@@ -1,0 +1,17 @@
+alias: "[Light] [FP2] : [Server Room] : [Motion Detected] : [Lights On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.basement_server_inovelli_presence_occupancy
+      - binary_sensor.basement_server_room_aqara_fp2_03_presence_sensor
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    target:
+      entity_id: light.basement_server_inovelli_presence
+    data: {}
+mode: single

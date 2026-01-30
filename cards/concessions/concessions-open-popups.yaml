@@ -1,0 +1,13 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+name: Concessions
+icon: mdi:clipboard-text-clock-outline
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#concessions-history"
+entity: light.basement_concessions_lights

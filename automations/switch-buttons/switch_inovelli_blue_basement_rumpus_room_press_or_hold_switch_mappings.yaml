@@ -1,0 +1,18 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Basement] [Rumpus Room] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: bebc0869627d11f6ff28712e78fb7ca3
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: basement_rumpus_room_inovelli_presence
+          normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.basement_rumpus_room_led_color
+          automation_entity_ids:
+            - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+            - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off

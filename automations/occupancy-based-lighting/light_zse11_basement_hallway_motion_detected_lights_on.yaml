@@ -1,0 +1,19 @@
+alias: "[Light] [ZSE11] : [Basement Hallway] : [Motion Detected] : [Lights On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.basement_hallway_qsensor_motion_detection
+      - binary_sensor.basement_hallway_inovelli_presence_occupancy
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data:
+      color_temp_kelvin: 2750
+      brightness_pct: 100
+    target:
+      entity_id: light.basement_hall_lights
+mode: single

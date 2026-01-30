@@ -1,0 +1,16 @@
+# <ZONE NAME> mmWave Normal Mode
+# NOTE we are using the UI to manage these helpers which does not all us to use YAML
+# This is still useful for copy pasting into the UI
+input_select:
+  zone_name_basement_rumpus_room_inovelli_mmwave_normal_mode:
+    name: <ZONE NAME> mmWave Normal Mode
+    options:
+      - Disabled
+      - Occupancy (default)
+      - Vacancy
+      - Wasteful Occupancy
+      - Mirrored Occupancy
+      - Mirrored Vacancy
+      - Mirrored Wasteful Occupancy
+    icon: mdi:motion-sensor
+

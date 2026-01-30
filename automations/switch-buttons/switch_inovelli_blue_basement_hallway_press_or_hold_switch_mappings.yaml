@@ -1,0 +1,18 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Basement] [Hallway] : [Press or Hold] : [Switch
+  Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 6e5e9df0a7123f89a5dce3dd003c04d6
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: basement_hallway_inovelli_presence
+          normal_mode: Disabled
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.basement_hallway_led_color
+          automation_entity_ids:
+            - automation.light_zse11_basement_hallway_motion_detected_lights_on
+            - automation.light_zse11_basement_hallway_motion_cleared_lights_off

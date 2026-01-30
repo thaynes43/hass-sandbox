@@ -1,0 +1,18 @@
+---
+alwaysApply: true
+---
+
+# Home Assistant Automation Project
+
+This project is a subset of Home Assistant scripts and automations. They have been copy pasted from the Home Assistant web based YAML editor into text files here to make them eaiser to edit as well as provide context when creating new automations what existing ones will be doing.
+
+The inovelli folder contains automations mainly driving inovelli smart presence detecting switches. The parameters for these switches may be found at https://help.inovelli.com/en/articles/12820312-blue-series-mmwave-presence-dimmer-switch-parameters.
+
+## Inovelli hold LED colors are state
+
+- **Reserved colors**: Any LED bar color used to indicate “hold” must be treated as state and must be reserved for that single purpose (do not reuse for other notifications).
+- **Manual vs automation holds**: Use different, fixed colors to distinguish sources.
+  - Manual hold: `input_text.inovelli_manual_hold`
+  - Cleaners-mode/automation hold: `input_text.inovelli_auto_hold`
+- **Clearing behavior**: Automations that clear holds must only clear holds matching the automation hold color, so manual holds are preserved.
+

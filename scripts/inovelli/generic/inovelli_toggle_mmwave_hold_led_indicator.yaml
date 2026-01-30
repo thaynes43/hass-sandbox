@@ -1,0 +1,229 @@
+alias: Inovelli Toggle mmWave Hold + LED Indicator
+description: >
+  Toggles MmwaveControlWiredDevice between Disabled (hold) and normal mode. When
+  enabling hold, caches current LED color (LED1 WhenOn) into an input_text
+  (optional), then sets LED 1-7 (on+off) to hold_color. When disabling hold,
+  restores cached LED color (fallback 255) and sets mmWave back to normal_mode.
+fields:
+  switch_name:
+    description: >
+      Entity name prefix used for BOTH the mmWave select entity and the LED
+      number entities
+    example: upstairs_primary_water_closet_inovelli_presence
+  normal_mode:
+    description: The mmWave dropdown option that represents NOT on hold
+    example: Occupancy (default)
+  normal_mode_input_select:
+    description: >-
+      Optional input_select helper whose state matches the switch's
+      MmwaveControlWiredDevice options. If provided, this will be used instead of
+      normal_mode (normal_mode becomes a fallback).
+    example: input_select.basement_rumpus_room_mmwave_normal_mode
+  hold_color:
+    description: >-
+      0-255 color index OR an input_* helper entity (recommended) whose state is
+      0-255, used for the hold indicator color
+    example: input_text.inovelli_manual_hold
+  automation_entity_ids:
+    description: >-
+      Optional list of Home Assistant `automation.*` entity ids to disable while
+      on hold and re-enable when hold clears.
+    example: >-
+      ["automation.light_fp2_server_room_motion_detected_lights_on",
+      "automation.light_fp2_server_room_motion_cleared_lights_off"]
+  prev_led_color_helper:
+    description: Optional input_text helper to cache the previous LED color (0-255)
+    example: input_text.upstairs_primary_water_closet_default_led_color
+sequence:
+  - variables:
+      mmwave_select: select.{{ switch_name }}_mmwavecontrolwireddevice
+      led1_on: number.{{ switch_name }}_defaultled1colorwhenon
+      mmwave_state: "{{ states(mmwave_select) }}"
+      mmwave_available: "{{ mmwave_state not in ['unknown','unavailable','none','None',''] }}"
+      normal_mode_input_select_entity: "{{ normal_mode_input_select | default('') | string }}"
+      normal_mode_from_input_select: |-
+        {% set e = normal_mode_input_select_entity %}
+        {% if e.startswith('input_select.') %}
+          {% set v = states(e) %}
+          {% if v in ['unknown','unavailable','none','None',''] %}
+            {{ '' }}
+          {% else %}
+            {{ v }}
+          {% endif %}
+        {% else %}
+          {{ '' }}
+        {% endif %}
+      effective_normal_mode: >-
+        {% set v = normal_mode_from_input_select | string %}
+        {% if (v | length) > 0 %}
+          {{ v }}
+        {% else %}
+          {{ normal_mode | default('') | string }}
+        {% endif %}
+      manual_hold_color_entity: "{{ manual_hold_color | default('input_text.inovelli_manual_hold') }}"
+      auto_hold_color_entity: "{{ auto_hold_color | default('input_text.inovelli_auto_hold') }}"
+      manual_hold_color_value: |-
+        {% set v = manual_hold_color_entity %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      auto_hold_color_value: |-
+        {% set v = auto_hold_color_entity %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(0), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(0), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      current_led1_on: "{{ states(led1_on) | int(0) }}"
+      led_color_on:
+        - number.{{ switch_name }}_defaultled1colorwhenon
+        - number.{{ switch_name }}_defaultled2colorwhenon
+        - number.{{ switch_name }}_defaultled3colorwhenon
+        - number.{{ switch_name }}_defaultled4colorwhenon
+        - number.{{ switch_name }}_defaultled5colorwhenon
+        - number.{{ switch_name }}_defaultled6colorwhenon
+        - number.{{ switch_name }}_defaultled7colorwhenon
+      led_color_off:
+        - number.{{ switch_name }}_defaultled1colorwhenoff
+        - number.{{ switch_name }}_defaultled2colorwhenoff
+        - number.{{ switch_name }}_defaultled3colorwhenoff
+        - number.{{ switch_name }}_defaultled4colorwhenoff
+        - number.{{ switch_name }}_defaultled5colorwhenoff
+        - number.{{ switch_name }}_defaultled6colorwhenoff
+        - number.{{ switch_name }}_defaultled7colorwhenoff
+      automation_ids: |-
+        {% set a = automation_entity_ids | default([]) %}
+        {% if a is string %}
+          {{ [a] }}
+        {% else %}
+          {{ a }}
+        {% endif %}
+      automation_ids_provided: "{{ (automation_ids | default([])) | length > 0 }}"
+      any_automation_off: |-
+        {% set ns = namespace(any_off=false) %}
+        {% for a in (automation_ids | default([])) %}
+          {% if states(a) == 'off' %}
+            {% set ns.any_off = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.any_off }}
+      helper_provided: "{{ (prev_led_color_helper | default('') | string | length) > 0 }}"
+      helper_needs_cache: >-
+        {{ helper_provided and states(prev_led_color_helper) in
+        ['unknown','unavailable','none','None',''] }}
+      hold_color_value: |-
+        {% set v = hold_color | default(85) %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      restore_led_color: |-
+        {% if helper_provided %}
+          {% set v = states(prev_led_color_helper) %}
+          {% if v in ['unknown','unavailable','none','None',''] %}
+            255
+          {% else %}
+            {{ [ [ v | int(255), 0 ] | max, 255 ] | min }}
+          {% endif %}
+        {% else %}
+          255
+        {% endif %}
+      is_on_hold: >-
+        {{ (current_led1_on in [manual_hold_color_value, auto_hold_color_value])
+        or (mmwave_available and mmwave_state == 'Disabled' and
+        (effective_normal_mode | default('') | string) != 'Disabled') or
+        (automation_ids_provided and
+        any_automation_off) }}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ not is_on_hold }}"
+        sequence:
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ automation_ids_provided }}"
+                sequence:
+                  - action: automation.turn_off
+                    target:
+                      entity_id: "{{ automation_ids }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ helper_needs_cache }}"
+                sequence:
+                  - action: input_text.set_value
+                    target:
+                      entity_id: "{{ prev_led_color_helper }}"
+                    data:
+                      value: "{{ states(led1_on) }}"
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ mmwave_available }}"
+                sequence:
+                  - action: select.select_option
+                    target:
+                      entity_id: "{{ mmwave_select }}"
+                    data:
+                      option: Disabled
+          - repeat:
+              for_each: "{{ led_color_on }}"
+              sequence:
+                - action: number.set_value
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    value: "{{ hold_color_value }}"
+          - repeat:
+              for_each: "{{ led_color_off }}"
+              sequence:
+                - action: number.set_value
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    value: "{{ hold_color_value }}"
+    default:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ mmwave_available and (effective_normal_mode |
+                  default('') | string | length) > 0 and (effective_normal_mode
+                  | string) != 'Disabled' }}
+            sequence:
+              - action: select.select_option
+                target:
+                  entity_id: "{{ mmwave_select }}"
+                data:
+                  option: "{{ effective_normal_mode }}"
+      - repeat:
+          for_each: "{{ led_color_on }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ restore_led_color }}"
+      - repeat:
+          for_each: "{{ led_color_off }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ restore_led_color }}"
+      - delay: "00:00:01"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ automation_ids_provided and (states(led1_on) | int(0)) not
+                  in [manual_hold_color_value, auto_hold_color_value] }}
+            sequence:
+              - action: automation.turn_on
+                target:
+                  entity_id: "{{ automation_ids }}"

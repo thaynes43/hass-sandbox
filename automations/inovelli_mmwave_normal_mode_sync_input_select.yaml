@@ -1,0 +1,31 @@
+alias: "Inovelli: Sync mmWave normal-mode helpers -> devices"
+description: >
+  Keeps per-zone Inovelli mmWave normal-mode input_select helpers in sync with
+  each device's MmwaveControlWiredDevice select.
+triggers:
+  - entity_id:
+      - input_select.basement_rumpus_room_mmwave_normal_mode
+      - input_select.basement_concessions_mmwave_normal_mode
+    trigger: state
+conditions: []
+actions:
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.to_state is not none and trigger.to_state.state not in
+              ['unknown','unavailable','none','None',''] }}
+        sequence:
+          - action: select.select_option
+            target:
+              entity_id: >-
+                {% if trigger.entity_id == 'input_select.basement_rumpus_room_mmwave_normal_mode' %}
+                  select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.basement_concessions_mmwave_normal_mode' %}
+                  select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice
+                {% else %}
+                  none
+                {% endif %}
+            data:
+              option: "{{ trigger.to_state.state }}"
+mode: single

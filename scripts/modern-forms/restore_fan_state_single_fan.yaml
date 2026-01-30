@@ -1,0 +1,50 @@
+alias: Restore Fan State (single fan)
+description: >
+  Restores a fan to the snapshot captured by Save Original State and Turn Fan
+  Off. Scenes created via scene.create may show state "unknown" in HA UI but
+  still work. This checks true entity existence and restores if present.
+fields:
+  entity_id:
+    name: Fan Entity
+    description: Fan entity_id to restore
+    required: true
+    selector:
+      entity:
+        domain: fan
+  snapshot_prefix:
+    name: Snapshot Prefix
+    description: >-
+      Prefix used for snapshot scene_id. Must match what was used when
+      snapshotting.
+    required: false
+    default: fan_state_snapshot
+    selector:
+      text: {}
+sequence:
+  - variables:
+      prefix: "{{ snapshot_prefix | default('fan_state_snapshot') }}"
+      snapshot_scene_id: |-
+        {{ prefix }}_{{ entity_id
+          | replace('fan.', '')
+          | replace('.', '_')
+          | lower
+        }}
+      snapshot_scene_entity: scene.{{ snapshot_scene_id }}
+      entity_exists: "{{ states[snapshot_scene_entity] is not none }}"
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ entity_exists }}"
+        sequence:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ snapshot_scene_entity }}"
+    default:
+      - action: logbook.log
+        data:
+          name: Fan Tools
+          message: >-
+            Snapshot scene not found: {{ snapshot_scene_entity }} (skipping
+            restore).
+          entity_id: "{{ entity_id }}"
+mode: queued

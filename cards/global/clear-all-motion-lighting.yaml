@@ -1,0 +1,9 @@
+type: custom:bubble-card
+card_type: button
+button_type: switch
+sub_button:
+  main: []
+  bottom: []
+entity: script.clear_hold_on_all_inovelli_presence_controlled_switches
+name: Clear Motion Controlled Lighting Hold
+icon: mdi:lock-open

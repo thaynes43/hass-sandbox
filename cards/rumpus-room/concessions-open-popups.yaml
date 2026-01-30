@@ -1,0 +1,13 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+name: Rumpus Room
+icon: mdi:clipboard-text-clock-outline
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#rumpus-room-history"
+entity: light.basement_rumpus_room_lamp

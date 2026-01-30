@@ -1,0 +1,147 @@
+alias: HOLD ON - Inovelli Set mmWave Hold + LED Indicator
+description: >
+  Forces MmwaveControlWiredDevice to Disabled (hold). Optionally caches current
+  LED color (LED1 WhenOn) into an input_text, then sets LED 1-7 (on+off) to
+  hold_color.
+fields:
+  switch_name:
+    description: >-
+      Entity name prefix used for BOTH the mmWave select entity and the LED
+      number entities
+    example: upstairs_primary_water_closet_inovelli_presence
+  hold_color:
+    description: >-
+      0-255 color index OR an input_* helper entity (recommended) whose state is
+      0-255, used for the hold indicator color
+    example: input_text.inovelli_auto_hold
+  automation_entity_ids:
+    description: >-
+      Optional list of Home Assistant `automation.*` entity ids to disable while
+      on hold.
+    example: >-
+      ["automation.light_fp2_server_room_motion_detected_lights_on",
+      "automation.light_fp2_server_room_motion_cleared_lights_off"]
+  prev_led_color_helper:
+    description: Optional input_text helper to cache the previous LED color (0-255)
+    example: input_text.upstairs_primary_water_closet_default_led_color
+sequence:
+  - variables:
+      mmwave_select: select.{{ switch_name }}_mmwavecontrolwireddevice
+      mmwave_state: "{{ states(mmwave_select) }}"
+      mmwave_available: "{{ mmwave_state not in ['unknown','unavailable','none','None',''] }}"
+      led1_on: number.{{ switch_name }}_defaultled1colorwhenon
+      manual_hold_color_entity: "{{ manual_hold_color | default('input_text.inovelli_manual_hold') }}"
+      auto_hold_color_entity: "{{ auto_hold_color | default('input_text.inovelli_auto_hold') }}"
+      manual_hold_color_value: |-
+        {% set v = manual_hold_color_entity %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      auto_hold_color_value: |-
+        {% set v = auto_hold_color_entity %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(0), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(0), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      current_led1_on: "{{ states(led1_on) | int(0) }}"
+      is_manual_hold: "{{ current_led1_on == manual_hold_color_value }}"
+      led_color_on:
+        - number.{{ switch_name }}_defaultled1colorwhenon
+        - number.{{ switch_name }}_defaultled2colorwhenon
+        - number.{{ switch_name }}_defaultled3colorwhenon
+        - number.{{ switch_name }}_defaultled4colorwhenon
+        - number.{{ switch_name }}_defaultled5colorwhenon
+        - number.{{ switch_name }}_defaultled6colorwhenon
+        - number.{{ switch_name }}_defaultled7colorwhenon
+      led_color_off:
+        - number.{{ switch_name }}_defaultled1colorwhenoff
+        - number.{{ switch_name }}_defaultled2colorwhenoff
+        - number.{{ switch_name }}_defaultled3colorwhenoff
+        - number.{{ switch_name }}_defaultled4colorwhenoff
+        - number.{{ switch_name }}_defaultled5colorwhenoff
+        - number.{{ switch_name }}_defaultled6colorwhenoff
+        - number.{{ switch_name }}_defaultled7colorwhenoff
+      automation_ids: |-
+        {% set a = automation_entity_ids | default([]) %}
+        {% if a is string %}
+          {{ [a] }}
+        {% else %}
+          {{ a }}
+        {% endif %}
+      automation_ids_provided: "{{ (automation_ids | default([])) | length > 0 }}"
+      any_automation_off: |-
+        {% set ns = namespace(any_off=false) %}
+        {% for a in (automation_ids | default([])) %}
+          {% if states(a) == 'off' %}
+            {% set ns.any_off = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.any_off }}
+      hold_color_value: |-
+        {% set v = hold_color | default(85) %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      helper_provided: "{{ (prev_led_color_helper | default('') | string | length) > 0 }}"
+      helper_needs_cache: >-
+        {{ helper_provided and states(prev_led_color_helper) in
+        ['unknown','unavailable','none','None',''] }}
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ automation_ids_provided }}"
+        sequence:
+          - action: automation.turn_off
+            target:
+              entity_id: "{{ automation_ids }}"
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_manual_hold }}"
+        sequence: []
+    default:
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ helper_needs_cache and (current_led1_on !=
+                  hold_color_value) }}
+            sequence:
+              - action: input_text.set_value
+                target:
+                  entity_id: "{{ prev_led_color_helper }}"
+                data:
+                  value: "{{ states(led1_on) }}"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ mmwave_available and (mmwave_state | string) != 'Disabled'
+                  }}
+            sequence:
+              - action: select.select_option
+                target:
+                  entity_id: "{{ mmwave_select }}"
+                data:
+                  option: Disabled
+      - repeat:
+          for_each: "{{ led_color_on }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ hold_color_value }}"
+      - repeat:
+          for_each: "{{ led_color_off }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ hold_color_value }}"

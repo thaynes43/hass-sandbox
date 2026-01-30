@@ -1,0 +1,112 @@
+alias: Inovelli Toggle Hold (Group of Switches)
+description: >
+  Toggles a shared "hold" state for a group of Inovelli switches. Computes the
+  current hold state BEFORE toggling (avoids race conditions), toggles hold on a
+  designated leader switch once, then syncs LEDs + mmWave across all switches to
+  the explicit desired state.
+fields:
+  leader_switch_name:
+    description: Switch name prefix for the switch that will be toggled
+    example: basement_lower_staircase_inovelli_presence
+  leader_normal_mode:
+    description: The mmWave dropdown option that represents NOT on hold for the leader
+    example: Occupancy (default)
+  leader_normal_mode_input_select:
+    description: >-
+      Optional input_select helper whose state matches the leader switch's
+      MmwaveControlWiredDevice options. If provided, this will be used instead of
+      leader_normal_mode (leader_normal_mode becomes a fallback).
+    example: input_select.basement_rumpus_room_mmwave_normal_mode
+  leader_prev_led_color_helper:
+    description: input_text helper used to cache/restore the leader LED color
+    example: input_text.basement_lower_staircase_led_color
+  hold_color:
+    description: >-
+      0-255 color index OR an input_* helper entity (recommended) whose state is
+      0-255, used for the hold indicator color
+    example: input_text.inovelli_manual_hold
+  automation_entity_ids:
+    description: >-
+      Optional list of automation.* entity ids. If provided and any are off, we
+      treat the group as currently held.
+    example: >-
+      ["automation.light_fp2_server_room_motion_detected_lights_on",
+      "automation.light_fp2_server_room_motion_cleared_lights_off"]
+  switches:
+    description: >-
+      List of switches to sync. Each item requires switch_name and a
+      prev_led_color_helper (input_text). normal_mode is optional per switch.
+    example: >-
+      [{"switch_name":"basement_lower_staircase_inovelli_presence",
+      "prev_led_color_helper":"input_text.basement_lower_staircase_led_color",
+      "normal_mode":"Occupancy (default)"},
+      {"switch_name":"basement_upper_staircase_inovelli_presence",
+      "prev_led_color_helper":"input_text.basement_upper_staircase_led_color",
+      "normal_mode":"Occupancy (default)"}]
+sequence:
+  - variables:
+      manual: "{{ states('input_text.inovelli_manual_hold') | int(85) }}"
+      auto: "{{ states('input_text.inovelli_auto_hold') | int(0) }}"
+      leader_led1: number.{{ leader_switch_name }}_defaultled1colorwhenon
+      leader_led1_value: "{{ states(leader_led1) | int(-1) }}"
+      leader_mmwave_select: select.{{ leader_switch_name }}_mmwavecontrolwireddevice
+      leader_mmwave_state: "{{ states(leader_mmwave_select) }}"
+      leader_mmwave_available: >-
+        {{ leader_mmwave_state not in ['unknown','unavailable','none','None','']
+        }}
+      leader_normal_mode_input_select_entity: "{{ leader_normal_mode_input_select | default('') | string }}"
+      leader_normal_mode_from_input_select: |-
+        {% set e = leader_normal_mode_input_select_entity %}
+        {% if e.startswith('input_select.') %}
+          {% set v = states(e) %}
+          {% if v in ['unknown','unavailable','none','None',''] %}
+            {{ '' }}
+          {% else %}
+            {{ v }}
+          {% endif %}
+        {% else %}
+          {{ '' }}
+        {% endif %}
+      leader_effective_normal_mode: >-
+        {% set v = leader_normal_mode_from_input_select | string %}
+        {% if (v | length) > 0 %}
+          {{ v }}
+        {% else %}
+          {{ leader_normal_mode | default('') | string }}
+        {% endif %}
+      automation_ids: |-
+        {% set a = automation_entity_ids | default([]) %}
+        {% if a is string %}
+          {{ [a] }}
+        {% else %}
+          {{ a }}
+        {% endif %}
+      automation_ids_provided: "{{ (automation_ids | default([])) | length > 0 }}"
+      any_automation_off: |-
+        {% set ns = namespace(any_off=false) %}
+        {% for a in (automation_ids | default([])) %}
+          {% if states(a) == 'off' %}
+            {% set ns.any_off = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.any_off }}
+      currently_held: >-
+        {{ (leader_led1_value in [manual, auto]) or (leader_mmwave_available and
+        leader_mmwave_state == 'Disabled' and leader_effective_normal_mode !=
+        'Disabled') or (automation_ids_provided and any_automation_off) }}
+      desired_held: "{{ not currently_held }}"
+  - action: script.inovelli_toggle_mmwave_hold_led_indicator
+    data:
+      switch_name: "{{ leader_switch_name }}"
+      normal_mode: "{{ leader_normal_mode }}"
+      normal_mode_input_select: "{{ leader_normal_mode_input_select | default('') }}"
+      hold_color: "{{ hold_color }}"
+      prev_led_color_helper: "{{ leader_prev_led_color_helper }}"
+      automation_entity_ids: "{{ automation_ids }}"
+  - action: script.inovelli_sync_hold_led_indicators_group
+    data:
+      held: "{{ desired_held }}"
+      hold_color: "{{ hold_color }}"
+      switches: "{{ switches }}"
+mode: single
+icon: mdi:toggle-switch

@@ -1,0 +1,230 @@
+alias: Inovelli Sync Hold LED Indicators (Group)
+description: >
+  Syncs LED 1-7 (on+off) across a group of Inovelli switches to reflect a shared
+  hold state. If held, caches each switch's current LED1 WhenOn color into its
+  helper (if empty) and sets LEDs to hold_color. If not held, restores LEDs from
+  each switch's helper (fallback 255).
+fields:
+  held:
+    description: >-
+      The desired shared hold state to sync to. Use true to sync the group ON
+      hold, false to sync the group OFF hold. This avoids race conditions from
+      reading state immediately after a toggle.
+    example: true
+  switches:
+    description: >-
+      List of switches to sync. Each item requires switch_name and a
+      prev_led_color_helper (input_text) for restoring. normal_mode is optional.
+      You may alternatively provide normal_mode_input_select per switch.
+    example: >-
+      [{"switch_name":"basement_server_inovelli_presence",
+      "prev_led_color_helper":"input_text.basement_server_led_color",
+      "normal_mode":"Wasteful Occupancy"},
+      {"switch_name":"basement_other_inovelli_presence",
+      "prev_led_color_helper":"input_text.basement_other_led_color",
+      "normal_mode":"Vacancy"}]
+  hold_color:
+    description: >-
+      0-255 color index OR an input_* helper entity whose state is 0-255, used
+      for the hold indicator color
+    example: input_text.inovelli_manual_hold
+  automation_entity_ids:
+    description: >-
+      Optional list of automation.* entity ids. When provided, the group is
+      considered "held" if any of these automations are currently off.
+    example: >-
+      ["automation.light_fp2_server_room_motion_detected_lights_on",
+      "automation.light_fp2_server_room_motion_cleared_lights_off"]
+sequence:
+  - variables:
+      hold_color_value: |-
+        {% set v = hold_color | default('') %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(0), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(0), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      manual_hold_color_entity: "{{ manual_hold_color | default('input_text.inovelli_manual_hold') }}"
+      auto_hold_color_entity: "{{ auto_hold_color | default('input_text.inovelli_auto_hold') }}"
+      manual_hold_color_value: |-
+        {% set v = manual_hold_color_entity %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      auto_hold_color_value: |-
+        {% set v = auto_hold_color_entity %}
+        {% if v is string and v.startswith('input_') %}
+          {{ [ [ states(v) | int(0), 0 ] | max, 255 ] | min }}
+        {% else %}
+          {{ [ [ v | int(0), 0 ] | max, 255 ] | min }}
+        {% endif %}
+      automation_ids: |-
+        {% set a = automation_entity_ids | default([]) %}
+        {% if a is string %}
+          {{ [a] }}
+        {% else %}
+          {{ a }}
+        {% endif %}
+      automation_ids_provided: "{{ (automation_ids | default([])) | length > 0 }}"
+      any_automation_off: |-
+        {% set ns = namespace(any_off=false) %}
+        {% for a in (automation_ids | default([])) %}
+          {% if states(a) == 'off' %}
+            {% set ns.any_off = true %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.any_off }}
+      desired_held: |-
+        {% if held is boolean %}
+          {{ held }}
+        {% else %}
+          {% set v = held | default('') | string | lower %}
+          {% if v in ['true','on','yes','1'] %}
+            true
+          {% elif v in ['false','off','no','0'] %}
+            false
+          {% else %}
+            {{ automation_ids_provided and any_automation_off }}
+          {% endif %}
+        {% endif %}
+  - repeat:
+      for_each: "{{ switches | default([]) }}"
+      sequence:
+        - variables:
+            switch_name: "{{ repeat.item.switch_name }}"
+            prev_led_color_helper: "{{ repeat.item.prev_led_color_helper }}"
+            normal_mode: "{{ repeat.item.normal_mode | default('') }}"
+            normal_mode_input_select_entity: "{{ repeat.item.normal_mode_input_select | default('') | string }}"
+            normal_mode_from_input_select: |-
+              {% set e = normal_mode_input_select_entity %}
+              {% if e.startswith('input_select.') %}
+                {% set v = states(e) %}
+                {% if v in ['unknown','unavailable','none','None',''] %}
+                  {{ '' }}
+                {% else %}
+                  {{ v }}
+                {% endif %}
+              {% else %}
+                {{ '' }}
+              {% endif %}
+            effective_normal_mode: >-
+              {% set v = normal_mode_from_input_select | string %}
+              {% if (v | length) > 0 %}
+                {{ v }}
+              {% else %}
+                {{ normal_mode | default('') | string }}
+              {% endif %}
+            mmwave_select: select.{{ repeat.item.switch_name }}_mmwavecontrolwireddevice
+            mmwave_state: "{{ states(mmwave_select) }}"
+            mmwave_available: >-
+              {{ mmwave_state not in ['unknown','unavailable','none','None','']
+              }}
+            led1_on: number.{{ repeat.item.switch_name }}_defaultled1colorwhenon
+            led_color_on:
+              - number.{{ repeat.item.switch_name }}_defaultled1colorwhenon
+              - number.{{ repeat.item.switch_name }}_defaultled2colorwhenon
+              - number.{{ repeat.item.switch_name }}_defaultled3colorwhenon
+              - number.{{ repeat.item.switch_name }}_defaultled4colorwhenon
+              - number.{{ repeat.item.switch_name }}_defaultled5colorwhenon
+              - number.{{ repeat.item.switch_name }}_defaultled6colorwhenon
+              - number.{{ repeat.item.switch_name }}_defaultled7colorwhenon
+            led_color_off:
+              - number.{{ repeat.item.switch_name }}_defaultled1colorwhenoff
+              - number.{{ repeat.item.switch_name }}_defaultled2colorwhenoff
+              - number.{{ repeat.item.switch_name }}_defaultled3colorwhenoff
+              - number.{{ repeat.item.switch_name }}_defaultled4colorwhenoff
+              - number.{{ repeat.item.switch_name }}_defaultled5colorwhenoff
+              - number.{{ repeat.item.switch_name }}_defaultled6colorwhenoff
+              - number.{{ repeat.item.switch_name }}_defaultled7colorwhenoff
+            helper_provided: "{{ (prev_led_color_helper | default('') | string | length) > 0 }}"
+            helper_needs_cache: >-
+              {{ helper_provided and states(prev_led_color_helper) in
+              ['unknown','unavailable','none','None',''] }}
+            restore_led_color: |-
+              {% if helper_provided %}
+                {% set v = states(prev_led_color_helper) %}
+                {% if v in ['unknown','unavailable','none','None',''] %}
+                  255
+                {% else %}
+                  {{ [ [ v | int(255), 0 ] | max, 255 ] | min }}
+                {% endif %}
+              {% else %}
+                255
+              {% endif %}
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ desired_held }}"
+              sequence:
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: >-
+                            {{ mmwave_available and (effective_normal_mode |
+                            string) != 'Disabled' }}
+                      sequence:
+                        - action: select.select_option
+                          target:
+                            entity_id: "{{ mmwave_select }}"
+                          data:
+                            option: Disabled
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ helper_needs_cache }}"
+                      sequence:
+                        - action: input_text.set_value
+                          target:
+                            entity_id: "{{ prev_led_color_helper }}"
+                          data:
+                            value: "{{ states(led1_on) }}"
+                - repeat:
+                    for_each: "{{ led_color_on }}"
+                    sequence:
+                      - action: number.set_value
+                        target:
+                          entity_id: "{{ repeat.item }}"
+                        data:
+                          value: "{{ hold_color_value }}"
+                - repeat:
+                    for_each: "{{ led_color_off }}"
+                    sequence:
+                      - action: number.set_value
+                        target:
+                          entity_id: "{{ repeat.item }}"
+                        data:
+                          value: "{{ hold_color_value }}"
+          default:
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >-
+                        {{ mmwave_available and (effective_normal_mode | string
+                        | length) > 0 and (effective_normal_mode | string) !=
+                        'Disabled' }}
+                  sequence:
+                    - action: select.select_option
+                      target:
+                        entity_id: "{{ mmwave_select }}"
+                      data:
+                        option: "{{ effective_normal_mode }}"
+            - repeat:
+                for_each: "{{ led_color_on }}"
+                sequence:
+                  - action: number.set_value
+                    target:
+                      entity_id: "{{ repeat.item }}"
+                    data:
+                      value: "{{ restore_led_color }}"
+            - repeat:
+                for_each: "{{ led_color_off }}"
+                sequence:
+                  - action: number.set_value
+                    target:
+                      entity_id: "{{ repeat.item }}"
+                    data:
+                      value: "{{ restore_led_color }}"
+mode: single
+icon: mdi:light-switch

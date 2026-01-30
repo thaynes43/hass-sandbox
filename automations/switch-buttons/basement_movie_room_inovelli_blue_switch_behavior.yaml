@@ -1,0 +1,39 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Basement] [Movie Room] : [Press or Hold] : [Switch
+  Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 238851523f18e55c74ca8994808d3cd9
+    config_single:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_movie_room_ambient_lighting
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: basement_movie_inovelli_presence
+          normal_mode: Disabled
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.basement_movie_led_color
+          automation_entity_ids:
+            - automation.light_inovelli_movie_room_motion_cleared_lights_off
+    up_double:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 100
+        target:
+          entity_id: light.basement_movie_room_lights
+    down_double:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 33
+        target:
+          entity_id: light.basement_movie_room_lights

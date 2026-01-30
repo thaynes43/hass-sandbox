@@ -1,0 +1,12 @@
+alias: Basement Staircase - Apply Cached LED Color
+sequence:
+  - action: script.inovelli_set_led_1_7_color_from_input_text
+    data:
+      switch_name: basement_lower_staircase_inovelli_presence
+      color_helper: input_text.basement_lower_staircase_led_color
+  - action: script.inovelli_set_led_1_7_color_from_input_text
+    data:
+      switch_name: basement_upper_staircase_inovelli_presence
+      color_helper: input_text.basement_upper_staircase_led_color
+mode: single
+description: ""

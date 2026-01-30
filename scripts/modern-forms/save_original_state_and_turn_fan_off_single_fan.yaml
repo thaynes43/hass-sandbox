@@ -1,0 +1,45 @@
+alias: Save Original State and Turn Fan Off (single fan)
+description: >
+  If the fan is ON, snapshot it to a per-fan scene (captures percentage +
+  direction when supported) and then turn it OFF. If already OFF, does nothing
+  (no snapshot).
+fields:
+  entity_id:
+    name: Fan Entity
+    description: Fan entity_id to snapshot + turn off
+    required: true
+    selector:
+      entity:
+        domain: fan
+  snapshot_prefix:
+    name: Snapshot Prefix
+    description: Prefix used for the snapshot scene_id. Defaults to "fan_state_snapshot".
+    required: false
+    default: fan_state_snapshot
+    selector:
+      text: {}
+sequence:
+  - variables:
+      prefix: "{{ snapshot_prefix | default('fan_state_snapshot') }}"
+      snapshot_scene_id: |-
+        {{ prefix }}_{{ entity_id
+          | replace('fan.', '')
+          | replace('.', '_')
+          | lower
+        }}
+      is_on: "{{ is_state(entity_id, 'on') }}"
+  - choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ is_on }}"
+        sequence:
+          - action: scene.create
+            data:
+              scene_id: "{{ snapshot_scene_id }}"
+              snapshot_entities:
+                - "{{ entity_id }}"
+          - action: fan.turn_off
+            target:
+              entity_id: "{{ entity_id }}"
+    default: []
+mode: queued

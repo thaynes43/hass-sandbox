@@ -1,0 +1,9 @@
+type: custom:bubble-card
+card_type: button
+button_type: switch
+sub_button:
+  main: []
+  bottom: []
+entity: script.hold_all_inovelli_presence_controlled_switches
+name: Hold Motion Controlled Lighting
+icon: mdi:lock

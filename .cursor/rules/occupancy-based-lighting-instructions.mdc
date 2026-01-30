@@ -1,0 +1,173 @@
+---
+description: Occupancy-based lighting + Inovelli hold/mode + cards migration playbook
+alwaysApply: true
+---
+
+# Occupancy-based lighting: how this repo works
+
+This repo is a working subset of Home Assistant YAML for **occupancy-based lighting zones**, including:
+
+- Dashboard **cards** (Bubble Card popups + buttons)
+- **Automations** that turn lights on/off based on occupancy
+- **Inovelli mmWave hold** logic (manual + auto/automation holds)
+- Helper **input_select** entities used as the “normal mode” source of truth
+
+The goal of these docs is to make it easy (and safe) to update a single zone at a time without accidentally changing other zones.
+
+---
+
+## Overview: `automations/occupancy-based-lighting/`
+
+This folder contains the zone automations that actually drive lighting behavior.
+
+Typical shape per zone:
+
+- **Motion detected → lights on**
+  - Example pattern: `automations/occupancy-based-lighting/light_*_<zone>_motion_detected_lights_on.yaml`
+- **Motion cleared → lights off**
+  - Example pattern: `automations/occupancy-based-lighting/light_*_<zone>_motion_cleared_lights_off.yaml`
+
+**Key concept:** these automations are often **temporarily disabled** during “hold” states so manual/auto holds can take over without fighting the occupancy automations.
+
+---
+
+## Holds (very active work area)
+
+Holds disable “occupancy control” temporarily and indicate state via **reserved LED colors** on the Inovelli LED bar.
+
+### Hold types
+
+- **Manual hold**
+  - Triggered by a physical switch action (usually via `automations/switch-buttons/*`)
+  - Identified by `input_text.inovelli_manual_hold` (reserved LED color)
+
+- **Auto/automation hold** (e.g. cleaners-mode)
+  - Triggered by automations/scripts
+  - Identified by `input_text.inovelli_auto_hold` (reserved LED color)
+
+### Hold rules (must follow)
+
+- **Reserved colors are state**
+  - Any LED bar color used to indicate “hold” is reserved for that purpose only.
+- **Manual vs automation holds must differ**
+  - Manual hold uses `input_text.inovelli_manual_hold`
+  - Auto/automation hold uses `input_text.inovelli_auto_hold`
+- **Clearing behavior**
+  - Automations that clear holds must only clear holds matching the **automation hold** color (so manual holds are preserved).
+
+### Manual hold: physical switch → script call
+
+Location: `automations/switch-buttons/*.yaml`
+
+These map switch button events to script calls such as:
+
+- `script.inovelli_toggle_mmwave_hold_led_indicator` (common for manual hold toggle)
+
+**Critical migration detail:** when passing “normal mode” to these scripts, prefer:
+
+- `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode`
+
+### Auto hold: scripts + automations
+
+Auto holds are typically driven by scripts and helper automations, for example:
+
+- Generic scripts under `scripts/inovelli/generic/`
+- Zone/group definitions under `scripts/inovelli/entities-defined/`
+
+These often work by:
+
+- Disabling the zone’s occupancy automations
+- Setting the Inovelli mmWave control to `Disabled`
+- Setting LED colors to a reserved “hold” color
+- Later clearing/restoring the mmWave mode + LED state
+
+**Important:** entity-defined scripts frequently store per-zone data in arrays of objects (e.g. `switches:` lists). Only edit the entry where the `switch_name` matches the zone you are changing.
+
+---
+
+## Cards (Bubble Card dashboards)
+
+Cards are stored in `cards/<zone>/` and are maintained as YAML snippets copied out of the HA UI editor.
+
+### Completed / canonical examples
+
+Use these as the “known good” patterns:
+
+- `cards/rumpus-room/`
+- `cards/concessions/`
+- `cards/global/` (cross-zone utilities like “hold all / clear all”)
+
+### Standard UI pattern: 1 button + 2 popups that toggle
+
+- **Entry button** (`*-open-popups.yaml`)
+  - `bubble-card` `card_type: button`
+  - Navigates to `#<zone>-history`
+
+- **History popup** (`*-history.yaml`)
+  - `bubble-card` `card_type: pop-up` with `hash: "#<zone>-history"`
+  - Header navigates to `#<zone>-advanced`
+  - Includes: key sensors/lights, 1-hour history graph, hold status, automations, normal-mode dropdown, hold buttons
+
+- **Advanced popup** (`*-advanced.yaml`)
+  - `bubble-card` `card_type: pop-up` with `hash: "#<zone>-advanced"`
+  - Provides a **Back** button returning to `#<zone>-history`
+  - Includes deeper device parameters/commands
+
+### Sensor presentation rule-of-thumb
+
+- **Graph-worthy sensors** (you might click for a graph): show as **sub-buttons**
+  - Temperature, humidity, illuminance, battery %, occupancy/motion, etc.
+- **Text-only status flags**: condense into **markdown**
+  - Example: “replace battery soon/now” boolean flags
+
+---
+
+## WIP / migration notes (normal_mode → normal_mode_input_select + old cards → new cards)
+
+### Migration: `normal_mode` → `normal_mode_input_select`
+
+We are migrating away from hardcoded `normal_mode: ...` parameters in script calls.
+
+**Rule: match `switch_name`, then replace the parameter in that same block.**
+
+- Find a block targeting a switch:
+  - `switch_name: <zone>_inovelli_presence`
+- If that same block contains:
+  - `normal_mode: ...`
+- Replace with:
+  - `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode`
+
+Applies across:
+
+- Cards (`cards/**`)
+- Switch-button automations (`automations/switch-buttons/**`)
+- Entity-defined scripts (`scripts/inovelli/entities-defined/**`)
+
+### Don’t forget the sync automation (helper → device)
+
+If a zone uses `normal_mode_input_select`, ensure it’s included in:
+
+- `automations/inovelli_mmwave_normal_mode_sync_input_select.yaml`
+
+That automation should:
+
+- Trigger on `input_select.<zone>_mmwave_normal_mode`
+- Route to `select.<zone>_inovelli_presence_mmwavecontrolwireddevice`
+
+### Migrating cards: old format won’t be in-repo
+
+During migration you will often paste **one zone’s old card YAML** into chat for conversion.
+
+- Assume the old format may not exist in the repo anymore.
+- Use `cards/rumpus-room/` and `cards/concessions/` as the reference “new format”.
+- Ensure hold buttons in cards pass `normal_mode_input_select` (not a string `normal_mode`).
+
+### Search terms that find what you need
+
+- Find all references for a zone switch:
+  - `switch_name: <zone>_inovelli_presence`
+- Find old-style parameter usage:
+  - `normal_mode:`
+- Find new-style parameter usage:
+  - `normal_mode_input_select:`
+

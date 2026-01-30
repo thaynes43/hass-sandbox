@@ -1,0 +1,40 @@
+alias: Cleaners Mode (Biweekly Monday)
+description: Run cleaner-mode holds on a biweekly Monday schedule
+triggers:
+  - at: "09:00:00"
+    id: start
+    trigger: time
+  - at: "17:00:00"
+    id: end
+    trigger: time
+conditions:
+  - condition: time
+    weekday:
+      - mon
+  - condition: template
+    value_template: "{{ (now().isocalendar().week % 2) == 1 }}"
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: start
+        sequence:
+          - action: script.hold_all_inovelli_presence_controlled_switches
+          - delay:
+              seconds: 30
+          - action: script.brighten_all_lights
+          - delay:
+              seconds: 30
+          - action: script.turn_off_all_fans
+      - conditions:
+          - condition: trigger
+            id: end
+        sequence:
+          - action: script.restore_all_lights
+          - delay:
+              seconds: 30
+          - action: script.restore_all_fans
+          - delay:
+              seconds: 30
+          - action: script.clear_hold_on_all_inovelli_presence_controlled_switches
+mode: single

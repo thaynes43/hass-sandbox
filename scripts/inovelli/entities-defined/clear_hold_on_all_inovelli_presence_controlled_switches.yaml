@@ -1,0 +1,76 @@
+alias: Clear hold on all Inovelli Presence Controlled Switches
+description: >
+  Clears hold on all configured Inovelli presence-controlled switches and
+  restores LED indicators.
+sequence:
+  - variables:
+      default_normal_mode: Occupancy (default)
+      hold_color: input_text.inovelli_auto_hold
+      switches:
+        - switch_name: basement_server_inovelli_presence
+          helper: input_text.basement_server_led_color
+          normal_mode: Wasteful Occupancy
+          automation_entity_ids:
+            - automation.light_fp2_server_room_motion_detected_lights_on
+            - automation.light_fp2_server_room_motion_cleared_lights_off
+        - switch_name: basement_upper_staircase_inovelli_presence
+          helper: input_text.basement_upper_staircase_led_color
+        - switch_name: basement_lower_staircase_inovelli_presence
+          helper: input_text.basement_lower_staircase_led_color
+        - switch_name: basement_bathroom_vanity_inovelli_presence
+          helper: input_text.basement_bathroom_vanity_led_color
+        - switch_name: basement_movie_inovelli_presence
+          helper: input_text.basement_movie_led_color
+          normal_mode: Disabled
+          automation_entity_ids:
+            - automation.light_inovelli_movie_room_motion_cleared_lights_off
+        - switch_name: basement_concessions_inovelli_presence
+          helper: input_text.basement_concessions_led_color
+          normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_zse11_concessions_motion_detected_lights_on
+            - automation.light_zse11_concessions_motion_cleared_lights_off
+        - switch_name: basement_hallway_inovelli_presence
+          helper: input_text.basement_hallway_led_color
+          normal_mode: Disabled
+          automation_entity_ids:
+            - automation.light_zse11_basement_hallway_motion_detected_lights_on
+            - automation.light_zse11_basement_hallway_motion_cleared_lights_off
+        - switch_name: basement_rumpus_room_inovelli_presence
+          helper: input_text.basement_rumpus_room_led_color
+          normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+            - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+        - switch_name: downstairs_bathroom_vanity_inovelli_presence
+          helper: input_text.downstairs_bathroom_vanity_led_color
+        - switch_name: downstairs_mudroom_inovelli_presence
+          helper: input_text.downstairs_mudroom_led_color
+        - switch_name: garage_interior_mudroom_inovelli_presence
+          helper: input_text.garage_mudroom_door_led_color
+        - switch_name: upstairs_kids_bathroom_vanity_inovelli_presence
+          helper: input_text.upstairs_kids_vanity_led_color
+        - switch_name: upstairs_laundry_inovlli_presence
+          helper: input_text.upstairs_laundry_led_color
+        - switch_name: upstairs_primary_bath_vanity_inovelli_presence
+          helper: input_text.upstairs_primary_vanity_led_color
+          normal_mode: Wasteful Occupancy
+          automation_entity_ids:
+            - >-
+              automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
+        - switch_name: upstairs_primary_water_closet_inovelli_presence
+          helper: input_text.upstairs_primary_water_closet_led_color
+  - repeat:
+      for_each: "{{ switches }}"
+      sequence:
+        - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+          data:
+            switch_name: "{{ repeat.item.switch_name }}"
+            normal_mode: "{{ repeat.item.normal_mode | default(default_normal_mode) }}"
+            normal_mode_input_select: "{{ repeat.item.normal_mode_input_select | default('') }}"
+            hold_color: "{{ hold_color }}"
+            prev_led_color_helper: "{{ repeat.item.helper }}"
+            automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
+        - delay:
+            seconds: 2
+mode: single
