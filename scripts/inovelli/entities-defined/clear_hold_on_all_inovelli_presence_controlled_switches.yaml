@@ -21,7 +21,7 @@ sequence:
           helper: input_text.basement_bathroom_vanity_led_color
         - switch_name: basement_movie_inovelli_presence
           helper: input_text.basement_movie_led_color
-          normal_mode: Disabled
+          normal_mode_input_select: input_select.basement_movie_room_mmwave_normal_mode
           automation_entity_ids:
             - automation.light_inovelli_movie_room_motion_cleared_lights_off
         - switch_name: basement_concessions_inovelli_presence
