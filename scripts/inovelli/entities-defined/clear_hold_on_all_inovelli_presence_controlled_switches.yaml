@@ -9,7 +9,7 @@ sequence:
       switches:
         - switch_name: basement_server_inovelli_presence
           helper: input_text.basement_server_led_color
-          normal_mode: Wasteful Occupancy
+          normal_mode_input_select: input_select.basement_server_room_mmwave_normal_mode
           automation_entity_ids:
             - automation.light_fp2_server_room_motion_detected_lights_on
             - automation.light_fp2_server_room_motion_cleared_lights_off

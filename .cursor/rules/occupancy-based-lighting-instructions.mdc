@@ -89,6 +89,14 @@ These often work by:
 
 Cards are stored in `cards/<zone>/` and are maintained as YAML snippets copied out of the HA UI editor.
 
+## Helpers in this repo (important)
+
+In this setup, helpers (`input_select`, `input_text`, etc.) are **created/edited in the Home Assistant UI**, not managed as YAML in this repo.
+
+- **Do not** create per-zone helper YAML files in `helpers/` (we can’t reliably copy/paste/import them back into HA, so they become stale/noisy).
+- **Do** keep **one example file per helper type** in `helpers/` as a reference/template (e.g. one mmWave normal-mode `input_select` example, one occupancy off-delay `input_select` example).
+- When migrating zones, create the real helper in HA UI, then reference the entity id in cards/automations.
+
 ### Completed / canonical examples
 
 Use these as the “known good” patterns:
@@ -119,6 +127,46 @@ Use these as the “known good” patterns:
   - Temperature, humidity, illuminance, battery %, occupancy/motion, etc.
 - **Text-only status flags**: condense into **markdown**
   - Example: “replace battery soon/now” boolean flags
+- **Sub-buttons sizing**: avoid “4 in a row”
+  - In `custom:bubble-card` with `card_type: sub-buttons`, do not put 4+ sensors into a single `group:` row.
+  - If you have 4 sensors, split into **two groups of two** (e.g. “Inovelli State” + “Other Sensors”).
+  - If you have more than 4, keep each group small (typically 2–3 items) and add another named group.
+
+---
+
+## Inovelli presence switch entity id convention (copy/paste trick)
+
+For Inovelli “presence dimmer” devices, the entity ids for mmWave parameters are consistent across zones.
+
+**Rule:** pick a known-good zone card (e.g. concessions or rumpus-room) and **substitute the switch name** everywhere.
+
+### Step-by-step (do this every time)
+
+1. **Pick a source card** that already has the controls you want (e.g. `cards/basement/rumpus-room/*`).
+2. **Identify the source switch name** used in that card.
+   - Example: `basement_rumpus_room_inovelli_presence`
+3. **Decide the target switch name** for the zone you’re building.
+   - Example: `basement_server_inovelli_presence`
+4. For any entity id that contains the source switch name, **string-replace** it with the target switch name.
+   - Example:
+     - Source: `sensor.basement_rumpus_room_inovelli_presence_illuminance`
+     - Target: `sensor.basement_server_inovelli_presence_illuminance`
+   - This works because everything **after** `_inovelli_presence` (the suffix) is consistent across Inovelli presence switches.
+
+### Common suffixes (after `<switch_name>_`)
+
+Replace every occurrence of the source switch name with the target switch name in entity ids like:
+  - `select.<switch_name>_mmwavedetectsensitivity`
+  - `select.<switch_name>_mmwavedetecttrigger`
+  - `select.<switch_name>_mmwavecontrolwireddevice`
+  - `select.<switch_name>_outputmode`
+  - `select.<switch_name>_smartbulbmode`
+  - `number.<switch_name>_mmwaveholdtime`
+  - `number.<switch_name>_mmwavestaylife`
+  - `number.<switch_name>_mmwavedepthmin` / `mmwavedepthmax`
+  - `number.<switch_name>_mmwavewidthmin` / `mmwavewidthmax`
+  - `number.<switch_name>_mmwaveheightmin` / `mmwaveheightmax`
+  - `sensor.<switch_name>_mmwave_control_commands`
 
 ---
 

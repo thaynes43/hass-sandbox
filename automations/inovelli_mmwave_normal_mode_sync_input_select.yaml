@@ -7,6 +7,7 @@ triggers:
       - input_select.basement_rumpus_room_mmwave_normal_mode
       - input_select.basement_concessions_mmwave_normal_mode
       - input_select.basement_hallway_mmwave_normal_mode
+      - input_select.basement_server_room_mmwave_normal_mode
     trigger: state
 conditions: []
 actions:
@@ -26,6 +27,8 @@ actions:
                   select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice
                 {% elif trigger.entity_id == 'input_select.basement_hallway_mmwave_normal_mode' %}
                   select.basement_hallway_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.basement_server_room_mmwave_normal_mode' %}
+                  select.basement_server_inovelli_presence_mmwavecontrolwireddevice
                 {% else %}
                   none
                 {% endif %}
