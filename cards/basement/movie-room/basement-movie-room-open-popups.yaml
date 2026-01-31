@@ -1,0 +1,13 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#movie-room-history"
+entity: light.basement_movie_room_lights
+name: Movie Room
+icon: mdi:clipboard-text-clock-outline

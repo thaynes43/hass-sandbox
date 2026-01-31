@@ -1,0 +1,132 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#movie-room-history"
+    button_type: state
+    sub_button:
+      main: []
+      bottom: []
+    entity: light.basement_movie_room_lights
+    name: Movie Room
+    icon: mdi:lightbulb-auto-outline
+    width_desktop: 75%
+  - type: entities
+    entities:
+      - entity: binary_sensor.basement_movie_inovelli_presence_occupancy
+        name: mmWave
+      - entity: binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
+        name: FP2
+      - entity: light.basement_movie_room_lights
+        name: Recessed Lights
+      - entity: light.basement_movie_room_ambient_lighting
+        name: Ambient Lights
+    title: Entities
+  - type: history-graph
+    entities:
+      - entity: binary_sensor.basement_movie_inovelli_presence_occupancy
+        name: mmWave
+      - entity: binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
+        name: FP2
+      - entity: light.basement_movie_room_lights
+        name: Recessedd Lights
+      - entity: light.basement_movie_room_ambient_lighting
+        name: Ambient Lights
+    title: Light Activation History
+    hours_to_show: 12
+    grid_options:
+      columns: full
+  - type: entities
+    title: Occupancy Control Hold
+    entities:
+      - type: custom:template-entity-row
+        name: Manual/Auto Hold
+        icon: mdi:lock-check
+        state: >
+          {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+          {% set auto = states('input_text.inovelli_auto_hold') | int(0) %} {%
+          set s = 'basement_movie_inovelli_presence' %} {% set led1 =
+          states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+
+          {% if led1 == manual %}
+            Manual Hold
+          {% elif led1 == auto %}
+            Auto Hold
+          {% else %}
+            Clear
+          {% endif %}
+      - type: custom:template-entity-row
+        name: LED ON Colors (1-7)
+        icon: mdi:palette
+        state: " "
+        secondary: >
+          {% set s = 'basement_movie_inovelli_presence' %} {% set ns =
+          namespace(out='') %} {% for i in range(1,8) %}
+            {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
+            {% set ns.out = ns.out ~ ('， ' if i > 1 else '') ~ v %}
+          {% endfor %} {{ ns.out }}
+      - type: custom:template-entity-row
+        name: OFF Colors (1–7)
+        icon: mdi:palette-outline
+        state: " "
+        secondary: >
+          {% set s = 'basement_movie_inovelli_presence' %} {% set ns =
+          namespace(out='') %} {% for i in range(1,8) %}
+            {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenoff') %}
+            {% set ns.out = ns.out ~ ('， ' if i > 1 else '') ~ v %}
+          {% endfor %} {{ ns.out }}
+      - entity: select.basement_movie_inovelli_presence_mmwavecontrolwireddevice
+        name: mmWave Control Wired Device
+      - entity: automation.light_inovelli_movie_room_motion_cleared_lights_off
+        name: Motion → Lights Off
+      - entity: input_text.basement_movie_led_color
+        name: Cached LED Color
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Toggle Manual Hold
+        icon: mdi:toggle-switch-outline
+        tap_action:
+          action: call-service
+          service: script.inovelli_toggle_mmwave_hold_led_indicator
+          data:
+            switch_name: basement_movie_inovelli_presence
+            normal_mode: Disabled
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_movie_led_color
+            automation_entity_ids:
+              - automation.light_inovelli_movie_room_motion_cleared_lights_off
+      - type: button
+        name: Set Auto Hold
+        icon: mdi:lock
+        tap_action:
+          action: call-service
+          service: script.inovelli_set_mmwave_hold_led_indicator
+          data:
+            switch_name: basement_movie_inovelli_presence
+            hold_color: input_text.inovelli_auto_hold
+            prev_led_color_helper: input_text.basement_movie_led_color
+            automation_entity_ids:
+              - automation.light_inovelli_movie_room_motion_cleared_lights_off
+      - type: button
+        name: Clear Auto Hold
+        icon: mdi:lock-open-variant
+        tap_action:
+          action: call-service
+          service: script.inovelli_clear_mmwave_hold_restore_led_indicator
+          data:
+            switch_name: basement_movie_inovelli_presence
+            normal_mode: Disabled
+            hold_color: input_text.inovelli_auto_hold
+            prev_led_color_helper: input_text.basement_movie_led_color
+            automation_entity_ids:
+              - automation.light_inovelli_movie_room_motion_cleared_lights_off
+      - type: button
+        name: Apply Cached LED Color
+        icon: mdi:palette
+        tap_action:
+          action: call-service
+          service: script.inovelli_set_led_1_7_color_from_input_text
+          data:
+            switch_name: basement_movie_inovelli_presence
+            color_helper: input_text.basement_movie_led_color
