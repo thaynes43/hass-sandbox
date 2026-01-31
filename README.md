@@ -20,10 +20,10 @@ I found mmWave sensors to take a bit of tuning their config to work out a few ki
 
 I use a button to open a popup bubble card that shows the basics of what I want to tweak and monitor a zone of lights controlled by motion & presence sensors. This has been very useful when a zone turns on unexpectedly. I can quickly see which sensor popped it and make some quick adjustments like setting an interference zone.
 
-[`img/rumpus-room-occpancy-home.png`](img/rumpus-room-occpancy-home.png)
+![rumpus-room-occpancy-home](img/rumpus-room-occpancy-home.png)
 
 ### Advanced Settings Popup
 
 The button at the top of each popup lets you navigte back and forth. This card is a bit more verbose and gets into settings you wouldn't be changing much. It's nice to make small changes and monitor the zone until things are rock solid. 
 
-[`img/rumpus-room-occpancy-advanced.png`](img/rumpus-room-occpancy-advanced.png)
+![rumpus-room-occpancy-advanced](img/rumpus-room-occpancy-advanced.png)
