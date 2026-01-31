@@ -1,0 +1,15 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Downstairs] [Mudroom] : [Press or Hold] : [Switch
+  Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 2b799c9dcd1b1a7d84ba806f494c15e8
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: downstairs_mudroom_inovelli_presence
+          normal_mode: Occupancy (default)
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.downstairs_mudroom_led_color

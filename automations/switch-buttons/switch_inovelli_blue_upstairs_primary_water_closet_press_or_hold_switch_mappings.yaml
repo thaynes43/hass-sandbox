@@ -1,0 +1,15 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Upstairs] [Primary Water Closet] : [Press or Hold]
+  : [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 9ce0fc560baa2c1689c1c49d7c7234a0
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: upstairs_primary_water_closet_inovelli_presence
+          normal_mode: Occupancy (default)
+          hold_color: 85
+          prev_led_color_helper: input_text.upstairs_primary_water_closet_led_color

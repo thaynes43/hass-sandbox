@@ -1,0 +1,15 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Basement] [Bathroom Vanity] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 866f19f7f5ab32e8438ece49d9277e30
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: basement_bathroom_vanity_inovelli_presence
+          normal_mode: Occupancy (default)
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.basement_bathroom_vanity_led_color

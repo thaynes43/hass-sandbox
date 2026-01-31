@@ -1,0 +1,15 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Upstairs] [Laundry] : [Press or Hold] : [Switch
+  Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: d82d5e0c1d7a5663284cd60f6adee6c8
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: upstairs_laundry_inovlli_presence
+          normal_mode: Occupancy (default)
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.upstairs_laundry_led_color

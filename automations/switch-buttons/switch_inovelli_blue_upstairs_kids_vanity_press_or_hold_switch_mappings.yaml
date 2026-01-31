@@ -1,0 +1,15 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Upstairs] [Kids Vanity] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 0b9233e220683c88c474c15054981478
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: upstairs_kids_bathroom_vanity_inovelli_presence
+          normal_mode: Occupancy (default)
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.upstairs_kids_vanity_led_color
