@@ -149,6 +149,14 @@ cards:
 
       <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):**
       {{ off_vals.out }}
+
+      <ha-icon icon="mdi:alert"></ha-icon> **QSensor Battery Flags:** {% set
+      soon =
+      is_state('binary_sensor.basement_hallway_qsensor_replace_battery_soon',
+      'on') %} {% set now =
+      is_state('binary_sensor.basement_hallway_qsensor_replace_battery_now',
+      'on') %} {% if now %}REPLACE NOW{% elif soon %}Replace Soon{% else %}OK{%
+      endif %}
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
