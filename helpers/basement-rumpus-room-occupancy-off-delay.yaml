@@ -1,0 +1,22 @@
+# Basement Rumpus Room — occupancy cleared → lights off delay
+# NOTE: Helpers are managed in the HA UI in your setup; this file is a
+# copy/paste-able snippet and repo-side documentation.
+input_select:
+  basement_rumpus_room_occupancy_off_delay:
+    name: "Basement Rumpus Room Lights Off Delay"
+    icon: mdi:timer-outline
+    options:
+      - 00:00:00
+      - 00:00:15
+      - 00:00:30
+      - 00:00:45
+      - 00:01:00
+      - 00:02:00
+      - 00:03:00
+      - 00:04:00
+      - 00:05:00
+      - 00:07:00
+      - 00:10:00
+      - 00:15:00
+      - 00:30:00
+    initial: 00:05:00

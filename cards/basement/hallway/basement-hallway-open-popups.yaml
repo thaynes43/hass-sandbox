@@ -1,0 +1,13 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+icon: mdi:clipboard-text-clock-outline
+name: Hallway
+entity: light.basement_hall_lights
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#hallway-history"

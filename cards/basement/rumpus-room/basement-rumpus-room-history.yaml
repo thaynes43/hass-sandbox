@@ -2,7 +2,7 @@ type: vertical-stack
 cards:
   - type: custom:bubble-card
     card_type: pop-up
-    hash: "#concessions-history"
+    hash: "#rumpus-room-history"
     button_type: name
     width_desktop: 75vw
     show_header: true
@@ -14,15 +14,14 @@ cards:
     scrolling_effect: false
     tap_action:
       action: navigate
-      navigation_path: "#concessions-advanced"
+      navigation_path: "#rumpus-room-advanced"
     sub_button:
       main: []
       bottom: []
     button_action:
       tap_action:
         action: navigate
-        navigation_path: "#concessions-advanced"
-
+        navigation_path: "#rumpus-room-advanced"
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -31,38 +30,36 @@ cards:
         - name: Sensors
           buttons_layout: inline
           group:
-            - entity: binary_sensor.basement_concessions_qsensor_motion_detection
-              name: QSensor
+            - entity: binary_sensor.basement_rumpus_room_aqara_fp2_02_presence_sensor
+              name: Art Desk FP2
               show_name: true
               show_state: true
               show_last_changed: false
               scrolling_effect: false
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.basement_rumpus_aqara_fp300_presence_presence
+              name: Door FP300
+              show_state: true
+              show_name: true
+              force_icon: false
+              show_last_changed: false
               content_layout: icon-top
               custom_height: 60
               show_icon: true
-            - entity: binary_sensor.basement_concessions_inovelli_presence_occupancy
+            - entity: binary_sensor.basement_rumpus_room_inovelli_presence_occupancy
               name: mmWave
               show_name: true
               show_state: true
               show_last_changed: false
-              scrolling_effect: false
-              content_layout: icon-top
-              custom_height: 60
-              show_icon: true
-            - entity: sensor.basement_concessions_qsensor_illuminance
-              name: Lux
-              icon: mdi:brightness-5
-              show_name: true
-              show_state: true
-              show_last_changed: false
-              scrolling_effect: false
               content_layout: icon-top
               custom_height: 60
               show_icon: true
         - name: Lights
           buttons_layout: inline
           group:
-            - entity: light.basement_concessions_lights
+            - entity: light.basement_rumpus_room_lights
               name: Recessed Lights
               show_name: true
               show_state: true
@@ -71,16 +68,24 @@ cards:
               content_layout: icon-top
               custom_height: 60
               scrolling_effect: false
+            - entity: light.basement_rumpus_room_lamp
+              name: Desk Lamp
+              show_name: true
+              show_state: true
+              show_last_updated: false
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+              force_icon: false
         - name: Misc
           buttons_layout: inline
           group:
-            - entity: sensor.basement_concessions_qsensor_battery_level
-              name: QSensor Battery
-              icon: mdi:battery
+            - entity: sensor.basement_rumpus_aqara_fp300_presence_battery
               show_name: true
+              name: FP300 Battery
               show_state: true
               content_layout: icon-left
-    bottom_layout: rows
+      bottom_layout: rows
     scrolling_effect: false
     show_state: true
     show_attribute: false
@@ -90,7 +95,7 @@ cards:
       .bubble-sub-button:has(ha-icon[icon="mdi:battery"]) {
         opacity: 1 !important;
         background-color: ${(() => {
-          const raw = `${hass.states['sensor.basement_concessions_qsensor_battery_level']?.state ?? ''}`
+          const raw = `${hass.states['sensor.basement_rumpus_aqara_fp300_presence_battery']?.state ?? ''}`
             .replace('%','')
             .trim();
           const v = parseFloat(raw);
@@ -107,22 +112,24 @@ cards:
       .bubble-sub-button:has(ha-icon[icon="mdi:battery"]) .bubble-state {
         color: #fff !important;
       }
-
   - type: history-graph
     entities:
-      - entity: binary_sensor.basement_concessions_qsensor_motion_detection
-        name: QSensor
-      - entity: binary_sensor.basement_concessions_inovelli_presence_occupancy
+      - entity: binary_sensor.basement_rumpus_room_aqara_fp2_02_presence_sensor
+        name: Wall FP2
+      - entity: binary_sensor.basement_rumpus_aqara_fp300_presence_presence
+        name: FP300
+      - entity: binary_sensor.basement_rumpus_room_inovelli_presence_occupancy
         name: mmWave
-      - entity: light.basement_concessions_lights
+      - entity: light.basement_rumpus_room_lights
         name: Recessed
+      - entity: light.basement_rumpus_room_lamp
+        name: Lamp
     hours_to_show: 1
     grid_options:
       columns: full
-
   - type: markdown
     content: >
-      {% set s = 'basement_concessions_inovelli_presence' %} {% set manual =
+      {% set s = 'basement_rumpus_room_inovelli_presence' %} {% set manual =
       states('input_text.inovelli_manual_hold') | int(85) %} {% set auto =
       states('input_text.inovelli_auto_hold') | int(0) %} {% set led1 =
       states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
@@ -136,7 +143,7 @@ cards:
       {% endif %}
 
       {% set mmwave_mode =
-      states('select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice')
+      states('select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice')
       %} {% if mmwave_mode in ['unknown', 'unavailable'] %}
         {% set mmwave_mode = '—' %}
       {% endif %}
@@ -162,13 +169,6 @@ cards:
 
       <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):**
       {{ off_vals.out }}
-
-      <ha-icon icon="mdi:alert"></ha-icon> **QSensor Battery Flags:** {% set soon =
-      is_state('binary_sensor.basement_concessions_qsensor_replace_battery_soon', 'on')
-      %} {% set now =
-      is_state('binary_sensor.basement_concessions_qsensor_replace_battery_now', 'on')
-      %} {% if now %}REPLACE NOW{% elif soon %}Replace Soon{% else %}OK{% endif %}
-
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -177,7 +177,7 @@ cards:
         - name: Automations
           buttons_layout: inline
           group:
-            - entity: automation.light_zse11_concessions_motion_detected_lights_on
+            - entity: automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
               name: Motion Turns On Lights
               show_name: true
               show_state: true
@@ -185,8 +185,8 @@ cards:
               show_last_updated: false
               content_layout: icon-top
               custom_height: 60
-            - entity: automation.light_zse11_concessions_motion_cleared_lights_off
-              name: No Motion Turns Off Lights
+            - entity: automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+              name: No Motion Tuns Off Lights
               show_name: true
               show_state: true
               content_layout: icon-top
@@ -194,7 +194,7 @@ cards:
         - name: Config Drop Down
           buttons_layout: inline
           group:
-            - entity: input_select.basement_concessions_mmwave_normal_mode
+            - entity: input_select.basement_rumpus_room_mmwave_normal_mode
               sub_button_type: select
               name: mmWave Control Mode
               show_name: true
@@ -203,14 +203,22 @@ cards:
               icon: mdi:format-list-bulleted
               content_layout: icon-left
               custom_height: 60
-    bottom_layout: rows
+            - entity: input_select.basement_rumpus_room_occupancy_off_delay
+              sub_button_type: select
+              name: Zone Off Delay
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:format-list-bulleted
+              content_layout: icon-left
+              custom_height: 60
+      bottom_layout: rows
     rows: 2.4
-
   - type: custom:mod-card
     card:
       type: entities
       entities:
-        - entity: input_text.basement_concessions_led_color
+        - entity: input_text.basement_rumpus_room_led_color
           name: Cached LED Color
       card_mod:
         style: |
@@ -219,7 +227,6 @@ cards:
           #states { padding-top: 0 !important; margin-top: 0 !important; }
     style: |
       ha-card { padding: 0 !important; }
-
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -234,13 +241,15 @@ cards:
                 perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
                 target: {}
                 data:
-                  switch_name: basement_concessions_inovelli_presence
-                  normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+                  switch_name: basement_rumpus_room_inovelli_presence
+                  normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
                   hold_color: input_text.inovelli_manual_hold
-                  prev_led_color_helper: input_text.basement_concessions_led_color
+                  prev_led_color_helper: input_text.basement_rumpus_room_led_color
                   automation_entity_ids:
-                    - automation.light_zse11_concessions_motion_detected_lights_on
-                    - automation.light_zse11_concessions_motion_cleared_lights_off
+                    - >-
+                      automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+                    - >-
+                      automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
               entity: script.inovelli_toggle_mmwave_hold_led_indicator
               show_state: false
               show_name: true
@@ -261,12 +270,14 @@ cards:
                 perform_action: script.inovelli_set_mmwave_hold_led_indicator
                 target: {}
                 data:
-                  switch_name: basement_concessions_inovelli_presence
+                  switch_name: basement_rumpus_room_inovelli_presence
                   hold_color: input_text.inovelli_auto_hold
-                  prev_led_color_helper: input_text.basement_concessions_led_color
+                  prev_led_color_helper: input_text.basement_rumpus_room_led_color
                   automation_entity_ids:
-                    - automation.light_zse11_concessions_motion_detected_lights_on
-                    - automation.light_zse11_concessions_motion_cleared_lights_off
+                    - >-
+                      automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+                    - >-
+                      automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
@@ -282,13 +293,15 @@ cards:
                 perform_action: script.inovelli_clear_mmwave_hold_restore_led_indicator
                 target: {}
                 data:
-                  switch_name: basement_concessions_inovelli_presence
-                  normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+                  switch_name: basement_rumpus_room_inovelli_presence
+                  normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
                   hold_color: input_text.inovelli_auto_hold
-                  prev_led_color_helper: input_text.basement_concessions_led_color
+                  prev_led_color_helper: input_text.basement_rumpus_room_led_color
                   automation_entity_ids:
-                    - automation.light_zse11_concessions_motion_detected_lights_on
-                    - automation.light_zse11_concessions_motion_cleared_lights_off
+                    - >-
+                      automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+                    - >-
+                      automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
             - entity: script.inovelli_set_led_1_7_color_from_input_text
@@ -300,8 +313,8 @@ cards:
                 perform_action: script.inovelli_set_led_1_7_color_from_input_text
                 target: {}
                 data:
-                  switch_name: basement_concessions_inovelli_presence
-                  color_helper: input_text.basement_concessions_led_color
+                  switch_name: basement_rumpus_room_inovelli_presence
+                  color_helper: input_text.basement_rumpus_room_led_color
               content_layout: icon-top
               fill_width: true
               custom_height: 80

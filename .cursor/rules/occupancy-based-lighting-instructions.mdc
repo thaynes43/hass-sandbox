@@ -154,6 +154,16 @@ That automation should:
 - Trigger on `input_select.<zone>_mmwave_normal_mode`
 - Route to `select.<zone>_inovelli_presence_mmwavecontrolwireddevice`
 
+### Don’t forget the “registry lists” (group hold / clear-all scripts)
+
+Some zones are also maintained in centralized “apply to all switches” scripts. When you add a new zone (or migrate it to `normal_mode_input_select`), ensure the zone’s `switch_name` entry is correct in:
+
+- `scripts/inovelli/entities-defined/hold_all_inovelli_presence_controlled_switches.yaml`
+  - Add/update the zone’s `automation_entity_ids` so holds properly disable/override occupancy lighting.
+- `scripts/inovelli/entities-defined/clear_hold_on_all_inovelli_presence_controlled_switches.yaml`
+  - Add/update the zone’s `automation_entity_ids`
+  - If the zone uses the input_select pattern, include `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode` (not `normal_mode: Disabled`)
+
 ### Migrating cards: old format won’t be in-repo
 
 During migration you will often paste **one zone’s old card YAML** into chat for conversion.
@@ -161,6 +171,29 @@ During migration you will often paste **one zone’s old card YAML** into chat f
 - Assume the old format may not exist in the repo anymore.
 - Use `cards/rumpus-room/` and `cards/concessions/` as the reference “new format”.
 - Ensure hold buttons in cards pass `normal_mode_input_select` (not a string `normal_mode`).
+
+### New: per-zone “lights off delay” helper + automation pattern
+
+We are migrating away from hardcoded trigger `for:` durations (e.g. `for: "00:05:00"`)
+so each zone can control “how long after the room is empty we turn lights off” from the UI.
+
+**Helper (recommended):** use an `input_select` storing `HH:MM:SS` strings.
+
+- Example entity id: `input_select.<zone>_occupancy_off_delay`
+- Example options: `00:00:00`, `00:00:15`, `00:00:30`, `00:01:00`, `00:05:00`, `00:15:00`, `00:30:00`
+
+**Automation pattern (motion cleared → lights off):**
+
+- Remove the trigger `for:` entirely
+- Add an action `delay:` that reads the helper (fallback to the previous hardcoded value if helper is unavailable)
+- Add a post-delay condition to verify the zone is still empty (all relevant sensors still `off`)
+- Use `mode: restart` so repeated “fully empty” triggers reset the timer (closest match to trigger `for:` semantics)
+
+**Cards (history popup):**
+
+- In the “Config Drop Down” section, expose:
+  - `input_select.<zone>_mmwave_normal_mode`
+  - `input_select.<zone>_occupancy_off_delay` (label it “Zone Off Delay” or similar; timer icon recommended)
 
 ### Search terms that find what you need
 

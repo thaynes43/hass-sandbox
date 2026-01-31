@@ -2,7 +2,7 @@ type: vertical-stack
 cards:
   - type: custom:bubble-card
     card_type: pop-up
-    hash: "#rumpus-room-advanced"
+    hash: "#hallway-advanced"
     button_type: name
     width_desktop: 75vw
     show_header: true
@@ -21,27 +21,35 @@ cards:
           show_icon: true
           tap_action:
             action: navigate
-            navigation_path: "#rumpus-room-history"
+            navigation_path: "#hallway-history"
     tap_action:
       action: navigate
-      navigation_path: "#rumpus-room-history"
+      navigation_path: "#hallway-history"
     button_action:
       tap_action:
         action: navigate
-        navigation_path: "#rumpus-room-history"
+        navigation_path: "#hallway-history"
   - type: markdown
     content: |
-      ### Sensors
+      ## Sensors
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
     sub_button:
       main: []
       bottom:
-        - name: inovelli State
+        - name: Env + Light
           buttons_layout: inline
           group:
-            - entity: sensor.basement_rumpus_room_inovelli_presence_illuminance
+            - entity: sensor.basement_hallway_qsensor_air_temperature
+              name: QSensor Temp
+              icon: mdi:thermometer
+              show_name: false
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.basement_hallway_inovelli_presence_illuminance
               name: Inovelli
               icon: mdi:brightness-6
               show_name: true
@@ -49,15 +57,7 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-            - entity: sensor.basement_rumpus_aqara_fp300_presence_temperature
-              name: FP300
-              icon: mdi:thermometer
-              show_name: true
-              show_state: true
-              show_icon: true
-              content_layout: icon-top
-              custom_height: 60
-            - entity: sensor.basement_rumpus_room_inovelli_presence_power
+            - entity: sensor.basement_hallway_inovelli_presence_power
               name: Inovelli
               icon: mdi:flash
               show_name: true
@@ -65,26 +65,26 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-        - name: Other Sensors
+        - name: Inovelli State
           buttons_layout: inline
           group:
-            - entity: sensor.basement_rumpus_room_aqara_fp2_01_light_sensor
-              name: FP2
+            - entity: sensor.basement_hallway_qsensor_humidity
+              name: QSensor Humidity
+              icon: mdi:water-percent
+              show_name: false
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.basement_hallway_qsensor_illuminance
+              name: QSensor
               icon: mdi:brightness-5
               show_name: true
               show_state: true
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-            - entity: sensor.basement_rumpus_aqara_fp300_presence_humidity
-              name: FP300
-              icon: mdi:water-percent
-              show_name: true
-              show_state: true
-              show_icon: true
-              content_layout: icon-top
-              custom_height: 60
-            - entity: sensor.basement_rumpus_room_inovelli_presence_overheat
+            - entity: sensor.basement_hallway_inovelli_presence_overheat
               name: Overheat
               icon: mdi:thermometer-alert
               show_name: true
@@ -96,7 +96,7 @@ cards:
     rows: 2.4
   - type: markdown
     content: |
-      ### inovelli Parameters
+      ## Inovelli Parameters
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
@@ -107,7 +107,7 @@ cards:
           buttons_layout: inline
           group:
             - entity: >-
-                select.basement_rumpus_room_inovelli_presence_mmwavedetectsensitivity
+                select.basement_hallway_inovelli_presence_mmwavedetectsensitivity
               sub_button_type: select
               name: Sensitivity
               icon: mdi:radar
@@ -116,7 +116,7 @@ cards:
               content_layout: icon-left
               custom_height: 60
             - entity: >-
-                select.basement_rumpus_room_inovelli_presence_mmwavedetecttrigger
+                select.basement_hallway_inovelli_presence_mmwavedetecttrigger
               sub_button_type: select
               name: Trigger Delay
               icon: mdi:timer-outline
@@ -124,10 +124,10 @@ cards:
               show_state: true
               content_layout: icon-left
               custom_height: 60
-        - name: Other Sensors
+        - name: Switch Modes
           buttons_layout: inline
           group:
-            - entity: select.basement_rumpus_room_inovelli_presence_outputmode
+            - entity: select.basement_hallway_inovelli_presence_outputmode
               icon: mdi:light-switch
               show_icon: true
               show_state: true
@@ -141,7 +141,7 @@ cards:
               double_tap_action:
                 action: none
               sub_button_type: default
-            - entity: select.basement_rumpus_room_inovelli_presence_smartbulbmode
+            - entity: select.basement_hallway_inovelli_presence_smartbulbmode
               icon: mdi:lightbulb-outline
               show_icon: true
               show_state: true
@@ -161,8 +161,59 @@ cards:
     columns: 2
     square: false
     cards:
+      - type: markdown
+        content: >-
+          **MmWave Hold Time**
+
+
+          Delay (seconds) after the sensor transitions from **presence → absence**
+          before it reports cleared.
+      - type: markdown
+        content: >-
+          **MmWave Stay Life**
+
+
+          How long the “stay” area lingers after motion stops. Default is **300**
+          (≈15s).
+
+          Lower values can be sub-second (e.g. **1 ≈ 50ms**, **20 ≈ 1s**).
       - type: tile
-        entity: number.basement_rumpus_room_inovelli_presence_mmwavedepthmin
+        entity: number.basement_hallway_inovelli_presence_mmwaveholdtime
+        name: Hold Time (s)
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_hallway_inovelli_presence_mmwavestaylife
+        name: Stay Life
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+  - type: markdown
+    content: |
+      #### mmWave Trigger Boundary (cm)
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: number.basement_hallway_inovelli_presence_mmwavedepthmin
         name: Depth Min
         vertical: false
         hide_state: true
@@ -176,7 +227,7 @@ cards:
           - type: numeric-input
         features_position: bottom
       - type: tile
-        entity: number.basement_rumpus_room_inovelli_presence_mmwavedepthmax
+        entity: number.basement_hallway_inovelli_presence_mmwavedepthmax
         name: Depth Max
         vertical: false
         hide_state: true
@@ -190,7 +241,7 @@ cards:
           - type: numeric-input
         features_position: bottom
       - type: tile
-        entity: number.basement_rumpus_room_inovelli_presence_mmwavewidthmin
+        entity: number.basement_hallway_inovelli_presence_mmwavewidthmin
         name: Width Left
         vertical: false
         hide_state: true
@@ -204,7 +255,7 @@ cards:
           - type: numeric-input
         features_position: bottom
       - type: tile
-        entity: number.basement_rumpus_room_inovelli_presence_mmwavewidthmax
+        entity: number.basement_hallway_inovelli_presence_mmwavewidthmax
         name: Width Right
         vertical: false
         hide_state: true
@@ -218,7 +269,7 @@ cards:
           - type: numeric-input
         features_position: bottom
       - type: tile
-        entity: number.basement_rumpus_room_inovelli_presence_mmwaveheightmin
+        entity: number.basement_hallway_inovelli_presence_mmwaveheightmin
         name: Height Floor
         vertical: false
         hide_state: true
@@ -232,7 +283,7 @@ cards:
           - type: numeric-input
         features_position: bottom
       - type: tile
-        entity: number.basement_rumpus_room_inovelli_presence_mmwaveheightmax
+        entity: number.basement_hallway_inovelli_presence_mmwaveheightmax
         name: Height Ceiling
         vertical: false
         hide_state: true
@@ -247,8 +298,10 @@ cards:
         features_position: bottom
   - type: markdown
     content: >-
-      **Last mmWave Command:**   <small> {% set s =
-      states('sensor.basement_rumpus_room_inovelli_presence_mmwave_control_commands')
+      **MQTT Commands**    <small> 
+
+      Last command: {% set s =
+      states('sensor.basement_hallway_inovelli_presence_mmwave_control_commands')
       %} {{ s if s not in ['unknown','unavailable',''] else '—' }} </small>
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -270,7 +323,7 @@ cards:
                 perform_action: script.inovelli_mmwave_control
                 target: {}
                 data:
-                  device: basement_rumpus_room_inovelli_presence
+                  device: basement_hallway_inovelli_presence
                   command: set_interference
             - name: Clear Interference
               icon: mdi:shield-off-outline
@@ -283,7 +336,7 @@ cards:
                 perform_action: script.inovelli_mmwave_control
                 target: {}
                 data:
-                  device: basement_rumpus_room_inovelli_presence
+                  device: basement_hallway_inovelli_presence
                   command: clear_interference
             - name: Reset Area
               icon: mdi:crop-free
@@ -296,7 +349,7 @@ cards:
                 perform_action: script.inovelli_mmwave_control
                 target: {}
                 data:
-                  device: basement_rumpus_room_inovelli_presence
+                  device: basement_hallway_inovelli_presence
                   command: reset_detection_area
             - name: Reset Module
               icon: mdi:restart-alert
@@ -309,31 +362,9 @@ cards:
                 perform_action: script.inovelli_mmwave_control
                 target: {}
                 data:
-                  device: basement_rumpus_room_inovelli_presence
+                  device: basement_hallway_inovelli_presence
                   command: reset_mmwave_module
       bottom_layout: inline
     rows: 1.625
     modules:
       - my_module
-  - type: markdown
-    content: |
-      ### Aqara FP300 Parameters
-  - type: custom:bubble-card
-    card_type: sub-buttons
-    show_header_toggle: false
-    sub_button:
-      main: []
-      bottom:
-        - name: FP300 Sensitivity
-          buttons_layout: inline
-          group:
-            - entity: select.basement_rumpus_aqara_fp300_presence_motion_sensitivity
-              sub_button_type: select
-              name: Motion Sensitivity
-              icon: mdi:run
-              show_name: true
-              show_state: true
-              content_layout: icon-left
-              custom_height: 60
-      bottom_layout: rows
-    rows: 1.33

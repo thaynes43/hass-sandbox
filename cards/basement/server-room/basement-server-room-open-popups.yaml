@@ -1,0 +1,13 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+entity: light.basement_server_room_lights
+name: Server Room
+icon: mdi:clipboard-text-clock-outline
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#server-room-history"

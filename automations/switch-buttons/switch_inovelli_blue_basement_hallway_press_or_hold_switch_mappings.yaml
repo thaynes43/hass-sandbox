@@ -10,7 +10,7 @@ use_blueprint:
       - action: script.inovelli_toggle_mmwave_hold_led_indicator
         data:
           switch_name: basement_hallway_inovelli_presence
-          normal_mode: Disabled
+          normal_mode_input_select: input_select.basement_hallway_mmwave_normal_mode
           hold_color: input_text.inovelli_manual_hold
           prev_led_color_helper: input_text.basement_hallway_led_color
           automation_entity_ids:

@@ -7,12 +7,21 @@ triggers:
         is_state('binary_sensor.basement_concessions_qsensor_motion_detection', 'off')
         and is_state('binary_sensor.basement_concessions_inovelli_presence_occupancy', 'off')
       }}
-    for: "00:02:00"
 conditions: []
 actions:
+  - delay: >-
+      {% set raw = states('input_select.basement_concessions_occupancy_off_delay') %}
+      {% set d = raw | replace('"','') | replace("'","") | trim %}
+      {{ d if d not in ['unknown','unavailable',''] else '00:02:00' }}
+  - condition: template
+    value_template: |
+      {{
+        is_state('binary_sensor.basement_concessions_qsensor_motion_detection', 'off')
+        and is_state('binary_sensor.basement_concessions_inovelli_presence_occupancy', 'off')
+      }}
   - action: light.turn_off
     metadata: {}
     data: {}
     target:
       entity_id: light.basement_concessions_lights
-mode: single
+mode: restart
