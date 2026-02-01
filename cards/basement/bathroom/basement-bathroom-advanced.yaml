@@ -31,7 +31,7 @@ cards:
         navigation_path: "#basement-bathroom-history"
   - type: markdown
     content: |
-      ## Sensors
+      ## Bathroom - Sensors
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
@@ -150,17 +150,20 @@ cards:
           **MmWave Hold Time**
 
 
-          Delay (seconds) after the sensor transitions from **presence →
-          absence** before it reports cleared.
+          How long the **load stays ON** after the switch stops detecting
+          presence.
+
+          Value is in **seconds** (e.g. **5 = 5s**). Default is **10s**.
       - type: markdown
         content: >-
           **MmWave Stay Life**
 
 
-          How long the “stay” area lingers after motion stops. Default is
-          **300** (≈15s).
+          How long the “stay” area lingers after motion stops (affects how
+          quickly the switch reports **cleared**).
 
-          Lower values can be sub-second (e.g. **1 ≈ 50ms**, **20 ≈ 1s**).
+          Default is **300** (≈15s). Lower values can be sub-second (e.g. **1 ≈
+          50ms**, **20 ≈ 1s**).
       - type: tile
         entity: number.basement_bathroom_vanity_inovelli_presence_mmwaveholdtime
         name: Hold Time (s)
@@ -173,8 +176,7 @@ cards:
         features:
           - type: numeric-input
             style: buttons
-          - type: numeric-input
-        features_position: bottom
+        features_position: inline
       - type: tile
         entity: number.basement_bathroom_vanity_inovelli_presence_mmwavestaylife
         name: Stay Life
@@ -187,8 +189,15 @@ cards:
         features:
           - type: numeric-input
             style: buttons
-          - type: numeric-input
-        features_position: bottom
+        features_position: inline
+      - type: entities
+        entities:
+          - entity: number.basement_bathroom_vanity_inovelli_presence_mmwaveholdtime
+            name: Hold Time (s)
+      - type: entities
+        entities:
+          - entity: number.basement_bathroom_vanity_inovelli_presence_mmwavestaylife
+            name: Stay Life
   - type: markdown
     content: |
       #### mmWave Trigger Boundary (cm)

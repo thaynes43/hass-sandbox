@@ -18,7 +18,7 @@ actions:
       {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
       {{ led1 != manual and led1 != auto }}
   - delay: >-
-      {% set raw = states('input_select.basement_hallway_occupancy_off_deay') %}
+      {% set raw = states('input_select.basement_hallway_occupancy_off_delay') %}
       {% set d = raw | replace('"','') | replace("'","") | trim %}
       {{ d if d not in ['unknown','unavailable',''] else '00:02:00' }}
   - condition: template

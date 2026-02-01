@@ -22,6 +22,9 @@ cards:
       tap_action:
         action: navigate
         navigation_path: "#rumpus-room-advanced"
+  - type: markdown
+    content: |
+      ## Rumpus Room
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -169,6 +172,25 @@ cards:
 
       <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):**
       {{ off_vals.out }}
+
+      {% set auto_delay_raw = states('input_select.basement_rumpus_room_occupancy_off_delay') %}
+      {% set auto_delay_td = as_timedelta(auto_delay_raw) if auto_delay_raw not in ['unknown','unavailable',''] else none %}
+      {% set auto_delay_s = (auto_delay_td.total_seconds() | float(0)) if auto_delay_td is not none else none %}
+
+      {% set hold_time_s = states('number.basement_rumpus_room_inovelli_presence_mmwaveholdtime') | float(0) %}
+      {% set stay_life_raw = states('number.basement_rumpus_room_inovelli_presence_mmwavestaylife') | float(0) %}
+      {% set stay_life_s = stay_life_raw / 20 %}
+      {% set mmwave_delay_s = hold_time_s + stay_life_s %}
+
+      {% set total_s = (mmwave_delay_s + auto_delay_s) if auto_delay_s is not none else none %}
+
+      <ha-icon icon="mdi:timer-outline"></ha-icon> **Automation Delay:** {{ auto_delay_raw if auto_delay_raw not in ['unknown','unavailable',''] else '—' }}{% if auto_delay_s is not none %} (≈{{ auto_delay_s | round(1) }}s){% endif %}
+
+      <ha-icon icon="mdi:timer-sand"></ha-icon> **Switch Clear Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
+
+      <ha-icon icon="mdi:progress-clock"></ha-icon> **Total Off Delay:** ≈ {{ mmwave_delay_s | round(1) }}s + {{ (auto_delay_s | round(1)) if auto_delay_s is not none else '—' }}s{% if total_s is not none %} = {{ total_s | round(1) }}s{% endif %}
+
+      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the occupancy sensor won’t report **off** until the switch’s mmWave clear delay elapses. The automation delay then starts *after* that.
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:

@@ -22,6 +22,9 @@ cards:
       tap_action:
         action: navigate
         navigation_path: "#basement-bathroom-advanced"
+  - type: markdown
+    content: |
+      ## Basement Bathroom
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -69,15 +72,6 @@ cards:
               content_layout: icon-top
               custom_height: 60
               scrolling_effect: false
-            - entity: light.basement_bathroom_night_light
-              name: Night Light
-              show_name: true
-              show_state: true
-              show_last_changed: false
-              show_icon: true
-              content_layout: icon-top
-              custom_height: 60
-              scrolling_effect: false
       bottom_layout: rows
     scrolling_effect: false
     show_state: true
@@ -94,8 +88,6 @@ cards:
         name: Vanity
       - entity: light.basement_bathroom_fan_light_inovelli_on_off
         name: Fan Light
-      - entity: light.basement_bathroom_night_light
-        name: Night Light
     hours_to_show: 1
     grid_options:
       columns: full
@@ -151,13 +143,20 @@ cards:
       {% set stay_life_s = stay_life_raw / 20 %}
       {% set mmwave_delay_s = hold_time_s + stay_life_s %}
 
-      {% set delta_s = (mmwave_delay_s - auto_delay_s) | abs if auto_delay_s is not none else none %}
+      {# fan-light automation OFF runs after sensor clears + automation delay #}
+      {% set total_s = (mmwave_delay_s + auto_delay_s) if auto_delay_s is not none else none %}
+      {# mismatch between switch-controlled load vs automation-controlled light is basically the automation delay #}
+      {% set mismatch_s = (auto_delay_s | abs) if auto_delay_s is not none else none %}
 
       <ha-icon icon="mdi:timer-outline"></ha-icon> **Automation Delay:** {{ auto_delay_raw if auto_delay_raw not in ['unknown','unavailable',''] else '—' }}{% if auto_delay_s is not none %} (≈{{ auto_delay_s | round(1) }}s){% endif %}
 
       <ha-icon icon="mdi:timer-sand"></ha-icon> **mmWave Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
 
-      <ha-icon icon="mdi:swap-horizontal"></ha-icon> **Potential mismatch:** lights may shut off up to **{{ (delta_s | round(1)) ~ 's' if delta_s is not none else '—' }}** apart.
+      <ha-icon icon="mdi:progress-clock"></ha-icon> **Effective Off Delay:** ≈ {{ mmwave_delay_s | round(1) }}s + {{ (auto_delay_s | round(1)) if auto_delay_s is not none else '—' }}s{% if total_s is not none %} = {{ total_s | round(1) }}s{% endif %}
+
+      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the automation delay starts *after* the occupancy sensors report **off**, so sensor-clear time is **in addition** to the automation delay.
+
+      <ha-icon icon="mdi:swap-horizontal"></ha-icon> **Potential mismatch:** lights may shut off up to **{{ (mismatch_s | round(1)) ~ 's' if mismatch_s is not none else '—' }}** apart.
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -166,14 +165,6 @@ cards:
         - name: Automations
           buttons_layout: inline
           group:
-            - entity: automation.night_light_basement_bathroom_occupancy_detected_turn_on
-              name: Night Light Auto On
-              show_name: true
-              show_state: true
-              show_last_changed: false
-              show_last_updated: false
-              content_layout: icon-top
-              custom_height: 60
             - entity: automation.light_inovelli_basement_bathroom_motion_detected_fan_light_on
               name: Motion Turns On Fan Light
               show_name: true

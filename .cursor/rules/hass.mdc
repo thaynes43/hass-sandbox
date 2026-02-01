@@ -8,7 +8,15 @@ This project is a subset of Home Assistant scripts and automations. They have be
 
 The inovelli folder contains automations mainly driving inovelli smart presence detecting switches. The parameters for these switches may be found at https://help.inovelli.com/en/articles/12820312-blue-series-mmwave-presence-dimmer-switch-parameters.
 
-## Inovelli hold LED colors are state
+## MCP Server
+
+You are running in an instance of cursor which is configured to use [ha-mcp](https://github.com/homeassistant-ai/ha-mcp). You may make tool calls using this to access what is running in the production smart home environment which we are developing new capabilites for.  
+
+If you don't know the exact name of an entity or attribute make sure to use the tool calls to search what exists.
+
+## Critical Information
+
+### Inovelli hold LED colors are state
 
 - **Reserved colors**: Any LED bar color used to indicate “hold” must be treated as state and must be reserved for that single purpose (do not reuse for other notifications).
 - **Manual vs automation holds**: Use different, fixed colors to distinguish sources.
