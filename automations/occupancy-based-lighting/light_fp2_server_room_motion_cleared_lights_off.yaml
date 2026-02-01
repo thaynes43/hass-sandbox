@@ -9,6 +9,14 @@ triggers:
       }}
 conditions: []
 actions:
+  - condition: template
+    value_template: |
+      {# Only run when hold is clear #}
+      {% set s = 'basement_server_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
   - delay: >-
       {% set raw = states('input_select.basement_server_room_occupancy_off_delay') %}
       {% set d = raw | replace('"','') | replace("'","") | trim %}
@@ -19,6 +27,14 @@ actions:
         is_state('binary_sensor.basement_server_inovelli_presence_occupancy', 'off')
         and is_state('binary_sensor.basement_server_room_aqara_fp2_03_presence_sensor', 'off')
       }}
+  - condition: template
+    value_template: |
+      {# Re-check hold state after the delay #}
+      {% set s = 'basement_server_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
   - action: light.turn_off
     target:
       entity_id: light.basement_server_inovelli_presence
