@@ -157,7 +157,7 @@ cards:
 
       <ha-icon icon="mdi:timer-sand"></ha-icon> **mmWave Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
 
-      <ha-icon icon="mdi:swap-horizontal"></ha-icon> **Potential mismatch:** lights may shut off up to **{{ (delta_s | round(1)) ~ 's' if delta_s is not none else '—' }}** apart (based on the difference between those delays).
+      <ha-icon icon="mdi:swap-horizontal"></ha-icon> **Potential mismatch:** lights may shut off up to **{{ (delta_s | round(1)) ~ 's' if delta_s is not none else '—' }}** apart.
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
