@@ -141,6 +141,23 @@ cards:
 
       <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):**
       {{ off_vals.out }}
+
+      {% set auto_delay_raw = states('input_select.basement_bathroom_occupancy_off_delay') %}
+      {% set auto_delay_td = as_timedelta(auto_delay_raw) if auto_delay_raw not in ['unknown','unavailable',''] else none %}
+      {% set auto_delay_s = (auto_delay_td.total_seconds() | float(0)) if auto_delay_td is not none else none %}
+
+      {% set hold_time_s = states('number.basement_bathroom_vanity_inovelli_presence_mmwaveholdtime') | float(0) %}
+      {% set stay_life_raw = states('number.basement_bathroom_vanity_inovelli_presence_mmwavestaylife') | float(0) %}
+      {% set stay_life_s = stay_life_raw / 20 %}
+      {% set mmwave_delay_s = hold_time_s + stay_life_s %}
+
+      {% set delta_s = (mmwave_delay_s - auto_delay_s) | abs if auto_delay_s is not none else none %}
+
+      <ha-icon icon="mdi:timer-outline"></ha-icon> **Automation Delay:** {{ auto_delay_raw if auto_delay_raw not in ['unknown','unavailable',''] else '—' }}{% if auto_delay_s is not none %} (≈{{ auto_delay_s | round(1) }}s){% endif %}
+
+      <ha-icon icon="mdi:timer-sand"></ha-icon> **mmWave Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
+
+      <ha-icon icon="mdi:swap-horizontal"></ha-icon> **Potential mismatch:** lights may shut off up to **{{ (delta_s | round(1)) ~ 's' if delta_s is not none else '—' }}** apart (based on the difference between those delays).
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:

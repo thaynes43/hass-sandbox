@@ -77,7 +77,7 @@ cards:
               content_layout: icon-top
               custom_height: 60
       bottom_layout: rows
-    rows: 2.0
+    rows: 2.4
   - type: markdown
     content: |
       ## Inovelli Parameters

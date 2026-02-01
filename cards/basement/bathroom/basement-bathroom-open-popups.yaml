@@ -5,7 +5,7 @@ sub_button:
   main: []
   bottom: []
 entity: light.basement_bathroom_vanity_inovelli_presence
-name: Basement Bathroom
+name: Bathroom
 icon: mdi:clipboard-text-clock-outline
 button_action:
   tap_action:
