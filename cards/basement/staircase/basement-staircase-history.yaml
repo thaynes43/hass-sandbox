@@ -1,0 +1,167 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#basement-staircase-history"
+    button_type: state
+    sub_button:
+      main: []
+      bottom: []
+    width_desktop: 75%
+    entity: light.basement_staircase_lights
+    name: Basement Staircase
+    icon: mdi:lightbulb-auto-outline
+  - type: entities
+    entities:
+      - entity: binary_sensor.basement_upper_staircase_inovelli_presence_occupancy
+        name: Upper mmWave
+      - entity: binary_sensor.basement_lower_staircase_inovelli_presence_occupancy
+        name: Lower Occupancy
+      - entity: light.basement_upper_staircase_inovelli_presence
+        name: Upper Switch
+      - entity: light.basement_lower_staircase_inovelli_presence
+        name: Lower Switch
+    title: Entities
+  - type: history-graph
+    entities:
+      - entity: binary_sensor.basement_upper_staircase_inovelli_presence_occupancy
+        name: Upper mmWave
+      - entity: binary_sensor.basement_lower_staircase_inovelli_presence_occupancy
+        name: Lower mmWave
+      - entity: light.basement_upper_staircase_inovelli_presence
+        name: Upper Light
+      - entity: light.basement_lower_staircase_inovelli_presence
+        name: Lower Light
+    title: Light Activation History
+    hours_to_show: 1
+    grid_options:
+      columns: full
+  - type: markdown
+    content: Hold is shared across upper and lower smart switches.
+    title: Occupany Control Hold
+  - type: entities
+    title: Upper Staircase
+    entities:
+      - type: custom:template-entity-row
+        name: Manual/Auto Hold
+        icon: mdi:lock-check
+        state: >
+          {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+          {% set auto = states('input_text.inovelli_auto_hold') | int(0) %} {%
+          set s = 'basement_upper_staircase_inovelli_presence' %} {% set led1 =
+          states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+
+          {% if led1 == manual %}
+            Manual Hold
+          {% elif led1 == auto %}
+            Auto Hold
+          {% else %}
+            Clear
+          {% endif %}
+      - type: custom:template-entity-row
+        name: LED ON Colors (1-7)
+        icon: mdi:palette
+        state: " "
+        secondary: >
+          {% set s = 'basement_upper_staircase_inovelli_presence' %} {% set ns =
+          namespace(out='') %} {% for i in range(1,8) %}
+            {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
+            {% set ns.out = ns.out ~ ('， ' if i > 1 else '') ~ v %}
+          {% endfor %} {{ ns.out }}
+      - type: custom:template-entity-row
+        name: OFF Colors (1–7)
+        icon: mdi:palette-outline
+        state: " "
+        secondary: >
+          {% set s = 'basement_upper_staircase_inovelli_presence' %} {% set ns =
+          namespace(out='') %} {% for i in range(1,8) %}
+            {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenoff') %}
+            {% set ns.out = ns.out ~ ('， ' if i > 1 else '') ~ v %}
+          {% endfor %} {{ ns.out }}
+      - entity: >-
+          select.basement_upper_staircase_inovelli_presence_mmwavecontrolwireddevice
+        name: mmWave Control Wired Device
+      - entity: input_text.basement_upper_staircase_led_color
+        name: Cached LED Color
+  - type: entities
+    title: Lower Staircase
+    entities:
+      - type: custom:template-entity-row
+        name: Manual/Auto Hold
+        icon: mdi:lock-check
+        state: >
+          {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+          {% set auto = states('input_text.inovelli_auto_hold') | int(0) %} {%
+          set s = 'basement_lower_staircase_inovelli_presence' %} {% set led1 =
+          states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+
+          {% if led1 == manual %}
+            Manual Hold
+          {% elif led1 == auto %}
+            Auto Hold
+          {% else %}
+            Clear
+          {% endif %}
+      - type: custom:template-entity-row
+        name: LED ON Colors (1-7)
+        icon: mdi:palette
+        state: " "
+        secondary: >
+          {% set s = 'basement_lower_staircase_inovelli_presence' %} {% set ns =
+          namespace(out='') %} {% for i in range(1,8) %}
+            {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
+            {% set ns.out = ns.out ~ ('， ' if i > 1 else '') ~ v %}
+          {% endfor %} {{ ns.out }}
+      - type: custom:template-entity-row
+        name: OFF Colors (1–7)
+        icon: mdi:palette-outline
+        state: " "
+        secondary: >
+          {% set s = 'basement_lower_staircase_inovelli_presence' %} {% set ns =
+          namespace(out='') %} {% for i in range(1,8) %}
+            {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenoff') %}
+            {% set ns.out = ns.out ~ ('， ' if i > 1 else '') ~ v %}
+          {% endfor %} {{ ns.out }}
+      - entity: >-
+          select.basement_lower_staircase_inovelli_presence_mmwavecontrolwireddevice
+        name: mmWave Control Wired Device
+      - entity: input_text.basement_lower_staircase_led_color
+        name: Cached LED Color
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: Toggle Manual Hold
+        icon: mdi:toggle-switch-outline
+        tap_action:
+          action: call-service
+          service: script.inovelli_toggle_hold_group_of_switches
+          data:
+            leader_switch_name: basement_lower_staircase_inovelli_presence
+            leader_normal_mode: Occupancy (default)
+            leader_prev_led_color_helper: input_text.basement_lower_staircase_led_color
+            hold_color: input_text.inovelli_manual_hold
+            switches:
+              - switch_name: basement_lower_staircase_inovelli_presence
+                prev_led_color_helper: input_text.basement_lower_staircase_led_color
+                normal_mode: Occupancy (default)
+              - switch_name: basement_upper_staircase_inovelli_presence
+                prev_led_color_helper: input_text.basement_upper_staircase_led_color
+                normal_mode: Occupancy (default)
+      - type: button
+        name: Set Auto Hold
+        icon: mdi:lock
+        tap_action:
+          action: call-service
+          service: script.basement_staircase_set_auto_hold
+      - type: button
+        name: Clear Auto Hold
+        icon: mdi:lock-open-variant
+        tap_action:
+          action: call-service
+          service: script.basement_staircase_clear_auto_hold
+      - type: button
+        name: Apply Cached LED Color
+        icon: mdi:palette
+        tap_action:
+          action: call-service
+          service: script.basement_staircase_apply_cached_led_color

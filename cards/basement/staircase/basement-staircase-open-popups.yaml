@@ -1,0 +1,16 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+entity: light.basement_staircase_lights
+name: Staircase
+icon: mdi:clipboard-text-clock-outline
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#basement-staircase-history"
+grid_options:
+  columns: 6
+  rows: auto
