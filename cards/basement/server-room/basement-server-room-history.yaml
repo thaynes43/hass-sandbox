@@ -24,7 +24,7 @@ cards:
         navigation_path: "#server-room-advanced"
   - type: markdown
     content: |
-      ## Basement Server Room
+      ## Server Room
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
