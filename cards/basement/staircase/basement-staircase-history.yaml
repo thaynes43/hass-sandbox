@@ -228,8 +228,8 @@ cards:
         - name: Hold Buttons
           buttons_layout: inline
           group:
-            - name: Toggle Manual Hold
-              icon: mdi:toggle-switch-outline
+            - name: Toggle
+              icon: mdi:hand-back-left
               tap_action:
                 action: perform-action
                 perform_action: script.inovelli_toggle_hold_group_of_switches
