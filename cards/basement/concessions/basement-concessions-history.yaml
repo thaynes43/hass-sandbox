@@ -24,7 +24,7 @@ cards:
         navigation_path: "#concessions-advanced"
   - type: markdown
     content: |
-      ## Basement Concessions
+      ## Concessions
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
