@@ -1,0 +1,566 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#basement-staircase-advanced"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Return to Overview
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#basement-staircase-history"
+    tap_action:
+      action: navigate
+      navigation_path: "#basement-staircase-history"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#basement-staircase-history"
+  - type: markdown
+    content: |
+      ## Staircase - Sensors
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Upper - Light + Power
+          buttons_layout: inline
+          group:
+            - entity: sensor.basement_lower_staircase_inovelli_presence_illuminance
+              name: Lower Lux
+              icon: mdi:brightness-6
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.basement_upper_staircase_inovelli_presence_illuminance
+              name: Upper Lux
+              icon: mdi:brightness-6
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Upper - State + Temp
+          buttons_layout: inline
+          group:
+            - entity: >-
+                sensor.basement_lower_staircase_inovelli_presence_internaltemperature
+              name: Lower Temp
+              icon: mdi:thermometer
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: >-
+                sensor.basement_upper_staircase_inovelli_presence_internaltemperature
+              name: Upper Temp
+              icon: mdi:thermometer
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Lower - Light + Power
+          buttons_layout: inline
+          group:
+            - entity: sensor.basement_lower_staircase_inovelli_presence_power
+              name: Lower Power
+              icon: mdi:flash
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.basement_upper_staircase_inovelli_presence_power
+              name: Upper Power
+              icon: mdi:flash
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Lower - State + Temp
+          buttons_layout: inline
+          group:
+            - entity: sensor.basement_lower_staircase_inovelli_presence_overheat
+              name: Lower Overheat
+              icon: mdi:thermometer-alert
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.basement_upper_staircase_inovelli_presence_overheat
+              name: Upper Overheat
+              icon: mdi:thermometer-alert
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+      bottom_layout: rows
+    rows: 4.55
+  - type: markdown
+    content: |
+      #### Upper Staircase mmWave Clear Timing
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: markdown
+        content: >-
+          **MmWave Hold Time**
+
+
+          How long the **load stays ON** after the switch stops detecting
+          presence.
+
+          Value is in **seconds** (e.g. **5 = 5s**). Default is **10s**.
+      - type: markdown
+        content: >-
+          **MmWave Stay Life**
+
+
+          How long the “stay” area lingers after motion stops (affects how
+          quickly the switch reports **cleared**).
+
+          Default is **300** (≈15s). Lower values can be sub-second (e.g. **1 ≈
+          50ms**, **20 ≈ 1s**).
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwaveholdtime
+        name: Hold Time (s)
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+        features_position: inline
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwavestaylife
+        name: Stay Life
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+        features_position: inline
+      - type: entities
+        entities:
+          - entity: number.basement_upper_staircase_inovelli_presence_mmwaveholdtime
+            name: Hold Time (s)
+      - type: entities
+        entities:
+          - entity: number.basement_upper_staircase_inovelli_presence_mmwavestaylife
+            name: Stay Life
+  - type: markdown
+    content: |
+      #### Upper Staircase mmWave Trigger Boundary (cm)
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwavedepthmin
+        name: Depth Min
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwavedepthmax
+        name: Depth Max
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwavewidthmin
+        name: Width Left
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwavewidthmax
+        name: Width Right
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwaveheightmin
+        name: Height Floor
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_upper_staircase_inovelli_presence_mmwaveheightmax
+        name: Height Ceiling
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+  - type: markdown
+    content: >-
+      #### Upper Staircase MQTT Commands    <small>
+
+      Last command: {% set s =
+      states('sensor.basement_upper_staircase_inovelli_presence_mmwave_control_commands')
+      %} {{ s if s not in ['unknown','unavailable',''] else '—' }} </small>
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Upper mmWave Commands
+          buttons_layout: inline
+          group:
+            - name: Set Interference
+              icon: mdi:shield-outline
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_upper_staircase_inovelli_presence
+                  command: set_interference
+            - name: Clear Interference
+              icon: mdi:shield-off-outline
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_upper_staircase_inovelli_presence
+                  command: clear_interference
+            - name: Reset Area
+              icon: mdi:crop-free
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_upper_staircase_inovelli_presence
+                  command: reset_detection_area
+            - name: Reset Module
+              icon: mdi:restart-alert
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_upper_staircase_inovelli_presence
+                  command: reset_mmwave_module
+      bottom_layout: inline
+    rows: 1.625
+    modules:
+      - my_module
+  - type: markdown
+    content: |
+      #### Lower Staircase mmWave Clear Timing
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: markdown
+        content: >-
+          **MmWave Hold Time**
+
+
+          How long the **load stays ON** after the switch stops detecting
+          presence.
+
+          Value is in **seconds** (e.g. **5 = 5s**). Default is **10s**.
+      - type: markdown
+        content: >-
+          **MmWave Stay Life**
+
+
+          How long the “stay” area lingers after motion stops (affects how
+          quickly the switch reports **cleared**).
+
+          Default is **300** (≈15s). Lower values can be sub-second (e.g. **1 ≈
+          50ms**, **20 ≈ 1s**).
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwaveholdtime
+        name: Hold Time (s)
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+        features_position: inline
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwavestaylife
+        name: Stay Life
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+        features_position: inline
+      - type: entities
+        entities:
+          - entity: number.basement_lower_staircase_inovelli_presence_mmwaveholdtime
+            name: Hold Time (s)
+      - type: entities
+        entities:
+          - entity: number.basement_lower_staircase_inovelli_presence_mmwavestaylife
+            name: Stay Life
+  - type: markdown
+    content: |
+      #### Lower Staircase mmWave Trigger Boundary (cm)
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwavedepthmin
+        name: Depth Min
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwavedepthmax
+        name: Depth Max
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwavewidthmin
+        name: Width Left
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwavewidthmax
+        name: Width Right
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwaveheightmin
+        name: Height Floor
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.basement_lower_staircase_inovelli_presence_mmwaveheightmax
+        name: Height Ceiling
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+  - type: markdown
+    content: >-
+      #### Lower Staircase MQTT Commands    <small>
+
+      Last command: {% set s =
+      states('sensor.basement_lower_staircase_inovelli_presence_mmwave_control_commands')
+      %} {{ s if s not in ['unknown','unavailable',''] else '—' }} </small>
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Lower mmWave Commands
+          buttons_layout: inline
+          group:
+            - name: Set Interference
+              icon: mdi:shield-outline
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_lower_staircase_inovelli_presence
+                  command: set_interference
+            - name: Clear Interference
+              icon: mdi:shield-off-outline
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_lower_staircase_inovelli_presence
+                  command: clear_interference
+            - name: Reset Area
+              icon: mdi:crop-free
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_lower_staircase_inovelli_presence
+                  command: reset_detection_area
+            - name: Reset Module
+              icon: mdi:restart-alert
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: basement_lower_staircase_inovelli_presence
+                  command: reset_mmwave_module
+      bottom_layout: inline
+    rows: 1.625
+    modules:
+      - my_module

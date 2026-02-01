@@ -10,13 +10,13 @@ use_blueprint:
       - action: script.inovelli_toggle_hold_group_of_switches
         data:
           leader_switch_name: basement_lower_staircase_inovelli_presence
-          leader_normal_mode: Occupancy (default)
+          leader_normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
           leader_prev_led_color_helper: input_text.basement_lower_staircase_led_color
           hold_color: input_text.inovelli_manual_hold
           switches:
             - switch_name: basement_lower_staircase_inovelli_presence
               prev_led_color_helper: input_text.basement_lower_staircase_led_color
-              normal_mode: Occupancy (default)
+              normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
             - switch_name: basement_upper_staircase_inovelli_presence
               prev_led_color_helper: input_text.basement_upper_staircase_led_color
-              normal_mode: Occupancy (default)
+              normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode

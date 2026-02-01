@@ -15,8 +15,10 @@ sequence:
             - automation.light_fp2_server_room_motion_cleared_lights_off
         - switch_name: basement_upper_staircase_inovelli_presence
           helper: input_text.basement_upper_staircase_led_color
+          normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
         - switch_name: basement_lower_staircase_inovelli_presence
           helper: input_text.basement_lower_staircase_led_color
+          normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
         - switch_name: basement_bathroom_vanity_inovelli_presence
           helper: input_text.basement_bathroom_vanity_led_color
           normal_mode_input_select: input_select.basement_bathroom_mmwave_normal_mode

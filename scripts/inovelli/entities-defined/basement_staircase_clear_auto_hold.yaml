@@ -3,13 +3,13 @@ sequence:
   - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
     data:
       switch_name: basement_lower_staircase_inovelli_presence
-      normal_mode: Occupancy (default)
+      normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
       hold_color: input_text.inovelli_auto_hold
       prev_led_color_helper: input_text.basement_lower_staircase_led_color
   - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
     data:
       switch_name: basement_upper_staircase_inovelli_presence
-      normal_mode: Occupancy (default)
+      normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
       hold_color: input_text.inovelli_auto_hold
       prev_led_color_helper: input_text.basement_upper_staircase_led_color
 mode: single
