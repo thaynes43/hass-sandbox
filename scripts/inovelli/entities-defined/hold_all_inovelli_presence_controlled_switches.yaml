@@ -17,6 +17,9 @@ sequence:
           helper: input_text.basement_lower_staircase_led_color
         - switch_name: basement_bathroom_vanity_inovelli_presence
           helper: input_text.basement_bathroom_vanity_led_color
+          automation_entity_ids:
+            - automation.light_inovelli_basement_bathroom_motion_detected_fan_light_on
+            - automation.light_inovelli_basement_bathroom_motion_cleared_fan_light_off
         - switch_name: basement_movie_inovelli_presence
           helper: input_text.basement_movie_led_color
           automation_entity_ids:

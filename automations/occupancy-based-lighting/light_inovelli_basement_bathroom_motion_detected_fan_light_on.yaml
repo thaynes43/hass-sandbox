@@ -1,0 +1,17 @@
+alias: "[Light] [Inovelli] : [Basement Bathroom] : [Motion Detected] : [Fan Light On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.basement_bathroom_vanity_inovelli_presence_occupancy
+      - binary_sensor.basement_bathroom_night_light_occupancy
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: light.basement_bathroom_fan_light_inovelli_on_off
+mode: single
