@@ -1,0 +1,122 @@
+blueprint:
+  name: Motion-activated night light (multi-sensor, brightness, color presets)
+  description: 'Turns on a night light when any selected motion or occupancy sensor is triggered and it's dark. 
+  Supports brightness and XY color presets. Source found here https://github.com/thaynes43/hass-blueprints'
+  domain: automation
+  input:
+    motion_sensors:
+      name: Motion / Occupancy Sensors
+      description: One or more sensors to trigger the light.
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+          device_class:
+            - motion
+            - occupancy
+
+    illuminance_sensor:
+      name: Illuminance Sensor
+      description: The sensor that measures light level (lx).
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+
+    light_target:
+      name: Light
+      description: The light to control.
+      selector:
+        target:
+          entity:
+            domain: light
+
+    illuminance_threshold:
+      name: Illuminance Threshold
+      description: Maximum lux level to consider it "dark"
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 1000
+          unit_of_measurement: lx
+          mode: slider
+
+    duration:
+      name: Auto-Off Duration
+      description: How long the light stays on after motion stops
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 3600
+          unit_of_measurement: seconds
+          mode: slider
+
+    brightness:
+      name: Brightness
+      description: Brightness level (1–255). Leave blank for default.
+      default: 255
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: box
+
+    color_preset:
+      name: Color Preset
+      description: Choose a preset color (XY format)
+      default: "[0.636, 0.34]"
+      selector:
+        select:
+          options:
+            - label: "Red"
+              value: "[0.7006, 0.2993]"
+            - label: "Orange"
+              value: "[0.636, 0.34]"
+            - label: "Yellow"
+              value: "[0.501, 0.415]"
+            - label: "Green"
+              value: "[0.1724, 0.7468]"
+            - label: "Blue"
+              value: "[0.1355, 0.0399]"
+            - label: "Pink"
+              value: "[0.3819, 0.1723]"
+            - label: "Warm White"
+              value: "[0.501, 0.415]"
+            - label: "Cool White"
+              value: "[0.31, 0.33]"
+            - label: "None (Use default color)"
+              value: "none"
+
+trigger:
+  - platform: state
+    entity_id: !input motion_sensors
+    from: 'off'
+    to: 'on'
+
+condition:
+  - condition: numeric_state
+    entity_id: !input illuminance_sensor
+    below: !input illuminance_threshold
+
+variables:
+  brightness: !input brightness
+  xy_color: !input color_preset
+
+action:
+  - service: light.turn_on
+    target: !input light_target
+    data:
+      brightness: "{{ brightness if brightness is not none else omit }}"
+      xy_color: "{{ xy_color | from_json if xy_color != 'none' else omit }}"
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input motion_sensors
+        to: 'off'
+        for:
+          seconds: !input duration
+  - service: light.turn_off
+    target: !input light_target
+
+mode: restart

@@ -1,0 +1,23 @@
+alias: "[Watchdog] Reset Unknown Night Light"
+description: ""
+mode: queued
+trigger:
+  - platform: state
+    entity_id:
+      - light.basement_bathroom_night_light
+      - light.basement_hall_night_light
+      - light.downstairs_bathroom_night_light
+      - light.downstairs_kitchen_night_light
+      - light.upstairs_foyer_night_light
+      - light.upstairs_kids_bathroom_night_light
+      - light.upstairs_primary_bath_night_light
+      - light.upstairs_primary_hall_night_light
+    from: unknown
+    to: null
+action:
+  - action: light.turn_on
+    target:
+      entity_id: "{{ trigger.entity_id }}"
+    data:
+      brightness_pct: 100
+condition: []

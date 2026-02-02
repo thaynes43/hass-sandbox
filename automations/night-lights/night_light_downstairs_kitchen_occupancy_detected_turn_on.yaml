@@ -1,0 +1,15 @@
+alias: "[Night Light] : [Downstairs] [Kitchen] : [Occupancy Detected] : [Turn On]"
+description: ""
+use_blueprint:
+  path: night_light/motion_night_light.yaml
+  input:
+    motion_sensors:
+      - binary_sensor.downstairs_kitchen_night_light_occupancy
+      - binary_sensor.downstairs_foyer_night_light_occupancy
+      - binary_sensor.downstairs_bathroom_night_light_occupancy
+      - binary_sensor.first_floor_ecobee_occupancy
+      - binary_sensor.mud_room_sensor_occupancy
+      - binary_sensor.dining_room_sensor_occupancy
+    illuminance_sensor: sensor.downstairs_kitchen_night_light_illuminance
+    light_target:
+      entity_id: light.downstairs_kitchen_night_light

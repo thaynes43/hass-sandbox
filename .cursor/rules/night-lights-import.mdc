@@ -1,0 +1,36 @@
+---
+description: How to import night light automations from Home Assistant into the automations/night-lights folder
+globs: automations/night-lights/**/*.yaml
+---
+
+# Night lights: import process
+
+This rule describes how night light automations are imported from Home Assistant (via MCP) into the `automations/night-lights/` folder so they can be edited here and copy-pasted back into the HA UI.
+
+## Source
+
+- **MCP:** Use the `user-home-assistant` MCP server.
+- **Discover automations:** `ha_search_entities(query="night light", domain_filter="automation", limit=100)`.
+- **Fetch config:** For each automation entity_id, call `ha_config_get_automation(identifier="automation.<name>")` to get the full config.
+
+## File naming
+
+- **Rule:** One automation per file. File name = automation **entity_id with the `automation.` prefix removed** + `.yaml`.
+- **Examples:**
+  - `automation.night_light_upstairs_primary_hall_occupancy_detected_turn_on` → `night_light_upstairs_primary_hall_occupancy_detected_turn_on.yaml`
+  - `automation.watchdog_reset_unknown_night_light` → `watchdog_reset_unknown_night_light.yaml`
+  - `automation.night_light_upstairs_cloffice_occupancy_detected_turn_on_2` → `night_light_upstairs_cloffice_occupancy_detected_turn_on_2.yaml`
+- **Path:** Always under `automations/night-lights/`, e.g. `automations/night-lights/night_light_upstairs_primary_hall_occupancy_detected_turn_on.yaml`.
+
+## Content: omit `id` for UI copy-paste
+
+- The imported YAML must **not** include the `id` field (e.g. `id: "1754590595069"`).
+- Stored config is intended for copy-paste into the Home Assistant automation YAML editor; HA will assign a new id when pasted.
+- Convert the MCP config (JSON-like) to YAML and strip the `id` key before writing the file.
+
+## Summary
+
+1. List night light automations via MCP search (domain automation, query "night light").
+2. For each automation, get config with `ha_config_get_automation(identifier=<entity_id>)`.
+3. Derive filename: remove `automation.` from entity_id, append `.yaml`.
+4. Write to `automations/night-lights/<filename>`, with config converted to YAML and **without** the `id` field.

@@ -1,0 +1,13 @@
+alias: "[Night Light] : [Upstairs] [Primary Hall] : [Occupancy Detected] : [Turn On]"
+description: ""
+use_blueprint:
+  path: night_light/motion_night_light.yaml
+  input:
+    motion_sensors:
+      - binary_sensor.upstairs_primary_hall_night_light_occupancy
+      - binary_sensor.upstairs_primary_bath_night_light_occupancy
+      - binary_sensor.downstairs_foyer_night_light_occupancy
+    illuminance_sensor: sensor.upstairs_primary_hall_night_light_illuminance
+    light_target:
+      entity_id: light.upstairs_primary_hall_night_light
+    color_preset: "[0.636, 0.34]"
