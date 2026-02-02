@@ -57,27 +57,6 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-        - name: Upper - State + Temp
-          buttons_layout: inline
-          group:
-            - entity: >-
-                sensor.basement_lower_staircase_inovelli_presence_internaltemperature
-              name: Lower Temp
-              icon: mdi:thermometer
-              show_name: true
-              show_state: true
-              show_icon: true
-              content_layout: icon-top
-              custom_height: 60
-            - entity: >-
-                sensor.basement_upper_staircase_inovelli_presence_internaltemperature
-              name: Upper Temp
-              icon: mdi:thermometer
-              show_name: true
-              show_state: true
-              show_icon: true
-              content_layout: icon-top
-              custom_height: 60
         - name: Lower - Light + Power
           buttons_layout: inline
           group:
@@ -117,7 +96,7 @@ cards:
               content_layout: icon-top
               custom_height: 60
       bottom_layout: rows
-    rows: 4.55
+    rows: 3.45
   - type: markdown
     content: |
       #### Upper Staircase mmWave Clear Timing

@@ -1,0 +1,27 @@
+alias: "[Light] [inovelli] : [Primary Bathroom] : [Shower Motion Detected] : [Lights On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id: binary_sensor.upstairs_primary_bath_shower_inovelli_presence_occupancy
+    from: null
+    to: "on"
+conditions:
+  - condition: template
+    value_template: |
+      {# Only run when hold is clear on BOTH switches #}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led_vanity = states('number.upstairs_primary_bath_vanity_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {% set led_shower = states('number.upstairs_primary_bath_shower_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {{ led_vanity != manual and led_vanity != auto and led_shower != manual and led_shower != auto }}
+actions:
+  - action: light.turn_on
+    metadata: {}
+    target:
+      entity_id:
+        - light.upstairs_primary_bath_vanity_inovelli_presence
+        - light.upstairs_primary_bath_shower_inovelli_presence
+        - light.upstairs_primary_bath_fan_light_inovelli_on_off
+        - light.upstairs_primary_bath_lights
+    data: {}
+mode: single

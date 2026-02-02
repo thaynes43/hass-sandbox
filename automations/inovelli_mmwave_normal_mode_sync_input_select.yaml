@@ -11,6 +11,8 @@ triggers:
       - input_select.basement_movie_room_mmwave_normal_mode
       - input_select.basement_bathroom_mmwave_normal_mode
       - input_select.basement_staircase_mmwave_normal_mode
+      - input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode
+      - input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
     trigger: state
 conditions: []
 actions:
@@ -39,6 +41,10 @@ actions:
                 {% elif trigger.entity_id == 'input_select.basement_staircase_mmwave_normal_mode' %}
                   select.basement_upper_staircase_inovelli_presence_mmwavecontrolwireddevice,
                   select.basement_lower_staircase_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode' %}
+                  select.upstairs_primary_bath_vanity_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode' %}
+                  select.upstairs_primary_bath_shower_inovelli_presence_mmwavecontrolwireddevice
                 {% else %}
                   none
                 {% endif %}

@@ -54,6 +54,15 @@ sequence:
           automation_entity_ids:
             - >-
               automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
+            - >-
+              automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
+        - switch_name: upstairs_primary_bath_shower_inovelli_presence
+          helper: input_text.upstairs_primary_shower_led_color
+          automation_entity_ids:
+            - >-
+              automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
+            - >-
+              automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
         - switch_name: upstairs_primary_water_closet_inovelli_presence
           helper: input_text.upstairs_primary_water_closet_led_color
   - repeat:

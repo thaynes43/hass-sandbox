@@ -1,0 +1,18 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Upstairs] [Primary Shower] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 9a68c1936e65f693a505c4128d724607
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: upstairs_primary_bath_shower_inovelli_presence
+          normal_mode_input_select: input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.upstairs_primary_shower_led_color
+          automation_entity_ids:
+            - automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
+            - automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on

@@ -60,23 +60,47 @@ sequence:
           helper: input_text.upstairs_laundry_led_color
         - switch_name: upstairs_primary_bath_vanity_inovelli_presence
           helper: input_text.upstairs_primary_vanity_led_color
-          normal_mode: Wasteful Occupancy
           automation_entity_ids:
             - >-
               automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
+            - >-
+              automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
+          normal_mode_input_select: input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode
+        - switch_name: upstairs_primary_bath_shower_inovelli_presence
+          helper: input_text.upstairs_primary_shower_led_color
+          automation_entity_ids:
+            - >-
+              automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
+            - >-
+              automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
+          normal_mode_input_select: input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
         - switch_name: upstairs_primary_water_closet_inovelli_presence
           helper: input_text.upstairs_primary_water_closet_led_color
   - repeat:
       for_each: "{{ switches }}"
       sequence:
-        - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
-          data:
-            switch_name: "{{ repeat.item.switch_name }}"
-            normal_mode: "{{ repeat.item.normal_mode | default(default_normal_mode) }}"
-            normal_mode_input_select: "{{ repeat.item.normal_mode_input_select | default('') }}"
-            hold_color: "{{ hold_color }}"
-            prev_led_color_helper: "{{ repeat.item.helper }}"
-            automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: >-
+                    {% set e = repeat.item.normal_mode_input_select | default('') | string %}
+                    {{ e.startswith('input_select.') }}
+              sequence:
+                - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+                  data:
+                    switch_name: "{{ repeat.item.switch_name }}"
+                    normal_mode_input_select: "{{ repeat.item.normal_mode_input_select }}"
+                    hold_color: "{{ hold_color }}"
+                    prev_led_color_helper: "{{ repeat.item.helper }}"
+                    automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
+          default:
+            - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+              data:
+                switch_name: "{{ repeat.item.switch_name }}"
+                normal_mode: "{{ repeat.item.normal_mode | default(default_normal_mode) }}"
+                hold_color: "{{ hold_color }}"
+                prev_led_color_helper: "{{ repeat.item.helper }}"
+                automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
         - delay:
             seconds: 2
 mode: single
