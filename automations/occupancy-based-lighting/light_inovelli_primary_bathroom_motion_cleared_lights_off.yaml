@@ -1,0 +1,19 @@
+alias: "[Light] [inovelli] : [Primary Bathroom] : [Motion Cleared] : [Lights Off]"
+description: ""
+triggers:
+  - trigger: template
+    value_template: |
+      {{
+        is_state('binary_sensor.upstairs_primary_bath_vanity_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.upstairs_primary_bath_shower_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.upstairs_primary_bath_night_light_occupancy', 'off')
+      }}
+    for: "00:02:00"
+conditions: []
+actions:
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id: light.upstairs_primary_bath_vanity_inovelli_presence
+    data: {}
+mode: single
