@@ -1,0 +1,16 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+entity: light.garage_interior_mudroom_inovelli_presence
+name: Garage
+icon: mdi:clipboard-text-clock-outline
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#garage-interior-mudroom-history"
+grid_options:
+  columns: 6
+  rows: auto

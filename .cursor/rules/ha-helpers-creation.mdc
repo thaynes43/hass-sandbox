@@ -1,0 +1,90 @@
+---
+description: Create Home Assistant helpers (esp. input_select) via HA MCP tools
+alwaysApply: true
+---
+
+## Home Assistant helpers: creation rules (MCP-first)
+
+### When to use this
+
+- Prefer creating helpers via the Home Assistant MCP tools so the **entity ids exist immediately** and can be referenced safely in `cards/**`, `automations/**`, and `scripts/**`.
+
+### Discovery (do this before creating)
+
+- Use `ha_search_entities` to confirm the helper does **not** already exist.
+- Optionally use `ha_config_list_helpers` to see existing helpers.
+
+### Create/update helpers (recommended tool)
+
+- Use `ha_config_set_helper`.
+  - **Create**: omit `helper_id`
+  - **Update**: provide `helper_id` (e.g. `downstairs_mudroom_mmwave_normal_mode` or `input_select.downstairs_mudroom_mmwave_normal_mode`)
+
+### Standard `input_select` for Inovelli mmWave normal mode
+
+- **Entity id convention**: `input_select.<zone>_mmwave_normal_mode`
+- **Options** (must match the device `select.*_mmwavecontrolwireddevice` options):
+  - `Disabled`
+  - `Occupancy (default)`
+  - `Vacancy`
+  - `Wasteful Occupancy`
+  - `Mirrored Occupancy`
+  - `Mirrored Vacancy`
+  - `Mirrored Wasteful Occupancy`
+- **Icon**: `mdi:motion-sensor`
+- **Initial**: usually `Occupancy (default)` (or whatever you want as the default “not on hold” mode)
+
+### Example MCP calls (known-good)
+
+Create an `input_select` helper:
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_select",
+    "name": "Downstairs Bathroom Vanity mmWave Normal Mode",
+    "icon": "mdi:motion-sensor",
+    "options": [
+      "Disabled",
+      "Occupancy (default)",
+      "Vacancy",
+      "Wasteful Occupancy",
+      "Mirrored Occupancy",
+      "Mirrored Vacancy",
+      "Mirrored Wasteful Occupancy"
+    ],
+    "initial": "Occupancy (default)"
+  }
+}
+```
+
+Update an existing helper’s options (example shape):
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_select",
+    "helper_id": "downstairs_bathroom_vanity_mmwave_normal_mode",
+    "name": "Downstairs Bathroom Vanity mmWave Normal Mode",
+    "icon": "mdi:motion-sensor",
+    "options": [
+      "Disabled",
+      "Occupancy (default)",
+      "Vacancy",
+      "Wasteful Occupancy",
+      "Mirrored Occupancy",
+      "Mirrored Vacancy",
+      "Mirrored Wasteful Occupancy"
+    ],
+    "initial": "Occupancy (default)"
+  }
+}
+```
+
+### After creating a new normal-mode helper (don’t forget)
+
+- **Cards**: hold buttons should pass `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode` (do not hardcode `normal_mode:`).
+- **Sync automation**: add the helper to `automations/inovelli_mmwave_normal_mode_sync_input_select.yaml` so helper changes update the device `select.*_mmwavecontrolwireddevice`.
+- **Clear-hold registry**: add `normal_mode_input_select` for the switch entry in `scripts/inovelli/entities-defined/clear_hold_on_all_inovelli_presence_controlled_switches.yaml`.

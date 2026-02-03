@@ -1,0 +1,207 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#upstairs-primary-water-closet-history"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Toggle Advanced Settings
+    show_icon: true
+    icon: mdi:tune-variant
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#upstairs-primary-water-closet-advanced"
+    sub_button:
+      main: []
+      bottom: []
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#upstairs-primary-water-closet-advanced"
+
+  - type: markdown
+    content: |
+      ## Upstairs Primary Water Closet
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Sensors
+          buttons_layout: inline
+          group:
+            - entity: binary_sensor.upstairs_primary_water_closet_inovelli_presence_occupancy
+              name: mmWave
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+        - name: Lights
+          buttons_layout: inline
+          group:
+            - entity: light.upstairs_primary_water_closet_inovelli_presence
+              name: WC Light
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+        - name: Config Drop Down
+          buttons_layout: inline
+          group:
+            - entity: input_select.upstairs_primary_water_closet_mmwave_normal_mode
+              sub_button_type: select
+              name: mmWave Mode
+              icon: mdi:motion-sensor
+              show_name: true
+              show_state: true
+              show_attribute: false
+              scrolling_effect: false
+              content_layout: icon-left
+              custom_height: 60
+      bottom_layout: rows
+    rows: 3.45
+    modules:
+      - my_module
+    show_header_toggle: false
+
+  - type: history-graph
+    entities:
+      - entity: binary_sensor.upstairs_primary_water_closet_inovelli_presence_occupancy
+        name: mmWave
+      - entity: light.upstairs_primary_water_closet_inovelli_presence
+        name: WC Light
+    hours_to_show: 1
+    grid_options:
+      columns: full
+
+  - type: markdown
+    content: |
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set s = 'upstairs_primary_water_closet_inovelli_presence' %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {% if led1 == manual %}{% set hold_label = 'Manual Hold' %}
+      {% elif led1 == auto %}{% set hold_label = 'Auto Hold' %}
+      {% else %}{% set hold_label = 'Clear' %}{% endif %}
+      {% set mmwave_mode = states('input_select.upstairs_primary_water_closet_mmwave_normal_mode') %}
+      {% if mmwave_mode in ['unknown', 'unavailable'] %}{% set mmwave_mode = '—' %}{% endif %}
+      {% set on_vals = namespace(out='') %}{% for i in range(1,8) %}
+        {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
+        {% set on_vals.out = on_vals.out ~ ('， ' if i > 1 else '') ~ v %}
+      {% endfor %}
+      {% set off_vals = namespace(out='') %}{% for i in range(1,8) %}
+        {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenoff') %}
+        {% set off_vals.out = off_vals.out ~ ('， ' if i > 1 else '') ~ v %}
+      {% endfor %}
+
+      Manual/Auto Hold: {{ hold_label }}
+      mmWave Mode: {{ mmwave_mode }}
+      LED ON Colors (1–7): {{ on_vals.out }}
+      LED OFF Colors (1–7): {{ off_vals.out }}
+
+  - type: custom:mod-card
+    card:
+      type: entities
+      entities:
+        - entity: input_text.upstairs_primary_water_closet_led_color
+          name: Cached LED Color
+      card_mod:
+        style: |
+          ha-card { padding: 0 !important; }
+          .card-content { padding: 0px 12px 6px 12px !important; }
+          #states { padding-top: 0 !important; margin-top: 0 !important; }
+    style: |
+      ha-card { padding: 0 !important; }
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Hold Buttons
+          buttons_layout: inline
+          group:
+            - name: Toggle
+              icon: mdi:hand-back-left
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+                target: {}
+                data:
+                  switch_name: upstairs_primary_water_closet_inovelli_presence
+                  normal_mode_input_select: input_select.upstairs_primary_water_closet_mmwave_normal_mode
+                  hold_color: input_text.inovelli_manual_hold
+                  prev_led_color_helper: input_text.upstairs_primary_water_closet_led_color
+              entity: script.inovelli_toggle_mmwave_hold_led_indicator
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              fill_width: true
+              custom_height: 80
+              scrolling_effect: false
+            - entity: script.inovelli_set_mmwave_hold_led_indicator
+              name: Set Auto Hold
+              icon: mdi:lock
+              show_name: true
+              show_state: false
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_set_mmwave_hold_led_indicator
+                target: {}
+                data:
+                  switch_name: upstairs_primary_water_closet_inovelli_presence
+                  hold_color: input_text.inovelli_auto_hold
+                  prev_led_color_helper: input_text.upstairs_primary_water_closet_led_color
+              content_layout: icon-top
+              custom_height: 80
+              scrolling_effect: false
+            - entity: script.inovelli_clear_mmwave_hold_restore_led_indicator
+              show_name: true
+              show_state: false
+              name: Clear Auto Hold
+              icon: mdi:lock-open-variant
+              show_background: true
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+                target: {}
+                data:
+                  switch_name: upstairs_primary_water_closet_inovelli_presence
+                  normal_mode_input_select: input_select.upstairs_primary_water_closet_mmwave_normal_mode
+                  hold_color: input_text.inovelli_auto_hold
+                  prev_led_color_helper: input_text.upstairs_primary_water_closet_led_color
+              content_layout: icon-top
+              custom_height: 80
+            - entity: script.inovelli_set_led_1_7_color_from_input_text
+              name: Set LED Color
+              icon: mdi:palette
+              show_name: true
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_set_led_1_7_color_from_input_text
+                target: {}
+                data:
+                  switch_name: upstairs_primary_water_closet_inovelli_presence
+                  color_helper: input_text.upstairs_primary_water_closet_led_color
+              content_layout: icon-top
+              fill_width: true
+              custom_height: 80
+              show_background: true
+              scrolling_effect: false
+      bottom_layout: inline
+    rows: 1.625
+    modules:
+      - my_module
+    show_header_toggle: false

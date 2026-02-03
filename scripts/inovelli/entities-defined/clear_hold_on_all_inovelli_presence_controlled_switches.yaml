@@ -50,14 +50,19 @@ sequence:
             - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
         - switch_name: downstairs_bathroom_vanity_inovelli_presence
           helper: input_text.downstairs_bathroom_vanity_led_color
+          normal_mode_input_select: input_select.downstairs_bathroom_vanity_mmwave_normal_mode
         - switch_name: downstairs_mudroom_inovelli_presence
           helper: input_text.downstairs_mudroom_led_color
+          normal_mode_input_select: input_select.downstairs_mudroom_mmwave_normal_mode
         - switch_name: garage_interior_mudroom_inovelli_presence
           helper: input_text.garage_mudroom_door_led_color
+          normal_mode_input_select: input_select.garage_interior_mudroom_mmwave_normal_mode
         - switch_name: upstairs_kids_bathroom_vanity_inovelli_presence
           helper: input_text.upstairs_kids_vanity_led_color
+          normal_mode_input_select: input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode
         - switch_name: upstairs_laundry_inovlli_presence
           helper: input_text.upstairs_laundry_led_color
+          normal_mode_input_select: input_select.upstairs_laundry_mmwave_normal_mode
         - switch_name: upstairs_primary_bath_vanity_inovelli_presence
           helper: input_text.upstairs_primary_vanity_led_color
           automation_entity_ids:
@@ -76,6 +81,7 @@ sequence:
           normal_mode_input_select: input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
         - switch_name: upstairs_primary_water_closet_inovelli_presence
           helper: input_text.upstairs_primary_water_closet_led_color
+          normal_mode_input_select: input_select.upstairs_primary_water_closet_mmwave_normal_mode
   - repeat:
       for_each: "{{ switches }}"
       sequence:

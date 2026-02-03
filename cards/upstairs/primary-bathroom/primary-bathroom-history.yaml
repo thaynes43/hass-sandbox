@@ -261,6 +261,19 @@ cards:
   - type: markdown
     content: |
       ### Vanity Switch Hold Buttons
+  - type: custom:mod-card
+    card:
+      type: entities
+      entities:
+        - entity: input_text.upstairs_primary_vanity_led_color
+          name: Cached LED Color
+      card_mod:
+        style: |
+          ha-card { padding: 0 !important; }
+          .card-content { padding: 0px 12px 6px 12px !important; }
+          #states { padding-top: 0 !important; margin-top: 0 !important; }
+    style: |
+      ha-card { padding: 0 !important; }
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -363,6 +376,19 @@ cards:
   - type: markdown
     content: |
       ### Shower Switch Hold Buttons
+  - type: custom:mod-card
+    card:
+      type: entities
+      entities:
+        - entity: input_text.upstairs_primary_shower_led_color
+          name: Cached LED Color
+      card_mod:
+        style: |
+          ha-card { padding: 0 !important; }
+          .card-content { padding: 0px 12px 6px 12px !important; }
+          #states { padding-top: 0 !important; margin-top: 0 !important; }
+    style: |
+      ha-card { padding: 0 !important; }
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:

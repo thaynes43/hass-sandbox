@@ -10,6 +10,6 @@ use_blueprint:
       - action: script.inovelli_toggle_mmwave_hold_led_indicator
         data:
           switch_name: downstairs_mudroom_inovelli_presence
-          normal_mode: Occupancy (default)
+          normal_mode_input_select: input_select.downstairs_mudroom_mmwave_normal_mode
           hold_color: input_text.inovelli_manual_hold
           prev_led_color_helper: input_text.downstairs_mudroom_led_color

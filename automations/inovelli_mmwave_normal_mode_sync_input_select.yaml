@@ -4,6 +4,9 @@ description: >
   each device's MmwaveControlWiredDevice select.
 triggers:
   - entity_id:
+      - input_select.downstairs_bathroom_vanity_mmwave_normal_mode
+      - input_select.downstairs_mudroom_mmwave_normal_mode
+      - input_select.garage_interior_mudroom_mmwave_normal_mode
       - input_select.basement_rumpus_room_mmwave_normal_mode
       - input_select.basement_concessions_mmwave_normal_mode
       - input_select.basement_hallway_mmwave_normal_mode
@@ -11,8 +14,11 @@ triggers:
       - input_select.basement_movie_room_mmwave_normal_mode
       - input_select.basement_bathroom_mmwave_normal_mode
       - input_select.basement_staircase_mmwave_normal_mode
+      - input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode
+      - input_select.upstairs_laundry_mmwave_normal_mode
       - input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode
       - input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
+      - input_select.upstairs_primary_water_closet_mmwave_normal_mode
     trigger: state
 conditions: []
 actions:
@@ -26,7 +32,13 @@ actions:
           - action: select.select_option
             target:
               entity_id: >-
-                {% if trigger.entity_id == 'input_select.basement_rumpus_room_mmwave_normal_mode' %}
+                {% if trigger.entity_id == 'input_select.downstairs_bathroom_vanity_mmwave_normal_mode' %}
+                  select.downstairs_bathroom_vanity_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.downstairs_mudroom_mmwave_normal_mode' %}
+                  select.downstairs_mudroom_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.garage_interior_mudroom_mmwave_normal_mode' %}
+                  select.garage_interior_mudroom_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.basement_rumpus_room_mmwave_normal_mode' %}
                   select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice
                 {% elif trigger.entity_id == 'input_select.basement_concessions_mmwave_normal_mode' %}
                   select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice
@@ -41,10 +53,16 @@ actions:
                 {% elif trigger.entity_id == 'input_select.basement_staircase_mmwave_normal_mode' %}
                   select.basement_upper_staircase_inovelli_presence_mmwavecontrolwireddevice,
                   select.basement_lower_staircase_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode' %}
+                  select.upstairs_kids_bathroom_vanity_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.upstairs_laundry_mmwave_normal_mode' %}
+                  select.upstairs_laundry_inovlli_presence_mmwavecontrolwireddevice
                 {% elif trigger.entity_id == 'input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode' %}
                   select.upstairs_primary_bath_vanity_inovelli_presence_mmwavecontrolwireddevice
                 {% elif trigger.entity_id == 'input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode' %}
                   select.upstairs_primary_bath_shower_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.upstairs_primary_water_closet_mmwave_normal_mode' %}
+                  select.upstairs_primary_water_closet_inovelli_presence_mmwavecontrolwireddevice
                 {% else %}
                   none
                 {% endif %}

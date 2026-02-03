@@ -200,31 +200,36 @@ cards:
 
       <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** occupancy
       won’t report **off** until each switch’s mmWave clear delay elapses.
-  - type: custom:bubble-card
-    card_type: sub-buttons
-    sub_button:
-      main: []
-      bottom:
-        - name: Cached LED Colors
-          buttons_layout: inline
-          group:
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:mod-card
+        card:
+          type: entities
+          entities:
             - entity: input_text.basement_upper_staircase_led_color
-              name: Upper LED
-              icon: mdi:palette
-              show_name: true
-              show_state: true
-              content_layout: icon-left
+              name: Cached LED Color (Upper)
+          card_mod:
+            style: |
+              ha-card { padding: 0 !important; }
+              .card-content { padding: 0px 12px 6px 12px !important; }
+              #states { padding-top: 0 !important; margin-top: 0 !important; }
+        style: |
+          ha-card { padding: 0 !important; }
+      - type: custom:mod-card
+        card:
+          type: entities
+          entities:
             - entity: input_text.basement_lower_staircase_led_color
-              name: Lower LED
-              icon: mdi:palette
-              show_name: true
-              show_state: true
-              content_layout: icon-left
-      bottom_layout: rows
-    rows: 0.94
-    modules:
-      - my_module
-    show_header_toggle: false
+              name: Cached LED Color (Lower)
+          card_mod:
+            style: |
+              ha-card { padding: 0 !important; }
+              .card-content { padding: 0px 12px 6px 12px !important; }
+              #states { padding-top: 0 !important; margin-top: 0 !important; }
+        style: |
+          ha-card { padding: 0 !important; }
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
