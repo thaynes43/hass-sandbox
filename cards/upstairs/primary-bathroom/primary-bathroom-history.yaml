@@ -229,7 +229,8 @@ cards:
         or is_state('light.upstairs_primary_bath_fan_light_inovelli_on_off', 'on')
         or is_state('light.upstairs_primary_bath_shower_inovelli_presence', 'on')
       %}
-      <ha-icon icon="mdi:timer-outline"></ha-icon> Off delay used: {% if full_room_on %}Shower{% else %}Vanity{% endif %}
+      {% set use_shower_delay = is_state('input_boolean.upstairs_primary_bathroom_use_shower_delay', 'on') %}
+      <ha-icon icon="mdi:timer-outline"></ha-icon> Off delay used: {% if use_shower_delay %}Shower{% else %}Vanity{% endif %}
   - type: custom:bubble-card
     card_type: sub-buttons
     sub_button:
@@ -246,8 +247,8 @@ cards:
               content_layout: icon-top
               custom_height: 60
             - entity: >-
-                automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
-              name: Shower → Lights On
+                automation.light_inovelli_primary_bathroom_fan_light_sync_shower
+              name: Fan ↔ Shower Sync
               show_name: true
               show_state: true
               content_layout: icon-top
@@ -297,8 +298,6 @@ cards:
                   automation_entity_ids:
                     - >-
                       automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
-                    - >-
-                      automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
               entity: script.inovelli_toggle_mmwave_hold_led_indicator
               show_state: false
               show_name: true
@@ -322,8 +321,6 @@ cards:
                   automation_entity_ids:
                     - >-
                       automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
-                    - >-
-                      automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
@@ -347,8 +344,6 @@ cards:
                   automation_entity_ids:
                     - >-
                       automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
-                    - >-
-                      automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
               content_layout: icon-top
               custom_height: 80
             - entity: script.inovelli_set_led_1_7_color_from_input_text
@@ -412,8 +407,6 @@ cards:
                   automation_entity_ids:
                     - >-
                       automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
-                    - >-
-                      automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
               entity: script.inovelli_toggle_mmwave_hold_led_indicator
               show_state: false
               show_name: true
@@ -437,8 +430,6 @@ cards:
                   automation_entity_ids:
                     - >-
                       automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
-                    - >-
-                      automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
@@ -462,8 +453,6 @@ cards:
                   automation_entity_ids:
                     - >-
                       automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
-                    - >-
-                      automation.light_inovelli_primary_bathroom_shower_motion_detected_lights_on
               content_layout: icon-top
               custom_height: 80
             - entity: script.inovelli_set_led_1_7_color_from_input_text

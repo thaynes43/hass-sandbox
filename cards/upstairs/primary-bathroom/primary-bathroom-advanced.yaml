@@ -34,6 +34,15 @@ cards:
     content: |
       ## Primary Bathroom - Sensors
 
+  - type: markdown
+    content: |
+      ### Room behavior
+
+      - **Vanity**: occupancy-based.
+      - **Shower / Fan Light / Group**: **manual** (no auto-on).
+      - **Single press** on the **Shower** switch toggles the **Fan Light**.
+      - When any **non-vanity** light has been turned on, the **Lights Off** automation uses the **Shower Off Delay** (long delay) until the room turns off.
+
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false

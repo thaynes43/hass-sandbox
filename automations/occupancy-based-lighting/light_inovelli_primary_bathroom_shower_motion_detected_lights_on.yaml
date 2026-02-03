@@ -1,5 +1,6 @@
 alias: "[Light] [inovelli] : [Primary Bathroom] : [Shower Motion Detected] : [Lights On]"
-description: ""
+description: "Disabled: shower side is manual now (no auto-on)."
+initial_state: false
 triggers:
   - trigger: state
     entity_id: binary_sensor.upstairs_primary_bath_shower_inovelli_presence_occupancy
@@ -15,13 +16,5 @@ conditions:
       {% set led_shower = states('number.upstairs_primary_bath_shower_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
       {{ led_vanity != manual and led_vanity != auto and led_shower != manual and led_shower != auto }}
 actions:
-  - action: light.turn_on
-    metadata: {}
-    target:
-      entity_id:
-        - light.upstairs_primary_bath_vanity_inovelli_presence
-        - light.upstairs_primary_bath_shower_inovelli_presence
-        - light.upstairs_primary_bath_fan_light_inovelli_on_off
-        - light.upstairs_primary_bath_lights
-    data: {}
+  - stop: "Disabled: shower side is manual now."
 mode: single

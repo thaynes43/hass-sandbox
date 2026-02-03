@@ -20,6 +20,57 @@ alwaysApply: true
   - **Create**: omit `helper_id`
   - **Update**: provide `helper_id` (e.g. `downstairs_mudroom_mmwave_normal_mode` or `input_select.downstairs_mudroom_mmwave_normal_mode`)
 
+### `input_boolean` helper (simple latch / flag)
+
+- **Use cases**: simple “sticky” state like *“use long off delay”*, *“vacuum is running”*, *“kids are sleeping”*, etc.
+- **Entity id convention**: `input_boolean.<thing>` (example: `input_boolean.upstairs_primary_bathroom_use_shower_delay`)
+- **Icon**: pick a relevant `mdi:` icon (common: `mdi:toggle-switch`, `mdi:timer-outline`)
+- **Initial**: `false` (off) is usually safest for a latch.
+
+#### Example MCP calls (known-good)
+
+Discovery (confirm it doesn’t already exist):
+
+```json
+{
+  "tool": "ha_search_entities",
+  "arguments": {
+    "query": "",
+    "domain_filter": "input_boolean",
+    "limit": 200
+  }
+}
+```
+
+Create an `input_boolean` helper:
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_boolean",
+    "name": "Upstairs Primary Bathroom Use Shower Delay",
+    "icon": "mdi:timer-outline",
+    "initial": false
+  }
+}
+```
+
+Update an existing `input_boolean` helper:
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_boolean",
+    "helper_id": "upstairs_primary_bathroom_use_shower_delay",
+    "name": "Upstairs Primary Bathroom Use Shower Delay",
+    "icon": "mdi:timer-outline",
+    "initial": false
+  }
+}
+```
+
 ### Standard `input_select` for Inovelli mmWave normal mode
 
 - **Entity id convention**: `input_select.<zone>_mmwave_normal_mode`

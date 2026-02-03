@@ -19,17 +19,13 @@ actions:
       {% set led_shower = states('number.upstairs_primary_bath_shower_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
       {{ led_vanity != manual and led_vanity != auto and led_shower != manual and led_shower != auto }}
   - delay: >-
-      {# Choose delay helper based on which lights are currently on #}
-      {% set full_room_on =
-        is_state('light.upstairs_primary_bath_lights', 'on')
-        or is_state('light.upstairs_primary_bath_fan_light_inovelli_on_off', 'on')
-        or is_state('light.upstairs_primary_bath_shower_inovelli_presence', 'on')
-      %}
-      {% set helper = 'input_select.upstairs_primary_bathroom_shower_occupancy_off_delay' if full_room_on else 'input_select.upstairs_primary_bathroom_vanity_occupancy_off_delay' %}
+      {# Choose delay helper based on whether non-vanity lights were turned on #}
+      {% set use_shower_delay = is_state('input_boolean.upstairs_primary_bathroom_use_shower_delay', 'on') %}
+      {% set helper = 'input_select.upstairs_primary_bathroom_shower_occupancy_off_delay' if use_shower_delay else 'input_select.upstairs_primary_bathroom_vanity_occupancy_off_delay' %}
       {% set raw = states(helper) %}
       {% set d = (raw | replace('"','') | replace("'","") | trim) %}
       {% if d in ['unknown','unavailable',''] %}
-        {{ '00:02:00' if full_room_on else '00:00:00' }}
+        {{ '00:02:00' if use_shower_delay else '00:00:00' }}
       {% else %}
         {{ d }}
       {% endif %}
@@ -57,4 +53,9 @@ actions:
         - light.upstairs_primary_bath_fan_light_inovelli_on_off
         - light.upstairs_primary_bath_lights
     data: {}
+  - action: input_boolean.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: input_boolean.upstairs_primary_bathroom_use_shower_delay
 mode: restart

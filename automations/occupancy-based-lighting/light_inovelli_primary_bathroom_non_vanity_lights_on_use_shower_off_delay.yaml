@@ -1,0 +1,18 @@
+alias: "[Light] [inovelli] : [Primary Bathroom] : [Non-Vanity Lights On] : [Use Shower Off Delay]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - light.upstairs_primary_bath_shower_inovelli_presence
+      - light.upstairs_primary_bath_fan_light_inovelli_on_off
+      - light.upstairs_primary_bath_lights
+    to: "on"
+conditions: []
+actions:
+  - action: input_boolean.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: input_boolean.upstairs_primary_bathroom_use_shower_delay
+mode: restart
+
