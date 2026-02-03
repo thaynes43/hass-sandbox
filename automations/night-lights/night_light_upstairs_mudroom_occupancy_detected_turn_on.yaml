@@ -1,0 +1,10 @@
+alias: "[Night Light] : [Upstairs] [Mudroom] : [Occupancy Detected] : [Turn On]"
+description: ""
+use_blueprint:
+  path: night_light/motion_night_light.yaml
+  input:
+    motion_sensors:
+      - binary_sensor.downstairs_mudroom_night_light_occupancy
+    illuminance_sensor: sensor.downstairs_mudroom_night_light_illuminance
+    light_target:
+      entity_id: light.downstairs_mudroom_night_light

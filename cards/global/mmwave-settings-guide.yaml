@@ -1,0 +1,35 @@
+type: markdown
+content: |
+  ## mmWave settings guide (Inovelli + Z2M)
+
+  ### Normal Mode (Z2M: `MmwaveControlWiredDevice`)
+  This dropdown controls whether the switch’s **wired load** is automatically controlled by presence.
+
+  - **Disabled**: presence does not control the load (manual control / automations only).
+  - **Occupancy (default)**: **auto on** with presence; **auto off** when presence clears.
+  - **Vacancy**: **no auto on**; **auto off** when presence clears.
+  - **Wasteful Occupancy**: **auto on** with presence; **no auto off**.
+  - **Mirrored Occupancy**: **auto on** when *clear*; **auto off** with presence (inverted).
+  - **Mirrored Vacancy**: **auto on** when *clear*; **no auto off** (inverted + “wasteful”).
+  - **Mirrored Wasteful Occupancy**: **no auto on**; **auto off** with presence (inverted).
+
+  ### mmWave clear timing (Z2M: `MmWaveHoldTime` + `MmWaveStayLife`)
+  These settings affect how long it takes before the occupancy sensor can report **off**.
+
+  - **MmWave Hold Time (seconds)**: time after the sensor detects “absent” before it can clear.
+    - Default is **10s**.
+    - Inovelli docs label this as **Param 114 “mmWave Time Out”**.
+  - **MmWave Stay Life**: extra “linger” time for the stay area.
+    - Default is **300 ≈ 15s**
+    - Z2M rule of thumb: `stay_life / 20 ≈ seconds` (e.g. 1 ≈ 50ms, 20 ≈ 1s, 300 ≈ 15s)
+
+  Approx sensor-clear time:
+  - `sensor_clear_delay_s ≈ hold_time_s + (stay_life / 20)`
+
+  ### Automation delays start AFTER the sensor clears
+  If a zone also has an “off delay” in automations, that timer starts **after** the sensors report `off`.
+
+  Approx total time until lights can turn off:
+  - `total_off_time ≈ hold_time_s + (stay_life / 20) + automation_delay`
+
+  Reference: [Inovelli Blue Series mmWave Presence Dimmer Switch parameters](https://help.inovelli.com/en/articles/12820312-blue-series-mmwave-presence-dimmer-switch-parameters#h_746fd6f933)
