@@ -6,6 +6,21 @@ use_blueprint:
   path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
   input:
     switch: 33e6ec6064d0f8c8993f7826a77879fd
+    config_single:
+      - action: light.turn_off
+        metadata: {}
+        target:
+          entity_id:
+            - light.upstairs_primary_bath_vanity_inovelli_presence
+            - light.upstairs_primary_bath_shower_inovelli_presence
+            - light.upstairs_primary_bath_fan_light_inovelli_on_off
+            - light.upstairs_primary_bath_lights
+        data: {}
+      - action: input_boolean.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id: input_boolean.upstairs_primary_bathroom_use_shower_delay
     config_double:
       - action: script.inovelli_toggle_mmwave_hold_led_indicator
         data:
