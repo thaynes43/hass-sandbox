@@ -13,6 +13,7 @@ use_blueprint:
                 value_template: >-
                   {{ is_state('light.upstairs_primary_bath_shower_inovelli_presence', 'on')
                     and is_state('light.upstairs_primary_bath_lights', 'on')
+                    and is_state('light.upstairs_primary_bath_fan_light_inovelli_on_off', 'on')
                   }}
             sequence:
               - action: light.turn_off
@@ -21,6 +22,7 @@ use_blueprint:
                   entity_id:
                     - light.upstairs_primary_bath_shower_inovelli_presence
                     - light.upstairs_primary_bath_lights
+                    - light.upstairs_primary_bath_fan_light_inovelli_on_off
                 data: {}
         default:
           - action: light.turn_on
@@ -29,6 +31,7 @@ use_blueprint:
               entity_id:
                 - light.upstairs_primary_bath_shower_inovelli_presence
                 - light.upstairs_primary_bath_lights
+                - light.upstairs_primary_bath_fan_light_inovelli_on_off
             data: {}
           - action: input_boolean.turn_on
             metadata: {}
