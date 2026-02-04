@@ -1,0 +1,80 @@
+---
+description: Use HA MCP tools to set entity/device settings (area, etc.)
+alwaysApply: true
+---
+
+## Home Assistant: set settings on entities/devices (MCP)
+
+### Key concept: entity vs device settings
+
+- **Entity settings** live in the **entity registry** (ex: entity area assignment).
+- **Device settings** live in the **device registry** (ex: device area assignment).
+- Home Assistant’s **device edit** dialog (it shows **“Enable device”**) uses the **device** registry.
+
+### Assign an Area (most common “setting”)
+
+1) Find the target area ID:
+
+```json
+{
+  "tool": "ha_config_list_areas",
+  "arguments": {}
+}
+```
+
+2) Look up the entity and its device:
+
+```json
+{
+  "tool": "ha_get_entity",
+  "arguments": { "entity_id": "light.downstairs_mudroom_hue_recessed_02" }
+}
+```
+
+```json
+{
+  "tool": "ha_get_device",
+  "arguments": { "entity_id": "light.downstairs_mudroom_hue_recessed_02" }
+}
+```
+
+3) Set **entity area** (entity registry):
+
+```json
+{
+  "tool": "ha_set_entity",
+  "arguments": {
+    "entity_id": "light.downstairs_mudroom_hue_recessed_02",
+    "area_id": "mudroom"
+  }
+}
+```
+
+4) Set **device area** (device registry) if you want the device UI to show it:
+
+```json
+{
+  "tool": "ha_update_device",
+  "arguments": {
+    "device_id": "<device_id from ha_get_device>",
+    "area_id": "mudroom"
+  }
+}
+```
+
+5) Verify:
+
+```json
+{
+  "tool": "ha_get_entity",
+  "arguments": { "entity_id": "light.downstairs_mudroom_hue_recessed_02" }
+}
+```
+
+```json
+{
+  "tool": "ha_get_device",
+  "arguments": { "device_id": "<device_id>" }
+}
+```
+
