@@ -1,0 +1,21 @@
+alias: "[Light] [Inovelli] : [Downstairs Mudroom] : [Motion Detected] : [Lights On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.downstairs_mudroom_inovelli_presence_occupancy
+      - binary_sensor.downstairs_mudroom_night_light_occupancy
+      - binary_sensor.ecobee_mudroom_sensor_occupancy
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data:
+      color_temp_kelvin: 2750
+      brightness_pct: 100
+    target:
+      entity_id: light.downstairs_mudroom_lights
+mode: single
+

@@ -1,0 +1,50 @@
+alias: "[Light] [Inovelli] : [Downstairs Mudroom] : [Motion Cleared] : [Lights Off]"
+description: ""
+triggers:
+  - trigger: template
+    value_template: |
+      {{
+        is_state('binary_sensor.downstairs_mudroom_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.downstairs_mudroom_night_light_occupancy', 'off')
+        and is_state('binary_sensor.ecobee_mudroom_sensor_occupancy', 'off')
+        and is_state('binary_sensor.downstairs_bathroom_vanity_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.downstairs_bathroom_night_light_occupancy', 'off')
+      }}
+conditions: []
+actions:
+  - condition: template
+    value_template: |
+      {# Only run when hold is clear #}
+      {% set s = 'downstairs_mudroom_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
+  - delay: >-
+      {% set raw = states('input_select.downstairs_mudroom_occupancy_off_delay') %}
+      {% set d = raw | replace('"','') | replace("'","") | trim %}
+      {{ d if d not in ['unknown','unavailable',''] else '00:02:00' }}
+  - condition: template
+    value_template: |
+      {{
+        is_state('binary_sensor.downstairs_mudroom_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.downstairs_mudroom_night_light_occupancy', 'off')
+        and is_state('binary_sensor.ecobee_mudroom_sensor_occupancy', 'off')
+        and is_state('binary_sensor.downstairs_bathroom_vanity_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.downstairs_bathroom_night_light_occupancy', 'off')
+      }}
+  - condition: template
+    value_template: |
+      {# Re-check hold state after the delay #}
+      {% set s = 'downstairs_mudroom_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id: light.downstairs_mudroom_lights
+    data: {}
+mode: restart
+

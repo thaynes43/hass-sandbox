@@ -78,8 +78,19 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
+        - name: Ecobee
+          buttons_layout: inline
+          group:
+            - entity: sensor.ecobee_mudroom_sensor_temperature
+              name: Temp
+              icon: mdi:thermometer
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
       bottom_layout: rows
-    rows: 2.4
+    rows: 3.45
 
   - type: markdown
     content: |

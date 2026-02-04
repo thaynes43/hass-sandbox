@@ -5,7 +5,7 @@ use_blueprint:
   input:
     motion_sensors:
       - binary_sensor.downstairs_bathroom_night_light_occupancy
-      - binary_sensor.mud_room_sensor_occupancy
+      - binary_sensor.ecobee_mudroom_sensor_occupancy
     illuminance_sensor: sensor.downstairs_bathroom_night_light_illuminance
     color_preset: "[0.501, 0.415]"
     light_target:

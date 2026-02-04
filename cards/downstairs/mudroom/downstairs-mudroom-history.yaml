@@ -44,11 +44,59 @@ cards:
               content_layout: icon-top
               custom_height: 60
               show_icon: true
+            - entity: binary_sensor.downstairs_mudroom_night_light_occupancy
+              name: Night Light
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: binary_sensor.ecobee_mudroom_sensor_occupancy
+              name: Ecobee
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+        - name: Spillover (Bathroom)
+          buttons_layout: inline
+          group:
+            - entity: binary_sensor.downstairs_bathroom_vanity_inovelli_presence_occupancy
+              name: Vanity
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: binary_sensor.downstairs_bathroom_night_light_occupancy
+              name: Night Light
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
         - name: Lights
           buttons_layout: inline
           group:
-            - entity: light.downstairs_mudroom_inovelli_presence
+            - entity: light.downstairs_mudroom_lights
               name: Mudroom
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+            - entity: light.downstairs_mudroom_night_light
+              name: Night Light
               show_name: true
               show_state: true
               show_last_changed: false
@@ -69,8 +117,18 @@ cards:
               scrolling_effect: false
               content_layout: icon-left
               custom_height: 60
+            - entity: input_select.downstairs_mudroom_occupancy_off_delay
+              sub_button_type: select
+              name: Off Delay
+              icon: mdi:timer-outline
+              show_name: true
+              show_state: true
+              show_attribute: false
+              scrolling_effect: false
+              content_layout: icon-left
+              custom_height: 60
       bottom_layout: rows
-    rows: 3.45
+    rows: 4.5
     modules:
       - my_module
     show_header_toggle: false
@@ -79,8 +137,18 @@ cards:
     entities:
       - entity: binary_sensor.downstairs_mudroom_inovelli_presence_occupancy
         name: mmWave
-      - entity: light.downstairs_mudroom_inovelli_presence
+      - entity: binary_sensor.downstairs_mudroom_night_light_occupancy
+        name: Night Light
+      - entity: binary_sensor.ecobee_mudroom_sensor_occupancy
+        name: Ecobee
+      - entity: binary_sensor.downstairs_bathroom_vanity_inovelli_presence_occupancy
+        name: Bathroom Vanity
+      - entity: binary_sensor.downstairs_bathroom_night_light_occupancy
+        name: Bathroom Night Light
+      - entity: light.downstairs_mudroom_lights
         name: Mudroom
+      - entity: light.downstairs_mudroom_night_light
+        name: Mudroom Night Light
     hours_to_show: 1
     grid_options:
       columns: full
@@ -105,10 +173,32 @@ cards:
         {% set off_vals.out = off_vals.out ~ ('， ' if i > 1 else '') ~ v %}
       {% endfor %}
 
-      Manual/Auto Hold: {{ hold_label }}
-      mmWave Mode: {{ mmwave_mode }}
-      LED ON Colors (1–7): {{ on_vals.out }}
-      LED OFF Colors (1–7): {{ off_vals.out }}
+      <ha-icon icon="mdi:lock-check"></ha-icon> **Manual/Auto Hold:** {{ hold_label }}
+
+      <ha-icon icon="mdi:motion-sensor"></ha-icon> **mmWave Mode:** {{ mmwave_mode }}
+
+      <ha-icon icon="mdi:palette"></ha-icon> **LED ON Colors (1–7):** {{ on_vals.out }}
+
+      <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):** {{ off_vals.out }}
+
+      {% set auto_delay_raw = states('input_select.downstairs_mudroom_occupancy_off_delay') %}
+      {% set auto_delay_td = as_timedelta(auto_delay_raw) if auto_delay_raw not in ['unknown','unavailable',''] else none %}
+      {% set auto_delay_s = (auto_delay_td.total_seconds() | float(0)) if auto_delay_td is not none else none %}
+
+      {% set hold_time_s = states('number.downstairs_mudroom_inovelli_presence_mmwaveholdtime') | float(0) %}
+      {% set stay_life_raw = states('number.downstairs_mudroom_inovelli_presence_mmwavestaylife') | float(0) %}
+      {% set stay_life_s = stay_life_raw / 20 %}
+      {% set mmwave_delay_s = hold_time_s + stay_life_s %}
+
+      {% set total_s = (mmwave_delay_s + auto_delay_s) if auto_delay_s is not none else none %}
+
+      <ha-icon icon="mdi:timer-outline"></ha-icon> **Automation Delay:** {{ auto_delay_raw if auto_delay_raw not in ['unknown','unavailable',''] else '—' }}{% if auto_delay_s is not none %} (≈{{ auto_delay_s | round(1) }}s){% endif %}
+
+      <ha-icon icon="mdi:timer-sand"></ha-icon> **Switch Clear Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
+
+      <ha-icon icon="mdi:progress-clock"></ha-icon> **Total Off Delay:** ≈ {{ mmwave_delay_s | round(1) }}s + {{ (auto_delay_s | round(1)) if auto_delay_s is not none else '—' }}s{% if total_s is not none %} = {{ total_s | round(1) }}s{% endif %}
+
+      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the occupancy sensor won’t report **off** until the switch’s mmWave clear delay elapses. The automation delay then starts *after* that.
 
   - type: custom:mod-card
     card:
@@ -143,6 +233,9 @@ cards:
                   normal_mode_input_select: input_select.downstairs_mudroom_mmwave_normal_mode
                   hold_color: input_text.inovelli_manual_hold
                   prev_led_color_helper: input_text.downstairs_mudroom_led_color
+                  automation_entity_ids:
+                    - automation.light_inovelli_downstairs_mudroom_motion_detected_lights_on
+                    - automation.light_inovelli_downstairs_mudroom_motion_cleared_lights_off
               entity: script.inovelli_toggle_mmwave_hold_led_indicator
               show_state: false
               show_name: true
@@ -163,6 +256,9 @@ cards:
                   switch_name: downstairs_mudroom_inovelli_presence
                   hold_color: input_text.inovelli_auto_hold
                   prev_led_color_helper: input_text.downstairs_mudroom_led_color
+                  automation_entity_ids:
+                    - automation.light_inovelli_downstairs_mudroom_motion_detected_lights_on
+                    - automation.light_inovelli_downstairs_mudroom_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
@@ -182,6 +278,9 @@ cards:
                   normal_mode_input_select: input_select.downstairs_mudroom_mmwave_normal_mode
                   hold_color: input_text.inovelli_auto_hold
                   prev_led_color_helper: input_text.downstairs_mudroom_led_color
+                  automation_entity_ids:
+                    - automation.light_inovelli_downstairs_mudroom_motion_detected_lights_on
+                    - automation.light_inovelli_downstairs_mudroom_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
             - entity: script.inovelli_set_led_1_7_color_from_input_text

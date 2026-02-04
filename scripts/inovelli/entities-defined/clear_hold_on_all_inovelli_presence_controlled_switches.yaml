@@ -54,6 +54,9 @@ sequence:
         - switch_name: downstairs_mudroom_inovelli_presence
           helper: input_text.downstairs_mudroom_led_color
           normal_mode_input_select: input_select.downstairs_mudroom_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_inovelli_downstairs_mudroom_motion_detected_lights_on
+            - automation.light_inovelli_downstairs_mudroom_motion_cleared_lights_off
         - switch_name: garage_interior_mudroom_inovelli_presence
           helper: input_text.garage_mudroom_door_led_color
           normal_mode_input_select: input_select.garage_interior_mudroom_mmwave_normal_mode

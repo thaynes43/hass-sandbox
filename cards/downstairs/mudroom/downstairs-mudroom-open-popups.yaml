@@ -4,7 +4,7 @@ button_type: state
 sub_button:
   main: []
   bottom: []
-entity: light.downstairs_mudroom_inovelli_presence
+entity: light.downstairs_mudroom_lights
 name: Mudroom
 icon: mdi:clipboard-text-clock-outline
 button_action:
