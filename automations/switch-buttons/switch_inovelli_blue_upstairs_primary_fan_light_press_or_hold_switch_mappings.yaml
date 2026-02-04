@@ -1,18 +1,18 @@
 alias: >-
-  [Switch] [Inovelli Blue] : [Upstairs] [Primary Shower] : [Press or Hold] :
+  [Switch] [Inovelli Blue] : [Upstairs] [Primary Fan Light] : [Press or Hold] :
   [Switch Mappings]
 description: ""
 use_blueprint:
   path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
   input:
-    switch: 9a68c1936e65f693a505c4128d724607
+    switch: fdc6f5f03ab52874c87f84a598b50737
     config_single:
       - choose:
           - conditions:
               - condition: template
                 value_template: >-
                   {{ is_state('light.upstairs_primary_bath_shower_inovelli_presence', 'on')
-                    and is_state('light.upstairs_primary_bath_fan_light_inovelli_on_off', 'on')
+                    and is_state('light.upstairs_primary_bath_lights', 'on')
                   }}
             sequence:
               - action: light.turn_off
@@ -20,7 +20,7 @@ use_blueprint:
                 target:
                   entity_id:
                     - light.upstairs_primary_bath_shower_inovelli_presence
-                    - light.upstairs_primary_bath_fan_light_inovelli_on_off
+                    - light.upstairs_primary_bath_lights
                 data: {}
         default:
           - action: light.turn_on
@@ -28,20 +28,10 @@ use_blueprint:
             target:
               entity_id:
                 - light.upstairs_primary_bath_shower_inovelli_presence
-                - light.upstairs_primary_bath_fan_light_inovelli_on_off
+                - light.upstairs_primary_bath_lights
             data: {}
           - action: input_boolean.turn_on
             metadata: {}
             target:
               entity_id: input_boolean.upstairs_primary_bathroom_use_shower_delay
             data: {}
-    config_double:
-      - action: script.inovelli_toggle_mmwave_hold_led_indicator
-        data:
-          switch_name: upstairs_primary_bath_shower_inovelli_presence
-          normal_mode_input_select: input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
-          hold_color: input_text.inovelli_manual_hold
-          prev_led_color_helper: input_text.upstairs_primary_shower_led_color
-          automation_entity_ids:
-            - >-
-              automation.light_inovelli_primary_bathroom_motion_cleared_lights_off

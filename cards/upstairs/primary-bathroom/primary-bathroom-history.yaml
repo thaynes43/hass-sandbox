@@ -247,8 +247,8 @@ cards:
               content_layout: icon-top
               custom_height: 60
             - entity: >-
-                automation.light_inovelli_primary_bathroom_fan_light_sync_shower
-              name: Fan ↔ Shower Sync
+                automation.light_inovelli_primary_bathroom_non_vanity_lights_on_use_shower_off_delay
+              name: Non-Vanity → Use Shower Delay
               show_name: true
               show_state: true
               content_layout: icon-top
