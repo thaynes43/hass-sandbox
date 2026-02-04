@@ -29,11 +29,9 @@ cards:
       tap_action:
         action: navigate
         navigation_path: "#downstairs-mudroom-history"
-
   - type: markdown
     content: |
       ## Downstairs Mudroom - Sensors
-
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
@@ -71,7 +69,7 @@ cards:
               content_layout: icon-top
               custom_height: 60
             - entity: sensor.downstairs_mudroom_inovelli_presence_internaltemperature
-              name: Temp
+              name: Switch Temp
               icon: mdi:thermometer
               show_name: true
               show_state: true
@@ -82,7 +80,7 @@ cards:
           buttons_layout: inline
           group:
             - entity: sensor.ecobee_mudroom_sensor_temperature
-              name: Temp
+              name: Room Temp
               icon: mdi:thermometer
               show_name: true
               show_state: true
@@ -91,7 +89,6 @@ cards:
               custom_height: 60
       bottom_layout: rows
     rows: 3.45
-
   - type: markdown
     content: |
       #### mmWave Clear Timing
@@ -116,8 +113,8 @@ cards:
           How long the “stay” area lingers after motion stops (affects how
           quickly the switch reports **cleared**).
 
-          Default is **300** (≈15s). Lower values can be sub-second
-          (e.g. **1 ≈ 50ms**, **20 ≈ 1s**).
+          Default is **300** (≈15s). Lower values can be sub-second (e.g. **1 ≈
+          50ms**, **20 ≈ 1s**).
       - type: tile
         entity: number.downstairs_mudroom_inovelli_presence_mmwaveholdtime
         name: Hold Time (s)
@@ -152,7 +149,6 @@ cards:
         entities:
           - entity: number.downstairs_mudroom_inovelli_presence_mmwavestaylife
             name: Stay Life
-
   - type: markdown
     content: |
       #### mmWave Trigger Boundary (cm)
@@ -244,7 +240,6 @@ cards:
             style: buttons
           - type: numeric-input
         features_position: bottom
-
   - type: markdown
     content: >-
       **MQTT Commands**    <small>
@@ -252,7 +247,6 @@ cards:
       Last command: {% set s =
       states('sensor.downstairs_mudroom_inovelli_presence_mmwave_control_commands')
       %} {{ s if s not in ['unknown','unavailable',''] else '—' }} </small>
-
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
