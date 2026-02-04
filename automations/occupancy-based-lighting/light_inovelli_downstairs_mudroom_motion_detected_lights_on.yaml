@@ -5,7 +5,6 @@ triggers:
     entity_id:
       - binary_sensor.downstairs_mudroom_inovelli_presence_occupancy
       - binary_sensor.downstairs_mudroom_night_light_occupancy
-      - binary_sensor.ecobee_mudroom_sensor_occupancy
     from: null
     to: "on"
 conditions: []
@@ -18,4 +17,3 @@ actions:
     target:
       entity_id: light.downstairs_mudroom_lights
 mode: single
-
