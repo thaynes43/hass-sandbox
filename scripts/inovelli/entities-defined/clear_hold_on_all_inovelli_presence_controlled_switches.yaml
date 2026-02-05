@@ -66,6 +66,12 @@ sequence:
         - switch_name: upstairs_laundry_inovlli_presence
           helper: input_text.upstairs_laundry_led_color
           normal_mode_input_select: input_select.upstairs_laundry_mmwave_normal_mode
+        - switch_name: upstairs_primary_closet_inovelli_presence
+          helper: input_text.upstairs_primary_closet_led_color
+          normal_mode_input_select: input_select.upstairs_primary_closet_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_zse41_primary_closet_door_open_turn_on
+            - automation.light_zse41_primary_closet_door_closed_turn_off
         - switch_name: upstairs_primary_bath_vanity_inovelli_presence
           helper: input_text.upstairs_primary_vanity_led_color
           automation_entity_ids:

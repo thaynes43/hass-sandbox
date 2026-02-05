@@ -1,0 +1,17 @@
+alias: "[Light] [ZSE41] : [Primary Closet] : [Door Closed] : [Turn Off]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - >-
+        binary_sensor.upstairs_primary_closet_open_closed_sensor_window_door_is_open
+    from: null
+    to: "off"
+conditions: []
+actions:
+  - action: light.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: light.upstairs_primary_closet_lights
+mode: single

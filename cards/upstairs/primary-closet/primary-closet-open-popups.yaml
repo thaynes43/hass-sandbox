@@ -1,0 +1,17 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+entity: light.upstairs_primary_closet_lights
+name: Primary Closet
+icon: mdi:hanger
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#upstairs-primary-closet-history"
+grid_options:
+  columns: 6
+  rows: auto
+

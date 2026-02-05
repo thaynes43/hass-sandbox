@@ -19,6 +19,7 @@ triggers:
       - input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode
       - input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
       - input_select.upstairs_primary_water_closet_mmwave_normal_mode
+      - input_select.upstairs_primary_closet_mmwave_normal_mode
     trigger: state
 conditions: []
 actions:
@@ -63,6 +64,8 @@ actions:
                   select.upstairs_primary_bath_shower_inovelli_presence_mmwavecontrolwireddevice
                 {% elif trigger.entity_id == 'input_select.upstairs_primary_water_closet_mmwave_normal_mode' %}
                   select.upstairs_primary_water_closet_inovelli_presence_mmwavecontrolwireddevice
+                {% elif trigger.entity_id == 'input_select.upstairs_primary_closet_mmwave_normal_mode' %}
+                  select.upstairs_primary_closet_inovelli_presence_mmwavecontrolwireddevice
                 {% else %}
                   none
                 {% endif %}

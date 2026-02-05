@@ -1,0 +1,16 @@
+alias: "[Light] [ZSE41] : [Storage] : [Door Open] : [Turn On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.basement_storage_open_closed_sensor_window_door_is_open
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data: {}
+    target:
+      entity_id: light.basement_storage_inovelli_dimmer
+mode: single
