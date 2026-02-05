@@ -51,6 +51,27 @@ cards:
               content_layout: icon-top
               custom_height: 60
               show_icon: true
+        - name: Media
+          buttons_layout: inline
+          group:
+            - entity: media_player.lg_webos_tv_oled83g4wua
+              name: TV
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: assist_satellite.movie_room_voice_assist_satellite
+              name: Voice
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
         - name: Lights
           buttons_layout: inline
           group:
@@ -78,7 +99,7 @@ cards:
     show_state: true
     show_attribute: false
     attribute: friendly_name
-    rows: 2.4
+    rows: 3.6
   - type: history-graph
     entities:
       - entity: binary_sensor.basement_movie_inovelli_presence_occupancy
@@ -89,6 +110,8 @@ cards:
         name: Recessed
       - entity: light.basement_movie_room_ambient_lighting
         name: Ambient
+      - entity: media_player.lg_webos_tv_oled83g4wua
+        name: TV
     hours_to_show: 12
     grid_options:
       columns: full
@@ -294,3 +317,82 @@ cards:
     modules:
       - my_module
     show_header_toggle: false
+  - type: markdown
+    content: |
+      ## TV Auto-Off (No Occupancy)
+
+      - **Pending (toggle off to cancel)**: turns on automatically when the room first becomes empty (with TV on). Toggle it **off** to cancel the current countdown.
+      - **Automation**: permanent enable/disable for the whole workflow (turn it off if sensors are unreliable).
+      - **Shutoff Delay**: how long the room must be empty *while the TV is on* before shutdown.
+      - The last **5 minutes** are a countdown announced on **Movie Room Voice** (every minute), then the TV turns off.
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: TV Auto-Off — Controls
+          buttons_layout: inline
+          group:
+            - entity: input_boolean.basement_movie_room_tv_auto_off_enabled
+              name: Pending (toggle off to cancel)
+              icon: mdi:television-off
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: toggle
+              hold_action:
+                action: more-info
+            - entity: input_select.basement_movie_room_tv_auto_off_delay
+              sub_button_type: select
+              name: Shutoff Delay
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:timer-outline
+              content_layout: icon-left
+              custom_height: 60
+        - name: TV Auto-Off — Automation
+          buttons_layout: inline
+          group:
+            - entity: automation.media_basement_movie_room_no_occupancy_tv_off
+              name: TV Auto-Off Automation
+              icon: mdi:robot
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: toggle
+              hold_action:
+                action: more-info
+        - name: TV Auto-Off — Status
+          buttons_layout: inline
+          group:
+            - entity: media_player.lg_webos_tv_oled83g4wua
+              name: TV
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: assist_satellite.movie_room_voice_assist_satellite
+              name: Voice
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+      bottom_layout: rows
+    bottom_layout: rows
+    rows: 3.45
+    modules:
+      - my_module

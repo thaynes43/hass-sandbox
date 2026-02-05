@@ -1,0 +1,27 @@
+---
+description: Require explicit Repo YAML vs Live HA change scope labeling
+alwaysApply: true
+---
+
+# Home Assistant changes: scope + copy/paste communication (required)
+
+When making any change in this repo or in Home Assistant, you MUST clearly state the scope using **one** of the following exact phrases as the first line of the response:
+
+- **Repo YAML Only Updated - You copy paste**
+- **Repo YAML & Live HA Updated**
+
+## What to include (always)
+
+Immediately after the scope line, include two bullets:
+
+- **Copy/paste required**: list the exact file path(s) the user should copy/paste into the HA UI (usually `cards/**` YAML).
+- **Reference only (repo)**: list any YAML files added/updated that are kept in git for review/backups (usually `automations/**`, `scripts/**`).
+
+If **Live HA** was updated, also include:
+
+- **Live HA entities updated**: list entity_id(s) created/updated/disabled (helpers, automations, scripts) so the user can verify in UI and traces.
+
+## Never ambiguous
+
+- Do **not** imply HA was updated unless you actually updated it via tools.
+- If you only changed repo YAML and plan to update HA later, say so explicitly and stop.

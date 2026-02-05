@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.upstairs_primary_closet_lights
 name: Primary Closet
-icon: mdi:hanger
+icon: mdi:clipboard-text-clock-outline
 button_action:
   tap_action:
     action: navigate
@@ -14,4 +14,3 @@ button_action:
 grid_options:
   columns: 6
   rows: auto
-
