@@ -15,4 +15,3 @@ actions:
     target:
       entity_id: input_boolean.upstairs_primary_bathroom_use_shower_delay
 mode: restart
-

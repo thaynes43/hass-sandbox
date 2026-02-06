@@ -19,6 +19,9 @@ Goal: consistent patterns, stable behavior, fewer edge cases.
 - **Mudroom**
   - Add lux gating using the night light lux sensor to avoid turning lights on when it’s already bright.
 
+- **Downstairs Bathroom**
+  - Need to turn off the other lights using the presence sensor
+
 - **Entrance**
   - Standard mmWave occupancy on/off.
   - Consider lux gating due to spill light from mudroom/kitchen.
@@ -53,6 +56,7 @@ Goal: consistent patterns, stable behavior, fewer edge cases.
 
 - **Primary bedroom suite**
   - Closet is good; “Clofffice” needs occupancy sensing plan (FP2/FP300?).
+  - Might want lux for the primary bath vanity as mornings are very bright
 
 ---
 
