@@ -104,31 +104,8 @@ cards:
               content_layout: icon-top
               custom_height: 60
               scrolling_effect: false
-        - name: Config Drop Down
-          buttons_layout: inline
-          group:
-            - entity: input_select.downstairs_mudroom_mmwave_normal_mode
-              sub_button_type: select
-              name: mmWave Mode
-              icon: mdi:motion-sensor
-              show_name: true
-              show_state: true
-              show_attribute: false
-              scrolling_effect: false
-              content_layout: icon-left
-              custom_height: 60
-            - entity: input_select.downstairs_mudroom_occupancy_off_delay
-              sub_button_type: select
-              name: Off Delay
-              icon: mdi:timer-outline
-              show_name: true
-              show_state: true
-              show_attribute: false
-              scrolling_effect: false
-              content_layout: icon-left
-              custom_height: 60
       bottom_layout: rows
-    rows: 4.5
+    rows: 3.45
     modules:
       - my_module
     show_header_toggle: false
@@ -199,6 +176,51 @@ cards:
       <ha-icon icon="mdi:progress-clock"></ha-icon> **Total Off Delay:** ≈ {{ mmwave_delay_s | round(1) }}s + {{ (auto_delay_s | round(1)) if auto_delay_s is not none else '—' }}s{% if total_s is not none %} = {{ total_s | round(1) }}s{% endif %}
 
       <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the occupancy sensor won’t report **off** until the switch’s mmWave clear delay elapses. The automation delay then starts *after* that.
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Automations
+          buttons_layout: inline
+          group:
+            - entity: automation.light_inovelli_downstairs_mudroom_motion_detected_lights_on
+              name: Motion Turns On Lights
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: automation.light_inovelli_downstairs_mudroom_motion_cleared_lights_off
+              name: No Motion Turns Off Lights
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Config Drop Down
+          buttons_layout: inline
+          group:
+            - entity: input_select.downstairs_mudroom_mmwave_normal_mode
+              sub_button_type: select
+              name: MmWave Control Mode
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:format-list-bulleted
+              content_layout: icon-left
+              custom_height: 60
+            - entity: input_select.downstairs_mudroom_occupancy_off_delay
+              sub_button_type: select
+              name: Zone Off Delay
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:timer-outline
+              content_layout: icon-left
+              custom_height: 60
+      bottom_layout: rows
+    bottom_layout: rows
+    rows: "2.4"
 
   - type: custom:mod-card
     card:
