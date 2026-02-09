@@ -14,14 +14,36 @@ When making any change in this repo or in Home Assistant, you MUST clearly state
 
 Immediately after the scope line, include two bullets:
 
-- **Copy/paste required**: list the exact file path(s) the user should copy/paste into the HA UI (usually `cards/**` YAML).
-- **Reference only (repo)**: list any YAML files added/updated that are kept in git for review/backups (usually `automations/**`, `scripts/**`).
+- **Copy/paste required**: list the exact file path(s) the user must copy/paste into the HA UI (or Lovelace editor) for changes to take effect.
+  - If **nothing** needs to be pasted, write `none`.
+  - **Rule**: If something was updated/created **live in HA**, it must **not** be listed here.
+- **Reference only (repo)**: list any YAML files added/updated in git for review/backups (even if you also applied the same changes live in HA).
+  - If nothing was changed in git, write `none`.
 
 If **Live HA** was updated, also include:
 
 - **Live HA entities updated**: list entity_id(s) created/updated/disabled (helpers, automations, scripts) so the user can verify in UI and traces.
 
+## Default assumption (dashboards/cards)
+
+- Assume **all dashboard/Lovelace YAML** changes require **copy/paste** (e.g., `cards/**`) unless you explicitly updated the dashboard via HA tooling.
+- Therefore, when you edit `cards/**`, it will almost always appear under **Copy/paste required**.
+
+## Dependent HA changes must be applied as a set (or not at all)
+
+When a change spans multiple dependent pieces (common for **helpers + automations + scripts + switch-button mappings**):
+
+- **Preferred**: apply **all** dependent changes live in HA in the same session (so there’s no ambiguity).
+- **Otherwise**: apply **none** of them live and instead list **all** required repo paths under **Copy/paste required**, with a short note that the changes are interdependent and must be pasted together.
+- **Avoid partial rollout** (some in HA, some only in repo). If you must do a partial rollout (rare), you MUST explicitly call it out with:
+  - what is already live in HA
+  - what still requires copy/paste
+  - what would be broken/incomplete until the remaining pieces are applied
+
+If you’re unsure how to apply something live in HA, it’s OK to choose the “apply none live” path and have the user copy/paste **the whole set**.
+
 ## Never ambiguous
 
 - Do **not** imply HA was updated unless you actually updated it via tools.
 - If you only changed repo YAML and plan to update HA later, say so explicitly and stop.
+- Never list a file under **Copy/paste required** if the same change has already been applied live in HA.

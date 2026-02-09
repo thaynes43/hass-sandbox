@@ -13,3 +13,5 @@ use_blueprint:
           normal_mode_input_select: input_select.downstairs_bathroom_vanity_mmwave_normal_mode
           hold_color: input_text.inovelli_manual_hold
           prev_led_color_helper: input_text.downstairs_bathroom_vanity_led_color
+          automation_entity_ids:
+            - automation.light_inovelli_downstairs_bathroom_motion_cleared_non_vanity_lights_off
