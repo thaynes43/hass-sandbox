@@ -1,0 +1,37 @@
+---
+description: Require docs/button-mappings.md updates when switch mappings change
+alwaysApply: true
+---
+
+# Button mappings doc sync (required)
+
+Whenever you change **button behavior** for any smart switch / scene controller, you MUST update `docs/button-mappings.md` in the same session.
+
+This includes changes in (but not limited to):
+
+- `automations/switch-buttons/**`
+  - `automations/switch-buttons/inovelli-button-mapping/**`
+  - `automations/switch-buttons/zen32-button-mapping/**`
+  - `automations/switch-buttons/zen37-button-mapping/**`
+- Any blueprint inputs that change mapping semantics:
+  - `blueprints/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml`
+  - `blueprints/ZEN32-control-track.yaml`
+  - `blueprints/Zen37-ZwaveJS-blueprint.yaml`
+
+## What “update the doc” means
+
+- Add/update the relevant per-device table rows (1x/2x/3x) so the doc matches current behavior.
+- Update the **Source automation** path(s) referenced in the doc.
+- If a device moves from “unmapped” → “mapped” (or vice-versa), you MUST move it between sections:
+  - Remove it from “Missing Mapping Automation” placeholders
+  - Add it under the appropriate “Current Mappings” section
+
+## Why this rule exists
+
+`docs/button-mappings.md` is both:
+
+- the **requirements doc** for future work, and
+- the canonical **family-facing reference** for what buttons do.
+
+So it must always track reality whenever mappings change.
+

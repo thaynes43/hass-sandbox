@@ -239,6 +239,24 @@ The following smart switches are currently configured for AUX companions (so you
 | Config (either switch) |  | **Toggle hold (group)** |  |  |
 | AUX (placeholder) |  |  |  | TODO |
 
+### Downstairs — Entrance — Inovelli (Presence)
+
+- **Type**: Inovelli Blue (presence)
+- **HA entity**: `light.downstairs_entrance_inovelli_presence`
+- **SwitchType (HA)**: `select.downstairs_entrance_inovelli_presence_switchtype` = `Aux Switch`
+- **Source automation**: `automations/switch-buttons/inovelli-button-mapping/switch_inovelli_blue_downstairs_entrance_press_or_hold_switch_mappings.yaml`
+
+| Button | 1x | 2x | 3x | Notes |
+|---|---|---|---|---|
+| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
+| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Config | **All Off (Entrance + Mudroom + Bathroom)** → `light.downstairs_entrance_lights`, `light.downstairs_mudroom_lights`, `light.downstairs_bathroom_vanity_inovelli_presence`, `light.downstairs_bathroom_fan_light_inovelli_on_off`, `light.downstairs_bathroom_shower_inovelli_on_off` |  |  | Config 1x is mapped here |
+
+**AUX companion switches (requirements)**
+
+- **AUX count**: TODO (>= 1)
+- **AUX behavior**: TODO
+
 ### Downstairs — Mudroom — Inovelli (Presence)
 
 - **Type**: Inovelli Blue (presence)
@@ -570,7 +588,6 @@ For each switch below, fill in desired behavior; then we’ll implement a matchi
 
 | HA entity (light.*) | Type (inferred) | Config 1x | Config 2x | Config 3x | Up 1x | Up 2x | Up 3x | Down 1x | Down 2x | Down 3x | SwitchType (HA) | AUX companions (requirements) |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `light.downstairs_entrance_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
 | `light.downstairs_kitchen_sink_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
 | `light.downstairs_kitchen_chaos_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  |  |  |  |
 | `light.downstairs_foyer_chaos_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  |  |  |  |

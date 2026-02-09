@@ -1,0 +1,19 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Downstairs] [Entrance] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 9309142cc63d3e1825383db6698eb22c
+    config_single:
+      - action: light.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id:
+            - light.downstairs_entrance_lights
+            - light.downstairs_mudroom_lights
+            - light.downstairs_bathroom_vanity_inovelli_presence
+            - light.downstairs_bathroom_fan_light_inovelli_on_off
+            - light.downstairs_bathroom_shower_inovelli_on_off
