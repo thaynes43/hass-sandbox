@@ -1,0 +1,57 @@
+alias: >-
+  [Switch] [ZEN32] : [Downstairs] [Livingroom] : [Press or Hold] : [Scene
+  Mapping]
+description: ""
+use_blueprint:
+  path: rwalker777/ZEN32-control-track.yaml
+  input:
+    zooz_switch: 592590e4e1e69e85784d22adbbf75673
+    input_entity0: light.livingroom_fan_light
+    scene_5:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.livingroom_fan_light
+    scene_53:
+      - action: script.zen32_hard_reset
+        metadata: {}
+        data:
+          power_switch_entity: switch.downstairs_livingroom_scene_controller
+          relay_control_select_entity: select.downstairs_livingroom_scene_controller_relay_control
+          scene_control_select_entity: select.downstairs_livingroom_scene_controller_scene_control_relay
+    input_entity1: fan.livingroom_fan_fan
+    scene_1:
+      - action: fan.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: fan.livingroom_fan_fan
+    input_entity2: fan.livingroom_fan_fan
+    scene_2:
+      - action: fan.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id: fan.livingroom_fan_fan
+    input_entity3: cover.livingroom_shades
+    scene_3:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_family_room_open
+    input_entity4: cover.livingroom_shades
+    scene_4:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_family_room_close
+    scene_32:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_family_room_tilt_open
+    p19_relay_control: "0"

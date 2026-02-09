@@ -83,6 +83,69 @@ cards:
 
   - type: markdown
     content: |
+      ## Inovelli Parameters
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Inovelli mmWave — Detection
+          buttons_layout: inline
+          group:
+            - entity: select.upstairs_laundry_inovlli_presence_mmwavedetectsensitivity
+              sub_button_type: select
+              name: Sensitivity
+              icon: mdi:radar
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+            - entity: select.upstairs_laundry_inovlli_presence_mmwavedetecttrigger
+              sub_button_type: select
+              name: Trigger Delay
+              icon: mdi:timer-outline
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+        - name: Switch Modes
+          buttons_layout: inline
+          group:
+            - entity: select.upstairs_laundry_inovlli_presence_outputmode
+              icon: mdi:light-switch
+              show_icon: true
+              show_state: true
+              show_name: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+              hold_action:
+                action: none
+              double_tap_action:
+                action: none
+              sub_button_type: default
+            - entity: select.upstairs_laundry_inovlli_presence_smartbulbmode
+              icon: mdi:lightbulb-outline
+              show_icon: true
+              show_state: true
+              show_name: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+              hold_action:
+                action: none
+              double_tap_action:
+                action: none
+              sub_button_type: default
+      bottom_layout: rows
+    rows: 2.4
+
+  - type: markdown
+    content: |
       #### mmWave Clear Timing
   - type: grid
     columns: 2

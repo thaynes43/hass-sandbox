@@ -1,0 +1,122 @@
+alias: Basement Movie Room ZEN37 Scene Controller
+description: ""
+use_blueprint:
+  path: rwalker777/Zen37-ZwaveJS-blueprint.yaml
+  input:
+    zen37lr:
+      - ac1f3efde8378e2773d9c677b59494ea
+    button_1_1_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_movie_room_lights
+    button_1_2_tap:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 100
+        target:
+          entity_id: light.basement_movie_room_lights
+    button_1_3_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_rumpus_room_lights
+    button_1_hold:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_1_held
+        action: input_boolean.turn_on
+        data: {}
+    button_1_released:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_1_held
+        action: input_boolean.turn_off
+        data: {}
+    button_2_1_tap:
+      - data:
+          lights_to_control: light.basement_movie_room_lights
+          brightness: >-
+            {{ state_attr('light.basement_movie_room_lights', 'brightness') |
+            default(255) }}
+        action: script.toggle_hue_colors
+    button_2_2_tap:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          rgb_color:
+            - 255
+            - 0
+            - 0
+          brightness_pct: 15
+        target:
+          entity_id: light.basement_movie_room_lights
+    button_2_3_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_concessions_lights, light.basement_hall_lights
+    button_2_hold:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_2_held
+        action: input_boolean.turn_on
+        data: {}
+    button_2_released:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_2_held
+        action: input_boolean.turn_off
+        data: {}
+    button_3_1_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_movie_room_ambient_lighting
+    button_3_2_tap:
+      - action: number.set_value
+        data:
+          value: >-
+            {{ states('number.movie_room_breeze_target_temperature') | float - 1
+            }}
+        target:
+          entity_id: number.movie_room_breeze_target_temperature
+    button_3_hold:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_3_held
+        action: input_boolean.turn_on
+        data: {}
+    button_3_released:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_3_held
+        action: input_boolean.turn_off
+        data: {}
+    button_4_1_tap:
+      - data:
+          select_entities: >-
+            select.basement_movie_hue_gradient_65_gradient_scene,
+            select.basement_movie_hue_gradient_75_gradient_scene,
+            select.basement_movie_hue_left_floor_lamp_gradient_scene,
+            select.basement_movie_hue_right_floor_lamp_gradient_scene
+          light_entities: light.basement_movie_hue_play_01, light.basement_movie_hue_play_02
+        action: script.cycle_gradient_scene_using_same_light_color
+    button_4_2_tap:
+      - action: number.set_value
+        data:
+          value: >-
+            {{ states('number.movie_room_breeze_target_temperature') | float + 1
+            }}
+        target:
+          entity_id: number.movie_room_breeze_target_temperature
+    button_4_hold:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_4_held
+        action: input_boolean.turn_on
+        data: {}
+    button_4_released:
+      - target:
+          entity_id: input_boolean.movie_room_zen37_button_4_held
+        action: input_boolean.turn_off
+        data: {}

@@ -1,0 +1,55 @@
+alias: "[Upstairs] [White Room] [ZEN32] [Scene Controller Mapping]"
+description: ""
+use_blueprint:
+  path: rwalker777/ZEN32-control-track.yaml
+  input:
+    zooz_switch: c1269d85f0877609808405a58c0cb03e
+    input_entity0: light.white_room_fan_light
+    scene_5:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.white_room_fan_light
+    scene_53:
+      - action: script.zen32_hard_reset
+        metadata: {}
+        data:
+          power_switch_entity: switch.upstairs_white_room_scene_controller
+          relay_control_select_entity: select.upstairs_white_room_scene_controller_relay_control
+          scene_control_select_entity: select.upstairs_white_room_scene_controller_scene_control_relay
+    input_entity1: fan.white_room_fan_fan
+    scene_1:
+      - action: fan.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: fan.white_room_fan_fan
+    input_entity2: fan.white_room_fan_fan
+    scene_2:
+      - action: fan.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id: fan.white_room_fan_fan
+    input_entity3: cover.white_room_shades
+    scene_3:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_white_room_tilt_open
+    input_entity4: cover.white_room_shades
+    scene_4:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_white_room_close
+    scene_32:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_white_room_open
+    p19_relay_control: "0"

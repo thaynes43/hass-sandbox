@@ -1,0 +1,100 @@
+alias: "[Upstairs] [Cloffice] [ZEN32] [Scene Controller Mapping]"
+description: ""
+use_blueprint:
+  path: rwalker777/ZEN32-control-track.yaml
+  input:
+    zooz_switch: 3ee123d66acd28331319f3e3eecebc06
+    p19_relay_control: "0"
+    input_entity0: light.upstairs_primary_cloffice_lights
+    scene_5:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.upstairs_primary_cloffice_lights
+    scene_52:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          brightness_pct: 100
+          color_temp_kelvin: 2823
+        target:
+          entity_id: light.upstairs_primary_cloffice_lights
+    scene_53:
+      - action: script.zen32_hard_reset
+        metadata: {}
+        data:
+          power_switch_entity: switch.upstairs_cloffice_scene_controller
+          relay_control_select_entity: select.upstairs_cloffice_scene_controller_relay_control
+          scene_control_select_entity: select.upstairs_cloffice_scene_controller_scene_control_relay
+    scene_5h:
+      - action: script.single_button_dimming_start
+        metadata: {}
+        data:
+          lights_to_control: light.upstairs_primary_cloffice_lights
+    scene_5r:
+      - action: script.single_button_dimming_stop
+        metadata: {}
+        data:
+          lights_to_control: light.upstairs_primary_cloffice_lights
+    track_relay0: "99"
+    scene_1:
+      - action: light.toggle
+        metadata: {}
+        data:
+          brightness_pct: 20
+        target:
+          entity_id: light.upstairs_primary_bed_nightstand_hue_bulb_kellie
+    scene_12:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.den_hue_iris_light
+    input_entity1: light.den_hue_iris_light
+    scene_2:
+      - action: light.toggle
+        metadata: {}
+        data:
+          brightness_pct: 20
+        target:
+          entity_id: light.upstairs_primary_bed_nightstand_hue_bulb_tom
+    scene_22:
+      - data:
+          lights_to_control: light.den_hue_iris_light
+          brightness: 100
+        action: script.toggle_hue_colors
+    input_entity2: light.den_hue_iris_light
+    scene_3:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.upstairs_gateway_cloffice_tilt_open
+    scene_32:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.upstairs_gateway_cloffice_open
+    scene_4:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.upstairs_gateway_cloffice_close
+    scene_42:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.upstairs_gateway_cloffice_privacy
+    input_entity3: cover.cloffice_shade_combined
+    input_entity4: cover.cloffice_shade_combined
+    off_color4: "4"
+    off_color3: "4"
+    off_state3: "3"
+    off_state4: "3"
+    off_state0: "3"
+    off_state1: "3"
+    on_color4: "4"

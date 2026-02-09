@@ -1,0 +1,84 @@
+alias: "[Switch] [ZEN32] : [Upstairs] [Pink Room] : [Press or Hold] : [Scene Mapping]"
+description: ""
+use_blueprint:
+  path: rwalker777/ZEN32-control-track.yaml
+  input:
+    zooz_switch: a7c10c71aedd3290040c29a4834a8125
+    input_entity0: light.pink_room_fan_light
+    scene_5:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.pink_room_fan_light
+    scene_52:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.upstairs_pink_room_nightstand_hue_bulb_penelope
+    scene_53:
+      - action: script.zen32_hard_reset
+        metadata: {}
+        data:
+          power_switch_entity: switch.upstairs_pink_room_scene_controller
+          relay_control_select_entity: select.upstairs_pink_room_scene_controller_relay_control
+          scene_control_select_entity: select.upstairs_pink_room_scene_controller_scene_control_relay
+    input_entity1: fan.pink_room_fan_fan
+    scene_1:
+      - action: fan.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: fan.pink_room_fan_fan
+    input_entity2: fan.pink_room_fan_fan
+    scene_2:
+      - action: fan.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id: fan.pink_room_fan_fan
+    input_entity3: cover.pink_room_shades
+    scene_3:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_pink_room_tilt_open
+    input_entity4: cover.pink_room_shades
+    scene_4:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_pink_room_close
+    scene_32:
+      - action: scene.turn_on
+        metadata: {}
+        data: {}
+        target:
+          entity_id: scene.laundry_gateway_pink_room_open
+    p19_relay_control: "0"
+    off_brightness0: "2"
+    off_brightness1: "2"
+    off_brightness2: "2"
+    off_brightness3: "2"
+    off_brightness4: "2"
+    track_relay0: "99"
+    on_state0: "3"
+    on_state1: "99"
+    on_brightness0: "2"
+    on_brightness1: "2"
+    on_brightness2: "2"
+    on_brightness3: "2"
+    on_brightness4: "2"
+    off_state0: "99"
+    off_color0: "4"
+    off_color1: "4"
+    off_color2: "4"
+    off_color3: "4"
+    off_color4: "4"
+    on_color4: "1"
+    on_color3: "1"
+    on_color2: "1"
+    on_color1: "1"

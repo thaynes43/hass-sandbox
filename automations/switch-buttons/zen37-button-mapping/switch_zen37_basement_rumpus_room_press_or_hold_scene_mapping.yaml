@@ -1,0 +1,137 @@
+alias: >-
+  [Switch] [Zen37] : [Basement] [Rumpus Room] : [Press or Hold] : [Scene
+  Mapping]
+description: ""
+use_blueprint:
+  path: rwalker777/Zen37-ZwaveJS-blueprint.yaml
+  input:
+    zen37lr:
+      - 3ecfdd63b4446023fbf5c24114b03ffb
+    button_1_1_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_rumpus_room_lights
+    button_1_2_tap:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 100
+        target:
+          entity_id: light.basement_rumpus_room_lights
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 100
+        target:
+          entity_id: light.basement_rumpus_room_lamp
+    button_1_hold:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_1_held
+        action: input_boolean.turn_on
+        data: {}
+    button_1_released:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_1_held
+        action: input_boolean.turn_off
+        data: {}
+    button_2_1_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_rumpus_room_lamp
+    button_2_2_tap:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 50
+        target:
+          entity_id: light.basement_rumpus_room_lights
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 50
+        target:
+          entity_id: light.basement_rumpus_room_lamp
+    button_2_3_tap:
+      - data:
+          target:
+            entity_id:
+              - light.basement_rumpus_hue_recessed_01
+              - light.basement_rumpus_hue_recessed_02
+              - light.basement_rumpus_hue_recessed_03
+              - light.basement_rumpus_hue_recessed_04
+              - light.basement_rumpus_hue_recessed_05
+              - light.basement_rumpus_hue_recessed_06
+              - light.basement_rumpus_hue_recessed_07
+              - light.basement_rumpus_hue_recessed_08
+              - light.basement_rumpus_lamp_hue_ceiling_bulb
+              - light.basement_rumpus_lamp_hue_desk_bulb
+          brightness: >-
+            {{ state_attr('light.basement_rumpus_room_lights', 'brightness') |
+            default(255) | int }}
+        action: script.toggle_hue_colors_for_multiple_targets
+    button_2_hold:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_2_held
+        action: input_boolean.turn_on
+        data: {}
+    button_2_released:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_2_held
+        action: input_boolean.turn_off
+        data: {}
+    button_3_1_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_concessions_lights
+    button_3_2_tap:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 100
+        target:
+          entity_id: light.basement_concessions_lights
+    button_3_hold:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_3_held
+        action: input_boolean.turn_on
+        data: {}
+    button_3_released:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_3_held
+        action: input_boolean.turn_off
+        data: {}
+    button_4_1_tap:
+      - action: light.toggle
+        metadata: {}
+        data: {}
+        target:
+          entity_id: light.basement_hall_lights
+    button_4_2_tap:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          kelvin: 2750
+          brightness_pct: 100
+        target:
+          entity_id: light.basement_hall_lights
+    button_4_hold:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_4_held
+        action: input_boolean.turn_on
+        data: {}
+    button_4_released:
+      - target:
+          entity_id: input_boolean.rumpus_room_zen37_button_4_held
+        action: input_boolean.turn_off
+        data: {}
