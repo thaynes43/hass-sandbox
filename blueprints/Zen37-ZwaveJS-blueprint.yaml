@@ -1,7 +1,6 @@
 blueprint:
   name: "ZEN37 Z-Wave JS Scene Controller"
-  description: Create automations for Zooz Zen37 800LR scene controller using Z-WAVE-JS integration. Credit goes to rwalker777, copied into this repo for context.
-  domain: automation
+  description: Create automations for Zooz Zen37 800LR scene controller using Z-WAVE-JS integration. Credit goes to https://github.com/rwalker777/Zen32-HA-Blueprint/blob/8e5be8d94e83973cb9b1435019d6b30a18fd5cca/Zen37-ZwaveJS-blueprint.yaml
   input:
     zen37lr:
       name: Zooz ZEN37 wall remote

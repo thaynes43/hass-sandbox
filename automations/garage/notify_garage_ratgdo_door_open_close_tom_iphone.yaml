@@ -1,0 +1,35 @@
+alias: "[Notify] : [Garage] : [RATGDO] : [Door Open/Close] : [Tom iPhone]"
+description: "Send Tom a push notification any time either RATGDO garage door reports open or closed."
+triggers:
+  - trigger: state
+    entity_id:
+      - cover.ratgdov25i_4a0325_door
+      - cover.ratgdov25i_dbfa50_door
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none and trigger.to_state.state in ['open','closed'] }}
+actions:
+  - action: notify.mobile_app_toms_iphone_15_pro
+    data:
+      title: "Garage Door {{ 'Opened' if trigger.to_state.state == 'open' else 'Closed' }}"
+      message: >-
+        {{ (trigger.to_state.attributes.friendly_name | default(trigger.entity_id)) }} is now
+        {{ trigger.to_state.state }} (was {{ trigger.from_state.state if trigger.from_state is
+        not none else 'unknown' }}).
+  - action: notify.mobile_app_toms_iphone_air
+    data:
+      title: "Garage Door {{ 'Opened' if trigger.to_state.state == 'open' else 'Closed' }}"
+      message: >-
+        {{ (trigger.to_state.attributes.friendly_name | default(trigger.entity_id)) }} is now
+        {{ trigger.to_state.state }} (was {{ trigger.from_state.state if trigger.from_state is
+        not none else 'unknown' }}).
+  - action: notify.mobile_app_kellies_iphone_air
+    data:
+      title: "Garage Door {{ 'Opened' if trigger.to_state.state == 'open' else 'Closed' }}"
+      message: >-
+        {{ (trigger.to_state.attributes.friendly_name | default(trigger.entity_id)) }} is now
+        {{ trigger.to_state.state }} (was {{ trigger.from_state.state if trigger.from_state is
+        not none else 'unknown' }}).
+mode: queued
+max: 10
