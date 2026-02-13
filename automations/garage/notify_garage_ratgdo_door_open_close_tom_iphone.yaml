@@ -5,31 +5,50 @@ triggers:
     entity_id:
       - cover.ratgdov25i_4a0325_door
       - cover.ratgdov25i_dbfa50_door
+    to: open
+  - trigger: state
+    entity_id:
+      - cover.ratgdov25i_4a0325_door
+      - cover.ratgdov25i_dbfa50_door
+    to: closed
 conditions:
   - condition: template
     value_template: >-
-      {{ trigger.to_state is not none and trigger.to_state.state in ['open','closed'] }}
+      {{
+        trigger.from_state is not none
+        and trigger.to_state is not none
+        and trigger.from_state.state != trigger.to_state.state
+      }}
 actions:
+  - variables:
+      door_name: "{{ trigger.to_state.attributes.friendly_name | default(trigger.entity_id) }}"
+      to_state: "{{ trigger.to_state.state }}"
+      from_stable: >-
+        {% set to = trigger.to_state.state %}
+        {% set frm = trigger.from_state.state if trigger.from_state is not none else 'unknown' %}
+        {% if frm in ['open','closed'] %}
+          {{ frm }}
+        {% elif to == 'open' %}
+          closed
+        {% elif to == 'closed' %}
+          open
+        {% else %}
+          {{ frm }}
+        {% endif %}
   - action: notify.mobile_app_toms_iphone_15_pro
     data:
-      title: "Garage Door {{ 'Opened' if trigger.to_state.state == 'open' else 'Closed' }}"
+      title: "{{ door_name }} {{ 'Opened' if to_state == 'open' else 'Closed' }}"
       message: >-
-        {{ (trigger.to_state.attributes.friendly_name | default(trigger.entity_id)) }} is now
-        {{ trigger.to_state.state }} (was {{ trigger.from_state.state if trigger.from_state is
-        not none else 'unknown' }}).
+        {{ door_name }} is now {{ to_state }} (was {{ from_stable }}).
   - action: notify.mobile_app_toms_iphone_air
     data:
-      title: "Garage Door {{ 'Opened' if trigger.to_state.state == 'open' else 'Closed' }}"
+      title: "{{ door_name }} {{ 'Opened' if to_state == 'open' else 'Closed' }}"
       message: >-
-        {{ (trigger.to_state.attributes.friendly_name | default(trigger.entity_id)) }} is now
-        {{ trigger.to_state.state }} (was {{ trigger.from_state.state if trigger.from_state is
-        not none else 'unknown' }}).
+        {{ door_name }} is now {{ to_state }} (was {{ from_stable }}).
   - action: notify.mobile_app_kellies_iphone_air
     data:
-      title: "Garage Door {{ 'Opened' if trigger.to_state.state == 'open' else 'Closed' }}"
+      title: "{{ door_name }} {{ 'Opened' if to_state == 'open' else 'Closed' }}"
       message: >-
-        {{ (trigger.to_state.attributes.friendly_name | default(trigger.entity_id)) }} is now
-        {{ trigger.to_state.state }} (was {{ trigger.from_state.state if trigger.from_state is
-        not none else 'unknown' }}).
+        {{ door_name }} is now {{ to_state }} (was {{ from_stable }}).
 mode: queued
 max: 10
