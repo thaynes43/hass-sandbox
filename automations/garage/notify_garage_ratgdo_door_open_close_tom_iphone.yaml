@@ -25,30 +25,29 @@ actions:
   - variables:
       door_name: "{{ trigger.to_state.attributes.friendly_name | default(trigger.entity_id) }}"
       to_state: "{{ trigger.to_state.state }}"
-      to_state_display: "{{ trigger.to_state.state | capitalize }}"
       from_state_display: >-
         {% set frm = trigger.from_state.state if trigger.from_state is not none else 'unknown' %}
         {% if frm == 'opening' %}
-          {{ 'open' | capitalize }}
+          closed
         {% elif frm == 'closing' %}
-          {{ 'closed' | capitalize }}
+          open
         {% else %}
-          {{ frm | capitalize }}
+          {{ frm }}
         {% endif %}
   - action: notify.mobile_app_toms_iphone_15_pro
     data:
       title: "{{ door_name }} {{ 'Opened' if to_state == 'open' else 'Closed' }}"
       message: >-
-        {{ door_name }} is now {{ to_state_display }} (was {{ from_state_display }}).
+        {{ door_name }} is now {{ to_state }} (was {{ from_state_display }}).
   - action: notify.mobile_app_toms_iphone_air
     data:
       title: "{{ door_name }} {{ 'Opened' if to_state == 'open' else 'Closed' }}"
       message: >-
-        {{ door_name }} is now {{ to_state_display }} (was {{ from_state_display }}).
+        {{ door_name }} is now {{ to_state }} (was {{ from_state_display }}).
   - action: notify.mobile_app_kellies_iphone_air
     data:
       title: "{{ door_name }} {{ 'Opened' if to_state == 'open' else 'Closed' }}"
       message: >-
-        {{ door_name }} is now {{ to_state_display }} (was {{ from_state_display }}).
+        {{ door_name }} is now {{ to_state }} (was {{ from_state_display }}).
 mode: queued
 max: 10
