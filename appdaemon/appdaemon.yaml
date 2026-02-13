@@ -1,0 +1,22 @@
+# AppDaemon main configuration - local dev
+# Production: injected via Kubernetes ExternalSecret. Never deployed.
+# See: https://appdaemon.readthedocs.io/en/latest/CONFIGURE.html
+
+appdaemon:
+  time_zone: America/New_York
+  latitude: 0
+  longitude: 0
+  elevation: 0
+
+plugins:
+  HASS:
+    type: hass
+    ha_url: https://hass.haynesops.com/
+    token: !secret token
+    ws_max_msg_size: 8388608
+
+http:
+  url: http://0.0.0.0:5050
+
+api:
+admin:

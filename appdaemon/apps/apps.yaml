@@ -1,0 +1,9 @@
+# AppDaemon app configuration
+# See: https://appdaemon.readthedocs.io/en/latest/APPGUIDE.html#configuration-of-apps
+#
+# Copy this file to your AppDaemon config dir (e.g. addon_configs/a0d7b954_appdaemon/apps/)
+# and ensure appdaemon.yaml points to the correct apps directory.
+
+environment_test:
+  module: environment_test
+  class: EnvironmentTest

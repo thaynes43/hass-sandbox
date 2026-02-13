@@ -1,0 +1,137 @@
+---
+description: How to use AppDaemon vs Home Assistant YAML; deploy procedure to production
+alwaysApply: true
+---
+
+# AppDaemon vs Home Assistant YAML
+
+This rule guides when to use **AppDaemon** (Python apps) vs **Home Assistant YAML** (automations, scripts, helpers), and **how to deploy** AppDaemon changes to production.
+
+## Right tool for the job
+
+From `docs/roadmap.md`:
+
+- **HA YAML**: Keep simple glue — automations, scripts, helpers, dashboards.
+- **AppDaemon**: Use when YAML gets brittle — persistent/derived state, multi-step sequences, structured code, better logs.
+
+## When to use AppDaemon
+
+Use AppDaemon when:
+
+- Workflows need **persistent or derived state** (counters, timers, mode engines).
+- You need **multi-step sequences** with retries, backoff, or complex branching.
+- Logic is easier in **Python** (conditionals, loops, dataclasses).
+- You want **structured code and clearer logs** than YAML templates.
+
+Good candidates: house-mode engine, media/presence supervisor, flood-watch mitigation, home/away inference.
+
+## When to use Home Assistant YAML
+
+Use HA YAML when:
+
+- Logic is **simple**: trigger → condition → action.
+- You use **helpers** (input_select, input_boolean, input_number) as the source of truth.
+- **Automations** and **scripts** are enough (no heavy state or algorithms).
+- The change is **small** and fits existing patterns (e.g. occupancy lighting, hold logic).
+
+Most of this repo (occupancy-based lighting, Inovelli hold logic, switch mappings) stays in HA YAML.
+
+## Interaction boundary
+
+- **AppDaemon** talks to HA via the HASS plugin: `turn_on`, `turn_off`, `call_service`, `listen_state`, `get_state`, etc.
+- **HA automations/scripts** can call AppDaemon apps via registered services, or via HA entities that apps update (e.g. `input_select.house_mode`).
+- Prefer **HA helpers** as shared state: AppDaemon reads/writes `input_select`, `input_boolean`; automations react to them. Avoid duplicating state in both.
+
+## Dev vs production
+
+| | Dev | Production |
+|---|---|---|
+| **Location** | `hass-sandbox/appdaemon/` | `X:\` (mounted in Kubernetes) |
+| **AppDaemon** | Run locally with `appdaemon -c appdaemon` | Runs in Kubernetes on cluster |
+| **UI** | N/A | https://appdaemon.haynesops.com/ |
+
+Everything we do in this repo considers `appdaemon/` as the **development environment**. AppDaemon itself runs in Kubernetes; production configs live at `X:\`. Iterate on apps in `appdaemon/`, then deploy when ready.
+
+---
+
+## Deploy procedure (production)
+
+**Agents must follow this procedure** when deploying AppDaemon changes to production.
+
+### Prerequisites
+
+- Production config directory `X:\` exists and is writable (typically a mounted volume).
+- Changes in `appdaemon/` are complete and tested locally.
+
+### Deploy script
+
+Use `appdaemon/deploy.py` to sync dev contents to production:
+
+```bash
+# Dry run first (show what would be copied)
+python appdaemon/deploy.py --dry-run
+
+# Deploy to default target X:\
+python appdaemon/deploy.py
+
+# Deploy to explicit target
+python appdaemon/deploy.py --target X:\
+
+# Custom target via env
+DEPLOY_TARGET=D:\prod\appdaemon python appdaemon/deploy.py
+```
+
+### What gets deployed
+
+- `appdaemon/apps/` → `X:\apps/` (all `.py` and `apps.yaml`)
+- Excludes: `.venv`, `__pycache__`, `.git`, `.cursor`
+
+### What never gets deployed
+
+- `appdaemon.yaml` and `secrets.yaml` are **never** deployed. Production injects them via Kubernetes ExternalSecret. `appdaemon.yaml` is committed for local dev; `secrets.yaml` is `.gitignored` (create locally with your token).
+
+### After deploy
+
+- AppDaemon in Kubernetes reads configs from `X:\`.
+- If auto-reload is enabled, changes may apply without restart; otherwise restart the AppDaemon pod/container.
+- Verify at https://appdaemon.haynesops.com/ and check logs.
+
+### Scope communication
+
+When you edit `appdaemon/**` and deploy:
+
+- **Repo YAML/Python Updated - Deployed to production**
+- List: `appdaemon/**` files changed, that `deploy.py` was run, and prod path `X:\`.
+
+If you edit `appdaemon/**` but **do not** deploy:
+
+- **Repo YAML/Python Only - You copy paste or deploy**
+- List: `appdaemon/**` paths changed, and that the user must run `python appdaemon/deploy.py` (or copy manually) to apply to production.
+
+---
+
+## Repo structure
+
+```
+appdaemon/                    # Dev environment (Python apps)
+├── appdaemon.yaml            # Local dev config (committed; never deployed)
+├── secrets.yaml              # Local dev secrets (.gitignored; create with token)
+├── requirements.txt
+├── deploy.py                 # Deploy script: apps/ → X:\
+└── apps/
+    ├── apps.yaml
+    └── environment_test.py
+
+automations/                  # HA automations (YAML)
+scripts/                      # HA scripts (YAML)
+cards/                        # Dashboard cards (YAML)
+helpers/                      # Example helper configs (reference only)
+```
+
+## Key references
+
+- [AppDaemon docs](https://appdaemon.readthedocs.io/en/latest/)
+- [Writing AppDaemon Apps](https://appdaemon.readthedocs.io/en/latest/APPGUIDE.html)
+- [HASS Plugin/API](https://appdaemon.readthedocs.io/en/latest/HASS_API_REFERENCE.html)
+- `docs/roadmap.md` — AppDaemon tooling direction
+- `docs/appdaemon-setup.md` — Dev setup and deploy summary
