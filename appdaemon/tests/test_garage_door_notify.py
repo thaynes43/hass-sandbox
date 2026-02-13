@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Mock hassapi before importing garage_door_notify (tests run without AppDaemon)
 class _MockHass:
@@ -28,6 +28,8 @@ class TestGarageDoorNotify:
         app = GarageDoorNotify(ad, config)
         app.args = args or {}
         app.call_service = MagicMock()  # Mock HA call
+        app.log = MagicMock()
+        app.get_state = MagicMock(return_value="Garage Door")
         return app
 
     def test_should_notify_valid_change(self):
@@ -104,3 +106,101 @@ class TestGarageDoorNotify:
             print(f"\n{old} -> {new}:")
             print(f"  title:   {title}")
             print(f"  message: {message}")
+
+    def test_consolidated_notification_output(self):
+        """Output consolidated notification format for key durations (run with -s to see)."""
+        app = self._make_app()
+        door_name = "Tesla Garage Door"
+        for was_open, duration_secs in [
+            (True, 45),
+            (True, 65),
+            (True, 125),
+            (False, 30),
+            (False, 120),
+        ]:
+            title, message = app._build_consolidated_notification(
+                door_name, was_open=was_open, duration_secs=duration_secs
+            )
+            state = "open" if was_open else "closed"
+            print(f"\nWas {state} for {duration_secs}s ({app._format_duration(duration_secs)}):")
+            print(f"  title:   {title}")
+            print(f"  message: {message}")
+
+    # --- Consolidation tests ---
+
+    def test_format_duration(self):
+        app = self._make_app()
+        assert app._format_duration(0) == "0 minutes and 0 seconds"
+        assert app._format_duration(45) == "0 minutes and 45 seconds"
+        assert app._format_duration(60) == "1 minute and 0 seconds"
+        assert app._format_duration(65) == "1 minute and 5 seconds"
+        assert app._format_duration(125) == "2 minutes and 5 seconds"
+        assert app._format_duration(1) == "0 minutes and 1 second"
+
+    def test_build_consolidated_notification_was_open(self):
+        app = self._make_app()
+        title, message = app._build_consolidated_notification("Tesla Garage", was_open=True, duration_secs=125)
+        assert title == "Tesla Garage Opened & Closed"
+        assert "was open for 2 minutes and 5 seconds before it closed" in message
+
+    def test_build_consolidated_notification_was_closed(self):
+        app = self._make_app()
+        title, message = app._build_consolidated_notification("Tesla Garage", was_open=False, duration_secs=45)
+        assert title == "Tesla Garage Closed & Opened"
+        assert "was closed for 0 minutes and 45 seconds before it opened" in message
+
+    def test_delay_expires_sends_single_notification(self):
+        """When consolidation delay expires, send single notification (no second transition)."""
+        app = self._make_app({"notify_services": ["notify.test"]})
+        app._pending = {}
+        app.run_in = MagicMock(return_value="handle_123")
+
+        app._on_door_state("cover.door", None, "closed", "open", {})
+
+        app.run_in.assert_called_once()
+        callback = app.run_in.call_args[0][0]
+        kwargs = app.run_in.call_args[1]
+        assert kwargs["new_state"] == "open"
+        assert kwargs["door_name"] == "Garage Door"
+
+        # Simulate delay expiry: call the callback (AppDaemon passes kwargs dict)
+        callback(kwargs)
+
+        app.call_service.assert_called_once()
+        _, call_kwargs = app.call_service.call_args
+        assert "Garage Door Opened" in call_kwargs["title"]
+        assert "is now open" in call_kwargs["message"]
+
+    def test_second_transition_during_delay_sends_consolidated_notification(self):
+        """When second transition happens during delay, send consolidated message."""
+        app = self._make_app({"notify_services": ["notify.test"]})
+        app._pending = {}
+        app.run_in = MagicMock(return_value="handle_123")
+        app.cancel_timer = MagicMock()
+
+        with patch("time.time", side_effect=[1000.0, 1065.0]):
+            app._on_door_state("cover.door", None, "closed", "open", {})
+            app._on_door_state("cover.door", None, "open", "closed", {})
+
+        app.cancel_timer.assert_called_once_with("handle_123")
+        app.call_service.assert_called_once()
+        _, call_kwargs = app.call_service.call_args
+        assert "Opened & Closed" in call_kwargs["title"]
+        assert "was open for 1 minute and 5 seconds before it closed" in call_kwargs["message"]
+
+    def test_second_transition_closed_then_open_consolidated(self):
+        """closed -> open during delay: consolidated 'was closed for X'."""
+        app = self._make_app({"notify_services": ["notify.test"]})
+        app._pending = {}
+        app.run_in = MagicMock(return_value="handle_123")
+        app.cancel_timer = MagicMock()
+
+        with patch("time.time", side_effect=[1000.0, 1030.0]):
+            app._on_door_state("cover.door", None, "open", "closed", {})
+            app._on_door_state("cover.door", None, "closed", "open", {})
+
+        app.cancel_timer.assert_called_once_with("handle_123")
+        app.call_service.assert_called_once()
+        _, call_kwargs = app.call_service.call_args
+        assert "Closed & Opened" in call_kwargs["title"]
+        assert "was closed for 0 minutes and 30 seconds before it opened" in call_kwargs["message"]

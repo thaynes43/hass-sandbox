@@ -2,9 +2,12 @@
 Garage RATGDO door open/close notifications.
 
 Sends push notifications when either RATGDO garage door reports open or closed.
-Ported from notify_garage_ratgdo_door_open_close_tom_iphone.yaml with configurable
-doors and notify targets.
+Consolidates rapid open->closed (or closed->open) into a single "was open/closed
+for n minutes m seconds" notification to avoid two alerts when someone leaves
+or arrives.
 """
+
+import time
 
 import hassapi as hass
 
@@ -22,10 +25,13 @@ class GarageDoorNotify(hass.Hass):
             "notify.mobile_app_toms_iphone_air",
             "notify.mobile_app_kellies_iphone_air",
         ],
+        "consolidation_delay": 300,  # seconds to wait for second transition
     }
 
     def initialize(self):
         """Register state listeners for each door."""
+        self._pending = {}  # entity_id -> {state, timestamp, handle, door_name, from_display}
+
         self.log(f"Namespaces: {self.list_namespaces()}")
         self.log(f"Door state: {self.get_state('cover.ratgdov25i_4a0325_door')}")
         covers = self.get_state("cover") or {}
@@ -44,10 +50,57 @@ class GarageDoorNotify(hass.Hass):
         if not self._should_notify(old, new):
             self.log(f"Skipping notify: old={old!r} new={new!r}", level="DEBUG")
             return
+
         door_name = self._door_name(entity_id)
         from_display = self._from_state_display(old)
-        title, message = self._build_notification(door_name, new, from_display)
+
+        # Check if we have a pending transition for the opposite state
+        opposite = "closed" if new == "open" else "open"
+        pending = self._pending.get(entity_id)
+        if pending and pending["state"] == opposite:
+            # Second transition within delay: consolidate
+            self._cancel_pending(entity_id)
+            duration_secs = time.time() - pending["timestamp"]
+            title, message = self._build_consolidated_notification(
+                door_name, was_open=(opposite == "open"), duration_secs=duration_secs
+            )
+            self._send_notifications(title, message)
+            return
+
+        # No matching pending: schedule single notification after delay
+        delay = self.args.get("consolidation_delay", self.DEFAULTS["consolidation_delay"])
+        handle = self.run_in(
+            self._on_delay_expired,
+            delay,
+            entity_id=entity_id,
+            new_state=new,
+            door_name=door_name,
+            from_display=from_display,
+        )
+        self._pending[entity_id] = {
+            "state": new,
+            "timestamp": time.time(),
+            "handle": handle,
+            "door_name": door_name,
+            "from_display": from_display,
+        }
+
+    def _on_delay_expired(self, kwargs):
+        """Called when consolidation delay expires: send single notification."""
+        entity_id = kwargs["entity_id"]
+        pending = self._pending.pop(entity_id, None)
+        if not pending:
+            return
+        title, message = self._build_notification(
+            pending["door_name"], pending["state"], pending["from_display"]
+        )
         self._send_notifications(title, message)
+
+    def _cancel_pending(self, entity_id: str) -> None:
+        """Cancel pending timer for entity and remove from _pending."""
+        pending = self._pending.pop(entity_id, None)
+        if pending and "handle" in pending:
+            self.cancel_timer(pending["handle"])
 
     def _should_notify(self, old: str, new: str) -> bool:
         """Skip unknown/unavailable or no actual state change."""
@@ -69,6 +122,27 @@ class GarageDoorNotify(hass.Hass):
         if old == "closing":
             return "open"
         return old if old else "unknown"
+
+    def _format_duration(self, seconds: float) -> str:
+        """Format seconds as 'n minutes and m seconds'."""
+        total = int(round(seconds))
+        mins, secs = divmod(total, 60)
+        m = "minute" if mins == 1 else "minutes"
+        s = "second" if secs == 1 else "seconds"
+        return f"{mins} {m} and {secs} {s}"
+
+    def _build_consolidated_notification(
+        self, door_name: str, was_open: bool, duration_secs: float
+    ) -> tuple[str, str]:
+        """Build (title, message) for consolidated open->closed or closed->open."""
+        duration_str = self._format_duration(duration_secs)
+        if was_open:
+            title = f"{door_name} Opened & Closed"
+            message = f"{door_name} was open for {duration_str} before it closed."
+        else:
+            title = f"{door_name} Closed & Opened"
+            message = f"{door_name} was closed for {duration_str} before it opened."
+        return title, message
 
     def _build_notification(self, door_name: str, to_state: str, from_display: str) -> tuple[str, str]:
         """Build (title, message) for the notification."""

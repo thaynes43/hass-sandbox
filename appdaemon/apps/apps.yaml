@@ -4,10 +4,6 @@
 # Copy this file to your AppDaemon config dir (e.g. addon_configs/a0d7b954_appdaemon/apps/)
 # and ensure appdaemon.yaml points to the correct apps directory.
 
-# environment_test:
-#   module: environment_test
-#   class: EnvironmentTest
-
 garage_door_notify:
   module: garage_door_notify
   class: GarageDoorNotify
@@ -15,4 +11,4 @@ garage_door_notify:
   notify_services:
     - notify.mobile_app_toms_iphone_15_pro
     - notify.mobile_app_toms_iphone_air
-    # - notify.mobile_app_kellies_iphone_air
+    - notify.mobile_app_kellies_iphone_air
