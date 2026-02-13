@@ -51,6 +51,14 @@ python appdaemon/deploy.py --target X:\
 python appdaemon/deploy.py --dry-run
 ```
 
+## Running tests
+
+```bash
+python -m pytest appdaemon/tests -v
+```
+
+See `docs/appdaemon-testing.md` for mocking HA calls and testing patterns.
+
 ## References
 
 - [AppDaemon docs](https://appdaemon.readthedocs.io/en/latest/)

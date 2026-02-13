@@ -1,2 +1,4 @@
 # AppDaemon - https://pypi.org/project/appdaemon/
 appdaemon>=4.5.0
+# Testing
+pytest>=7.0
