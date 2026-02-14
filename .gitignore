@@ -1,2 +1,10 @@
 # AppDaemon secrets - replace token and never commit (production uses ExternalSecret)
 appdaemon/secrets.yaml
+
+# AppDaemon runtime state (detection summary store persistence)
+appdaemon/apps/_state/
+
+# Python caches
+__pycache__/
+*.pyc
+.venv-wsl

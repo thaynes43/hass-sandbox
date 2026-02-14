@@ -1,0 +1,106 @@
+{
+  "best": {
+    "ai_structured": {
+      "frame_score": 9,
+      "person_score": 9,
+      "pose": "standing",
+      "summary": "s9"
+    },
+    "frame_score": 9.0,
+    "image_url": "/api/camera_proxy/camera.detection_summary_garage_best",
+    "image_web_path": "/local/detection-summary/garage/buffer/slot_01.jpg",
+    "person_score": 9.0,
+    "pose": "standing",
+    "score": 9.0,
+    "summary": "s9"
+  },
+  "best_idx": 1,
+  "bundle_artifacts": {
+    "best_artifact_web_path": "/local/detection-summary/garage/runs/run-123/best.jpg",
+    "best_candidate_ha_path": "/media/detection-summary/garage/buffer/slot_01.jpg",
+    "best_candidate_web_path": "/local/detection-summary/garage/buffer/slot_01.jpg",
+    "bundle_ha_dir": "/media/detection-summary/garage/runs/run-123",
+    "bundle_web_base": "/local/detection-summary/garage/runs/run-123"
+  },
+  "bundle_key": "garage",
+  "camera_entity_id": "camera.garage",
+  "candidates": [
+    {
+      "ai_frame_score": 1.0,
+      "ai_person_score": 1.0,
+      "ai_pose": "walking",
+      "ai_score": 1.0,
+      "ai_structured": {
+        "frame_score": 1,
+        "person_score": 1,
+        "pose": "walking",
+        "summary": "s1"
+      },
+      "ai_summary": "s1",
+      "idx": 0,
+      "image_filename": "slot_00.jpg",
+      "image_ha_path": "/media/detection-summary/garage/buffer/slot_00.jpg",
+      "image_web_path": "/local/detection-summary/garage/buffer/slot_00.jpg"
+    },
+    {
+      "ai_frame_score": 9.0,
+      "ai_person_score": 9.0,
+      "ai_pose": "standing",
+      "ai_score": 9.0,
+      "ai_structured": {
+        "frame_score": 9,
+        "person_score": 9,
+        "pose": "standing",
+        "summary": "s9"
+      },
+      "ai_summary": "s9",
+      "idx": 1,
+      "image_filename": "slot_01.jpg",
+      "image_ha_path": "/media/detection-summary/garage/buffer/slot_01.jpg",
+      "image_web_path": "/local/detection-summary/garage/buffer/slot_01.jpg"
+    }
+  ],
+  "consumed": false,
+  "consumed_at_utc": null,
+  "created_at_epoch": 1000.0,
+  "created_at_utc": "1970-01-01T00:16:40+00:00",
+  "debug": {
+    "best_min_person_score": 1.0,
+    "best_selected_filename": "slot_01.jpg",
+    "best_selected_ha_path": "/media/detection-summary/garage/buffer/slot_01.jpg",
+    "best_selected_idx": 1,
+    "data_frame_score_field": "frame_score",
+    "data_instructions": "test",
+    "data_person_score_field": "person_score",
+    "data_pose_field": "pose",
+    "data_summary_field": "summary",
+    "expected_keys": [
+      "score",
+      "summary"
+    ],
+    "external_data_image_detail": "low",
+    "external_data_max_output_tokens": 300,
+    "external_data_model": "gpt-5.2",
+    "external_data_provider": "openai",
+    "external_data_timeout_s": 60.0,
+    "external_image_gen_enabled": false,
+    "external_image_gen_model": "gpt-image-1.5",
+    "external_image_gen_provider": "openai",
+    "external_image_gen_quality": "medium",
+    "external_image_gen_size": "1024x1024",
+    "image_instructions": "image",
+    "ranking_order_idx": [
+      1,
+      0
+    ]
+  },
+  "generated_image": {
+    "created_at_utc": "2026-02-14T19:01:57.010235+00:00",
+    "media_source_id": "media-source://media_source/test.png",
+    "model": "m",
+    "revised_prompt": "rp",
+    "url": "/api/media/test.png"
+  },
+  "run_id": "run-123",
+  "trigger_entity_id": "binary_sensor.garage_person"
+}

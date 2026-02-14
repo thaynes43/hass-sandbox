@@ -1,0 +1,64 @@
+---
+description: AppDaemon coding guidelines (apps vs libraries, and offloading work from Home Assistant)
+alwaysApply: true
+---
+
+# AppDaemon coding guidelines
+
+## 1) Apps vs shared libraries
+
+- Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps.yaml`) in `appdaemon/apps/`.
+- Put **code that is only used by one app** alongside that app in `appdaemon/apps/`.
+
+Examples:
+
+- `appdaemon/apps/garage_door_notify.py` (AppDaemon app)
+- `appdaemon/apps/detection_summary.py` (AppDaemon app)
+
+### Shared libraries (not apps)
+
+- Put **shared code used by multiple apps** outside `appdaemon/apps/`.
+- Prefer dedicated directories like:
+  - `appdaemon/ai_providers/` (LLM/provider plumbing)
+  - `appdaemon/<shared_module>/` (other shared utilities)
+
+Rationale:
+
+- Makes it obvious what is an AppDaemon “app” vs a shared module.
+- Avoids AppDaemon “missing app” warnings and keeps `apps/` clean.
+
+### Importing shared modules
+
+When a shared module lives outside `appdaemon/apps/`, ensure the AppDaemon runtime can import it:
+
+- Preferred: use AppDaemon `import_paths` in `appdaemon.yaml` to add the config directory (or specific shared dirs) to `sys.path`.
+- Acceptable fallback: in the app module, add a small guarded `sys.path` append based on `__file__` (keep it minimal and well-commented).
+
+## 2) Key tenet: offload AI work from Home Assistant
+
+Home Assistant runs critical real-time workloads (device I/O, state machine, UI, recorder). AI + images are:
+
+- network-heavy
+- CPU-heavy
+- latency-variable
+- prone to rate limits and retries
+
+**Guideline:** Prefer doing AI work in AppDaemon (or other external services), not inside Home Assistant.
+
+### What this means in practice
+
+- Avoid `ai_task.generate_data` for workflows that involve:
+  - multiple images
+  - retries/timeouts
+  - any kind of queueing or batching
+- Instead, use `appdaemon/ai_providers/` to call providers directly (OpenAI now; Ollama/ComfyUI later).
+- Keep HA’s role focused on:
+  - capturing snapshots (`camera.snapshot`)
+  - exposing images for UI/notifications (e.g., `local_file` cameras, `/api/camera_proxy/...`)
+  - executing device actions and simple automations
+
+### Storage coupling
+
+If AppDaemon must read/write the same images HA captures, prefer using **`/media`** and mount it into both HA and AppDaemon.
+This keeps AI processing off HA while still sharing artifacts reliably.
+

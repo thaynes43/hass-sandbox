@@ -3,6 +3,11 @@
 #
 # Copy this file to your AppDaemon config dir (e.g. addon_configs/a0d7b954_appdaemon/apps/)
 # and ensure appdaemon.yaml points to the correct apps directory.
+#
+# Note on snapshot paths:
+# - For `/config/www/<path>`, Home Assistant serves images at `/local/<path>`.
+# - For `/media/<path>`, images are in HA local media storage (not `/local/`).
+#   When using `/media`, prefer `local_file` cameras + `/api/camera_proxy/...` for serving images in notifications.
 
 garage_door_notify:
   module: garage_door_notify
@@ -12,3 +17,109 @@ garage_door_notify:
     - notify.mobile_app_toms_iphone_15_pro
     - notify.mobile_app_toms_iphone_air
     - notify.mobile_app_kellies_iphone_air
+  ai_enabled: true
+  ai_bundle_key: garage
+  ai_wait_timeout_s: 30
+  ai_max_bundle_age_s: 120
+
+detection_summary_garage:
+  module: detection_summary
+  class: DetectionSummary
+  bundle_key: garage
+  camera_entity_id: camera.garage_g5_dome_medium_resolution_channel
+  trigger_entity_id: binary_sensor.g5_dome_motion
+  storage_backend: media
+  snapshot_ha_dir: /media/detection-summary/garage
+  # Map HA's `/media/...` to the local filesystem path AppDaemon can access.
+  # - Dev (WSL): e.g. `/mnt/cephfs-hdd/misc/hass-media`
+  # - Prod (Kubernetes): `/media`
+  #
+  # Use secrets so dev/prod can differ without editing `apps.yaml`.
+  media_fs_root: !secret media_fs_root
+  buffer_subdir: buffer
+  bundle_runs_subdir: runs
+  # Stable generated image filename (for a local_file camera to point at a constant path).
+  published_generated_filename: detection_summary_generated.png
+  # Optional: local_file camera for the *generated* image only.
+  # Create the HA local_file camera to read:
+  # - /media/detection-summary/garage/detection_summary_generated.png
+  #
+  generated_image_camera_entity_id: camera.garage_detection_summary_generated
+  # Capture faster + analyze more while tuning.
+  max_snapshots: 10
+  snapshot_interval_s: 3
+  ring_size: 100
+  cooldown_s: 60
+  retention_hours: 24
+  task_name: detection summary
+  data_instructions: >
+    You are analyzing ONE security camera snapshot for a push notification.
+    Focus ONLY on the people (ignore the environment/vehicles/objects unless it is directly relevant to the person).
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+    Include only: person count, what they are doing, and where they are in frame (e.g. "near left", "center", "back").
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
+    Heavily favor frames where at least one person's FACE is clearly visible (front/3-4 view, not fully occluded).
+    If no face is visible, the frame should score significantly lower than a similar frame with a visible face.
+    face_score meaning: 0=no face visible, 10=clear unobstructed face (ideally looking toward camera).
+    Prefer frames where the person is clearly visible and stationary (standing/sitting),
+    not partially occluded or blurred in motion.
+  data_structure:
+    person_score:
+      selector:
+        number:
+          min: 0
+          max: 10
+    face_score:
+      selector:
+        number:
+          min: 0
+          max: 10
+    frame_score:
+      selector:
+        number:
+          min: 0
+          max: 10
+    pose:
+      selector:
+        select:
+          options:
+            - standing
+            - walking
+            - sitting
+            - none
+    summary:
+      selector:
+        text:
+  data_person_score_field: person_score
+  data_face_score_field: face_score
+  data_frame_score_field: frame_score
+  data_pose_field: pose
+  data_summary_field: summary
+  best_min_person_score: 2
+  # If false, we *only* capture snapshots (fast). No AI scoring/summaries.
+  # If true, scoring happens *after* capture so snapshot cadence stays stable.
+  ai_data_enabled: true
+  # External data generation (OpenAI vision -> JSON). Defaults are set in code; override if needed.
+  external_data_provider: openai
+  external_data_api_key: !secret ai_provider_key
+  external_data_model: gpt-5.2
+  external_data_timeout_s: 60
+  external_data_max_output_tokens: 300
+  external_data_image_detail: low
+  # Write per-run debug bundle to /media/.../runs/<run_id>/summary.json
+  write_bundle_json: true
+  # Verbose logs while tuning/debugging
+  log_snapshot_events: true
+  log_llm_events: true
+  # (Optional) Only needed if you enable legacy `generate_image_enabled: true`
+  # (HA `ai_task.generate_image`). We prefer `external_image_gen_enabled` now.
+  # ai_task_entity_id: ai_task.openai_ai_task
+  # External image generation (OpenAI). Uses `image_instructions` as the prompt.
+  external_image_gen_enabled: true
+  external_image_gen_provider: openai
+  external_image_gen_api_key: !secret ai_provider_key
+  # Image edit models are separate from GPT-5.2; this endpoint uses GPT Image models.
+  # See OpenAI docs for /v1/images/edits (e.g. gpt-image-1.5, gpt-image-1, chatgpt-image-latest).
+  external_image_gen_model: gpt-image-1.5
+  image_instructions: >
+    Create a simple, clean illustration representing the scene for a notification.

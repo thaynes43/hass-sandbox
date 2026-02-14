@@ -7,9 +7,13 @@ for n minutes m seconds" notification to avoid two alerts when someone leaves
 or arrives.
 """
 
+import threading
 import time
+from typing import Optional
 
 import hassapi as hass
+
+from detection_summary_store import STORE as DETECTION_SUMMARY_STORE
 
 
 class GarageDoorNotify(hass.Hass):
@@ -26,6 +30,12 @@ class GarageDoorNotify(hass.Hass):
             "notify.mobile_app_kellies_iphone_air",
         ],
         "consolidation_delay": 300,  # seconds to wait for second transition
+        # Detection summary attachment (optional)
+        "ai_enabled": False,
+        "ai_bundle_key": "garage",
+        "ai_wait_timeout_s": 30,
+        "ai_max_bundle_age_s": 120,
+        "ai_window_pad_s": 5,
     }
 
     def initialize(self):
@@ -64,7 +74,11 @@ class GarageDoorNotify(hass.Hass):
             title, message = self._build_consolidated_notification(
                 door_name, was_open=(opposite == "open"), duration_secs=duration_secs
             )
-            self._send_notifications(title, message)
+            window_start = pending["timestamp"] - self._ai_window_pad_s()
+            window_end = time.time()
+            self._send_notifications_with_optional_ai_async(
+                title, message, window_start_epoch=window_start, window_end_epoch=window_end
+            )
             return
 
         # No matching pending: schedule single notification after delay
@@ -94,7 +108,11 @@ class GarageDoorNotify(hass.Hass):
         title, message = self._build_notification(
             pending["door_name"], pending["state"], pending["from_display"]
         )
-        self._send_notifications(title, message)
+        window_start = pending["timestamp"] - self._ai_window_pad_s()
+        window_end = time.time()
+        self._send_notifications_with_optional_ai_async(
+            title, message, window_start_epoch=window_start, window_end_epoch=window_end
+        )
 
     def _cancel_pending(self, entity_id: str) -> None:
         """Cancel pending timer for entity and remove from _pending."""
@@ -151,11 +169,152 @@ class GarageDoorNotify(hass.Hass):
         message = f"{door_name} is now {to_state} (was {from_display})."
         return title, message
 
-    def _send_notifications(self, title: str, message: str) -> None:
+    def _send_notifications(self, title: str, message: str, image_web_path: Optional[str] = None) -> None:
         """Send notification to all configured services."""
         services = self.args.get("notify_services", self.DEFAULTS["notify_services"])
         self.log(f"Sending notification: {title!r} to {len(services)} service(s)", level="INFO")
         for svc in services:
             # notify.mobile_app_xxx -> notify/mobile_app_xxx
             service = svc.replace(".", "/", 1) if "." in svc else f"notify/{svc}"
-            self.call_service(service, title=title, message=message)
+            if image_web_path:
+                self.call_service(service, title=title, message=message, data={"image": image_web_path})
+            else:
+                self.call_service(service, title=title, message=message)
+
+    def _ai_enabled(self) -> bool:
+        return bool(self.args.get("ai_enabled", self.DEFAULTS["ai_enabled"]))
+
+    def _ai_bundle_key(self) -> str:
+        return str(self.args.get("ai_bundle_key", self.DEFAULTS["ai_bundle_key"]))
+
+    def _ai_wait_timeout_s(self) -> float:
+        return float(self.args.get("ai_wait_timeout_s", self.DEFAULTS["ai_wait_timeout_s"]))
+
+    def _ai_max_bundle_age_s(self) -> float:
+        return float(self.args.get("ai_max_bundle_age_s", self.DEFAULTS["ai_max_bundle_age_s"]))
+
+    def _ai_window_pad_s(self) -> float:
+        return float(self.args.get("ai_window_pad_s", self.DEFAULTS["ai_window_pad_s"]))
+
+    def _append_ai_summary(self, message: str, summary: Optional[str]) -> str:
+        summary = (summary or "").strip()
+        if not summary:
+            return message
+        return f"{message}\n\n{summary}"
+
+    def _get_detection_summary(self, window_start_epoch: float, window_end_epoch: float) -> Optional[dict]:
+        """
+        If enabled, fetch or wait briefly for a detection summary bundle and return:
+        {summary, image_web_path, run_id}.
+        """
+        if not self._ai_enabled():
+            return None
+
+        t0 = time.time()
+        bundle_key = self._ai_bundle_key()
+        max_age_s = self._ai_max_bundle_age_s()
+        bundle = DETECTION_SUMMARY_STORE.get_best_bundle(
+            bundle_key,
+            window_start_epoch,
+            window_end_epoch,
+            include_consumed=False,
+            max_age_s=max_age_s,
+        )
+
+        if not bundle:
+            timeout_s = self._ai_wait_timeout_s()
+            if timeout_s > 0:
+                bundle = DETECTION_SUMMARY_STORE.wait_for_bundle(
+                    bundle_key,
+                    window_start_epoch,
+                    window_end_epoch,
+                    timeout_s=timeout_s,
+                    include_consumed=False,
+                    max_age_s=max_age_s,
+                )
+
+        if not bundle:
+            self.log(
+                f"AI summary: none (bundle_key={bundle_key} window=({window_start_epoch:.0f},{window_end_epoch:.0f}) "
+                f"max_age_s={max_age_s:.0f} waited={time.time()-t0:.3f}s)",
+                level="DEBUG",
+            )
+            return None
+
+        best = bundle.get("best") or {}
+        generated = bundle.get("generated_image") or {}
+        run_id = str(bundle.get("run_id", ""))
+        # Mark consumed so the next door event prefers a fresh bundle.
+        if run_id:
+            DETECTION_SUMMARY_STORE.mark_consumed(bundle_key, run_id)
+
+        # Prefer generated image (if publish configured it with a camera proxy URL),
+        # otherwise fall back to the best snapshot image.
+        gen_url = (generated.get("image_url") or "").strip()
+        gen_web_path = (generated.get("image_web_path") or "").strip()
+        best_url = (best.get("image_url") or "").strip()
+        best_web_path = (best.get("image_web_path") or "").strip()
+        image_url = gen_url or best_url
+        image_web_path = gen_web_path or best_web_path
+        self.log(
+            f"AI summary: run_id={run_id} waited={time.time()-t0:.3f}s summary_len={len(str(best.get('summary') or ''))} "
+            f"image={'generated' if gen_url or gen_web_path else ('best' if best_url or best_web_path else 'none')}",
+            level="INFO",
+        )
+        return {
+            "run_id": run_id,
+            "summary": best.get("summary") or "",
+            "image_url": image_url,
+            "image_web_path": image_web_path,
+            "image": image_url or image_web_path,
+        }
+
+    def _send_notifications_with_optional_ai_async(
+        self,
+        title: str,
+        message: str,
+        *,
+        window_start_epoch: float,
+        window_end_epoch: float,
+    ) -> None:
+        """
+        Avoid blocking AppDaemon callback threads while waiting for DetectionSummary bundles.
+        Fetch/wait in a background thread, then schedule the actual HA notify calls back
+        on the AppDaemon thread via run_in(..., 0).
+        """
+
+        if not self._ai_enabled():
+            self._send_notifications(title, message)
+            return
+
+        def _worker():
+            ai = self._get_detection_summary(window_start_epoch, window_end_epoch)
+
+            # Prefer generated image when available, otherwise best image.
+            image = ""
+            if ai:
+                image = (ai.get("image") or "").strip()
+            final_title = title
+            final_message = message
+            final_image = image
+            if ai:
+                final_message = self._append_ai_summary(message, ai.get("summary"))
+
+            # Schedule notify back on AD thread.
+            self.run_in(
+                self._send_notifications_async_callback,
+                0,
+                title=final_title,
+                message=final_message,
+                image=final_image,
+            )
+
+        t = threading.Thread(target=_worker, name="garage_door_notify_ai")
+        t.daemon = True
+        t.start()
+
+    def _send_notifications_async_callback(self, kwargs):
+        title = kwargs.get("title") or ""
+        message = kwargs.get("message") or ""
+        image = (kwargs.get("image") or "").strip()
+        self._send_notifications(title, message, image_web_path=image if image else None)
