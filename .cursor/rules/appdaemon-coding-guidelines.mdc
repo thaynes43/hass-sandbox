@@ -33,6 +33,17 @@ When a shared module lives outside `appdaemon/apps/`, ensure the AppDaemon runti
 - Preferred: use AppDaemon `import_paths` in `appdaemon.yaml` to add the config directory (or specific shared dirs) to `sys.path`.
 - Acceptable fallback: in the app module, add a small guarded `sys.path` append based on `__file__` (keep it minimal and well-commented).
 
+#### Warning: AppDaemon often only adds `appdaemon/apps` to `sys.path`
+
+In many deployments, AppDaemon imports apps with `sys.path` containing **only** `appdaemon/apps/`.
+This means imports like `import ai_providers...` will fail unless you explicitly add the AppDaemon root
+directory to the import path.
+
+- **Symptom**: `ModuleNotFoundError: No module named 'ai_providers'` during AppDaemon startup/import.
+- **Preferred fix**: set `import_paths:` in `appdaemon.yaml` to include `appdaemon/` (or `appdaemon/ai_providers/`).
+- **Fallback fix** (in the app): append the **AppDaemon root** (not `apps/`) to `sys.path`, e.g.:
+  - from a file under `appdaemon/apps/<pkg>/...`: `Path(__file__).resolve().parents[2]` is typically `appdaemon/`
+
 ## 2) Key tenet: offload AI work from Home Assistant
 
 Home Assistant runs critical real-time workloads (device I/O, state machine, UI, recorder). AI + images are:

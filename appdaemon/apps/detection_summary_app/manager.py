@@ -46,7 +46,9 @@ try:
 except Exception:  # pragma: no cover
     import sys
 
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    # AppDaemon often only adds `appdaemon/apps` to sys.path. Our shared libraries
+    # live at `appdaemon/ai_providers`, so add the AppDaemon root directory.
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
     from ai_providers.registry import (  # type: ignore
         build_data_provider,
         build_image_provider,
@@ -366,6 +368,13 @@ class DetectionSummary(hass.Hass):
         self.run_in(self._capture_tick, delay, run_id=active.capture.run_id)
 
     def _start_processing_thread(self, run: _Run) -> None:
+        self.log(
+            f"DetectionSummary[{self.bundle_key}]: run_id={run.capture.run_id} capture complete "
+            f"(captured_count={int(run.capture.capture_idx)} timed_out={bool(run.capture.timed_out)}); "
+            f"starting background processing",
+            level="INFO",
+        )
+
         def _worker():
             self._process_background(run)
 
@@ -408,6 +417,11 @@ class DetectionSummary(hass.Hass):
             t0 = time.time()
             data: dict[str, Any] = {}
             try:
+                if self.log_llm_events:
+                    self.log(
+                        f"DetectionSummary[{self.bundle_key}]: LLM score start run_id={run_id} idx={i} path={local_path}",
+                        level="INFO",
+                    )
                 # wait briefly for snapshot visibility on shared mount
                 deadline = time.time() + 2.0
                 while time.time() < deadline and not local_path.exists():
@@ -428,6 +442,18 @@ class DetectionSummary(hass.Hass):
             frame = _safe_float(data.get(self.data_frame_score_field), default=person)
             pose = str(data.get(self.data_pose_field) or "").strip().lower()
             summary = str(data.get(self.data_summary_field, data.get("summary", "")) or "").strip()
+            if self.log_llm_events:
+                elapsed = time.time() - t0
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: LLM score done run_id={run_id} idx={i} "
+                    f"elapsed_s={elapsed:.3f} person={person:.2f} face={face:.2f} frame={frame:.2f} pose={pose!r} "
+                    f"summary_preview={summary[:120]!r} keys={sorted(list(data.keys()))[:20]}",
+                    level="INFO",
+                )
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: LLM raw run_id={run_id} idx={i} data={data!r}",
+                    level="DEBUG",
+                )
             ev = {
                 "type": "data",
                 "frame_idx": i,
@@ -474,6 +500,17 @@ class DetectionSummary(hass.Hass):
         )
         best_idx = int(meta.best_idx)
 
+        self.log(
+            f"DetectionSummary[{self.bundle_key}]: selection run_id={run_id} captured={total_frames} "
+            f"budget={int(self.analyze_max_snapshots)} scored={len(scored)} best_idx={best_idx} cutoff={meta.cutoff_idx_inclusive}",
+            level="INFO",
+        )
+        self.log(
+            f"DetectionSummary[{self.bundle_key}]: selection detail run_id={run_id} "
+            f"probes={meta.probes} scored_indices={meta.scored_indices}",
+            level="DEBUG",
+        )
+
         # Write trace artifacts (optional)
         write_trace(
             local_run_dir=local_run_dir,
@@ -506,10 +543,21 @@ class DetectionSummary(hass.Hass):
                     img_provider = build_image_provider(provider_cfg)
                     if not getattr(img_provider, "capabilities", None) or not img_provider.capabilities.supports_image_to_image:
                         raise ExternalImageGenError("image provider does not support image-to-image")
+                    self.log(
+                        f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
+                        f"in={in_path} out={out_path} prompt_len={len(self.image_instructions)}",
+                        level="INFO",
+                    )
                     generated_image = img_provider.edit_image(
                         input_image_path=str(in_path),
                         prompt=str(self.image_instructions),
                         output_image_path=str(out_path),
+                    )
+                    self.log(
+                        f"DetectionSummary[{self.bundle_key}]: image gen done run_id={run_id} "
+                        f"elapsed_s={(generated_image or {}).get('elapsed_s')} model={(generated_image or {}).get('model')} "
+                        f"output_exists={out_path.exists()}",
+                        level="INFO",
                     )
                     llm_events.append(
                         {
@@ -526,6 +574,10 @@ class DetectionSummary(hass.Hass):
                     if out_path.exists():
                         stable_local.write_bytes(out_path.read_bytes())
                         generated_image["output_path"] = str(stable_local)
+                        self.log(
+                            f"DetectionSummary[{self.bundle_key}]: image gen mirrored run_id={run_id} stable={stable_local}",
+                            level="INFO",
+                        )
                 except ExternalImageGenError as e:
                     self.log(f"DetectionSummary[{self.bundle_key}]: image generation failed: {e!r}", level="WARNING")
 
@@ -587,6 +639,15 @@ class DetectionSummary(hass.Hass):
             gen_url = ""
             if isinstance(gen, dict):
                 gen_url = str(gen.get("image_url") or "")
+            if isinstance(bundle, dict):
+                best = bundle.get("best") or {}
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: bundle run_id={active.capture.run_id} "
+                    f"best_summary_len={len(str(best.get('summary') or ''))} "
+                    f"person={best.get('person_score')} face={best.get('face_score')} frame={best.get('frame_score')} "
+                    f"generated_url={(gen_url or '')!r}",
+                    level="INFO",
+                )
             self.fire_event(
                 "detection_summary/run_published",
                 bundle_key=self.bundle_key,

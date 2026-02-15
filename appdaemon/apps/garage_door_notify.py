@@ -261,10 +261,18 @@ class GarageDoorNotify(hass.Hass):
         if self._ai_use_events():
             run_id = self._get_latest_run_id(bundle_key)
             if run_id:
+                self.log(
+                    f"AI summary(event): start bundle_key={bundle_key} run_id={run_id} timeout_s={self._ai_wait_timeout_s():.0f}",
+                    level="INFO",
+                )
                 bundle = DETECTION_SUMMARY_STORE.get_bundle_by_run_id(bundle_key, run_id, include_consumed=False)
                 if not bundle:
                     timeout_s = self._ai_wait_timeout_s()
                     if timeout_s > 0:
+                        self.log(
+                            f"AI summary(event): waiting bundle_key={bundle_key} run_id={run_id} timeout_s={timeout_s:.0f}",
+                            level="INFO",
+                        )
                         bundle = DETECTION_SUMMARY_STORE.wait_for_run_id(
                             bundle_key,
                             run_id,
@@ -302,6 +310,11 @@ class GarageDoorNotify(hass.Hass):
         if not bundle:
             timeout_s = self._ai_wait_timeout_s()
             if timeout_s > 0:
+                self.log(
+                    f"AI summary(window): waiting bundle_key={bundle_key} timeout_s={timeout_s:.0f} "
+                    f"window=({window_start_epoch:.0f},{window_end_epoch:.0f})",
+                    level="INFO",
+                )
                 # IMPORTANT:
                 # The detection-summary bundle may be published *after* this door-event window_end_epoch
                 # (e.g. door close notification fires before LLM/image processing finishes).
@@ -367,6 +380,12 @@ class GarageDoorNotify(hass.Hass):
         if not self._ai_enabled():
             self._send_notifications(title, message)
             return
+
+        self.log(
+            f"AI notify: background fetch start window=({window_start_epoch:.0f},{window_end_epoch:.0f}) "
+            f"bundle_key={self._ai_bundle_key()} use_events={self._ai_use_events()} timeout_s={self._ai_wait_timeout_s():.0f}",
+            level="INFO",
+        )
 
         def _worker():
             ai = self._get_detection_summary(window_start_epoch, window_end_epoch)
