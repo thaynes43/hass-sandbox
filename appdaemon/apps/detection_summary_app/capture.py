@@ -29,6 +29,10 @@ class CaptureState:
     frames: list[CapturedFrame]
     capture_idx: int = 0
     motion_off_since: Optional[float] = None
+    # Motion timing (for observability).
+    last_motion_state: Optional[bool] = None
+    last_motion_change_ts: Optional[float] = None
+    motion_on_total_s: float = 0.0
     timed_out: bool = False
     ended_ts: Optional[float] = None
 

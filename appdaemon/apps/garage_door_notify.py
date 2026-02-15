@@ -45,6 +45,7 @@ class GarageDoorNotify(hass.Hass):
         """Register state listeners for each door."""
         self._pending = {}  # entity_id -> {state, timestamp, handle, door_name, from_display}
         self._latest_run_started: dict[str, dict[str, Any]] = {}
+        self._run_started_signal: dict[str, threading.Event] = {}
 
         self.log(f"Namespaces: {self.list_namespaces()}")
         self.log(f"Door state: {self.get_state('cover.ratgdov25i_4a0325_door')}")
@@ -81,7 +82,44 @@ class GarageDoorNotify(hass.Hass):
             started_ts = float(data.get("started_ts") or 0.0)
             if not bundle_key or not run_id:
                 return
-            self._latest_run_started[bundle_key] = {"run_id": run_id, "started_ts": started_ts}
+            latest = getattr(self, "_latest_run_started", None)
+            if latest is None:
+                self._latest_run_started = {}
+                latest = self._latest_run_started
+            latest[bundle_key] = {"run_id": run_id, "started_ts": started_ts}
+
+            # Signal any waiters that a run_id is available.
+            signals = getattr(self, "_run_started_signal", None)
+            if signals is None:
+                self._run_started_signal = {}
+                signals = self._run_started_signal
+            ev = signals.setdefault(bundle_key, threading.Event())
+            ev.set()
+
+            # If we have a pending door notification within the consolidation window, attach this run_id
+            # so the eventual notification (either consolidated or delayed) can wait deterministically.
+            now = time.time()
+            delay = float(self.args.get("consolidation_delay", self.DEFAULTS["consolidation_delay"]))
+            pad = self._ai_window_pad_s()
+            attached = 0
+            for _eid, p in (self._pending or {}).items():
+                ts = float(p.get("timestamp") or 0.0)
+                if ts <= 0:
+                    continue
+                if (now - ts) > (delay + pad):
+                    continue
+                if started_ts and started_ts < (ts - pad):
+                    continue
+                if p.get("ai_run_id"):
+                    continue
+                p["ai_run_id"] = run_id
+                p["ai_run_started_ts"] = started_ts
+                attached += 1
+            if attached:
+                self.log(
+                    f"AI summary(event): attached run_id={run_id} to {attached} pending door notification(s)",
+                    level="INFO",
+                )
         except Exception:
             return
 
@@ -119,8 +157,13 @@ class GarageDoorNotify(hass.Hass):
             )
             window_start = pending["timestamp"] - self._ai_window_pad_s()
             window_end = time.time()
+            preferred_run_id = pending.get("ai_run_id")
             self._send_notifications_with_optional_ai_async(
-                title, message, window_start_epoch=window_start, window_end_epoch=window_end
+                title,
+                message,
+                window_start_epoch=window_start,
+                window_end_epoch=window_end,
+                preferred_run_id=str(preferred_run_id) if preferred_run_id else None,
             )
             return
 
@@ -140,7 +183,13 @@ class GarageDoorNotify(hass.Hass):
             "handle": handle,
             "door_name": door_name,
             "from_display": from_display,
+            "ai_run_id": None,
+            "ai_run_started_ts": None,
         }
+        self.log(
+            f"Door pending: {entity_id} state={new!r} delay={float(delay):.0f}s",
+            level="INFO",
+        )
 
     def _on_delay_expired(self, kwargs):
         """Called when consolidation delay expires: send single notification."""
@@ -153,8 +202,13 @@ class GarageDoorNotify(hass.Hass):
         )
         window_start = pending["timestamp"] - self._ai_window_pad_s()
         window_end = time.time()
+        preferred_run_id = pending.get("ai_run_id")
         self._send_notifications_with_optional_ai_async(
-            title, message, window_start_epoch=window_start, window_end_epoch=window_end
+            title,
+            message,
+            window_start_epoch=window_start,
+            window_end_epoch=window_end,
+            preferred_run_id=str(preferred_run_id) if preferred_run_id else None,
         )
 
     def _cancel_pending(self, entity_id: str) -> None:
@@ -245,7 +299,13 @@ class GarageDoorNotify(hass.Hass):
             return message
         return f"{message}\n\n{summary}"
 
-    def _get_detection_summary(self, window_start_epoch: float, window_end_epoch: float) -> Optional[dict]:
+    def _get_detection_summary(
+        self,
+        window_start_epoch: float,
+        window_end_epoch: float,
+        *,
+        preferred_run_id: Optional[str] = None,
+    ) -> Optional[dict]:
         """
         If enabled, fetch or wait briefly for a detection summary bundle and return:
         {summary, image_web_path, run_id}.
@@ -257,9 +317,9 @@ class GarageDoorNotify(hass.Hass):
         bundle_key = self._ai_bundle_key()
         max_age_s = self._ai_max_bundle_age_s()
 
-        # Event-driven path: if we saw a recent run start, wait specifically for that run_id.
+        # Event-driven path: if we have (or later discover) a run_id, wait specifically for that run_id.
         if self._ai_use_events():
-            run_id = self._get_latest_run_id(bundle_key)
+            run_id = (preferred_run_id or "").strip() or self._get_latest_run_id(bundle_key)
             if run_id:
                 self.log(
                     f"AI summary(event): start bundle_key={bundle_key} run_id={run_id} timeout_s={self._ai_wait_timeout_s():.0f}",
@@ -321,14 +381,56 @@ class GarageDoorNotify(hass.Hass):
                 # When we choose to wait, extend the eligible window to include bundles published
                 # during the wait interval.
                 wait_window_end = max(float(window_end_epoch), time.time()) + float(timeout_s)
-                bundle = DETECTION_SUMMARY_STORE.wait_for_bundle(
-                    bundle_key,
-                    window_start_epoch,
-                    wait_window_end,
-                    timeout_s=timeout_s,
-                    include_consumed=False,
-                    max_age_s=max_age_s,
-                )
+
+                # If events are enabled, we might receive a run_started during this wait window.
+                # To allow switching to deterministic run_id waits, we do short wait slices.
+                deadline = time.time() + float(timeout_s)
+                slice_s = 2.0
+                if self._ai_use_events():
+                    signals = getattr(self, "_run_started_signal", None)
+                    if signals is None:
+                        self._run_started_signal = {}
+                        signals = self._run_started_signal
+                    signal = signals.setdefault(bundle_key, threading.Event())
+                    # We only want to catch a *new* run_started during our wait.
+                    signal.clear()
+
+                while time.time() < deadline and not bundle:
+                    remaining = deadline - time.time()
+                    this_wait = min(slice_s, max(0.0, remaining))
+                    if this_wait <= 0:
+                        break
+
+                    # If a run_started event arrives, switch to waiting for that run_id.
+                    if self._ai_use_events():
+                        signals = getattr(self, "_run_started_signal", None)
+                        if signals is None:
+                            self._run_started_signal = {}
+                            signals = self._run_started_signal
+                        signal = signals.setdefault(bundle_key, threading.Event())
+                        if signal.wait(timeout=this_wait):
+                            run_id = self._get_latest_run_id(bundle_key)
+                            if run_id:
+                                self.log(
+                                    f"AI summary(switch): run_started observed during window-wait; switching to run_id={run_id}",
+                                    level="INFO",
+                                )
+                                bundle = DETECTION_SUMMARY_STORE.wait_for_run_id(
+                                    bundle_key,
+                                    run_id,
+                                    timeout_s=max(0.0, deadline - time.time()),
+                                    include_consumed=False,
+                                )
+                                break
+
+                    bundle = DETECTION_SUMMARY_STORE.wait_for_bundle(
+                        bundle_key,
+                        window_start_epoch,
+                        wait_window_end,
+                        timeout_s=this_wait,
+                        include_consumed=False,
+                        max_age_s=max_age_s,
+                    )
 
         if not bundle:
             self.log(
@@ -370,6 +472,7 @@ class GarageDoorNotify(hass.Hass):
         *,
         window_start_epoch: float,
         window_end_epoch: float,
+        preferred_run_id: Optional[str] = None,
     ) -> None:
         """
         Avoid blocking AppDaemon callback threads while waiting for DetectionSummary bundles.
@@ -383,12 +486,13 @@ class GarageDoorNotify(hass.Hass):
 
         self.log(
             f"AI notify: background fetch start window=({window_start_epoch:.0f},{window_end_epoch:.0f}) "
-            f"bundle_key={self._ai_bundle_key()} use_events={self._ai_use_events()} timeout_s={self._ai_wait_timeout_s():.0f}",
+            f"bundle_key={self._ai_bundle_key()} use_events={self._ai_use_events()} timeout_s={self._ai_wait_timeout_s():.0f} "
+            f"preferred_run_id={(preferred_run_id or '')!r}",
             level="INFO",
         )
 
         def _worker():
-            ai = self._get_detection_summary(window_start_epoch, window_end_epoch)
+            ai = self._get_detection_summary(window_start_epoch, window_end_epoch, preferred_run_id=preferred_run_id)
 
             # Prefer generated image when available, otherwise best image.
             image = ""

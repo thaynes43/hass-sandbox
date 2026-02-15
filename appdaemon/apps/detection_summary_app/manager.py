@@ -288,7 +288,15 @@ class DetectionSummary(hass.Hass):
         run_id = str(uuid.uuid4())
         self._in_flight = True
         self._active = _Run(
-            capture=CaptureState(run_id=run_id, started_ts=now, frames=[], capture_idx=0)
+            capture=CaptureState(
+                run_id=run_id,
+                started_ts=now,
+                frames=[],
+                capture_idx=0,
+                last_motion_state=True,
+                last_motion_change_ts=now,
+                motion_on_total_s=0.0,
+            )
         )
         self.fire_event(
             "detection_summary/run_started",
@@ -314,6 +322,16 @@ class DetectionSummary(hass.Hass):
         motion_state = self.get_state(self.trigger_entity_id)
         motion_is_on = str(motion_state) == str(self.trigger_to)
 
+        # Track motion-on duration separately from capture duration (off-grace adds buffer).
+        if active.capture.last_motion_state is None:
+            active.capture.last_motion_state = bool(motion_is_on)
+            active.capture.last_motion_change_ts = now
+        elif bool(motion_is_on) != bool(active.capture.last_motion_state):
+            if active.capture.last_motion_state and active.capture.last_motion_change_ts is not None:
+                active.capture.motion_on_total_s += max(0.0, now - float(active.capture.last_motion_change_ts))
+            active.capture.last_motion_state = bool(motion_is_on)
+            active.capture.last_motion_change_ts = now
+
         cap_cfg = CaptureConfig(
             snapshot_interval_s=self.snapshot_interval_s,
             off_grace_s=self.off_grace_s,
@@ -322,6 +340,10 @@ class DetectionSummary(hass.Hass):
 
         if should_stop_capture(now=now, cfg=cap_cfg, state=active.capture, motion_is_on=motion_is_on):
             ended = float(active.capture.ended_ts or now)
+            # Finalize motion-on accumulation up to the point motion ended (or capture ended).
+            if active.capture.last_motion_state and active.capture.last_motion_change_ts is not None:
+                active.capture.motion_on_total_s += max(0.0, ended - float(active.capture.last_motion_change_ts))
+                active.capture.last_motion_change_ts = ended
             self.fire_event(
                 "detection_summary/run_capture_done",
                 bundle_key=self.bundle_key,

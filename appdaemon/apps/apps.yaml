@@ -48,7 +48,7 @@ detection_summary_garage:
   #
   generated_image_camera_entity_id: camera.garage_detection_summary_generated
   # Capture while motion is ON; stop after it's OFF for 15s.
-  snapshot_interval_s: 3
+  snapshot_interval_s: 1
   off_grace_s: 15
   # Safety cap: stop capture even if motion stays on.
   capture_max_s: 300

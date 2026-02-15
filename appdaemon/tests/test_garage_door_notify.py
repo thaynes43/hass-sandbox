@@ -196,6 +196,36 @@ class TestGarageDoorNotify:
         assert args[2] >= 25  # 20 + 5s extension at minimum
         assert any(c[0] == "mark_consumed" for c in store.calls)
 
+    def test_pending_adopts_run_started_for_consolidation_window(self, monkeypatch):
+        app = self._make_app(
+            {
+                "ai_enabled": True,
+                "ai_bundle_key": "garage",
+                "ai_use_detection_summary_events": True,
+                "ai_window_pad_s": 5,
+                "consolidation_delay": 300,
+            }
+        )
+        # Create a pending door event
+        app._pending["cover.door"] = {
+            "state": "open",
+            "timestamp": 100.0,
+            "handle": "h",
+            "door_name": "Garage Door",
+            "from_display": "closed",
+            "ai_run_id": None,
+            "ai_run_started_ts": None,
+        }
+        monkeypatch.setattr(sys.modules["garage_door_notify"].time, "time", lambda: 120.0)
+
+        # Simulate run_started arriving during consolidation window
+        app._on_detection_summary_run_started(
+            "detection_summary/run_started",
+            {"bundle_key": "garage", "run_id": "r123", "started_ts": 115.0},
+            {},
+        )
+        assert app._pending["cover.door"]["ai_run_id"] == "r123"
+
     def test_get_detection_summary_event_driven_waits_by_run_id(self, monkeypatch):
         bundle = {
             "run_id": "r99",
