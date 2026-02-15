@@ -4,7 +4,36 @@ appdaemon/secrets.yaml
 # AppDaemon runtime state (detection summary store persistence)
 appdaemon/apps/_state/
 
-# Python caches
+# Python caches / artifacts
 __pycache__/
+**/__pycache__/
 *.pyc
-.venv-wsl
+*.pyo
+*.pyd
+*.so
+.Python
+
+# Virtual environments
+.venv/
+.venv-wsl/
+venv/
+ENV/
+env/
+.env/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Type checking / tooling caches
+.mypy_cache/
+.ruff_cache/
+.tox/
