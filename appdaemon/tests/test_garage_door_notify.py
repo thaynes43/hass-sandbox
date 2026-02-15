@@ -43,6 +43,14 @@ class _FakeStore:
         self.calls.append(("mark_consumed", args, kwargs))
         return True
 
+    def get_bundle_by_run_id(self, *args, **kwargs):
+        self.calls.append(("get_bundle_by_run_id", args, kwargs))
+        return None
+
+    def wait_for_run_id(self, *args, **kwargs):
+        self.calls.append(("wait_for_run_id", args, kwargs))
+        return self._wait_bundle
+
 
 class _ImmediateThread:
     def __init__(self, *, target, name=None):
@@ -167,7 +175,8 @@ class TestGarageDoorNotify:
     def test_get_detection_summary_waits_then_consumes(self, monkeypatch):
         bundle = {
             "run_id": "r1",
-            "best": {"summary": "Person in garage.", "image_url": "/api/camera_proxy/camera.x", "image_web_path": ""},
+            "best": {"summary": "Person in garage.", "image_url": "/api/camera_proxy/camera.best", "image_web_path": ""},
+            "generated_image": {"image_url": "/api/camera_proxy/camera.gen"},
         }
         store = _FakeStore(bundle=None, wait_bundle=bundle)
         monkeypatch.setattr(sys.modules["garage_door_notify"], "DETECTION_SUMMARY_STORE", store)
@@ -177,8 +186,45 @@ class TestGarageDoorNotify:
         )
         got = app._get_detection_summary(10, 20)
         assert got is not None
-        assert got["image"] == "/api/camera_proxy/camera.x"
+        assert got["image"] == "/api/camera_proxy/camera.gen"
+        # Wait call should extend the eligible window end by timeout_s
+        wait_calls = [c for c in store.calls if c[0] == "wait_for_bundle"]
+        assert wait_calls, "expected wait_for_bundle to be called"
+        _, args, kwargs = wait_calls[0]
+        # args: (bundle_key, window_start_epoch, window_end_epoch, timeout_s=...)
+        assert args[1] == 10
+        assert args[2] >= 25  # 20 + 5s extension at minimum
         assert any(c[0] == "mark_consumed" for c in store.calls)
+
+    def test_get_detection_summary_event_driven_waits_by_run_id(self, monkeypatch):
+        bundle = {
+            "run_id": "r99",
+            "best": {"summary": "Person in garage.", "image_url": "/api/camera_proxy/camera.best", "image_web_path": ""},
+            "generated_image": {"image_url": "/api/camera_proxy/camera.gen"},
+        }
+        store = _FakeStore(bundle=None, wait_bundle=bundle)
+        monkeypatch.setattr(sys.modules["garage_door_notify"], "DETECTION_SUMMARY_STORE", store)
+
+        app = self._make_app(
+            {
+                "ai_enabled": True,
+                "ai_bundle_key": "garage",
+                "ai_wait_timeout_s": 5,
+                "ai_max_bundle_age_s": 120,
+                "ai_use_detection_summary_events": True,
+                "ai_run_started_lookback_s": 900,
+            }
+        )
+        # Simulate that we observed a recent run_started event.
+        app._latest_run_started = {"garage": {"run_id": "r99", "started_ts": 105.0}}
+        monkeypatch.setattr(sys.modules["garage_door_notify"].time, "time", lambda: 110.0)
+
+        got = app._get_detection_summary(10, 20)
+        assert got is not None
+        assert got["run_id"] == "r99"
+        assert got["image"] == "/api/camera_proxy/camera.gen"
+        assert any(c[0] == "wait_for_run_id" for c in store.calls)
+        assert not any(c[0] == "wait_for_bundle" for c in store.calls)
 
     def test_on_delay_expired_schedules_async_send_with_ai(self, monkeypatch):
         # Force thread to run inline for determinism
@@ -187,6 +233,7 @@ class TestGarageDoorNotify:
         bundle = {
             "run_id": "r2",
             "best": {"summary": "1 person standing center.", "image_url": "/api/camera_proxy/camera.best", "image_web_path": ""},
+            "generated_image": {"image_url": "/api/camera_proxy/camera.gen"},
         }
         store = _FakeStore(bundle=bundle)
         monkeypatch.setattr(sys.modules["garage_door_notify"], "DETECTION_SUMMARY_STORE", store)
@@ -223,7 +270,7 @@ class TestGarageDoorNotify:
         app._on_delay_expired({"entity_id": entity_id})
         assert app._send_notifications.call_count == 1
         _, kwargs = app._send_notifications.call_args
-        assert kwargs["image_web_path"] == "/api/camera_proxy/camera.best"
+        assert kwargs["image_web_path"] == "/api/camera_proxy/camera.gen"
 
     def test_consolidated_transition_cancels_timer_and_schedules_send(self, monkeypatch):
         monkeypatch.setattr(sys.modules["garage_door_notify"].threading, "Thread", _ImmediateThread)

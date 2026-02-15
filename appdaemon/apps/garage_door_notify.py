@@ -9,7 +9,7 @@ or arrives.
 
 import threading
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import hassapi as hass
 
@@ -36,11 +36,15 @@ class GarageDoorNotify(hass.Hass):
         "ai_wait_timeout_s": 30,
         "ai_max_bundle_age_s": 120,
         "ai_window_pad_s": 5,
+        # Event-driven coordination with DetectionSummary (preferred).
+        "ai_use_detection_summary_events": True,
+        "ai_run_started_lookback_s": 900,
     }
 
     def initialize(self):
         """Register state listeners for each door."""
         self._pending = {}  # entity_id -> {state, timestamp, handle, door_name, from_display}
+        self._latest_run_started: dict[str, dict[str, Any]] = {}
 
         self.log(f"Namespaces: {self.list_namespaces()}")
         self.log(f"Door state: {self.get_state('cover.ratgdov25i_4a0325_door')}")
@@ -53,6 +57,45 @@ class GarageDoorNotify(hass.Hass):
         for entity_id in doors:
             self.listen_state(self._on_door_state, entity_id, new="open")
             self.listen_state(self._on_door_state, entity_id, new="closed")
+
+        # Subscribe to detection-summary events so we can wait by run_id rather than time windows.
+        if self._ai_enabled() and self._ai_use_events():
+            self.listen_event(self._on_detection_summary_run_started, "detection_summary/run_started")
+
+    def _ai_use_events(self) -> bool:
+        return bool(
+            self.args.get(
+                "ai_use_detection_summary_events", self.DEFAULTS["ai_use_detection_summary_events"]
+            )
+        )
+
+    def _ai_run_started_lookback_s(self) -> float:
+        return float(self.args.get("ai_run_started_lookback_s", self.DEFAULTS["ai_run_started_lookback_s"]))
+
+    def _on_detection_summary_run_started(self, event_name, data, kwargs) -> None:
+        try:
+            if not isinstance(data, dict):
+                return
+            bundle_key = str(data.get("bundle_key") or "")
+            run_id = str(data.get("run_id") or "")
+            started_ts = float(data.get("started_ts") or 0.0)
+            if not bundle_key or not run_id:
+                return
+            self._latest_run_started[bundle_key] = {"run_id": run_id, "started_ts": started_ts}
+        except Exception:
+            return
+
+    def _get_latest_run_id(self, bundle_key: str) -> Optional[str]:
+        info = getattr(self, "_latest_run_started", {}).get(bundle_key)
+        if not info:
+            return None
+        run_id = str(info.get("run_id") or "")
+        started_ts = float(info.get("started_ts") or 0.0)
+        if not run_id:
+            return None
+        if started_ts > 0 and (time.time() - started_ts) > self._ai_run_started_lookback_s():
+            return None
+        return run_id
 
     def _on_door_state(self, entity_id, attribute, old, new, kwargs):
         """Handle door state change to open or closed."""
@@ -213,6 +256,41 @@ class GarageDoorNotify(hass.Hass):
         t0 = time.time()
         bundle_key = self._ai_bundle_key()
         max_age_s = self._ai_max_bundle_age_s()
+
+        # Event-driven path: if we saw a recent run start, wait specifically for that run_id.
+        if self._ai_use_events():
+            run_id = self._get_latest_run_id(bundle_key)
+            if run_id:
+                bundle = DETECTION_SUMMARY_STORE.get_bundle_by_run_id(bundle_key, run_id, include_consumed=False)
+                if not bundle:
+                    timeout_s = self._ai_wait_timeout_s()
+                    if timeout_s > 0:
+                        bundle = DETECTION_SUMMARY_STORE.wait_for_run_id(
+                            bundle_key,
+                            run_id,
+                            timeout_s=timeout_s,
+                            include_consumed=False,
+                        )
+                if bundle:
+                    best = bundle.get("best") or {}
+                    generated = bundle.get("generated_image") or {}
+                    DETECTION_SUMMARY_STORE.mark_consumed(bundle_key, run_id)
+
+                    gen_url = (generated.get("image_url") or "").strip()
+                    gen_web_path = (generated.get("image_web_path") or "").strip()
+                    self.log(
+                        f"AI summary(event): run_id={run_id} waited={time.time()-t0:.3f}s "
+                        f"image={'generated' if gen_url or gen_web_path else 'none'}",
+                        level="INFO",
+                    )
+                    return {
+                        "run_id": run_id,
+                        "summary": best.get("summary") or "",
+                        "image_url": gen_url,
+                        "image_web_path": gen_web_path,
+                        "image": gen_url or gen_web_path,
+                    }
+
         bundle = DETECTION_SUMMARY_STORE.get_best_bundle(
             bundle_key,
             window_start_epoch,
@@ -224,10 +302,16 @@ class GarageDoorNotify(hass.Hass):
         if not bundle:
             timeout_s = self._ai_wait_timeout_s()
             if timeout_s > 0:
+                # IMPORTANT:
+                # The detection-summary bundle may be published *after* this door-event window_end_epoch
+                # (e.g. door close notification fires before LLM/image processing finishes).
+                # When we choose to wait, extend the eligible window to include bundles published
+                # during the wait interval.
+                wait_window_end = max(float(window_end_epoch), time.time()) + float(timeout_s)
                 bundle = DETECTION_SUMMARY_STORE.wait_for_bundle(
                     bundle_key,
                     window_start_epoch,
-                    window_end_epoch,
+                    wait_window_end,
                     timeout_s=timeout_s,
                     include_consumed=False,
                     max_age_s=max_age_s,
@@ -248,17 +332,14 @@ class GarageDoorNotify(hass.Hass):
         if run_id:
             DETECTION_SUMMARY_STORE.mark_consumed(bundle_key, run_id)
 
-        # Prefer generated image (if publish configured it with a camera proxy URL),
-        # otherwise fall back to the best snapshot image.
+        # Prefer generated image only (garage notifications use the illustration).
         gen_url = (generated.get("image_url") or "").strip()
         gen_web_path = (generated.get("image_web_path") or "").strip()
-        best_url = (best.get("image_url") or "").strip()
-        best_web_path = (best.get("image_web_path") or "").strip()
-        image_url = gen_url or best_url
-        image_web_path = gen_web_path or best_web_path
+        image_url = gen_url
+        image_web_path = gen_web_path
         self.log(
             f"AI summary: run_id={run_id} waited={time.time()-t0:.3f}s summary_len={len(str(best.get('summary') or ''))} "
-            f"image={'generated' if gen_url or gen_web_path else ('best' if best_url or best_web_path else 'none')}",
+            f"image={'generated' if gen_url or gen_web_path else 'none'}",
             level="INFO",
         )
         return {

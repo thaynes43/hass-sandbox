@@ -171,6 +171,48 @@ class DetectionSummaryStore:
                     return None
                 self._cv.wait(timeout=remaining)
 
+    def get_bundle_by_run_id(
+        self,
+        bundle_key: str,
+        run_id: str,
+        *,
+        include_consumed: bool = False,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Return a bundle by run_id (deep-copied), or None.
+        """
+        with self._lock:
+            bundles: list[dict[str, Any]] = self._data.get("bundles", {}).get(bundle_key, []) or []
+            for b in bundles:
+                if str(b.get("run_id")) != str(run_id):
+                    continue
+                if (not include_consumed) and b.get("consumed"):
+                    return None
+                return deepcopy(b)
+        return None
+
+    def wait_for_run_id(
+        self,
+        bundle_key: str,
+        run_id: str,
+        *,
+        timeout_s: float,
+        include_consumed: bool = False,
+    ) -> Optional[dict[str, Any]]:
+        """
+        Wait up to timeout_s for a specific run_id to appear.
+        """
+        deadline = time.time() + max(0.0, float(timeout_s))
+        with self._cv:
+            while True:
+                found = self.get_bundle_by_run_id(bundle_key, run_id, include_consumed=include_consumed)
+                if found:
+                    return found
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return None
+                self._cv.wait(timeout=remaining)
+
     def mark_consumed(self, bundle_key: str, run_id: str) -> bool:
         """
         Mark a bundle as consumed (idempotent). Returns True if found.

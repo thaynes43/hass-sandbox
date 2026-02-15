@@ -19,11 +19,14 @@ garage_door_notify:
     - notify.mobile_app_kellies_iphone_air
   ai_enabled: true
   ai_bundle_key: garage
-  ai_wait_timeout_s: 30
-  ai_max_bundle_age_s: 120
+  # Garage door notifications can happen minutes after motion triggers the bundle
+  # (consolidation delay + capture + LLM/image generation). We wait longer and
+  # allow older bundles to be eligible.
+  ai_wait_timeout_s: 180
+  ai_max_bundle_age_s: 900
 
 detection_summary_garage:
-  module: detection_summary
+  module: detection_summary_app.manager
   class: DetectionSummary
   bundle_key: garage
   camera_entity_id: camera.garage_g5_dome_medium_resolution_channel
@@ -36,7 +39,6 @@ detection_summary_garage:
   #
   # Use secrets so dev/prod can differ without editing `apps.yaml`.
   media_fs_root: !secret media_fs_root
-  buffer_subdir: buffer
   bundle_runs_subdir: runs
   # Stable generated image filename (for a local_file camera to point at a constant path).
   published_generated_filename: detection_summary_generated.png
@@ -45,11 +47,15 @@ detection_summary_garage:
   # - /media/detection-summary/garage/detection_summary_generated.png
   #
   generated_image_camera_entity_id: camera.garage_detection_summary_generated
-  # Capture faster + analyze more while tuning.
-  max_snapshots: 10
+  # Capture while motion is ON; stop after it's OFF for 15s.
   snapshot_interval_s: 3
-  ring_size: 100
+  off_grace_s: 15
+  # Safety cap: stop capture even if motion stays on.
+  capture_max_s: 300
+  # Analyze at most N frames per run (adaptive selection).
+  analyze_max_snapshots: 10
   cooldown_s: 60
+  cooldown_backoff_max_s: 1800
   retention_hours: 24
   task_name: detection summary
   data_instructions: >
