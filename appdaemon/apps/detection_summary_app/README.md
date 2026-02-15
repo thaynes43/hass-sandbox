@@ -94,3 +94,12 @@ Goal: A local UI/tool to load a bundle directory and show:
 - prompts and model settings used
 - optional “what-if” re-run with modified prompts/settings
 
+### 4) Animal detection (publish bundle when people OR animals)
+
+Goal: Today we only publish bundles when **people** are found. Extend this so we can also publish bundles for **animals**.
+
+- Add `animal_score` (or a more general `subject_types` schema) to per-frame scoring.
+- Change the “skip bundle” gate to publish when:
+  - `person_score >= threshold` **OR** `animal_score >= threshold`
+- Keep the push notification summary focused on meaningful subjects (people/animals), not environment.
+

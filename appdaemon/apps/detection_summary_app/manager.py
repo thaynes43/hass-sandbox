@@ -123,6 +123,9 @@ class DetectionSummary(hass.Hass):
         "data_frame_score_field": "frame_score",
         "data_pose_field": "pose",
         "data_summary_field": "summary",
+        # If the best scored frame has person_score below this value, skip bundle + image generation.
+        # (Future: extend to "people OR animals" detection.)
+        "best_min_person_score": 2,
         # image generation
         "external_image_gen_enabled": True,
         "external_image_gen_provider": "openai",
@@ -196,6 +199,10 @@ class DetectionSummary(hass.Hass):
         self.data_frame_score_field: str = str(self.args.get("data_frame_score_field", self.DEFAULTS["data_frame_score_field"]))
         self.data_pose_field: str = str(self.args.get("data_pose_field", self.DEFAULTS["data_pose_field"]))
         self.data_summary_field: str = str(self.args.get("data_summary_field", self.DEFAULTS["data_summary_field"]))
+        self.best_min_person_score: float = _safe_float(
+            self.args.get("best_min_person_score", self.DEFAULTS["best_min_person_score"]),
+            default=float(self.DEFAULTS["best_min_person_score"]),
+        )
 
         self.external_image_gen_enabled: bool = _as_bool(self.args.get("external_image_gen_enabled", self.DEFAULTS["external_image_gen_enabled"]))
         self.external_image_gen_wait_for_best_s: float = _safe_float(
@@ -407,13 +414,14 @@ class DetectionSummary(hass.Hass):
     def _process_background(self, run: _Run) -> None:
         try:
             bundle = self._build_bundle(run)
+            # bundle=None means "intentionally skipped" (e.g. no people)
             run.bundle = bundle
         except Exception as e:
             run.bundle = {"run_id": run.capture.run_id, "bundle_key": self.bundle_key, "error": repr(e)}
         finally:
             self.run_in(self._finalize, 0, run_id=run.capture.run_id)
 
-    def _build_bundle(self, run: _Run) -> dict[str, Any]:
+    def _build_bundle(self, run: _Run) -> Optional[dict[str, Any]]:
         cfg = BundleConfig(
             snapshot_ha_dir=self.snapshot_ha_dir,
             bundle_runs_subdir=self.bundle_runs_subdir,
@@ -521,6 +529,8 @@ class DetectionSummary(hass.Hass):
             no_people_threshold=self.no_people_threshold,
         )
         best_idx = int(meta.best_idx)
+        best_res = scored.get(best_idx)
+        best_person = float(getattr(best_res, "person_score", 0.0) if best_res else 0.0)
 
         self.log(
             f"DetectionSummary[{self.bundle_key}]: selection run_id={run_id} captured={total_frames} "
@@ -542,6 +552,17 @@ class DetectionSummary(hass.Hass):
             best_idx=best_idx,
             cfg=self.trace_cfg,
         )
+
+        # If we didn't find people, skip bundle generation to save image-gen API usage.
+        # TODO(future): extend this gate to "people OR animals" detection.
+        if best_person < float(self.best_min_person_score):
+            self.log(
+                f"DetectionSummary[{self.bundle_key}]: run_id={run_id} no bundle generated "
+                f"(best_person_score={best_person:.2f} < best_min_person_score={float(self.best_min_person_score):.2f}); "
+                f"skipping image generation + store publish",
+                level="INFO",
+            )
+            return None
 
         # Create best.jpg for this run
         best_src = frames_dir / f"frame_{best_idx:03d}.jpg"
@@ -632,6 +653,15 @@ class DetectionSummary(hass.Hass):
         if not active or kwargs.get("run_id") != active.capture.run_id:
             return
         try:
+            # If we skipped bundle generation (e.g. no people), do not publish.
+            if active.bundle is None:
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: run_id={active.capture.run_id} finalized with no bundle (skipped)",
+                    level="INFO",
+                )
+                self._effective_cooldown_s = float(self.cooldown_s)
+                return
+
             bundle = active.bundle or {}
             gen = bundle.get("generated_image") if isinstance(bundle, dict) else None
 
