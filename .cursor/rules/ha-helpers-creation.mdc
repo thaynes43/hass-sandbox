@@ -1,8 +1,7 @@
 ---
-description: Create Home Assistant helpers (esp. input_select) via HA MCP tools
-alwaysApply: true
+globs: **/home-assistant/**
+alwaysApply: false
 ---
-
 ## Home Assistant helpers: creation rules (MCP-first)
 
 ### When to use this

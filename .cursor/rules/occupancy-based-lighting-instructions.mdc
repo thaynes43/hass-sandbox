@@ -1,8 +1,7 @@
 ---
-description: Occupancy-based lighting + Inovelli hold/mode + cards migration playbook
-alwaysApply: true
+globs: **/home-assistant/**
+alwaysApply: false
 ---
-
 # Occupancy-based lighting: how this repo works
 
 This repo is a working subset of Home Assistant YAML for **occupancy-based lighting zones**, including:

@@ -1,8 +1,7 @@
 ---
-description: Use HA MCP tools to set entity/device settings (area, etc.)
-alwaysApply: true
+globs: **/home-assistant/**
+alwaysApply: false
 ---
-
 ## Home Assistant: set settings on entities/devices (MCP)
 
 ### Key concept: entity vs device settings

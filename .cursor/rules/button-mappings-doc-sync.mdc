@@ -1,8 +1,7 @@
 ---
-description: Require docs/button-mappings.md updates when switch mappings change
-alwaysApply: true
+globs: **/home-assistant/**
+alwaysApply: false
 ---
-
 # Button mappings doc sync (required)
 
 Whenever you change **button behavior** for any smart switch / scene controller, you MUST update `docs/button-mappings.md` in the same session.

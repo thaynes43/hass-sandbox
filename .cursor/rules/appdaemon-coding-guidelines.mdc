@@ -1,8 +1,7 @@
 ---
-description: AppDaemon coding guidelines (apps vs libraries, and offloading work from Home Assistant)
-alwaysApply: true
+globs: **/appdaemon/**
+alwaysApply: false
 ---
-
 # AppDaemon coding guidelines
 
 ## 1) Apps vs shared libraries
