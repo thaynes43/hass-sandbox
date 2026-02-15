@@ -561,6 +561,9 @@ class DetectionSummary(hass.Hass):
                     time.sleep(0.2)
             if in_path.exists():
                 try:
+                    # TODO(future): Add a "prompt-writer" step (LLM) that generates the image-edit prompt.
+                    # Requirement: maximize style/theme variety across runs without anchoring on hard-coded examples,
+                    # while keeping contents consistent with the chosen best frame.
                     provider_cfg = provider_config_from_appdaemon_args(self.args)
                     img_provider = build_image_provider(provider_cfg)
                     if not getattr(img_provider, "capabilities", None) or not img_provider.capabilities.supports_image_to_image:
@@ -602,6 +605,9 @@ class DetectionSummary(hass.Hass):
                         )
                 except ExternalImageGenError as e:
                     self.log(f"DetectionSummary[{self.bundle_key}]: image generation failed: {e!r}", level="WARNING")
+
+        # TODO(future): Produce a run-level narrative summary (arrival/exit story) by aggregating
+        # per-frame structured facts, then synthesizing a final notification summary.
 
         # best image url is set in finalize after updating local_file camera
         bundle = build_bundle_dict(

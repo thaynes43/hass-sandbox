@@ -60,3 +60,37 @@ Settings:
 - `trace_copy_best_frame` (default true)
 - `trace_max_copies` (default 50)
 
+## Future work (TODO)
+
+### 1) Dynamic, high-variety image style prompts
+
+Goal: Keep **contents** consistent with the best frame, but vary **style/theme** every run.
+
+- Add a “prompt-writer” step that produces an image-generator prompt.
+- Requirements:
+  - Maximize variety without hard-coded examples (no anchoring on specific styles).
+  - Enforce constraints: preserve subject count/positions/actions from the chosen frame.
+  - Store both prompts in the bundle:
+    - the prompt-writer prompt + output
+    - the final image-edit prompt passed to the image provider
+
+### 2) Run-level narrative summary (not single-frame)
+
+Goal: Produce a final push-notification summary that describes the **whole run** (someone arrived/left / what they did), not “what’s in one frame”.
+
+- During scoring, gather structured per-frame facts (who/what/where) and timestamps.
+- After selection, run a second LLM step that synthesizes a **run summary** from the facts.
+- Store:
+  - per-frame fact list
+  - final run summary
+  - model + prompt metadata
+
+### 3) Bundle viewer debug tool
+
+Goal: A local UI/tool to load a bundle directory and show:
+
+- images + their per-frame scores/facts side-by-side
+- selection trace (probes/cutoff/peak exploration)
+- prompts and model settings used
+- optional “what-if” re-run with modified prompts/settings
+
