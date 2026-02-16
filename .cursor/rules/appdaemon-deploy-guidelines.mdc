@@ -8,9 +8,9 @@ This repo treats `appdaemon/` as the **development** workspace. Production AppDa
 
 ## 1) What `deploy.py` does (and does not do)
 
-- **Does**: sync `appdaemon/apps/**` into `X:\apps/**`.
+- **Does**: sync `appdaemon/apps/**` into `X:\apps/**` (includes `apps.yaml`; no renaming).
 - **Also does**: sync shared libraries needed at runtime (currently `appdaemon/ai_providers/**`) into `X:\apps/ai_providers/**` so AppDaemon can import them when its `sys.path` is only `/conf/apps`.
-- **Never does**: deploy `appdaemon.yaml` or `secrets.yaml` (production injects secrets via ExternalSecret).
+- **Never does**: deploy `appdaemon.yaml` or `secrets.yaml` (production appdaemon.yaml and secrets.yaml are deployed via Flux as ConfigMaps).
 - **Does not**: install Python dependencies in the production container image.
 
 ## 2) Shared code must be deployed into `/conf/apps`

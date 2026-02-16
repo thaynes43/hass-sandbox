@@ -6,7 +6,7 @@ alwaysApply: false
 
 ## 1) Apps vs shared libraries
 
-- Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps.yaml`) in `appdaemon/apps/`.
+- Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps.yaml` or `apps-dev.yaml`) in `appdaemon/apps/`.
 - Put **code that is only used by one app** alongside that app in `appdaemon/apps/`.
 
 Examples:

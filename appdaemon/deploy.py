@@ -5,8 +5,8 @@ Deploy AppDaemon configs from this repo to production.
 Syncs appdaemon/apps/ to the production config directory (typically X:\apps/).
 Used by agents and humans.
 
-NEVER deploys appdaemon.yaml or secrets.yaml — production injects these via
-Kubernetes ExternalSecret. Local dev copies are .gitignored.
+NEVER deploys appdaemon.yaml or secrets.yaml — production gets them via Flux
+(ConfigMaps). Local dev copies are .gitignored.
 
 Usage:
     python appdaemon/deploy.py
@@ -30,7 +30,7 @@ SOURCE = SCRIPT_DIR
 DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
 
 # What to copy:
-# - apps/: AppDaemon app modules + apps.yaml
+# - apps/: AppDaemon app modules + apps.yaml (prod app list). No renaming; prod uses apps.yaml as-is.
 # - ai_providers/: shared provider code used by apps (must be importable in prod)
 #
 # NOTE: In production AppDaemon often only includes `/conf/apps` in sys.path.
