@@ -1,5 +1,5 @@
 ---
-globs: **/home-assistant/**
+globs: home-assistant/**
 alwaysApply: false
 ---
 ## Home Assistant helpers: creation rules (MCP-first)

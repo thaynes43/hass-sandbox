@@ -1,5 +1,5 @@
 ---
-globs: **/appdaemon/**
+globs: appdaemon/**
 alwaysApply: false
 ---
 # AppDaemon coding guidelines

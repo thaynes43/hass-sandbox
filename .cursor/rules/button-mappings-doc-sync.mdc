@@ -1,5 +1,8 @@
 ---
-globs: **/home-assistant/**
+globs:
+  - home-assistant/automations/switch-buttons/**
+  - home-assistant/blueprints/**
+  - docs/button-mappings.md
 alwaysApply: false
 ---
 # Button mappings doc sync (required)

@@ -1,5 +1,10 @@
 ---
-globs: **/home-assistant/**
+globs:
+  - home-assistant/automations/occupancy-based-lighting/**
+  - home-assistant/automations/switch-buttons/**
+  - home-assistant/scripts/**
+  - home-assistant/cards/**
+  - home-assistant/blueprints/**
 alwaysApply: false
 ---
 # Occupancy-based lighting: how this repo works

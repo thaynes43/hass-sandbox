@@ -29,9 +29,14 @@ REPO_ROOT = SCRIPT_DIR.parent
 SOURCE = SCRIPT_DIR
 DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
 
-# What to copy: apps/ only. appdaemon.yaml and secrets.yaml are NEVER deployed;
-# production injects them via Kubernetes ExternalSecret.
-COPY_ITEMS = ["apps"]
+# What to copy:
+# - apps/: AppDaemon app modules + apps.yaml
+# - ai_providers/: shared provider code used by apps (must be importable in prod)
+#
+# NOTE: In production AppDaemon often only includes `/conf/apps` in sys.path.
+# We therefore deploy `ai_providers/` into `apps/ai_providers/` so imports like
+# `import ai_providers...` work without requiring appdaemon.yaml import_paths changes.
+COPY_ITEMS = ["apps", "ai_providers"]
 
 EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}
@@ -58,7 +63,8 @@ def deploy(source: Path, target: Path, dry_run: bool = False) -> int:
     copied = 0
     for item in COPY_ITEMS:
         src = source / item
-        dst = target / item
+        # Keep `ai_providers/` importable under the default prod sys.path (/conf/apps).
+        dst = (target / "apps" / item) if item == "ai_providers" else (target / item)
         if not src.exists():
             continue
         if src.is_dir():

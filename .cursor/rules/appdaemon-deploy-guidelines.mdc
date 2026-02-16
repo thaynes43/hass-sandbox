@@ -1,0 +1,48 @@
+---
+globs: appdaemon/**
+alwaysApply: false
+---
+# AppDaemon deploy guidelines (required)
+
+This repo treats `appdaemon/` as the **development** workspace. Production AppDaemon reads configs from `X:\` (mounted into Kubernetes).
+
+## 1) What `deploy.py` does (and does not do)
+
+- **Does**: sync `appdaemon/apps/**` into `X:\apps/**`.
+- **Also does**: sync shared libraries needed at runtime (currently `appdaemon/ai_providers/**`) into `X:\apps/ai_providers/**` so AppDaemon can import them when its `sys.path` is only `/conf/apps`.
+- **Never does**: deploy `appdaemon.yaml` or `secrets.yaml` (production injects secrets via ExternalSecret).
+- **Does not**: install Python dependencies in the production container image.
+
+## 2) Shared code must be deployed into `/conf/apps`
+
+Production AppDaemon commonly imports apps with:
+
+- `sys.path == ["/conf/apps", ...]`
+
+So any shared code outside `appdaemon/apps/` must still land **under** `X:\apps\...` (or you must change production `appdaemon.yaml` `import_paths`).
+
+### Update requirement
+
+If you add a new shared library directory (example: `appdaemon/service_providers/` or `appdaemon/foo_shared/`) that apps import at runtime, you MUST update:
+
+- `appdaemon/deploy.py` `COPY_ITEMS = [...]`
+
+and ensure the destination path is importable under `/conf/apps` (typically by deploying into `X:\apps/<module_name>/`).
+
+## 3) Python dependencies: dev vs production
+
+### Key rule
+
+Adding a new line to `appdaemon/requirements.txt` only guarantees it exists in **dev**. Production will **NOT** have the dependency until the AppDaemon container environment installs it.
+
+### What to do when adding a dependency
+
+- Update `appdaemon/requirements.txt` (source of truth).
+- Ensure production has one of:
+  - **Preferred**: AppDaemon image rebuild installs `requirements.txt`
+  - **Alternative**: init container / startup hook runs `pip install -r ...` into a writable site-packages/venv
+
+### Deployment note
+
+If an app imports a package that is not in the production image, AppDaemon will fail on startup with `ModuleNotFoundError`.
+

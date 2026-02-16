@@ -1,6 +1,7 @@
 ---
 description: How to import night light automations from Home Assistant into the automations/night-lights folder
-globs: **/home-assistant/**
+globs:
+  - home-assistant/automations/night-lights/**
 alwaysApply: false
 ---
 # Night lights: import process
