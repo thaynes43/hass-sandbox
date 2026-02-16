@@ -1,0 +1,1 @@
+net use X: \\sshfs.kr\appdaemon@localhost!2222\config\conf /persistent:no

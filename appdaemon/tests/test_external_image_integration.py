@@ -84,8 +84,8 @@ def test_external_openai_image_edit_writes_png() -> None:
     from ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
 
     secrets = _load_secrets()
-    api_key = _env("AI_PROVIDER_KEY") or str(secrets.get("ai_provider_key") or "")
-    assert api_key, "Set AI_PROVIDER_KEY (or set ai_provider_key in appdaemon/secrets.yaml)"
+    api_key = _env("AI_PROVIDER_KEY") or str(secrets.get("openapi_token") or secrets.get("ai_provider_key") or "")
+    assert api_key, "Set AI_PROVIDER_KEY (or set openapi_token in appdaemon/secrets.yaml)"
 
     input_path = _resolve_media_path(Path(_env("EXTERNAL_IMAGE_INPUT_PATH")))
     assert input_path.exists(), f"Set EXTERNAL_IMAGE_INPUT_PATH to an existing image; got {input_path}"

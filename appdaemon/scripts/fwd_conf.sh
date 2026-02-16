@@ -1,0 +1,1 @@
+kubectl -n home-automation port-forward svc/appdaemon 2222:2222

@@ -13,7 +13,7 @@ param(
 # Requires:
 # - Either:
 #   - `AI_PROVIDER_KEY`, OR
-#   - `appdaemon/secrets.yaml` contains `ai_provider_key: "..."` (pytest loads it as a fallback)
+#   - `appdaemon/secrets.yaml` contains `openapi_token: "..."` (pytest loads it as a fallback)
 # - InputPath points at a real image file, typically:
 #   /media/detection-summary/<zone>/runs/<run_id>/best.jpg (as seen from AppDaemon container)
 

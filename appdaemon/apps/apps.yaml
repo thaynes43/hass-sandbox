@@ -107,7 +107,7 @@ detection_summary_garage:
   ai_data_enabled: true
   # External data generation (OpenAI vision -> JSON). Defaults are set in code; override if needed.
   external_data_provider: openai
-  external_data_api_key: !secret ai_provider_key
+  external_data_api_key: !secret openapi_token
   external_data_model: gpt-5.2
   external_data_timeout_s: 60
   external_data_max_output_tokens: 300
@@ -123,7 +123,7 @@ detection_summary_garage:
   # External image generation (OpenAI). Uses `image_instructions` as the prompt.
   external_image_gen_enabled: true
   external_image_gen_provider: openai
-  external_image_gen_api_key: !secret ai_provider_key
+  external_image_gen_api_key: !secret openapi_token
   # Image edit models are separate from GPT-5.2; this endpoint uses GPT Image models.
   # See OpenAI docs for /v1/images/edits (e.g. gpt-image-1.5, gpt-image-1, chatgpt-image-latest).
   external_image_gen_model: gpt-image-1.5
