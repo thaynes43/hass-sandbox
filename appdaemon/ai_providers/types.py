@@ -96,3 +96,16 @@ class DataProvider(Protocol):
         """
         raise NotImplementedError
 
+    def generate_data_from_text(
+        self,
+        *,
+        input_text: str,
+        instructions: str,
+        expected_keys: Optional[list[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate structured data from text input (text-only LLM).
+        Returns a dict (typically JSON-decoded).
+        """
+        raise NotImplementedError
+

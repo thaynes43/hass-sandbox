@@ -46,19 +46,23 @@ def build_image_provider(cfg: ImageProviderConfig) -> ImageProvider:
 
 def provider_config_from_appdaemon_args(args: dict[str, Any]) -> ImageProviderConfig:
     """
-    Parse the subset of an AppDaemon app's args that configure external image gen.
+    Parse `ai_provider_conf` from an AppDaemon app's args for image generation.
     """
-    provider = ImageProviderName.parse(args.get("external_image_gen_provider", "openai"))
-    timeout_raw = args.get("external_image_gen_timeout_s")
+    conf = args.get("ai_provider_conf") or {}
+    if not isinstance(conf, dict):
+        conf = {}
+
+    provider = ImageProviderName.parse(conf.get("provider", "openai"))
+    timeout_raw = conf.get("image_timeout_s")
     timeout_s = float(timeout_raw) if timeout_raw is not None else None
     return ImageProviderConfig(
         provider=provider,
-        api_key=args.get("external_image_gen_api_key"),
-        base_url=args.get("external_image_gen_base_url"),
-        model=args.get("external_image_gen_model"),
-        size=args.get("external_image_gen_size"),
-        quality=args.get("external_image_gen_quality"),
-        output_format=args.get("external_image_gen_output_format"),
+        api_key=conf.get("api_key"),
+        base_url=conf.get("base_url"),
+        model=conf.get("image_model"),
+        size=conf.get("image_size"),
+        quality=conf.get("image_quality"),
+        output_format=conf.get("image_output_format"),
         timeout_s=timeout_s,
     )
 
@@ -96,20 +100,24 @@ def build_data_provider(cfg: DataProviderConfig) -> DataProvider:
 
 def data_provider_config_from_appdaemon_args(args: dict[str, Any]) -> DataProviderConfig:
     """
-    Parse the subset of an AppDaemon app's args that configure external data gen.
+    Parse `ai_provider_conf` from an AppDaemon app's args for vision/text data generation.
     """
-    provider = DataProviderName.parse(args.get("external_data_provider", "openai"))
-    timeout_raw = args.get("external_data_timeout_s")
+    conf = args.get("ai_provider_conf") or {}
+    if not isinstance(conf, dict):
+        conf = {}
+
+    provider = DataProviderName.parse(conf.get("provider", "openai"))
+    timeout_raw = conf.get("data_timeout_s")
     timeout_s = float(timeout_raw) if timeout_raw is not None else None
-    max_tokens_raw = args.get("external_data_max_output_tokens")
+    max_tokens_raw = conf.get("data_max_output_tokens")
     max_output_tokens = int(max_tokens_raw) if max_tokens_raw is not None else None
     return DataProviderConfig(
         provider=provider,
-        api_key=args.get("external_data_api_key") or args.get("external_image_gen_api_key"),
-        base_url=args.get("external_data_base_url") or args.get("external_image_gen_base_url"),
-        model=args.get("external_data_model"),
+        api_key=conf.get("api_key"),
+        base_url=conf.get("base_url"),
+        model=conf.get("data_model"),
         timeout_s=timeout_s,
         max_output_tokens=max_output_tokens,
-        image_detail=args.get("external_data_image_detail"),
+        image_detail=conf.get("data_image_detail"),
     )
 

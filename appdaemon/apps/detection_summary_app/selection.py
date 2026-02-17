@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 @dataclass
 class ScoreResult:
+    person_count: int
     person_score: float
     face_score: float
     frame_score: float
@@ -31,10 +32,11 @@ def _pose_rank(pose: str) -> int:
 
 
 def _pick_key(res: ScoreResult) -> tuple:
-    has_person = 1 if res.person_score > 0 else 0
+    has_person = 1 if (int(res.person_count) > 0 or res.person_score > 0) else 0
     has_summary = 1 if (res.summary or "").strip() else 0
     return (
         has_person,
+        int(res.person_count),
         res.face_score,
         res.frame_score,
         _pose_rank(res.pose),
@@ -117,9 +119,9 @@ def adaptive_select_and_score(
             return scored[i]
         if len(scored) >= budget:
             # Budget exhausted: return a very low score placeholder.
-            return ScoreResult(0, 0, 0, "none", "", {})
+            return ScoreResult(0, 0, 0, 0, "none", "", {})
         ensure_batch([i])
-        return scored.get(i, ScoreResult(0, 0, 0, "none", "", {}))
+        return scored.get(i, ScoreResult(0, 0, 0, 0, "none", "", {}))
 
     if n <= budget:
         for i in range(n):
@@ -168,10 +170,16 @@ def adaptive_select_and_score(
     cutoff = n - 1
     # If we already have evidence of a no-people frame after best_idx from prior probes,
     # infer a cutoff without spending more budget.
-    existing_no = [i for i, r in scored.items() if i > best_idx and r.person_score <= no_people_threshold]
+    existing_no = [
+        i
+        for i, r in scored.items()
+        if i > best_idx and (int(r.person_count) <= 0 and r.person_score <= no_people_threshold)
+    ]
     if existing_no:
         first_no = min(existing_no)
-        existing_people = [i for i, r in scored.items() if i < first_no and r.person_score > no_people_threshold]
+        existing_people = [
+            i for i, r in scored.items() if i < first_no and (int(r.person_count) > 0 or r.person_score > no_people_threshold)
+        ]
         if existing_people:
             cutoff = max(existing_people)
     # Walk forward with exponential steps from best_idx to find first no-people.
@@ -184,7 +192,7 @@ def adaptive_select_and_score(
             break
         ensure_batch([j])
         r = ensure(j)
-        if r.person_score <= no_people_threshold:
+        if int(r.person_count) <= 0 and r.person_score <= no_people_threshold:
             first_no_people = j
             break
         last_people = j
@@ -199,7 +207,7 @@ def adaptive_select_and_score(
         while (b - a) > 1 and len(scored) < budget:
             mid = (a + b) // 2
             r = ensure(mid)
-            if r.person_score <= no_people_threshold:
+            if int(r.person_count) <= 0 and r.person_score <= no_people_threshold:
                 b = mid
             else:
                 a = mid
@@ -214,7 +222,7 @@ def adaptive_select_and_score(
                     continue
                 ensure_batch([jj])
                 rr = ensure(jj)
-                if rr.person_score > no_people_threshold:
+                if int(rr.person_count) > 0 or rr.person_score > no_people_threshold:
                     look_ok = False
                     break
         if look_ok:

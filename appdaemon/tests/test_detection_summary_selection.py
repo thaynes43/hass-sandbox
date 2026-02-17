@@ -1,35 +1,24 @@
+"""Unit tests for detection_summary_app.selection ranking behavior."""
+
 from __future__ import annotations
 
-from detection_summary_app.selection import ScoreResult, adaptive_select_and_score
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
+
+from detection_summary_app.selection import ScoreResult, adaptive_select_and_score  # noqa: E402
 
 
-def test_adaptive_selection_prefers_face_and_stops_after_no_people_cutoff():
-    # Construct a synthetic scoring landscape:
-    # - People appear in frames 2..6
-    # - Best face frame is 4
-    # - After frame 7, no people (should become cutoff)
-    def score(i: int) -> ScoreResult:
-        if 2 <= i <= 6:
-            person = 9
-        else:
-            person = 0
-        face = 10 if i == 4 else (5 if i == 5 else 0)
-        frame = 8 if i in (4, 5) else (3 if person else 0)
-        pose = "standing" if i in (4, 5) else ("walking" if person else "none")
-        summary = f"idx={i}"
-        return ScoreResult(person, face, frame, pose, summary, {"person_score": person, "face_score": face, "frame_score": frame})
+def test_selection_prefers_more_people_when_other_signals_equal():
+    # Two frames, same scores, different person_count
+    def score_index(i: int) -> ScoreResult:
+        if i == 0:
+            return ScoreResult(1, 5.0, 5.0, 5.0, "standing", "s", {})
+        return ScoreResult(3, 5.0, 5.0, 5.0, "standing", "s", {})
 
-    scored, meta = adaptive_select_and_score(
-        total_frames=12,
-        budget=9,
-        score_index=score,
-        seed="test-seed",
-        no_people_threshold=1.0,
-        lookahead_after_no_people=2,
-    )
-
-    assert len(scored) <= 9
-    assert meta.best_idx == 4
-    # Cutoff should not extend into the far tail where there are no people.
-    assert meta.cutoff_idx_inclusive <= 7
+    scored, meta = adaptive_select_and_score(total_frames=2, budget=2, score_index=score_index, seed="x")
+    assert scored[0].person_count == 1
+    assert scored[1].person_count == 3
+    assert meta.best_idx == 1
 

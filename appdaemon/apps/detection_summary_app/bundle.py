@@ -25,6 +25,7 @@ class BundleConfig:
     bundle_runs_subdir: str
     bundle_best_filename: str
     external_generated_filename: str
+    published_best_filename: str
     published_generated_filename: str
     write_bundle_json: bool
     trace: TraceConfig
@@ -36,6 +37,10 @@ def run_ha_dir(cfg: BundleConfig, run_id: str) -> str:
 
 def stable_generated_ha_path(cfg: BundleConfig) -> str:
     return f"{cfg.snapshot_ha_dir}/{cfg.published_generated_filename}"
+
+
+def stable_best_ha_path(cfg: BundleConfig) -> str:
+    return f"{cfg.snapshot_ha_dir}/{cfg.published_best_filename}"
 
 
 def ensure_dir(p: Path) -> None:
@@ -80,11 +85,11 @@ def write_trace(
             copy_file(src, best_dir / src.name)
 
     meta_out = {
-        "budget": meta.budget,
-        "scored_indices": meta.scored_indices,
-        "probes": meta.probes,
-        "cutoff_idx_inclusive": meta.cutoff_idx_inclusive,
-        "best_idx": best_idx,
+        "budget": int(meta.budget),
+        "scored_indices": list(meta.scored_indices),
+        "probes": list(meta.probes),
+        "cutoff_idx_inclusive": int(meta.cutoff_idx_inclusive),
+        "best_idx": int(best_idx),
         "scored": {
             str(i): {
                 "person_score": float(r.person_score),
@@ -111,6 +116,7 @@ def build_bundle_dict(
     best_idx: int,
     best_image_url: str,
     generated_image: Optional[dict[str, Any]],
+    run_narrative: Optional[dict[str, Any]],
     cfg: BundleConfig,
     llm_events: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -118,11 +124,20 @@ def build_bundle_dict(
     ha_dir = run_ha_dir(cfg, run_id)
 
     def _rank_key(res: ScoreResult) -> tuple:
-        has_person = 1 if float(res.person_score) > 0 else 0
+        person_count = int(getattr(res, "person_count", 0) or 0)
+        has_person = 1 if (person_count > 0 or float(res.person_score) > 0) else 0
         has_summary = 1 if (res.summary or "").strip() else 0
         pose = (res.pose or "").strip().lower()
         pose_rank = {"standing": 3, "stationary": 3, "sitting": 2, "walking": 1, "moving": 1}.get(pose, 0)
-        return (has_person, float(res.face_score), float(res.frame_score), pose_rank, float(res.person_score), has_summary)
+        return (
+            has_person,
+            person_count,
+            float(res.face_score),
+            float(res.frame_score),
+            pose_rank,
+            float(res.person_score),
+            has_summary,
+        )
 
     def _cand(idx: int) -> dict[str, Any]:
         fr = scored.get(idx)
@@ -131,6 +146,7 @@ def build_bundle_dict(
             "idx": idx,
             "image_filename": (cap_fr.filename if cap_fr else f"frame_{idx:03d}.jpg"),
             "image_ha_path": (cap_fr.image_ha_path if cap_fr else ""),
+            "ai_person_count": int(getattr(fr, "person_count", 0) or 0) if fr else 0,
             "ai_person_score": getattr(fr, "person_score", 0.0) if fr else 0.0,
             "ai_face_score": getattr(fr, "face_score", 0.0) if fr else 0.0,
             "ai_frame_score": getattr(fr, "frame_score", 0.0) if fr else 0.0,
@@ -141,6 +157,9 @@ def build_bundle_dict(
 
     best_res = scored.get(best_idx)
     best_summary = (best_res.summary if best_res else "").strip()
+    run_summary = ""
+    if isinstance(run_narrative, dict):
+        run_summary = str(run_narrative.get("run_summary") or "").strip()
 
     capture_ended_epoch = float(capture.ended_ts or published_ts)
     capture_duration_s = max(0.0, capture_ended_epoch - float(capture.started_ts))
@@ -183,7 +202,9 @@ def build_bundle_dict(
         "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(published_ts)),
         "best_idx": int(best_idx),
         "text": best_summary,
+        "run_text": run_summary,
         "scores": {
+            "person_count": int(getattr(best_res, "person_count", 0) or 0),
             "person_score": float(best_res.person_score if best_res else 0.0),
             "face_score": float(best_res.face_score if best_res else 0.0),
             "frame_score": float(best_res.frame_score if best_res else 0.0),
@@ -203,11 +224,13 @@ def build_bundle_dict(
     }
 
     # Keep AI artifacts near the top for readability.
+    bundle["run_narrative"] = run_narrative
     bundle["generated_image"] = generated_image
     bundle["best_idx"] = int(best_idx)
     bundle["best"] = {
         "summary": best_summary,
         "score": float(best_res.person_score if best_res else 0.0),
+        "person_count": int(getattr(best_res, "person_count", 0) or 0),
         "person_score": float(best_res.person_score if best_res else 0.0),
         "face_score": float(best_res.face_score if best_res else 0.0),
         "frame_score": float(best_res.frame_score if best_res else 0.0),
@@ -235,6 +258,7 @@ def build_bundle_dict(
         "captured_subdir": "captured",
         "best_ha_path": f"{ha_dir}/{cfg.bundle_best_filename}",
         "generated_ha_path": f"{ha_dir}/{cfg.external_generated_filename}",
+        "stable_best_ha_path": stable_best_ha_path(cfg),
         "stable_generated_ha_path": stable_generated_ha_path(cfg),
     }
 

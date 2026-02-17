@@ -180,6 +180,8 @@ class DetectionSummaryStore:
     ) -> Optional[dict[str, Any]]:
         """
         Return a bundle by run_id (deep-copied), or None.
+
+        If include_consumed is False (default), consumed bundles are ignored.
         """
         with self._lock:
             bundles: list[dict[str, Any]] = self._data.get("bundles", {}).get(bundle_key, []) or []
@@ -187,7 +189,7 @@ class DetectionSummaryStore:
                 if str(b.get("run_id")) != str(run_id):
                     continue
                 if (not include_consumed) and b.get("consumed"):
-                    return None
+                    continue
                 return deepcopy(b)
         return None
 

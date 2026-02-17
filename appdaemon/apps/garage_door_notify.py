@@ -39,6 +39,10 @@ class GarageDoorNotify(hass.Hass):
         # Event-driven coordination with DetectionSummary (preferred).
         "ai_use_detection_summary_events": True,
         "ai_run_started_lookback_s": 900,
+        # Mobile deep-link when tapping the notification.
+        # For custom dashboards, the path is typically: /<dashboard_url_path>/<view_path>
+        # Example: /garage-notify/summary
+        "notification_url": "/garage-notify/summary",
     }
 
     def initialize(self):
@@ -266,15 +270,36 @@ class GarageDoorNotify(hass.Hass):
         message = f"{door_name} is now {to_state} (was {from_display})."
         return title, message
 
-    def _send_notifications(self, title: str, message: str, image_web_path: Optional[str] = None) -> None:
+    def _send_notifications(
+        self,
+        title: str,
+        message: str,
+        image_web_path: Optional[str] = None,
+        *,
+        run_id: Optional[str] = None,
+    ) -> None:
         """Send notification to all configured services."""
         services = self.args.get("notify_services", self.DEFAULTS["notify_services"])
+        notification_url = str(self.args.get("notification_url", self.DEFAULTS["notification_url"]) or "").strip()
         self.log(f"Sending notification: {title!r} to {len(services)} service(s)", level="INFO")
         for svc in services:
             # notify.mobile_app_xxx -> notify/mobile_app_xxx
             service = svc.replace(".", "/", 1) if "." in svc else f"notify/{svc}"
+            data: dict[str, Any] = {}
             if image_web_path:
-                self.call_service(service, title=title, message=message, data={"image": image_web_path})
+                data["image"] = image_web_path
+            # Home Assistant Companion App deep-link (works across iOS/Android; keep both keys for compatibility).
+            if notification_url:
+                data["url"] = notification_url
+                data["clickAction"] = notification_url
+            # Optional action button to select the specific run_id in the dashboard.
+            rid = str(run_id or "").strip()
+            if rid:
+                data["actions"] = [
+                    {"action": f"GARAGE_DS_VIEW:{rid}", "title": "View details"},
+                ]
+            if data:
+                self.call_service(service, title=title, message=message, data=data)
             else:
                 self.call_service(service, title=title, message=message)
 
@@ -342,10 +367,14 @@ class GarageDoorNotify(hass.Hass):
                 if bundle:
                     best = bundle.get("best") or {}
                     generated = bundle.get("generated_image") or {}
+                    run_narrative = bundle.get("run_narrative") or {}
                     DETECTION_SUMMARY_STORE.mark_consumed(bundle_key, run_id)
 
                     gen_url = (generated.get("image_url") or "").strip()
                     gen_web_path = (generated.get("image_web_path") or "").strip()
+                    run_summary = ""
+                    if isinstance(run_narrative, dict):
+                        run_summary = str(run_narrative.get("run_summary") or "").strip()
                     self.log(
                         f"AI summary(event): run_id={run_id} waited={time.time()-t0:.3f}s "
                         f"image={'generated' if gen_url or gen_web_path else 'none'}",
@@ -353,7 +382,7 @@ class GarageDoorNotify(hass.Hass):
                     )
                     return {
                         "run_id": run_id,
-                        "summary": best.get("summary") or "",
+                        "summary": run_summary or (best.get("summary") or ""),
                         "image_url": gen_url,
                         "image_web_path": gen_web_path,
                         "image": gen_url or gen_web_path,
@@ -442,6 +471,7 @@ class GarageDoorNotify(hass.Hass):
 
         best = bundle.get("best") or {}
         generated = bundle.get("generated_image") or {}
+        run_narrative = bundle.get("run_narrative") or {}
         run_id = str(bundle.get("run_id", ""))
         # Mark consumed so the next door event prefers a fresh bundle.
         if run_id:
@@ -452,6 +482,9 @@ class GarageDoorNotify(hass.Hass):
         gen_web_path = (generated.get("image_web_path") or "").strip()
         image_url = gen_url
         image_web_path = gen_web_path
+        run_summary = ""
+        if isinstance(run_narrative, dict):
+            run_summary = str(run_narrative.get("run_summary") or "").strip()
         self.log(
             f"AI summary: run_id={run_id} waited={time.time()-t0:.3f}s summary_len={len(str(best.get('summary') or ''))} "
             f"image={'generated' if gen_url or gen_web_path else 'none'}",
@@ -459,7 +492,7 @@ class GarageDoorNotify(hass.Hass):
         )
         return {
             "run_id": run_id,
-            "summary": best.get("summary") or "",
+            "summary": run_summary or (best.get("summary") or ""),
             "image_url": image_url,
             "image_web_path": image_web_path,
             "image": image_url or image_web_path,
@@ -496,8 +529,10 @@ class GarageDoorNotify(hass.Hass):
 
             # Prefer generated image when available, otherwise best image.
             image = ""
+            run_id = ""
             if ai:
                 image = (ai.get("image") or "").strip()
+                run_id = str(ai.get("run_id") or "").strip()
             final_title = title
             final_message = message
             final_image = image
@@ -511,6 +546,7 @@ class GarageDoorNotify(hass.Hass):
                 title=final_title,
                 message=final_message,
                 image=final_image,
+                run_id=run_id,
             )
 
         t = threading.Thread(target=_worker, name="garage_door_notify_ai")
@@ -521,4 +557,5 @@ class GarageDoorNotify(hass.Hass):
         title = kwargs.get("title") or ""
         message = kwargs.get("message") or ""
         image = (kwargs.get("image") or "").strip()
-        self._send_notifications(title, message, image_web_path=image if image else None)
+        run_id = (kwargs.get("run_id") or "").strip()
+        self._send_notifications(title, message, image_web_path=image if image else None, run_id=run_id if run_id else None)

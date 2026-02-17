@@ -22,6 +22,17 @@ This package implements a generic “detection summary” producer:
   - (example entity: `camera.garage_detection_summary_generated`)
   - Notifications attach `/api/camera_proxy/<camera_entity_id>`
 
+## What gets published (bundle outputs)
+
+Each run publishes a bundle that includes:
+
+- **Best-frame summary**: `best.summary` (what is visible in the chosen best frame)
+- **Run narrative summary**: `run_narrative.run_summary` (what happened across the whole run)
+  - Convenience copy: `summary.run_text`
+- **Images**
+  - Best frame: `runs/<run_id>/best.jpg` and stable mirror `detection_summary_best.jpg` (if configured)
+  - Generated illustration: `runs/<run_id>/generated.png` and stable mirror `detection_summary_generated.png`
+
 ## Events (contract for consumers)
 
 `DetectionSummary` fires:
@@ -34,31 +45,128 @@ Consumers (e.g. `GarageDoorNotify`) should listen for these events and wait for 
 
 ## Config reference (apps.yaml)
 
-### Capture
-- `trigger_entity_id`: motion binary sensor
-- `trigger_to`: usually `on`
-- `snapshot_interval_s`: seconds between snapshots while motion is on
-- `off_grace_s`: motion must be off continuously this long to stop capture (default: 15)
-- `capture_max_s`: maximum run duration while motion is on (default: 300)
-- `cooldown_s`: base cooldown between runs
-- `cooldown_backoff_max_s`: cap for exponential cooldown backoff (default: 1800)
+This app is designed to keep `apps.yaml` minimal: **wire it to HA entities + directories** and rely on code defaults.
 
-### Selection/scoring
-- `analyze_max_snapshots`: max frames to score per run (budget)
-- `no_people_threshold`: person_score <= this is treated as “no people” for cutoff
-- `external_data_parallelism`: max concurrent vision calls
+### Required (per deployment)
 
-### Trace/debug artifacts (optional)
+- `bundle_key`
+- `snapshot_ha_dir` (must be under `/media/...`)
+- `media_fs_root` (local filesystem path that maps to HA `/media`)
+- `data_instructions`
+- `image_instructions`
+- `hass_entities` (nested HA entity IDs; at minimum `camera_entity_id` and `trigger_entity_id`)
+- `ai_provider_conf` (at minimum, `provider` + `api_key`)
+
+### `hass_entities` (nested)
+
+All Home Assistant entity IDs live under this object so the main app config stays readable.
+
+Required:
+
+- `hass_entities.camera_entity_id`
+- `hass_entities.trigger_entity_id`
+
+Optional (enable features/UI integration):
+
+- `hass_entities.best_image_camera_entity_id`
+- `hass_entities.generated_image_camera_entity_id`
+- `hass_entities.summary_text_entity_id`
+- `hass_entities.run_picker_entity_id`
+- `hass_entities.selected_summary_text_entity_id`
+- `hass_entities.selected_best_image_camera_entity_id`
+- `hass_entities.selected_generated_image_camera_entity_id`
+
+### `ai_provider_conf` (nested)
+
+Used for **both** vision scoring and image generation.
+
+- `provider` (default: `openai`)
+- `api_key` (**required** for OpenAI)
+- `base_url` (default: `https://api.openai.com`)
+- `data_model` (default: `gpt-5.2`)
+- `data_timeout_s` (default: `60`)
+- `data_max_output_tokens` (default: `300`)
+- `data_image_detail` (default: `low`)
+- `image_model` (default: `gpt-image-1.5`)
+- `image_timeout_s` (default: `90`)
+- `image_size` (default: `1024x1024`)
+- `image_quality` (default: `medium`)
+- `image_output_format` (default: `png`)
+
+### Defaults (overridable app args)
+
+These are defaults in code. You can override any of these by adding the key at the top-level of the app config in `apps.yaml`.
+
+#### Capture / cooldown
+
+| Key | Default |
+| --- | --- |
+| `trigger_to` | `on` |
+| `task_name` | `detection summary` |
+| `snapshot_interval_s` | `2.5` |
+| `off_grace_s` | `15` |
+| `capture_max_s` | `300` |
+| `cooldown_s` | `60` |
+| `cooldown_backoff_max_s` | `1800` |
+
+#### Selection / scoring
+
+| Key | Default |
+| --- | --- |
+| `analyze_max_snapshots` | `10` |
+| `no_people_threshold` | `1.0` |
+| `external_data_parallelism` | `4` |
+| `best_min_person_score` | `2` |
+
+#### Image generation (image-to-image “edit”)
+
+| Key | Default |
+| --- | --- |
+| `external_image_gen_enabled` | `true` |
+| `external_image_gen_wait_for_best_s` | `5` |
+| `external_generated_filename` | `generated.png` |
+
+#### Bundle filenames / layout
+
+| Key | Default |
+| --- | --- |
+| `bundle_best_filename` | `best.jpg` |
+| `published_best_filename` | `detection_summary_best.jpg` |
+| `published_generated_filename` | `detection_summary_generated.png` |
+| `selected_best_filename` | `detection_summary_selected_best.jpg` |
+| `selected_generated_filename` | `detection_summary_selected_generated.png` |
+| `bundle_runs_subdir` | `runs` |
+| `captured_subdir` | `captured` |
+| `write_bundle_json` | `true` |
+
+#### Selected-run dashboard integration
+
+| Key | Default |
+| --- | --- |
+| `run_picker_max_options` | `25` |
+| `selected_auto_reset_s` | `900` |
+
+#### Run narrative (second LLM step)
+
+| Key | Default |
+| --- | --- |
+| `run_narrative_enabled` | `true` |
+| `run_narrative_max_chars` | `220` |
+| `run_narrative_instructions` | `null` |
+
+#### Trace/debug artifacts
+
 When enabled, write:
 - `runs/<run_id>/trace/selected/` (frames sent to the LLM)
 - `runs/<run_id>/trace/best/` (best frame)
 - `runs/<run_id>/trace/meta.json` (selection probes and scores)
 
-Settings:
-- `trace_enabled` (default false)
-- `trace_copy_selected_frames` (default true)
-- `trace_copy_best_frame` (default true)
-- `trace_max_copies` (default 50)
+| Key | Default |
+| --- | --- |
+| `trace_enabled` | `false` |
+| `trace_copy_selected_frames` | `true` |
+| `trace_copy_best_frame` | `true` |
+| `trace_max_copies` | `50` |
 
 ## Future work (TODO)
 
@@ -73,17 +181,6 @@ Goal: Keep **contents** consistent with the best frame, but vary **style/theme**
   - Store both prompts in the bundle:
     - the prompt-writer prompt + output
     - the final image-edit prompt passed to the image provider
-
-### 2) Run-level narrative summary (not single-frame)
-
-Goal: Produce a final push-notification summary that describes the **whole run** (someone arrived/left / what they did), not “what’s in one frame”.
-
-- During scoring, gather structured per-frame facts (who/what/where) and timestamps.
-- After selection, run a second LLM step that synthesizes a **run summary** from the facts.
-- Store:
-  - per-frame fact list
-  - final run summary
-  - model + prompt metadata
 
 ### 3) Bundle viewer debug tool
 

@@ -13,6 +13,33 @@ This repo treats `appdaemon/` as the **development** workspace. Production AppDa
 - **Never does**: deploy `appdaemon.yaml` or `secrets.yaml` (production appdaemon.yaml and secrets.yaml are deployed via Flux as ConfigMaps).
 - **Does not**: install Python dependencies in the production container image.
 
+## 1.1) Merging dev apps into prod apps (recommended)
+
+This repo keeps two app lists:
+
+- `appdaemon/apps/apps.yaml`: the **production** app list (source-of-truth for prod)
+- `appdaemon/apps/apps-dev.yaml`: the **dev overlay** (only the apps you’re actively iterating on)
+
+To avoid manual copy/paste merging, `deploy.py` supports a merge mode:
+
+```bash
+# Preview what would copy + confirm the merged apps.yaml
+python appdaemon/deploy.py --dry-run --merge-dev-apps
+
+# Deploy with merge (apps-dev.yaml overlays apps.yaml at top-level keys)
+python appdaemon/deploy.py --merge-dev-apps
+```
+
+### Merge behavior
+
+- **New app keys** present in `apps-dev.yaml` are **added** to the deployed `X:\apps\apps.yaml`.
+- **Existing app keys** present in `apps-dev.yaml` **replace** the corresponding app config from `apps.yaml` (whole-app replacement, not deep-merge).
+- YAML tags like `!secret` are preserved during merge via `ruamel.yaml`.
+
+### Dependency note
+
+Merge mode requires `ruamel.yaml` to be installed in the environment running `deploy.py` (dev only). It is listed in `appdaemon/requirements.txt`.
+
 ## 2) Shared code must be deployed into `/conf/apps`
 
 Production AppDaemon commonly imports apps with:

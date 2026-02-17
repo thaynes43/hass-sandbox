@@ -37,25 +37,18 @@ class TestDetectionSummary:
     def test_initialize_sets_up_and_listens(self):
         args = {
             "bundle_key": "garage",
-            "camera_entity_id": "camera.garage",
-            "trigger_entity_id": "binary_sensor.garage_person",
-            "storage_backend": "media",
+            "hass_entities": {
+                "camera_entity_id": "camera.garage",
+                "trigger_entity_id": "binary_sensor.garage_person",
+            },
             "snapshot_ha_dir": "/media/detection-summary/garage",
             "media_fs_root": str(Path(__file__).resolve().parent / "_tmp_media"),
-            "bundle_runs_subdir": "runs",
-            "bundle_best_filename": "best.jpg",
-            "task_name": "detection summary",
             "data_instructions": "test",
-            "data_structure": {
-                "score": {"selector": {"number": {"min": 0, "max": 10}}},
-                "summary": {"selector": {"text": None}},
-            },
             "image_instructions": "image",
             "snapshot_interval_s": 0,
             "cooldown_s": 0,
             "retention_hours": 1,
-            "external_data_provider": "openai",
-            "external_data_api_key": "test-key",
+            "ai_provider_conf": {"provider": "openai", "api_key": "test-key"},
         }
 
         app = self._make_app(args)

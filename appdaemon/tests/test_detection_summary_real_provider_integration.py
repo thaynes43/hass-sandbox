@@ -39,16 +39,16 @@ def test_real_provider_scores_and_generates_image_edit_smoke():
             shutil.copyfile(src, dst)
 
         args = {
-            "external_data_provider": "openai",
-            "external_data_api_key": _env("AI_PROVIDER_KEY"),
-            "external_data_model": _env("DS_DATA_MODEL") or "gpt-5.2",
-            "external_data_timeout_s": float(_env("DS_DATA_TIMEOUT_S") or "60"),
-            "external_data_max_output_tokens": int(_env("DS_DATA_MAX_OUTPUT_TOKENS") or "300"),
-            "external_data_image_detail": _env("DS_DATA_IMAGE_DETAIL") or "low",
-            "external_image_gen_provider": "openai",
-            "external_image_gen_api_key": _env("AI_PROVIDER_KEY"),
-            "external_image_gen_model": _env("DS_IMAGE_MODEL") or "gpt-image-1.5",
-            "external_image_gen_timeout_s": float(_env("DS_IMAGE_TIMEOUT_S") or "90"),
+            "ai_provider_conf": {
+                "provider": "openai",
+                "api_key": _env("AI_PROVIDER_KEY"),
+                "data_model": _env("DS_DATA_MODEL") or "gpt-5.2",
+                "data_timeout_s": float(_env("DS_DATA_TIMEOUT_S") or "60"),
+                "data_max_output_tokens": int(_env("DS_DATA_MAX_OUTPUT_TOKENS") or "300"),
+                "data_image_detail": _env("DS_DATA_IMAGE_DETAIL") or "low",
+                "image_model": _env("DS_IMAGE_MODEL") or "gpt-image-1.5",
+                "image_timeout_s": float(_env("DS_IMAGE_TIMEOUT_S") or "90"),
+            }
         }
 
         data_provider = build_data_provider(data_provider_config_from_appdaemon_args(args))
@@ -57,10 +57,10 @@ def test_real_provider_scores_and_generates_image_edit_smoke():
         instructions = _env("DS_DATA_INSTRUCTIONS") or (
             "You are analyzing ONE security camera snapshot for a push notification.\n"
             "Focus ONLY on the people.\n"
-            "Return JSON with keys: person_score, face_score, frame_score, pose, summary.\n"
+            "Return JSON with keys: person_count, person_score, face_score, frame_score, pose, summary.\n"
             "Scores are 0-10. Heavily favor clear, unobstructed faces."
         )
-        expected_keys = ["person_score", "face_score", "frame_score", "pose", "summary"]
+        expected_keys = ["person_count", "person_score", "face_score", "frame_score", "pose", "summary"]
 
         def score(i: int) -> ScoreResult:
             img = work / f"frame_{i:03d}.jpg"
@@ -69,12 +69,13 @@ def test_real_provider_scores_and_generates_image_edit_smoke():
                 instructions=instructions,
                 expected_keys=expected_keys,
             )
+            person_count = int(float(data.get("person_count", 0) or 0))
             person = float(data.get("person_score", 0) or 0)
             face = float(data.get("face_score", 0) or 0)
             frame = float(data.get("frame_score", person) or person)
             pose = str(data.get("pose") or "")
             summary = str(data.get("summary") or "")
-            return ScoreResult(person, face, frame, pose, summary, data)
+            return ScoreResult(person_count, person, face, frame, pose, summary, data)
 
         total = len(list(work.glob("frame_*.jpg")))
         scored, meta = adaptive_select_and_score(

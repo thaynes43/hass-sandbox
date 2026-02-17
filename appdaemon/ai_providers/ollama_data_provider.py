@@ -16,8 +16,8 @@ class OllamaDataProvider(DataProvider):
     name = DataProviderName.OLLAMA
     capabilities = DataProviderCapabilities(
         supports_image_to_json=False,
-        supports_text_to_json=True,
-        notes="Vision-to-JSON not implemented for Ollama in this project yet.",
+        supports_text_to_json=False,
+        notes="Text/vision-to-JSON not implemented for Ollama in this project yet.",
     )
 
     def __init__(self, *, base_url: str):
@@ -32,6 +32,18 @@ class OllamaDataProvider(DataProvider):
     ) -> Dict[str, Any]:
         raise ExternalDataGenError(
             "Ollama provider is configured, but image-to-JSON generation is not implemented/supported yet. "
+            "Use provider=openai for now."
+        )
+
+    def generate_data_from_text(
+        self,
+        *,
+        input_text: str,
+        instructions: str,
+        expected_keys: Optional[list[str]] = None,
+    ) -> Dict[str, Any]:
+        raise ExternalDataGenError(
+            "Ollama provider is configured, but text-to-JSON generation is not implemented/supported yet. "
             "Use provider=openai for now."
         )
 

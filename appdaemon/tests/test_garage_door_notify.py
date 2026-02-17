@@ -7,6 +7,7 @@ These tests run without AppDaemon; we mock hassapi and stub the store and thread
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +22,10 @@ mock_hass = MagicMock()
 mock_hass.Hass = _MockHass
 sys.modules["hassapi"] = mock_hass
 
+# Ensure AppDaemon apps dir is importable (WSL/CI safe).
+_APPS_DIR = Path(__file__).resolve().parents[1] / "apps"
+if str(_APPS_DIR) not in sys.path:
+    sys.path.insert(0, str(_APPS_DIR))
 
 from garage_door_notify import GarageDoorNotify  # noqa: E402
 
@@ -113,7 +118,12 @@ class TestGarageDoorNotify:
     def test_send_notifications_calls_services(self):
         app = self._make_app({"notify_services": ["notify.test_service"]})
         app._send_notifications("Title", "Message")
-        app.call_service.assert_called_once_with("notify/test_service", title="Title", message="Message")
+        app.call_service.assert_called_once_with(
+            "notify/test_service",
+            title="Title",
+            message="Message",
+            data={"url": "/garage-notify/summary", "clickAction": "/garage-notify/summary"},
+        )
 
     def test_send_notifications_includes_image_when_provided(self):
         app = self._make_app({"notify_services": ["notify.test_service"]})
@@ -122,7 +132,25 @@ class TestGarageDoorNotify:
             "notify/test_service",
             title="Title",
             message="Message",
-            data={"image": "/api/camera_proxy/camera.best"},
+            data={
+                "image": "/api/camera_proxy/camera.best",
+                "url": "/garage-notify/summary",
+                "clickAction": "/garage-notify/summary",
+            },
+        )
+
+    def test_send_notifications_includes_action_when_run_id_provided(self):
+        app = self._make_app({"notify_services": ["notify.test_service"]})
+        app._send_notifications("Title", "Message", run_id="run-123")
+        app.call_service.assert_called_once_with(
+            "notify/test_service",
+            title="Title",
+            message="Message",
+            data={
+                "url": "/garage-notify/summary",
+                "clickAction": "/garage-notify/summary",
+                "actions": [{"action": "GARAGE_DS_VIEW:run-123", "title": "View details"}],
+            },
         )
 
     def test_send_notifications_multiple(self):

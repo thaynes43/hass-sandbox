@@ -69,3 +69,18 @@ def test_cleanup_prunes_old_entries():
         assert best is not None
         assert best["run_id"] == "new"
 
+
+def test_get_bundle_by_run_id_respects_include_consumed():
+    with TemporaryDirectory() as td:
+        store = DetectionSummaryStore(
+            config=StoreConfig(state_path=Path(td) / "store.json", max_bundles_per_key=50)
+        )
+        base = 1000.0
+        store.publish_bundle("garage", _bundle("a", base + 1, 1))
+        assert store.mark_consumed("garage", "a") is True
+
+        assert store.get_bundle_by_run_id("garage", "a") is None
+        got = store.get_bundle_by_run_id("garage", "a", include_consumed=True)
+        assert got is not None
+        assert got["run_id"] == "a"
+
