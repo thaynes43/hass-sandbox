@@ -69,13 +69,12 @@ def test_real_provider_scores_and_generates_image_edit_smoke():
                 instructions=instructions,
                 expected_keys=expected_keys,
             )
-            person_count = int(float(data.get("person_count", 0) or 0))
             person = float(data.get("person_score", 0) or 0)
             face = float(data.get("face_score", 0) or 0)
             frame = float(data.get("frame_score", person) or person)
             pose = str(data.get("pose") or "")
             summary = str(data.get("summary") or "")
-            return ScoreResult(person_count, person, face, frame, pose, summary, data)
+            return ScoreResult(0, 0, 0, person, face, frame, pose, summary, data)
 
         total = len(list(work.glob("frame_*.jpg")))
         scored, meta = adaptive_select_and_score(

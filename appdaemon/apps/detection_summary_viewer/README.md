@@ -235,3 +235,48 @@ Suggested shape:
 
 When that’s done, `detection_summary_app` can focus on generating bundles (runs, summaries, best images, generated images) and become reusable beyond the garage door use case.
 
+---
+
+## TODO: notification tap deep-link should auto-select the run
+
+Today (iOS especially), tapping the notification body can only open the dashboard URL; it cannot fire an event to select a `run_id`.
+Action buttons can fire events, but on iPhone they require a long-press UX which is not ideal for V1.
+
+**TODO (v2):** support `?run_id=<uuid>` (or similar) in the dashboard URL and add a tiny frontend helper (custom resource)
+that, on page load, parses the query param and calls the appropriate HA service to select that run (for example:
+`input_select.select_option` on the run picker).
+
+This should live with the viewer frontend/docs (or the standalone viewer app), not inside the bundle-generating app.
+
+---
+
+## TODO: phone-friendly image sizes (performance)
+
+Right now the viewer serves the staged images at whatever resolution/encoding they were produced at.
+On mobile, this can be slower than necessary.
+
+**TODO:** during staging into `/media/.../viewer_stage/`, generate smaller derivatives (for example: max width 1080, crop/cover to
+match desired aspect ratio, and compress) before the HA refresh copies them into `/config/www`.
+
+---
+
+## TODO: move Vestaboard message generation into AppDaemon (richer + real home data)
+
+Today we generate Vestaboard messages directly in Home Assistant via `ai_task.generate_data`, which works but lacks
+context (and can produce generic output).
+
+**TODO:** move message generation into an AppDaemon app so we can:
+
+- Pull real, current home state (examples):
+  - actual thermostat setpoint and HVAC mode
+  - outside temperature / weather condition
+  - number of lights on
+  - alarm / lock status
+  - time of day
+- Let the model request which data it wants using structured output, e.g.:
+  - `required_facts`: list of fact keys (thermostat_setpoint, outside_temp, etc.)
+  - `template`: 22×6 message with placeholders like `{{ thermostat_setpoint }}` filled by AppDaemon
+- Validate and normalize the final 22×6 text before sending to the Vestaboard (retry/fallback on violations)
+
+Net result: **random messages that are coherent and include real information from the house**.
+

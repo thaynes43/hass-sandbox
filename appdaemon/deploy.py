@@ -39,7 +39,7 @@ DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
 # `import ai_providers...` work without requiring appdaemon.yaml import_paths changes.
 COPY_ITEMS = ["apps", "ai_providers"]
 
-EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor"}
+EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor", "_state"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}
 
 

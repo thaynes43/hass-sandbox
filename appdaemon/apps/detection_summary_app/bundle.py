@@ -92,6 +92,9 @@ def write_trace(
         "best_idx": int(best_idx),
         "scored": {
             str(i): {
+                "male_count": int(getattr(r, "male_count", 0) or 0),
+                "female_count": int(getattr(r, "female_count", 0) or 0),
+                "animal_count": int(getattr(r, "animal_count", 0) or 0),
                 "person_score": float(r.person_score),
                 "face_score": float(r.face_score),
                 "frame_score": float(r.frame_score),
@@ -119,6 +122,7 @@ def build_bundle_dict(
     run_narrative: Optional[dict[str, Any]],
     cfg: BundleConfig,
     llm_events: list[dict[str, Any]],
+    population_bounds: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     published_ts = time.time()
     ha_dir = run_ha_dir(cfg, run_id)
@@ -146,7 +150,9 @@ def build_bundle_dict(
             "idx": idx,
             "image_filename": (cap_fr.filename if cap_fr else f"frame_{idx:03d}.jpg"),
             "image_ha_path": (cap_fr.image_ha_path if cap_fr else ""),
-            "ai_person_count": int(getattr(fr, "person_count", 0) or 0) if fr else 0,
+            "ai_male_count": int(getattr(fr, "male_count", 0) or 0) if fr else 0,
+            "ai_female_count": int(getattr(fr, "female_count", 0) or 0) if fr else 0,
+            "ai_animal_count": int(getattr(fr, "animal_count", 0) or 0) if fr else 0,
             "ai_person_score": getattr(fr, "person_score", 0.0) if fr else 0.0,
             "ai_face_score": getattr(fr, "face_score", 0.0) if fr else 0.0,
             "ai_frame_score": getattr(fr, "frame_score", 0.0) if fr else 0.0,
@@ -204,7 +210,9 @@ def build_bundle_dict(
         "text": best_summary,
         "run_text": run_summary,
         "scores": {
-            "person_count": int(getattr(best_res, "person_count", 0) or 0),
+            "male_count": int(getattr(best_res, "male_count", 0) or 0),
+            "female_count": int(getattr(best_res, "female_count", 0) or 0),
+            "animal_count": int(getattr(best_res, "animal_count", 0) or 0),
             "person_score": float(best_res.person_score if best_res else 0.0),
             "face_score": float(best_res.face_score if best_res else 0.0),
             "frame_score": float(best_res.frame_score if best_res else 0.0),
@@ -230,7 +238,9 @@ def build_bundle_dict(
     bundle["best"] = {
         "summary": best_summary,
         "score": float(best_res.person_score if best_res else 0.0),
-        "person_count": int(getattr(best_res, "person_count", 0) or 0),
+        "male_count": int(getattr(best_res, "male_count", 0) or 0),
+        "female_count": int(getattr(best_res, "female_count", 0) or 0),
+        "animal_count": int(getattr(best_res, "animal_count", 0) or 0),
         "person_score": float(best_res.person_score if best_res else 0.0),
         "face_score": float(best_res.face_score if best_res else 0.0),
         "frame_score": float(best_res.frame_score if best_res else 0.0),
@@ -273,6 +283,8 @@ def build_bundle_dict(
             "ranked_indices_best_to_worst": ranked_indices,
         }
     }
+    if isinstance(population_bounds, dict) and population_bounds:
+        bundle["debug"]["population_bounds"] = population_bounds
     bundle["consumed"] = False
     bundle["consumed_at_utc"] = None
 

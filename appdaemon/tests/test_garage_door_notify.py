@@ -149,7 +149,6 @@ class TestGarageDoorNotify:
             data={
                 "url": "/garage-notify/summary",
                 "clickAction": "/garage-notify/summary",
-                "actions": [{"action": "GARAGE_DS_VIEW:run-123", "title": "View details"}],
             },
         )
 

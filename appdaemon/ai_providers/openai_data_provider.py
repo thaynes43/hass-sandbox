@@ -70,6 +70,85 @@ def _parse_json_maybe(text: str) -> Dict[str, Any]:
     raise ExternalDataGenError(f"failed to parse JSON object from content: {s[:400]!r}")
 
 
+def _content_to_text(content: Any) -> str:
+    """
+    OpenAI Chat Completions may return `message.content` as:
+    - a string
+    - a list of content parts (dicts), depending on model/version
+    - None (e.g., refusal / content filter)
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for p in content:
+            if isinstance(p, str):
+                parts.append(p)
+                continue
+            if isinstance(p, dict):
+                txt = p.get("text")
+                if isinstance(txt, str):
+                    parts.append(txt)
+                    continue
+                # Some variants nest text as {"value": "..."}
+                if isinstance(txt, dict):
+                    val = txt.get("value")
+                    if isinstance(val, str):
+                        parts.append(val)
+        return "".join(parts)
+    return str(content)
+
+
+def _extract_assistant_json_text(choice0: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """
+    Extract the model's JSON output from a chat completion choice.
+
+    Some models may place structured output in tool_calls/function_call rather than content.
+    Returns (text, debug) where debug is safe metadata for logging/errors.
+    """
+    msg = (choice0 or {}).get("message") or {}
+    content_raw = msg.get("content", None)
+    content = _content_to_text(content_raw).strip()
+
+    debug: dict[str, Any] = {
+        "message_keys": sorted([str(k) for k in msg.keys()])[:50],
+        "content_raw_type": type(content_raw).__name__,
+        "content_raw_preview": repr(content_raw)[:400],
+    }
+
+    if content:
+        return content, debug
+
+    # Try tool_calls (function.arguments usually contains a JSON string)
+    tool_calls = msg.get("tool_calls")
+    if isinstance(tool_calls, list) and tool_calls:
+        args_parts: list[str] = []
+        for tc in tool_calls:
+            if not isinstance(tc, dict):
+                continue
+            fn = tc.get("function")
+            if isinstance(fn, dict):
+                a = fn.get("arguments")
+                if isinstance(a, str) and a.strip():
+                    args_parts.append(a.strip())
+        if args_parts:
+            debug["extracted_from"] = "tool_calls.function.arguments"
+            debug["tool_calls_count"] = len(tool_calls)
+            return args_parts[0], debug
+
+    # Try legacy function_call
+    fc = msg.get("function_call")
+    if isinstance(fc, dict):
+        a = fc.get("arguments")
+        if isinstance(a, str) and a.strip():
+            debug["extracted_from"] = "function_call.arguments"
+            return a.strip(), debug
+
+    return "", debug
+
+
 class OpenAIDataProvider(DataProvider):
     name = DataProviderName.OPENAI
     capabilities = DataProviderCapabilities(
@@ -125,7 +204,6 @@ class OpenAIDataProvider(DataProvider):
                 },
             ],
             "response_format": {"type": "json_object"},
-            # GPT-5.2 uses `max_completion_tokens` (not `max_tokens`).
             "max_completion_tokens": int(self._config.max_output_tokens),
         }
         if self._config.user:
@@ -159,12 +237,22 @@ class OpenAIDataProvider(DataProvider):
 
         try:
             choices = payload.get("choices") or []
-            msg = choices[0]["message"]
-            content = msg.get("content", "")
+            choice0 = choices[0] if choices else {}
+            content, content_debug = _extract_assistant_json_text(choice0)
+            if not content:
+                finish_reason = choice0.get("finish_reason")
+                msg = choice0.get("message") or {}
+                refusal = msg.get("refusal")
+                raise ExternalDataGenError(
+                    "model returned empty content "
+                    f"(finish_reason={finish_reason!r} refusal={refusal!r} debug={content_debug})"
+                )
+        except ExternalDataGenError:
+            raise
         except Exception as e:
             raise ExternalDataGenError(f"openai response missing content: {payload!r}") from e
 
-        obj = _parse_json_maybe(str(content))
+        obj = _parse_json_maybe(content)
 
         # Light validation: ensure keys exist (don't over-enforce, caller can decide).
         if expected_keys:
@@ -261,12 +349,22 @@ class OpenAIDataProvider(DataProvider):
 
         try:
             choices = payload.get("choices") or []
-            msg = choices[0]["message"]
-            content = msg.get("content", "")
+            choice0 = choices[0] if choices else {}
+            content, content_debug = _extract_assistant_json_text(choice0)
+            if not content:
+                finish_reason = choice0.get("finish_reason")
+                msg = choice0.get("message") or {}
+                refusal = msg.get("refusal")
+                raise ExternalDataGenError(
+                    "model returned empty content "
+                    f"(finish_reason={finish_reason!r} refusal={refusal!r} debug={content_debug})"
+                )
+        except ExternalDataGenError:
+            raise
         except Exception as e:
             raise ExternalDataGenError(f"openai response missing content: {payload!r}") from e
 
-        obj = _parse_json_maybe(str(content))
+        obj = _parse_json_maybe(content)
 
         if expected_keys:
             for k in expected_keys:

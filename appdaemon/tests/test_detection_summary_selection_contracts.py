@@ -18,7 +18,17 @@ from detection_summary_app.selection import ScoreResult, SelectionMeta, adaptive
 def test_adaptive_select_returns_selectionmeta():
     def score_index(i: int) -> ScoreResult:
         # deterministic, valid result
-        return ScoreResult(person_count=1, person_score=5.0, face_score=0.0, frame_score=0.0, pose="standing", summary="s", structured={})
+        return ScoreResult(
+            male_count=0,
+            female_count=1,
+            animal_count=0,
+            person_score=5.0,
+            face_score=0.0,
+            frame_score=0.0,
+            pose="standing",
+            summary="s",
+            structured={},
+        )
 
     scored, meta = adaptive_select_and_score(total_frames=5, budget=3, score_index=score_index, seed="seed")
     assert isinstance(scored, dict)
@@ -29,7 +39,7 @@ def test_adaptive_select_returns_selectionmeta():
 def test_build_bundle_dict_requires_selectionmeta():
     # Minimal capture state (bundle builder only needs timing + frames list for candidate filenames/paths).
     cap = CaptureState(run_id="rid", started_ts=time.time(), frames=[], capture_idx=0)
-    scored = {0: ScoreResult(1, 5.0, 0.0, 0.0, "standing", "s", {})}
+    scored = {0: ScoreResult(0, 1, 0, 5.0, 0.0, 0.0, "standing", "s", {})}
     cfg = BundleConfig(
         snapshot_ha_dir="/media/detection-summary/x",
         bundle_runs_subdir="runs",
@@ -67,7 +77,17 @@ def test_manager_does_not_overwrite_selection_meta_with_narrative_meta():
     # We don't invoke manager internals here; we lock in the intent:
     # narrative metadata must not be stored in the selection meta variable.
     def score_index(i: int) -> ScoreResult:
-        return ScoreResult(person_count=1, person_score=5.0, face_score=0.0, frame_score=0.0, pose="standing", summary="s", structured={})
+        return ScoreResult(
+            male_count=0,
+            female_count=1,
+            animal_count=0,
+            person_score=5.0,
+            face_score=0.0,
+            frame_score=0.0,
+            pose="standing",
+            summary="s",
+            structured={},
+        )
 
     _scored, meta = adaptive_select_and_score(total_frames=5, budget=3, score_index=score_index, seed="seed2")
     assert isinstance(meta, SelectionMeta)

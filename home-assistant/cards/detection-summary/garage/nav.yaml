@@ -1,0 +1,67 @@
+type: custom:bubble-card
+card_type: sub-buttons
+sub_button:
+  main: []
+  bottom:
+    - name: Nav
+      buttons_layout: inline
+      group:
+        - entity: input_select.garage_detection_summary_run_id
+          icon: mdi:chevron-left
+          show_icon: true
+          show_name: false
+          show_state: false
+          content_layout: icon-left
+          custom_height: 44
+          scrolling_effect: false
+          tap_action:
+            action: call-service
+            service: input_select.select_previous
+            target:
+              entity_id: input_select.garage_detection_summary_run_id
+            data:
+              cycle: false
+          hold_action:
+            action: none
+          double_tap_action:
+            action: none
+          sub_button_type: default
+        - entity: input_select.garage_detection_summary_run_id
+          icon: mdi:star-four-points
+          show_icon: true
+          show_name: false
+          show_state: false
+          content_layout: icon-left
+          custom_height: 44
+          scrolling_effect: false
+          tap_action:
+            action: call-service
+            service: input_select.select_first
+            target:
+              entity_id: input_select.garage_detection_summary_run_id
+          hold_action:
+            action: none
+          double_tap_action:
+            action: none
+          sub_button_type: default
+        - entity: input_select.garage_detection_summary_run_id
+          icon: mdi:chevron-right
+          show_icon: true
+          show_name: false
+          show_state: false
+          content_layout: icon-left
+          custom_height: 44
+          scrolling_effect: false
+          tap_action:
+            action: call-service
+            service: input_select.select_next
+            target:
+              entity_id: input_select.garage_detection_summary_run_id
+            data:
+              cycle: false
+          hold_action:
+            action: none
+          double_tap_action:
+            action: none
+          sub_button_type: default
+rows: 1.05

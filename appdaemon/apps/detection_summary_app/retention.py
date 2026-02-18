@@ -69,21 +69,24 @@ def list_published_runs(*, runs_dir: Path) -> list[PublishedRun]:
     return out
 
 
-def prune_old_runs(*, runs_dir: Path, retention_hours: float) -> int:
+def prune_runs_to_max(*, runs_dir: Path, max_runs: int) -> int:
     """
-    Delete run directories older than retention_hours (based on summary.json created_at_epoch).
+    Delete oldest published runs until we have at most max_runs.
+
+    Uses summary.json created_at_epoch ordering (newest-first), and deletes from the tail.
     Returns deleted count.
     """
-    hours = max(0.0, float(retention_hours))
-    if hours <= 0:
+    max_runs = int(max_runs)
+    if max_runs <= 0:
         return 0
-    cutoff = time.time() - (hours * 3600.0)
+    runs = list_published_runs(runs_dir=runs_dir)
+    if len(runs) <= max_runs:
+        return 0
     deleted = 0
-    for r in list_published_runs(runs_dir=runs_dir):
-        if float(r.created_at_epoch) < float(cutoff):
-            if delete_run_dir(r.run_dir):
-                deleted += 1
-    return deleted
+    for r in runs[max_runs:]:
+        if delete_run_dir(r.run_dir):
+            deleted += 1
+    return int(deleted)
 
 
 def recent_published_run_ids(*, runs_dir: Path, max_options: int) -> list[str]:

@@ -292,12 +292,6 @@ class GarageDoorNotify(hass.Hass):
             if notification_url:
                 data["url"] = notification_url
                 data["clickAction"] = notification_url
-            # Optional action button to select the specific run_id in the dashboard.
-            rid = str(run_id or "").strip()
-            if rid:
-                data["actions"] = [
-                    {"action": f"GARAGE_DS_VIEW:{rid}", "title": "View details"},
-                ]
             if data:
                 self.call_service(service, title=title, message=message, data=data)
             else:

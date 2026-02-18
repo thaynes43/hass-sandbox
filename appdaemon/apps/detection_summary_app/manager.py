@@ -37,8 +37,10 @@ from .bundle import (
 )
 from .capture import CaptureConfig, CaptureState, CapturedFrame, next_delay_s, should_stop_capture
 from .selection import ScoreResult, SelectionMeta, adaptive_select_and_score
+from .population import augment_image_instructions, compute_population_bounds
 from .narrative import NarrativeConfig, synthesize_run_narrative
-from .retention import delete_run_dir, prune_old_runs, recent_published_run_ids
+from .publish_gate import should_publish_bundle
+from .retention import delete_run_dir, prune_runs_to_max, recent_published_run_ids
 from .viewer_cache import ViewerCache, ViewerCacheConfig
 
 try:
@@ -121,6 +123,8 @@ class DetectionSummary(hass.Hass):
         # If the best scored frame has person_score below this value, skip bundle + image generation.
         # (Future: extend to "people OR animals" detection.)
         "best_min_person_score": 2,
+        # If any analyzed frame contains >= this many animals, publish even if person_score is low.
+        "best_min_animal_count": 1,
         # image generation
         "external_image_gen_enabled": True,
         "external_image_gen_wait_for_best_s": 5,
@@ -191,7 +195,9 @@ class DetectionSummary(hass.Hass):
         # Fixed model output schema we depend on.
         # Keep this in code so `apps.yaml` stays minimal and consistent.
         self.expected_keys: list[str] = [
-            "person_count",
+            "male_count",
+            "female_count",
+            "animal_count",
             "person_score",
             "face_score",
             "frame_score",
@@ -224,6 +230,7 @@ class DetectionSummary(hass.Hass):
             self.args.get("best_min_person_score", self.DEFAULTS["best_min_person_score"]),
             default=float(self.DEFAULTS["best_min_person_score"]),
         )
+        self.best_min_animal_count: int = int(self.args.get("best_min_animal_count", self.DEFAULTS["best_min_animal_count"]))
 
         self.external_image_gen_enabled: bool = _as_bool(self.args.get("external_image_gen_enabled", self.DEFAULTS["external_image_gen_enabled"]))
         self.external_image_gen_wait_for_best_s: float = _safe_float(
@@ -450,6 +457,23 @@ class DetectionSummary(hass.Hass):
         run_id = s.split(":", 1)[1].strip()
         return run_id or None
 
+    def _resolve_run_id_from_options(self, token: str, options: list[str]) -> Optional[str]:
+        """
+        Resolve a run token to a full run_id present in picker options.
+
+        We primarily expect full run_ids, but iOS notification action identifiers can be truncated,
+        so we also support short UUID prefixes (e.g., first 8 chars) as long as the match is unique.
+        """
+        token = str(token or "").strip()
+        if not token:
+            return None
+        if token in options:
+            return token
+        matches = [o for o in (options or []) if str(o).startswith(token)]
+        if len(matches) == 1:
+            return str(matches[0])
+        return None
+
     def _on_mobile_app_notification_action(self, event_name, data, kwargs) -> None:
         try:
             if not self.run_picker_entity_id:
@@ -460,9 +484,28 @@ class DetectionSummary(hass.Hass):
             if not run_id:
                 return
             self.log(f"DetectionSummary[{self.bundle_key}]: notification action select run_id={run_id}", level="INFO")
-            self._set_run_picker_value(run_id)
-            self._select_run_from_www_cache(run_id)
-            self._update_selected_summary_text(run_id)
+            # Keep viewer/picker consistent: only select run_ids that are already staged.
+            # Refresh the picker (which stages + refreshes the viewer folder) then select.
+            self._sync_run_picker_periodic({})
+            try:
+                st = self.get_state(self.run_picker_entity_id, attribute="all") or {}
+                attrs = st.get("attributes") if isinstance(st, dict) else None
+                options = (attrs.get("options") if isinstance(attrs, dict) else None) or []
+                options = [str(o) for o in options] if isinstance(options, list) else []
+            except Exception:
+                options = []
+            resolved = self._resolve_run_id_from_options(run_id, options)
+            if not resolved:
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: notification action run_id not in picker options (not staged); ignoring run_id={run_id}",
+                    level="WARNING",
+                )
+                return
+            self.call_service(
+                "input_select/select_option",
+                target={"entity_id": self.run_picker_entity_id},
+                option=resolved,
+            )
         except Exception as e:
             self.log(
                 f"DetectionSummary[{self.bundle_key}]: notification action handler failed: {e!r}",
@@ -506,14 +549,14 @@ class DetectionSummary(hass.Hass):
         """
         if not self.run_picker_entity_id:
             return
-        retention_hours = _safe_float(self.args.get("retention_hours", 24), default=24)
+        max_retained_runs = int(self.args.get("max_retained_runs", 100))
         runs_dir = self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir
         try:
-            pruned = prune_old_runs(runs_dir=runs_dir, retention_hours=float(retention_hours))
+            pruned = prune_runs_to_max(runs_dir=runs_dir, max_runs=int(max_retained_runs))
             options = recent_published_run_ids(runs_dir=runs_dir, max_options=int(self.run_picker_max_options))
             self.log(
                 f"DetectionSummary[{self.bundle_key}]: sync run picker runs_dir={runs_dir} "
-                f"retention_hours={float(retention_hours):.2f} pruned={int(pruned)} options={len(options)}",
+                f"max_retained_runs={int(max_retained_runs)} pruned={int(pruned)} options={len(options)}",
                 level="INFO",
             )
             if not options:
@@ -967,9 +1010,24 @@ class DetectionSummary(hass.Hass):
                 deadline = time.time() + 2.0
                 while time.time() < deadline and not local_path.exists():
                     time.sleep(0.1)
+                # Always append our required schema + guidance. This keeps `apps.yaml` prompts smaller
+                # while ensuring we still get hardened structured output for scoring + image-gen facts.
+                instr = str(self.data_instructions or "").strip()
+                instr = (
+                    instr
+                    + "\n\nAdditional required fields:\n"
+                    + "- male_count: integer count of men/boys visible in the frame (0 if none)\n"
+                    + "- female_count: integer count of women/girls visible in the frame (0 if none)\n"
+                    + "- animal_count: integer count of animals/pets visible in the frame (0 if none)\n"
+                    + "\nScoring guidance:\n"
+                    + "- If animals are present and clearly visible, increase frame_score appropriately.\n"
+                    + "- face_score can be influenced by clearly visible faces of people OR animals.\n"
+                    + "- pose should describe the main subject (person or animal) when possible.\n"
+                    + "- summary should mention animals when they are relevant, but remain 1 sentence <= 140 characters.\n"
+                )
                 data = provider.generate_data_from_image(
                     input_image_path=str(local_path),
-                    instructions=str(self.data_instructions),
+                    instructions=instr,
                     expected_keys=expected_keys,
                 )
             except ExternalDataGenError as e:
@@ -978,7 +1036,9 @@ class DetectionSummary(hass.Hass):
                 self.log(f"DetectionSummary[{self.bundle_key}]: data gen error for {local_path}: {e!r}", level="WARNING")
             if not isinstance(data, dict):
                 data = {}
-            person_count = int(_safe_float(data.get("person_count"), default=0.0))
+            male_count = int(_safe_float(data.get("male_count"), default=0.0))
+            female_count = int(_safe_float(data.get("female_count"), default=0.0))
+            animal_count = int(_safe_float(data.get("animal_count"), default=0.0))
             person = _safe_float(data.get("person_score", data.get("score")), default=0.0)
             face = _safe_float(data.get("face_score"), default=0.0)
             frame = _safe_float(data.get("frame_score"), default=person)
@@ -989,6 +1049,7 @@ class DetectionSummary(hass.Hass):
                 self.log(
                     f"DetectionSummary[{self.bundle_key}]: LLM score done run_id={run_id} idx={i} "
                     f"elapsed_s={elapsed:.3f} person={person:.2f} face={face:.2f} frame={frame:.2f} pose={pose!r} "
+                    f"counts=(m={male_count},f={female_count},a={animal_count}) "
                     f"summary_preview={summary[:120]!r} keys={sorted(list(data.keys()))[:20]}",
                     level="INFO",
                 )
@@ -1002,14 +1063,16 @@ class DetectionSummary(hass.Hass):
                 "image_filename": f"frame_{i:03d}.jpg",
                 "elapsed_s": round(time.time() - t0, 3),
                 "model": (data.get("_meta") or {}).get("model") if isinstance(data.get("_meta"), dict) else None,
-                "person_count": person_count,
+                "male_count": male_count,
+                "female_count": female_count,
+                "animal_count": animal_count,
                 "person_score": person,
                 "face_score": face,
                 "frame_score": frame,
                 "pose": pose,
                 "summary_preview": summary[:160],
             }
-            return i, ScoreResult(person_count, person, face, frame, pose, summary, data), ev
+            return i, ScoreResult(male_count, female_count, animal_count, person, face, frame, pose, summary, data), ev
 
         def score_index(i: int) -> ScoreResult:
             ii, res, ev = score_one(int(i))
@@ -1081,12 +1144,17 @@ class DetectionSummary(hass.Hass):
             cfg=self.trace_cfg,
         )
 
-        # If we didn't find people, skip bundle generation to save image-gen API usage.
-        # TODO(future): extend this gate to "people OR animals" detection.
-        if best_person < float(self.best_min_person_score):
+        # Publish bundles when we have meaningful subjects: people OR animals.
+        if not should_publish_bundle(
+            scored=scored,
+            best_person_score=best_person,
+            best_min_person_score=float(self.best_min_person_score),
+            best_min_animal_count=int(self.best_min_animal_count),
+        ):
             self.log(
                 f"DetectionSummary[{self.bundle_key}]: run_id={run_id} no bundle generated "
-                f"(best_person_score={best_person:.2f} < best_min_person_score={float(self.best_min_person_score):.2f}); "
+                f"(best_person_score={best_person:.2f} < best_min_person_score={float(self.best_min_person_score):.2f} "
+                f"and no animals detected); "
                 f"skipping image generation + store publish",
                 level="INFO",
             )
@@ -1168,6 +1236,7 @@ class DetectionSummary(hass.Hass):
 
         # Generate image from best.jpg to per-run generated.png, then mirror to stable
         generated_image: Optional[dict[str, Any]] = None
+        population_bounds = compute_population_bounds(scored)
         if self.external_image_gen_enabled:
             in_path = best_dst
             out_path = local_run_dir / self.external_generated_filename
@@ -1185,14 +1254,15 @@ class DetectionSummary(hass.Hass):
                     img_provider = build_image_provider(provider_cfg)
                     if not getattr(img_provider, "capabilities", None) or not img_provider.capabilities.supports_image_to_image:
                         raise ExternalImageGenError("image provider does not support image-to-image")
+                    prompt = augment_image_instructions(str(self.image_instructions), population_bounds)
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
-                        f"in={in_path} out={out_path} prompt_len={len(self.image_instructions)}",
+                        f"in={in_path} out={out_path} prompt_len={len(prompt)}",
                         level="INFO",
                     )
                     generated_image = img_provider.edit_image(
                         input_image_path=str(in_path),
-                        prompt=str(self.image_instructions),
+                        prompt=prompt,
                         output_image_path=str(out_path),
                     )
                     self.log(
@@ -1240,6 +1310,7 @@ class DetectionSummary(hass.Hass):
             run_narrative=run_narrative,
             cfg=cfg,
             llm_events=llm_events,
+            population_bounds=population_bounds,
         )
         maybe_write_bundle_json(local_run_dir=local_run_dir, bundle=bundle, enabled=self.write_bundle_json)
         return bundle
@@ -1270,7 +1341,6 @@ class DetectionSummary(hass.Hass):
                 best["image_url"] = f"/api/camera_proxy/{self.best_image_camera_entity_id}"
 
             DETECTION_SUMMARY_STORE.publish_bundle(self.bundle_key, bundle)
-            DETECTION_SUMMARY_STORE.cleanup(_safe_float(self.args.get("retention_hours", 24), default=24))
 
             # Event for consumers
             # Prefer run narrative summary when present; fall back to best-frame summary.
@@ -1320,40 +1390,24 @@ class DetectionSummary(hass.Hass):
             # Retention + run picker sync (newest-first, bounded).
             if self.run_picker_entity_id:
                 try:
-                    retention_hours = _safe_float(self.args.get("retention_hours", 24), default=24)
-                    runs_dir = self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir
-                    pruned = prune_old_runs(runs_dir=runs_dir, retention_hours=float(retention_hours))
-                    if pruned:
-                        self.log(
-                            f"DetectionSummary[{self.bundle_key}]: pruned {pruned} old run(s) from {runs_dir}",
-                            level="INFO",
-                        )
-
-                    options = recent_published_run_ids(runs_dir=runs_dir, max_options=int(self.run_picker_max_options))
-                    if options:
-                        current = str(self.get_state(self.run_picker_entity_id) or "").strip()
-                        should_select = False
-                        if not current or current.lower() in {"unknown", "unavailable", "loading"}:
-                            should_select = True
-                        if current and current not in options:
-                            should_select = True
-                        if float(self.selected_auto_reset_s) > 0 and float(self._selected_last_set_ts) > 0:
-                            if (time.time() - float(self._selected_last_set_ts)) >= float(self.selected_auto_reset_s):
-                                should_select = True
-
+                    # Refresh viewer + picker so the newest run is present under `/config/www/.../viewer/`
+                    # *before* we select it (prevents missing-file errors on mobile).
+                    self._sync_run_picker_periodic({})
+                    # Prefer selecting the newly published run_id when it's available.
+                    try:
+                        st = self.get_state(self.run_picker_entity_id, attribute="all") or {}
+                        attrs = st.get("attributes") if isinstance(st, dict) else None
+                        options = (attrs.get("options") if isinstance(attrs, dict) else None) or []
+                        options = [str(o) for o in options] if isinstance(options, list) else []
+                    except Exception:
+                        options = []
+                    if active.capture.run_id in options:
+                        self._selected_last_set_ts = time.time()
                         self.call_service(
-                            "input_select/set_options",
+                            "input_select/select_option",
                             target={"entity_id": self.run_picker_entity_id},
-                            options=options,
+                            option=active.capture.run_id,
                         )
-                        if should_select:
-                            self._selected_last_set_ts = time.time()
-                            self.call_service(
-                                "input_select/select_option",
-                                target={"entity_id": self.run_picker_entity_id},
-                                option=options[0],
-                            )
-                            self._materialize_selected_run(options[0])
                 except Exception as e:
                     self.log(f"DetectionSummary[{self.bundle_key}]: run picker sync failed: {e!r}", level="WARNING")
 

@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
-from detection_summary_app.retention import prune_old_runs, recent_published_run_ids  # noqa: E402
+from detection_summary_app.retention import prune_runs_to_max, recent_published_run_ids  # noqa: E402
 
 
 def _write_summary(run_dir: Path, *, created_at_epoch: float) -> None:
@@ -30,15 +30,16 @@ def test_recent_published_run_ids_orders_newest_first():
         assert got == ["r2", "r3", "r1"]
 
 
-def test_prune_old_runs_deletes_older_than_retention_hours():
+def test_prune_runs_to_max_deletes_oldest_when_over_capacity():
     with TemporaryDirectory() as td:
         runs_dir = Path(td) / "runs"
-        now = time.time()
-        _write_summary(runs_dir / "old", created_at_epoch=now - 10 * 3600)
-        _write_summary(runs_dir / "new", created_at_epoch=now - 60)
+        _write_summary(runs_dir / "oldest", created_at_epoch=100.0)
+        _write_summary(runs_dir / "middle", created_at_epoch=200.0)
+        _write_summary(runs_dir / "newest", created_at_epoch=300.0)
 
-        deleted = prune_old_runs(runs_dir=runs_dir, retention_hours=1)
+        deleted = prune_runs_to_max(runs_dir=runs_dir, max_runs=2)
         assert deleted == 1
-        assert not (runs_dir / "old").exists()
-        assert (runs_dir / "new").exists()
+        assert not (runs_dir / "oldest").exists()
+        assert (runs_dir / "middle").exists()
+        assert (runs_dir / "newest").exists()
 

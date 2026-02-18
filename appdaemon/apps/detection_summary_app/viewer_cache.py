@@ -12,6 +12,14 @@ AppDaemon can always write to `/media` but cannot reach `/config`. Therefore:
 - AppDaemon calls a HA `shell_command` that wipes the destination `/config/www/.../viewer/`
   folder and copies everything from staging to destination.
 - AppDaemon updates the input_select options to match exactly what exists in the viewer folder.
+
+TODO(perf/mobile): downscale/compress staged images before refresh.
+- Problem: dashboard loads full-res AI generated PNG/JPG; even with good caching, byte size can be large and slow on mobile.
+- Desired: when staging into `/media/.../viewer_stage/`, write phone-friendly derivatives (e.g. 1080px wide, moderate JPEG quality,
+  or PNG optimized) so `/config/www/.../viewer/` stays small and loads fast.
+- Constraint: AppDaemon can write `/media` but we should avoid adding heavy dependencies unless needed. Options:
+  - Use an external tool available in the AppDaemon container (e.g. `ffmpeg`/`convert`) if present.
+  - Or add Pillow as an optional dependency and do the resize in pure Python.
 """
 
 from __future__ import annotations

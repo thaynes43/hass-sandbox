@@ -33,7 +33,7 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 @dataclass(frozen=True)
 class StoreConfig:
     state_path: Path
-    max_bundles_per_key: int = 50
+    max_bundles_per_key: int = 100
 
 
 class DetectionSummaryStore:

@@ -1,0 +1,3 @@
+type: markdown
+content: >-
+  <img src="/local/detection-summary/garage/viewer/{{ states('input_select.garage_detection_summary_run_id') }}_generated.png" />

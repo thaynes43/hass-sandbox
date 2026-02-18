@@ -32,21 +32,23 @@ detection_summary_garage:
     selected_generated_image_camera_entity_id: camera.garage_detection_summary_selected_generated
   data_instructions: >
     You are analyzing ONE security camera snapshot for a push notification.
-    Focus ONLY on the people (ignore the environment/vehicles/objects unless it is directly relevant to the person).
+    Focus ONLY on the people and any animals (ignore the environment/vehicles/objects unless it is directly relevant).
     The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
-    Include only: person count, what they are doing, and where they are in frame (e.g. "near left", "center", "back").
-    Also return person_count as an integer count of people visible in the frame (0 if none).
+    Include only: person/animal count, what they are doing, and where they are in frame (e.g. "near left", "center", "back").
+    Also return male_count and female_count as integer counts of people by gender (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
     Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
     Heavily favor frames where at least one person's FACE is clearly visible (front/3-4 view, not fully occluded).
     If no face is visible, the frame should score significantly lower than a similar frame with a visible face.
     face_score meaning: 0=no face visible, 10=clear unobstructed face (ideally looking toward camera).
     Prefer frames where the person is clearly visible and stationary (standing/sitting),
     not partially occluded or blurred in motion.
+    If animals are present and clearly visible, increase frame_score appropriately.
   image_instructions: >
     Create a simple, clean illustration representing the scene for a notification.
   ai_provider_conf:
     provider: openai
     api_key: !secret openapi_token
     data_model: gpt-5.2
-    data_image_detail: low
-    image_model: gpt-image-1.5
+    data_image_detail: auto
+    image_model: gpt-image-1-mini
