@@ -182,6 +182,22 @@ Goal: Keep **contents** consistent with the best frame, but vary **style/theme**
     - the prompt-writer prompt + output
     - the final image-edit prompt passed to the image provider
 
+### 2) Cooldown/backoff that handles motion “flapping”
+
+Problem: We can generate too many runs/images if the motion `binary_sensor` briefly turns `off` and then back `on` while someone remains in the scene.
+
+Current behavior (in `manager.py`):
+- A new run starts on `off->on` as long as `(now - _last_run_ts) >= _effective_cooldown_s`.
+- `_effective_cooldown_s` doubles only when a run **timed out** (`capture_max_s`), otherwise it resets to `cooldown_s`.
+- If motion “flaps” `off` briefly and back `on`, each `off->on` can start a fresh run every `cooldown_s`, and runs may never time out -> **no backoff escalation**.
+
+Ideas to consider:
+- Require the sensor to be `off` for a minimum duration (debounce) before allowing a new run to start.
+- Treat `off->on` within a short window as a **continuation** of the previous run (extend capture / merge runs) instead of starting a new run.
+- Make cooldown keyed to “time since last stable motion-off” rather than “time since last run start”.
+- Add a “burst limiter” (max runs per N minutes) that increases cooldown when repeated runs occur without timeouts.
+- If available, incorporate a richer occupancy signal (e.g. mmWave presence) to avoid relying solely on a flappy motion sensor.
+
 ### 3) Bundle viewer debug tool
 
 Goal: A local UI/tool to load a bundle directory and show:

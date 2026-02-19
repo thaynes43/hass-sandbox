@@ -57,6 +57,11 @@ def augment_image_instructions(base_instructions: str, bounds: dict[str, Any]) -
             "- Important: the best snapshot used for the illustration may show fewer/different people/animals than these maxima.",
             "- Preserve the apparent gender presentation of people in the input image; avoid defaulting women to men.",
             "- If animals are visible in any provided input image(s), include them in the illustration.",
+            "",
+            "Hard constraints (do not violate):",
+            f"- Do NOT include more than {mm} male person(s).",
+            f"- Do NOT include more than {ff} female person(s).",
+            f"- Do NOT include more than {aa} animal(s)/pet(s).",
         ]
     )
     return "\n".join(lines).strip()
