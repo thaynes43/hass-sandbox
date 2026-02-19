@@ -109,7 +109,7 @@ def test_external_openai_image_edit_writes_png() -> None:
     )
 
     provider = OpenAIImageProvider(cfg)
-    meta = provider.edit_image(input_image_path=str(input_path), prompt=prompt, output_image_path=str(output_path))
+    meta = provider.edit_image(input_image_paths=[str(input_path)], prompt=prompt, output_image_path=str(output_path))
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0

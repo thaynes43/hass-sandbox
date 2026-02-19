@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Sequence
 
 from ai_providers.types import ExternalImageGenError, ImageProvider, ImageProviderName, ProviderCapabilities
 
@@ -28,7 +28,7 @@ class OllamaImageProvider(ImageProvider):
     def edit_image(
         self,
         *,
-        input_image_path: str,
+        input_image_paths: Sequence[str],
         prompt: str,
         output_image_path: str,
     ) -> Dict[str, Any]:

@@ -51,4 +51,4 @@ detection_summary_garage:
     api_key: !secret openapi_token
     data_model: gpt-5.2
     data_image_detail: auto
-    image_model: gpt-image-1-mini
+    image_model: gpt-image-1.5

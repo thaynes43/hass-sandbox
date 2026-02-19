@@ -47,6 +47,20 @@ def _pick_key(res: ScoreResult) -> tuple:
     )
 
 
+def _person_count(res: ScoreResult) -> int:
+    """
+    Best-effort person count for internal heuristics.
+
+    The LLM scoring schema in this app returns `male_count` + `female_count`; treat that as
+    "people visible" for cutoff heuristics. (Some frames may still have non-binary/unknown
+    presentation, but we don't currently model that separately.)
+    """
+    try:
+        return max(0, int(getattr(res, "male_count", 0) or 0) + int(getattr(res, "female_count", 0) or 0))
+    except Exception:
+        return 0
+
+
 def _weighted_random_indices(
     rng: random.Random, n: int, k: int, *, max_idx_inclusive: Optional[int] = None
 ) -> list[int]:
@@ -209,7 +223,7 @@ def adaptive_select_and_score(
         while (b - a) > 1 and len(scored) < budget:
             mid = (a + b) // 2
             r = ensure(mid)
-            if int(r.person_count) <= 0 and r.person_score <= no_people_threshold:
+            if _person_count(r) <= 0 and r.person_score <= no_people_threshold and int(getattr(r, "animal_count", 0) or 0) <= 0:
                 b = mid
             else:
                 a = mid
@@ -224,7 +238,7 @@ def adaptive_select_and_score(
                     continue
                 ensure_batch([jj])
                 rr = ensure(jj)
-                if int(rr.person_count) > 0 or rr.person_score > no_people_threshold:
+                if _person_count(rr) > 0 or rr.person_score > no_people_threshold or int(getattr(rr, "animal_count", 0) or 0) > 0:
                     look_ok = False
                     break
         if look_ok:

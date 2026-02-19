@@ -9,6 +9,12 @@ alwaysApply: false
 - Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps.yaml` or `apps-dev.yaml`) in `appdaemon/apps/`.
 - Put **code that is only used by one app** alongside that app in `appdaemon/apps/`.
 
+## Dev environment (venvs + shell)
+
+- **Windows / PowerShell**: use the repo venv at `.venv` (invoke via `.\.venv\Scripts\python.exe ...`)
+- **WSL/Linux**: use the repo venv at `.venv-wsl` (activate via `source .venv-wsl/bin/activate`)
+- Agents may use **WSL** to execute Python dev commands (linting, quick scripts, local AppDaemon runs) because it often behaves more consistently than PowerShell — just make sure you’re using `.venv-wsl` when doing so.
+
 Examples:
 
 - `appdaemon/apps/garage_door_notify.py` (AppDaemon app)

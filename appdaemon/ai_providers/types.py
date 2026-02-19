@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional, Protocol
+from typing import Any, Dict, Optional, Protocol, Sequence
 
 
 class ExternalImageGenError(RuntimeError):
@@ -41,12 +41,12 @@ class ImageProvider(Protocol):
     def edit_image(
         self,
         *,
-        input_image_path: str,
+        input_image_paths: Sequence[str],
         prompt: str,
         output_image_path: str,
     ) -> Dict[str, Any]:
         """
-        Image-to-image generation (“edit”) using `input_image_path` as context.
+        Image-to-image generation (“edit”) using `input_image_paths` as context.
         Writes the resulting image to `output_image_path`.
         """
         raise NotImplementedError

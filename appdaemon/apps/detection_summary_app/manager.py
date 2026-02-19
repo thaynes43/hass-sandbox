@@ -1179,13 +1179,17 @@ class DetectionSummary(hass.Hass):
                     if not fr or not cap:
                         continue
                     t_s = max(0.0, float(getattr(cap, "captured_ts", 0.0) or 0.0) - float(run.capture.started_ts))
+                    try:
+                        person_count = max(0, int(getattr(fr, "male_count", 0) or 0) + int(getattr(fr, "female_count", 0) or 0))
+                    except Exception:
+                        person_count = 0
                     facts.append(
                         {
                             "idx": int(idx),
                             "t_s": round(float(t_s), 3),
                             "summary": str(getattr(fr, "summary", "") or "").strip(),
                             "pose": str(getattr(fr, "pose", "") or "").strip(),
-                            "person_count": int(getattr(fr, "person_count", 0) or 0),
+                            "person_count": int(person_count),
                             "person_score": float(getattr(fr, "person_score", 0.0) or 0.0),
                             "face_score": float(getattr(fr, "face_score", 0.0) or 0.0),
                             "frame_score": float(getattr(fr, "frame_score", 0.0) or 0.0),
@@ -1238,14 +1242,99 @@ class DetectionSummary(hass.Hass):
         generated_image: Optional[dict[str, Any]] = None
         population_bounds = compute_population_bounds(scored)
         if self.external_image_gen_enabled:
-            in_path = best_dst
             out_path = local_run_dir / self.external_generated_filename
             # wait for best to exist
             if self.external_image_gen_wait_for_best_s > 0:
                 deadline = time.time() + float(self.external_image_gen_wait_for_best_s)
-                while time.time() < deadline and not in_path.exists():
+                while time.time() < deadline and not best_dst.exists():
                     time.sleep(0.2)
-            if in_path.exists():
+
+            def _pick_best_idx_with_max(sc: dict[int, ScoreResult], get_count) -> Optional[int]:
+                if not sc:
+                    return None
+                try:
+                    max_val = max(int(get_count(r) or 0) for r in sc.values())
+                except Exception:
+                    return None
+                if int(max_val) <= 0:
+                    return None
+                cands: list[tuple[int, ScoreResult]] = []
+                for ii, rr in sc.items():
+                    try:
+                        if int(get_count(rr) or 0) == int(max_val):
+                            cands.append((int(ii), rr))
+                    except Exception:
+                        continue
+                if not cands:
+                    return None
+                return max(
+                    cands,
+                    key=lambda t: (
+                        float(getattr(t[1], "frame_score", 0.0) or 0.0),
+                        float(getattr(t[1], "face_score", 0.0) or 0.0),
+                        float(getattr(t[1], "person_score", 0.0) or 0.0),
+                    ),
+                )[0]
+
+            # Provide multiple reference frames to reduce "phantom" additions:
+            # - best overall frame (always)
+            # - best-scoring frame that contains the max animals / max males / max females (deduped)
+            best_animals_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "animal_count", 0))
+            best_males_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "male_count", 0))
+            best_females_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "female_count", 0))
+
+            candidate_idxs: list[int] = [int(best_idx)]
+            for extra in (best_animals_idx, best_males_idx, best_females_idx):
+                if extra is None:
+                    continue
+                ii = int(extra)
+                if ii not in candidate_idxs:
+                    candidate_idxs.append(ii)
+
+            # Ensure we send more than one reference when we have more than one scored frame.
+            # This helps prevent "phantom" subjects when the best frame is missing a transient subject.
+            min_refs = 2
+            max_refs = 4
+
+            def _ref_rank(res: ScoreResult) -> tuple:
+                # Similar spirit to selection._pick_key, tuned for reference quality.
+                has_subject = 1 if (int(getattr(res, "animal_count", 0) or 0) > 0 or float(getattr(res, "person_score", 0.0) or 0.0) > 0) else 0
+                has_summary = 1 if (str(getattr(res, "summary", "") or "").strip()) else 0
+                return (
+                    has_subject,
+                    float(getattr(res, "frame_score", 0.0) or 0.0),
+                    float(getattr(res, "face_score", 0.0) or 0.0),
+                    float(getattr(res, "person_score", 0.0) or 0.0),
+                    int(getattr(res, "animal_count", 0) or 0),
+                    has_summary,
+                )
+
+            if len(scored) > 1 and len(candidate_idxs) < min_refs:
+                ranked = sorted([(int(ii), rr) for ii, rr in (scored or {}).items() if rr is not None], key=lambda t: _ref_rank(t[1]), reverse=True)
+                for ii, _rr in ranked:
+                    if ii not in candidate_idxs:
+                        candidate_idxs.append(int(ii))
+                    if len(candidate_idxs) >= min_refs:
+                        break
+
+            if len(candidate_idxs) > max_refs:
+                candidate_idxs = candidate_idxs[:max_refs]
+
+            # Build input paths (best.jpg + additional captured frames).
+            input_paths: list[Path] = []
+            for ii in candidate_idxs:
+                p = best_dst if int(ii) == int(best_idx) else (frames_dir / f"frame_{int(ii):03d}.jpg")
+                if p.exists():
+                    input_paths.append(p)
+                else:
+                    self.log(
+                        f"DetectionSummary[{self.bundle_key}]: image gen missing candidate frame idx={int(ii)} path={p}",
+                        level="WARNING",
+                    )
+            if not input_paths and best_dst.exists():
+                input_paths = [best_dst]
+
+            if input_paths:
                 try:
                     # TODO(future): Add a "prompt-writer" step (LLM) that generates the image-edit prompt.
                     # Requirement: maximize style/theme variety across runs without anchoring on hard-coded examples,
@@ -1254,14 +1343,69 @@ class DetectionSummary(hass.Hass):
                     img_provider = build_image_provider(provider_cfg)
                     if not getattr(img_provider, "capabilities", None) or not img_provider.capabilities.supports_image_to_image:
                         raise ExternalImageGenError("image provider does not support image-to-image")
-                    prompt = augment_image_instructions(str(self.image_instructions), population_bounds)
+
+                    # Narrative context is helpful, but should not be treated as a "hard rule" about subject count.
+                    narrative_text = ""
+                    if isinstance(run_narrative, dict):
+                        narrative_text = str(run_narrative.get("run_summary") or "").strip()
+
+                    # Compact per-frame notes for the images we are providing.
+                    idx_to_frame = {int(f.idx): f for f in (run.capture.frames or []) if getattr(f, "idx", None) is not None}
+                    notes: list[str] = []
+                    for ii in sorted({int(best_idx)} | {int(i) for i in candidate_idxs}):
+                        rr = scored.get(int(ii))
+                        if not rr:
+                            continue
+                        cap = idx_to_frame.get(int(ii))
+                        t_s = None
+                        if cap is not None:
+                            try:
+                                t_s = max(0.0, float(getattr(cap, "captured_ts", 0.0) or 0.0) - float(run.capture.started_ts))
+                            except Exception:
+                                t_s = None
+                        summary = str(getattr(rr, "summary", "") or "").strip()
+                        try:
+                            m = int(getattr(rr, "male_count", 0) or 0)
+                            f = int(getattr(rr, "female_count", 0) or 0)
+                            a = int(getattr(rr, "animal_count", 0) or 0)
+                        except Exception:
+                            m, f, a = 0, 0, 0
+                        time_part = f" t={t_s:.1f}s" if isinstance(t_s, (int, float)) else ""
+                        notes.append(f"- frame_{int(ii):03d}.jpg{time_part}: {summary or '(no summary)'} (m={m}, f={f}, animals={a})")
+
+                    base_prompt = augment_image_instructions(str(self.image_instructions), population_bounds)
+                    prompt_lines: list[str] = [base_prompt, ""]
+                    prompt_lines.extend(
+                        [
+                            "Reference frames:",
+                            f"- You are provided {len(input_paths)} image(s) captured close in time during ONE motion detection event.",
+                            "- These frames are only a subset of the event; people/animals may enter/leave between frames.",
+                            "",
+                            "Critical constraints:",
+                            "- ONLY include people and animals that are clearly present in at least ONE of the provided reference frames.",
+                            "- Do NOT invent/add animals or extra people that are not visible in any provided frame (avoid 'phantom' animals).",
+                            "- If you are uncertain whether a subject exists, OMIT it rather than hallucinating it.",
+                            "- Any counts mentioned elsewhere (summaries/analysis) are soft context, not hard rules for adding subjects.",
+                            "",
+                            "Scene composition guidance:",
+                            "- Generate ONE coherent illustration that captures the essence of what happened across the provided frames.",
+                            "- Exact positioning/poses do not need to match a single frame; it can be a composite of the event.",
+                            "- Use the narrative context below for mood/intent, but do not add subjects that are not visible in the frames.",
+                        ]
+                    )
+                    if narrative_text:
+                        prompt_lines.extend(["", "Narrative context:", narrative_text])
+                    if notes:
+                        prompt_lines.extend(["", "Frame notes (for the provided references):", *notes])
+
+                    prompt = "\n".join([ln.rstrip() for ln in prompt_lines]).strip()
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
-                        f"in={in_path} out={out_path} prompt_len={len(prompt)}",
+                        f"inputs={len(input_paths)} out={out_path} prompt_len={len(prompt)}",
                         level="INFO",
                     )
                     generated_image = img_provider.edit_image(
-                        input_image_path=str(in_path),
+                        input_image_paths=[str(p) for p in input_paths],
                         prompt=prompt,
                         output_image_path=str(out_path),
                     )
@@ -1274,7 +1418,7 @@ class DetectionSummary(hass.Hass):
                     llm_events.append(
                         {
                             "type": "image_edit",
-                            "input_path": str(in_path),
+                            "input_paths": [str(p) for p in input_paths],
                             "output_path": str(out_path),
                             "elapsed_s": (generated_image or {}).get("elapsed_s"),
                             "model": (generated_image or {}).get("model"),

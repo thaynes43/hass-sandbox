@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Sequence
 
 from ai_providers.types import ExternalImageGenError, ImageProvider, ImageProviderName, ProviderCapabilities
 
@@ -57,23 +57,26 @@ class OpenAIImageProvider(ImageProvider):
     def edit_image(
         self,
         *,
-        input_image_path: str,
+        input_image_paths: Sequence[str],
         prompt: str,
         output_image_path: str,
     ) -> Dict[str, Any]:
-        in_path = Path(input_image_path)
+        in_paths = [Path(p) for p in (list(input_image_paths) if input_image_paths is not None else []) if str(p).strip()]
         out_path = Path(output_image_path)
 
-        if not in_path.exists():
-            raise ExternalImageGenError(f"input image does not exist: {in_path}")
+        if not in_paths:
+            raise ExternalImageGenError("input_image_paths is required (one or more paths)")
+        missing = [p for p in in_paths if not p.exists()]
+        if missing:
+            raise ExternalImageGenError(f"input image(s) do not exist: {[str(p) for p in missing]}")
         if not prompt or not str(prompt).strip():
             raise ExternalImageGenError("prompt is required")
 
-        data_url = _file_to_data_url(in_path)
+        data_urls = [{"image_url": _file_to_data_url(p)} for p in in_paths]
         prompt_preview = str(prompt)[:400]
 
         body: dict[str, Any] = {
-            "images": [{"image_url": data_url}],
+            "images": data_urls,
             "prompt": str(prompt),
             "model": self._config.model,
             "size": self._config.size,
@@ -137,7 +140,7 @@ class OpenAIImageProvider(ImageProvider):
             "output_format": self._config.output_format,
             "created_at_epoch": time.time(),
             "elapsed_s": round(time.time() - started, 3),
-            "input_path": str(in_path),
+            "input_paths": [str(p) for p in in_paths],
             "output_path": str(out_path),
             "revised_prompt": first.get("revised_prompt"),
             "request": {

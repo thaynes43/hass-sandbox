@@ -40,6 +40,40 @@ python appdaemon/deploy.py --merge-dev-apps
 
 Merge mode requires `ruamel.yaml` to be installed in the environment running `deploy.py` (dev only). It is listed in `appdaemon/requirements.txt`.
 
+### Run `deploy.py` from the correct venv (required)
+
+Agents often have multiple Python installs (Windows system Python, WSL Python, repo venvs). If you run `deploy.py`
+from the wrong interpreter, installs may fail (or succeed partially), and `--merge-dev-apps` will fail due to
+missing `ruamel.yaml`.
+
+- **Windows**: use the repo venv `.venv`:
+
+```powershell
+cd D:\labspace\hass-sandbox
+.\.venv\Scripts\python.exe appdaemon\deploy.py --dry-run --merge-dev-apps --target "X:\"
+```
+
+- **WSL/Linux**: use the repo venv `.venv-wsl`:
+
+```bash
+cd /mnt/d/labspace/hass-sandbox
+source .venv-wsl/bin/activate
+python appdaemon/deploy.py --dry-run --merge-dev-apps --target /mnt/x
+```
+
+### Common deploy pitfalls (and fixes)
+
+- **WSL + `--target X:\`**
+  - **Symptom**: `Target directory does not exist: /mnt/.../X:\`
+  - **Cause**: on Linux/WSL, `X:\` is not a valid absolute path; it resolves relative to your cwd.
+  - **Fix**: run deploy from **Windows PowerShell** OR mount the drive/share in WSL and pass a WSL-visible path
+    (often `/mnt/x`, but mapped/network drives frequently won’t appear in WSL).
+
+- **`--merge-dev-apps` missing `ruamel.yaml`**
+  - **Fix**: install into the same venv you’re using to run `deploy.py` (do not assume system Python):
+    - Windows: `.\.venv\Scripts\python.exe -m pip install ruamel.yaml`
+    - WSL: `pip install ruamel.yaml` (inside `.venv-wsl`)
+
 ## 2) Shared code must be deployed into `/conf/apps`
 
 Production AppDaemon commonly imports apps with:

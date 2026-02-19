@@ -93,7 +93,7 @@ def test_real_provider_scores_and_generates_image_edit_smoke():
         prompt = _env("DS_IMAGE_PROMPT") or "Create a simple illustrative image of the detected person(s)."
         out = work / "generated.png"
         res = image_provider.edit_image(
-            input_image_path=str(best),
+            input_image_paths=[str(best)],
             prompt=prompt,
             output_image_path=str(out),
         )
