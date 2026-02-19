@@ -41,8 +41,8 @@ class GarageDoorNotify(hass.Hass):
         "ai_run_started_lookback_s": 900,
         # Mobile deep-link when tapping the notification.
         # For custom dashboards, the path is typically: /<dashboard_url_path>/<view_path>
-        # Example: /garage-notify/summary
-        "notification_url": "/garage-notify/summary",
+        # Example: /detection-summary/garage
+        "notification_url": "/detection-summary/garage",
     }
 
     def initialize(self):
