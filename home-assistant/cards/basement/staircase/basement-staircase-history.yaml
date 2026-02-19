@@ -141,12 +141,9 @@ cards:
       states('select.basement_upper_staircase_inovelli_presence_mmwavecontrolwireddevice')
       %} {% set mmwave_lower =
       states('select.basement_lower_staircase_inovelli_presence_mmwavecontrolwireddevice')
-      %} {% set mmwave_helper =
-      states('input_select.basement_staircase_mmwave_normal_mode') %} {% if
-      mmwave_upper in ['unknown', 'unavailable'] %} {% set mmwave_upper = '—' %}
+      %} {% if mmwave_upper in ['unknown', 'unavailable'] %} {% set mmwave_upper = '—' %}
       {% endif %} {% if mmwave_lower in ['unknown', 'unavailable'] %} {% set
-      mmwave_lower = '—' %} {% endif %} {% if mmwave_helper in ['unknown',
-      'unavailable'] %} {% set mmwave_helper = '—' %} {% endif %}
+      mmwave_lower = '—' %} {% endif %}
 
       {% set s = 'basement_lower_staircase_inovelli_presence' %}
 
@@ -163,9 +160,6 @@ cards:
       <ha-icon icon="mdi:lock-check"></ha-icon> **Manual/Auto Hold (shared):**
       {{ hold_label }}{% if upper_hold != lower_hold %} (Upper={{ upper_hold }},
       Lower={{ lower_hold }}){% endif %}
-
-      <ha-icon icon="mdi:motion-sensor"></ha-icon> **mmWave Mode (helper):** {{
-      mmwave_helper }}
 
       <ha-icon icon="mdi:motion-sensor-outline"></ha-icon> **mmWave Mode
       (devices):** Upper={{ mmwave_upper }}, Lower={{ mmwave_lower }}

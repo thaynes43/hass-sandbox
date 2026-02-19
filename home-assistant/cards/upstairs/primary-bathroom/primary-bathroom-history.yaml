@@ -186,7 +186,7 @@ cards:
       {% if led1 == manual %}{% set hold_label = 'Manual Hold' %}
       {% elif led1 == auto %}{% set hold_label = 'Auto Hold' %}
       {% else %}{% set hold_label = 'Clear' %}{% endif %}
-      {% set mmwave_mode = states('input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode') %}
+      {% set mmwave_mode = states('select.' ~ s ~ '_mmwavecontrolwireddevice') %}
       {% if mmwave_mode in ['unknown', 'unavailable'] %}{% set mmwave_mode = '—' %}{% endif %}
       {% set on_vals = namespace(out='') %}{% for i in range(1,8) %}
         {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
@@ -208,7 +208,7 @@ cards:
       {% if led1 == manual %}{% set hold_label = 'Manual Hold' %}
       {% elif led1 == auto %}{% set hold_label = 'Auto Hold' %}
       {% else %}{% set hold_label = 'Clear' %}{% endif %}
-      {% set mmwave_mode = states('input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode') %}
+      {% set mmwave_mode = states('select.' ~ s ~ '_mmwavecontrolwireddevice') %}
       {% if mmwave_mode in ['unknown', 'unavailable'] %}{% set mmwave_mode = '—' %}{% endif %}
       {% set on_vals = namespace(out='') %}{% for i in range(1,8) %}
         {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}

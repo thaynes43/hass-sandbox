@@ -1,0 +1,171 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#kellie-garage-doors"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Return to Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#"
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      {% set tesla = 'cover.ratgdov25i_4a0325_door' %}
+      **Tesla Garage Door:** {% if is_state(tesla, 'closed') %}Closed {{ as_local(states[tesla].last_changed).strftime('%I:%M %p on %m/%d') }}{% elif is_state(tesla, 'open') %}Open for {{ relative_time(states[tesla].last_changed) }}{% else %}{{ states(tesla) }}{% endif %}
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    sub_button:
+      main: []
+      bottom:
+        - name: Tesla Garage Door
+          buttons_layout: inline
+          group:
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.open_cover
+                target:
+                  entity_id: cover.ratgdov25i_4a0325_door
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Stop
+              icon: mdi:stop
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.stop_cover
+                target:
+                  entity_id: cover.ratgdov25i_4a0325_door
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.close_cover
+                target:
+                  entity_id: cover.ratgdov25i_4a0325_door
+      bottom_layout: rows
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      {% set wagoneer = 'cover.ratgdov25i_dbfa50_door' %}
+      **Wagoneer Garage Door:** {% if is_state(wagoneer, 'closed') %}Closed {{ as_local(states[wagoneer].last_changed).strftime('%I:%M %p on %m/%d') }}{% elif is_state(wagoneer, 'open') %}Open for {{ relative_time(states[wagoneer].last_changed) }}{% else %}{{ states(wagoneer) }}{% endif %}
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    sub_button:
+      main: []
+      bottom:
+        - name: Wagoneer Garage Door
+          buttons_layout: inline
+          group:
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.open_cover
+                target:
+                  entity_id: cover.ratgdov25i_dbfa50_door
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Stop
+              icon: mdi:stop
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.stop_cover
+                target:
+                  entity_id: cover.ratgdov25i_dbfa50_door
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.close_cover
+                target:
+                  entity_id: cover.ratgdov25i_dbfa50_door
+      bottom_layout: rows
+
+  - type: picture-entity
+    entity: camera.garage_g5_dome_medium_resolution_channel
+    camera_view: live
+    show_state: false
+    show_name: false
