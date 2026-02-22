@@ -61,7 +61,7 @@ cards:
         }
     content: |
       {% set e = 'lock.front_door_lock' %}
-      **Front Door:** {{ states(e) | title }}
+      **Front Door:** {{ states(e) | title }} {{ as_local(states[e].last_changed).strftime('%I:%M %p on %m/%d') }}
 
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -69,9 +69,9 @@ cards:
     rows: 1.3
     styles: |-
       @keyframes lockMovePulse {
-        0% { filter: brightness(1); }
-        50% { filter: brightness(1.18); }
-        100% { filter: brightness(1); }
+        0% { filter: brightness(1); transform: scale(1); }
+        50% { filter: brightness(1.18); transform: scale(1.015); }
+        100% { filter: brightness(1); transform: scale(1); }
       }
       .bubble-sub-button-1,
       .bubble-sub-button-2 {
@@ -79,26 +79,32 @@ cards:
       }
       .bubble-sub-button-1 {
         background-color: ${(() => {
+          const p = hass.states['input_select.front_door_lock_pending']?.state;
           const s = hass.states['lock.front_door_lock']?.state;
+          if (p === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'locking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.front_door_lock']?.state;
-          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.front_door_lock_pending']?.state;
+          return p === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
       .bubble-sub-button-2 {
         background-color: ${(() => {
+          const p = hass.states['input_select.front_door_lock_pending']?.state;
           const s = hass.states['lock.front_door_lock']?.state;
+          if (p === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'unlocking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.front_door_lock']?.state;
-          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.front_door_lock_pending']?.state;
+          return p === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
     sub_button:
@@ -117,9 +123,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.unlock
-                target:
-                  entity_id: lock.front_door_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.front_door_lock_pending
+                  option: unlocking
             - entity: lock.front_door_lock
               icon: mdi:lock
               show_name: false
@@ -130,9 +137,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.lock
-                target:
-                  entity_id: lock.front_door_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.front_door_lock_pending
+                  option: locking
       bottom_layout: rows
 
   - type: markdown
@@ -146,7 +154,7 @@ cards:
         }
     content: |
       {% set e = 'lock.side_door_lock' %}
-      **Side Door:** {{ states(e) | title }}
+      **Side Door:** {{ states(e) | title }} {{ as_local(states[e].last_changed).strftime('%I:%M %p on %m/%d') }}
 
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -154,9 +162,9 @@ cards:
     rows: 1.3
     styles: |-
       @keyframes lockMovePulse {
-        0% { filter: brightness(1); }
-        50% { filter: brightness(1.18); }
-        100% { filter: brightness(1); }
+        0% { filter: brightness(1); transform: scale(1); }
+        50% { filter: brightness(1.18); transform: scale(1.015); }
+        100% { filter: brightness(1); transform: scale(1); }
       }
       .bubble-sub-button-1,
       .bubble-sub-button-2 {
@@ -164,26 +172,32 @@ cards:
       }
       .bubble-sub-button-1 {
         background-color: ${(() => {
+          const p = hass.states['input_select.side_door_lock_pending']?.state;
           const s = hass.states['lock.side_door_lock']?.state;
+          if (p === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'locking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.side_door_lock']?.state;
-          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.side_door_lock_pending']?.state;
+          return p === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
       .bubble-sub-button-2 {
         background-color: ${(() => {
+          const p = hass.states['input_select.side_door_lock_pending']?.state;
           const s = hass.states['lock.side_door_lock']?.state;
+          if (p === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'unlocking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.side_door_lock']?.state;
-          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.side_door_lock_pending']?.state;
+          return p === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
     sub_button:
@@ -202,9 +216,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.unlock
-                target:
-                  entity_id: lock.side_door_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.side_door_lock_pending
+                  option: unlocking
             - entity: lock.side_door_lock
               icon: mdi:lock
               show_name: false
@@ -215,9 +230,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.lock
-                target:
-                  entity_id: lock.side_door_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.side_door_lock_pending
+                  option: locking
       bottom_layout: rows
 
   - type: markdown
@@ -231,7 +247,7 @@ cards:
         }
     content: |
       {% set e = 'lock.bulkhead_lock' %}
-      **Bulkhead:** {{ states(e) | title }}
+      **Bulkhead:** {{ states(e) | title }} {{ as_local(states[e].last_changed).strftime('%I:%M %p on %m/%d') }}
 
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -239,9 +255,9 @@ cards:
     rows: 1.3
     styles: |-
       @keyframes lockMovePulse {
-        0% { filter: brightness(1); }
-        50% { filter: brightness(1.18); }
-        100% { filter: brightness(1); }
+        0% { filter: brightness(1); transform: scale(1); }
+        50% { filter: brightness(1.18); transform: scale(1.015); }
+        100% { filter: brightness(1); transform: scale(1); }
       }
       .bubble-sub-button-1,
       .bubble-sub-button-2 {
@@ -249,26 +265,32 @@ cards:
       }
       .bubble-sub-button-1 {
         background-color: ${(() => {
+          const p = hass.states['input_select.bulkhead_lock_pending']?.state;
           const s = hass.states['lock.bulkhead_lock']?.state;
+          if (p === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'locking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.bulkhead_lock']?.state;
-          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.bulkhead_lock_pending']?.state;
+          return p === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
       .bubble-sub-button-2 {
         background-color: ${(() => {
+          const p = hass.states['input_select.bulkhead_lock_pending']?.state;
           const s = hass.states['lock.bulkhead_lock']?.state;
+          if (p === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'unlocking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.bulkhead_lock']?.state;
-          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.bulkhead_lock_pending']?.state;
+          return p === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
     sub_button:
@@ -287,9 +309,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.unlock
-                target:
-                  entity_id: lock.bulkhead_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.bulkhead_lock_pending
+                  option: unlocking
             - entity: lock.bulkhead_lock
               icon: mdi:lock
               show_name: false
@@ -300,9 +323,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.lock
-                target:
-                  entity_id: lock.bulkhead_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.bulkhead_lock_pending
+                  option: locking
       bottom_layout: rows
 
   - type: markdown
@@ -316,7 +340,7 @@ cards:
         }
     content: |
       {% set e = 'lock.mudroom_door_lock' %}
-      **Mudroom:** {{ states(e) | title }}
+      **Mudroom:** {{ states(e) | title }} {{ as_local(states[e].last_changed).strftime('%I:%M %p on %m/%d') }}
 
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -324,9 +348,9 @@ cards:
     rows: 1.3
     styles: |-
       @keyframes lockMovePulse {
-        0% { filter: brightness(1); }
-        50% { filter: brightness(1.18); }
-        100% { filter: brightness(1); }
+        0% { filter: brightness(1); transform: scale(1); }
+        50% { filter: brightness(1.18); transform: scale(1.015); }
+        100% { filter: brightness(1); transform: scale(1); }
       }
       .bubble-sub-button-1,
       .bubble-sub-button-2 {
@@ -334,26 +358,32 @@ cards:
       }
       .bubble-sub-button-1 {
         background-color: ${(() => {
+          const p = hass.states['input_select.mudroom_lock_pending']?.state;
           const s = hass.states['lock.mudroom_door_lock']?.state;
+          if (p === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'locking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.mudroom_door_lock']?.state;
-          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.mudroom_lock_pending']?.state;
+          return p === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
       .bubble-sub-button-2 {
         background-color: ${(() => {
+          const p = hass.states['input_select.mudroom_lock_pending']?.state;
           const s = hass.states['lock.mudroom_door_lock']?.state;
+          if (p === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          if (p === 'unlocking') return 'rgba(0,0,0,0.22)';
+          if (p === 'error') return 'rgba(255, 179, 0, 0.28)';
           if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
-          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
           return 'rgba(0,0,0,0.22)';
         })()} !important;
         animation: ${(() => {
-          const s = hass.states['lock.mudroom_door_lock']?.state;
-          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+          const p = hass.states['input_select.mudroom_lock_pending']?.state;
+          return p === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
         })()} !important;
       }
     sub_button:
@@ -372,9 +402,10 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.unlock
-                target:
-                  entity_id: lock.mudroom_door_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.mudroom_lock_pending
+                  option: unlocking
             - entity: lock.mudroom_door_lock
               icon: mdi:lock
               show_name: false
@@ -385,7 +416,8 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: lock.lock
-                target:
-                  entity_id: lock.mudroom_door_lock
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.mudroom_lock_pending
+                  option: locking
       bottom_layout: rows

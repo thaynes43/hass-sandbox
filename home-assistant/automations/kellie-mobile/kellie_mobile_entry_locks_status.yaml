@@ -1,0 +1,37 @@
+alias: Kellie Mobile - Entry Locks Status
+description: Maintain an aggregate status string for Kellie’s mobile dashboard lock popup button.
+mode: single
+trigger:
+  - platform: state
+    entity_id:
+      - lock.front_door_lock
+      - lock.side_door_lock
+      - lock.bulkhead_lock
+      - lock.mudroom_door_lock
+action:
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.kellie_entry_locks_status
+    data:
+      value: >-
+        {% set must_lock = ['lock.front_door_lock','lock.side_door_lock','lock.bulkhead_lock'] %}
+        {% set ok_unlock = ['lock.mudroom_door_lock'] %}
+        {% set bad_must_lock = must_lock | reject('is_state','locked') | list %}
+        {% set bad_ok_unlock = ok_unlock | reject('is_state','unlocked') | list %}
+        {% set bad = bad_must_lock + bad_ok_unlock %}
+
+        {% if bad | length == 0 %}
+          All OK
+        {% else %}
+          {% set ns = namespace(names=[]) %}
+          {% for e in bad %}
+            {% set ns.names = ns.names + [state_attr(e,'friendly_name') or e] %}
+          {% endfor %}
+          {% if ns.names | length == 1 %}
+            Check {{ ns.names[0] }}
+          {% elif ns.names | length == 2 %}
+            Check {{ ns.names[0] }} and {{ ns.names[1] }}
+          {% else %}
+            Check {{ ns.names[0:-1] | join(', ') }}, and {{ ns.names[-1] }}
+          {% endif %}
+        {% endif %}
