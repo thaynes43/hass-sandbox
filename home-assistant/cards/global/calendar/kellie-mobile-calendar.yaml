@@ -1,0 +1,19 @@
+type: custom:bubble-card
+card_type: calendar
+entities:
+  - entity: calendar.hayneshome01886_gmail_com
+days: 7
+event_action:
+  tap_action:
+    action: more-info
+  double_tap_action:
+    action: none
+  hold_action:
+    action: none
+sub_button:
+  main: []
+  bottom: []
+show_progress: false
+show_place: false
+show_end: false
+rows: 2.8

@@ -1,0 +1,44 @@
+alias: Kellie Mobile - Weather Forecast Cache
+description: >-
+  Cache daily forecast (today/tomorrow) into helpers for use in Kellie’s mobile
+  weather card (bubble-card).
+mode: single
+trigger:
+  - platform: homeassistant
+    event: start
+  - platform: time_pattern
+    minutes: "/30"
+action:
+  - action: weather.get_forecasts
+    target:
+      entity_id: weather.forecast_home
+    data:
+      type: daily
+    response_variable: forecasts
+  - variables:
+      today: >-
+        {{ forecasts.get('weather.forecast_home', {}).get('forecast', [])[0] if
+        (forecasts.get('weather.forecast_home', {}).get('forecast', []) | length) > 0 else {} }}
+      tomorrow: >-
+        {{ forecasts.get('weather.forecast_home', {}).get('forecast', [])[1] if
+        (forecasts.get('weather.forecast_home', {}).get('forecast', []) | length) > 1 else {} }}
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.kellie_weather_today_temp
+    data:
+      value: "{{ today.get('temperature') | float(0) }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.kellie_weather_today_condition
+    data:
+      value: "{{ today.get('condition') or 'unknown' }}"
+  - action: input_number.set_value
+    target:
+      entity_id: input_number.kellie_weather_tomorrow_temp
+    data:
+      value: "{{ tomorrow.get('temperature') | float(0) }}"
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.kellie_weather_tomorrow_condition
+    data:
+      value: "{{ tomorrow.get('condition') or 'unknown' }}"

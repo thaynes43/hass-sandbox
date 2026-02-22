@@ -1,0 +1,45 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+entity: weather.first_floor_ecobee
+name: Weather
+show_state: true
+card_layout: large-2-rows
+sub_button:
+  main:
+    - name: ""
+      entity: sensor.first_floor_ecobee_temperature
+      show_state: true
+      show_name: true
+      show_icon: true
+      show_background: false
+      icon: mdi:home-floor-1
+    - name: ""
+      entity: sensor.second_floor_ecobee_temperature
+      show_state: true
+      show_name: true
+      show_icon: true
+      show_background: false
+      icon: mdi:home-floor-2
+    - name: Today
+      entity: input_number.kellie_weather_today_temp
+      show_name: true
+      show_state: true
+      show_background: false
+      tap_action:
+        action: more-info
+    - name: Tomorrow
+      entity: input_number.kellie_weather_tomorrow_temp
+      show_name: true
+      show_state: true
+      show_background: false
+      tap_action:
+        action: more-info
+  bottom: []
+styles: >-
+  ${subButtonIcon[2].setAttribute("icon",
+  getWeatherIcon(hass.states['input_text.kellie_weather_today_condition']?.state))}
+  ${subButtonIcon[3].setAttribute("icon",
+  getWeatherIcon(hass.states['input_text.kellie_weather_tomorrow_condition']?.state))}
+slider_fill_orientation: left
+slider_value_position: right

@@ -1,0 +1,218 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#kellie-primary-bedroom"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Return to Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#"
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+    slider_fill_orientation: left
+    slider_value_position: right
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      ## Primary Bedroom
+  - type: grid
+    columns: 1
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: fan.primary_bedroom_fan_fan
+        name: Fan
+        icon: mdi:fan
+        show_state: true
+        show_attribute: true
+        attribute: percentage
+        tap_action:
+          action: toggle
+        sub_button:
+          main: []
+          bottom: []
+        slider_fill_orientation: left
+        slider_value_position: right
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: cover
+        entity: cover.primary_bedroom_shades
+        name: Shades
+        show_state: true
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.primary_bedroom
+        name: TV / Speaker
+        show_state: true
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      ### Light Zones
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_bed_lights
+        name: Recessed Lights
+        icon: mdi:light-recessed
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        sub_button:
+          main: []
+          bottom: []
+        slider_fill_orientation: left
+        slider_value_position: right
+        light_slider_type: brightness
+        button_action:
+          tap_action:
+            action: toggle
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_nook_lights
+        name: Nook Lights
+        icon: mdi:ceiling-light
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_nightstand_lights
+        name: Nightstands
+        icon: mdi:lamp
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_hall_lights
+        name: Hallway Lights
+        icon: mdi:light-recessed
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_closet_lights
+        name: Closet
+        icon: mdi:hanger
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      ### Nightstands
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_bed_nightstand_hue_bulb_tom
+        name: Tom
+        icon: mdi:lamp-outline
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_bed_nightstand_hue_bulb_kellie
+        name: Kellie
+        icon: mdi:lamp-outline
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
