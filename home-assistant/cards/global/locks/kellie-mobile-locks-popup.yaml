@@ -1,0 +1,391 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#kellie-locks"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Return to Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#"
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      ## Entry Status
+      **Locks:** {{ states('input_text.kellie_entry_locks_status') }}
+
+      {% set slider = 'binary_sensor.kitchen_slider_usl_entry_contact' %}
+      {% set garage_side = 'binary_sensor.usl_entry_contact_2' %}
+      {% set bulkhead = 'binary_sensor.usl_entry_contact' %}
+      **Slider:** {% if is_state(slider,'on') %}Open{% else %}Closed{% endif %}
+      **Garage Side Door:** {% if is_state(garage_side,'on') %}Open{% else %}Closed{% endif %}
+      **Bulkhead Door:** {% if is_state(bulkhead,'on') %}Open{% else %}Closed{% endif %}
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      {% set e = 'lock.front_door_lock' %}
+      **Front Door:** {{ states(e) | title }}
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    styles: |-
+      @keyframes lockMovePulse {
+        0% { filter: brightness(1); }
+        50% { filter: brightness(1.18); }
+        100% { filter: brightness(1); }
+      }
+      .bubble-sub-button-1,
+      .bubble-sub-button-2 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-1 {
+        background-color: ${(() => {
+          const s = hass.states['lock.front_door_lock']?.state;
+          if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.front_door_lock']?.state;
+          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-2 {
+        background-color: ${(() => {
+          const s = hass.states['lock.front_door_lock']?.state;
+          if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.front_door_lock']?.state;
+          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+    sub_button:
+      main: []
+      bottom:
+        - name: Front Door
+          buttons_layout: inline
+          group:
+            - entity: lock.front_door_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.unlock
+                target:
+                  entity_id: lock.front_door_lock
+            - entity: lock.front_door_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.lock
+                target:
+                  entity_id: lock.front_door_lock
+      bottom_layout: rows
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      {% set e = 'lock.side_door_lock' %}
+      **Side Door:** {{ states(e) | title }}
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    styles: |-
+      @keyframes lockMovePulse {
+        0% { filter: brightness(1); }
+        50% { filter: brightness(1.18); }
+        100% { filter: brightness(1); }
+      }
+      .bubble-sub-button-1,
+      .bubble-sub-button-2 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-1 {
+        background-color: ${(() => {
+          const s = hass.states['lock.side_door_lock']?.state;
+          if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.side_door_lock']?.state;
+          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-2 {
+        background-color: ${(() => {
+          const s = hass.states['lock.side_door_lock']?.state;
+          if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.side_door_lock']?.state;
+          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+    sub_button:
+      main: []
+      bottom:
+        - name: Side Door
+          buttons_layout: inline
+          group:
+            - entity: lock.side_door_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.unlock
+                target:
+                  entity_id: lock.side_door_lock
+            - entity: lock.side_door_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.lock
+                target:
+                  entity_id: lock.side_door_lock
+      bottom_layout: rows
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      {% set e = 'lock.bulkhead_lock' %}
+      **Bulkhead:** {{ states(e) | title }}
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    styles: |-
+      @keyframes lockMovePulse {
+        0% { filter: brightness(1); }
+        50% { filter: brightness(1.18); }
+        100% { filter: brightness(1); }
+      }
+      .bubble-sub-button-1,
+      .bubble-sub-button-2 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-1 {
+        background-color: ${(() => {
+          const s = hass.states['lock.bulkhead_lock']?.state;
+          if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.bulkhead_lock']?.state;
+          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-2 {
+        background-color: ${(() => {
+          const s = hass.states['lock.bulkhead_lock']?.state;
+          if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.bulkhead_lock']?.state;
+          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+    sub_button:
+      main: []
+      bottom:
+        - name: Bulkhead
+          buttons_layout: inline
+          group:
+            - entity: lock.bulkhead_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.unlock
+                target:
+                  entity_id: lock.bulkhead_lock
+            - entity: lock.bulkhead_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.lock
+                target:
+                  entity_id: lock.bulkhead_lock
+      bottom_layout: rows
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      {% set e = 'lock.mudroom_door_lock' %}
+      **Mudroom:** {{ states(e) | title }}
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    styles: |-
+      @keyframes lockMovePulse {
+        0% { filter: brightness(1); }
+        50% { filter: brightness(1.18); }
+        100% { filter: brightness(1); }
+      }
+      .bubble-sub-button-1,
+      .bubble-sub-button-2 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-1 {
+        background-color: ${(() => {
+          const s = hass.states['lock.mudroom_door_lock']?.state;
+          if (s === 'unlocked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'unlocking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.mudroom_door_lock']?.state;
+          return s === 'unlocking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-2 {
+        background-color: ${(() => {
+          const s = hass.states['lock.mudroom_door_lock']?.state;
+          if (s === 'locked') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'locking') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['lock.mudroom_door_lock']?.state;
+          return s === 'locking' ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+    sub_button:
+      main: []
+      bottom:
+        - name: Mudroom
+          buttons_layout: inline
+          group:
+            - entity: lock.mudroom_door_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.unlock
+                target:
+                  entity_id: lock.mudroom_door_lock
+            - entity: lock.mudroom_door_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: lock.lock
+                target:
+                  entity_id: lock.mudroom_door_lock
+      bottom_layout: rows

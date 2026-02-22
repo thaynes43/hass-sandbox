@@ -1,0 +1,12 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Locks
+icon: mdi:shield-lock
+entity: input_text.kellie_entry_locks_status
+show_state: true
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#kellie-locks"
+rows: 1
