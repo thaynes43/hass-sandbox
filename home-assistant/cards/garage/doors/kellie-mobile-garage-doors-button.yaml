@@ -1,39 +1,33 @@
 type: custom:bubble-card
 card_type: button
-button_type: state
+button_type: name
 name: Garage Doors
 icon: mdi:garage
-entity: cover.ratgdov25i_4a0325_door
+entity: cover.ratgdov25i_dbfa50_door
 button_action:
   tap_action:
     action: navigate
     navigation_path: "#kellie-garage-doors"
 sub_button:
-  main: []
-  bottom:
+  main:
     - entity: cover.ratgdov25i_4a0325_door
       name: Tesla
-      icon: mdi:garage-variant
       show_name: true
+      show_icon: false
       show_state: true
-      show_icon: true
-      show_last_changed: false
-      scrolling_effect: false
-      content_layout: icon-top
-      custom_height: 60
       tap_action:
-        action: none
+        action: navigate
+        navigation_path: "#kellie-garage-doors"
     - entity: cover.ratgdov25i_dbfa50_door
       name: Wagoneer
-      icon: mdi:garage-variant
       show_name: true
       show_state: true
-      show_icon: true
-      show_last_changed: false
-      scrolling_effect: false
-      content_layout: icon-top
-      custom_height: 60
+      show_icon: false
       tap_action:
-        action: none
+        action: navigate
+        navigation_path: "#kellie-garage-doors"
+  bottom: []
   bottom_layout: rows
-rows: 2
+rows: 1
+slider_fill_orientation: left
+slider_value_position: right

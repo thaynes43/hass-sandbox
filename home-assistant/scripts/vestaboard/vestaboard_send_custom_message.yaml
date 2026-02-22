@@ -1,0 +1,104 @@
+alias: "Vestaboard: Send Custom Message"
+description: "Send the custom Vestaboard message from helpers (max 80 chars, centered inside a selectable border)."
+mode: restart
+sequence:
+  - variables:
+      raw: "{{ states('input_text.vestaboard_custom_message') }}"
+      border: "{{ states('input_select.vestaboard_border_tile') }}"
+      duration: "{{ (states('input_number.vestaboard_custom_duration_min') | int(15)) * 60 }}"
+      message: >-
+        {% set tile = border %}
+        {% if tile in ['unknown','unavailable','None','none',''] %}{% set tile = ' ' %}{% endif %}
+
+        {% set raw2 = raw %}
+        {% if raw2 in ['unknown','unavailable',''] %}{% set raw2 = '' %}{% endif %}
+        {% set text = raw2 | replace('\n',' ') | replace('\r',' ') %}
+        {% set text = text.split() | join(' ') %}
+        {% set text = text[:80] %}
+        {% set text = text | upper %}
+
+        {# Wrap into <= 4 lines of width 20 (hard-break long words) #}
+        {% set words = (text.split(' ') if text != '' else []) %}
+        {% set wrapped = namespace(list=[], current='') %}
+        {% for w in words %}
+          {% if wrapped.list | length >= 4 %}{% break %}{% endif %}
+          {% if w | length > 20 %}
+            {% if wrapped.current != '' %}
+              {% set wrapped.list = wrapped.list + [wrapped.current] %}
+              {% set wrapped.current = '' %}
+            {% endif %}
+            {% for j in range(0, w | length, 20) %}
+              {% if wrapped.list | length >= 4 %}{% break %}{% endif %}
+              {% set chunk = w[j:j+20] %}
+              {% if chunk != '' %}
+                {% set wrapped.list = wrapped.list + [chunk] %}
+              {% endif %}
+            {% endfor %}
+          {% else %}
+            {% if wrapped.current == '' %}
+              {% set candidate = w %}
+            {% else %}
+              {% set candidate = wrapped.current ~ ' ' ~ w %}
+            {% endif %}
+            {% if candidate | length <= 20 %}
+              {% set wrapped.current = candidate %}
+            {% else %}
+              {% set wrapped.list = wrapped.list + [wrapped.current] %}
+              {% set wrapped.current = w %}
+            {% endif %}
+          {% endif %}
+        {% endfor %}
+        {% if wrapped.current != '' and wrapped.list | length < 4 %}
+          {% set wrapped.list = wrapped.list + [wrapped.current] %}
+        {% endif %}
+
+        {# Vertically + horizontally center inside 4x20 = 80 chars #}
+        {% set n = wrapped.list | length %}
+        {% set top = ((4 - n) // 2) if n < 4 else 0 %}
+        {% set interior = namespace(list=[]) %}
+        {% for i in range(0, 4) %}
+          {% if i < top or i >= top + n %}
+            {% set line = '' %}
+          {% else %}
+            {% set line = wrapped.list[i - top] %}
+          {% endif %}
+          {% set line = line[:20] %}
+          {% set pad = 20 - (line | length) %}
+          {% set left = pad // 2 %}
+          {% set right = pad - left %}
+          {% set interior.list = interior.list + [(' ' * left) ~ line ~ (' ' * right)] %}
+        {% endfor %}
+
+        {# Build 6x22 grid with border: top/bottom 22; sides 4 rows #}
+        {% set row1 = tile * 22 %}
+        {% set rows = namespace(list=[row1]) %}
+        {% for i in range(0, 4) %}
+          {% set rows.list = rows.list + [tile ~ interior.list[i] ~ tile] %}
+        {% endfor %}
+        {% set rows.list = rows.list + [tile * 22] %}
+        {{ rows.list | join('\n') }}
+  - condition: template
+    value_template: "{{ message not in ['unknown','unavailable',''] }}"
+  - choose:
+      - conditions:
+          - condition: state
+            entity_id: input_boolean.vestaboard_custom_temporary
+            state: "on"
+        sequence:
+          - action: vestaboard.message
+            data:
+              device_id: a47506daa51b03ab75b8b6e816b51d64
+              message: "{{ message }}"
+              justify: center
+              align: center
+              duration: "{{ duration }}"
+    default:
+      - action: button.press
+        target:
+          entity_id: button.vestaboard_clear_temporary_message
+      - action: vestaboard.message
+        data:
+          device_id: a47506daa51b03ab75b8b6e816b51d64
+          message: "{{ message }}"
+          justify: center
+          align: center

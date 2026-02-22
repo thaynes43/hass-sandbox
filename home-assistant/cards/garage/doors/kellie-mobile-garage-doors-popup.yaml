@@ -54,9 +54,9 @@ cards:
           buttons_layout: inline
           group:
             - entity: cover.ratgdov25i_4a0325_door
-              name: Open
-              icon: mdi:arrow-up-bold
-              show_name: true
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: false
               show_state: false
               show_icon: true
               scrolling_effect: false
@@ -64,13 +64,13 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: cover.open_cover
+                service: cover.close_cover
                 target:
                   entity_id: cover.ratgdov25i_4a0325_door
             - entity: cover.ratgdov25i_4a0325_door
               name: Stop
               icon: mdi:stop
-              show_name: true
+              show_name: false
               show_state: false
               show_icon: true
               scrolling_effect: false
@@ -82,9 +82,9 @@ cards:
                 target:
                   entity_id: cover.ratgdov25i_4a0325_door
             - entity: cover.ratgdov25i_4a0325_door
-              name: Close
-              icon: mdi:arrow-down-bold
-              show_name: true
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: false
               show_state: false
               show_icon: true
               scrolling_effect: false
@@ -92,7 +92,7 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: cover.close_cover
+                service: cover.open_cover
                 target:
                   entity_id: cover.ratgdov25i_4a0325_door
       bottom_layout: rows
@@ -121,9 +121,9 @@ cards:
           buttons_layout: inline
           group:
             - entity: cover.ratgdov25i_dbfa50_door
-              name: Open
-              icon: mdi:arrow-up-bold
-              show_name: true
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: false
               show_state: false
               show_icon: true
               scrolling_effect: false
@@ -131,13 +131,13 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: cover.open_cover
+                service: cover.close_cover
                 target:
                   entity_id: cover.ratgdov25i_dbfa50_door
             - entity: cover.ratgdov25i_dbfa50_door
               name: Stop
               icon: mdi:stop
-              show_name: true
+              show_name: false
               show_state: false
               show_icon: true
               scrolling_effect: false
@@ -149,9 +149,9 @@ cards:
                 target:
                   entity_id: cover.ratgdov25i_dbfa50_door
             - entity: cover.ratgdov25i_dbfa50_door
-              name: Close
-              icon: mdi:arrow-down-bold
-              show_name: true
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: false
               show_state: false
               show_icon: true
               scrolling_effect: false
@@ -159,7 +159,7 @@ cards:
               custom_height: 60
               tap_action:
                 action: call-service
-                service: cover.close_cover
+                service: cover.open_cover
                 target:
                   entity_id: cover.ratgdov25i_dbfa50_door
       bottom_layout: rows

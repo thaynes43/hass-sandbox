@@ -1,0 +1,16 @@
+alias: "Vestaboard: Enforce custom message max 80"
+description: "Trims input_text.vestaboard_custom_message to 80 characters so mobile input stays predictable."
+triggers:
+  - trigger: state
+    entity_id: input_text.vestaboard_custom_message
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none and (trigger.to_state.state | string | length) > 80 }}
+actions:
+  - action: input_text.set_value
+    data:
+      entity_id: input_text.vestaboard_custom_message
+      value: >-
+        {{ (trigger.to_state.state | string)[:80] }}
+mode: single

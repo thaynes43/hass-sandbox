@@ -1,0 +1,8 @@
+alias: "Vestaboard Editor: Clear"
+description: "Clear input_text.vestaboard_custom_message."
+mode: restart
+sequence:
+  - action: input_text.set_value
+    data:
+      entity_id: input_text.vestaboard_custom_message
+      value: ""

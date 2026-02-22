@@ -1,0 +1,11 @@
+type: vertical-stack
+cards:
+  - type: picture-entity
+    entity: image.vestaboard
+    show_state: false
+    show_name: false
+    tap_action:
+      action: navigate
+      navigation_path: "#kellie-vestaboard"
+    hold_action:
+      action: more-info
