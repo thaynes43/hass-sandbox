@@ -1,0 +1,14 @@
+id: '1765153465449'
+alias: '[TV] : [Upstairs] [Blue Room] : [Specific Time] : [Turn Off]'
+description: ''
+triggers:
+  - trigger: time
+    at: 01:00:00
+conditions: []
+actions:
+  - action: media_player.turn_off
+    metadata: {}
+    data: {}
+    target:
+      entity_id: media_player.blue_room_lg_tv
+mode: single

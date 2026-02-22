@@ -47,6 +47,44 @@ cards:
     card_type: sub-buttons
     show_header_toggle: false
     rows: 1.3
+    styles: |-
+      @keyframes garageMovePulse {
+        0% { filter: brightness(1); }
+        50% { filter: brightness(1.18); }
+        100% { filter: brightness(1); }
+      }
+      .bubble-sub-button-1,
+      .bubble-sub-button-2,
+      .bubble-sub-button-3 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-1 {
+        background-color: ${(() => {
+          const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;
+          if (s === 'closed') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'closing') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;
+          return s === 'closing' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-3 {
+        background-color: ${(() => {
+          const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;
+          if (s === 'open') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'opening') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;
+          return s === 'opening' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-2 {
+        background-color: rgba(0,0,0,0.22) !important;
+      }
     sub_button:
       main: []
       bottom:
@@ -114,6 +152,44 @@ cards:
     card_type: sub-buttons
     show_header_toggle: false
     rows: 1.3
+    styles: |-
+      @keyframes garageMovePulse {
+        0% { filter: brightness(1); }
+        50% { filter: brightness(1.18); }
+        100% { filter: brightness(1); }
+      }
+      .bubble-sub-button-1,
+      .bubble-sub-button-2,
+      .bubble-sub-button-3 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-1 {
+        background-color: ${(() => {
+          const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;
+          if (s === 'closed') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'closing') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;
+          return s === 'closing' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-3 {
+        background-color: ${(() => {
+          const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;
+          if (s === 'open') return 'rgba(var(--rgb-primary-color), 0.35)';
+          if (s === 'opening') return 'rgba(0, 180, 255, 0.28)';
+          return 'rgba(0,0,0,0.22)';
+        })()} !important;
+        animation: ${(() => {
+          const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;
+          return s === 'opening' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';
+        })()} !important;
+      }
+      .bubble-sub-button-2 {
+        background-color: rgba(0,0,0,0.22) !important;
+      }
     sub_button:
       main: []
       bottom:
