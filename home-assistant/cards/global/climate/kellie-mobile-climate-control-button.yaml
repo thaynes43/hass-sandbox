@@ -1,0 +1,107 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Climate Control
+icon: mdi:thermostat
+entity: climate.first_floor_ecobee
+show_state: true
+card_layout: large-sub-buttons-grid
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#kellie-climate-control"
+sub_button:
+  main: []
+  bottom:
+    - entity: climate.first_floor_ecobee
+      name: 68°
+      show_name: true
+      show_state: false
+      show_icon: true
+      tap_action:
+        action: call-service
+        service: climate.set_temperature
+        target:
+          entity_id: climate.first_floor_ecobee
+        data:
+          temperature: 68
+      icon: mdi:home-floor-1
+    - entity: climate.first_floor_ecobee
+      name: 72°
+      show_name: true
+      show_state: false
+      show_icon: true
+      tap_action:
+        action: call-service
+        service: climate.set_temperature
+        target:
+          entity_id: climate.first_floor_ecobee
+        data:
+          temperature: 72
+      icon: mdi:home-floor-1
+    - entity: climate.second_floor_ecobee
+      name: 68°
+      show_name: true
+      show_state: false
+      show_icon: true
+      tap_action:
+        action: call-service
+        service: climate.set_temperature
+        target:
+          entity_id: climate.second_floor_ecobee
+        data:
+          temperature: 68
+      icon: mdi:home-floor-2
+    - entity: climate.second_floor_ecobee
+      name: 72°
+      show_name: true
+      show_state: false
+      show_icon: true
+      tap_action:
+        action: call-service
+        service: climate.set_temperature
+        target:
+          entity_id: climate.second_floor_ecobee
+        data:
+          temperature: 72
+      icon: mdi:home-floor-2
+  bottom_layout: rows
+styles: |-
+  .bubble-sub-button-1,
+  .bubble-sub-button-2,
+  .bubble-sub-button-3,
+  .bubble-sub-button-4 {
+    transition: background-color 200ms ease;
+  }
+
+  .bubble-sub-button-1 {
+    background-color: ${(() => {
+      const t = hass.states['climate.first_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 68 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+  .bubble-sub-button-2 {
+    background-color: ${(() => {
+      const t = hass.states['climate.first_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 72 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+  .bubble-sub-button-3 {
+    background-color: ${(() => {
+      const t = hass.states['climate.second_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 68 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+  .bubble-sub-button-4 {
+    background-color: ${(() => {
+      const t = hass.states['climate.second_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 72 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+rows: 1.719
+slider_fill_orientation: left
+slider_value_position: right

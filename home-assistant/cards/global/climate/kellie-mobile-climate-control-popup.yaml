@@ -1,0 +1,75 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#kellie-climate-control"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Return to Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#"
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      ## Climate Control
+
+  - type: thermostat
+    entity: climate.first_floor_ecobee
+    grid_options:
+      columns: 12
+      rows: 5
+    features:
+      - type: climate-hvac-modes
+
+  - type: thermostat
+    entity: climate.second_floor_ecobee
+    grid_options:
+      columns: 12
+      rows: 5
+    features:
+      - type: climate-hvac-modes
+
+  - type: thermostat
+    entity: climate.rumpus_room_breeze
+    grid_options:
+      columns: 12
+      rows: 5
+    features:
+      - type: climate-hvac-modes
+
+  - type: thermostat
+    entity: climate.movie_room_breeze
+    grid_options:
+      columns: 12
+      rows: 5
+    features:
+      - type: climate-hvac-modes

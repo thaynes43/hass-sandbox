@@ -5,15 +5,36 @@ name: Primary Bedroom
 icon: mdi:bed-king-outline
 entity: light.upstairs_primary_bed_lights
 show_state: true
-rows: 1
+rows: 1.719
 button_action:
   tap_action:
     action: navigate
     navigation_path: "#kellie-primary-bedroom"
 sub_button:
-  main:
+  main: []
+  bottom:
+    - name: Sleep
+      icon: mdi:moon-waning-crescent
+      show_name: true
+      show_icon: true
+      show_state: false
+      tap_action:
+        action: call-service
+        service: script.turn_on
+        target:
+          entity_id: script.kellie_mobile_primary_bedroom_sleep
+    - name: Bedtime
+      icon: mdi:bed-clock
+      show_name: true
+      show_icon: true
+      show_state: false
+      tap_action:
+        action: call-service
+        service: script.turn_on
+        target:
+          entity_id: script.kellie_mobile_primary_bedroom_bedtime
     - name: Relaxed
-      icon: mdi:weather-night
+      icon: mdi:sofa-outline
       show_name: true
       show_icon: true
       show_state: false
@@ -32,37 +53,63 @@ sub_button:
         service: script.turn_on
         target:
           entity_id: script.kellie_mobile_primary_bedroom_focused
-  bottom: []
   bottom_layout: rows
 slider_fill_orientation: left
 slider_value_position: right
 light_slider_type: brightness
 styles: |-
   .bubble-sub-button-1,
-  .bubble-sub-button-2 {
+  .bubble-sub-button-2,
+  .bubble-sub-button-3,
+  .bubble-sub-button-4 {
     transition: background-color 200ms ease;
   }
   .bubble-sub-button-1 {
     background-color: ${(() => {
-      const e = hass.states['light.upstairs_primary_bed_lights'];
-      const isOn = e?.state === 'on';
-      const b = e?.attributes?.brightness;
-      const pct = b == null ? 0 : (b / 255) * 100;
       const active = 'rgba(var(--rgb-accent-color), 0.45)';
       const inactive = 'rgba(0,0,0,0.22)';
-      if (!isOn) return inactive;
-      return pct <= 40 ? active : inactive;
+      const bed = hass.states['light.upstairs_primary_bed_lights']?.state;
+      const night = hass.states['light.upstairs_primary_nightstand_lights']?.state;
+      return (bed === 'off' && night === 'off') ? active : inactive;
     })()} !important;
   }
   .bubble-sub-button-2 {
     background-color: ${(() => {
-      const e = hass.states['light.upstairs_primary_bed_lights'];
-      const isOn = e?.state === 'on';
-      const b = e?.attributes?.brightness;
-      const pct = b == null ? 0 : (b / 255) * 100;
       const active = 'rgba(var(--rgb-accent-color), 0.45)';
       const inactive = 'rgba(0,0,0,0.22)';
-      if (!isOn) return inactive;
+      const bed = hass.states['light.upstairs_primary_bed_lights']?.state;
+      const nightEnt = hass.states['light.upstairs_primary_nightstand_lights'];
+      const night = nightEnt?.state;
+      const b = nightEnt?.attributes?.brightness;
+      const pct = b == null ? 0 : (b / 255) * 100;
+      return (bed === 'off' && night === 'on' && pct <= 30) ? active : inactive;
+    })()} !important;
+  }
+  .bubble-sub-button-3 {
+    background-color: ${(() => {
+      const active = 'rgba(var(--rgb-accent-color), 0.45)';
+      const inactive = 'rgba(0,0,0,0.22)';
+      const bedEnt = hass.states['light.upstairs_primary_bed_lights'];
+      const bed = bedEnt?.state;
+      const b = bedEnt?.attributes?.brightness;
+      const pct = b == null ? 0 : (b / 255) * 100;
+      if (bed !== 'on') return inactive;
+      return pct <= 40 ? active : inactive;
+    })()} !important;
+  }
+  .bubble-sub-button-4 {
+    background-color: ${(() => {
+      const active = 'rgba(var(--rgb-accent-color), 0.45)';
+      const inactive = 'rgba(0,0,0,0.22)';
+      const bedEnt = hass.states['light.upstairs_primary_bed_lights'];
+      const bed = bedEnt?.state;
+      const b = bedEnt?.attributes?.brightness;
+      const pct = b == null ? 0 : (b / 255) * 100;
+      if (bed !== 'on') return inactive;
       return pct > 40 ? active : inactive;
     })()} !important;
   }
+card_layout: large-sub-buttons-grid
+tap_action:
+  action: navigate
+  navigation_path: "#kellie-primary-bedroom"

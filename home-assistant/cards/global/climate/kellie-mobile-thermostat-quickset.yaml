@@ -1,0 +1,110 @@
+type: custom:bubble-card
+card_type: sub-buttons
+show_header_toggle: false
+rows: 2.4
+styles: |-
+  .bubble-sub-button-1,
+  .bubble-sub-button-2,
+  .bubble-sub-button-3,
+  .bubble-sub-button-4 {
+    transition: background-color 200ms ease;
+  }
+
+  .bubble-sub-button-1 {
+    background-color: ${(() => {
+      const t = hass.states['climate.first_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 68 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+  .bubble-sub-button-2 {
+    background-color: ${(() => {
+      const t = hass.states['climate.first_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 72 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+  .bubble-sub-button-3 {
+    background-color: ${(() => {
+      const t = hass.states['climate.second_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 68 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+  .bubble-sub-button-4 {
+    background-color: ${(() => {
+      const t = hass.states['climate.second_floor_ecobee']?.attributes?.temperature;
+      const active = Math.round((t ?? -999));
+      return active === 72 ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';
+    })()} !important;
+  }
+sub_button:
+  main: []
+  bottom:
+    - name: ""
+      buttons_layout: inline
+      group:
+        - entity: climate.first_floor_ecobee
+          name: "Downstairs 68°"
+          icon: mdi:home-floor-0
+          show_icon: false
+          show_name: true
+          show_state: false
+          content_layout: name
+          custom_height: 60
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.first_floor_ecobee
+            data:
+              temperature: 68
+        - entity: climate.first_floor_ecobee
+          name: "Downstairs 72°"
+          icon: mdi:home-floor-0
+          show_icon: false
+          show_name: true
+          show_state: false
+          content_layout: name
+          custom_height: 60
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.first_floor_ecobee
+            data:
+              temperature: 72
+    - name: ""
+      buttons_layout: inline
+      group:
+        - entity: climate.second_floor_ecobee
+          name: "Upstairs 68°"
+          icon: mdi:home-floor-1
+          show_icon: false
+          show_name: true
+          show_state: false
+          content_layout: name
+          custom_height: 60
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.second_floor_ecobee
+            data:
+              temperature: 68
+        - entity: climate.second_floor_ecobee
+          name: "Upstairs 72°"
+          icon: mdi:home-floor-1
+          show_icon: false
+          show_name: true
+          show_state: false
+          content_layout: name
+          custom_height: 60
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.second_floor_ecobee
+            data:
+              temperature: 72
+  bottom_layout: rows

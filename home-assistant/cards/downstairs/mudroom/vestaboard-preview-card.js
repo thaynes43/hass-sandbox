@@ -193,20 +193,14 @@ class VestaboardPreviewCard extends HTMLElement {
     const wrapped = this._wrapToWidth(text, 4, 20);
     const centered = this._centerLines(wrapped, 4, 20);
 
-    const rows = [];
-    const borderRow = hasBorder ? "B".repeat(22) : " ".repeat(22);
-    rows.push(borderRow);
-    for (let i = 0; i < 4; i++) {
-      rows.push((hasBorder ? "B" : " ") + centered[i] + (hasBorder ? "B" : " "));
-    }
-    rows.push(borderRow);
-
     const cells = [];
     for (let r = 0; r < 6; r++) {
-      const row = rows[r];
       for (let c = 0; c < 22; c++) {
-        const isBorder = hasBorder && row[c] === "B";
-        const char = isBorder ? " " : row[c] ?? " ";
+        const isBorder = hasBorder && (r === 0 || r === 5 || c === 0 || c === 21);
+        const char =
+          isBorder
+            ? " "
+            : centered[r - 1]?.[c - 1] ?? " ";
         cells.push({ isBorder, char });
       }
     }
