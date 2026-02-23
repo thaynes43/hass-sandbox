@@ -1,5 +1,7 @@
-alias: Kellie Mobile - Primary Bedroom Focused
-description: Set Primary Bedroom lights to a focused scene.
+alias: Set Primary Bedroom to Focus
+description: >-
+  Set Primary Bedroom lighting to bright task lighting (bed 100%, nook 100%,
+  nightstands off; hall unchanged).
 mode: single
 sequence:
   - action: light.turn_off

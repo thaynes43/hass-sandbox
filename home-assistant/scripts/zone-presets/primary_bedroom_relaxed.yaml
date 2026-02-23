@@ -1,5 +1,7 @@
-alias: Kellie Mobile - Primary Bedroom Relaxed
-description: Set Primary Bedroom lights to a relaxed scene.
+alias: Set Primary Bedroom to Relax
+description: >-
+  Set Primary Bedroom lighting to a low, comfortable level (nightstands 20%,
+  bed 30%, nook 30%, hall off).
 mode: single
 sequence:
   - action: light.turn_on

@@ -1,16 +1,12 @@
-alias: Kellie Mobile - Primary Bedroom Bedtime
-description: Everything off except nightstands at 20%.
+alias: Set Primary Bedroom to Sleep
+description: Turn off all Primary Bedroom lights.
 mode: single
 sequence:
   - action: light.turn_off
     target:
       entity_id:
+        - light.upstairs_primary_nightstand_lights
         - light.upstairs_primary_bed_lights
         - light.upstairs_primary_nook_lights
         - light.upstairs_primary_hall_lights
         - light.upstairs_primary_closet_lights
-  - action: light.turn_on
-    target:
-      entity_id: light.upstairs_primary_nightstand_lights
-    data:
-      brightness_pct: 20
