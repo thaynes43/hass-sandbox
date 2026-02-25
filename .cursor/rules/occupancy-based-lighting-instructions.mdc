@@ -263,6 +263,11 @@ Use these as the “known good” patterns:
   - `bubble-card` `card_type: pop-up` with `hash: "#<zone>-advanced"`
   - Provides a **Back** button returning to `#<zone>-history`
   - Includes deeper device parameters/commands
+  - **mmWave clear timing controls**: keep both input styles
+    - Keep the **tile** cards with `numeric-input` (fast +/- tweaks)
+    - Add the compact **entities** cards (one entity each) right below for **text entry**
+      - `number.<switch_name>_mmwaveholdtime`
+      - `number.<switch_name>_mmwavestaylife`
 
 ### Sensor presentation rule-of-thumb
 

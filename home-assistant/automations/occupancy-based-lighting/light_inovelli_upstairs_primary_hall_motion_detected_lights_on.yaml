@@ -1,0 +1,17 @@
+alias: "[Light] [Inovelli] : [Upstairs Primary Hall] : [Motion Detected] : [Lights On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.upstairs_primary_hall_inovelli_presence_occupancy
+      - binary_sensor.upstairs_primary_hall_night_light_occupancy
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    target:
+      entity_id: light.upstairs_primary_hall_lights
+    data: {}
+mode: single
