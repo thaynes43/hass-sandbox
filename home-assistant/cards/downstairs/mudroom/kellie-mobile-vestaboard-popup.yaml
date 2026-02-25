@@ -36,14 +36,6 @@ cards:
         navigation_path: "#"
     slider_fill_orientation: left
     slider_value_position: right
-
-  - type: picture-entity
-    entity: image.vestaboard
-    camera_view: auto
-    fit_mode: cover
-    show_state: false
-    show_name: false
-
   - type: markdown
     text_only: true
     card_mod:
@@ -53,14 +45,31 @@ cards:
           box-shadow: none;
           border: none;
         }
-    content: |
-      ## Vestaboard
-      Message: up to 80 chars (4 lines × 20) and it’ll be centered for you. Border: choose a tile and we’ll draw a full border (22 across top/bottom, 4 down each side).
+    content: >
+      ## Vestaboard - Custom Message
+
+      Border: choose a tile and we’ll draw a full border (22 across top/bottom,
+      4 down each side).
+
+
+      Message: Type up to 80 chars (4 lines × 20) and press enter. 
 
       {% set exp = states('sensor.vestaboard_temporary_message_expiration') %}
-      Temporary active: {{ states('binary_sensor.vestaboard_temporary_message') }}
-      Temporary expires: {% if exp in ['unknown','unavailable',''] %}—{% else %}{{ as_local(as_datetime(exp)).strftime('%I:%M %p on %m/%d') }}{% endif %}
 
+      Temporary active: {{ states('binary_sensor.vestaboard_temporary_message')
+      }}
+
+
+      Temporary expires: {% if exp in ['unknown','unavailable',''] %}—{% else
+      %}{{ as_local(as_datetime(exp)).strftime('%I:%M %p on %m/%d') }}{% endif
+      %}
+  - type: custom:vestaboard-preview-card
+    title: Preview (6 × 22)
+    message_entity: input_text.vestaboard_custom_message
+    border_entity: input_select.vestaboard_border_tile
+    cell_size: 18
+    gap: 2
+    radius: 3
   - type: entities
     entities:
       - entity: input_select.vestaboard_border_tile
@@ -71,67 +80,13 @@ cards:
         name: Temporary message
       - entity: input_number.vestaboard_custom_duration_min
         name: Temporary duration (minutes)
-
-  - type: custom:vestaboard-preview-card
-    title: Preview (6 × 22)
-    message_entity: input_text.vestaboard_custom_message
-    border_entity: input_select.vestaboard_border_tile
-    cell_size: 18
-    gap: 2
-    radius: 3
-
   - type: custom:bubble-card
     card_type: sub-buttons
     show_header_toggle: false
-    rows: 2.4
+    rows: 1.3
     sub_button:
       main: []
       bottom:
-        - name: Presets
-          buttons_layout: inline
-          group:
-            - entity: input_boolean.vestaboard_calendar_clock_enabled
-              name: Clock Mode
-              icon: mdi:clock-outline
-              show_name: true
-              show_state: false
-              show_icon: true
-              scrolling_effect: false
-              content_layout: icon-top
-              custom_height: 60
-              tap_action:
-                action: call-service
-                service: input_boolean.toggle
-                target:
-                  entity_id: input_boolean.vestaboard_calendar_clock_enabled
-            - entity: script.vestaboard_random_message
-              name: Random
-              icon: mdi:dice-multiple
-              show_name: true
-              show_state: false
-              show_icon: true
-              scrolling_effect: false
-              content_layout: icon-top
-              custom_height: 60
-              tap_action:
-                action: call-service
-                service: script.turn_on
-                target:
-                  entity_id: script.vestaboard_random_message
-            - entity: script.vestaboard_random_art
-              name: Art
-              icon: mdi:palette
-              show_name: true
-              show_state: false
-              show_icon: true
-              scrolling_effect: false
-              content_layout: icon-top
-              custom_height: 60
-              tap_action:
-                action: call-service
-                service: script.turn_on
-                target:
-                  entity_id: script.vestaboard_random_art
         - name: Actions
           buttons_layout: inline
           group:
@@ -158,9 +113,68 @@ cards:
               scrolling_effect: false
               content_layout: icon-top
               custom_height: 60
+      bottom_layout: rows
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          background: none;
+          box-shadow: none;
+          border: none;
+        }
+    content: |
+      ## Vestaboard - Presets
+      Select one fo the following presets and the vestaboard will be updated.
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    rows: 1.3
+    sub_button:
+      main: []
+      bottom:
+        - name: Presets
+          buttons_layout: inline
+          group:
+            - entity: input_boolean.vestaboard_calendar_clock_enabled
+              name: Clock Mode
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
               tap_action:
                 action: call-service
-                service: button.press
+                service: input_boolean.toggle
                 target:
-                  entity_id: button.vestaboard_clear_temporary_message
+                  entity_id: input_boolean.vestaboard_calendar_clock_enabled
+            - entity: script.vestaboard_random_message
+              name: Random
+              icon: mdi:dice-multiple
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: script.turn_on
+                target:
+                  entity_id: script.vestaboard_random_message
+            - entity: script.vestaboard_random_message
+              name: Random
+              icon: mdi:palette
+              show_name: true
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: script.turn_on
+                target:
+                  entity_id: script.vestaboard_random_art
       bottom_layout: rows

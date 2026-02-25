@@ -5,6 +5,7 @@ use_blueprint:
   input:
     motion_sensors:
       - binary_sensor.basement_bathroom_night_light_occupancy
+      - binary_sensor.basement_concessions_qsensor_motion_detection
     illuminance_sensor: sensor.basement_bathroom_night_light_illuminance
     light_target:
       entity_id: light.basement_bathroom_night_light

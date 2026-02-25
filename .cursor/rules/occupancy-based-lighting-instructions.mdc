@@ -85,6 +85,12 @@ These often work by:
 - Setting LED colors to a reserved “hold” color
 - Later clearing/restoring the mmWave mode + LED state
 
+**Normal-mode source of truth:** the “normal mode” restored when a hold clears should come from the per-zone helper dropdown (not a hardcoded default):
+
+- `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode`
+
+**Mudroom correction:** now that **Downstairs Mudroom** has occupancy-based lighting automations, set `input_select.downstairs_mudroom_mmwave_normal_mode` to **`Disabled`** in the HA UI so holds restore to Disabled (instead of the switch’s default `Occupancy (default)` behavior).
+
 **Important:** entity-defined scripts frequently store per-zone data in arrays of objects (e.g. `switches:` lists). Only edit the entry where the `switch_name` matches the zone you are changing.
 
 ---
