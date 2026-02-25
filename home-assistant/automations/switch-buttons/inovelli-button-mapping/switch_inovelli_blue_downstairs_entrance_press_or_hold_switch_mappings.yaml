@@ -17,3 +17,13 @@ use_blueprint:
             - light.downstairs_bathroom_vanity_inovelli_presence
             - light.downstairs_bathroom_fan_light_inovelli_on_off
             - light.downstairs_bathroom_shower_inovelli_on_off
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: downstairs_entrance_inovelli_presence
+          normal_mode_input_select: input_select.downstairs_entrance_mmwave_normal_mode
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.downstairs_entrance_led_color
+          automation_entity_ids:
+            - automation.light_inovelli_downstairs_entrance_motion_detected_lights_on
+            - automation.light_inovelli_downstairs_entrance_motion_cleared_lights_off

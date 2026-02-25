@@ -53,6 +53,12 @@ sequence:
           normal_mode_input_select: input_select.downstairs_bathroom_vanity_mmwave_normal_mode
           automation_entity_ids:
             - automation.light_inovelli_downstairs_bathroom_motion_cleared_non_vanity_lights_off
+        - switch_name: downstairs_entrance_inovelli_presence
+          helper: input_text.downstairs_entrance_led_color
+          normal_mode_input_select: input_select.downstairs_entrance_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_inovelli_downstairs_entrance_motion_detected_lights_on
+            - automation.light_inovelli_downstairs_entrance_motion_cleared_lights_off
         - switch_name: downstairs_mudroom_inovelli_presence
           helper: input_text.downstairs_mudroom_led_color
           normal_mode_input_select: input_select.downstairs_mudroom_mmwave_normal_mode

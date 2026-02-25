@@ -43,6 +43,11 @@ sequence:
           helper: input_text.downstairs_bathroom_vanity_led_color
           automation_entity_ids:
             - automation.light_inovelli_downstairs_bathroom_motion_cleared_non_vanity_lights_off
+        - switch_name: downstairs_entrance_inovelli_presence
+          helper: input_text.downstairs_entrance_led_color
+          automation_entity_ids:
+            - automation.light_inovelli_downstairs_entrance_motion_detected_lights_on
+            - automation.light_inovelli_downstairs_entrance_motion_cleared_lights_off
         - switch_name: downstairs_mudroom_inovelli_presence
           helper: input_text.downstairs_mudroom_led_color
           automation_entity_ids:

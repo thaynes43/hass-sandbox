@@ -1,0 +1,16 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+entity: light.downstairs_entrance_lights
+name: Entrance
+icon: mdi:door
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#downstairs-entrance-history"
+grid_options:
+  columns: 6
+  rows: auto
