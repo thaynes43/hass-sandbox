@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "X:/"
+		},
+		{
+			"path": "../hass-immich-addon"
 		}
 	],
 	"settings": {}

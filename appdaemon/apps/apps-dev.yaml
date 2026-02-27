@@ -1,54 +1,16 @@
-# Dev app list. Copy of apps.yaml to start; adjust for local dev (e.g. fewer notify targets) and copy over apps.yaml before running (do not commit).
-# Production uses apps.yaml only (Flux deploys appdaemon+secrets; deploy.py copies apps/).
+# Local dev app list (AppDaemon reads this via `appdaemon/appdaemon.yaml`).
+# Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
 
-garage_door_notify:
-  module: garage_door_notify
-  class: GarageDoorNotify
-  # Dev testing: exclude Kellie's phone to avoid spam (add back for prod deploy)
-  notify_services:
-    - notify.mobile_app_toms_iphone_15_pro
-    - notify.mobile_app_toms_iphone_air
-    - notify.mobile_app_kellies_iphone_air
-  ai_enabled: true
-  ai_bundle_key: garage
-  ai_wait_timeout_s: 180
-  ai_max_bundle_age_s: 900
-
-detection_summary_garage:
-  module: detection_summary_app.manager
-  class: DetectionSummary
-  bundle_key: garage
-  snapshot_ha_dir: /media/detection-summary/garage
-  media_fs_root: !secret media_fs_root
-  hass_entities:
-    camera_entity_id: camera.garage_g5_dome_medium_resolution_channel
-    trigger_entity_id: binary_sensor.g5_dome_motion
-    best_image_camera_entity_id: camera.garage_detection_summary_best
-    generated_image_camera_entity_id: camera.garage_detection_summary_generated
-    summary_text_entity_id: input_text.garage_detection_summary
-    run_picker_entity_id: input_select.garage_detection_summary_run_id
-    selected_summary_text_entity_id: input_text.garage_detection_summary_selected
-    selected_best_image_camera_entity_id: camera.garage_detection_summary_selected_best
-    selected_generated_image_camera_entity_id: camera.garage_detection_summary_selected_generated
-  data_instructions: >
-    You are analyzing ONE security camera snapshot for a push notification.
-    Focus ONLY on the people and any animals (ignore the environment/vehicles/objects unless it is directly relevant).
-    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
-    Include only: person/animal count, what they are doing, and where they are in frame (e.g. "near left", "center", "back").
-    Also return male_count and female_count as integer counts of people by gender (0 if none).
-    Also return animal_count as an integer count of visible animals/pets (0 if none).
-    Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
-    Heavily favor frames where at least one person's FACE is clearly visible (front/3-4 view, not fully occluded).
-    If no face is visible, the frame should score significantly lower than a similar frame with a visible face.
-    face_score meaning: 0=no face visible, 10=clear unobstructed face (ideally looking toward camera).
-    Prefer frames where the person is clearly visible and stationary (standing/sitting),
-    not partially occluded or blurred in motion.
-    If animals are present and clearly visible, increase frame_score appropriately.
-  image_instructions: >
-    Create a simple, clean illustration representing the scene for a notification.
-  ai_provider_conf:
-    provider: openai
-    api_key: !secret openapi_token
-    data_model: gpt-5.2
-    data_image_detail: auto
-    image_model: gpt-image-1.5
+photo_frame_viewer_wall_display:
+  module: photo_frame_viewer.photo_frame_viewer_app
+  class: PhotoFrameViewerApp
+  source_sensor_entity_id: sensor.immich_album
+  picker_entity_id: input_select.wall_display_photo_frame_image
+  paused_entity_id: input_boolean.wall_display_photo_frame_paused
+  interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
+  cache_bust_entity_id: input_text.wall_display_photo_frame_cache_bust
+  update_shell_command: update_photo_frame_wall_display
+  fallback_image_path: /config/www/immich-album/no-image.jpg
+  options_max: 50
+  refresh_options_every_s: 60
+  auto_cycle: true

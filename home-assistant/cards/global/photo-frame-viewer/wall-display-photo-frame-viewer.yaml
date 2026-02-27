@@ -1,0 +1,48 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: select
+    entity: input_select.wall_display_photo_frame_image
+    name: Photo Frame
+    show_name: true
+    rows: 1
+    sub_button:
+      main:
+        - sub_button_type: button
+          icon: mdi:chevron-left
+          tap_action:
+            action: call-service
+            service: input_select.select_previous
+            target:
+              entity_id: input_select.wall_display_photo_frame_image
+            data:
+              cycle: false
+        - sub_button_type: button
+          icon: mdi:play-pause
+          tap_action:
+            action: call-service
+            service: input_boolean.toggle
+            target:
+              entity_id: input_boolean.wall_display_photo_frame_paused
+        - sub_button_type: button
+          icon: mdi:chevron-right
+          tap_action:
+            action: call-service
+            service: input_select.select_next
+            target:
+              entity_id: input_select.wall_display_photo_frame_image
+            data:
+              cycle: false
+      bottom: []
+
+  - type: entities
+    entities:
+      - entity: input_number.wall_display_photo_frame_interval_seconds
+        name: Slide interval (seconds)
+      - entity: input_boolean.wall_display_photo_frame_paused
+        name: Paused
+
+  - type: markdown
+    content: >-
+      <img style="width: 100%; height: auto;" src="/local/photo-frame-wall-display/photo.jpg?cb={{ states('input_text.wall_display_photo_frame_cache_bust') }}" />
+

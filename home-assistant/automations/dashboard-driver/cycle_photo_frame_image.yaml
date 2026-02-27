@@ -1,0 +1,21 @@
+alias: Cycle Photo Frame Image
+triggers:
+  - trigger: time_pattern
+    seconds: /10
+actions:
+  - action: input_text.set_value
+    target:
+      entity_id: input_text.photo_frame_image
+    data:
+      value: >-
+        {% set files = state_attr('sensor.immich_album', 'file_list') |
+        default([], true) %} {% if files | length > 0 %}
+          {% set idx = ((now().timestamp() | int) // 10) % (files | length) %}
+          {{ files[idx] | string | trim }}
+        {% else %}
+          /config/www/immich-album/no-image.jpg
+        {% endif %}
+  - action: shell_command.update_photo_frame
+    data:
+      image_path: "{{ states('input_text.photo_frame_image') | trim }}"
+mode: single
