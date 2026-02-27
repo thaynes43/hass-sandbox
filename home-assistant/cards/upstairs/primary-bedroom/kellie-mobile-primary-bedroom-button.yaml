@@ -110,6 +110,3 @@ styles: |-
     })()} !important;
   }
 card_layout: large-sub-buttons-grid
-tap_action:
-  action: navigate
-  navigation_path: "#kellie-primary-bedroom"
