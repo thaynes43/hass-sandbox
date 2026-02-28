@@ -8,17 +8,55 @@ This project is a subset of Home Assistant scripts and automations as well as Ap
 
 The inovelli folder contains automations mainly driving inovelli smart presence detecting switches. The parameters for these switches may be found at https://help.inovelli.com/en/articles/12820312-blue-series-mmwave-presence-dimmer-switch-parameters.
 
+## Development Environment
+
+Often agents struggle with powershell commands to carry out simple tasks. You may take advantage of wsl which is installed on the system. If working with AppDeamon you may run tests using the .venv-wsl virtual environment. If you must run python on windows you may use .venv know it is updated less frequently than the wsl virtual environment .venv-wsl and you may need to ask to user to install dependencies on windows to run commands. If you find yourself repeatedly running failed commands you may ask the user to provide additional tools. 
+
 ## MCP Server
 
-You are running in an instance of cursor which is configured to use [ha-mcp](https://github.com/homeassistant-ai/ha-mcp). You may make tool calls using this to access what is running in the production smart home environment which we are developing new capabilites for.  
+You are running in an instance of cursor which is configured to use [ha-mcp](https://github.com/homeassistant-ai/ha-mcp). ha-mcp is configured in mcpServers as `home-assistant`. If it is unavalable ask the user to toggle the config to reload the tools. You may make tool calls using this to access what is running in the production smart home environment which we are developing new capabilites for.  
 
 If you don't know the exact name of an entity or attribute make sure to use the tool calls to search what exists.
+
+Try to keep calls to the MCP server at a minimum. Much of the context you will need is avalable in this repository as it serves as a mirror of many of the items present on the server. You will mainly use the MCP server to look up the exact names of entities and to create cards / scripts / automations / and helpers on the server. You may also use it to triage issues reported by the user. You should not go doing loopup after loopup to pull context off the server, stick to searching the repository for that.
 
 ## AppDaemon
 
 AddDaemon has it's own rules that apply to the folders. It is recommended agents are familiar with it's documentation from [here](https://appdaemon.readthedocs.io/en/latest/) before programming the apps as they are not stadard python programs but plug-in to the AppDaemon docker which manages their execution. AppDaemon is also setup to run in the .venv or .venv-wsl directories of this repositories so we can test new apps and features before deploying them to the production server. Deployment is handled with a script that copies the files to the docker's config share, mounted at x:/. 
 
+## Cursor mdc Rules
+
+Cursor .mdc rulesets in the project are often configured by globs since you do not need the same rules for AppDeamon development as you do Home Assistant. Sometimes you will be doing both at the same time and you should load the rules for each. Agents will often fail to load the rules even if they are editing files that match the globs so check before executing a prompt where the files will be and load the correct rules before making any changes. 
+
+## YAML formatting guidelines (repo)
+
+### Dashboard cards (`home-assistant/cards/**`)
+
+- **One file = one paste unit**: each file should contain exactly one **root card config** (a single YAML mapping that starts with `type:`).
+  - The root card can be a container card like `vertical-stack`, `horizontal-stack`, `grid`, etc. (it may include many nested cards under `cards:`).
+  - Popups are still “cards” in this sense: e.g. a `vertical-stack` that contains the `custom:bubble-card` `pop-up` (and its related controls) is a single paste unit.
+- **Never multiple roots**: do not include multiple top-level `type:` blocks in a single file.
+- **Goal**: any file in `home-assistant/cards/**` should be directly copy/pasteable into the **Manual** card editor as-is.
+
+### Dashboards (live HA UI)
+
+- **Take extreme caution when editing dashboards** (Lovelace storage dashboards) and do not delete entire cards unless the USER explicitly asks you or you ask and receive confirmation. 
+  - Default: treat `home-assistant/cards/**` as repo-side, portable snippets; the USER should always be able to copy/paste them into dashboards. Agents can use them to reference cards from other dashboards when building new ones.
+  - When the USER asks for dashboard edits, prefer surgical, minimal changes and avoid unrelated sections/cards. Allow the user to position cards on the dashboard and just modify cards relative to the users prompt.
+
+### Automations / scripts / blueprints (`home-assistant/automations/**`, `home-assistant/scripts/**`, `home-assistant/blueprints/**`)
+
+- **One file = one automation/script/blueprint** (single YAML document per file).
+- Keep formatting so the full file can be copy/pasted into the appropriate HA YAML editor for that object.
+
+### Helpers
+
+- **Do not** add new helper definitions/snippets under `home-assistant/helpers/**` (treat it as legacy reference only).
+- **Do** create/update helpers using the Home Assistant MCP server so entity_ids exist immediately and stay authoritative in HA.
+
 ## Critical Information
+
+Some domain knowledge will be difficult to pick up from the files in this repo alone. This section will be used for that which is critical. 
 
 ### Inovelli hold LED colors are state
 

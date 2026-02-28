@@ -9,7 +9,7 @@ photo_frame_viewer_wall_display:
   paused_entity_id: input_boolean.wall_display_photo_frame_paused
   interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
   cache_bust_entity_id: input_text.wall_display_photo_frame_cache_bust
-  update_shell_command: update_photo_frame_wall_display
+  image_local_url_entity_id: input_text.wall_display_photo_frame_image_local_url
   fallback_image_path: /config/www/immich-album/no-image.jpg
   options_max: 50
   refresh_options_every_s: 60

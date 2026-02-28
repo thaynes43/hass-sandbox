@@ -5,6 +5,7 @@ from pathlib import PurePosixPath
 from typing import Any, Optional
 
 import hassapi as hass
+from urllib.parse import quote
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -48,7 +49,8 @@ class PhotoFrameViewerApp(hass.Hass):
         "paused_entity_id": "input_boolean.wall_display_photo_frame_paused",
         "interval_entity_id": "input_number.wall_display_photo_frame_interval_seconds",
         "cache_bust_entity_id": "input_text.wall_display_photo_frame_cache_bust",
-        "update_shell_command": "update_photo_frame_wall_display",
+        # Stores the selected image to display (as a `/local/...` URL).
+        "image_local_url_entity_id": "input_text.wall_display_photo_frame_image_local_url",
         "fallback_image_path": "/config/www/immich-album/no-image.jpg",
         "options_max": 100,
         "refresh_options_every_s": 60,
@@ -66,7 +68,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self.paused_entity_id: str = str(cfg["paused_entity_id"])
         self.interval_entity_id: str = str(cfg["interval_entity_id"])
         self.cache_bust_entity_id: str = str(cfg["cache_bust_entity_id"])
-        self.update_shell_command: str = str(cfg["update_shell_command"])
+        self.image_local_url_entity_id: str = str(cfg["image_local_url_entity_id"])
         self.fallback_image_path: str = str(cfg["fallback_image_path"])
         self.options_max: int = max(1, int(cfg["options_max"]))
         self.refresh_options_every_s: float = max(10.0, float(cfg["refresh_options_every_s"]))
@@ -77,13 +79,13 @@ class PhotoFrameViewerApp(hass.Hass):
         self._periodic_handle: Optional[Any] = None
         self._label_to_path: dict[str, str] = {}
         self._path_to_label: dict[str, str] = {}
-        self._last_copied_path: Optional[str] = None
+        self._last_published_local_url: Optional[str] = None
 
         self.log(
             "PhotoFrameViewerApp init "
             f"source_sensor={self.source_sensor_entity_id} picker={self.picker_entity_id} "
             f"paused={self.paused_entity_id} interval={self.interval_entity_id} "
-            f"shell_command={self.update_shell_command}",
+            f"image_local_url_entity_id={self.image_local_url_entity_id}",
             level="INFO",
         )
 
@@ -106,6 +108,8 @@ class PhotoFrameViewerApp(hass.Hass):
 
         # Initial sync + timer.
         self._refresh_picker_options(reason="init")
+        # Ensure the dashboard has an initial image URL immediately.
+        self._publish_selected_local_url(self._picker_value(), reason="init")
         self._sync_timer(reason="init")
 
     # --- state helpers ---
@@ -206,23 +210,50 @@ class PhotoFrameViewerApp(hass.Hass):
                 option=desired_label,
             )
 
-    # --- selection -> copy ---
+    # --- selection -> publish local URL (no copying) ---
 
-    def _copy_selected(self, label: str, *, reason: str) -> None:
+    def _to_local_url(self, ha_path: str) -> str:
+        """
+        Convert an HA-accessible file path under `/config/www/` to `/local/...`.
+
+        Example:
+        - `/config/www/immich-album/foo bar.jpg` -> `/local/immich-album/foo%20bar.jpg`
+        """
+        p = str(PurePosixPath(str(ha_path or "").strip()))
+        if not p:
+            return "/local/immich-album/no-image.jpg"
+        if p.startswith("/local/"):
+            return quote(p, safe="/")
+        if p.startswith("/config/www/"):
+            rel = p[len("/config/www/") :]
+            return "/local/" + quote(rel, safe="/")
+        # Best-effort fallback: treat as already a relative path.
+        if p.startswith("/"):
+            return quote(p, safe="/")
+        return "/local/" + quote(p, safe="/")
+
+    def _publish_selected_local_url(self, label: str, *, reason: str) -> None:
         label = str(label or "").strip()
         path = (self._label_to_path.get(label) or "").strip()
         if not path:
             path = self.fallback_image_path
             label = self._path_to_label.get(path, label) or label
 
-        if self._last_copied_path == path:
+        local_url = self._to_local_url(path)
+        if self._last_published_local_url == local_url:
             return
 
-        self.log(f"PhotoFrameViewerApp: copy start label={label!r} path={path!r} reason={reason}", level="INFO")
-        self.call_service(f"shell_command/{self.update_shell_command}", image_path=path)
-        self._last_copied_path = path
+        self.log(
+            f"PhotoFrameViewerApp: publish local url label={label!r} path={path!r} url={local_url!r} reason={reason}",
+            level="INFO",
+        )
+        self.call_service(
+            "input_text/set_value",
+            entity_id=self.image_local_url_entity_id,
+            value=local_url,
+        )
+        self._last_published_local_url = local_url
         self._touch_cache_bust()
-        self.log(f"PhotoFrameViewerApp: copy done label={label!r}", level="INFO")
 
     def _touch_cache_bust(self) -> None:
         value = str(int(time.time()))
@@ -274,7 +305,7 @@ class PhotoFrameViewerApp(hass.Hass):
         new_label = str(new or "").strip()
         if not new_label:
             return
-        self._copy_selected(new_label, reason="picker_change")
+        self._publish_selected_local_url(new_label, reason="picker_change")
         if self.reset_timer_on_manual_nav:
             self._schedule_next(reason="picker_change")
 

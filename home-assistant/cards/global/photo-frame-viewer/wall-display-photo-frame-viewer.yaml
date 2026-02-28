@@ -6,6 +6,19 @@ cards:
     name: Photo Frame
     show_name: true
     rows: 1
+    styles: |-
+      .bubble-sub-button-1,
+      .bubble-sub-button-2,
+      .bubble-sub-button-3 {
+        transition: background-color 200ms ease;
+      }
+      .bubble-sub-button-2 {
+        background-color: ${(() => {
+          const active = 'rgba(var(--rgb-accent-color), 0.45)';
+          const paused = hass.states['input_boolean.wall_display_photo_frame_paused']?.state;
+          return paused === 'on' ? active : '';
+        })()} !important;
+      }
     sub_button:
       main:
         - sub_button_type: button
@@ -16,9 +29,9 @@ cards:
             target:
               entity_id: input_select.wall_display_photo_frame_image
             data:
-              cycle: false
+              cycle: true
         - sub_button_type: button
-          icon: mdi:play-pause
+          icon: mdi:pause
           tap_action:
             action: call-service
             service: input_boolean.toggle
@@ -32,17 +45,14 @@ cards:
             target:
               entity_id: input_select.wall_display_photo_frame_image
             data:
-              cycle: false
+              cycle: true
       bottom: []
-
-  - type: entities
-    entities:
-      - entity: input_number.wall_display_photo_frame_interval_seconds
-        name: Slide interval (seconds)
-      - entity: input_boolean.wall_display_photo_frame_paused
-        name: Paused
-
+    tap_action:
+      action: navigate
+      navigation_path: "#photo-frame-settings"
+    icon: mdi:cog-outline
   - type: markdown
     content: >-
-      <img style="width: 100%; height: auto;" src="/local/photo-frame-wall-display/photo.jpg?cb={{ states('input_text.wall_display_photo_frame_cache_bust') }}" />
-
+      <img style="width: 100%; height: auto;" src="{{
+      states('input_text.wall_display_photo_frame_image_local_url') }}?cb={{
+      states('input_text.wall_display_photo_frame_cache_bust') }}" />

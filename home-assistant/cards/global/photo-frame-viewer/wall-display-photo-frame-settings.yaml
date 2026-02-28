@@ -1,0 +1,59 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#photo-frame-settings"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Photo Frame Settings
+    show_icon: true
+    icon: mdi:cog
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#"
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+    slider_fill_orientation: left
+    slider_value_position: right
+  - type: custom:bubble-card
+    card_type: button
+    button_type: switch
+    entity: input_boolean.wall_display_photo_frame_paused
+    name: Paused
+    icon: mdi:pause-circle-outline
+    show_state: true
+    sub_button:
+      main: []
+      bottom: []
+    slider_fill_orientation: left
+    slider_value_position: right
+  - type: tile
+    entity: input_number.wall_display_photo_frame_interval_seconds
+    name: Slide interval (seconds)
+    hide_state: true
+    vertical: false
+    tap_action:
+      action: none
+    hold_action:
+      action: more-info
+    features:
+      - type: numeric-input
+        style: buttons
+      - type: numeric-input
+    features_position: bottom
