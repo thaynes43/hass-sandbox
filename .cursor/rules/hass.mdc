@@ -4,7 +4,9 @@ alwaysApply: true
 
 # Home Assistant Automation Project
 
-This project is a subset of Home Assistant scripts and automations as well as AppDaemon apps. The home-assistant YAML has been copy pasted from the Home Assistant web based YAML editor into text files here to make them eaiser to edit as well as provide context when creating new automations what existing ones will be doing. The AppDeamon python has been written in this repo from the beginning. 
+This project is a subset of Home Assistant scripts and automations as well as AppDaemon apps. It is important to know that Home Assistant and App Daemon are running in seperate docker containers but share a /media nfs mount so we can easily pass files between the two. 
+
+The home-assistant YAML has been copy pasted from the Home Assistant web based YAML editor into text files here to make them eaiser to edit as well as provide context when creating new automations what existing ones will be doing. The AppDeamon python has been written in this repo from the beginning. 
 
 The inovelli folder contains automations mainly driving inovelli smart presence detecting switches. The parameters for these switches may be found at https://help.inovelli.com/en/articles/12820312-blue-series-mmwave-presence-dimmer-switch-parameters.
 
@@ -57,6 +59,14 @@ Cursor .mdc rulesets in the project are often configured by globs since you do n
 ## Critical Information
 
 Some domain knowledge will be difficult to pick up from the files in this repo alone. This section will be used for that which is critical. 
+
+### HA and AppDaemon container separation
+
+- HA and AppDaemon run in **separate Kubernetes pods** (separate containers).
+- They share a **`/media` NFS mount** for passing files between them. AppDaemon maps this via `media_fs_root` config.
+- **`/config/www/`** is HA's local served directory. AppDaemon **cannot** access it directly. To operate on files there, AppDaemon must call HA `shell_command` services (which execute inside the HA container).
+- `/config/www/` should remain lightweight -- if you need to store many or large files, stage them in `/media/` and copy only what the dashboard needs to display into `/config/www/` via a `shell_command`.
+- **Known exception / tech debt**: `/config/www/immich-album/` is a single-folder NFS mount shared between the `hass-immich-addon` pod and HA's pod. This predates the `/media` convention and should eventually be migrated so the Immich addon writes to `/media/` instead. See `docs/image-view-roadmap.md` for the migration note.
 
 ### Inovelli hold LED colors are state
 

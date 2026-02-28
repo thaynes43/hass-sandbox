@@ -5,6 +5,12 @@ photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
   source_sensor_entity_id: sensor.immich_album
+  source_dir: /config/www/immich-album
+  ha_local_url_base: /local/photo-frame/live
+  stage_shell_command: photo_frame_stage_gen
+  cleanup_shell_command: photo_frame_cleanup_gen
+  source_poll_interval_s: 30
+  stage_settle_delay_s: 3
   picker_entity_id: input_select.wall_display_photo_frame_image
   paused_entity_id: input_boolean.wall_display_photo_frame_paused
   interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
