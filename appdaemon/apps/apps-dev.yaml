@@ -1,11 +1,25 @@
 # Local dev app list (AppDaemon reads this via `appdaemon/appdaemon.yaml`).
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
 
+immich_fetcher:
+  module: immich_fetcher.immich_fetcher_app
+  class: ImmichFetcherApp
+  immich_url: !secret immich_url
+  immich_api_key: !secret immich_api_key
+  output_dir: /mnt/cephfs-hdd/misc/hass-media/immich-photos
+  config_file: /mnt/cephfs-hdd/misc/hass-media/immich-fetcher/config.json
+  update_interval_minutes: 60
+  num_photos: 10
+  download_quality: preview
+  default_filters:
+    - name: Random
+      selection: all_photos
+
 photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
-  source_sensor_entity_id: sensor.immich_album
-  source_dir: /config/www/immich-album
+  source_dir: /mnt/cephfs-hdd/misc/hass-media/immich-photos
+  ha_source_dir: /media/immich-photos
   ha_local_url_base: /local/photo-frame/live
   stage_shell_command: photo_frame_stage_gen
   cleanup_shell_command: photo_frame_cleanup_gen
@@ -16,7 +30,7 @@ photo_frame_viewer_wall_display:
   interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
   cache_bust_entity_id: input_text.wall_display_photo_frame_cache_bust
   image_local_url_entity_id: input_text.wall_display_photo_frame_image_local_url
-  fallback_image_path: /config/www/immich-album/no-image.jpg
+  fallback_image_path: /mnt/cephfs-hdd/misc/hass-media/immich-photos/no-image.jpg
   options_max: 50
   refresh_options_every_s: 60
   auto_cycle: true

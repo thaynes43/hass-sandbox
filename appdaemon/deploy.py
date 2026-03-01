@@ -31,7 +31,7 @@ SOURCE = SCRIPT_DIR
 DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
 
 # What to copy:
-# - apps/: AppDaemon app modules + apps.yaml
+# - apps/: AppDaemon app modules + apps-base.yaml (deployed as apps.yaml)
 # - ai_providers/: shared provider code used by apps (must be importable in prod)
 #
 # NOTE: In production AppDaemon often only includes `/conf/apps` in sys.path.
@@ -42,9 +42,15 @@ COPY_ITEMS = ["apps", "ai_providers"]
 EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor", "_state"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}
 
+# apps-dev.yaml is dev-only; apps-base.yaml is deployed as apps.yaml in production.
+EXCLUDE_FILES = {"apps-dev.yaml"}
+RENAME_FILES = {"apps-base.yaml": "apps.yaml"}
+
 
 def should_exclude(path: Path) -> bool:
     if path.name in EXCLUDE_DIRS:
+        return True
+    if path.name in EXCLUDE_FILES:
         return True
     if path.suffix.lower() in EXCLUDE_SUFFIXES:
         return True
@@ -57,7 +63,7 @@ def _merge_apps_yaml(
     overlay_path: Path,
 ) -> str:
     """
-    Merge overlay (apps-dev.yaml) onto base (apps.yaml) at the top-level keys.
+    Merge overlay (apps-dev.yaml) onto base (apps-base.yaml) at the top-level keys.
 
     - New apps in overlay are added
     - Existing app configs in overlay replace base entries entirely
@@ -120,7 +126,7 @@ def deploy(
 
     merged_apps_yaml: Optional[str] = None
     if merge_dev_apps:
-        base_path = source / "apps" / "apps.yaml"
+        base_path = source / "apps" / "apps-base.yaml"
         overlay_path = source / "apps" / "apps-dev.yaml"
         try:
             merged_apps_yaml = _merge_apps_yaml(base_path=base_path, overlay_path=overlay_path)
@@ -145,18 +151,19 @@ def deploy(
                     if should_exclude(Path(f)):
                         continue
                     src_file = root_path / f
-                    dst_file = dst_dir / f
+                    dst_name = RENAME_FILES.get(f, f)
+                    dst_file = dst_dir / dst_name
 
                     # Optional: deploy a merged apps.yaml without requiring manual copy/paste
-                    # between apps-dev.yaml and apps.yaml.
+                    # between apps-dev.yaml and apps-base.yaml.
                     if (
                         merged_apps_yaml is not None
                         and item == "apps"
                         and rel == Path(".")
-                        and f == "apps.yaml"
+                        and f == "apps-base.yaml"
                     ):
                         if dry_run:
-                            print(f"[dry-run] {src_file} -> {dst_file} (merged from apps-dev.yaml)")
+                            print(f"[dry-run] {src_file} -> {dst_file} (merged with apps-dev.yaml)")
                         else:
                             dst_dir.mkdir(parents=True, exist_ok=True)
                             dst_file.write_text(merged_apps_yaml, encoding="utf-8")
@@ -200,7 +207,7 @@ def main() -> int:
         "--merge-dev-apps",
         action="store_true",
         help=(
-            "Merge apps/apps-dev.yaml onto apps/apps.yaml at top-level keys and deploy the merged result "
+            "Merge apps/apps-dev.yaml onto apps/apps-base.yaml at top-level keys and deploy the merged result "
             "as apps/apps.yaml (avoids manual copy/paste)."
         ),
     )

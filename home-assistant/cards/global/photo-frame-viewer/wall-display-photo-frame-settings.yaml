@@ -31,29 +31,5 @@ cards:
         navigation_path: "#"
     slider_fill_orientation: left
     slider_value_position: right
-  - type: custom:bubble-card
-    card_type: button
-    button_type: switch
-    entity: input_boolean.wall_display_photo_frame_paused
-    name: Paused
-    icon: mdi:pause-circle-outline
-    show_state: true
-    sub_button:
-      main: []
-      bottom: []
-    slider_fill_orientation: left
-    slider_value_position: right
-  - type: tile
-    entity: input_number.wall_display_photo_frame_interval_seconds
-    name: Slide interval (seconds)
-    hide_state: true
-    vertical: false
-    tap_action:
-      action: none
-    hold_action:
-      action: more-info
-    features:
-      - type: numeric-input
-        style: buttons
-      - type: numeric-input
-    features_position: bottom
+  - type: custom:photo-frame-viewer-card
+  - type: custom:immich-fetcher-card

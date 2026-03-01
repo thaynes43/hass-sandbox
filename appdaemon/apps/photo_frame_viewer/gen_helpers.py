@@ -20,14 +20,30 @@ def basename(path: str) -> str:
         return ""
 
 
-def compute_fingerprint(file_paths: list[str]) -> str:
+def compute_fingerprint(
+    file_paths: list[str],
+    *,
+    file_stats: dict[str, tuple[int, float]] | None = None,
+) -> str:
     """Stable fingerprint from a list of source file paths.
 
-    Uses sorted basenames so order in the sensor attribute doesn't matter.
+    When *file_stats* is provided (mapping path → (size, mtime)), the
+    fingerprint includes size and mtime so content changes are detected
+    even when filenames stay the same.
+
     Returns a hex SHA-256 digest.
     """
-    names = sorted(basename(p) for p in file_paths if p)
-    payload = "\n".join(names).encode("utf-8")
+    entries: list[str] = []
+    for p in sorted(file_paths, key=basename):
+        name = basename(p)
+        if not name:
+            continue
+        if file_stats and p in file_stats:
+            size, mtime = file_stats[p]
+            entries.append(f"{name}:{size}:{mtime}")
+        else:
+            entries.append(name)
+    payload = "\n".join(entries).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 

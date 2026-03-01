@@ -119,8 +119,8 @@ appdaemon/                    # Dev environment (Python apps)
 ├── requirements.txt
 ├── deploy.py                 # Deploy script: apps/ → X:\
 └── apps/
-    ├── apps.yaml          # App list (prod uses this; deploy copies as-is)
-    ├── apps-dev.yaml      # Dev app list; repo appdaemon.yaml uses apps: apps/apps-dev.yaml. Committed; deploy copies to prod (prod still uses apps.yaml).
+    ├── apps-base.yaml     # Production app list; deploy.py copies as apps.yaml to prod.
+    ├── apps-dev.yaml      # Dev-only app list (dev overrides/additions). Not deployed to prod. deploy.py --merge-dev-apps merges into prod apps.yaml.
     └── ...
 
 automations/                  # HA automations (YAML)

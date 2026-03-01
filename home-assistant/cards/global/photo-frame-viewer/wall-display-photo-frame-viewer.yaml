@@ -1,7 +1,7 @@
 type: vertical-stack
 cards:
   - type: custom:bubble-card
-    card_type: select
+    card_type: button
     entity: input_select.wall_display_photo_frame_image
     name: Photo Frame
     show_name: true
@@ -46,11 +46,23 @@ cards:
               entity_id: input_select.wall_display_photo_frame_image
             data:
               cycle: true
+        - entity: input_select.wall_display_photo_frame_image
+          sub_button_type: select
+          scrolling_effect: false
+          show_icon: false
+          show_arrow: true
       bottom: []
     tap_action:
       action: navigate
       navigation_path: "#photo-frame-settings"
     icon: mdi:cog-outline
+    button_type: switch
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#photo-frame-settings"
+    slider_fill_orientation: left
+    slider_value_position: right
   - type: markdown
     content: >-
       <img style="width: 100%; height: auto;" src="{{

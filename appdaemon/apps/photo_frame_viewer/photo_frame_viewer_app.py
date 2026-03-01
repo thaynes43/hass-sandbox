@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Optional
 
@@ -35,7 +36,8 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
 class PhotoFrameViewerApp(hass.Hass):
     """Photo frame viewer with generation-based atomic batch swap.
 
-    Reads available image paths from a sensor attribute (``file_list``),
+    Discovers available images by scanning ``source_dir`` directly via
+    ``os.listdir()`` (AppDaemon has filesystem access to ``/media/``),
     copies them into a versioned "generation" directory under
     ``/config/www/photo-frame/live/<gen>/`` via HA ``shell_command``
     services, and keeps a dashboard ``input_select`` + ``input_text``
@@ -46,10 +48,12 @@ class PhotoFrameViewerApp(hass.Hass):
     source directory.
     """
 
+    IMAGE_EXTENSIONS: frozenset[str] = frozenset(
+        {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+    )
+
     DEFAULTS: dict[str, Any] = {
-        "source_sensor_entity_id": "sensor.immich_album",
-        "source_file_list_attr": "file_list",
-        "source_dir": "/config/www/immich-album",
+        "source_dir": "/media/immich-photos",
         "ha_local_url_base": "/local/photo-frame/live",
         "stage_shell_command": "photo_frame_stage_gen",
         "cleanup_shell_command": "photo_frame_cleanup_gen",
@@ -74,9 +78,8 @@ class PhotoFrameViewerApp(hass.Hass):
     def initialize(self) -> None:
         cfg = {**self.DEFAULTS, **(self.args or {})}
 
-        self.source_sensor_entity_id: str = str(cfg["source_sensor_entity_id"])
-        self.source_file_list_attr: str = str(cfg["source_file_list_attr"])
         self.source_dir: str = str(cfg["source_dir"])
+        self.ha_source_dir: str = str(cfg.get("ha_source_dir") or cfg["source_dir"])
         self.ha_local_url_base: str = str(cfg["ha_local_url_base"]).rstrip("/")
         self.stage_shell_command: str = str(cfg["stage_shell_command"])
         self.cleanup_shell_command: str = str(cfg["cleanup_shell_command"])
@@ -118,11 +121,14 @@ class PhotoFrameViewerApp(hass.Hass):
 
         # Guard: suppress picker-change handler during programmatic updates
         self._suppress_picker_handler: bool = False
+        # Flag set by _on_tick before select_next so _on_picker_change
+        # knows the change is tick-driven (not a manual button press).
+        self._tick_advance_pending: bool = False
 
         self.log(
             "PhotoFrameViewerApp init "
-            f"source_sensor={self.source_sensor_entity_id} "
             f"source_dir={self.source_dir} "
+            f"ha_source_dir={self.ha_source_dir} "
             f"ha_local_url_base={self.ha_local_url_base} "
             f"picker={self.picker_entity_id}",
             level="INFO",
@@ -136,24 +142,24 @@ class PhotoFrameViewerApp(hass.Hass):
         self.listen_state(self._on_pause_change, self.paused_entity_id)
         self.listen_state(self._on_interval_change, self.interval_entity_id)
 
-        # Poll source for changes (replaces the old sensor listen_state +
-        # periodic refresh with a single unified poll).
+        # Poll source directory for changes periodically.
         self._poll_handle = self.run_every(
             self._poll_for_changes_cb,
             self.datetime(),
             self.source_poll_interval_s,
         )
 
-        # Also react to sensor changes for faster detection.
-        self.listen_state(self._on_source_sensor_change, self.source_sensor_entity_id)
+        # React to fetcher batch-ready events for faster detection.
+        self.listen_event(self._on_batch_ready, "immich_fetcher_batch_ready")
 
-        # Kick off: if no current gen, stage the first generation immediately.
-        if self._current_gen_id is None:
-            self.log("PhotoFrameViewerApp: no current gen found, staging initial generation", level="INFO")
-            self._poll_for_changes(reason="init")
-        else:
+        # Kick off: always stage on startup to guarantee files exist on HA.
+        # If we recovered a gen, populate the picker first so the dashboard
+        # has *something* while the new gen stages.
+        if self._current_gen_id is not None:
             self._refresh_picker_from_current_gen(reason="init")
             self._publish_selected_local_url(self._picker_value(), reason="init")
+            self._current_fingerprint = None  # force re-stage
+        self._poll_for_changes(reason="init")
 
         self._sync_timer(reason="init")
 
@@ -183,22 +189,44 @@ class PhotoFrameViewerApp(hass.Hass):
     # ------------------------------------------------------------------
 
     def _read_source_file_list(self) -> list[str]:
-        """Read the source file list from the sensor attribute."""
-        st = self.get_state(self.source_sensor_entity_id, attribute="all")
-        if not isinstance(st, dict):
+        """Read the source file list by scanning source_dir on disk.
+
+        AppDaemon has direct filesystem access to /media/ so we can
+        use os.listdir() instead of relying on an HA folder sensor.
+        """
+        try:
+            entries = os.listdir(self.source_dir)
+        except FileNotFoundError:
+            self.log(
+                f"PhotoFrameViewerApp: source_dir not found: {self.source_dir}",
+                level="WARNING",
+            )
             return []
-        attrs = st.get("attributes")
-        if not isinstance(attrs, dict):
+        except OSError as exc:
+            self.log(
+                f"PhotoFrameViewerApp: error reading source_dir: {exc}",
+                level="WARNING",
+            )
             return []
-        files = attrs.get(self.source_file_list_attr)
-        if not isinstance(files, list):
-            return []
+
         out: list[str] = []
-        for f in files:
-            s = str(f or "").strip()
-            if s:
-                out.append(s)
+        for name in sorted(entries):
+            ext = os.path.splitext(name)[1].lower()
+            if ext in self.IMAGE_EXTENSIONS:
+                out.append(os.path.join(self.source_dir, name))
         return out[: self.options_max]
+
+    @staticmethod
+    def _stat_files(paths: list[str]) -> dict[str, tuple[int, float]]:
+        """Return {path: (size_bytes, mtime)} for each path that exists."""
+        stats: dict[str, tuple[int, float]] = {}
+        for p in paths:
+            try:
+                st = os.stat(p)
+                stats[p] = (st.st_size, st.st_mtime)
+            except OSError:
+                pass
+        return stats
 
     # ------------------------------------------------------------------
     # Change detection + staging
@@ -211,7 +239,7 @@ class PhotoFrameViewerApp(hass.Hass):
             self.log("PhotoFrameViewerApp: source file list empty, skipping poll", level="DEBUG")
             return
 
-        fp = compute_fingerprint(source_paths)
+        fp = compute_fingerprint(source_paths, file_stats=self._stat_files(source_paths))
         if fp == self._current_fingerprint and self._current_gen_id is not None:
             return  # No change
 
@@ -251,7 +279,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         self.call_service(
             f"shell_command/{self.stage_shell_command}",
-            source_dir=self.source_dir,
+            source_dir=self.ha_source_dir,
             gen_id=gen_id,
         )
 
@@ -320,7 +348,9 @@ class PhotoFrameViewerApp(hass.Hass):
 
         self._label_to_path = l2p
         self._path_to_label = p2l
-        self._current_fingerprint = compute_fingerprint(source_paths)
+        self._current_fingerprint = compute_fingerprint(
+            source_paths, file_stats=self._stat_files(source_paths)
+        )
 
         existing_opts = self._picker_options()
         if existing_opts != labels:
@@ -437,7 +467,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self.log(
             f"PhotoFrameViewerApp: publish url={local_url!r} "
             f"label={label!r} gen={gen_id} reason={reason}",
-            level="INFO",
+            level="DEBUG",
         )
         self.call_service(
             "input_text/set_value",
@@ -566,8 +596,9 @@ class PhotoFrameViewerApp(hass.Hass):
     def _poll_for_changes_cb(self, kwargs: Any) -> None:
         self._poll_for_changes(reason="poll")
 
-    def _on_source_sensor_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
-        self._poll_for_changes(reason="sensor_change")
+    def _on_batch_ready(self, event_name: str, data: dict, kwargs: Any) -> None:
+        """Fetcher wrote a new batch — poll for changes immediately."""
+        self._poll_for_changes(reason="batch_ready")
 
     def _on_picker_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
         if self._suppress_picker_handler:
@@ -576,17 +607,27 @@ class PhotoFrameViewerApp(hass.Hass):
         if not new_label:
             return
 
-        # Manual navigation while a pending gen is queued: the user is
-        # actively changing the image, so apply the new gen now.
+        # Tick-driven advance: publish quietly and return.
+        if self._tick_advance_pending:
+            self._tick_advance_pending = False
+            self._publish_selected_local_url(new_label, reason="tick")
+            return
+
+        # Manual navigation while a pending gen is queued.
         if self._pending_gen_id is not None:
+            self.log(
+                f"PhotoFrameViewerApp: manual nav to {new_label!r} (applying pending gen)",
+                level="INFO",
+            )
             self._apply_pending_gen(reason="manual_nav")
             if self.reset_timer_on_manual_nav:
                 self._schedule_next(reason="manual_nav")
             return
 
-        self._publish_selected_local_url(new_label, reason="picker_change")
+        self.log(f"PhotoFrameViewerApp: manual nav to {new_label!r}", level="INFO")
+        self._publish_selected_local_url(new_label, reason="manual_nav")
         if self.reset_timer_on_manual_nav:
-            self._schedule_next(reason="picker_change")
+            self._schedule_next(reason="manual_nav")
 
     def _on_pause_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
         self._sync_timer(reason="pause_change")
@@ -600,9 +641,6 @@ class PhotoFrameViewerApp(hass.Hass):
             self._cancel_timer()
             return
 
-        # If a pending gen is queued, apply it now (the image is about to
-        # change anyway). select_next below will then advance within the
-        # new generation's options.
         if self._pending_gen_id is not None:
             self._apply_pending_gen(reason="tick")
 
@@ -611,12 +649,10 @@ class PhotoFrameViewerApp(hass.Hass):
             self._schedule_next(reason="tick_no_options")
             return
 
-        before = self._picker_value()
+        self._tick_advance_pending = True
         self.call_service(
             "input_select/select_next",
             entity_id=self.picker_entity_id,
             cycle=self.auto_cycle,
         )
-        after = self._picker_value()
-        if after == before:
-            self._schedule_next(reason="tick_no_change")
+        self._schedule_next(reason="tick")
