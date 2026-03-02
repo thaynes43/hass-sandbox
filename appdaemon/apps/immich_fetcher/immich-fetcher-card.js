@@ -718,7 +718,9 @@ class ImmichFetcherCard extends HTMLElement {
         touchActive = false;
         return;
       }
-      if (e.cancelable) e.preventDefault();
+      const tag = el.tagName?.toLowerCase();
+      const nativeEl = tag === "input" || tag === "select" || tag === "textarea";
+      if (!nativeEl && e.cancelable) e.preventDefault();
       this._dispatchAction(action, el);
       setTimeout(() => { touchActive = false; }, 400);
     });
