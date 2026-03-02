@@ -6,6 +6,12 @@ alwaysApply: false
 
 This repo treats `appdaemon/` as the **development** workspace. Production AppDaemon reads configs from `X:\` (mounted into Kubernetes).
 
+## 0) Never auto-deploy
+
+- **`X:\` is not always mounted.** The user mounts it on demand.
+- **Never run `deploy.py` automatically** after making changes. Only run it when the user explicitly asks to deploy.
+- After editing `appdaemon/**` files, tell the user what changed and that they can deploy when ready — do not attempt the deploy yourself.
+
 ## 1) What `deploy.py` does (and does not do)
 
 - **Does**: sync `appdaemon/apps/**` into `X:\apps/**` (includes `apps.yaml`; no renaming).

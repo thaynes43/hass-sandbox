@@ -1,6 +1,7 @@
 garage_door_notify:
   module: garage_door_notify
   class: GarageDoorNotify
+  disable: true
   notify_services:
     - notify.mobile_app_toms_iphone_15_pro
     - notify.mobile_app_toms_iphone_air
@@ -13,6 +14,7 @@ garage_door_notify:
 detection_summary_garage:
   module: detection_summary_app.manager
   class: DetectionSummary
+  disable: true
   bundle_key: garage
   snapshot_ha_dir: /media/detection-summary/garage
   media_fs_root: !secret media_fs_root
@@ -48,42 +50,3 @@ detection_summary_garage:
     data_model: gpt-5.2
     data_image_detail: auto
     image_model: gpt-image-1.5
-
-immich_fetcher:
-  module: immich_fetcher.immich_fetcher_app
-  class: ImmichFetcherApp
-  immich_url: !secret immich_url
-  immich_api_key: !secret immich_api_key
-  output_dir: /media/immich-photos
-  config_file: /media/immich-fetcher/config.json
-  update_interval_minutes: 60
-  num_photos: 10
-  download_quality: preview
-  default_filters:
-    - name: Random
-      selection: all_photos
-    - name: "Penelope's Birthday"
-      selection: search
-      randomize: true
-      search_query: "Birthday"
-      people: ["Penelope Haynes"]
-      search_pool_size: 500
-
-photo_frame_viewer_wall_display:
-  module: photo_frame_viewer.photo_frame_viewer_app
-  class: PhotoFrameViewerApp
-  source_dir: /media/immich-photos
-  ha_local_url_base: /local/photo-frame/live
-  stage_shell_command: photo_frame_stage_gen
-  cleanup_shell_command: photo_frame_cleanup_gen
-  source_poll_interval_s: 30
-  stage_settle_delay_s: 3
-  picker_entity_id: input_select.wall_display_photo_frame_image
-  paused_entity_id: input_boolean.wall_display_photo_frame_paused
-  interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
-  cache_bust_entity_id: input_text.wall_display_photo_frame_cache_bust
-  image_local_url_entity_id: input_text.wall_display_photo_frame_image_local_url
-  fallback_image_path: /media/immich-photos/no-image.jpg
-  options_max: 50
-  refresh_options_every_s: 60
-  auto_cycle: true

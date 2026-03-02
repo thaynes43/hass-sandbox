@@ -2,13 +2,10 @@
  * Immich Fetcher Config Card
  *
  * Custom Lovelace card for managing Immich photo fetcher filter profiles.
- * Reads from sensor.immich_fetcher_status and fires HA events for config updates.
+ * Reads from sensor.immich_fetcher_status and calls the relay script for config updates.
  */
 
 const SENSOR_ENTITY = "sensor.immich_fetcher_status";
-const EVENT_UPDATE_CONFIG = "immich_fetcher_update_config";
-const EVENT_REFRESH_NOW = "immich_fetcher_refresh_now";
-const EVENT_SYNC_FILTER = "immich_fetcher_sync_filter";
 
 const SELECTION_TYPES = [
   { value: "all_photos", label: "All Photos" },
@@ -187,13 +184,16 @@ class ImmichFetcherCard extends HTMLElement {
     this._dirty = false;
   }
 
-  _fireEvent(eventType, eventData) {
+  _callRelay(command, data) {
     if (!this._hass) return;
-    this._hass.connection.sendMessagePromise({
-      type: "fire_event",
-      event_type: eventType,
-      event_data: eventData || {},
-    });
+    this._hass
+      .callService("script", "immich_fetcher_relay", {
+        command,
+        payload: JSON.stringify(data || {}),
+      })
+      .catch((err) => {
+        console.warn("immich-fetcher-card: relay failed", command, err);
+      });
   }
 
   _saveConfig() {
@@ -223,18 +223,18 @@ class ImmichFetcherCard extends HTMLElement {
       people_cutoff: this._peopleCutoff,
       show_favorite_people_only: this._showFavoritePeopleOnly,
     };
-    this._fireEvent(EVENT_UPDATE_CONFIG, payload);
+    this._callRelay("update_config", payload);
     this._dirty = false;
     this._render();
   }
 
   _refreshNow() {
-    this._fireEvent(EVENT_REFRESH_NOW);
+    this._callRelay("refresh_now");
   }
 
   _syncFilter(idx) {
     const name = this._filters[idx]?.name || "";
-    this._fireEvent(EVENT_SYNC_FILTER, { filter_index: idx, filter_name: name });
+    this._callRelay("sync_filter", { filter_index: idx, filter_name: name });
   }
 
   _markDirty() {
@@ -299,7 +299,8 @@ class ImmichFetcherCard extends HTMLElement {
         </div>
       </ha-card>
     `;
-    this._attachEventListeners(peopleAvailable, albumsAvailable);
+    this._ensureDelegatedListeners();
+    this._attachFormListeners();
   }
 
   // ── Status Bar ────────────────────────────────────────────────────
@@ -350,8 +351,8 @@ class ImmichFetcherCard extends HTMLElement {
         }
         return `
           <div class="filter-item ${isExpanded ? "expanded" : ""} ${isActive ? "active" : ""} ${isEmpty && !isActive ? "empty" : ""}">
-            <div class="filter-header" data-action="toggle-filter" data-idx="${i}">
-              <div class="filter-header-left">
+            <div class="filter-header">
+              <div class="filter-header-left" data-action="toggle-filter" data-idx="${i}">
                 ${statusIcon}
                 <span class="filter-name">${this._escapeHtml(f.name)}</span>
                 <span class="filter-badge">${badge}</span>
@@ -370,7 +371,7 @@ class ImmichFetcherCard extends HTMLElement {
                 <button class="btn-icon btn-danger" data-action="remove-filter" data-idx="${i}" title="Remove filter">
                   <ha-icon icon="mdi:delete"></ha-icon>
                 </button>
-                <ha-icon icon="${isExpanded ? "mdi:chevron-up" : "mdi:chevron-down"}" class="expand-chevron"></ha-icon>
+                <ha-icon icon="${isExpanded ? "mdi:chevron-up" : "mdi:chevron-down"}" class="expand-chevron" data-action="toggle-filter" data-idx="${i}"></ha-icon>
               </div>
             </div>
             ${isExpanded ? this._renderFilterEditor(f, i, peopleAvailable, albumsAvailable) : ""}
@@ -682,261 +683,282 @@ class ImmichFetcherCard extends HTMLElement {
       </div>`;
   }
 
-  // ── Event Listeners ───────────────────────────────────────────────
+  // ── Event Handling ────────────────────────────────────────────────
+  //
+  // Uses the same touchstart/touchend + mousedown/click pattern as HA's
+  // own actionHandler directive (home-assistant/frontend). Event
+  // delegation at the shadow root via composedPath() means listeners
+  // survive innerHTML rebuilds and work reliably on touch devices
+  // (including HA companion app WebViews) because we never depend on
+  // click events bubbling *out* of <ha-icon> shadow DOM.
 
-  _attachEventListeners(peopleAvailable, albumsAvailable) {
+  _ensureDelegatedListeners() {
+    if (this._delegatedBound) return;
+    this._delegatedBound = true;
+
+    const root = this.shadowRoot;
+    let touchActive = false;
+    let touchCancelled = false;
+    let moveCount = 0;
+
+    ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
+      root.addEventListener(evt, () => { touchCancelled = true; moveCount++; }, { passive: true });
+    });
+
+    root.addEventListener("touchstart", () => {
+      touchActive = true;
+      touchCancelled = false;
+      moveCount = 0;
+    }, { passive: true });
+
+    root.addEventListener("touchend", (e) => {
+      const el = this._findActionTarget(e);
+      const action = el?.dataset?.action || "none";
+      if (touchCancelled || !el) {
+        touchActive = false;
+        return;
+      }
+      if (e.cancelable) e.preventDefault();
+      this._dispatchAction(action, el);
+      setTimeout(() => { touchActive = false; }, 400);
+    });
+
+    root.addEventListener("click", (e) => {
+      const el = this._findActionTarget(e);
+      const action = el?.dataset?.action || "none";
+      if (touchActive) return;
+      if (el) this._dispatchAction(action, el);
+    });
+  }
+
+  _findActionTarget(e) {
+    for (const node of e.composedPath()) {
+      if (node === this.shadowRoot || node === this) break;
+      if (node.dataset?.action) return node;
+    }
+    return null;
+  }
+
+  _dispatchAction(action, el) {
+    const root = this.shadowRoot;
+    const idx = () => parseInt(el.dataset.idx);
+    const filterIdx = () => parseInt(el.dataset.filterIdx);
+
+    switch (action) {
+      case "refresh-now":
+        this._refreshNow();
+        break;
+
+      case "sync-filter":
+        this._syncFilter(idx());
+        break;
+
+      case "toggle-filter": {
+        const i = idx();
+        this._expandedFilterIdx = this._expandedFilterIdx === i ? -1 : i;
+        this._render();
+        break;
+      }
+
+      case "add-filter":
+        this._filters.push(defaultFilter());
+        this._expandedFilterIdx = this._filters.length - 1;
+        this._markDirty();
+        break;
+
+      case "remove-filter": {
+        const i = idx();
+        if (this._filters.length <= 1) break;
+        this._filters.splice(i, 1);
+        if (this._expandedFilterIdx >= this._filters.length) this._expandedFilterIdx = -1;
+        if (this._expandedFilterIdx === i) this._expandedFilterIdx = -1;
+        this._markDirty();
+        break;
+      }
+
+      case "move-filter-up": {
+        const i = idx();
+        if (i === 0) break;
+        [this._filters[i - 1], this._filters[i]] = [this._filters[i], this._filters[i - 1]];
+        if (this._expandedFilterIdx === i) this._expandedFilterIdx = i - 1;
+        else if (this._expandedFilterIdx === i - 1) this._expandedFilterIdx = i;
+        this._markDirty();
+        break;
+      }
+
+      case "move-filter-down": {
+        const i = idx();
+        if (i >= this._filters.length - 1) break;
+        [this._filters[i], this._filters[i + 1]] = [this._filters[i + 1], this._filters[i]];
+        if (this._expandedFilterIdx === i) this._expandedFilterIdx = i + 1;
+        else if (this._expandedFilterIdx === i + 1) this._expandedFilterIdx = i;
+        this._markDirty();
+        break;
+      }
+
+      case "set-selection": {
+        const i = filterIdx();
+        const value = el.dataset.value;
+        this._filters[i].selection = value;
+        if (value === "all_photos") this._filters[i].randomize = true;
+        this._markDirty();
+        break;
+      }
+
+      case "add-person": {
+        const i = filterIdx();
+        const input = root.querySelector(`.people-input[data-filter-idx="${i}"]`);
+        if (!input) break;
+        const name = input.value.trim();
+        if (!name) break;
+        if (!this._filters[i].people) this._filters[i].people = [];
+        if (!this._filters[i].people.includes(name)) {
+          this._filters[i].people.push(name);
+          this._markDirty();
+        }
+        break;
+      }
+
+      case "remove-person": {
+        const fIdx = filterIdx();
+        const pIdx = parseInt(el.dataset.personIdx);
+        if (this._filters[fIdx].people) {
+          this._filters[fIdx].people.splice(pIdx, 1);
+          this._markDirty();
+        }
+        break;
+      }
+
+      case "toggle-people-manager":
+        this._showPeopleManager = !this._showPeopleManager;
+        this._render();
+        break;
+
+      case "toggle-favorite-person": {
+        const person = el.dataset.person;
+        const pi = this._favoritePeople.indexOf(person);
+        if (pi >= 0) this._favoritePeople.splice(pi, 1);
+        else this._favoritePeople.push(person);
+        this._markDirty();
+        break;
+      }
+
+      case "quick-add-person": {
+        const i = filterIdx();
+        const person = el.dataset.person;
+        if (!this._filters[i].people) this._filters[i].people = [];
+        if (!this._filters[i].people.includes(person)) {
+          this._filters[i].people.push(person);
+          this._markDirty();
+        }
+        break;
+      }
+
+      case "toggle-alias-manager":
+        this._showAliasManager = !this._showAliasManager;
+        this._render();
+        break;
+
+      case "add-alias": {
+        const nameInput = root.querySelector('[data-alias-field="name"]');
+        const cityInput = root.querySelector('[data-alias-field="city"]');
+        const stateInput = root.querySelector('[data-alias-field="state"]');
+        const countryInput = root.querySelector('[data-alias-field="country"]');
+        const name = (nameInput?.value || "").trim();
+        if (!name) break;
+        const alias = {};
+        const city = (cityInput?.value || "").trim();
+        const state = (stateInput?.value || "").trim();
+        const country = (countryInput?.value || "").trim();
+        if (city) alias.city = city;
+        if (state) alias.state = state;
+        if (country) alias.country = country;
+        if (Object.keys(alias).length === 0) break;
+        this._locationAliases[name] = alias;
+        this._newAliasName = "";
+        this._newAliasCity = "";
+        this._newAliasState = "";
+        this._newAliasCountry = "";
+        this._markDirty();
+        break;
+      }
+
+      case "remove-alias":
+        delete this._locationAliases[el.dataset.alias];
+        this._markDirty();
+        break;
+
+      case "save":
+        this._saveConfig();
+        break;
+
+      case "reload":
+        this._loadFromSensor();
+        this._expandedFilterIdx = -1;
+        this._render();
+        break;
+    }
+  }
+
+  /**
+   * Bind form-specific listeners that need per-element attachment (input/change
+   * events on form controls). Called on every render since innerHTML destroys
+   * the previous elements.
+   */
+  _attachFormListeners() {
     const root = this.shadowRoot;
 
-    root.querySelectorAll("[data-action]").forEach((el) => {
-      const action = el.dataset.action;
-
-      if (action === "refresh-now") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this._refreshNow();
-        });
-      }
-
-      if (action === "sync-filter") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt(el.dataset.idx);
-          this._syncFilter(idx);
-        });
-      }
-
-      if (action === "toggle-filter") {
-        el.addEventListener("click", () => {
-          const idx = parseInt(el.dataset.idx);
-          this._expandedFilterIdx = this._expandedFilterIdx === idx ? -1 : idx;
-          this._render();
-        });
-      }
-
-      if (action === "add-filter") {
-        el.addEventListener("click", () => {
-          this._filters.push(defaultFilter());
-          this._expandedFilterIdx = this._filters.length - 1;
-          this._saveConfig();
-        });
-      }
-
-      if (action === "remove-filter") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt(el.dataset.idx);
-          if (this._filters.length <= 1) return;
-          this._filters.splice(idx, 1);
-          if (this._expandedFilterIdx >= this._filters.length)
-            this._expandedFilterIdx = -1;
-          if (this._expandedFilterIdx === idx) this._expandedFilterIdx = -1;
-          this._saveConfig();
-        });
-      }
-
-      if (action === "move-filter-up") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt(el.dataset.idx);
-          if (idx === 0) return;
-          [this._filters[idx - 1], this._filters[idx]] = [this._filters[idx], this._filters[idx - 1]];
-          if (this._expandedFilterIdx === idx) this._expandedFilterIdx = idx - 1;
-          else if (this._expandedFilterIdx === idx - 1) this._expandedFilterIdx = idx;
-          this._saveConfig();
-        });
-      }
-
-      if (action === "move-filter-down") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt(el.dataset.idx);
-          if (idx >= this._filters.length - 1) return;
-          [this._filters[idx], this._filters[idx + 1]] = [this._filters[idx + 1], this._filters[idx]];
-          if (this._expandedFilterIdx === idx) this._expandedFilterIdx = idx + 1;
-          else if (this._expandedFilterIdx === idx + 1) this._expandedFilterIdx = idx;
-          this._saveConfig();
-        });
-      }
-
-      if (action === "set-selection") {
-        el.addEventListener("click", () => {
-          const idx = parseInt(el.dataset.filterIdx);
-          const value = el.dataset.value;
-          this._filters[idx].selection = value;
-          if (value === "all_photos") this._filters[idx].randomize = true;
-          this._markDirty();
-        });
-      }
-
-      if (action === "set-filter-field") {
-        const idx = parseInt(el.dataset.filterIdx);
-        const field = el.dataset.field;
-        const handler = () => {
-          if (field === "randomize" || field === "favorites_only") {
-            this._filters[idx][field] = el.checked;
-          } else if (field === "search_pool_size") {
-            this._filters[idx][field] = parseInt(el.value) || 250;
-          } else {
-            this._filters[idx][field] = el.value;
-          }
-          this._markDirty();
-        };
-        if (el.type === "checkbox") {
-          el.addEventListener("change", handler);
-        } else if (el.type === "range") {
-          el.addEventListener("input", handler);
+    root.querySelectorAll('[data-action="set-filter-field"]').forEach((el) => {
+      const idx = parseInt(el.dataset.filterIdx);
+      const field = el.dataset.field;
+      const handler = () => {
+        if (field === "randomize" || field === "favorites_only") {
+          this._filters[idx][field] = el.checked;
+        } else if (field === "search_pool_size") {
+          this._filters[idx][field] = parseInt(el.value) || 250;
         } else {
-          // Text/date inputs: only use "input" (fires on every keystroke).
-          // Avoid "change" (fires on blur) which causes a DOM rebuild that
-          // can swallow the subsequent Save button click.
-          el.addEventListener("input", handler);
+          this._filters[idx][field] = el.value;
         }
-      }
-
-      if (action === "add-person") {
-        el.addEventListener("click", () => {
-          const idx = parseInt(el.dataset.filterIdx);
-          const input = root.querySelector(`.people-input[data-filter-idx="${idx}"]`);
-          if (!input) return;
-          const name = input.value.trim();
-          if (!name) return;
-          if (!this._filters[idx].people) this._filters[idx].people = [];
-          if (!this._filters[idx].people.includes(name)) {
-            this._filters[idx].people.push(name);
-            this._markDirty();
-          }
-        });
-      }
-
-      if (action === "remove-person") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const fIdx = parseInt(el.dataset.filterIdx);
-          const pIdx = parseInt(el.dataset.personIdx);
-          if (this._filters[fIdx].people) {
-            this._filters[fIdx].people.splice(pIdx, 1);
-            this._markDirty();
-          }
-        });
-      }
-
-      if (action === "set-global") {
-        const field = el.dataset.field;
-        const handler = () => {
-          if (field === "num_photos") {
-            this._numPhotos = parseInt(el.value) || 10;
-          } else if (field === "update_interval_minutes") {
-            this._updateIntervalMinutes = parseInt(el.value) || 60;
-          } else if (field === "people_cutoff") {
-            this._peopleCutoff = parseInt(el.value) || 5;
-          }
-          this._markDirty();
-        };
-        if (el.type === "range") {
-          el.addEventListener("input", handler);
-        } else {
-          el.addEventListener("change", handler);
-        }
-      }
-
-      if (action === "set-global-bool") {
-        el.addEventListener("change", () => {
-          const field = el.dataset.field;
-          if (field === "show_favorite_people_only") {
-            this._showFavoritePeopleOnly = el.checked;
-          }
-          this._markDirty();
-        });
-      }
-
-      if (action === "toggle-people-manager") {
-        el.addEventListener("click", () => {
-          this._showPeopleManager = !this._showPeopleManager;
-          this._render();
-        });
-      }
-
-      if (action === "toggle-favorite-person") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const person = el.dataset.person;
-          const idx = this._favoritePeople.indexOf(person);
-          if (idx >= 0) {
-            this._favoritePeople.splice(idx, 1);
-          } else {
-            this._favoritePeople.push(person);
-          }
-          this._markDirty();
-        });
-      }
-
-      if (action === "quick-add-person") {
-        el.addEventListener("click", () => {
-          const filterIdx = parseInt(el.dataset.filterIdx);
-          const person = el.dataset.person;
-          if (!this._filters[filterIdx].people) this._filters[filterIdx].people = [];
-          if (!this._filters[filterIdx].people.includes(person)) {
-            this._filters[filterIdx].people.push(person);
-            this._markDirty();
-          }
-        });
-      }
-
-      if (action === "toggle-alias-manager") {
-        el.addEventListener("click", () => {
-          this._showAliasManager = !this._showAliasManager;
-          this._render();
-        });
-      }
-
-      if (action === "add-alias") {
-        el.addEventListener("click", () => {
-          const nameInput = root.querySelector('[data-alias-field="name"]');
-          const cityInput = root.querySelector('[data-alias-field="city"]');
-          const stateInput = root.querySelector('[data-alias-field="state"]');
-          const countryInput = root.querySelector('[data-alias-field="country"]');
-          const name = (nameInput?.value || "").trim();
-          if (!name) return;
-          const alias = {};
-          const city = (cityInput?.value || "").trim();
-          const state = (stateInput?.value || "").trim();
-          const country = (countryInput?.value || "").trim();
-          if (city) alias.city = city;
-          if (state) alias.state = state;
-          if (country) alias.country = country;
-          if (Object.keys(alias).length === 0) return;
-          this._locationAliases[name] = alias;
-          this._newAliasName = "";
-          this._newAliasCity = "";
-          this._newAliasState = "";
-          this._newAliasCountry = "";
-          this._markDirty();
-        });
-      }
-
-      if (action === "remove-alias") {
-        el.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const alias = el.dataset.alias;
-          delete this._locationAliases[alias];
-          this._markDirty();
-        });
-      }
-
-      if (action === "save") {
-        el.addEventListener("click", () => this._saveConfig());
-      }
-
-      if (action === "reload") {
-        el.addEventListener("click", () => {
-          this._loadFromSensor();
-          this._expandedFilterIdx = -1;
-          this._render();
-        });
+        this._markDirty();
+      };
+      if (el.type === "checkbox") {
+        el.addEventListener("change", handler);
+      } else if (el.type === "range") {
+        el.addEventListener("input", handler);
+      } else {
+        el.addEventListener("input", handler);
       }
     });
 
-    // Preserve alias form inputs on re-render
+    root.querySelectorAll('[data-action="set-global"]').forEach((el) => {
+      const field = el.dataset.field;
+      const handler = () => {
+        if (field === "num_photos") {
+          this._numPhotos = parseInt(el.value) || 10;
+        } else if (field === "update_interval_minutes") {
+          this._updateIntervalMinutes = parseInt(el.value) || 60;
+        } else if (field === "people_cutoff") {
+          this._peopleCutoff = parseInt(el.value) || 5;
+        }
+        this._markDirty();
+      };
+      if (el.type === "range") {
+        el.addEventListener("input", handler);
+      } else {
+        el.addEventListener("change", handler);
+      }
+    });
+
+    root.querySelectorAll('[data-action="set-global-bool"]').forEach((el) => {
+      el.addEventListener("change", () => {
+        const field = el.dataset.field;
+        if (field === "show_favorite_people_only") {
+          this._showFavoritePeopleOnly = el.checked;
+        }
+        this._markDirty();
+      });
+    });
+
     root.querySelectorAll("[data-alias-field]").forEach((el) => {
       el.addEventListener("input", () => {
         const field = el.dataset.aliasField;
@@ -947,7 +969,6 @@ class ImmichFetcherCard extends HTMLElement {
       });
     });
 
-    // People input: Enter key adds person
     root.querySelectorAll(".people-input").forEach((input) => {
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter") {
@@ -964,7 +985,6 @@ class ImmichFetcherCard extends HTMLElement {
       });
     });
 
-    // Album select syncs with text input
     root.querySelectorAll('select[data-field="album_name"]').forEach((sel) => {
       sel.addEventListener("change", () => {
         const idx = parseInt(sel.dataset.filterIdx);
@@ -1134,7 +1154,6 @@ class ImmichFetcherCard extends HTMLElement {
         align-items: center;
         justify-content: space-between;
         padding: 10px var(--ifc-spacing);
-        cursor: pointer;
         user-select: none;
         transition: background-color 150ms;
         border-left: 3px solid transparent;
@@ -1150,6 +1169,7 @@ class ImmichFetcherCard extends HTMLElement {
         gap: var(--ifc-spacing-sm);
         flex: 1;
         min-width: 0;
+        cursor: pointer;
       }
 
       .active-indicator {
@@ -1203,6 +1223,8 @@ class ImmichFetcherCard extends HTMLElement {
         --mdc-icon-size: 20px;
         color: var(--ifc-on-surface-secondary);
         margin-left: 4px;
+        cursor: pointer;
+        padding: 4px;
       }
 
       /* Filter editor */
@@ -1518,6 +1540,15 @@ class ImmichFetcherCard extends HTMLElement {
         color: var(--ifc-warning, #ff9800);
       }
 
+      /* Make ha-icon pass-through inside interactive elements so touch
+         events land on the button/link, not the icon's shadow DOM. */
+      [data-action] ha-icon,
+      .btn-icon ha-icon,
+      .btn-text ha-icon,
+      .quick-add-chip ha-icon {
+        pointer-events: none;
+      }
+
       /* Buttons */
       .btn-icon {
         background: none;
@@ -1531,6 +1562,8 @@ class ImmichFetcherCard extends HTMLElement {
         justify-content: center;
         transition: all 150ms;
         --mdc-icon-size: 18px;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
       }
 
       .btn-icon:hover {
@@ -1571,6 +1604,8 @@ class ImmichFetcherCard extends HTMLElement {
         transition: background-color 150ms;
         font-family: inherit;
         --mdc-icon-size: 16px;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
       }
 
       .btn-text:hover {

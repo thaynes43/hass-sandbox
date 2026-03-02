@@ -5,7 +5,6 @@
 # Dev uses apps: apps/apps-dev.yaml to load the dev app list (path relative to config dir).
 
 appdaemon:
-  apps: apps/apps-dev.yaml
   time_zone: America/New_York
   latitude: 0
   longitude: 0
@@ -13,7 +12,7 @@ appdaemon:
   plugins:
     HASS:
       type: hass
-      ha_url: https://hass.haynesops.com/
+      ha_url: !secret ha_url
       token: !secret token
       ws_max_msg_size: 8388608
       ws_timeout: 60

@@ -13,9 +13,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
+# live at `appdaemon/ha_provisioner`, so add the AppDaemon root directory.
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 import hassapi as hass
 
@@ -75,13 +80,11 @@ class ImmichFetcherApp(hass.Hass):
         os.makedirs(self._output_dir, exist_ok=True)
         os.makedirs(os.path.dirname(self._config_file), exist_ok=True)
 
-        # Startup: populate caches, publish sensor, schedule first fetch
+        # Startup: provision relay script, populate caches, publish sensor, schedule first fetch
         self.run_in(self._on_startup, 0)
 
-        # Listen for dashboard events
-        self.listen_event(self._on_update_config, "immich_fetcher_update_config")
-        self.listen_event(self._on_refresh_now, "immich_fetcher_refresh_now")
-        self.listen_event(self._on_sync_filter, "immich_fetcher_sync_filter")
+        # Single event listener for all card commands (routed via relay script)
+        self.listen_event(self._on_command, "immich_fetcher_command")
 
     # ------------------------------------------------------------------
     # Config loading / persistence
@@ -143,6 +146,9 @@ class ImmichFetcherApp(hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
+        # Auto-provision the relay script for card-to-AppDaemon communication
+        await self._provision_relay()
+
         try:
             await self._refresh_caches()
         except Exception as exc:
@@ -153,6 +159,55 @@ class ImmichFetcherApp(hass.Hass):
 
         # Trigger an initial fetch immediately
         self.run_in(self._on_fetch_timer, 2)
+
+    async def _provision_relay(self) -> None:
+        """Create script.immich_fetcher_relay if it doesn't exist."""
+        ha_url = self.args.get("ha_url")
+        ha_token = self.args.get("ha_token")
+        if not ha_url or not ha_token:
+            self.log(
+                "ha_url / ha_token not configured — skipping relay provisioning",
+                level="WARNING",
+            )
+            return
+
+        from ha_provisioner import HAProvisioner
+
+        prov = HAProvisioner(ha_url=ha_url, ha_token=ha_token)
+        try:
+            created = await prov.ensure_script("immich_fetcher_relay", {
+                "alias": "Immich Fetcher Relay",
+                "description": "Relays dashboard commands to AppDaemon",
+                "mode": "queued",
+                "max": 10,
+                "fields": {
+                    "command": {
+                        "name": "Command",
+                        "description": "Command name",
+                        "required": True,
+                        "selector": {"text": {}},
+                    },
+                    "payload": {
+                        "name": "Payload",
+                        "description": "JSON-encoded command data",
+                        "required": False,
+                        "selector": {"text": {}},
+                    },
+                },
+                "sequence": [{
+                    "event": "immich_fetcher_command",
+                    "event_data": {
+                        "command": "{{ command }}",
+                        "payload": "{{ payload | default('{}') }}",
+                    },
+                }],
+            })
+            if created:
+                self.log("Relay script created: script.immich_fetcher_relay", level="INFO")
+            else:
+                self.log("Relay script already exists", level="DEBUG")
+        except Exception as exc:
+            self.log(f"Failed to provision relay script: {exc}", level="ERROR")
 
     # ------------------------------------------------------------------
     # Immich cache refresh (people + albums)
@@ -419,12 +474,32 @@ class ImmichFetcherApp(hass.Hass):
             pass
 
     # ------------------------------------------------------------------
-    # Event handlers (dashboard card interaction)
+    # Command handler (all card interactions come through the relay script)
     # ------------------------------------------------------------------
 
-    def _on_update_config(self, event_name: str, data: dict, kwargs: Any) -> None:
-        """Handle immich_fetcher_update_config from the dashboard card."""
-        self.log(f"Received config update event: {list(data.keys())}", level="INFO")
+    def _on_command(self, event_name: str, data: dict, kwargs: Any) -> None:
+        """Route commands dispatched by the relay script."""
+        cmd = data.get("command")
+        raw = data.get("payload", "{}")
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except (json.JSONDecodeError, TypeError):
+            self.log(f"Invalid command payload: {raw}", level="WARNING")
+            return
+
+        if cmd == "update_config":
+            self._handle_update_config(payload)
+        elif cmd == "sync_filter":
+            self._handle_sync_filter(payload)
+        elif cmd == "refresh_now":
+            self.log("Manual refresh requested via relay", level="INFO")
+            self.create_task(self._do_fetch())
+        else:
+            self.log(f"Unknown command: {cmd}", level="WARNING")
+
+    def _handle_update_config(self, data: dict) -> None:
+        """Apply a config update from the dashboard card."""
+        self.log(f"Received config update: {list(data.keys())}", level="INFO")
         try:
             new_cfg = FetcherConfig.from_dict(data)
             new_cfg.validate()
@@ -432,7 +507,6 @@ class ImmichFetcherApp(hass.Hass):
             self.log(f"Invalid config update rejected: {exc}", level="ERROR")
             return
 
-        # Log structural filter changes
         old_names = [f.name for f in self._config.filters]
         new_names = [f.name for f in new_cfg.filters]
         if old_names != new_names:
@@ -447,7 +521,6 @@ class ImmichFetcherApp(hass.Hass):
                     f"Filters reordered: {old_names} -> {new_names}", level="INFO"
                 )
 
-        # Log changes to aliases and favorites
         old_aliases = set(self._config.location_aliases.keys())
         new_aliases = set(new_cfg.location_aliases.keys())
         added_aliases = new_aliases - old_aliases
@@ -466,7 +539,6 @@ class ImmichFetcherApp(hass.Hass):
         if removed_favs:
             self.log(f"Favorite people removed: {removed_favs}", level="INFO")
 
-        # Validate people names against the Immich cache
         if self._people_map:
             for filt in new_cfg.filters:
                 if filt.people:
@@ -487,7 +559,6 @@ class ImmichFetcherApp(hass.Hass):
 
         old_interval = self._config.update_interval_minutes
         self._config = new_cfg
-        # Clamp indices to valid range after filter list changes
         if self._config.filters:
             max_idx = len(self._config.filters) - 1
             self._active_filter_index = min(
@@ -507,15 +578,11 @@ class ImmichFetcherApp(hass.Hass):
         self._publish_sensor()
         self.log("Config updated successfully", level="INFO")
 
-    def _on_refresh_now(self, event_name: str, data: dict, kwargs: Any) -> None:
-        """Handle immich_fetcher_refresh_now: trigger an immediate fetch."""
-        self.log("Manual refresh requested", level="INFO")
-        self.create_task(self._do_fetch())
-
-    def _on_sync_filter(self, event_name: str, data: dict, kwargs: Any) -> None:
-        """Jump to a specific filter index and fetch immediately."""
+    def _handle_sync_filter(self, data: dict) -> None:
+        """Sync a specific filter (fetch with it immediately)."""
         if not self._config.filters:
             return
+
         idx = data.get("filter_index")
         requested_name = data.get("filter_name", "")
         if idx is None:

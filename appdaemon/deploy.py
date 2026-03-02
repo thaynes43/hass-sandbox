@@ -32,12 +32,14 @@ DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
 
 # What to copy:
 # - apps/: AppDaemon app modules + apps-base.yaml (deployed as apps.yaml)
-# - ai_providers/: shared provider code used by apps (must be importable in prod)
+# - ai_providers/: shared provider code used by apps
+# - ha_provisioner/: HA entity provisioning library used by apps
 #
 # NOTE: In production AppDaemon often only includes `/conf/apps` in sys.path.
-# We therefore deploy `ai_providers/` into `apps/ai_providers/` so imports like
-# `import ai_providers...` work without requiring appdaemon.yaml import_paths changes.
-COPY_ITEMS = ["apps", "ai_providers"]
+# We therefore deploy shared libraries into `apps/<lib>/` so imports like
+# `import ai_providers...` / `import ha_provisioner...` work without
+# requiring appdaemon.yaml import_paths changes.
+COPY_ITEMS = ["apps", "ai_providers", "ha_provisioner"]
 
 EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor", "_state"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}
@@ -137,8 +139,9 @@ def deploy(
     copied = 0
     for item in COPY_ITEMS:
         src = source / item
-        # Keep `ai_providers/` importable under the default prod sys.path (/conf/apps).
-        dst = (target / "apps" / item) if item == "ai_providers" else (target / item)
+        # Shared libraries (anything other than "apps") go into apps/<lib>/ so they
+        # are importable under the default prod sys.path (/conf/apps).
+        dst = (target / item) if item == "apps" else (target / "apps" / item)
         if not src.exists():
             continue
         if src.is_dir():

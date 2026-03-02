@@ -1,0 +1,178 @@
+---
+globs: appdaemon/**
+alwaysApply: false
+---
+# AppDaemon architecture decisions
+
+This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.mdc` (coding conventions) and `appdaemon-deploy-guidelines.mdc` (deployment).
+
+## 1) Folder structure: apps vs shared libraries
+
+- `appdaemon/apps/` — **AppDaemon app modules only** (things with `module:`/`class:` in `apps.yaml`).
+- `appdaemon/<lib>/` — **Shared libraries** used by multiple apps.
+  - `appdaemon/ai_providers/` — LLM/provider plumbing.
+  - `appdaemon/ha_provisioner/` — HA entity provisioning (scripts, helpers).
+- Each shared library **must** be added to `deploy.py` `COPY_ITEMS` so it deploys to `X:\apps\<lib>\` and is importable under prod's `/conf/apps` sys.path.
+
+Do **not** put shared libraries inside `appdaemon/apps/`. Only actual AppDaemon app modules belong there.
+
+### Dev import path
+
+In production, `deploy.py` places shared libraries under `apps/` where they're on AppDaemon's `sys.path`. In dev, they live at `appdaemon/<lib>/` (siblings of `apps/`), so they're **not** automatically importable. Any app module that imports a shared library must add the AppDaemon root to `sys.path` at module level:
+
+```python
+import sys
+from pathlib import Path
+
+# AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
+# live at `appdaemon/<lib>`, so add the AppDaemon root directory.
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+```
+
+The `.parents[2]` assumes the standard `appdaemon/apps/<app_name>/module.py` layout. This is the same pattern used by `detection_summary_app` for `ai_providers`.
+
+## 2) Self-provisioning: apps create their own HA entities
+
+Apps **must not** assume that helpers, scripts, or other HA entities already exist. Instead, apps provision them on startup using the `ha_provisioner` shared library.
+
+### What this means in practice
+
+- **Never** instruct users to manually create helpers (`input_button`, `input_text`, `input_boolean`, etc.).
+- **Never** instruct users to manually create HA scripts for app communication.
+- On startup (in `_async_startup` or equivalent), call `ha_provisioner` to `ensure_script` / `ensure_helper` for everything the app needs.
+- If an entity already exists, the provisioner skips creation (idempotent).
+
+### What to provision
+
+| Need | Provision with |
+|------|---------------|
+| Card-to-AppDaemon communication | Relay script (see below) |
+| User-facing state (pause toggle, interval slider) | Helper (`input_boolean`, `input_number`, etc.) |
+| App status / read-only state | `set_state()` virtual sensor (no provisioning needed) |
+
+### What is NOT yet auto-provisioned (manual steps)
+
+These remain manual for now and should be documented per-app:
+
+- **Shell commands** — defined in HA `configuration.yaml`, no REST API to create them.
+- **Lovelace resources** — custom card JS registration (could be automated later).
+- **`local_file` cameras** — could be provisioned via Config Entry Flow but complex.
+
+### App config requirements
+
+Apps using `ha_provisioner` need `ha_url` and `ha_token` in their `apps.yaml` / `apps-dev.yaml` args. Both reference the same secrets already used by the HASS plugin — no extra secret entries needed:
+
+```yaml
+my_app:
+  module: my_app.my_app_module
+  class: MyApp
+  ha_url: !secret ha_url
+  ha_token: !secret token
+```
+
+The token is the same long-lived access token that the HASS plugin uses, used **server-side only** by AppDaemon. It is never exposed to the frontend.
+
+## 3) Relay script pattern: card-to-AppDaemon communication
+
+All Lovelace card-to-AppDaemon communication **must** use a relay script. This is a single HA script per app that the card calls via `callService` and that fires a namespaced event for AppDaemon to handle.
+
+### Why not `fire_event`?
+
+`fire_event` (both WebSocket and REST) requires **admin privileges** in HA. Non-admin device accounts (tablets, phones, wall displays) cannot use it. `callService` on a script entity uses the `call_service` WebSocket command, which works for any authenticated user.
+
+### How it works
+
+1. AppDaemon provisions `script.<app>_relay` on startup via `ha_provisioner`.
+2. The Lovelace card calls `hass.callService("script", "<app>_relay", { command, payload })`.
+3. The script fires `<app>_command` event with the command and payload.
+4. AppDaemon listens for `<app>_command` and routes to the appropriate handler.
+
+### Relay script definition (template)
+
+Each app's relay script follows this pattern:
+
+```python
+await provisioner.ensure_script("<app>_relay", {
+    "alias": "<App Name> Relay",
+    "description": "Relays dashboard commands to AppDaemon",
+    "mode": "queued",
+    "max": 10,
+    "fields": {
+        "command": {
+            "name": "Command",
+            "description": "Command name",
+            "required": True,
+            "selector": {"text": {}},
+        },
+        "payload": {
+            "name": "Payload",
+            "description": "JSON-encoded command data",
+            "required": False,
+            "selector": {"text": {}},
+        },
+    },
+    "sequence": [{
+        "event": "<app>_command",
+        "event_data": {
+            "command": "{{ command }}",
+            "payload": "{{ payload | default('{}') }}",
+        },
+    }],
+})
+```
+
+### Card-side pattern (JavaScript)
+
+```javascript
+_callRelay(command, data) {
+  if (!this._hass) return;
+  this._hass.callService("script", "<app>_relay", {
+    command,
+    payload: JSON.stringify(data || {}),
+  }).catch((err) => {
+    console.warn("<app>-card: relay failed", command, err);
+  });
+}
+```
+
+### AppDaemon-side pattern (Python)
+
+```python
+# In initialize():
+self.listen_event(self._on_command, "<app>_command")
+
+# Unified command router:
+def _on_command(self, event_name, data, kwargs):
+    cmd = data.get("command")
+    raw = data.get("payload", "{}")
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except (json.JSONDecodeError, TypeError):
+        self.log(f"Invalid command payload: {raw}", level="WARNING")
+        return
+
+    if cmd == "do_something":
+        self._handle_do_something(payload)
+    else:
+        self.log(f"Unknown command: {cmd}", level="WARNING")
+```
+
+## 4) Non-admin frontend rule
+
+All Lovelace card interactions **must** work without admin access:
+
+- **`hass.callService()`** is the only safe frontend-to-backend channel.
+- **Never** use `fire_event`, `callApi("POST", "events/...")`, or `connection.sendMessagePromise({ type: "fire_event" })` from card code.
+- Desktop admin accounts are used for HA configuration; tablets/phones/wall displays use non-admin device-specific accounts.
+
+## 5) New app checklist
+
+When creating a new AppDaemon app with a Lovelace card:
+
+1. Define the relay script config (event name, commands).
+2. Define any user-facing helpers the app needs (pause toggles, sliders, etc.).
+3. Call `ha_provisioner` on startup to ensure all entities exist.
+4. Card uses `callService("script", "<app>_relay", ...)` for all actions.
+5. AppDaemon listens for `<app>_command` event, routes commands.
+6. Add `ha_url` and `ha_token` to `apps-dev.yaml` and `apps-base.yaml`.
+7. Document any manual steps (shell commands, Lovelace resources) in the app's README or setup docs.

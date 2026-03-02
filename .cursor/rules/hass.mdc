@@ -24,7 +24,7 @@ Try to keep calls to the MCP server at a minimum. Much of the context you will n
 
 ## AppDaemon
 
-AddDaemon has it's own rules that apply to the folders. It is recommended agents are familiar with it's documentation from [here](https://appdaemon.readthedocs.io/en/latest/) before programming the apps as they are not stadard python programs but plug-in to the AppDaemon docker which manages their execution. AppDaemon is also setup to run in the .venv or .venv-wsl directories of this repositories so we can test new apps and features before deploying them to the production server. Deployment is handled with a script that copies the files to the docker's config share, mounted at x:/. 
+AddDaemon has it's own rules that apply to the folders. It is recommended agents are familiar with it's documentation from [here](https://appdaemon.readthedocs.io/en/latest/) before programming the apps as they are not stadard python programs but plug-in to the AppDaemon docker which manages their execution. AppDaemon is also setup to run in the .venv or .venv-wsl directories of this repositories so we can test new apps and features before deploying them to the production server. Deployment is handled with a script that copies the files to the docker's config share, mounted at x:/. **Never run `deploy.py` automatically** — `X:\` is not always mounted. Only deploy when the user explicitly asks.
 
 ## Cursor mdc Rules
 
@@ -59,6 +59,15 @@ Cursor .mdc rulesets in the project are often configured by globs since you do n
 ## Critical Information
 
 Some domain knowledge will be difficult to pick up from the files in this repo alone. This section will be used for that which is critical. 
+
+### Frontend must work without admin access
+
+- **Desktop** (admin account): Used for configuration, creating helpers/automations, editing dashboards.
+- **Tablets / phones / wall displays**: Each has a **non-admin** device-specific account for a purpose-driven experience.
+- **Admin-only WebSocket/REST calls** (`fire_event`, `POST /api/events/`, etc.) **will silently fail** on these devices.
+- **`hass.callService()`** works for any authenticated user (respects entity-level permissions).
+- **Rule**: Any Lovelace card action that a non-admin user might trigger (buttons, controls, interactions) **must** use `callService` on helpers (e.g. `input_button.press`, `input_text.set_value`) — never `fire_event`.
+- Admin-only operations (config save, structural changes) may still use `fire_event` but should be clearly documented as such and should degrade gracefully (console warning, no broken UI).
 
 ### HA and AppDaemon container separation
 

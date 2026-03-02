@@ -4,6 +4,8 @@
 immich_fetcher:
   module: immich_fetcher.immich_fetcher_app
   class: ImmichFetcherApp
+  ha_url: !secret ha_url
+  ha_token: !secret token
   immich_url: !secret immich_url
   immich_api_key: !secret immich_api_key
   output_dir: /mnt/cephfs-hdd/misc/hass-media/immich-photos

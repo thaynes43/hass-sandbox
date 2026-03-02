@@ -25,7 +25,9 @@ mock_hass = MagicMock()
 mock_hass.Hass = type("_MockHass", (), {"__init__": lambda self, *a, **kw: None})
 sys.modules["hassapi"] = mock_hass
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
+_repo_root = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_repo_root / "apps"))
+sys.path.insert(0, str(_repo_root))
 
 from immich_fetcher.immich_fetcher_app import ImmichFetcherApp, SENSOR_ENTITY_ID
 from immich_fetcher.models import FetcherConfig, PhotoFilter
@@ -192,9 +194,7 @@ class TestInitialize:
             app.initialize()
 
             event_names = [c.args[1] for c in app.listen_event.call_args_list]
-            assert "immich_fetcher_update_config" in event_names
-            assert "immich_fetcher_refresh_now" in event_names
-            assert "immich_fetcher_sync_filter" in event_names
+            assert "immich_fetcher_command" in event_names
 
     def test_creates_output_dirs(self):
         with tempfile.TemporaryDirectory() as td:
@@ -581,7 +581,7 @@ class TestConfigUpdateEvent:
                 "update_interval_minutes": 30,
                 "download_quality": "preview",
             }
-            app._on_update_config("immich_fetcher_update_config", new_config_data, {})
+            app._handle_update_config(new_config_data)
 
             assert app._config.num_photos == 25
             assert len(app._config.filters) == 1
@@ -605,11 +605,7 @@ class TestConfigUpdateEvent:
             original_filters = app._config.filters[:]
 
             # Empty filters is invalid
-            app._on_update_config(
-                "immich_fetcher_update_config",
-                {"filters": [], "num_photos": 5},
-                {},
-            )
+            app._handle_update_config({"filters": [], "num_photos": 5})
 
             # Config unchanged
             assert app._config.filters == original_filters
@@ -633,7 +629,7 @@ class TestConfigUpdateEvent:
                 "update_interval_minutes": 15,
                 "download_quality": "preview",
             }
-            app._on_update_config("immich_fetcher_update_config", new_config_data, {})
+            app._handle_update_config(new_config_data)
 
             assert app._config.update_interval_minutes == 15
             assert app.cancel_timer.called
@@ -655,7 +651,11 @@ class TestRefreshNow:
             app.initialize()
             app.create_task.reset_mock()
 
-            app._on_refresh_now("immich_fetcher_refresh_now", {}, {})
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "refresh_now"},
+                {},
+            )
             assert app.create_task.called
 
 
@@ -1023,9 +1023,9 @@ class TestSyncFilter:
             app.initialize()
             app.create_task.reset_mock()
 
-            app._on_sync_filter(
-                "immich_fetcher_sync_filter",
-                {"filter_index": 2, "filter_name": "C"},
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "sync_filter", "payload": json.dumps({"filter_index": 2, "filter_name": "C"})},
                 {},
             )
 
@@ -1053,9 +1053,9 @@ class TestSyncFilter:
             app.initialize()
             app.create_task.reset_mock()
 
-            app._on_sync_filter(
-                "immich_fetcher_sync_filter",
-                {"filter_index": 1, "filter_name": "Nonexistent"},
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "sync_filter", "payload": json.dumps({"filter_index": 1, "filter_name": "Nonexistent"})},
                 {},
             )
 
@@ -1083,9 +1083,9 @@ class TestSyncFilter:
             app.initialize()
             app.create_task.reset_mock()
 
-            app._on_sync_filter(
-                "immich_fetcher_sync_filter",
-                {"filter_index": 0, "filter_name": "A"},
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "sync_filter", "payload": json.dumps({"filter_index": 0, "filter_name": "A"})},
                 {},
             )
 
@@ -1125,7 +1125,7 @@ class TestSyncFilter:
                 "update_interval_minutes": 60,
                 "download_quality": "preview",
             }
-            app._on_update_config("immich_fetcher_update_config", new_config_data, {})
+            app._handle_update_config(new_config_data)
 
             assert app._active_filter_index == 2  # preserved, not reset to 0
 
@@ -1155,7 +1155,7 @@ class TestSyncFilter:
                 "update_interval_minutes": 60,
                 "download_quality": "preview",
             }
-            app._on_update_config("immich_fetcher_update_config", new_config_data, {})
+            app._handle_update_config(new_config_data)
 
             assert app._active_filter_index == 0  # clamped to len-1
 
@@ -1183,7 +1183,7 @@ class TestSyncFilter:
                 "update_interval_minutes": 60,
                 "download_quality": "preview",
             }
-            app._on_update_config("immich_fetcher_update_config", new_config_data, {})
+            app._handle_update_config(new_config_data)
 
             log_messages = [
                 str(call.args[0]) for call in app.log.call_args_list
@@ -1208,7 +1208,7 @@ class TestSyncFilter:
                 "update_interval_minutes": 60,
                 "download_quality": "preview",
             }
-            app._on_update_config("immich_fetcher_update_config", new_config_data, {})
+            app._handle_update_config(new_config_data)
 
             # run_in should NOT have been called for auto-fetch
             for call in app.run_in.call_args_list:
@@ -1378,3 +1378,202 @@ class TestEmptyFilterTracking:
             empty_raw = attrs.get("empty_filters", "[]")
             empty_parsed = json.loads(empty_raw) if isinstance(empty_raw, str) else empty_raw
             assert "Broken" in empty_parsed
+
+
+# ---------------------------------------------------------------------------
+# F5: _async_startup / _provision_relay integration
+# ---------------------------------------------------------------------------
+
+class TestProvisionRelay:
+    @pytest.mark.asyncio
+    async def test_provision_relay_calls_ensure_script(self):
+        """_provision_relay passes correct relay config to HAProvisioner."""
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+                extra_args={
+                    "ha_url": "http://ha:8123",
+                    "ha_token": "test-token",
+                },
+            )
+            app.initialize()
+
+            mock_prov = MagicMock()
+            mock_prov.ensure_script = AsyncMock(return_value=False)
+
+            with patch(
+                "ha_provisioner.HAProvisioner",
+                return_value=mock_prov,
+            ) as mock_cls:
+                await app._provision_relay()
+
+            mock_cls.assert_called_once_with(ha_url="http://ha:8123", ha_token="test-token")
+            mock_prov.ensure_script.assert_called_once()
+
+            call_args = mock_prov.ensure_script.call_args
+            script_id = call_args.args[0]
+            config = call_args.args[1]
+
+            assert script_id == "immich_fetcher_relay"
+            assert config["alias"] == "Immich Fetcher Relay"
+            assert config["mode"] == "queued"
+            assert "command" in config["fields"]
+            assert "payload" in config["fields"]
+            assert config["sequence"][0]["event"] == "immich_fetcher_command"
+
+    @pytest.mark.asyncio
+    async def test_provision_relay_skips_without_credentials(self):
+        """_provision_relay returns early when ha_url/ha_token are missing."""
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+            )
+            app.initialize()
+
+            with patch(
+                "ha_provisioner.HAProvisioner",
+            ) as mock_cls:
+                await app._provision_relay()
+
+            mock_cls.assert_not_called()
+            app.log.assert_any_call(
+                "ha_url / ha_token not configured — skipping relay provisioning",
+                level="WARNING",
+            )
+
+    @pytest.mark.asyncio
+    async def test_provision_relay_catches_errors(self):
+        """_provision_relay logs errors but doesn't crash the app."""
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+                extra_args={
+                    "ha_url": "http://ha:8123",
+                    "ha_token": "test-token",
+                },
+            )
+            app.initialize()
+
+            mock_prov = MagicMock()
+            mock_prov.ensure_script = AsyncMock(side_effect=RuntimeError("connection refused"))
+
+            with patch(
+                "ha_provisioner.HAProvisioner",
+                return_value=mock_prov,
+            ):
+                await app._provision_relay()
+
+            error_logs = [
+                c for c in app.log.call_args_list
+                if c.args and "Failed to provision relay" in str(c.args[0])
+            ]
+            assert len(error_logs) == 1
+
+
+# ---------------------------------------------------------------------------
+# F6: _on_command end-to-end for update_config
+# ---------------------------------------------------------------------------
+
+class TestOnCommandRouting:
+    def test_update_config_routed_through_on_command(self):
+        """update_config via _on_command exercises JSON deserialization."""
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+            )
+            app.initialize()
+
+            new_cfg = {
+                "filters": [
+                    {"name": "Renamed", "selection": "all_photos"},
+                ],
+                "num_photos": 12,
+                "update_interval_minutes": 15,
+                "download_quality": "preview",
+            }
+
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "update_config", "payload": json.dumps(new_cfg)},
+                {},
+            )
+
+            assert app._config.filters[0].name == "Renamed"
+            assert app._config.num_photos == 12
+
+
+# ---------------------------------------------------------------------------
+# F7: _on_command edge cases
+# ---------------------------------------------------------------------------
+
+class TestOnCommandEdgeCases:
+    def test_unknown_command_logs_warning(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+            )
+            app.initialize()
+            app.log.reset_mock()
+
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "nonexistent_action"},
+                {},
+            )
+
+            warning_logs = [
+                c for c in app.log.call_args_list
+                if "Unknown command" in str(c.args[0])
+                and c.kwargs.get("level") == "WARNING"
+            ]
+            assert len(warning_logs) == 1
+
+    def test_malformed_json_payload_logs_warning(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+            )
+            app.initialize()
+            app.log.reset_mock()
+
+            app._on_command(
+                "immich_fetcher_command",
+                {"command": "update_config", "payload": "NOT VALID JSON{{{"},
+                {},
+            )
+
+            warning_logs = [
+                c for c in app.log.call_args_list
+                if "Invalid command payload" in str(c.args[0])
+                and c.kwargs.get("level") == "WARNING"
+            ]
+            assert len(warning_logs) == 1
+            assert app._config.filters[0].name == "Random"
+
+    def test_missing_command_key_logs_warning(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+            )
+            app.initialize()
+            app.log.reset_mock()
+
+            app._on_command(
+                "immich_fetcher_command",
+                {"payload": "{}"},
+                {},
+            )
+
+            warning_logs = [
+                c for c in app.log.call_args_list
+                if "Unknown command" in str(c.args[0])
+                and c.kwargs.get("level") == "WARNING"
+            ]
+            assert len(warning_logs) == 1
