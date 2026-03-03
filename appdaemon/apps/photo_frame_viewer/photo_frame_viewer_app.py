@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import json
 import os
+import sys
 import time
+from pathlib import Path
 from typing import Any, Optional
+
+# AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
+# live at `appdaemon/ha_provisioner`, so add the AppDaemon root directory.
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 import hassapi as hass
 
@@ -40,12 +47,15 @@ class PhotoFrameViewerApp(hass.Hass):
     ``os.listdir()`` (AppDaemon has filesystem access to ``/media/``),
     copies them into a versioned "generation" directory under
     ``/config/www/photo-frame/live/<gen>/`` via HA ``shell_command``
-    services, and keeps a dashboard ``input_select`` + ``input_text``
-    URL in sync.
+    services, and keeps a dashboard ``input_select`` + virtual sensor
+    in sync.
 
-    The generation swap ensures the displayed image is never a broken
-    link when the external service (Immich fetcher) refreshes the
-    source directory.
+    State (pause, interval, image URL, cache-bust) is published on a
+    virtual sensor ``sensor.<prefix>_photo_frame_status``.  An
+    ``input_select.<prefix>_photo_frame_image`` helper is auto-provisioned
+    for the image picker.  A relay script
+    ``script.<prefix>_photo_frame_relay`` is provisioned to allow the
+    Lovelace card to send commands without admin privileges.
     """
 
     IMAGE_EXTENSIONS: frozenset[str] = frozenset(
@@ -59,16 +69,12 @@ class PhotoFrameViewerApp(hass.Hass):
         "cleanup_shell_command": "photo_frame_cleanup_gen",
         "source_poll_interval_s": 30,
         "stage_settle_delay_s": 3,
-        "picker_entity_id": "input_select.wall_display_photo_frame_image",
-        "paused_entity_id": "input_boolean.wall_display_photo_frame_paused",
-        "interval_entity_id": "input_number.wall_display_photo_frame_interval_seconds",
-        "cache_bust_entity_id": "input_text.wall_display_photo_frame_cache_bust",
-        "image_local_url_entity_id": "input_text.wall_display_photo_frame_image_local_url",
         "fallback_image_path": "/config/www/immich-album/no-image.jpg",
         "options_max": 100,
         "refresh_options_every_s": 60,
         "auto_cycle": True,
         "reset_timer_on_manual_nav": True,
+        "default_interval_s": 10,
     }
 
     # ------------------------------------------------------------------
@@ -85,16 +91,33 @@ class PhotoFrameViewerApp(hass.Hass):
         self.cleanup_shell_command: str = str(cfg["cleanup_shell_command"])
         self.source_poll_interval_s: float = max(5.0, float(cfg["source_poll_interval_s"]))
         self.stage_settle_delay_s: float = max(1.0, float(cfg["stage_settle_delay_s"]))
-        self.picker_entity_id: str = str(cfg["picker_entity_id"])
-        self.paused_entity_id: str = str(cfg["paused_entity_id"])
-        self.interval_entity_id: str = str(cfg["interval_entity_id"])
-        self.cache_bust_entity_id: str = str(cfg["cache_bust_entity_id"])
-        self.image_local_url_entity_id: str = str(cfg["image_local_url_entity_id"])
         self.fallback_image_path: str = str(cfg["fallback_image_path"])
         self.options_max: int = max(1, int(cfg["options_max"]))
         self.refresh_options_every_s: float = max(10.0, float(cfg["refresh_options_every_s"]))
         self.auto_cycle: bool = _as_bool(cfg["auto_cycle"], True)
         self.reset_timer_on_manual_nav: bool = _as_bool(cfg["reset_timer_on_manual_nav"], True)
+
+        # Entity prefix — derives entity IDs for all provisioned entities.
+        self._entity_prefix: str = self._derive_entity_prefix(cfg)
+
+        # State persistence directory
+        state_dir_default = f"/media/photo-frame-viewer/{self._entity_prefix}"
+        self._state_dir: str = str(cfg.get("state_dir") or state_dir_default)
+        self._state_file: str = os.path.join(self._state_dir, "state.json")
+
+        # Derived entity IDs
+        self.picker_entity_id: str = str(
+            cfg.get("picker_entity_id")
+            or f"input_select.{self._entity_prefix}_photo_frame_image"
+        )
+        self._sensor_entity_id: str = f"sensor.{self._entity_prefix}_photo_frame_status"
+        self._relay_script_id: str = f"{self._entity_prefix}_photo_frame_relay"
+        self._command_event: str = f"{self._entity_prefix}_photo_frame_command"
+
+        # Internal state (replaces input_boolean and input_number helpers)
+        self._paused: bool = False
+        self._interval: float = self._load_interval(float(cfg.get("default_interval_s", 10)))
+        self._cache_bust: str = str(int(time.time()))
 
         # Slideshow timer
         self._timer_handle: Optional[Any] = None
@@ -119,28 +142,26 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pending_path_to_label: dict[str, str] = {}
         self._pending_fingerprint: Optional[str] = None
 
-        # Guard: suppress picker-change handler during programmatic updates
-        self._suppress_picker_handler: bool = False
-        # Flag set by _on_tick before select_next so _on_picker_change
-        # knows the change is tick-driven (not a manual button press).
-        self._tick_advance_pending: bool = False
+        # Timestamp of last programmatic picker change — absorbs async round-trip echoes.
+        self._last_programmatic_change: float = 0.0
+        self._PROGRAMMATIC_DEBOUNCE_S: float = 1.0
 
         self.log(
-            "PhotoFrameViewerApp init "
+            f"PhotoFrameViewerApp init "
+            f"prefix={self._entity_prefix} "
             f"source_dir={self.source_dir} "
             f"ha_source_dir={self.ha_source_dir} "
             f"ha_local_url_base={self.ha_local_url_base} "
-            f"picker={self.picker_entity_id}",
+            f"picker={self.picker_entity_id} "
+            f"sensor={self._sensor_entity_id}",
             level="INFO",
         )
 
-        # Recover generation counter from previously published URL
-        self._recover_gen_from_url()
+        # Recover generation counter from previously published virtual sensor
+        self._recover_gen_from_sensor()
 
-        # Watch selection (manual nav or our own auto-advance).
+        # Watch picker selection (manual nav or auto-advance echo).
         self.listen_state(self._on_picker_change, self.picker_entity_id)
-        self.listen_state(self._on_pause_change, self.paused_entity_id)
-        self.listen_state(self._on_interval_change, self.interval_entity_id)
 
         # Poll source directory for changes periodically.
         self._poll_handle = self.run_every(
@@ -151,6 +172,12 @@ class PhotoFrameViewerApp(hass.Hass):
 
         # React to fetcher batch-ready events for faster detection.
         self.listen_event(self._on_batch_ready, "immich_fetcher_batch_ready")
+
+        # Relay command listener — card sends commands via script that fires this event.
+        self.listen_event(self._on_command, self._command_event)
+
+        # Async startup: provision entities, then publish initial sensor state.
+        self.run_in(self._on_startup, 0)
 
         # Kick off: always stage on startup to guarantee files exist on HA.
         # If we recovered a gen, populate the picker first so the dashboard
@@ -164,14 +191,90 @@ class PhotoFrameViewerApp(hass.Hass):
         self._sync_timer(reason="init")
 
     # ------------------------------------------------------------------
+    # Entity prefix derivation
+    # ------------------------------------------------------------------
+
+    def _derive_entity_prefix(self, cfg: dict) -> str:
+        """Derive entity prefix from config or app instance name.
+
+        Priority:
+          1. ``entity_prefix`` key in apps.yaml
+          2. Suffix after ``photo_frame_viewer_`` in the app instance name
+          3. Fallback: ``wall_display``
+        """
+        explicit = cfg.get("entity_prefix")
+        if explicit:
+            return str(explicit)
+
+        try:
+            app_name = str(self.name) if hasattr(self, "name") else ""
+        except Exception:
+            app_name = ""
+
+        marker = "photo_frame_viewer_"
+        if marker in app_name:
+            suffix = app_name[app_name.index(marker) + len(marker):]
+            if suffix:
+                return suffix
+
+        return "wall_display"
+
+    # ------------------------------------------------------------------
+    # Interval persistence
+    # ------------------------------------------------------------------
+
+    def _load_interval(self, default: float) -> float:
+        """Load persisted interval from state file, or return default."""
+        try:
+            state_path = Path(self._state_file)
+            if state_path.is_file():
+                data = json.loads(state_path.read_text(encoding="utf-8"))
+                val = float(data.get("interval_seconds", default))
+                if val > 0:
+                    return max(1.0, val)
+        except Exception as exc:
+            self.log(
+                f"PhotoFrameViewerApp: failed to load interval state: {exc}",
+                level="WARNING",
+            )
+        return max(1.0, default)
+
+    def _save_interval(self) -> None:
+        """Persist current interval to state file."""
+        try:
+            os.makedirs(self._state_dir, exist_ok=True)
+            Path(self._state_file).write_text(
+                json.dumps({"interval_seconds": self._interval}),
+                encoding="utf-8",
+            )
+            self.log(
+                f"PhotoFrameViewerApp: interval persisted ({self._interval}s)",
+                level="DEBUG",
+            )
+        except Exception as exc:
+            self.log(
+                f"PhotoFrameViewerApp: failed to save interval state: {exc}",
+                level="ERROR",
+            )
+
+    # ------------------------------------------------------------------
     # Recovery
     # ------------------------------------------------------------------
 
-    def _recover_gen_from_url(self) -> None:
-        """On startup, recover the generation counter from the existing URL helper."""
-        raw = str(self.get_state(self.image_local_url_entity_id) or "").strip()
+    def _recover_gen_from_sensor(self) -> None:
+        """On startup, recover the generation counter from the existing virtual sensor."""
+        try:
+            state = self.get_state(self._sensor_entity_id, attribute="all")
+            if not isinstance(state, dict):
+                return
+            attrs = state.get("attributes", {})
+            raw = str(attrs.get("image_url", "")).strip()
+        except Exception:
+            return
+
         if not raw:
             return
+
         gen = parse_gen_id_from_url(raw, self.ha_local_url_base)
         if gen is not None:
             gen_int = int(gen)
@@ -179,9 +282,219 @@ class PhotoFrameViewerApp(hass.Hass):
             self._next_gen_counter = gen_int + 1
             self._last_published_local_url = raw
             self.log(
-                f"PhotoFrameViewerApp: recovered gen={gen} from url={raw!r}, "
+                f"PhotoFrameViewerApp: recovered gen={gen} from sensor url={raw!r}, "
                 f"next_counter={self._next_gen_counter}",
                 level="INFO",
+            )
+
+    # ------------------------------------------------------------------
+    # Startup + provisioning
+    # ------------------------------------------------------------------
+
+    def _on_startup(self, kwargs: Any) -> None:
+        """Async startup work wrapped in run_in callback."""
+        self.create_task(self._async_startup())
+
+    async def _async_startup(self) -> None:
+        await self._provision_entities()
+        self._publish_sensor_state()
+
+    async def _provision_entities(self) -> None:
+        """Provision relay script and input_select via ha_provisioner."""
+        ha_url = self.args.get("ha_url")
+        ha_token = self.args.get("ha_token")
+        if not ha_url or not ha_token:
+            self.log(
+                "ha_url / ha_token not configured — skipping entity provisioning",
+                level="WARNING",
+            )
+            return
+
+        from ha_provisioner import HAProvisioner
+
+        prov = HAProvisioner(ha_url=ha_url, ha_token=ha_token)
+
+        # Provision relay script
+        try:
+            prefix_title = self._entity_prefix.replace("_", " ").title()
+            created = await prov.ensure_script(
+                self._relay_script_id,
+                {
+                    "alias": f"{prefix_title} Photo Frame Relay",
+                    "description": "Relays dashboard commands to AppDaemon",
+                    "mode": "queued",
+                    "max": 10,
+                    "fields": {
+                        "command": {
+                            "name": "Command",
+                            "description": "Command name",
+                            "required": True,
+                            "selector": {"text": {}},
+                        },
+                        "payload": {
+                            "name": "Payload",
+                            "description": "JSON-encoded command data",
+                            "required": False,
+                            "selector": {"text": {}},
+                        },
+                    },
+                    "sequence": [
+                        {
+                            "event": self._command_event,
+                            "event_data": {
+                                "command": "{{ command }}",
+                                "payload": "{{ payload | default('{}') }}",
+                            },
+                        }
+                    ],
+                },
+            )
+            if created:
+                self.log(
+                    f"Relay script created: script.{self._relay_script_id}",
+                    level="INFO",
+                )
+            else:
+                self.log(
+                    f"Relay script already exists: script.{self._relay_script_id}",
+                    level="DEBUG",
+                )
+        except Exception as exc:
+            self.log(
+                f"PhotoFrameViewerApp: failed to provision relay script: {exc}",
+                level="ERROR",
+            )
+
+        # Provision input_select picker helper
+        try:
+            picker_name = (
+                f"{self._entity_prefix.replace('_', ' ').title()} Photo Frame Image"
+            )
+            created = await prov.ensure_helper("input_select", picker_name)
+            if created:
+                self.log(
+                    f"Picker helper created: {self.picker_entity_id}",
+                    level="INFO",
+                )
+            else:
+                self.log(
+                    f"Picker helper already exists: {self.picker_entity_id}",
+                    level="DEBUG",
+                )
+        except Exception as exc:
+            self.log(
+                f"PhotoFrameViewerApp: failed to provision picker helper: {exc}",
+                level="ERROR",
+            )
+
+    # ------------------------------------------------------------------
+    # Virtual sensor publishing
+    # ------------------------------------------------------------------
+
+    def _publish_sensor_state(self) -> None:
+        """Publish the virtual status sensor with all state as attributes."""
+        status = "paused" if self._paused else "playing"
+        self.set_state(
+            self._sensor_entity_id,
+            state=status,
+            attributes={
+                "image_url": self._last_published_local_url or "",
+                "cache_bust": self._cache_bust,
+                "paused": "true" if self._paused else "false",
+                "interval_seconds": self._interval,
+                "current_gen": self._current_gen_id or "",
+                "friendly_name": f"{self._entity_prefix.replace('_', ' ').title()} Photo Frame",
+            },
+        )
+
+    # ------------------------------------------------------------------
+    # Relay command handler
+    # ------------------------------------------------------------------
+
+    def _on_command(self, event_name: str, data: dict, kwargs: Any) -> None:
+        """Route relay commands from the dashboard card."""
+        cmd = data.get("command")
+        raw = data.get("payload", "{}")
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else (raw or {})
+        except (json.JSONDecodeError, TypeError):
+            self.log(
+                f"PhotoFrameViewerApp: invalid command payload: {raw!r}",
+                level="WARNING",
+            )
+            return
+
+        if cmd == "toggle_pause":
+            self._handle_toggle_pause()
+        elif cmd == "set_interval":
+            self._handle_set_interval(payload)
+        elif cmd == "next":
+            self._handle_next()
+        elif cmd == "previous":
+            self._handle_previous()
+        elif cmd == "select":
+            self._handle_select(payload)
+        else:
+            self.log(
+                f"PhotoFrameViewerApp: unknown command: {cmd!r}",
+                level="WARNING",
+            )
+
+    def _handle_toggle_pause(self) -> None:
+        self._paused = not self._paused
+        self.log(
+            f"PhotoFrameViewerApp: paused={self._paused} via relay",
+            level="INFO",
+        )
+        self._sync_timer(reason="toggle_pause")
+        self._publish_sensor_state()
+
+    def _handle_set_interval(self, payload: dict) -> None:
+        raw = payload.get("seconds")
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            self.log(
+                f"PhotoFrameViewerApp: set_interval invalid value: {raw!r}",
+                level="WARNING",
+            )
+            return
+        if seconds <= 0:
+            self.log(
+                f"PhotoFrameViewerApp: set_interval non-positive value: {seconds}",
+                level="WARNING",
+            )
+            return
+        self._interval = max(1.0, seconds)
+        self._save_interval()
+        self.log(
+            f"PhotoFrameViewerApp: interval={self._interval}s via relay",
+            level="INFO",
+        )
+        self._sync_timer(reason="set_interval")
+        self._publish_sensor_state()
+
+    def _handle_next(self) -> None:
+        self.call_service(
+            "input_select/select_next",
+            entity_id=self.picker_entity_id,
+            cycle=True,
+        )
+
+    def _handle_previous(self) -> None:
+        self.call_service(
+            "input_select/select_previous",
+            entity_id=self.picker_entity_id,
+            cycle=True,
+        )
+
+    def _handle_select(self, payload: dict) -> None:
+        image = payload.get("image", "")
+        if image:
+            self.call_service(
+                "input_select/select_option",
+                entity_id=self.picker_entity_id,
+                option=image,
             )
 
     # ------------------------------------------------------------------
@@ -414,9 +727,6 @@ class PhotoFrameViewerApp(hass.Hass):
         Called at the moment the displayed image would naturally change
         (tick advance, manual nav, or first-gen init) so the user never
         sees an unexpected image swap.
-
-        Uses ``_suppress_picker_handler`` to prevent the programmatic
-        picker update from cascading back through ``_on_picker_change``.
         """
         if self._pending_gen_id is None:
             return
@@ -424,34 +734,32 @@ class PhotoFrameViewerApp(hass.Hass):
         pending_labels = self._pending_labels[:]
         self._finalize_pending(reason=reason)
 
-        self._suppress_picker_handler = True
-        try:
-            existing_opts = self._picker_options()
-            if existing_opts != pending_labels:
-                self.log(
-                    f"PhotoFrameViewerApp: updating picker options "
-                    f"count={len(pending_labels)} reason=apply_{reason}",
-                    level="INFO",
-                )
-                self.call_service(
-                    "input_select/set_options",
-                    entity_id=self.picker_entity_id,
-                    options=pending_labels,
-                )
+        self._last_programmatic_change = time.time()
 
-            if pending_labels:
-                first_label = pending_labels[0]
-                self.call_service(
-                    "input_select/select_option",
-                    entity_id=self.picker_entity_id,
-                    option=first_label,
-                )
-                self._publish_selected_local_url(first_label, reason=reason)
-        finally:
-            self._suppress_picker_handler = False
+        existing_opts = self._picker_options()
+        if existing_opts != pending_labels:
+            self.log(
+                f"PhotoFrameViewerApp: updating picker options "
+                f"count={len(pending_labels)} reason=apply_{reason}",
+                level="INFO",
+            )
+            self.call_service(
+                "input_select/set_options",
+                entity_id=self.picker_entity_id,
+                options=pending_labels,
+            )
+
+        if pending_labels:
+            first_label = pending_labels[0]
+            self.call_service(
+                "input_select/select_option",
+                entity_id=self.picker_entity_id,
+                option=first_label,
+            )
+            self._publish_selected_local_url(first_label, reason=reason)
 
     def _publish_selected_local_url(self, label: str, *, reason: str) -> None:
-        """Publish the ``/local/...`` URL for the selected label."""
+        """Publish the ``/local/...`` URL for the selected label via the virtual sensor."""
         label = str(label or "").strip()
         path = (self._label_to_path.get(label) or "").strip()
 
@@ -469,13 +777,9 @@ class PhotoFrameViewerApp(hass.Hass):
             f"label={label!r} gen={gen_id} reason={reason}",
             level="DEBUG",
         )
-        self.call_service(
-            "input_text/set_value",
-            entity_id=self.image_local_url_entity_id,
-            value=local_url,
-        )
         self._last_published_local_url = local_url
-        self._touch_cache_bust()
+        self._cache_bust = str(int(time.time()))
+        self._publish_sensor_state()
 
     def _finalize_pending(self, *, reason: str) -> None:
         """Promote pending gen to current and clean up the old gen."""
@@ -515,27 +819,15 @@ class PhotoFrameViewerApp(hass.Hass):
             gen_id=gen_id,
         )
 
-    def _touch_cache_bust(self) -> None:
-        value = str(int(time.time()))
-        self.call_service(
-            "input_text/set_value",
-            entity_id=self.cache_bust_entity_id,
-            value=value,
-        )
-
     # ------------------------------------------------------------------
     # HA state helpers
     # ------------------------------------------------------------------
 
     def _is_paused(self) -> bool:
-        return str(self.get_state(self.paused_entity_id) or "").strip().lower() == "on"
+        return self._paused
 
     def _interval_s(self) -> float:
-        raw = self.get_state(self.interval_entity_id)
-        seconds = _safe_float(raw, default=10.0)
-        if seconds <= 0:
-            seconds = 10.0
-        return max(1.0, seconds)
+        return self._interval
 
     def _picker_options(self) -> list[str]:
         st = self.get_state(self.picker_entity_id, attribute="all")
@@ -601,16 +893,22 @@ class PhotoFrameViewerApp(hass.Hass):
         self._poll_for_changes(reason="batch_ready")
 
     def _on_picker_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
-        if self._suppress_picker_handler:
-            return
         new_label = str(new or "").strip()
         if not new_label:
             return
 
-        # Tick-driven advance: publish quietly and return.
-        if self._tick_advance_pending:
-            self._tick_advance_pending = False
-            self._publish_selected_local_url(new_label, reason="tick")
+        # Ignore attribute-only updates where the selected value didn't change.
+        old_label = str(old or "").strip()
+        if new_label == old_label:
+            return
+
+        # Absorb async state-change events from our own programmatic calls.
+        if time.time() - self._last_programmatic_change < self._PROGRAMMATIC_DEBOUNCE_S:
+            self.log(
+                f"PhotoFrameViewerApp: ignoring picker echo {new_label!r} "
+                f"(debounce)",
+                level="DEBUG",
+            )
             return
 
         # Manual navigation while a pending gen is queued.
@@ -629,12 +927,6 @@ class PhotoFrameViewerApp(hass.Hass):
         if self.reset_timer_on_manual_nav:
             self._schedule_next(reason="manual_nav")
 
-    def _on_pause_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
-        self._sync_timer(reason="pause_change")
-
-    def _on_interval_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
-        self._sync_timer(reason="interval_change")
-
     def _on_tick(self, kwargs: Any) -> None:
         self._timer_handle = None
         if self._is_paused():
@@ -649,10 +941,26 @@ class PhotoFrameViewerApp(hass.Hass):
             self._schedule_next(reason="tick_no_options")
             return
 
-        self._tick_advance_pending = True
+        # Compute next label locally instead of calling select_next and
+        # waiting for the async state-change round-trip.  This avoids the
+        # race where the echo event arrives after the debounce flag clears.
+        current = self._picker_value()
+        try:
+            idx = opts.index(current)
+        except ValueError:
+            idx = -1
+
+        if self.auto_cycle:
+            next_idx = (idx + 1) % len(opts)
+        else:
+            next_idx = min(idx + 1, len(opts) - 1)
+        next_label = opts[next_idx]
+
+        self._last_programmatic_change = time.time()
         self.call_service(
-            "input_select/select_next",
+            "input_select/select_option",
             entity_id=self.picker_entity_id,
-            cycle=self.auto_cycle,
+            option=next_label,
         )
+        self._publish_selected_local_url(next_label, reason="tick")
         self._schedule_next(reason="tick")

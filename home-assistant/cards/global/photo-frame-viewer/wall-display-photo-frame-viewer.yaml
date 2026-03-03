@@ -15,8 +15,9 @@ cards:
       .bubble-sub-button-2 {
         background-color: ${(() => {
           const active = 'rgba(var(--rgb-accent-color), 0.45)';
-          const paused = hass.states['input_boolean.wall_display_photo_frame_paused']?.state;
-          return paused === 'on' ? active : '';
+          const sensor = hass.states['sensor.wall_display_photo_frame_status'];
+          const paused = sensor?.attributes?.paused;
+          return paused === 'true' || paused === true ? active : '';
         })()} !important;
       }
     sub_button:
@@ -34,9 +35,13 @@ cards:
           icon: mdi:pause
           tap_action:
             action: call-service
-            service: input_boolean.toggle
+            service: script.turn_on
             target:
-              entity_id: input_boolean.wall_display_photo_frame_paused
+              entity_id: script.wall_display_photo_frame_relay
+            data:
+              variables:
+                command: toggle_pause
+                payload: "{}"
         - sub_button_type: button
           icon: mdi:chevron-right
           tap_action:
@@ -66,5 +71,5 @@ cards:
   - type: markdown
     content: >-
       <img style="width: 100%; height: auto;" src="{{
-      states('input_text.wall_display_photo_frame_image_local_url') }}?cb={{
-      states('input_text.wall_display_photo_frame_cache_bust') }}" />
+      state_attr('sensor.wall_display_photo_frame_status', 'image_url') }}?cb={{
+      state_attr('sensor.wall_display_photo_frame_status', 'cache_bust') }}" />

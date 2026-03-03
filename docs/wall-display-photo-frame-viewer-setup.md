@@ -1,6 +1,9 @@
 # Wall Display Photo Frame Viewer
 
-AppDaemon app + Lovelace dashboard card for a photo slideshow on a wall-mounted display. Photos are sourced from Immich via an external fetcher and displayed without ever showing a broken image, even when the fetcher refreshes the batch.
+AppDaemon app + Lovelace dashboard card for a photo slideshow on a
+wall-mounted display.  Photos are sourced from Immich via an external fetcher
+and displayed without ever showing a broken image, even when the fetcher
+refreshes the batch.
 
 ## How it works
 
@@ -8,8 +11,7 @@ AppDaemon app + Lovelace dashboard card for a photo slideshow on a wall-mounted 
 Immich fetcher                  AppDaemon                         Dashboard
  (writes to NFS)            (PhotoFrameViewerApp)            (markdown <img>)
        |                           |                               |
-       |  /config/www/             |                               |
-       |  immich-album/            |                               |
+       |  /media/immich-photos/    |                               |
        |  ├── IMG_001.jpg   poll   |                               |
        |  └── IMG_002.jpg -------> | fingerprint changed?          |
        |                           |   yes -> call shell_command   |
@@ -25,15 +27,20 @@ Immich fetcher                  AppDaemon                         Dashboard
        |                           | (picker shows new filenames)  |
        |                           |                               |
        |                           | on next advance (tick/nav):   |
-       |                           |   set input_text URL -------> | displays image
+       |                           |   publish sensor URL -------> | displays image
        |                           |   cleanup old gen dir         |
 ```
 
 ### Generation swap
 
-The external Immich fetcher periodically deletes and replaces files in `/config/www/immich-album/`. If the dashboard pointed at those files directly, it would show broken images during a refresh.
+The external Immich fetcher periodically deletes and replaces files.  If the
+dashboard pointed at those files directly, it would show broken images during
+a refresh.
 
-Instead, AppDaemon copies each batch into a versioned **generation directory** (`/config/www/photo-frame/live/<gen_id>/`) via an HA `shell_command`. The dashboard URL always points at a gen directory that is guaranteed to exist. When a new batch arrives:
+Instead, AppDaemon copies each batch into a versioned **generation directory**
+(`/config/www/photo-frame/live/<gen_id>/`) via an HA `shell_command`.  The
+dashboard URL always points at a gen directory that is guaranteed to exist.
+When a new batch arrives:
 
 1. A new gen directory is created atomically (copy to temp, then `mv`).
 2. The `input_select` picker updates to reflect the new filenames.
@@ -41,9 +48,25 @@ Instead, AppDaemon copies each batch into a versioned **generation directory** (
 4. On the next slideshow advance (or manual nav), the URL moves to the new gen.
 5. Only then is the old gen directory deleted.
 
-This means a paused slideshow keeps its current image visible indefinitely, even after multiple batch refreshes.
+This means a paused slideshow keeps its current image visible indefinitely,
+even after multiple batch refreshes.
 
-## Prerequisites
+### Self-provisioning
+
+`PhotoFrameViewerApp` provisions its own HA entities on startup via
+`ha_provisioner`.  No manual helper creation is needed.
+
+Provisioned entities:
+- `input_select.wall_display_photo_frame_image` — image picker
+- `script.wall_display_photo_frame_relay` — card-to-AppDaemon command relay
+
+State (paused, interval, image URL, cache-bust) is published on a virtual
+sensor `sensor.wall_display_photo_frame_status` as attributes.  Dashboard
+cards read this sensor; they do not write to separate helpers.
+
+---
+
+## Setup
 
 ### 1. Filesystem directory
 
@@ -97,21 +120,25 @@ shell_command:
 
 Restart Home Assistant to register the new shell commands.
 
-### 3. Helpers (entity IDs)
+### 3. Fallback image
 
-Create these via the HA UI (or they may already exist):
+Ensure `/config/www/immich-album/no-image.jpg` (or the path you configure for
+`fallback_image_path`) exists as a fallback when no photos are available.
 
-| Entity ID | Type | Purpose |
-|---|---|---|
-| `input_select.wall_display_photo_frame_image` | input_select | Image picker (populated by AppDaemon) |
-| `input_boolean.wall_display_photo_frame_paused` | input_boolean | Pause/resume slideshow |
-| `input_number.wall_display_photo_frame_interval_seconds` | input_number | Seconds between slides |
-| `input_text.wall_display_photo_frame_cache_bust` | input_text | Cache-bust token (managed by AppDaemon) |
-| `input_text.wall_display_photo_frame_image_local_url` | input_text | Currently displayed image URL (managed by AppDaemon) |
+### 4. No manual helpers required
 
-### 4. Fallback image
+The app provisions the `input_select` and relay script automatically on
+startup.  Previously, several helpers had to be created manually — they have
+been replaced by internal AppDaemon state and the virtual sensor.
 
-Ensure `/config/www/immich-album/no-image.jpg` exists as a fallback when no photos are available.
+If upgrading from an older version that had these helpers, they can be deleted
+after verifying the new app is running correctly:
+- `input_boolean.wall_display_photo_frame_paused`
+- `input_number.wall_display_photo_frame_interval_seconds`
+- `input_text.wall_display_photo_frame_cache_bust`
+- `input_text.wall_display_photo_frame_image_local_url`
+
+---
 
 ## Dashboard cards
 
@@ -120,17 +147,21 @@ Card YAML snippets (copy-paste into the Lovelace manual editor):
 - **Viewer + controls**: `home-assistant/cards/global/photo-frame-viewer/wall-display-photo-frame-viewer.yaml`
 - **Settings popup**: `home-assistant/cards/global/photo-frame-viewer/wall-display-photo-frame-settings.yaml`
 
-The viewer card displays:
+The viewer card reads image URL and cache-bust from the virtual sensor:
 
 ```yaml
 type: markdown
 content: >-
   <img style="width: 100%; height: auto;" src="{{
-  states('input_text.wall_display_photo_frame_image_local_url') }}?cb={{
-  states('input_text.wall_display_photo_frame_cache_bust') }}" />
+  state_attr('sensor.wall_display_photo_frame_status', 'image_url')
+  }}?cb={{
+  state_attr('sensor.wall_display_photo_frame_status', 'cache_bust') }}" />
 ```
 
-The URL is path-agnostic -- it works regardless of which gen directory is active.
+Pause/next/previous buttons call `script.wall_display_photo_frame_relay` via
+`script.turn_on` (works for non-admin accounts — no `fire_event` required).
+
+---
 
 ## AppDaemon config
 
@@ -140,36 +171,62 @@ In `appdaemon/apps/apps.yaml` (or `apps-dev.yaml` for local dev):
 photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
-  source_sensor_entity_id: sensor.immich_album
-  source_dir: /config/www/immich-album
+  ha_url: !secret ha_url
+  ha_token: !secret token
+  source_dir: /media/immich-photos
   ha_local_url_base: /local/photo-frame/live
   stage_shell_command: photo_frame_stage_gen
   cleanup_shell_command: photo_frame_cleanup_gen
   source_poll_interval_s: 30
   stage_settle_delay_s: 3
-  picker_entity_id: input_select.wall_display_photo_frame_image
-  paused_entity_id: input_boolean.wall_display_photo_frame_paused
-  interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
-  cache_bust_entity_id: input_text.wall_display_photo_frame_cache_bust
-  image_local_url_entity_id: input_text.wall_display_photo_frame_image_local_url
   fallback_image_path: /config/www/immich-album/no-image.jpg
-  options_max: 50
+  options_max: 100
   refresh_options_every_s: 60
   auto_cycle: true
+  default_interval_s: 10
+  state_dir: /media/photo-frame-viewer/wall_display
 ```
 
 ### Key config parameters
 
-- `source_dir`: The NFS directory the Immich fetcher writes to (read-only from AppDaemon's perspective).
-- `ha_local_url_base`: URL prefix for gen directories (maps to `/config/www/photo-frame/live/`).
-- `stage_shell_command` / `cleanup_shell_command`: Names of the HA shell commands.
-- `source_poll_interval_s`: How often to check for source changes (seconds).
-- `stage_settle_delay_s`: Delay after calling the stage shell_command before marking the gen ready.
+| Key | Default | Description |
+|---|---|---|
+| `ha_url` | — | Home Assistant URL (required for provisioning) |
+| `ha_token` | — | Long-lived access token (required for provisioning) |
+| `source_dir` | `/media/immich-photos` | NFS directory the Immich fetcher writes to |
+| `ha_local_url_base` | `/local/photo-frame/live` | URL prefix mapping to `/config/www/photo-frame/live/` |
+| `stage_shell_command` | `photo_frame_stage_gen` | HA shell_command name for staging a gen |
+| `cleanup_shell_command` | `photo_frame_cleanup_gen` | HA shell_command name for deleting an old gen |
+| `source_poll_interval_s` | `30` | How often to check for source changes (seconds) |
+| `stage_settle_delay_s` | `3` | Delay after staging before marking the gen ready |
+| `default_interval_s` | `10` | Default slideshow interval (overridden by user via relay) |
+| `state_dir` | `/media/photo-frame-viewer/<prefix>` | Directory for persisting interval across restarts |
+| `entity_prefix` | derived from instance name | Override entity ID prefix (see below) |
+
+### Entity prefix
+
+Entity IDs are derived from the app instance name in `apps.yaml`:
+
+```
+Instance:  photo_frame_viewer_wall_display
+Prefix:    wall_display
+
+Entities:
+  sensor.wall_display_photo_frame_status
+  input_select.wall_display_photo_frame_image
+  script.wall_display_photo_frame_relay
+```
+
+To use a custom prefix, add `entity_prefix: my_prefix` to the app config.
+
+---
 
 ## External service: Immich fetcher
 
-The Immich fetcher (`hass-immich-addon` repo) runs as a separate Kubernetes pod. It periodically queries the Immich API and writes photos to `/config/www/immich-album/` via a shared NFS mount between the addon pod and HA's pod.
+The Immich fetcher (`hass-immich-addon` repo) runs as a separate Kubernetes
+pod.  It periodically queries the Immich API and writes photos to
+`/media/immich-photos/` via the shared `/media` NFS mount.
 
-The `sensor.immich_album` entity (from the HA `folder_watcher` or `folder` integration) exposes `attributes.file_list` with the current file paths. AppDaemon polls this attribute to detect changes.
-
-> **Tech debt**: This NFS mount on `/config/www/` predates the `/media` convention. See `docs/image-view-roadmap.md` for the planned migration to `/media/immich-album/`.
+> **Tech debt**: An older NFS mount still exists between the Immich addon pod
+> and HA's pod at `/config/www/immich-album/`.  See
+> `docs/image-view-roadmap.md` for the planned migration to `/media/`.

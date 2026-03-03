@@ -2,6 +2,11 @@
 
 Uses the same mocked-AppDaemon pattern as test_detection_summary.py.
 The viewer now reads source files via os.listdir() instead of a sensor.
+
+After the provisioner migration, state (paused, interval, image_url) is
+held internally and published on a virtual sensor rather than individual
+helper entities.  Tests that previously relied on the paused/interval
+helpers now set internal state directly after initialize().
 """
 
 from __future__ import annotations
@@ -24,6 +29,10 @@ from photo_frame_viewer.photo_frame_viewer_app import PhotoFrameViewerApp
 
 SOURCE_FILENAMES = ["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"]
 
+# Entity IDs derived from the default prefix "wall_display"
+_SENSOR_ENTITY_ID = "sensor.wall_display_photo_frame_status"
+_PICKER_ENTITY_ID = "input_select.wall_display_photo_frame_image"
+
 
 def _make_app(
     *,
@@ -32,7 +41,6 @@ def _make_app(
     current_url: str = "",
     picker_value: str = "",
     picker_options: list[str] | None = None,
-    paused: bool = False,
     extra_args: dict | None = None,
 ) -> PhotoFrameViewerApp:
     """Create a PhotoFrameViewerApp with mocked AppDaemon methods.
@@ -41,6 +49,9 @@ def _make_app(
     *source_filenames* (defaults to SOURCE_FILENAMES) written as empty
     files.  The caller is responsible for cleanup if they care, but
     since these are under /tmp they'll be garbage collected.
+
+    To test paused behaviour, call ``app.initialize()`` first and then
+    set ``app._paused = True`` before triggering the relevant actions.
     """
     if source_filenames is None:
         source_filenames = list(SOURCE_FILENAMES)
@@ -63,33 +74,35 @@ def _make_app(
         "cleanup_shell_command": "photo_frame_cleanup_gen",
         "source_poll_interval_s": 30,
         "stage_settle_delay_s": 3,
-        "picker_entity_id": "input_select.wall_display_photo_frame_image",
-        "paused_entity_id": "input_boolean.wall_display_photo_frame_paused",
-        "interval_entity_id": "input_number.wall_display_photo_frame_interval_seconds",
-        "cache_bust_entity_id": "input_text.wall_display_photo_frame_cache_bust",
-        "image_local_url_entity_id": "input_text.wall_display_photo_frame_image_local_url",
+        "picker_entity_id": _PICKER_ENTITY_ID,
         "fallback_image_path": os.path.join(source_dir, "no-image.jpg"),
         "options_max": 50,
         "refresh_options_every_s": 60,
         "auto_cycle": True,
+        "state_dir": source_dir,
     }
     if extra_args:
         base_args.update(extra_args)
     app.args = base_args
 
+    # AppDaemon sets app.name to the instance name; set it so prefix
+    # derivation produces a stable "wall_display" prefix in tests.
+    app.name = "photo_frame_viewer_wall_display"
+
     if picker_options is None:
         picker_options = []
 
     def fake_get_state(entity_id, attribute=None):
-        if entity_id == "input_text.wall_display_photo_frame_image_local_url":
+        # Virtual status sensor — used by _recover_gen_from_sensor()
+        if entity_id == _SENSOR_ENTITY_ID:
             if attribute == "all":
-                return {"state": current_url, "attributes": {}}
-            return current_url
-        if entity_id == "input_boolean.wall_display_photo_frame_paused":
-            return "on" if paused else "off"
-        if entity_id == "input_number.wall_display_photo_frame_interval_seconds":
-            return "10.0"
-        if entity_id == "input_select.wall_display_photo_frame_image":
+                return {
+                    "state": "playing",
+                    "attributes": {"image_url": current_url},
+                }
+            return "playing"
+        # Picker entity
+        if entity_id == _PICKER_ENTITY_ID:
             if attribute == "all":
                 return {
                     "state": picker_value,
@@ -99,16 +112,17 @@ def _make_app(
         return None
 
     app.get_state = MagicMock(side_effect=fake_get_state)
+    app.set_state = MagicMock()
     app.call_service = MagicMock()
     app.listen_state = MagicMock()
     app.listen_event = MagicMock()
-    app.fire_event = MagicMock()
     app.run_every = MagicMock()
     app.run_in = MagicMock()
     app.cancel_timer = MagicMock()
     app.timer_running = MagicMock(return_value=False)
     app.datetime = MagicMock()
     app.log = MagicMock()
+    app.create_task = MagicMock()
 
     return app
 
@@ -240,9 +254,9 @@ class TestPendingSwap:
             current_url=url,
             picker_value="IMG_001.jpg",
             picker_options=["IMG_001.jpg"],
-            paused=True,
         )
         app.initialize()
+        app._paused = True  # Pause after initialize() to avoid reset
         app._on_stage_settled({})
         app.call_service.reset_mock()
 
@@ -264,13 +278,14 @@ class TestPendingSwap:
             current_url=url,
             picker_value="IMG_001.jpg",
             picker_options=["IMG_001.jpg", "IMG_002.jpg"],
-            paused=True,
         )
         app.initialize()
+        app._paused = True  # Pause after initialize() to avoid reset
         app._on_stage_settled({})
         url_after_init = app._last_published_local_url
 
         app.call_service.reset_mock()
+        app.set_state.reset_mock()
 
         _replace_source_files(app.source_dir, ["BRAND_NEW.jpg"])
         app._poll_for_changes(reason="test")
@@ -280,12 +295,13 @@ class TestPendingSwap:
         assert app._current_gen_id == "3"
         assert app._last_published_local_url == url_after_init
 
-        url_calls = [
-            c for c in app.call_service.call_args_list
-            if c.args and c.args[0] == "input_text/set_value"
-            and c.kwargs.get("entity_id") == "input_text.wall_display_photo_frame_image_local_url"
-        ]
-        assert len(url_calls) == 0
+        # set_state should not have been called with a new image_url while paused
+        for c in app.set_state.call_args_list:
+            attrs = c[1].get("attributes", {})
+            published_url = attrs.get("image_url", "")
+            assert published_url == "" or published_url == url_after_init, (
+                f"Paused slideshow published unexpected URL: {published_url}"
+            )
 
         set_opts = _set_options_calls(app)
         assert len(set_opts) == 0

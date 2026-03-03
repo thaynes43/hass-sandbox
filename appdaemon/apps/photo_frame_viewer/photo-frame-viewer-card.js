@@ -2,28 +2,34 @@
  * Photo Frame Viewer Card
  *
  * Custom Lovelace card for controlling the photo frame slideshow.
- * Reads/writes HA entities for pause, interval, and image selection.
+ * Reads state from sensor.<prefix>_photo_frame_status attributes.
+ * Sends pause/interval commands via the relay script.
+ * Navigation (prev/next) uses input_select directly.
  * Designed to visually match the Immich Fetcher Config card.
  */
 
-const PFV_ENTITIES = {
-  paused: "input_boolean.wall_display_photo_frame_paused",
-  interval: "input_number.wall_display_photo_frame_interval_seconds",
-  picker: "input_select.wall_display_photo_frame_image",
-  imageUrl: "input_text.wall_display_photo_frame_image_local_url",
+const PFV_DEFAULTS = {
+  status_entity: "sensor.wall_display_photo_frame_status",
+  picker_entity: "input_select.wall_display_photo_frame_image",
+  relay_script: "wall_display_photo_frame_relay",
+  min_interval: 1,
+  max_interval: 120,
+  step_interval: 1,
 };
 
 class PhotoFrameViewerCard extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._config = {};
+    this._config = { ...PFV_DEFAULTS };
     this._hass = null;
     this._lastSnapshot = null;
+    this._delegatedBound = false;
+    this._intervalDebounce = null;
   }
 
   setConfig(config) {
-    this._config = config;
+    this._config = { ...PFV_DEFAULTS, ...config };
   }
 
   set hass(hass) {
@@ -40,23 +46,46 @@ class PhotoFrameViewerCard extends HTMLElement {
     this._render();
   }
 
+  // ── State helpers ─────────────────────────────────────────────────
+
   _snapshot() {
     if (!this._hass) return null;
-    const parts = Object.values(PFV_ENTITIES).map((eid) => {
-      const s = this._hass.states[eid];
-      return s ? `${s.state}|${s.last_updated}` : "?";
-    });
-    return parts.join("~");
+    const ss = this._hass.states[this._config.status_entity];
+    const ps = this._hass.states[this._config.picker_entity];
+    const statusPart = ss
+      ? `${ss.state}|${JSON.stringify(ss.attributes)}`
+      : "?";
+    const pickerPart = ps
+      ? `${ps.state}|${JSON.stringify(ps.attributes.options)}`
+      : "?";
+    return `${statusPart}~${pickerPart}`;
   }
 
-  _state(entityId) {
-    const s = this._hass?.states?.[entityId];
-    return s ? s.state : null;
-  }
-
-  _attr(entityId, attr) {
-    const s = this._hass?.states?.[entityId];
+  _sensorAttr(attr) {
+    const s = this._hass?.states?.[this._config.status_entity];
     return s?.attributes?.[attr];
+  }
+
+  _pickerState() {
+    return this._hass?.states?.[this._config.picker_entity];
+  }
+
+  // ── Service calls ─────────────────────────────────────────────────
+
+  /**
+   * Send a command to AppDaemon via the relay script.
+   * Uses callService (works for all authenticated users, including non-admin).
+   */
+  _callRelay(command, data) {
+    if (!this._hass) return;
+    this._hass
+      .callService("script", this._config.relay_script, {
+        command,
+        payload: JSON.stringify(data || {}),
+      })
+      .catch((err) => {
+        console.warn("photo-frame-viewer-card: relay failed", command, err);
+      });
   }
 
   _callService(domain, service, data) {
@@ -67,13 +96,26 @@ class PhotoFrameViewerCard extends HTMLElement {
   // ── Render ────────────────────────────────────────────────────────
 
   _render() {
-    const paused = this._state(PFV_ENTITIES.paused) === "on";
-    const interval = parseFloat(this._state(PFV_ENTITIES.interval)) || 5;
-    const currentLabel = this._state(PFV_ENTITIES.picker) || "—";
-    const options = this._attr(PFV_ENTITIES.picker, "options") || [];
-    const minInterval = this._attr(PFV_ENTITIES.interval, "min") ?? 1;
-    const maxInterval = this._attr(PFV_ENTITIES.interval, "max") ?? 30;
-    const stepInterval = this._attr(PFV_ENTITIES.interval, "step") ?? 1;
+    // Don't re-render while a text input is focused (prevents focus loss on typing).
+    // Range sliders are exempt — they don't lose meaningful state on re-render.
+    const active = this.shadowRoot?.activeElement;
+    if (active) {
+      const tag = active.tagName;
+      const isText = tag === "TEXTAREA" ||
+        (tag === "INPUT" && active.type !== "range");
+      if (isText) return;
+    }
+
+    const paused = this._sensorAttr("paused") === "true";
+    const interval =
+      parseFloat(this._sensorAttr("interval_seconds")) ||
+      this._config.min_interval;
+    const pickerSt = this._pickerState();
+    const currentLabel = pickerSt?.state || "—";
+    const options = pickerSt?.attributes?.options || [];
+    const minInterval = this._config.min_interval;
+    const maxInterval = this._config.max_interval;
+    const stepInterval = this._config.step_interval;
 
     const statusIcon = paused ? "mdi:pause-circle" : "mdi:play-circle";
     const statusLabel = paused ? "Paused" : "Playing";
@@ -139,52 +181,104 @@ class PhotoFrameViewerCard extends HTMLElement {
         </div>
       </ha-card>
     `;
-    this._attachEventListeners();
+    this._ensureDelegatedListeners();
   }
 
-  // ── Event Listeners ───────────────────────────────────────────────
+  // ── Delegated event handling ───────────────────────────────────────
 
-  _attachEventListeners() {
+  /**
+   * Single delegated event system on the shadow root.
+   * Handles touch deduplication so actions don't fire twice on touch devices.
+   */
+  _ensureDelegatedListeners() {
+    if (this._delegatedBound) return;
+    this._delegatedBound = true;
+
     const root = this.shadowRoot;
+    let touchActive = false;
+    let touchCancelled = false;
 
-    root.querySelectorAll("[data-action]").forEach((el) => {
+    const findTarget = (e) => {
+      for (const el of e.composedPath()) {
+        if (el instanceof Element && el.dataset?.action) return el;
+      }
+      return null;
+    };
+
+    const dispatchAction = (el) => {
       const action = el.dataset.action;
-
       if (action === "toggle-pause") {
-        el.addEventListener("click", () => {
-          const paused = this._state(PFV_ENTITIES.paused) === "on";
-          this._callService("input_boolean", paused ? "turn_off" : "turn_on", {
-            entity_id: PFV_ENTITIES.paused,
-          });
-        });
-      }
-
-      if (action === "prev") {
-        el.addEventListener("click", () => {
+        this._callRelay("toggle_pause");
+      } else if (action === "prev") {
+        if (!el.disabled) {
           this._callService("input_select", "select_previous", {
-            entity_id: PFV_ENTITIES.picker,
+            entity_id: this._config.picker_entity,
             cycle: true,
           });
-        });
-      }
-
-      if (action === "next") {
-        el.addEventListener("click", () => {
+        }
+      } else if (action === "next") {
+        if (!el.disabled) {
           this._callService("input_select", "select_next", {
-            entity_id: PFV_ENTITIES.picker,
+            entity_id: this._config.picker_entity,
             cycle: true,
           });
-        });
+        }
       }
+    };
 
-      if (action === "set-interval") {
-        el.addEventListener("input", () => {
-          const val = parseFloat(el.value);
-          this._callService("input_number", "set_value", {
-            entity_id: PFV_ENTITIES.interval,
-            value: val,
-          });
-        });
+    ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
+      root.addEventListener(evt, () => { touchCancelled = true; }, { passive: true });
+    });
+
+    root.addEventListener(
+      "touchstart",
+      () => {
+        touchActive = true;
+        touchCancelled = false;
+      },
+      { passive: true }
+    );
+
+    root.addEventListener("touchend", (e) => {
+      const el = findTarget(e);
+      if (touchCancelled || !el) {
+        touchActive = false;
+        return;
+      }
+      // Never preventDefault on native form elements — Android webviews
+      // will not open keyboards, dropdowns, or date pickers.
+      const tag = el.tagName?.toLowerCase();
+      const nativeEl =
+        tag === "input" || tag === "select" || tag === "textarea";
+      if (!nativeEl && e.cancelable) e.preventDefault();
+
+      dispatchAction(el);
+      setTimeout(() => { touchActive = false; }, 400);
+    });
+
+    // Desktop click — skip if touch just handled it to prevent double-fire.
+    root.addEventListener("click", (e) => {
+      if (touchActive) return;
+      const el = findTarget(e);
+      if (el) dispatchAction(el);
+    });
+
+    // Range slider: update label immediately, debounce the relay call.
+    root.addEventListener("input", (e) => {
+      const el = e.target;
+      if (el?.dataset?.action === "set-interval") {
+        const val = parseFloat(el.value);
+        if (isNaN(val) || val <= 0) return;
+
+        // Update label text instantly without a full re-render.
+        const label = root.querySelector(".field-group label");
+        if (label) label.textContent = `Slide interval: ${val}s`;
+
+        // Debounce the relay call — only send after the user stops dragging.
+        clearTimeout(this._intervalDebounce);
+        this._intervalDebounce = setTimeout(() => {
+          this._callRelay("set_interval", { seconds: val });
+        }, 400);
       }
     });
   }
@@ -435,8 +529,9 @@ class PhotoFrameViewerCardEditor extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <div style="padding: 16px;">
         <p style="color: var(--secondary-text-color, #757575); font-size: 14px;">
-          This card requires no configuration. It reads from the
-          photo frame viewer entities automatically.
+          This card reads state from <code>sensor.&lt;prefix&gt;_photo_frame_status</code>
+          and sends commands via the relay script. No configuration required for
+          the default <code>wall_display</code> prefix.
         </p>
       </div>
     `;

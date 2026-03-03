@@ -1,3 +1,22 @@
+photo_frame_viewer_wall_display_prod:
+  module: photo_frame_viewer.photo_frame_viewer_app
+  class: PhotoFrameViewerApp
+  disable: true
+  ha_url: !secret ha_url
+  ha_token: !secret token
+  source_dir: /media/immich-photos
+  ha_source_dir: /media/immich-photos
+  ha_local_url_base: /local/photo-frame/live
+  stage_shell_command: photo_frame_stage_gen
+  cleanup_shell_command: photo_frame_cleanup_gen
+  source_poll_interval_s: 30
+  stage_settle_delay_s: 3
+  fallback_image_path: /config/www/immich-album/no-image.jpg
+  options_max: 50
+  refresh_options_every_s: 60
+  auto_cycle: true
+  default_interval_s: 10
+
 garage_door_notify:
   module: garage_door_notify
   class: GarageDoorNotify

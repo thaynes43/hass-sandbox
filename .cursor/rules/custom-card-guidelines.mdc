@@ -1,0 +1,192 @@
+---
+globs: "**/*.js"
+alwaysApply: false
+---
+# Custom Lovelace Card Guidelines
+
+Guidelines for building custom Home Assistant Lovelace cards that work across all target devices:
+
+- **Desktop**: Chrome/Firefox/Edge on Windows/Mac/Linux
+- **iOS**: Home Assistant Companion App (iPhone, iPad)
+- **Android**: Home Assistant Companion App, UniFi Connect Display (wall-mounted touchscreen)
+
+## 1) Communication: relay script pattern only
+
+Cards **must not** use `fire_event`, `callApi("POST", "events/...")`, or `connection.sendMessagePromise({ type: "fire_event" })`. These require **admin privileges** and fail silently on non-admin device accounts.
+
+Use `hass.callService()` exclusively — it works for all authenticated users:
+
+```javascript
+_callRelay(command, data) {
+  if (!this._hass) return;
+  this._hass.callService("script", "<app>_relay", {
+    command,
+    payload: JSON.stringify(data || {}),
+  }).catch((err) => {
+    console.warn("<card>: relay failed", command, err);
+  });
+}
+```
+
+See `appdaemon-architecture.mdc` §3 for the full relay script pattern.
+
+## 2) Touch + click event delegation
+
+Use a single delegated event system on the shadow root. Mark interactive elements with `data-action` attributes and route through a central `_dispatchAction(action, el)` handler.
+
+### The problem
+
+Touch devices fire `touchstart` → `touchend` → `click` in sequence. Without deduplication, actions fire twice. Android webviews (especially UniFi Connect) are stricter about `preventDefault()` blocking native form behavior than iOS or desktop.
+
+### Required pattern
+
+```javascript
+_ensureDelegatedListeners() {
+  if (this._delegatedBound) return;
+  this._delegatedBound = true;
+
+  const root = this.shadowRoot;
+  let touchActive = false;
+  let touchCancelled = false;
+
+  // Cancel touch on scroll/move
+  ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
+    root.addEventListener(evt, () => { touchCancelled = true; }, { passive: true });
+  });
+
+  root.addEventListener("touchstart", () => {
+    touchActive = true;
+    touchCancelled = false;
+  }, { passive: true });
+
+  root.addEventListener("touchend", (e) => {
+    const el = findActionTarget(e);
+    if (touchCancelled || !el) { touchActive = false; return; }
+
+    // CRITICAL: never preventDefault on native form elements — Android
+    // webviews will not open keyboards, dropdowns, or date pickers.
+    const tag = el.tagName?.toLowerCase();
+    const nativeEl = tag === "input" || tag === "select" || tag === "textarea";
+    if (!nativeEl && e.cancelable) e.preventDefault();
+
+    dispatchAction(el);
+    setTimeout(() => { touchActive = false; }, 400);
+  });
+
+  // Desktop click — skip if touch just handled it
+  root.addEventListener("click", (e) => {
+    if (touchActive) return;
+    const el = findActionTarget(e);
+    if (el) dispatchAction(el);
+  });
+}
+```
+
+### Key rules
+
+| Rule | Why |
+|---|---|
+| **Never** `preventDefault()` on `<input>`, `<select>`, `<textarea>` touchend | Android webviews won't open keyboard or dropdown |
+| Use `{ passive: true }` for `touchstart`, `touchmove`, `touchcancel`, `scroll` | Required by modern browsers; improves scroll performance |
+| Gate click handler with `if (touchActive) return` | Prevents double-fire on touch devices |
+| Use 300–400ms timeout to clear `touchActive` | Covers the touch→click delay on all platforms |
+| Use `e.composedPath()` to find `data-action` target | Works correctly inside shadow DOM |
+
+## 3) Form inputs must not lose focus on re-render
+
+When the card re-renders (e.g., after `_markDirty()`), the entire shadow DOM is replaced, stealing focus from any active input field. This makes typing impossible — each keystroke triggers a re-render that deselects the field.
+
+### Fix
+
+Before re-rendering, check if the active element is an input. If so, skip the render or defer it:
+
+```javascript
+_render() {
+  const active = this.shadowRoot?.activeElement;
+  if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
+    // Don't re-render while user is typing — the save button is already enabled
+    return;
+  }
+  // ... actual render logic
+}
+```
+
+For date inputs (`<input type="date">`), also skip re-render since the date picker counts as an active input on mobile.
+
+## 4) Structural changes require explicit save
+
+Actions that modify the card's data model (add, remove, reorder items) should call `_markDirty()` and re-render — **not** auto-save. The user must click "Save" to persist changes. This allows discarding unintentional actions (e.g., accidental delete).
+
+Auto-save is only appropriate for actions that are explicitly confirmatory (the Save button itself).
+
+## 5) Cache busting
+
+Custom cards served from `/local/` or `/config/www/` are aggressively cached by browsers and HA companion apps. After updating a card's JS file on the HA server:
+
+1. Update the Lovelace resource URL's query parameter: `?v=N` → `?v=N+1`
+2. Users must hard-refresh (Ctrl+Shift+R on desktop, pull-to-refresh on mobile)
+
+Use the MCP `ha_config_set_dashboard_resource` tool to bump the version:
+
+```
+resource_id: "<id from ha_config_list_dashboard_resources>"
+url: "/local/path/to/card.js?v=<N+1>"
+```
+
+## 6) Shadow DOM and styling
+
+- All card HTML lives inside `this.shadowRoot` (via `attachShadow({ mode: "open" })`)
+- Styles are scoped to the shadow DOM — use `<style>` tags inside the shadow root
+- HA theme CSS variables (e.g., `var(--primary-color)`, `var(--card-background-color)`) are inherited into shadow DOM and should be used for consistent theming
+- External stylesheets and global CSS do not penetrate the shadow boundary
+
+## 7) Card structure
+
+Every custom card must:
+
+1. Extend `HTMLElement`
+2. Define `setConfig(config)` — called once with card YAML config
+3. Define `set hass(hass)` — called on every HA state change; use to read sensor data and trigger renders
+4. Register with `customElements.define("<card-name>", CardClass)`
+5. Optionally define `getCardSize()` — returns estimated card height in grid units
+
+### Minimal skeleton
+
+```javascript
+class MyCard extends HTMLElement {
+  setConfig(config) {
+    this._config = config;
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+    }
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  _render() {
+    // Build shadow DOM HTML
+  }
+
+  getCardSize() { return 3; }
+}
+
+customElements.define("my-card", MyCard);
+```
+
+## 8) Testing across devices
+
+When testing custom cards, verify on all three target platforms:
+
+| Feature | Desktop | iOS App | Android / UniFi |
+|---|---|---|---|
+| Button taps | click | touch→click | touch→click |
+| Text input focus + keyboard | click | tap | tap (fragile) |
+| Select/dropdown | click | tap | tap (fragile) |
+| Date picker | click | tap | tap (fragile) |
+| Scroll without triggering actions | mouse wheel | swipe | swipe |
+| Relay service calls | always works | works if non-admin safe | works if non-admin safe |
+
+Items marked "fragile" on Android/UniFi are sensitive to `preventDefault()` — follow §2 strictly.

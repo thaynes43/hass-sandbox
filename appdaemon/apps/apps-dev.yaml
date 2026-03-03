@@ -20,6 +20,8 @@ immich_fetcher:
 photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
+  ha_url: !secret ha_url
+  ha_token: !secret token
   source_dir: /mnt/cephfs-hdd/misc/hass-media/immich-photos
   ha_source_dir: /media/immich-photos
   ha_local_url_base: /local/photo-frame/live
@@ -27,12 +29,9 @@ photo_frame_viewer_wall_display:
   cleanup_shell_command: photo_frame_cleanup_gen
   source_poll_interval_s: 30
   stage_settle_delay_s: 3
-  picker_entity_id: input_select.wall_display_photo_frame_image
-  paused_entity_id: input_boolean.wall_display_photo_frame_paused
-  interval_entity_id: input_number.wall_display_photo_frame_interval_seconds
-  cache_bust_entity_id: input_text.wall_display_photo_frame_cache_bust
-  image_local_url_entity_id: input_text.wall_display_photo_frame_image_local_url
   fallback_image_path: /mnt/cephfs-hdd/misc/hass-media/immich-photos/no-image.jpg
   options_max: 50
   refresh_options_every_s: 60
   auto_cycle: true
+  default_interval_s: 10
+  state_dir: /mnt/cephfs-hdd/misc/hass-media/photo-frame-viewer/wall_display

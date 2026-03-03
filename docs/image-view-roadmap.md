@@ -7,26 +7,35 @@ This repo currently contains (or is moving toward) multiple "image viewers" for 
 
 The long-term goal is to keep Home Assistant YAML thin (helpers + UI) and keep viewer logic in AppDaemon so it's testable, loggable, and reusable.
 
-## Phase 0 (current MVP): Wall Display Photo Frame Viewer
+## Phase 0 (current): Wall Display Photo Frame Viewer
 
 **Inputs**
-- `sensor.immich_album` is the source of truth for which photos are currently available (via `attributes.file_list`).
+- AppDaemon scans `source_dir` (typically `/media/immich-photos/`) directly
+  via `os.listdir()` — no sensor dependency.
 
-**Controls / state (helpers)**
-- `input_select.wall_display_photo_frame_image` (dropdown selection)
-- `input_boolean.wall_display_photo_frame_paused` (pause)
-- `input_number.wall_display_photo_frame_interval_seconds` (cycle interval)
-- `input_text.wall_display_photo_frame_cache_bust` (cache-bust for dashboard reload)
+**Controls / state (self-provisioned)**
+- `input_select.wall_display_photo_frame_image` (image picker — provisioned by AppDaemon on startup)
+- `script.wall_display_photo_frame_relay` (card→AppDaemon command relay — provisioned by AppDaemon)
+- Pause state, interval, and image URL live in AppDaemon-internal Python fields.
+- All read-only state is published as attributes on `sensor.wall_display_photo_frame_status`.
+
+Previously, `input_boolean`, `input_number`, and two `input_text` helpers were
+created manually and read/written by AppDaemon.  These have been replaced by
+internal state + the virtual sensor.  The relay script pattern ensures dashboard
+cards work on non-admin wall-display accounts (`callService` only — no
+`fire_event`).
 
 **Rendering**
-- Dashboard displays a stable `/local/...` image path that AppDaemon updates via an HA `shell_command`.
+- Dashboard reads `image_url` and `cache_bust` attributes from the virtual sensor.
+- AppDaemon calls `shell_command/photo_frame_stage_gen` to copy batches into
+  versioned gen directories under `/config/www/photo-frame/live/`.
 
 ### Tech debt: immich-album NFS mount on /config/www/
 
-- The `hass-immich-addon` (repo: `hass-immich-addon`) currently writes photos directly to `/config/www/immich-album/` via a shared NFS mount between its pod and HA's pod.
-- This predates AppDaemon integration and breaks the standard pattern where external services write to `/media/` and HA `shell_command`s copy display files into `/config/www/`.
-- The photo frame viewer's generation-swap design works around this by treating `/config/www/immich-album/` as a read-only source and copying into `/config/www/photo-frame/live/<gen>/` via shell_commands.
-- **Future migration**: update `hass-immich-addon` to write to `/media/immich-album/` instead. Then the photo frame stage shell_command would read from `/media/` (or AppDaemon could stage directly since it has `/media/` access). This would also let us remove the special NFS mount between the Immich pod and HA.
+- The `hass-immich-addon` (repo: `hass-immich-addon`) currently writes photos to `/config/www/immich-album/` via a dedicated NFS mount shared between its pod and HA's pod.
+- This predates the `/media` convention where external services write to the shared `/media` NFS mount.
+- The photo frame viewer now reads from `/media/immich-photos/` (AppDaemon has direct `/media` access), so the production `source_dir` no longer requires the old `/config/www/immich-album` mount.
+- **Remaining migration**: update `hass-immich-addon` to write to `/media/immich-photos/` instead, and remove the `/config/www/immich-album` NFS mount from both the Immich addon pod and HA's pod.  The `fallback_image_path` can also migrate to `/media/...` once the dedicated mount is retired.
 
 ## Phase 1: Dashboard "configuration popup" for Immich fetch rules (out of scope for MVP)
 
