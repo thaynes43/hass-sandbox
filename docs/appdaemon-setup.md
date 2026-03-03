@@ -12,13 +12,14 @@ This repo uses `appdaemon/` as the **development environment** for AppDaemon app
 
 ```
 appdaemon/
-├── appdaemon.yaml           # Local dev config (.gitignored; never deployed)
+├── appdaemon.yaml           # Local dev config (committed; never deployed)
 ├── secrets.yaml             # Local dev secrets (.gitignored; never deployed)
 ├── requirements.txt         # Python deps (pip install -r)
 ├── deploy.py                # Deploy script (apps/ + shared libs → X:\)
 ├── apps/
-│   ├── apps.yaml            # App registration (environment_test)
-│   └── environment_test.py  # Environment test app
+│   ├── apps-prod.yaml       # Production app list (all disable: true); deploy writes apps.yaml
+│   ├── apps-dev.yaml        # Dev-only app list (keys end in _dev); never deployed
+│   └── ...
 ├── photo_providers/         # Shared library: photo source provider plumbing (Immich; extensible)
 ├── ai_providers/            # Shared library: LLM/provider plumbing
 └── ha_provisioner/          # Shared library: HA entity provisioning

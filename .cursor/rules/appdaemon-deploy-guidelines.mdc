@@ -12,104 +12,90 @@ This repo treats `appdaemon/` as the **development** workspace. Production AppDa
 - **Never run `deploy.py` automatically** after making changes. Only run it when the user explicitly asks to deploy.
 - After editing `appdaemon/**` files, tell the user what changed and that they can deploy when ready — do not attempt the deploy yourself.
 
+## Deployment process (quick reference)
+
+When the user asks to deploy, follow this sequence:
+
+1. **Prerequisites**: Ensure `X:\` is mounted and writable. If `X:\` does not exist, abort and tell the user to mount it.
+2. **If promoting dev apps**: Run `--merge-dev-apps`, then **stop**. Tell the user to review `apps-prod.yaml` and confirm before deploy.
+3. **Deploy**: From repo root, run dry-run first, then deploy for real:
+   - Windows: `cd D:\labspace\hass-sandbox` then `.\.venv\Scripts\python.exe appdaemon\deploy.py --dry-run --target "X:\"`
+   - After user confirms dry-run output: `.\.venv\Scripts\python.exe appdaemon\deploy.py --target "X:\"`
+
 ## 1) What `deploy.py` does (and does not do)
 
-- **Does**: sync `appdaemon/apps/**` into `X:\apps/**` (includes `apps.yaml`; no renaming).
-- **Also does**: sync shared libraries needed at runtime (currently `appdaemon/ai_providers/**`) into `X:\apps/ai_providers/**` so AppDaemon can import them when its `sys.path` is only `/conf/apps`.
-- **Never does**: deploy `appdaemon.yaml` or `secrets.yaml` (production appdaemon.yaml and secrets.yaml are deployed via Flux as ConfigMaps).
+- **Does**: sync `appdaemon/apps/**` into `X:\apps/**`. Reads `apps-prod.yaml`, strips all `disable: true` flags, writes the result as `X:\apps\apps.yaml`.
+- **Also does**: sync shared libraries needed at runtime (`ai_providers/`, `ha_provisioner/`, `photo_providers/`) into `X:\apps/<lib>/` so AppDaemon can import them.
+- **Never does**: deploy `appdaemon.yaml` or `secrets.yaml` (production gets them via Flux ConfigMaps).
 - **Does not**: install Python dependencies in the production container image.
 
-## 1.1) Merging dev apps into prod apps (recommended)
+## 1.1) Promote dev apps into prod (two-step workflow)
 
 This repo keeps two app lists:
 
-- `appdaemon/apps/apps.yaml`: the **production** app list (source-of-truth for prod)
-- `appdaemon/apps/apps-dev.yaml`: the **dev overlay** (only the apps you’re actively iterating on)
+- `appdaemon/apps/apps-prod.yaml`: the **production** app list. Every app has `disable: true` so local AppDaemon does not run them. Deploy strips these when writing `X:\apps\apps.yaml`.
+- `appdaemon/apps/apps-dev.yaml`: the **dev-only** list. App keys end in `_dev` (e.g. `immich_fetcher_dev`). Never deployed. Used for local iteration.
 
-To avoid manual copy/paste merging, `deploy.py` supports a merge mode:
+### Step 1: Promote (repo-only)
 
-```bash
-# Preview what would copy + confirm the merged apps.yaml
-python appdaemon/deploy.py --dry-run --merge-dev-apps
+When a dev app is ready for production, run from repo root:
 
-# Deploy with merge (apps-dev.yaml overlays apps.yaml at top-level keys)
-python appdaemon/deploy.py --merge-dev-apps
+```powershell
+# Windows (from D:\labspace\hass-sandbox)
+.\.venv\Scripts\python.exe appdaemon\deploy.py --merge-dev-apps
+```
+
+This reads `apps-dev.yaml`, strips the `_dev` suffix from app names, converts dev media paths (e.g. `/mnt/cephfs-hdd/misc/hass-media/...`) to prod paths (`/media/...`), adds `disable: true`, and merges the entries into `apps-prod.yaml`. **Nothing is deployed to `X:\`.**
+
+**Agent rule:** After running `--merge-dev-apps`, **stop and let the user review the updated `apps-prod.yaml`** before running deploy. Agents must **never** chain promote + deploy in one step.
+
+### Step 2: Deploy (after user review)
+
+Once the user has reviewed `apps-prod.yaml` and is satisfied, from repo root:
+
+```powershell
+# Dry-run first (Windows)
+.\.venv\Scripts\python.exe appdaemon\deploy.py --dry-run --target "X:\"
+
+# Deploy for real (only after user confirms dry-run looks correct)
+.\.venv\Scripts\python.exe appdaemon\deploy.py --target "X:\"
+```
+
+Default target is `X:\` (or `DEPLOY_TARGET` env); `--target` can be omitted if using default.
+
+### Custom dev media path
+
+If you develop on a different machine where the media mount differs:
+
+```powershell
+.\.venv\Scripts\python.exe appdaemon\deploy.py --merge-dev-apps --prod-media /mnt/other/media
 ```
 
 ### Merge behavior
 
-- **New app keys** present in `apps-dev.yaml` are **added** to the deployed `X:\apps\apps.yaml`.
-- **Existing app keys** present in `apps-dev.yaml` **replace** the corresponding app config from `apps.yaml` (whole-app replacement, not deep-merge).
-- YAML tags like `!secret` are preserved during merge via `ruamel.yaml`.
+- **New app keys** in `apps-dev.yaml` are **added** to `apps-prod.yaml` with `disable: true` and prod paths.
+- **Existing app keys** (same prod name) in `apps-dev.yaml` **replace** the corresponding entry in `apps-prod.yaml`.
+- YAML tags like `!secret` are preserved via `ruamel.yaml`.
 
 ### Dependency note
 
-Merge mode requires `ruamel.yaml` to be installed in the environment running `deploy.py` (dev only). It is listed in `appdaemon/requirements.txt`.
+`deploy.py` (both promote and deploy) requires `ruamel.yaml` in the environment. It is listed in `appdaemon/requirements.txt`.
 
 ### Run `deploy.py` from the correct venv (required)
 
-Agents often have multiple Python installs (Windows system Python, WSL Python, repo venvs). If you run `deploy.py`
-from the wrong interpreter, installs may fail (or succeed partially), and `--merge-dev-apps` will fail due to
-missing `ruamel.yaml`.
+- **Windows PowerShell**: use `.\.venv\Scripts\python.exe` (run from repo root)
+- **WSL/Linux**: activate `.venv-wsl` first; for deploy, `X:\` is typically not visible in WSL — run deploy from Windows, or pass a WSL-visible path (e.g. `/mnt/x`) if the prod mount is exposed there
 
-- **Windows**: use the repo venv `.venv`:
+### Common deploy pitfalls
 
-```powershell
-cd D:\labspace\hass-sandbox
-.\.venv\Scripts\python.exe appdaemon\deploy.py --dry-run --merge-dev-apps --target "X:\"
-```
-
-- **WSL/Linux**: use the repo venv `.venv-wsl`:
-
-```bash
-cd /mnt/d/labspace/hass-sandbox
-source .venv-wsl/bin/activate
-python appdaemon/deploy.py --dry-run --merge-dev-apps --target /mnt/x
-```
-
-### Common deploy pitfalls (and fixes)
-
-- **WSL + `--target X:\`**
-  - **Symptom**: `Target directory does not exist: /mnt/.../X:\`
-  - **Cause**: on Linux/WSL, `X:\` is not a valid absolute path; it resolves relative to your cwd.
-  - **Fix**: run deploy from **Windows PowerShell** OR mount the drive/share in WSL and pass a WSL-visible path
-    (often `/mnt/x`, but mapped/network drives frequently won’t appear in WSL).
-
-- **`--merge-dev-apps` missing `ruamel.yaml`**
-  - **Fix**: install into the same venv you’re using to run `deploy.py` (do not assume system Python):
-    - Windows: `.\.venv\Scripts\python.exe -m pip install ruamel.yaml`
-    - WSL: `pip install ruamel.yaml` (inside `.venv-wsl`)
+- **Target `X:\` does not exist** — User must mount the production config volume before deploy. Deploy will fail with "Target directory does not exist".
+- **WSL + `--target X:\`** — `X:\` is not a valid path in WSL. Run deploy from Windows PowerShell, or pass a WSL-visible path (e.g. `/mnt/x`) if the prod mount is exposed there.
+- **Missing `ruamel.yaml`** — Install with `pip install ruamel.yaml` in the venv you use for `deploy.py`.
 
 ## 2) Shared code must be deployed into `/conf/apps`
 
-Production AppDaemon commonly imports apps with:
-
-- `sys.path == ["/conf/apps", ...]`
-
-So any shared code outside `appdaemon/apps/` must still land **under** `X:\apps\...` (or you must change production `appdaemon.yaml` `import_paths`).
-
-### Update requirement
-
-If you add a new shared library directory (example: `appdaemon/service_providers/` or `appdaemon/foo_shared/`) that apps import at runtime, you MUST update:
-
-- `appdaemon/deploy.py` `COPY_ITEMS = [...]`
-
-and ensure the destination path is importable under `/conf/apps` (typically by deploying into `X:\apps/<module_name>/`).
+Production AppDaemon commonly imports apps with `sys.path == ["/conf/apps", ...]`. Any shared library outside `appdaemon/apps/` must land under `X:\apps\...`. Update `deploy.py` `COPY_ITEMS` when adding a new shared library.
 
 ## 3) Python dependencies: dev vs production
 
-### Key rule
-
-Adding a new line to `appdaemon/requirements.txt` only guarantees it exists in **dev**. Production will **NOT** have the dependency until the AppDaemon container environment installs it.
-
-### What to do when adding a dependency
-
-- Update `appdaemon/requirements.txt` (source of truth).
-- Ensure production has one of:
-  - **Preferred**: AppDaemon image rebuild installs `requirements.txt`
-  - **Alternative**: init container / startup hook runs `pip install -r ...` into a writable site-packages/venv
-
-### Deployment note
-
-If an app imports a package that is not in the production image, AppDaemon will fail on startup with `ModuleNotFoundError`.
-
+Adding a line to `appdaemon/requirements.txt` only guarantees it exists in **dev**. Production will NOT have the dependency until the AppDaemon container installs it. If an app imports a missing package, AppDaemon will fail with `ModuleNotFoundError`.

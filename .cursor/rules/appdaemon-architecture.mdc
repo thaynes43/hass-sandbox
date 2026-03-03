@@ -8,7 +8,7 @@ This ruleset captures major architectural decisions for AppDaemon apps in this p
 
 ## 1) Folder structure: apps vs shared libraries
 
-- `appdaemon/apps/` — **AppDaemon app modules only** (things with `module:`/`class:` in `apps.yaml`).
+- `appdaemon/apps/` — **AppDaemon app modules only** (things with `module:`/`class:` in `apps-prod.yaml` or `apps-dev.yaml`).
 - `appdaemon/<lib>/` — **Shared libraries** used by multiple apps.
   - `appdaemon/ai_providers/` — LLM/provider plumbing.
   - `appdaemon/ha_provisioner/` — HA entity provisioning (scripts, helpers).
@@ -61,7 +61,7 @@ These remain manual for now and should be documented per-app:
 
 ### App config requirements
 
-Apps using `ha_provisioner` need `ha_url` and `ha_token` in their `apps.yaml` / `apps-dev.yaml` args. Both reference the same secrets already used by the HASS plugin — no extra secret entries needed:
+Apps using `ha_provisioner` need `ha_url` and `ha_token` in their `apps-prod.yaml` / `apps-dev.yaml` args. Both reference the same secrets already used by the HASS plugin — no extra secret entries needed:
 
 ```yaml
 my_app:
@@ -175,5 +175,5 @@ When creating a new AppDaemon app with a Lovelace card:
 3. Call `ha_provisioner` on startup to ensure all entities exist.
 4. Card uses `callService("script", "<app>_relay", ...)` for all actions.
 5. AppDaemon listens for `<app>_command` event, routes commands.
-6. Add `ha_url` and `ha_token` to `apps-dev.yaml` and `apps-base.yaml`.
+6. Add `ha_url` and `ha_token` to `apps-dev.yaml` and `apps-prod.yaml`.
 7. Document any manual steps (shell commands, Lovelace resources) in the app's README or setup docs.

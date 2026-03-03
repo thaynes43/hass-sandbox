@@ -2,14 +2,19 @@
 """
 Deploy AppDaemon configs from this repo to production.
 
-Syncs appdaemon/apps/ to the production config directory (typically X:\apps/).
+Syncs appdaemon/apps/ to the production config directory (typically X:\\apps/).
 Used by agents and humans.
 
 NEVER deploys appdaemon.yaml or secrets.yaml — production gets them via Flux
 (ConfigMaps). Local dev copies are .gitignored.
 
 Usage:
-    python appdaemon/deploy.py
+    # Promote dev apps into apps-prod.yaml (repo-only, no deploy)
+    python appdaemon/deploy.py --merge-dev-apps
+    python appdaemon/deploy.py --merge-dev-apps --prod-media /mnt/other/media
+
+    # Deploy to production
+    python appdaemon/deploy.py --dry-run --target X:\\
     python appdaemon/deploy.py --target X:\\
     DEPLOY_TARGET=X:\\ python appdaemon/deploy.py
 
@@ -29,24 +34,23 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent
 SOURCE = SCRIPT_DIR
 DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
+DEFAULT_PROD_MEDIA = "/mnt/cephfs-hdd/misc/hass-media"
 
 # What to copy:
-# - apps/: AppDaemon app modules + apps-base.yaml (deployed as apps.yaml)
-# - ai_providers/: shared provider code used by apps
-# - ha_provisioner/: HA entity provisioning library used by apps
+# - apps/: AppDaemon app modules + apps-prod.yaml (processed: disable stripped, deployed as apps.yaml)
+# - ai_providers/, ha_provisioner/, photo_providers/: shared libraries
 #
-# NOTE: In production AppDaemon often only includes `/conf/apps` in sys.path.
-# We therefore deploy shared libraries into `apps/<lib>/` so imports like
-# `import ai_providers...` / `import ha_provisioner...` work without
-# requiring appdaemon.yaml import_paths changes.
+# NOTE: In production AppDaemon often only includes /conf/apps in sys.path.
+# We deploy shared libraries into apps/<lib>/ so imports work.
 COPY_ITEMS = ["apps", "ai_providers", "ha_provisioner", "photo_providers"]
 
 EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor", "_state"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}
 
-# apps-dev.yaml is dev-only; apps-base.yaml is deployed as apps.yaml in production.
+# apps-dev.yaml is dev-only, never deployed. apps-prod.yaml is processed (not raw-copied).
 EXCLUDE_FILES = {"apps-dev.yaml"}
-RENAME_FILES = {"apps-base.yaml": "apps.yaml"}
+APPS_PROD_FILE = "apps-prod.yaml"
+APPS_YAML_FILE = "apps.yaml"
 
 
 def should_exclude(path: Path) -> bool:
@@ -59,19 +63,7 @@ def should_exclude(path: Path) -> bool:
     return False
 
 
-def _merge_apps_yaml(
-    *,
-    base_path: Path,
-    overlay_path: Path,
-) -> str:
-    """
-    Merge overlay (apps-dev.yaml) onto base (apps-base.yaml) at the top-level keys.
-
-    - New apps in overlay are added
-    - Existing app configs in overlay replace base entries entirely
-
-    Uses ruamel.yaml so custom tags like `!secret` survive round-trip.
-    """
+def _get_yaml():
     try:
         from ruamel.yaml import YAML  # type: ignore
     except Exception as e:
@@ -81,33 +73,99 @@ def _merge_apps_yaml(
 
     yaml = YAML(typ="rt")
     yaml.preserve_quotes = True
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    return yaml
 
-    def _load(p: Path) -> dict[str, Any]:
-        if not p.exists():
-            return {}
-        data = yaml.load(p.read_text(encoding="utf-8"))  # noqa: S506 (local file)
-        if data is None:
-            return {}
-        if not isinstance(data, dict):
-            raise ValueError(f"Expected mapping at YAML root: {p}")
-        return data
 
-    base = _load(base_path)
-    overlay = _load(overlay_path)
-    for k, v in overlay.items():
-        base[k] = v
+def _load_yaml(yaml, path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    data = yaml.load(path.read_text(encoding="utf-8"))  # noqa: S506 (local file)
+    if data is None:
+        return {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected mapping at YAML root: {path}")
+    return data
 
-    # Dump to string
+
+def _replace_media_prefix(obj: Any, dev_prefix: str, prod_prefix: str = "/media") -> Any:
+    """Recursively replace string values starting with dev_prefix with prod_prefix."""
+    if isinstance(obj, str):
+        if obj.startswith(dev_prefix):
+            return prod_prefix + obj[len(dev_prefix) :]
+        return obj
+    if isinstance(obj, dict):
+        return {k: _replace_media_prefix(v, dev_prefix, prod_prefix) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_replace_media_prefix(v, dev_prefix, prod_prefix) for v in obj]
+    return obj
+
+
+def _strip_disable(data: dict[str, Any]) -> dict[str, Any]:
+    """Remove disable: true from each app config."""
+    result = {}
+    for k, v in data.items():
+        if isinstance(v, dict) and "disable" in v:
+            out = dict(v)
+            del out["disable"]
+            result[k] = out
+        else:
+            result[k] = v
+    return result
+
+
+def _ensure_trailing_newline(s: str) -> str:
+    if s and not s.endswith("\n"):
+        return s + "\n"
+    return s
+
+
+def merge_dev_apps(
+    *,
+    apps_prod_path: Path,
+    apps_dev_path: Path,
+    prod_media: str,
+) -> None:
+    """
+    Promote dev apps into apps-prod.yaml (repo-only).
+
+    - Reads apps-dev.yaml and apps-prod.yaml
+    - For each dev app: strips _dev suffix from key, converts dev media paths to /media,
+      adds disable: true
+    - Merges into apps-prod.yaml, writes back
+    """
+    yaml = _get_yaml()
+    prod = _load_yaml(yaml, apps_prod_path)
+    dev = _load_yaml(yaml, apps_dev_path)
+
+    for dev_key, dev_config in dev.items():
+        if not dev_key.endswith("_dev"):
+            continue
+        prod_key = dev_key[:-4]  # strip _dev
+        config = dict(dev_config)
+        config["disable"] = True
+        config = _replace_media_prefix(config, prod_media)
+        prod[prod_key] = config
+
     from io import StringIO
 
     buf = StringIO()
-    yaml.indent(mapping=2, sequence=4, offset=2)
-    yaml.dump(base, buf)
-    out = buf.getvalue()
-    # Ensure trailing newline for nicer diffs
-    if out and not out.endswith("\n"):
-        out += "\n"
-    return out
+    yaml.dump(prod, buf)
+    apps_prod_path.write_text(_ensure_trailing_newline(buf.getvalue()), encoding="utf-8")
+    print(f"Updated {apps_prod_path} with promoted dev apps. Review before deploying.")
+
+
+def process_apps_prod_for_deploy(apps_prod_path: Path) -> str:
+    """Read apps-prod.yaml, strip disable flags, return YAML string for apps.yaml."""
+    yaml = _get_yaml()
+    data = _load_yaml(yaml, apps_prod_path)
+    data = _strip_disable(data)
+
+    from io import StringIO
+
+    buf = StringIO()
+    yaml.dump(data, buf)
+    return _ensure_trailing_newline(buf.getvalue())
 
 
 def deploy(
@@ -115,7 +173,6 @@ def deploy(
     target: Path,
     *,
     dry_run: bool = False,
-    merge_dev_apps: bool = False,
 ) -> int:
     target = Path(target)
     source = Path(source)
@@ -123,24 +180,20 @@ def deploy(
         print(f"ERROR: Source not found: {source}", file=sys.stderr)
         return 1
     if not target.is_dir():
-        print(f"ERROR: Target not found: {target}", file=sys.stderr)
+        print(f"ERROR: Target directory not found: {target}", file=sys.stderr)
         return 1
 
-    merged_apps_yaml: Optional[str] = None
-    if merge_dev_apps:
-        base_path = source / "apps" / "apps-base.yaml"
-        overlay_path = source / "apps" / "apps-dev.yaml"
-        try:
-            merged_apps_yaml = _merge_apps_yaml(base_path=base_path, overlay_path=overlay_path)
-        except Exception as e:
-            print(f"ERROR: Failed to merge apps YAML: {e!r}", file=sys.stderr)
-            return 1
+    apps_prod_path = source / "apps" / APPS_PROD_FILE
+    if not apps_prod_path.exists():
+        print(f"ERROR: {APPS_PROD_FILE} not found: {apps_prod_path}", file=sys.stderr)
+        return 1
+
+    apps_yaml_content = process_apps_prod_for_deploy(apps_prod_path)
+    target_apps_yaml = target / "apps" / APPS_YAML_FILE
 
     copied = 0
     for item in COPY_ITEMS:
         src = source / item
-        # Shared libraries (anything other than "apps") go into apps/<lib>/ so they
-        # are importable under the default prod sys.path (/conf/apps).
         dst = (target / item) if item == "apps" else (target / "apps" / item)
         if not src.exists():
             continue
@@ -154,22 +207,15 @@ def deploy(
                     if should_exclude(Path(f)):
                         continue
                     src_file = root_path / f
-                    dst_name = RENAME_FILES.get(f, f)
-                    dst_file = dst_dir / dst_name
+                    dst_file = dst_dir / f
 
-                    # Optional: deploy a merged apps.yaml without requiring manual copy/paste
-                    # between apps-dev.yaml and apps-base.yaml.
-                    if (
-                        merged_apps_yaml is not None
-                        and item == "apps"
-                        and rel == Path(".")
-                        and f == "apps-base.yaml"
-                    ):
+                    # apps-prod.yaml -> processed apps.yaml (not raw copy)
+                    if item == "apps" and rel == Path(".") and f == APPS_PROD_FILE:
                         if dry_run:
-                            print(f"[dry-run] {src_file} -> {dst_file} (merged with apps-dev.yaml)")
+                            print(f"[dry-run] {src_file} -> {target_apps_yaml} (strip disable)")
                         else:
-                            dst_dir.mkdir(parents=True, exist_ok=True)
-                            dst_file.write_text(merged_apps_yaml, encoding="utf-8")
+                            target_apps_yaml.parent.mkdir(parents=True, exist_ok=True)
+                            target_apps_yaml.write_text(apps_yaml_content, encoding="utf-8")
                         copied += 1
                         continue
 
@@ -210,17 +256,42 @@ def main() -> int:
         "--merge-dev-apps",
         action="store_true",
         help=(
-            "Merge apps/apps-dev.yaml onto apps/apps-base.yaml at top-level keys and deploy the merged result "
-            "as apps/apps.yaml (avoids manual copy/paste)."
+            "Promote dev apps from apps-dev.yaml into apps-prod.yaml (repo-only). "
+            "Strips _dev suffix, converts media paths to /media, adds disable: true. "
+            "Does NOT deploy. Let user review apps-prod.yaml before running deploy."
+        ),
+    )
+    parser.add_argument(
+        "--prod-media",
+        default=DEFAULT_PROD_MEDIA,
+        help=(
+            f"Dev media root path to replace with /media during --merge-dev-apps "
+            f"(default: {DEFAULT_PROD_MEDIA})"
         ),
     )
     args = parser.parse_args()
+
+    if args.merge_dev_apps:
+        apps_prod_path = SOURCE / "apps" / APPS_PROD_FILE
+        apps_dev_path = SOURCE / "apps" / "apps-dev.yaml"
+        if not apps_prod_path.exists():
+            print(f"ERROR: {APPS_PROD_FILE} not found: {apps_prod_path}", file=sys.stderr)
+            return 1
+        if not apps_dev_path.exists():
+            print(f"ERROR: apps-dev.yaml not found: {apps_dev_path}", file=sys.stderr)
+            return 1
+        merge_dev_apps(
+            apps_prod_path=apps_prod_path,
+            apps_dev_path=apps_dev_path,
+            prod_media=args.prod_media.rstrip("/"),
+        )
+        return 0
+
     target = Path(args.target).resolve()
-    source = SOURCE
     if not target.exists():
         print(f"ERROR: Target directory does not exist: {target}", file=sys.stderr)
         return 1
-    return deploy(source, target, dry_run=args.dry_run, merge_dev_apps=bool(args.merge_dev_apps))
+    return deploy(source=SOURCE, target=target, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # Local dev app list (AppDaemon reads this via `appdaemon/appdaemon.yaml`).
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
 
-immich_fetcher:
+immich_fetcher_dev:
   module: immich_fetcher.immich_fetcher_app
   class: ImmichFetcherApp
   ha_url: !secret ha_url
@@ -17,7 +17,7 @@ immich_fetcher:
     - name: Random
       selection: all_photos
 
-photo_frame_viewer_wall_display:
+photo_frame_viewer_wall_display_dev:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
   ha_url: !secret ha_url

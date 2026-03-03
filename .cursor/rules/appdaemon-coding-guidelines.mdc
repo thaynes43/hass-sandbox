@@ -6,7 +6,7 @@ alwaysApply: false
 
 ## 1) Apps vs shared libraries
 
-- Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps.yaml` or `apps-dev.yaml`) in `appdaemon/apps/`.
+- Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps-prod.yaml` or `apps-dev.yaml`) in `appdaemon/apps/`.
 - Put **code that is only used by one app** alongside that app in `appdaemon/apps/`.
 
 ## Dev environment (venvs + shell)
@@ -77,4 +77,10 @@ Home Assistant runs critical real-time workloads (device I/O, state machine, UI,
 
 If AppDaemon must read/write the same images HA captures, prefer using **`/media`** and mount it into both HA and AppDaemon.
 This keeps AI processing off HA while still sharing artifacts reliably.
+
+## 3) Dev vs prod app naming
+
+- **`apps-dev.yaml`**: App keys must end with `_dev` (e.g. `immich_fetcher_dev`, `photo_frame_viewer_wall_display_dev`). Use dev paths (e.g. `/mnt/cephfs-hdd/misc/hass-media/...`).
+- **`apps-prod.yaml`**: App keys use the production name **without** the `_dev` suffix (e.g. `immich_fetcher`, `photo_frame_viewer_wall_display`). Use prod paths (e.g. `/media/...`). Every entry has `disable: true`.
+- When adding a new app: define it in `apps-dev.yaml` with the `_dev` suffix. When promoting to prod via `deploy.py --merge-dev-apps`, the prod entry in `apps-prod.yaml` will omit the suffix automatically.
 

@@ -91,6 +91,10 @@ class PhotoFrameViewerApp(hass.Hass):
         self.cleanup_shell_command: str = str(cfg["cleanup_shell_command"])
         self.source_poll_interval_s: float = max(5.0, float(cfg["source_poll_interval_s"]))
         self.stage_settle_delay_s: float = max(1.0, float(cfg["stage_settle_delay_s"]))
+        # TODO: fallback_image_path currently points into source_dir (immich-photos), which
+        # immich_fetcher clears on every run. The image will never exist; we show broken image
+        # instead of a fallback. Move to a dir the fetcher doesn't touch (e.g. state_dir) or
+        # have immich_fetcher preserve it.
         self.fallback_image_path: str = str(cfg["fallback_image_path"])
         self.options_max: int = max(1, int(cfg["options_max"]))
         self.refresh_options_every_s: float = max(10.0, float(cfg["refresh_options_every_s"]))

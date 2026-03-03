@@ -83,8 +83,8 @@ DEPLOY_TARGET=D:\prod\appdaemon python appdaemon/deploy.py
 
 ### What gets deployed
 
-- `appdaemon/apps/` → `X:\apps/` (all `.py` and `apps.yaml`)
-- Excludes: `.venv`, `__pycache__`, `.git`, `.cursor`
+- `appdaemon/apps/` → `X:\apps/` (all `.py`; `apps-prod.yaml` is processed: disable flags stripped, written as `apps.yaml`)
+- Excludes: `.venv`, `__pycache__`, `.git`, `.cursor`, `apps-dev.yaml`
 
 ### What never gets deployed
 
@@ -119,8 +119,8 @@ appdaemon/                    # Dev environment (Python apps)
 ├── requirements.txt
 ├── deploy.py                 # Deploy script: apps/ → X:\
 └── apps/
-    ├── apps-base.yaml     # Production app list; deploy.py copies as apps.yaml to prod.
-    ├── apps-dev.yaml      # Dev-only app list (dev overrides/additions). Not deployed to prod. deploy.py --merge-dev-apps merges into prod apps.yaml.
+    ├── apps-prod.yaml     # Production app list (all disable: true). Deploy strips disable and writes apps.yaml to prod.
+    ├── apps-dev.yaml      # Dev-only app list (keys end in _dev). Never deployed. Use deploy.py --merge-dev-apps to promote into apps-prod.yaml.
     └── ...
 
 automations/                  # HA automations (YAML)

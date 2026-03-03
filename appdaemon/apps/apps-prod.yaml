@@ -1,0 +1,101 @@
+# Production app list. All apps have disable: true so local AppDaemon does not run them.
+# Deploy strips disable flags when writing X:\apps\apps.yaml.
+# Promote dev apps with: python appdaemon/deploy.py --merge-dev-apps
+
+garage_door_notify:
+  module: garage_door_notify
+  class: GarageDoorNotify
+  disable: true
+  notify_services:
+    - notify.mobile_app_toms_iphone_15_pro
+    - notify.mobile_app_toms_iphone_air
+    - notify.mobile_app_kellies_iphone_air
+  ai_enabled: true
+  ai_bundle_key: garage
+  ai_wait_timeout_s: 180
+  ai_max_bundle_age_s: 900
+
+detection_summary_garage:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  disable: true
+  bundle_key: garage
+  snapshot_ha_dir: /media/detection-summary/garage
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.garage_g5_dome_medium_resolution_channel
+    trigger_entity_id: binary_sensor.g5_dome_motion
+    best_image_camera_entity_id: camera.garage_detection_summary_best
+    generated_image_camera_entity_id: camera.garage_detection_summary_generated
+    summary_text_entity_id: input_text.garage_detection_summary
+    run_picker_entity_id: input_select.garage_detection_summary_run_id
+    selected_summary_text_entity_id: 
+      input_text.garage_detection_summary_selected
+    selected_best_image_camera_entity_id: 
+      camera.garage_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: 
+      camera.garage_detection_summary_selected_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot for a push notification.
+    Focus ONLY on the people and any animals (ignore the environment/vehicles/objects
+    unless it is directly relevant).
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+    Include only: person/animal count, what they are doing, and where they are in
+    frame (e.g. "near left", "center", "back").
+    Also return male_count and female_count as integer counts of people by gender
+    (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank
+    frames.
+    Heavily favor frames where at least one person's FACE is clearly visible (front/3-4
+    view, not fully occluded).
+    If no face is visible, the frame should score significantly lower than a similar
+    frame with a visible face.
+    face_score meaning: 0=no face visible, 10=clear unobstructed face (ideally looking
+    toward camera).
+    Prefer frames where the person is clearly visible and stationary (standing/sitting),
+    not partially occluded or blurred in motion.
+    If animals are present and clearly visible, increase frame_score appropriately.
+  image_instructions: >
+    Create a simple, clean illustration representing the scene for a notification.
+  ai_provider_conf:
+    provider: openai
+    api_key: !secret openapi_token
+    data_model: gpt-5.2
+    data_image_detail: auto
+    image_model: gpt-image-1.5
+immich_fetcher:
+  module: immich_fetcher.immich_fetcher_app
+  class: ImmichFetcherApp
+  ha_url: !secret ha_url
+  ha_token: !secret token
+  immich_url: !secret immich_url
+  immich_api_key: !secret immich_api_key
+  output_dir: /media/immich-photos
+  config_file: /media/immich-fetcher/config.json
+  update_interval_minutes: 60
+  num_photos: 10
+  download_quality: preview
+  default_filters:
+    - name: Random
+      selection: all_photos
+  disable: true
+photo_frame_viewer_wall_display:
+  module: photo_frame_viewer.photo_frame_viewer_app
+  class: PhotoFrameViewerApp
+  ha_url: !secret ha_url
+  ha_token: !secret token
+  source_dir: /media/immich-photos
+  ha_source_dir: /media/immich-photos
+  ha_local_url_base: /local/photo-frame/live
+  stage_shell_command: photo_frame_stage_gen
+  cleanup_shell_command: photo_frame_cleanup_gen
+  source_poll_interval_s: 30
+  stage_settle_delay_s: 3
+  fallback_image_path: /media/immich-photos/no-image.jpg
+  options_max: 50
+  refresh_options_every_s: 60
+  auto_cycle: true
+  default_interval_s: 10
+  state_dir: /media/photo-frame-viewer/wall_display
+  disable: true
