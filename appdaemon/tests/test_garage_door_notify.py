@@ -122,7 +122,7 @@ class TestGarageDoorNotify:
             "notify/test_service",
             title="Title",
             message="Message",
-            data={"url": "/garage-notify/summary", "clickAction": "/garage-notify/summary"},
+            data={"url": "/detection-summary/garage", "clickAction": "/detection-summary/garage"},
         )
 
     def test_send_notifications_includes_image_when_provided(self):
@@ -134,8 +134,8 @@ class TestGarageDoorNotify:
             message="Message",
             data={
                 "image": "/api/camera_proxy/camera.best",
-                "url": "/garage-notify/summary",
-                "clickAction": "/garage-notify/summary",
+                "url": "/detection-summary/garage",
+                "clickAction": "/detection-summary/garage",
             },
         )
 
@@ -147,8 +147,8 @@ class TestGarageDoorNotify:
             title="Title",
             message="Message",
             data={
-                "url": "/garage-notify/summary",
-                "clickAction": "/garage-notify/summary",
+                "url": "/detection-summary/garage",
+                "clickAction": "/detection-summary/garage",
             },
         )
 

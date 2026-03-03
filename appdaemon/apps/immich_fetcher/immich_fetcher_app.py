@@ -19,14 +19,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
-# live at `appdaemon/ha_provisioner`, so add the AppDaemon root directory.
+# live at `appdaemon/<lib>`, so add the AppDaemon root directory.
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 import hassapi as hass
 
-from immich_fetcher.immich_client import ImmichClient
-from immich_fetcher.models import FetcherConfig, LocationAlias, PhotoFilter
-from immich_fetcher.selectors import create_selector
+from immich_fetcher.models import FetcherConfig
+from photo_providers.immich_data_provider import ImmichDataProvider
+from photo_providers.types import PhotoFilter, PhotoProvider
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +51,11 @@ class ImmichFetcherApp(hass.Hass):
         self._config_file: str = args.get(
             "config_file", "/media/immich-fetcher/config.json"
         )
-        # Caches populated on startup / periodically
-        self._people_map: Dict[str, str] = {}
+        self._provider: PhotoProvider = ImmichDataProvider(
+            base_url=self._immich_url,
+            api_key=self._immich_api_key,
+        )
+        # Caches populated on startup via provider.refresh_metadata()
         self._people_available: List[str] = []  # names ranked by photo count
         self._albums_available: List[Dict[str, Any]] = []
 
@@ -214,36 +217,12 @@ class ImmichFetcherApp(hass.Hass):
     # ------------------------------------------------------------------
 
     async def _refresh_caches(self) -> None:
-        async with self._create_client() as client:
-            # People – API returns them ranked by photo count.
-            # assetCount may or may not be present; we store only names
-            # in rank order and use _people_map for name→id resolution.
-            raw_people = await client.get_people()
-            has_asset_count = bool(
-                raw_people and "assetCount" in raw_people[0]
-            )
-            named = [p for p in raw_people if p.get("name")]
-            if has_asset_count:
-                named.sort(key=lambda p: p.get("assetCount", 0), reverse=True)
-            self._people_map = {p["name"]: p["id"] for p in named}
-            self._people_available = [p["name"] for p in named]
-
-            # Albums
-            raw_albums = await client.get_albums()
-            self._albums_available = sorted(
-                [
-                    {
-                        "name": a.get("albumName", ""),
-                        "id": a["id"],
-                        "asset_count": a.get("assetCount", 0),
-                    }
-                    for a in raw_albums
-                    if a.get("albumName")
-                ],
-                key=lambda x: x["asset_count"],
-                reverse=True,
-            )
-
+        metadata = await self._provider.refresh_metadata()
+        self._people_available = [p.name for p in metadata.people]
+        self._albums_available = [
+            {"name": a.name, "id": a.id, "asset_count": a.asset_count}
+            for a in metadata.albums
+        ]
         self.log(
             f"Caches refreshed: {len(self._people_available)} people, "
             f"{len(self._albums_available)} albums | "
@@ -418,49 +397,30 @@ class ImmichFetcherApp(hass.Hass):
             )
 
     async def _select_assets(self, pf: PhotoFilter) -> List[str]:
-        """Use the appropriate selector to get asset IDs."""
-        album_id: Optional[str] = None
-        if pf.selection == "album" and pf.album_name:
-            async with self._create_client() as client:
-                album_id = await client.resolve_album_name(pf.album_name)
-            if album_id is None:
-                self.log(
-                    f"Album '{pf.album_name}' not found, skipping",
-                    level="WARNING",
-                )
-                return []
-
-        async with self._create_client() as client:
-            selector = create_selector(
-                client,
-                pf,
-                people_map=self._people_map,
-                location_aliases=self._config.location_aliases,
-                album_id=album_id,
-            )
-            return await selector.get_asset_ids(self._config.num_photos)
+        """Use the photo provider to get asset IDs matching the filter."""
+        return await self._provider.fetch_photo_ids(
+            pf,
+            self._config.num_photos,
+            location_aliases=self._config.location_aliases,
+        )
 
     async def _download_assets(self, asset_ids: List[str]) -> int:
         """Download preview JPEGs to output_dir, replacing existing files."""
-        # Clear existing photos
         self._clear_output_dir()
-
         downloaded = 0
-        async with self._create_client() as client:
-            for i, aid in enumerate(asset_ids):
-                try:
-                    data = await client.download_preview(aid)
-                    filename = f"photo_{i:04d}.jpg"
-                    filepath = os.path.join(self._output_dir, filename)
-                    with open(filepath, "wb") as f:
-                        f.write(data)
-                    downloaded += 1
-                except Exception as exc:
-                    self.log(
-                        f"Failed to download asset {aid}: {exc}",
-                        level="WARNING",
-                    )
-
+        for i, aid in enumerate(asset_ids):
+            try:
+                data = await self._provider.download_photo(aid)
+                filename = f"photo_{i:04d}.jpg"
+                filepath = os.path.join(self._output_dir, filename)
+                with open(filepath, "wb") as f:
+                    f.write(data)
+                downloaded += 1
+            except Exception as exc:
+                self.log(
+                    f"Failed to download asset {aid}: {exc}",
+                    level="WARNING",
+                )
         return downloaded
 
     def _clear_output_dir(self) -> None:
@@ -539,17 +499,18 @@ class ImmichFetcherApp(hass.Hass):
         if removed_favs:
             self.log(f"Favorite people removed: {removed_favs}", level="INFO")
 
-        if self._people_map:
+        known_people = set(self._people_available)
+        if known_people:
             for filt in new_cfg.filters:
                 if filt.people:
-                    unknown = [n for n in filt.people if n not in self._people_map]
+                    unknown = [n for n in filt.people if n not in known_people]
                     if unknown:
                         self.log(
                             f"Filter '{filt.name}' has unknown people: {unknown}",
                             level="WARNING",
                         )
             unknown_favs = [
-                n for n in new_cfg.favorite_people if n not in self._people_map
+                n for n in new_cfg.favorite_people if n not in known_people
             ]
             if unknown_favs:
                 self.log(
@@ -618,13 +579,3 @@ class ImmichFetcherApp(hass.Hass):
         )
         self._publish_sensor()
         self.create_task(self._do_fetch(advance=False))
-
-    # ------------------------------------------------------------------
-    # Client factory
-    # ------------------------------------------------------------------
-
-    def _create_client(self) -> ImmichClient:
-        return ImmichClient(
-            base_url=self._immich_url,
-            api_key=self._immich_api_key,
-        )

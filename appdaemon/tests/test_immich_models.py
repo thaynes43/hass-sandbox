@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from apps.immich_fetcher.models import (
-    FetcherConfig,
-    LocationAlias,
-    PhotoFilter,
-)
+from apps.immich_fetcher.models import FetcherConfig
+from photo_providers.types import LocationAlias, PhotoFilter
 
 
 # ---------------------------------------------------------------------------

@@ -30,7 +30,8 @@ sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root))
 
 from immich_fetcher.immich_fetcher_app import ImmichFetcherApp, SENSOR_ENTITY_ID
-from immich_fetcher.models import FetcherConfig, PhotoFilter
+from immich_fetcher.models import FetcherConfig
+from photo_providers.types import PhotoFilter, PhotoAlbum, PhotoMetadata, PhotoPerson
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +224,17 @@ class TestInitialize:
 class TestCacheRefresh:
     @pytest.mark.asyncio
     async def test_refresh_caches(self):
+        metadata = PhotoMetadata(
+            people=[
+                PhotoPerson("Charlie", 200),
+                PhotoPerson("Alice", 50),
+                PhotoPerson("Bob", 5),
+            ],
+            albums=[
+                PhotoAlbum("Family 2024", "alb-1", 120),
+                PhotoAlbum("Vacation", "alb-2", 30),
+            ],
+        )
         with tempfile.TemporaryDirectory() as td:
             app = _make_app(
                 config_file=os.path.join(td, "config.json"),
@@ -230,21 +242,10 @@ class TestCacheRefresh:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.get_people = AsyncMock(return_value=PEOPLE_API_RESPONSE)
-            mock_client.get_albums = AsyncMock(return_value=ALBUMS_API_RESPONSE)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.refresh_metadata = AsyncMock(return_value=metadata)
+            await app._refresh_caches()
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._refresh_caches()
-
-            # People map includes all named people
-            assert "Alice" in app._people_map
-            assert "Bob" in app._people_map
-            assert "Charlie" in app._people_map
-
-            # people_available is a list of names (strings) in API order
+            # people_available is a list of names (strings) in metadata order
             assert isinstance(app._people_available, list)
             assert all(isinstance(n, str) for n in app._people_available)
             assert "Alice" in app._people_available
@@ -301,24 +302,14 @@ class TestFetchLogic:
                 output_dir=out_dir,
             )
             app.initialize()
-            app._people_map = {"Alice": "uuid-alice"}
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
-                return_value=[
-                    {"id": "asset-1"},
-                    {"id": "asset-2"},
-                    {"id": "asset-3"},
-                ]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["asset-1", "asset-2", "asset-3"]
             )
-            mock_client.download_preview = AsyncMock(
+            app._provider.download_photo = AsyncMock(
                 return_value=b"\xff\xd8\xff\xe0FAKE_JPEG"
             )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            await app._do_fetch()
 
             # Files written to output dir
             files = os.listdir(out_dir)
@@ -351,23 +342,18 @@ class TestFetchLogic:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
-                return_value=[{"id": "asset-1"}]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["asset-1"]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.download_photo = AsyncMock(return_value=b"JPEG")
+            assert app._active_filter_index == 0
+            await app._do_fetch()
+            assert app._last_fetch_filter == "Filter A"
+            assert app._active_filter_index == 1
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                assert app._active_filter_index == 0
-                await app._do_fetch()
-                assert app._last_fetch_filter == "Filter A"
-                assert app._active_filter_index == 1
-
-                await app._do_fetch()
-                assert app._last_fetch_filter == "Filter B"
-                assert app._active_filter_index == 0  # wraps around
+            await app._do_fetch()
+            assert app._last_fetch_filter == "Filter B"
+            assert app._active_filter_index == 0  # wraps around
 
     @pytest.mark.asyncio
     async def test_fetch_clears_old_files(self):
@@ -384,16 +370,11 @@ class TestFetchLogic:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
-                return_value=[{"id": "new-asset"}]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["new-asset"]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"NEW")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            app._provider.download_photo = AsyncMock(return_value=b"NEW")
+            await app._do_fetch()
 
             files = set(os.listdir(out_dir))
             assert "old_photo.jpg" not in files  # cleared
@@ -411,13 +392,8 @@ class TestFetchLogic:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(return_value=[])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            app._provider.fetch_photo_ids = AsyncMock(return_value=[])
+            await app._do_fetch()
 
             assert app._status == "idle"
             batch_events = _fire_event_calls(app, "immich_fetcher_batch_ready")
@@ -434,15 +410,10 @@ class TestFetchLogic:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
+            app._provider.fetch_photo_ids = AsyncMock(
                 side_effect=Exception("Network error")
             )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            await app._do_fetch()
 
             assert app._status == "error"
 
@@ -459,19 +430,14 @@ class TestFetchLogic:
             )
             app.initialize()
 
-            pool_assets = [{"id": f"asset-{i}"} for i in range(50)]
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(return_value=pool_assets)
-            mock_client.download_preview = AsyncMock(return_value=b"\xff\xd8JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            pool_ids = [f"asset-{i}" for i in range(50)]
+            app._provider.fetch_photo_ids = AsyncMock(return_value=pool_ids)
+            app._provider.download_photo = AsyncMock(return_value=b"\xff\xd8JPEG")
+            await app._do_fetch()
 
             files = os.listdir(out_dir)
             assert len(files) == 5  # only num_photos downloaded, not full pool
-            assert mock_client.download_preview.call_count == 5
+            assert app._provider.download_photo.call_count == 5
             assert app._last_fetch_count == 5
 
     @pytest.mark.asyncio
@@ -486,12 +452,11 @@ class TestFetchLogic:
             app.initialize()
             app._status = "fetching"  # simulate already fetching
 
-            mock_client = AsyncMock()
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            app._provider.fetch_photo_ids = AsyncMock(return_value=["a1"])
+            await app._do_fetch()
 
-            # search_random never called because fetch was skipped
-            mock_client.search_random.assert_not_called()
+            # fetch_photo_ids never called because fetch was skipped
+            app._provider.fetch_photo_ids.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -515,19 +480,12 @@ class TestAlbumSelection:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.resolve_album_name = AsyncMock(return_value="alb-1")
-            mock_client.get_album_assets = AsyncMock(
-                return_value=[{"id": "a1"}, {"id": "a2"}]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["a1", "a2"]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.download_photo = AsyncMock(return_value=b"JPEG")
+            await app._do_fetch()
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
-
-            mock_client.resolve_album_name.assert_awaited_once_with("Family 2024")
             assert app._last_fetch_count == 2
 
     @pytest.mark.asyncio
@@ -546,13 +504,8 @@ class TestAlbumSelection:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.resolve_album_name = AsyncMock(return_value=None)
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            app._provider.fetch_photo_ids = AsyncMock(return_value=[])
+            await app._do_fetch()
 
             assert app._status == "idle"
             batch_events = _fire_event_calls(app, "immich_fetcher_batch_ready")
@@ -737,13 +690,13 @@ class TestViewerSourceReading:
 # Selector: pool → batch selection
 # ---------------------------------------------------------------------------
 
-from immich_fetcher.selectors import (
+from photo_providers.immich_selectors import (
     AllPhotosSelector,
     AlbumSelector,
     SearchSelector,
     create_selector,
 )
-from immich_fetcher.models import LocationAlias
+from photo_providers.types import LocationAlias
 
 
 class TestSearchSelectorPoolSampling:
@@ -959,21 +912,17 @@ class TestSyncFilter:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
-                return_value=[{"id": "asset-1"}]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["asset-1"]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.download_photo = AsyncMock(return_value=b"JPEG")
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                # Sync filter index 2 (C)
-                app._active_filter_index = 2
-                await app._do_fetch(advance=False)
+            # Sync filter index 2 (C)
+            app._active_filter_index = 2
+            await app._do_fetch(advance=False)
 
-                assert app._last_fetch_filter == "C"
-                assert app._active_filter_index == 2  # stayed
+            assert app._last_fetch_filter == "C"
+            assert app._active_filter_index == 2  # stayed
 
     @pytest.mark.asyncio
     async def test_normal_fetch_advances_index(self):
@@ -993,18 +942,14 @@ class TestSyncFilter:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
-                return_value=[{"id": "asset-1"}]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["asset-1"]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.download_photo = AsyncMock(return_value=b"JPEG")
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                assert app._active_filter_index == 0
-                await app._do_fetch()  # default advance=True
-                assert app._active_filter_index == 1
+            assert app._active_filter_index == 0
+            await app._do_fetch()  # default advance=True
+            assert app._active_filter_index == 1
 
     def test_sync_name_mismatch_resolves_by_name(self):
         """If card sends index 2 but name='C' and backend has C at 1, use 1."""
@@ -1240,16 +1185,12 @@ class TestEmptyFilterTracking:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(return_value=[])
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.fetch_photo_ids = AsyncMock(return_value=[])
 
             app._displaying_filter_index = 0
             app._active_filter_index = 1
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            await app._do_fetch()
 
             assert app._displaying_filter_index == 0  # unchanged
             assert "Empty" in app._empty_filter_names
@@ -1274,20 +1215,16 @@ class TestEmptyFilterTracking:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
             # First call (Empty) returns nothing, second call (B) returns a photo
-            mock_client.search_random = AsyncMock(
-                side_effect=[[], [{"id": "asset-1"}]]
+            app._provider.fetch_photo_ids = AsyncMock(
+                side_effect=[[], ["asset-1"]]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.download_photo = AsyncMock(return_value=b"JPEG")
 
             app._displaying_filter_index = 0
             app._active_filter_index = 1  # points at "Empty"
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch(advance=False)
+            await app._do_fetch(advance=False)
 
             assert app._displaying_filter_index == 2  # moved to B
             assert "Empty" in app._empty_filter_names
@@ -1312,16 +1249,12 @@ class TestEmptyFilterTracking:
             app.initialize()
             app._empty_filter_names = {"A"}
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
-                return_value=[{"id": "asset-1"}]
+            app._provider.fetch_photo_ids = AsyncMock(
+                return_value=["asset-1"]
             )
-            mock_client.download_preview = AsyncMock(return_value=b"JPEG")
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
+            app._provider.download_photo = AsyncMock(return_value=b"JPEG")
 
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            await app._do_fetch()
 
             assert "A" not in app._empty_filter_names
             assert app._displaying_filter_index == 0
@@ -1338,16 +1271,12 @@ class TestEmptyFilterTracking:
             )
             app.initialize()
 
-            mock_client = AsyncMock()
-            mock_client.search_random = AsyncMock(
+            app._provider.fetch_photo_ids = AsyncMock(
                 side_effect=Exception("Network error")
             )
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
 
             filter_name = app._config.filters[0].name
-            with patch.object(app, "_create_client", return_value=mock_client):
-                await app._do_fetch()
+            await app._do_fetch()
 
             assert filter_name in app._empty_filter_names
 

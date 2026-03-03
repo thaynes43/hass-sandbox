@@ -57,6 +57,8 @@ Desired: allow a wall-display user to adjust what photos appear without editing 
 - The fetcher currently owns the Immich API integration; Home Assistant should not become the heavy worker.
 - Avoid tight coupling between viewer UI and fetcher implementation details; keep a stable "contract" at the HA helper layer.
 
+The `photo_providers` shared library (`appdaemon/photo_providers/`) owns the Immich API logic and defines a `PhotoProvider` interface. Future providers (Google Photos, Apple Photos) can be plugged in without changing the fetcher app logic.
+
 ## Phase 2: Detection Summary refactor (decouple producer from viewer)
 
 The `DetectionSummary` app currently contains both:

@@ -193,6 +193,46 @@ The fetcher card lives inside a Bubble Card popup. Intercepting the popup close 
 
 ---
 
+## Task 7: Thumbnail carousel (viewer controls card — settings popup)
+
+**Problem:** The Previous / Next buttons on `photo-frame-viewer-card.js` (the controls card in the settings popup, above the fetcher card) are nearly useless because there's no visual context for what you're navigating to. Users end up using the main dashboard Bubble Card instead, because at least there they see the photo change. The controls card feels disconnected from the content.
+
+**Solution:** Add a compact thumbnail carousel strip between the status bar and the Previous/Next buttons (or replace the button row entirely). The current photo is centered, with sequential neighbors fading out toward the edges. The strip must fit within the existing card footprint — no height increase.
+
+**Design:**
+- A single horizontal row of small square thumbnails (~40–48px), horizontally centered.
+- The active photo is highlighted (brighter, subtle border or scale-up). Neighbors fade progressively with `opacity` (e.g., 1.0, 0.7, 0.4, 0.2).
+- The strip wraps cyclically — if the current photo is near the start/end of the list, thumbnails wrap around.
+- Tapping a thumbnail navigates directly to that photo (`input_select/select_option`).
+- Previous/Next buttons can become thin arrow icons flanking the strip, or removed entirely if tap-to-navigate on thumbnails is sufficient.
+- On narrow screens the strip should show fewer thumbnails (e.g., 5 instead of 7) via a `@media` breakpoint or dynamic JS calculation.
+
+**Data source:**
+- The `input_select` entity's `options` attribute provides the ordered list of photo labels (e.g., `photo_0001.jpg` through `photo_0020.jpg`).
+- Thumbnail URLs can be constructed from the `ha_local_url_base` config + gen folder + label, with the `cache_bust` attribute appended. The sensor's `image_url` attribute already contains the pattern — the card can derive the base path from it.
+- Alternatively, expose a `thumbnail_base_url` attribute on the sensor so the card doesn't have to parse URL patterns.
+
+**Implementation notes:**
+1. In `_render()`, read `options` from the picker entity and `image_url` from the sensor to derive the base URL path.
+2. Render a `.thumbnail-strip` container with `display: flex; align-items: center; justify-content: center; gap: 4px; overflow: hidden;`.
+3. Each thumbnail: `<img src="..." class="thumb ${isActive ? 'active' : ''}" data-action="select-photo" data-label="${label}" style="opacity: ${opacity}" />`.
+4. Add `select-photo` to `dispatchAction`: `this._callService("input_select", "select_option", { entity_id: this._config.picker_entity, option: el.dataset.label })`.
+5. Thumbnails should use `object-fit: cover; width: 44px; height: 44px; border-radius: 4px;` for uniform squares regardless of photo orientation.
+6. Use `loading="lazy"` on non-visible thumbnails to avoid loading all 20 images at once.
+7. Consider a CSS `scroll-snap` approach if the strip needs to be swipeable on touch devices.
+
+**Caution:**
+- Loading 20 thumbnail images may be heavy. Consider limiting the visible strip to ~7–9 thumbnails centered on the current index and only rendering those `<img>` tags.
+- Append `cache_bust` to each thumbnail URL to avoid stale images after a batch swap.
+- Follow custom-card-guidelines §2 for touch handling on the thumbnails.
+
+**AppDaemon change (optional but recommended):**
+- Add a `url_base` attribute to the status sensor (e.g., `/local/photo-frame/live/4/`) so the card can construct thumbnail URLs without parsing the full `image_url`. This decouples the card from the URL format.
+
+**Test:** Verify on all three platforms. Verify the active thumbnail updates when the slideshow advances. Verify tapping a thumbnail navigates to that photo. Verify the strip doesn't increase the card's overall height.
+
+---
+
 ## Recommended implementation order
 
 Each task should be implemented, tested, and cache-busted independently before moving to the next:
@@ -202,10 +242,11 @@ Each task should be implemented, tested, and cache-busted independently before m
 | 1 | Task 3: Move delete inside expanded filter | Fetcher | Low | Small, safe change. Test on all devices. |
 | 2 | Task 1: Two-line filter row layout | Fetcher | Medium | Layout change; may affect touch targets. Test thoroughly on UniFi. |
 | 3 | Task 4 Tier 1: Unsaved changes banner | Fetcher | Low | Additive, no regression risk. |
-| 4 | Task 2: Drag-to-reorder | Fetcher | High | Complex touch handling. Follow custom-card-guidelines §2 carefully. Only `preventDefault` on the drag handle. Test scrolling vs dragging. |
-| 5 | Task 5: Photo frame viewer card | Viewer | High | New card. Replaces markdown card on dashboard. Test aspect ratio behavior with many photo orientations. |
-| 6 | Task 6: Heartbeat / offline detection | Both | Low | Touches both AppDaemon apps and both cards. Do before or after Task 5. |
-| 7 | Task 4 Tier 2: Cross-card dirty indicator | Both | Medium | Requires provisioner changes + coordination between cards. Do after Task 5. |
+| 4 | Task 7: Thumbnail carousel | Viewer (controls) | Medium | Independent. Enhances existing `photo-frame-viewer-card.js` in settings popup. Image loading perf needs care. |
+| 5 | Task 2: Drag-to-reorder | Fetcher | High | Complex touch handling. Follow custom-card-guidelines §2 carefully. Only `preventDefault` on the drag handle. Test scrolling vs dragging. |
+| 6 | Task 5: Photo frame display card | Viewer (new) | High | New card. Replaces markdown card on main dashboard. Test aspect ratio behavior with many photo orientations. |
+| 7 | Task 6: Heartbeat / offline detection | Both | Low | Touches both AppDaemon apps and both cards. Independent of other tasks. |
+| 8 | Task 4 Tier 2: Cross-card dirty indicator | Both | Medium | Requires provisioner changes + coordination between cards. Do after Task 5. |
 
 ---
 

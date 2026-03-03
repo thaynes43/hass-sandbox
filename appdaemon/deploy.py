@@ -39,7 +39,7 @@ DEFAULT_TARGET = os.environ.get("DEPLOY_TARGET", "X:\\")
 # We therefore deploy shared libraries into `apps/<lib>/` so imports like
 # `import ai_providers...` / `import ha_provisioner...` work without
 # requiring appdaemon.yaml import_paths changes.
-COPY_ITEMS = ["apps", "ai_providers", "ha_provisioner"]
+COPY_ITEMS = ["apps", "ai_providers", "ha_provisioner", "photo_providers"]
 
 EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor", "_state"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}

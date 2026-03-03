@@ -1,25 +1,24 @@
-"""Unit tests for immich_fetcher.selectors – request body construction.
+"""Unit tests for photo_providers.immich_selectors – request body construction.
 
 All aiohttp responses are mocked; no real HTTP calls are made.
 """
 
 from __future__ import annotations
 
-import random as _random
 from typing import Any, Dict, List
 from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
 
-from apps.immich_fetcher.immich_client import ImmichClient
-from apps.immich_fetcher.models import LocationAlias, PhotoFilter
-from apps.immich_fetcher.selectors import (
+from photo_providers.immich_client import ImmichClient
+from photo_providers.immich_selectors import (
     AllPhotosSelector,
     AlbumSelector,
     SearchSelector,
     create_selector,
 )
+from photo_providers.types import LocationAlias, PhotoFilter
 
 
 # ---------------------------------------------------------------------------
@@ -247,10 +246,10 @@ class TestSearchSelector:
         sel = SearchSelector(client, pf)
         pool = _asset_list([f"id-{i}" for i in range(50)])
         client.search_smart = AsyncMock(return_value=pool)
-        with patch.object(_random, "sample", wraps=_random.sample) as mock_sample:
+        with patch("photo_providers.immich_selectors.random.shuffle") as mock_shuffle:
             ids = await sel.get_asset_ids(10)
-            mock_sample.assert_called_once()
-            assert len(ids) == 10
+            mock_shuffle.assert_called_once()
+            assert len(ids) == 50  # SearchSelector returns full shuffled pool when randomize=True
 
     @pytest.mark.asyncio
     async def test_randomized_fewer_than_count(self, client: ImmichClient):
@@ -294,8 +293,11 @@ class TestAlbumSelector:
         client.get_album_assets = AsyncMock(
             return_value=_asset_list([f"v{i}" for i in range(20)])
         )
-        with patch.object(_random, "sample", wraps=_random.sample):
+        with patch("photo_providers.immich_selectors.random.sample") as mock_sample:
+            mock_sample.side_effect = lambda pop, k: list(pop)[:k]  # deterministic for test
             ids = await sel.get_asset_ids(5)
+            mock_sample.assert_called_once()
+            assert mock_sample.call_args[0][1] == 5
             assert len(ids) == 5
 
     @pytest.mark.asyncio

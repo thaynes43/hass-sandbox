@@ -12,6 +12,7 @@ This ruleset captures major architectural decisions for AppDaemon apps in this p
 - `appdaemon/<lib>/` — **Shared libraries** used by multiple apps.
   - `appdaemon/ai_providers/` — LLM/provider plumbing.
   - `appdaemon/ha_provisioner/` — HA entity provisioning (scripts, helpers).
+  - `appdaemon/photo_providers/` — Photo source provider plumbing (Immich; extensible for Google Photos, Apple Photos).
 - Each shared library **must** be added to `deploy.py` `COPY_ITEMS` so it deploys to `X:\apps\<lib>\` and is importable under prod's `/conf/apps` sys.path.
 
 Do **not** put shared libraries inside `appdaemon/apps/`. Only actual AppDaemon app modules belong there.

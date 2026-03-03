@@ -15,10 +15,13 @@ appdaemon/
 ├── appdaemon.yaml           # Local dev config (.gitignored; never deployed)
 ├── secrets.yaml             # Local dev secrets (.gitignored; never deployed)
 ├── requirements.txt         # Python deps (pip install -r)
-├── deploy.py                # Deploy script (apps/ → X:\)
+├── deploy.py                # Deploy script (apps/ + shared libs → X:\)
 ├── apps/
 │   ├── apps.yaml            # App registration (environment_test)
 │   └── environment_test.py  # Environment test app
+├── photo_providers/         # Shared library: photo source provider plumbing (Immich; extensible)
+├── ai_providers/            # Shared library: LLM/provider plumbing
+└── ha_provisioner/          # Shared library: HA entity provisioning
 ```
 
 ### Local setup (pip)
