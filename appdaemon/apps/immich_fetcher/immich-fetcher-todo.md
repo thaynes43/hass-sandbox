@@ -112,6 +112,25 @@ The fetcher card lives inside a Bubble Card popup. Intercepting the popup close 
 
 ---
 
+## Task 4b: Collapse expanded filters on save (fetcher card)
+
+**Problem:** After editing filter settings and clicking "Save Configuration", all expanded filters stay open. This is jarring — the user just finished editing, and the open editors are stale (they reflect the now-saved state, not a work-in-progress). It also makes it easy to accidentally re-edit something without realizing changes were already persisted.
+
+**Solution:** When the save action completes successfully, collapse all expanded filters.
+
+**Implementation:**
+1. In the save handler (the `save-config` action in `_dispatchAction`), after the save service call succeeds and `_dirty` is cleared, set `this._expandedFilter = -1` (or `null`, whatever sentinel the card uses for "none expanded").
+2. Trigger a re-render so the filter list draws with all rows collapsed.
+3. No additional `_markDirty()` — collapsing is a UI-only state change, not a config change.
+
+**Caution:**
+- If the save fails (network error, backend rejection), do **not** collapse — the user needs the editor open to retry or fix the issue.
+- This pairs well with Task 4 Tier 1 (unsaved banner): save clears the banner **and** collapses filters in one gesture, giving clear visual feedback that the operation completed.
+
+**Test:** Expand two filters, edit one, click Save. Verify both filters collapse after save. Verify that on a save failure (e.g., disconnect AppDaemon), filters remain expanded.
+
+---
+
 ## Task 5: Custom photo frame viewer card (viewer card)
 
 **Problem:** The current photo frame display uses a markdown card with a raw `<img>` tag. This causes the card to resize dynamically based on photo aspect ratio (portrait vs landscape), which makes the entire dashboard shift constantly.
@@ -233,6 +252,109 @@ The fetcher card lives inside a Bubble Card popup. Intercepting the popup close 
 
 ---
 
+## Task 8: Multi-location filters (backend + fetcher card)
+
+**Problem:** A `PhotoFilter` currently supports a single `location: Optional[str]` field. When traveling, photos from a trip are often spread across many nearby towns (e.g., "Florence", "Fiesole", "Siena"). Creating a separate filter per town is tedious, and combining them requires a workaround like a `search` filter with a vague query.
+
+**Solution:** Allow a filter to specify **multiple locations**, and allow a **LocationAlias** to map a friendly name to **multiple** `{city, state, country}` tuples (so a single alias like "Tuscany Trip" resolves to several towns).
+
+### Backend changes
+
+**`photo_providers/types.py` — `PhotoFilter`:**
+- Change `location: Optional[str]` to `locations: Optional[List[str]]` (list of location names or alias keys).
+- Keep backward compatibility: `from_dict` should accept both `"location": "Paris"` (legacy, wraps in a list) and `"locations": ["Paris", "Florence"]`.
+- `to_dict` should always serialize as `"locations"`.
+- `validate()` should reject empty strings in the list.
+
+**`photo_providers/types.py` — `LocationAlias`:**
+- Change from a single `{city, state, country}` to a **list of location specs**:
+  ```python
+  @dataclass
+  class LocationAlias:
+      """Maps a friendly name to one or more reverse-geocode locations."""
+      specs: List[LocationSpec]  # each is {city?, state?, country?}
+
+  @dataclass
+  class LocationSpec:
+      city: Optional[str] = None
+      state: Optional[str] = None
+      country: Optional[str] = None
+  ```
+- Keep backward compatibility in `from_dict`: if the raw dict has `city`/`state`/`country` at the top level (old format), wrap it into a single-element `specs` list.
+- `to_dict` should always serialize the `specs` list.
+- `validate()` should require at least one spec, and each spec must have at least one field.
+
+**`photo_providers/immich_selectors.py` (or wherever location filtering happens):**
+- When resolving locations for a filter: expand each entry in `locations` — if it matches a LocationAlias key, use all specs from that alias; otherwise treat it as a literal city name.
+- Query Immich for assets matching **any** of the resolved locations (union/OR).
+- Selection strategy for multi-location results: **random** by default (shuffle the combined pool). Optionally support `location_strategy: "round_robin"` on the filter to pull evenly from each location, but default to random for simplicity.
+
+**`immich_fetcher/models.py` — `FetcherConfig`:**
+- No structural change needed; `location_aliases` dict already exists. The values just change shape (list of specs instead of single spec).
+
+### Card changes (`immich-fetcher-card.js`)
+
+- **Filter editor location field:** Replace the single location text input with a tag/chip input that supports multiple locations. Each chip is a location name. Typing shows autocomplete from known alias names.
+- **Location alias editor:** Update the alias editor to allow adding multiple `{city, state, country}` rows per alias. Each row has city/state/country fields. A "+" button adds another row. Show the count of locations in the alias badge.
+- When saving config, serialize `locations` (list) and the new `LocationAlias` format.
+
+### Migration
+
+- On config load (`FetcherConfig.from_dict`), if a filter has the old `location` key (string), convert to `locations: [location]`.
+- On alias load, if the raw dict has `city`/`state`/`country` at the top level, wrap into `specs: [{city, state, country}]`.
+- The persisted config JSON will be updated to the new format on next save.
+
+**Test:** Create a filter with `locations: ["Tuscany Trip"]` where "Tuscany Trip" is an alias mapping to `[{city: "Florence"}, {city: "Siena"}, {city: "Fiesole"}]`. Verify photos from all three cities appear. Test with a mix of aliases and literal city names. Test legacy single-location config loads correctly.
+
+---
+
+## Task 9: Location alias enhancements — grouping trips and regions (fetcher card)
+
+**Problem (extends Task 8):** After Task 8 adds multi-spec LocationAliases, the card UI needs a good way to discover and create them. Currently the user has to know exact city names from Immich's reverse-geocode data. For trip grouping, the user wants to select from cities that appear in their photo library, not guess.
+
+**Solution:**
+
+### Backend: Location discovery endpoint
+
+- Add a new relay command `get_locations` that returns all distinct `{city, state, country}` tuples from the user's Immich library (from the metadata cache, or a new Immich API call).
+- The card can then show a picker of known locations when building an alias.
+
+### Card: Alias builder UX
+
+- When editing a LocationAlias, show a searchable list of all known locations (cities from the library).
+- User can check multiple cities to add them to the alias.
+- Group the location list by state/country for easier browsing (e.g., all Italian cities grouped under "Italy").
+- Show a count badge on each alias in the alias list (e.g., "Tuscany Trip (3 locations)").
+
+### Card: Quick "Create from filter results"
+
+- After a fetch completes with location-based results, offer a shortcut: "Save these locations as an alias" that captures the distinct cities from the fetched photos into a new alias.
+
+**Test:** Create an alias using the picker, verify all selected cities are included. Verify the alias badge shows the correct count. Test the quick-create flow after a location-based fetch.
+
+---
+
+## Known bugs
+
+### Bug 1: Active filter indicator drifts after reorder (fetcher card)
+
+**Severity:** Medium — confusing UX, but no data loss.
+
+**Symptoms:** When moving a filter up or down with the arrow buttons, the play/active indicator does not follow the moved filter. It either stays on the original index (so it now points at a different filter) or jumps unexpectedly. Needs further testing to pin down the exact behavior — the active indicator may be tracked by array index rather than by filter identity.
+
+**Likely cause:** The card tracks the "currently playing" filter by index (e.g., comparing against the backend's active filter index from the sensor). When `move-filter-up` / `move-filter-down` reorders `this._filters`, the index-to-filter mapping changes, but the active index from the sensor hasn't been updated yet (it reflects the saved order, not the unsaved reorder). This creates a mismatch between the displayed indicator and the actual active filter.
+
+**Possible fix:**
+- Track the active filter by **name** (or a stable identifier) rather than by array index.
+- After a reorder, resolve the active filter's name back to its new index for display purposes.
+- This bug will be partially mooted by Task 2 (drag-to-reorder replaces the arrow buttons), but the underlying index-vs-identity tracking issue should still be fixed since it could affect drag reorder too.
+
+**Workaround:** Save after reordering — the backend updates its active index to match the new order, and the indicator corrects on the next render.
+
+**Related:** Task 2 (drag-to-reorder) — fix this bug before or during Task 2 implementation.
+
+---
+
 ## Recommended implementation order
 
 Each task should be implemented, tested, and cache-busted independently before moving to the next:
@@ -242,11 +364,14 @@ Each task should be implemented, tested, and cache-busted independently before m
 | 1 | Task 3: Move delete inside expanded filter | Fetcher | Low | Small, safe change. Test on all devices. |
 | 2 | Task 1: Two-line filter row layout | Fetcher | Medium | Layout change; may affect touch targets. Test thoroughly on UniFi. |
 | 3 | Task 4 Tier 1: Unsaved changes banner | Fetcher | Low | Additive, no regression risk. |
-| 4 | Task 7: Thumbnail carousel | Viewer (controls) | Medium | Independent. Enhances existing `photo-frame-viewer-card.js` in settings popup. Image loading perf needs care. |
-| 5 | Task 2: Drag-to-reorder | Fetcher | High | Complex touch handling. Follow custom-card-guidelines §2 carefully. Only `preventDefault` on the drag handle. Test scrolling vs dragging. |
-| 6 | Task 5: Photo frame display card | Viewer (new) | High | New card. Replaces markdown card on main dashboard. Test aspect ratio behavior with many photo orientations. |
-| 7 | Task 6: Heartbeat / offline detection | Both | Low | Touches both AppDaemon apps and both cards. Independent of other tasks. |
-| 8 | Task 4 Tier 2: Cross-card dirty indicator | Both | Medium | Requires provisioner changes + coordination between cards. Do after Task 5. |
+| 4 | Task 4b: Collapse filters on save | Fetcher | Low | Tiny change, pairs with Task 4 Tier 1. Do immediately after. |
+| 5 | Task 7: Thumbnail carousel | Viewer (controls) | Medium | Independent. Enhances existing `photo-frame-viewer-card.js` in settings popup. Image loading perf needs care. |
+| 6 | Task 2: Drag-to-reorder | Fetcher | High | Complex touch handling. Follow custom-card-guidelines §2 carefully. Only `preventDefault` on the drag handle. Test scrolling vs dragging. |
+| 7 | Task 8: Multi-location filters | Both | Medium | Backend model changes + card UI. Do before Task 9. Backward-compatible migration required for existing configs. |
+| 8 | Task 9: Location alias enhancements | Fetcher | Medium | Depends on Task 8. New location discovery endpoint + picker UI. |
+| 9 | Task 5: Photo frame display card | Viewer (new) | High | New card. Replaces markdown card on main dashboard. Test aspect ratio behavior with many photo orientations. |
+| 10 | Task 6: Heartbeat / offline detection | Both | Low | Touches both AppDaemon apps and both cards. Independent of other tasks. |
+| 11 | Task 4 Tier 2: Cross-card dirty indicator | Both | Medium | Requires provisioner changes + coordination between cards. Do after Task 5. |
 
 ---
 
