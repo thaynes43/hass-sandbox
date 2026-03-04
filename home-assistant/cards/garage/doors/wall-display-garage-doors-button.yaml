@@ -1,0 +1,33 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Garage Doors
+icon: mdi:garage
+entity: cover.ratgdov25i_dbfa50_door
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#wall-display-garage-doors"
+sub_button:
+  main:
+    - entity: cover.ratgdov25i_4a0325_door
+      name: Tesla
+      show_name: true
+      show_icon: false
+      show_state: true
+      tap_action:
+        action: navigate
+        navigation_path: "#wall-display-garage-doors"
+    - entity: cover.ratgdov25i_dbfa50_door
+      name: Wagoneer
+      show_name: true
+      show_state: true
+      show_icon: false
+      tap_action:
+        action: navigate
+        navigation_path: "#wall-display-garage-doors"
+  bottom: []
+  bottom_layout: rows
+rows: 1
+slider_fill_orientation: left
+slider_value_position: right

@@ -2,11 +2,11 @@ type: vertical-stack
 cards:
   - type: custom:bubble-card
     card_type: pop-up
-    hash: "#kellie-locks"
+    hash: "#wall-display-locks"
     button_type: name
     width_desktop: 75vw
     show_header: true
-    name: Return to Dashboard
+    name: Wall Display - Return to Dashboard
     show_icon: true
     icon: mdi:arrow-left
     show_name: true
@@ -41,7 +41,7 @@ cards:
         }
     content: |
       ## Entry Status
-      **Locks:** {{ states('input_text.kellie_entry_locks_status') }}
+      **Locks:** {{ states('input_text.wall_display_entry_locks_status') }}
 
       {% set slider = 'binary_sensor.kitchen_slider_usl_entry_contact' %}
       {% set garage_side = 'binary_sensor.usl_entry_contact_2' %}

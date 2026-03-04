@@ -351,7 +351,7 @@ The fetcher card lives inside a Bubble Card popup. Intercepting the popup close 
 
 **Workaround:** Save after reordering — the backend updates its active index to match the new order, and the indicator corrects on the next render.
 
-**Related:** Task 2 (drag-to-reorder) — fix this bug before or during Task 2 implementation.
+**Related:** Task 2 (drag-to-reorder) replaces the arrow buttons entirely, which may eliminate this bug as a side effect. Implement Task 2 first, then re-evaluate whether Bug 1 persists with the new reorder mechanism before investing in a separate fix.
 
 ---
 
