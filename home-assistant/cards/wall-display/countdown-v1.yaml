@@ -1,0 +1,28 @@
+type: custom:mod-card
+style: |
+  ha-card {
+    height: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden;
+  }
+card:
+  type: picture-elements
+  image: /api/image/serve/a51b703921e9d9c68b3133bdee090ccb/512x512
+  elements:
+    - type: state-label
+      entity: sensor.front_page_countdown
+      style:
+        left: 50%
+        top: 70%
+        transform: translate(-50%, -50%)
+        font-size: 50px
+        font-weight: 1000
+        color: "#ffd24a"
+        text-transform: uppercase
+        letter-spacing: 4px
+        text-shadow: >
+          -3px -3px 6px rgba(0,0,0,0.9), 3px -3px 6px rgba(0,0,0,0.9), -3px 3px
+          6px rgba(0,0,0,0.9), 3px 3px 6px rgba(0,0,0,0.9), 0 0 10px
+          rgba(255,210,74,0.9), 0 0 22px rgba(255,160,40,0.7), 0 0 32px
+          rgba(255,120,20,0.5)
