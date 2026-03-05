@@ -157,6 +157,8 @@ Replace `{BUNDLE_KEY_UPPER}` with the bundle key in UPPER_SNAKE_CASE (e.g., `BUL
 The viewer self-provisions on startup (idempotent):
 - `input_select.{bundle_key}_detection_summary_run_id` — run picker
 - `input_text.{bundle_key}_detection_summary_selected` — selected summary text
+- `input_text.{bundle_key}_detection_summary_timing` — detection period start/end/elapsed
+- `input_text.{bundle_key}_detection_summary_cooldown` — cooldown status and backoff info
 - `script.{bundle_key}_detection_summary_relay` — dashboard relay script
 
 ---
@@ -257,7 +259,7 @@ config['views'].append({
             {'type': 'markdown', 'content': "{{ states('input_text.{bundle_key}_detection_summary_selected') }}"},
             {'type': 'markdown', 'content': "<img src=\"/local/detection-summary/{bundle_key}/viewer/{{ states('input_select.{bundle_key}_detection_summary_run_id') }}_generated.png\" />"},
             {'type': 'markdown', 'content': "<img src=\"/local/detection-summary/{bundle_key}/viewer/{{ states('input_select.{bundle_key}_detection_summary_run_id') }}_best.jpg\" style=\"width:100%;border-radius:12px;object-fit:cover;\" />"},
-            {'type': 'markdown', 'content': '_Selection updated: {{ states.input_text.{bundle_key}_detection_summary_selected.last_updated }}_'}
+            {'type': 'markdown', 'content': "_Detection: {{ states('input_text.{bundle_key}_detection_summary_timing') }}_\n\n_Cooldown: {{ states('input_text.{bundle_key}_detection_summary_cooldown') }}_\n\n_Selection updated: {{ states.input_text.{bundle_key}_detection_summary_selected.last_updated }}_"}
         ]
     }],
     'cards': []

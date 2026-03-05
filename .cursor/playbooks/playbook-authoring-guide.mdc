@@ -93,4 +93,5 @@ alwaysApply: false
 | `appdaemon-deploy-playbook.mdc` | Deploy AppDaemon apps from dev to production |
 | `security-audit-playbook.mdc` | Audit AppDaemon apps for security policy violations |
 | `detection-app-playbook.mdc` | Build/extend the detection summary AppDaemon app |
+| `multi-agent-plan-playbook.mdc` | Structure multi-agent plans (Planner → Implementation → Validation) |
 | `playbook-authoring-guide.mdc` | This file — how to write new playbooks |

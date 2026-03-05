@@ -141,6 +141,40 @@ def _recent_published_run_ids(runs_dir: Path, max_options: int) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
+# Dashboard helper format functions (module-level; pure, easy to unit test)
+# ---------------------------------------------------------------------------
+
+
+def _format_timing_value(timing: dict) -> str:
+    """Format summary.json timing block to 'HH:MM:SS → HH:MM:SS (H:MM:SS)'."""
+    started = float(timing.get("capture_started_epoch") or 0)
+    ended = float(timing.get("capture_ended_epoch") or 0)
+    duration = float(timing.get("capture_duration_s") or 0)
+    start_str = time.strftime("%H:%M:%S", time.gmtime(started)) if started else "?"
+    end_str = time.strftime("%H:%M:%S", time.gmtime(ended)) if ended else "?"
+    h = int(duration // 3600)
+    m = int((duration % 3600) // 60)
+    s = int(duration % 60)
+    elapsed = f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+    return f"{start_str} → {end_str} ({elapsed})"
+
+
+def _format_cooldown_value(cooldown: dict) -> str:
+    """Format summary.json cooldown_state block for dashboard display."""
+    effective = float(cooldown.get("effective_cooldown_s") or 0)
+    base = float(cooldown.get("base_cooldown_s") or effective or 0)
+    increments = int(cooldown.get("backoff_increments") or 0)
+    expires = float(cooldown.get("cooldown_expires_at_epoch") or 0)
+    if expires > time.time():
+        expires_str = time.strftime("%H:%M:%SZ", time.gmtime(expires))
+        status = f"on cooldown until {expires_str}"
+    else:
+        status = "ready"
+    backoff_info = f"x{increments} ({effective:.0f}s, base {base:.0f}s)" if increments > 0 else f"{base:.0f}s base"
+    return f"{status} | {backoff_info}"
+
+
+# ---------------------------------------------------------------------------
 # Main app class
 # ---------------------------------------------------------------------------
 
@@ -209,6 +243,14 @@ class DetectionSummaryViewer(hass.Hass):
         self.selected_summary_text_entity_id: str = (
             hass_entities.get("selected_summary_text_entity_id")
             or f"input_text.{self.bundle_key}_detection_summary_selected"
+        )
+        self.timing_helper_entity_id: str = (
+            hass_entities.get("timing_helper_entity_id")
+            or f"input_text.{self.bundle_key}_detection_summary_timing"
+        )
+        self.cooldown_helper_entity_id: str = (
+            hass_entities.get("cooldown_helper_entity_id")
+            or f"input_text.{self.bundle_key}_detection_summary_cooldown"
         )
         self.selected_best_image_camera_entity_id: Optional[str] = hass_entities.get(
             "selected_best_image_camera_entity_id"
@@ -347,6 +389,8 @@ class DetectionSummaryViewer(hass.Hass):
         for helper_type, name, extra_kwargs in [
             ("input_select", f"{bk_display} Detection Summary Run Id", {"options": ["loading"]}),
             ("input_text", f"{bk_display} Detection Summary Selected", {"max": 255}),
+            ("input_text", f"{bk_display} Detection Summary Timing", {"max": 255}),
+            ("input_text", f"{bk_display} Detection Summary Cooldown", {"max": 255}),
         ]:
             try:
                 created = await prov.ensure_helper(helper_type, name, **extra_kwargs)
@@ -497,6 +541,87 @@ class DetectionSummaryViewer(hass.Hass):
                 level="WARNING",
             )
 
+    def _update_run_detail_helpers(self, run_id: str, *, local_run_dir: Optional[Path] = None) -> None:
+        """Read summary.json for run_id and update timing + cooldown input_text helpers."""
+        if not self.timing_helper_entity_id and not self.cooldown_helper_entity_id:
+            return
+        if local_run_dir is None:
+            local_run_dir = (
+                self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir / run_id
+            )
+        summary_path = local_run_dir / "summary.json"
+        if not summary_path.exists():
+            self.log(
+                f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: summary.json missing for run_id={run_id}",
+                level="WARNING",
+            )
+            return
+        try:
+            parsed = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            self.log(
+                f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: failed to read summary.json for run_id={run_id}: {e!r}",
+                level="WARNING",
+            )
+            return
+
+        if self.timing_helper_entity_id:
+            timing = (parsed.get("summary") or {}).get("timing") if isinstance(parsed, dict) else None
+            if timing is None:
+                self.log(
+                    f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: timing block absent for run_id={run_id}",
+                    level="WARNING",
+                )
+            else:
+                try:
+                    value = _format_timing_value(timing)
+                    if len(value) > 255:
+                        value = value[:252] + "..."
+                    self.call_service(
+                        "input_text/set_value",
+                        entity_id=self.timing_helper_entity_id,
+                        value=value,
+                    )
+                except Exception as e:
+                    self.log(
+                        f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: failed to set timing helper for run_id={run_id}: {e!r}",
+                        level="WARNING",
+                    )
+
+        if self.cooldown_helper_entity_id:
+            cooldown = parsed.get("cooldown_state") if isinstance(parsed, dict) else None
+            if cooldown is None:
+                self.log(
+                    f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: cooldown_state absent for run_id={run_id} (old run or backoff disabled)",
+                    level="WARNING",
+                )
+                try:
+                    self.call_service(
+                        "input_text/set_value",
+                        entity_id=self.cooldown_helper_entity_id,
+                        value="unknown",
+                    )
+                except Exception as e:
+                    self.log(
+                        f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: failed to clear cooldown helper for run_id={run_id}: {e!r}",
+                        level="WARNING",
+                    )
+            else:
+                try:
+                    value = _format_cooldown_value(cooldown)
+                    if len(value) > 255:
+                        value = value[:252] + "..."
+                    self.call_service(
+                        "input_text/set_value",
+                        entity_id=self.cooldown_helper_entity_id,
+                        value=value,
+                    )
+                except Exception as e:
+                    self.log(
+                        f"DetectionSummaryViewer[{self.bundle_key}]: _update_run_detail_helpers: failed to set cooldown helper for run_id={run_id}: {e!r}",
+                        level="WARNING",
+                    )
+
     def _select_run_from_www_cache(self, run_id: str) -> None:
         """Repoint the two selected local_file cameras to staged viewer files for run_id."""
         run_id = str(run_id or "").strip()
@@ -589,6 +714,7 @@ class DetectionSummaryViewer(hass.Hass):
             )
             self._select_run_from_www_cache(run_id)
             self._update_selected_summary_text(run_id)
+            self._update_run_detail_helpers(run_id)
         except Exception as e:
             self.log(
                 f"DetectionSummaryViewer[{self.bundle_key}]: run picker change failed: {e!r}", level="WARNING"
@@ -851,3 +977,4 @@ class DetectionSummaryViewer(hass.Hass):
             )
 
         self._update_selected_summary_text(run_id, local_run_dir=local_run_dir)
+        self._update_run_detail_helpers(run_id, local_run_dir=local_run_dir)

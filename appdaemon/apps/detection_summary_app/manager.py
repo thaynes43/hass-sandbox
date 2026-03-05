@@ -12,6 +12,8 @@ This is the orchestrator that:
 
 from __future__ import annotations
 
+import json
+import math
 import threading
 import time
 import uuid
@@ -326,6 +328,30 @@ class DetectionSummary(hass.Hass):
         if remainder is None:
             return Path(ha_path)
         return Path(self.media_fs_root) / remainder
+
+    def _patch_summary_json_cooldown(self, run_id: str, cooldown_state: dict) -> None:
+        """Patch an existing summary.json with cooldown_state after _finalize computes the new cooldown."""
+        if not self.write_bundle_json:
+            return
+        local_run_dir = (
+            self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir / run_id
+        )
+        summary_path = local_run_dir / "summary.json"
+        if not summary_path.exists():
+            self.log(
+                f"DetectionSummary[{self.bundle_key}]: _patch_summary_json_cooldown: summary.json missing for run_id={run_id}",
+                level="WARNING",
+            )
+            return
+        try:
+            existing = json.loads(summary_path.read_text(encoding="utf-8"))
+            existing["cooldown_state"] = cooldown_state
+            summary_path.write_text(json.dumps(existing, indent=2, sort_keys=False), encoding="utf-8")
+        except Exception as e:
+            self.log(
+                f"DetectionSummary[{self.bundle_key}]: _patch_summary_json_cooldown failed for run_id={run_id}: {e!r}",
+                level="WARNING",
+            )
 
     # --- async startup --------------------------------------------------
 
@@ -1128,6 +1154,16 @@ class DetectionSummary(hass.Hass):
                 f"DetectionSummary[{self.bundle_key}]: cooldown {reason} -> {new_cd:.0f}s",
                 level=log_level,
             )
+
+            cooldown_state = {
+                "base_cooldown_s": float(self.cooldown_s),
+                "effective_cooldown_s": new_cd,
+                "backoff_increments": max(0, round(math.log2(new_cd / float(self.cooldown_s)))) if new_cd > float(self.cooldown_s) else 0,
+                "finalized_at_epoch": now,
+                "cooldown_expires_at_epoch": now + new_cd,
+                "cooldown_expires_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now + new_cd)),
+            }
+            self._patch_summary_json_cooldown(active.capture.run_id, cooldown_state)
 
             best_file = ((bundle.get("debug") or {}).get("selection_meta") or {}).get("best_idx") if isinstance(bundle, dict) else None
             self.log(

@@ -14,6 +14,57 @@ All tool parameters must be valid JSON objects/values. Do not pass Python dict l
 
 ---
 
+## Workflow: find & verify helpers
+
+Use this before creating a helper (to avoid duplicates), when diagnosing issues, or when validating that a provisioner-created entity actually exists.
+
+**Option A — Search by name / keyword (1 call)**
+
+Returns all matching entity IDs, friendly names, current state, and match scores. Works across all helper types at once. Best when you know part of the name.
+
+```json
+{
+  "tool": "ha_search_entities",
+  "arguments": {
+    "query": "detection summary timing",
+    "domain_filter": "input_text",
+    "limit": 10
+  }
+}
+```
+
+The `state` field in the response is the **current live value** of the helper — no separate verification call needed. Omit `domain_filter` to search across all domains at once.
+
+**Option B — List all helpers of a type (1 call)**
+
+Returns every stored helper of that type with its full configuration. Best for an exhaustive inventory.
+
+```json
+{
+  "tool": "ha_config_list_helpers",
+  "arguments": {
+    "helper_type": "input_text"
+  }
+}
+```
+
+**Option C — Check current state of a known entity (1 call)**
+
+Use when you already know the exact `entity_id` and want its current state or attributes.
+
+```json
+{
+  "tool": "ha_get_state",
+  "arguments": {
+    "entity_id": "input_text.bulkhead_detection_summary_timing"
+  }
+}
+```
+
+> **Note on AppDaemon-provisioned helpers**: helpers created via `HAProvisioner` at app startup may not appear in AppDaemon's local state cache immediately. The entities are created via HA REST API; AppDaemon learns about them via WebSocket `state_changed` events which arrive within seconds. If `ha_search_entities` or `ha_get_state` return the entity, it exists in HA. The AppDaemon "entity not found in namespace" log warning is transient and resolves automatically.
+
+---
+
 ## Workflow: create a new helper
 
 **Step 1 — Discovery (1 call, optional)**

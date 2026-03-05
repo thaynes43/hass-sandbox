@@ -78,8 +78,8 @@ class TestDetectionSummaryViewerInit:
             app.initialize()
             app._async_startup_wrapper({})
 
-        # 2 helpers: input_select (run picker) + input_text (selected summary)
-        assert mock_prov.ensure_helper.call_count == 2
+        # 4 helpers: input_select (run picker) + input_text (selected summary, timing, cooldown)
+        assert mock_prov.ensure_helper.call_count == 4
         # 1 relay script
         assert mock_prov.ensure_script.call_count == 1
 
