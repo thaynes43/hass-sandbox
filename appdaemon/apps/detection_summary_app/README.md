@@ -99,15 +99,16 @@ These are defaults in code. You can override any of these by adding the key at t
 
 #### Capture / cooldown
 
-| Key | Default |
-| --- | --- |
-| `trigger_to` | `on` |
-| `task_name` | `detection summary` |
-| `snapshot_interval_s` | `2.5` |
-| `off_grace_s` | `15` |
-| `capture_max_s` | `300` |
-| `cooldown_s` | `60` |
-| `cooldown_backoff_max_s` | `1800` |
+| Key | Default | Description |
+| --- | --- | --- |
+| `trigger_to` | `on` | State value that starts a run |
+| `task_name` | `detection summary` | Used in log messages |
+| `snapshot_interval_s` | `2.5` | Seconds between frame captures while motion is on |
+| `off_grace_s` | `15` | Seconds motion must be OFF before capture ends |
+| `capture_max_s` | `300` | Hard cap on total capture duration |
+| `cooldown_s` | `150` | Base post-finalize cooldown (seconds). See cooldown/backoff section below. |
+| `cooldown_backoff_max_s` | `1800` | Hard cap on the effective cooldown (seconds) |
+| `cooldown_backoff_window_n` | `3` | Backoff window multiplier. See cooldown/backoff section below. |
 
 #### Selection / scoring
 
@@ -168,6 +169,68 @@ When enabled, write:
 | `trace_copy_best_frame` | `true` |
 | `trace_max_copies` | `50` |
 
+## Cooldown and backoff
+
+The cooldown system prevents rapid back-to-back image generation when motion is flapping (e.g. sensor briefly turns off and on again while someone is still in the scene).
+
+### How it works
+
+After a pipeline completes (bundle published **or** skipped), triggers are suppressed for `_effective_cooldown_s` seconds. The effective cooldown starts from the moment `_finalize` returns — not from run start — so it is a true post-pipeline gate regardless of how long capture + LLM + image generation took.
+
+`_effective_cooldown_s` starts at `cooldown_s` and is updated each time a bundle is produced:
+
+- **First image ever**: resets to `cooldown_s` (no history to compare against).
+- **Next image within the backoff window**: `_effective_cooldown_s` doubles, capped at `cooldown_backoff_max_s`.
+- **Next image outside the backoff window**: resets to `cooldown_s`.
+- **Skipped run** (no people/animals detected): always resets to `cooldown_s`. Does not affect the backoff chain.
+
+The **backoff window** is `cooldown_backoff_window_n × previous_effective_cooldown_s`. The delta is measured between finalize timestamps of successive bundles.
+
+### The three config keys
+
+| Key | Role |
+| --- | --- |
+| `cooldown_s` | Base cooldown after each finalized pipeline. Also the reset value when the window is exceeded. |
+| `cooldown_backoff_window_n` | Multiplier defining how long "rapid" means. If the next bundle arrives within `n × prev_cooldown`, the cooldown doubles. |
+| `cooldown_backoff_max_s` | Hard cap. The effective cooldown will never exceed this regardless of how many doublings occur. |
+
+### Example: groceries unloading (150s base, n=3)
+
+| Event | Time (after prev finalize) | Effective cooldown set |
+| --- | --- | --- |
+| First trip detected, image generated | T₀ | 150s (first image) |
+| Second trip trigger | T₀ + 60s | **SUPPRESSED** — 90s remaining |
+| Second trip trigger | T₀ + 160s | allowed — delta 160s ≤ window 450s → **backed off to 300s** |
+| Third trip trigger | T₁ + 200s | **SUPPRESSED** — 100s remaining |
+| Later distinct event | T₁ + 500s | allowed — delta 500s > window 900s → **reset to 150s** |
+
+Backoff progression from 150s base: **150 → 300 → 600 → 1200 → 1800s** (cap).
+
+### Suppression logging
+
+Every suppressed trigger is logged at `WARNING` level:
+
+```
+DetectionSummary[bulkhead]: trigger SUPPRESSED by cooldown
+  entity=binary_sensor.basement_motion
+  elapsed=16.6s remaining=133.4s
+  effective_cooldown=150s (base=150s)
+```
+
+When the cooldown is backed off after a bundle, it is logged at `WARNING`:
+
+```
+DetectionSummary[bulkhead]: cooldown backed_off delta=160.0s <= window=450.0s -> 300s
+```
+
+When it resets (delta exceeded the window), it is logged at `INFO`:
+
+```
+DetectionSummary[bulkhead]: cooldown reset delta=500.0s > window=450.0s -> 150s
+```
+
+---
+
 ## Future work (TODO)
 
 ### 1) Dynamic, high-variety image style prompts
@@ -182,23 +245,7 @@ Goal: Keep **contents** consistent with the best frame, but vary **style/theme**
     - the prompt-writer prompt + output
     - the final image-edit prompt passed to the image provider
 
-### 2) Cooldown/backoff that handles motion “flapping”
-
-Problem: We can generate too many runs/images if the motion `binary_sensor` briefly turns `off` and then back `on` while someone remains in the scene.
-
-Current behavior (in `manager.py`):
-- A new run starts on `off->on` as long as `(now - _last_run_ts) >= _effective_cooldown_s`.
-- `_effective_cooldown_s` doubles only when a run **timed out** (`capture_max_s`), otherwise it resets to `cooldown_s`.
-- If motion “flaps” `off` briefly and back `on`, each `off->on` can start a fresh run every `cooldown_s`, and runs may never time out -> **no backoff escalation**.
-
-Ideas to consider:
-- Require the sensor to be `off` for a minimum duration (debounce) before allowing a new run to start.
-- Treat `off->on` within a short window as a **continuation** of the previous run (extend capture / merge runs) instead of starting a new run.
-- Make cooldown keyed to “time since last stable motion-off” rather than “time since last run start”.
-- Add a “burst limiter” (max runs per N minutes) that increases cooldown when repeated runs occur without timeouts.
-- If available, incorporate a richer occupancy signal (e.g. mmWave presence) to avoid relying solely on a flappy motion sensor.
-
-### 3) Bundle viewer debug tool
+### 2) Bundle viewer debug tool
 
 Goal: A local UI/tool to load a bundle directory and show:
 

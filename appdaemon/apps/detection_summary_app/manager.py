@@ -95,6 +95,27 @@ def _strip_posix_prefix(path: str, prefix: str) -> Optional[str]:
     return None
 
 
+def _compute_backoff_cooldown(
+    bundle_generated: bool,
+    now: float,
+    last_image_ts: float,
+    prev_cooldown_s: float,
+    base_cooldown_s: float,
+    window_n: float,
+    max_cooldown_s: float,
+) -> tuple[float, str]:
+    if not bundle_generated:
+        return base_cooldown_s, "skipped_run"
+    if last_image_ts <= 0.0:
+        return base_cooldown_s, "first_image"
+    delta = now - last_image_ts
+    window = window_n * prev_cooldown_s
+    if delta <= window:
+        new_cd = min(max_cooldown_s, prev_cooldown_s * 2.0)
+        return new_cd, f"backed_off delta={delta:.1f}s <= window={window:.1f}s"
+    return base_cooldown_s, f"reset delta={delta:.1f}s > window={window:.1f}s"
+
+
 @dataclass
 class _Run:
     capture: CaptureState
@@ -110,8 +131,9 @@ class DetectionSummary(hass.Hass):
         "off_grace_s": 15,
         "capture_max_s": 300,
         # cooldown
-        "cooldown_s": 60,
+        "cooldown_s": 150,
         "cooldown_backoff_max_s": 1800,
+        "cooldown_backoff_window_n": 3,
         # selection/scoring
         "analyze_max_snapshots": 10,
         "no_people_threshold": 1.0,
@@ -197,7 +219,12 @@ class DetectionSummary(hass.Hass):
         self.cooldown_backoff_max_s: float = _safe_float(
             self.args.get("cooldown_backoff_max_s", self.DEFAULTS["cooldown_backoff_max_s"])
         )
+        self.cooldown_backoff_window_n: float = _safe_float(
+            self.args.get("cooldown_backoff_window_n", self.DEFAULTS["cooldown_backoff_window_n"]),
+            default=3.0,
+        )
         self._effective_cooldown_s: float = float(self.cooldown_s)
+        self._last_image_generated_ts: float = 0.0
 
         self.analyze_max_snapshots: int = int(self.args.get("analyze_max_snapshots", self.args.get("max_snapshots", self.DEFAULTS["analyze_max_snapshots"])))
         self.no_people_threshold: float = _safe_float(self.args.get("no_people_threshold", self.DEFAULTS["no_people_threshold"]))
@@ -351,6 +378,15 @@ class DetectionSummary(hass.Hass):
         if self._in_flight:
             return
         if self._effective_cooldown_s > 0 and (now - self._last_run_ts) < self._effective_cooldown_s:
+            elapsed = now - self._last_run_ts
+            remaining = self._effective_cooldown_s - elapsed
+            self.log(
+                f"DetectionSummary[{self.bundle_key}]: trigger SUPPRESSED by cooldown\n"
+                f"  entity={self.trigger_entity_id}\n"
+                f"  elapsed={elapsed:.1f}s remaining={remaining:.1f}s\n"
+                f"  effective_cooldown={self._effective_cooldown_s:.0f}s (base={self.cooldown_s:.0f}s)",
+                level="WARNING",
+            )
             return
 
         run_id = str(uuid.uuid4())
@@ -996,13 +1032,25 @@ class DetectionSummary(hass.Hass):
         if not active or kwargs.get("run_id") != active.capture.run_id:
             return
         try:
-            # If we skipped bundle generation (e.g. no people), do not publish.
             if active.bundle is None:
                 self.log(
                     f"DetectionSummary[{self.bundle_key}]: run_id={active.capture.run_id} finalized with no bundle (skipped)",
                     level="INFO",
                 )
-                self._effective_cooldown_s = float(self.cooldown_s)
+                new_cd, reason = _compute_backoff_cooldown(
+                    bundle_generated=False,
+                    now=0.0,
+                    last_image_ts=0.0,
+                    prev_cooldown_s=self._effective_cooldown_s,
+                    base_cooldown_s=float(self.cooldown_s),
+                    window_n=self.cooldown_backoff_window_n,
+                    max_cooldown_s=float(self.cooldown_backoff_max_s),
+                )
+                self._effective_cooldown_s = new_cd
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: cooldown {reason} -> {new_cd:.0f}s",
+                    level="DEBUG",
+                )
                 return
 
             bundle = active.bundle or {}
@@ -1063,14 +1111,23 @@ class DetectionSummary(hass.Hass):
                 except Exception as e:
                     self.log(f"DetectionSummary[{self.bundle_key}]: failed to update summary_text_entity_id: {e!r}", level="WARNING")
 
-            # Cooldown backoff behavior
-            if active.capture.timed_out:
-                self._effective_cooldown_s = min(
-                    float(self.cooldown_backoff_max_s),
-                    max(float(self.cooldown_s), float(self._effective_cooldown_s) * 2.0),
-                )
-            else:
-                self._effective_cooldown_s = float(self.cooldown_s)
+            now = time.time()
+            new_cd, reason = _compute_backoff_cooldown(
+                bundle_generated=True,
+                now=now,
+                last_image_ts=self._last_image_generated_ts,
+                prev_cooldown_s=self._effective_cooldown_s,
+                base_cooldown_s=float(self.cooldown_s),
+                window_n=self.cooldown_backoff_window_n,
+                max_cooldown_s=float(self.cooldown_backoff_max_s),
+            )
+            self._effective_cooldown_s = new_cd
+            self._last_image_generated_ts = now
+            log_level = "WARNING" if reason.startswith("backed_off") else "INFO"
+            self.log(
+                f"DetectionSummary[{self.bundle_key}]: cooldown {reason} -> {new_cd:.0f}s",
+                level=log_level,
+            )
 
             best_file = ((bundle.get("debug") or {}).get("selection_meta") or {}).get("best_idx") if isinstance(bundle, dict) else None
             self.log(
@@ -1079,7 +1136,7 @@ class DetectionSummary(hass.Hass):
                 level="INFO",
             )
         finally:
-            self._last_run_ts = float(active.capture.started_ts)
+            self._last_run_ts = time.time()
             self._in_flight = False
             self._active = None
 
