@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Sequence
 
-from ai_providers.types import ExternalImageGenError, ImageProvider, ImageProviderName, ProviderCapabilities
+from .types import ExternalImageGenError, ImageProvider, ImageProviderName, ProviderCapabilities
 
 
 class OllamaImageProvider(ImageProvider):

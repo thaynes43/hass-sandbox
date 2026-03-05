@@ -44,26 +44,26 @@ from .retention import delete_run_dir, prune_runs_to_max, recent_published_run_i
 from .viewer_cache import ViewerCache, ViewerCacheConfig
 
 try:
-    from ai_providers.registry import (
+    from providers.ai_providers.registry import (
         build_data_provider,
         build_image_provider,
         data_provider_config_from_appdaemon_args,
         provider_config_from_appdaemon_args,
     )
-    from ai_providers.types import ExternalDataGenError, ExternalImageGenError
+    from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError
 except Exception:  # pragma: no cover
     import sys
 
     # AppDaemon often only adds `appdaemon/apps` to sys.path. Our shared libraries
-    # live at `appdaemon/ai_providers`, so add the AppDaemon root directory.
+    # live at `appdaemon/providers`, so add the AppDaemon root directory.
     sys.path.append(str(Path(__file__).resolve().parents[2]))
-    from ai_providers.registry import (  # type: ignore
+    from providers.ai_providers.registry import (  # type: ignore
         build_data_provider,
         build_image_provider,
         data_provider_config_from_appdaemon_args,
         provider_config_from_appdaemon_args,
     )
-    from ai_providers.types import ExternalDataGenError, ExternalImageGenError  # type: ignore
+    from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError  # type: ignore
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -251,7 +251,7 @@ class DetectionSummary(hass.Hass):
         self.bundle_runs_subdir: str = str(self.args.get("bundle_runs_subdir", self.DEFAULTS["bundle_runs_subdir"])).strip("/") or "runs"
         self.captured_subdir: str = str(self.args.get("captured_subdir", self.DEFAULTS["captured_subdir"])).strip("/") or "captured"
 
-        self.media_fs_root: str = str(self.args.get("media_fs_root", self.DEFAULTS["media_fs_root"])).rstrip("/") or "/media"
+        self.media_fs_root = str(self.args.get("media_fs_root", self.DEFAULTS["media_fs_root"])).rstrip("/") or "/media"
 
         # Viewer cache: keep dashboard files in `/config/www` small + bounded.
         self.viewer_enabled: bool = _as_bool(self.args.get("viewer_enabled", self.DEFAULTS["viewer_enabled"]), default=True)
@@ -325,9 +325,9 @@ class DetectionSummary(hass.Hass):
         if not isinstance(ai_conf, dict):
             ai_conf = {}
         provider = str(ai_conf.get("provider", "openai") or "").strip().lower()
-        api_key = str(ai_conf.get("api_key") or "").strip()
-        if (self.ai_data_enabled or self.external_image_gen_enabled) and provider == "openai" and not api_key:
-            raise ValueError("ai_provider_conf.api_key is required for ai_provider_conf.provider='openai'")
+        api_key_env = str(ai_conf.get("api_key_env") or "").strip()
+        if (self.ai_data_enabled or self.external_image_gen_enabled) and provider == "openai" and not api_key_env:
+            raise ValueError("ai_provider_conf.api_key_env is required for ai_provider_conf.provider='openai'")
         if self.external_image_gen_enabled and not self.image_instructions:
             raise ValueError("image_instructions is required when external_image_gen_enabled is true")
 

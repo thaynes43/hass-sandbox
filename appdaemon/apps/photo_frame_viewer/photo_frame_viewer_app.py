@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 # AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
-# live at `appdaemon/ha_provisioner`, so add the AppDaemon root directory.
+# live at `appdaemon/providers`, so add the AppDaemon root directory.
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 import hassapi as hass
@@ -306,17 +306,17 @@ class PhotoFrameViewerApp(hass.Hass):
     async def _provision_entities(self) -> None:
         """Provision relay script and input_select via ha_provisioner."""
         ha_url = self.args.get("ha_url")
-        ha_token = self.args.get("ha_token")
-        if not ha_url or not ha_token:
+        ha_token_env = self.args.get("ha_token_env")
+        if not ha_url or not ha_token_env:
             self.log(
-                "ha_url / ha_token not configured — skipping entity provisioning",
+                "ha_url / ha_token_env not configured — skipping entity provisioning",
                 level="WARNING",
             )
             return
 
-        from ha_provisioner import HAProvisioner
+        from providers.ha_provisioner import HAProvisioner
 
-        prov = HAProvisioner(ha_url=ha_url, ha_token=ha_token)
+        prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
 
         # Provision relay script
         try:

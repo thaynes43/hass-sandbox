@@ -4,16 +4,17 @@ alwaysApply: false
 ---
 # AppDaemon architecture decisions
 
-This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.mdc` (coding conventions) and `appdaemon-deploy-guidelines.mdc` (deployment).
+This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.mdc` (coding conventions) and `appdaemon-deploy-playbook.mdc` (deployment).
 
 ## 1) Folder structure: apps vs shared libraries
 
 - `appdaemon/apps/` — **AppDaemon app modules only** (things with `module:`/`class:` in `apps-prod.yaml` or `apps-dev.yaml`).
-- `appdaemon/<lib>/` — **Shared libraries** used by multiple apps.
-  - `appdaemon/ai_providers/` — LLM/provider plumbing.
-  - `appdaemon/ha_provisioner/` — HA entity provisioning (scripts, helpers).
-  - `appdaemon/photo_providers/` — Photo source provider plumbing (Immich; extensible for Google Photos, Apple Photos).
-- Each shared library **must** be added to `deploy.py` `COPY_ITEMS` so it deploys to `X:\apps\<lib>\` and is importable under prod's `/conf/apps` sys.path.
+- `appdaemon/providers/` — **Shared libraries** used by multiple apps (consolidated under one parent).
+  - `appdaemon/providers/ai_providers/` — LLM/provider plumbing.
+  - `appdaemon/providers/ha_provisioner/` — HA entity provisioning (scripts, helpers).
+  - `appdaemon/providers/photo_providers/` — Photo source provider plumbing (Immich; extensible for Google Photos, Apple Photos).
+  - `appdaemon/providers/secrets.py` — Env-var secret resolution (`resolve_secret()`).
+- The entire `providers/` tree is deployed via `deploy.py` `COPY_ITEMS` to `X:\apps/providers/` and is importable under prod's `/conf/apps` sys.path.
 
 Do **not** put shared libraries inside `appdaemon/apps/`. Only actual AppDaemon app modules belong there.
 
@@ -30,7 +31,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 ```
 
-The `.parents[2]` assumes the standard `appdaemon/apps/<app_name>/module.py` layout. This is the same pattern used by `detection_summary_app` for `ai_providers`.
+The `.parents[2]` assumes the standard `appdaemon/apps/<app_name>/module.py` layout. Apps import providers with `from providers.ai_providers...`, `from providers.ha_provisioner...`, etc.
 
 ## 2) Self-provisioning: apps create their own HA entities
 
@@ -59,19 +60,19 @@ These remain manual for now and should be documented per-app:
 - **Lovelace resources** — custom card JS registration (could be automated later).
 - **`local_file` cameras** — could be provisioned via Config Entry Flow but complex.
 
-### App config requirements
+### App config requirements (env-var secret pattern)
 
-Apps using `ha_provisioner` need `ha_url` and `ha_token` in their `apps-prod.yaml` / `apps-dev.yaml` args. Both reference the same secrets already used by the HASS plugin — no extra secret entries needed:
+Apps using `ha_provisioner` need `ha_url_env` and `ha_token_env` in their `apps-prod.yaml` / `apps-dev.yaml` args. These are env var **names** (not values); the provisioner resolves them at runtime via `providers.secrets.resolve_secret()`. This prevents the AppDaemon admin UI from displaying resolved secrets.
 
 ```yaml
 my_app:
   module: my_app.my_app_module
   class: MyApp
-  ha_url: !secret ha_url
-  ha_token: !secret token
+  ha_url_env: HA_URL
+  ha_token_env: HA_TOKEN
 ```
 
-The token is the same long-lived access token that the HASS plugin uses, used **server-side only** by AppDaemon. It is never exposed to the frontend.
+Production injects these env vars via Kubernetes ExternalSecret. Dev uses `.env` (gitignored) or `python-dotenv`. The token is the same long-lived access token that the HASS plugin uses, used **server-side only** by AppDaemon. It is never exposed to the frontend.
 
 ## 3) Relay script pattern: card-to-AppDaemon communication
 
@@ -175,5 +176,5 @@ When creating a new AppDaemon app with a Lovelace card:
 3. Call `ha_provisioner` on startup to ensure all entities exist.
 4. Card uses `callService("script", "<app>_relay", ...)` for all actions.
 5. AppDaemon listens for `<app>_command` event, routes commands.
-6. Add `ha_url` and `ha_token` to `apps-dev.yaml` and `apps-prod.yaml`.
+6. Add `ha_url_env` and `ha_token_env` to `apps-dev.yaml` and `apps-prod.yaml` (see security policy and `.env.example`).
 7. Document any manual steps (shell commands, Lovelace resources) in the app's README or setup docs.

@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from ai_providers.ollama_data_provider import OllamaDataProvider
-from ai_providers.ollama_provider import OllamaImageProvider
-from ai_providers.openai_data_provider import OpenAIChatVisionDataConfig, OpenAIDataProvider
-from ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
-from ai_providers.types import DataProvider, DataProviderName, ImageProvider, ImageProviderName
+from providers.secrets import resolve_secret
+
+from .ollama_data_provider import OllamaDataProvider
+from .ollama_provider import OllamaImageProvider
+from .openai_data_provider import OpenAIChatVisionDataConfig, OpenAIDataProvider
+from .openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
+from .types import DataProvider, DataProviderName, ImageProvider, ImageProviderName
 
 
 @dataclass(frozen=True)
@@ -55,9 +57,11 @@ def provider_config_from_appdaemon_args(args: dict[str, Any]) -> ImageProviderCo
     provider = ImageProviderName.parse(conf.get("provider", "openai"))
     timeout_raw = conf.get("image_timeout_s")
     timeout_s = float(timeout_raw) if timeout_raw is not None else None
+    api_key_env = conf.get("api_key_env")
+    api_key = resolve_secret(api_key_env) if api_key_env else None
     return ImageProviderConfig(
         provider=provider,
-        api_key=conf.get("api_key"),
+        api_key=api_key,
         base_url=conf.get("base_url"),
         model=conf.get("image_model"),
         size=conf.get("image_size"),
@@ -111,9 +115,11 @@ def data_provider_config_from_appdaemon_args(args: dict[str, Any]) -> DataProvid
     timeout_s = float(timeout_raw) if timeout_raw is not None else None
     max_tokens_raw = conf.get("data_max_output_tokens")
     max_output_tokens = int(max_tokens_raw) if max_tokens_raw is not None else None
+    api_key_env = conf.get("api_key_env")
+    api_key = resolve_secret(api_key_env) if api_key_env else None
     return DataProviderConfig(
         provider=provider,
-        api_key=conf.get("api_key"),
+        api_key=api_key,
         base_url=conf.get("base_url"),
         model=conf.get("data_model"),
         timeout_s=timeout_s,

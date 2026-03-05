@@ -6,15 +6,15 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 try:
-    from ai_providers.types import DataProvider, ExternalDataGenError
+    from providers.ai_providers.types import DataProvider, ExternalDataGenError
 except Exception:  # pragma: no cover
     import sys
     from pathlib import Path
 
     # AppDaemon often only adds `appdaemon/apps` to sys.path. Our shared libraries
-    # live at `appdaemon/ai_providers`, so add the AppDaemon root directory.
+    # live at `appdaemon/providers`, so add the AppDaemon root directory.
     sys.path.append(str(Path(__file__).resolve().parents[2]))
-    from ai_providers.types import DataProvider, ExternalDataGenError  # type: ignore
+    from providers.ai_providers.types import DataProvider, ExternalDataGenError  # type: ignore
 
 
 @dataclass(frozen=True)

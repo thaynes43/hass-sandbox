@@ -38,11 +38,11 @@ DEFAULT_PROD_MEDIA = "/mnt/cephfs-hdd/misc/hass-media"
 
 # What to copy:
 # - apps/: AppDaemon app modules + apps-prod.yaml (processed: disable stripped, deployed as apps.yaml)
-# - ai_providers/, ha_provisioner/, photo_providers/: shared libraries
+# - providers/: shared libraries (ai_providers, ha_provisioner, photo_providers)
 #
 # NOTE: In production AppDaemon often only includes /conf/apps in sys.path.
-# We deploy shared libraries into apps/<lib>/ so imports work.
-COPY_ITEMS = ["apps", "ai_providers", "ha_provisioner", "photo_providers"]
+# We deploy providers into apps/providers/ so imports work.
+COPY_ITEMS = ["apps", "providers"]
 
 EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".cursor", "_state"}
 EXCLUDE_SUFFIXES = {".pyc", ".pyo", ".swp", ".bak"}

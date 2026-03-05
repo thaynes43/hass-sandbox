@@ -11,8 +11,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ha_provisioner.provisioner import HAProvisioner
-from ha_provisioner.ha_rest_client import HaRestClient
+from providers.ha_provisioner.provisioner import HAProvisioner
+from providers.ha_provisioner.ha_rest_client import HaRestClient
 
 
 def _make_404() -> aiohttp.ClientResponseError:
@@ -73,7 +73,8 @@ class TestHelperSlug:
 class TestEnsureScript:
     @pytest.mark.asyncio
     async def test_creates_script_when_missing(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_404())
         mock_post = AsyncMock(return_value={})
 
@@ -90,7 +91,8 @@ class TestEnsureScript:
 
     @pytest.mark.asyncio
     async def test_propagates_non_404_errors(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_500())
 
         with patch.object(HaRestClient, "get", mock_get), \
@@ -101,7 +103,8 @@ class TestEnsureScript:
 
     @pytest.mark.asyncio
     async def test_skips_when_script_exists(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(return_value={"entity_id": "script.my_relay", "state": "off"})
         mock_post = AsyncMock()
 
@@ -121,7 +124,8 @@ class TestEnsureScript:
 class TestEnsureHelper:
     @pytest.mark.asyncio
     async def test_creates_helper_via_config_flow(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_404())
         flow_init = {"flow_id": "flow-abc", "type": "form"}
         flow_complete = {"type": "create_entry", "title": "My Toggle"}
@@ -149,7 +153,8 @@ class TestEnsureHelper:
 
     @pytest.mark.asyncio
     async def test_skips_when_helper_exists(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(return_value={"entity_id": "input_boolean.my_toggle", "state": "off"})
         mock_post = AsyncMock()
 
@@ -163,7 +168,8 @@ class TestEnsureHelper:
 
     @pytest.mark.asyncio
     async def test_raises_on_unexpected_flow_result(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_404())
         flow_init = {"flow_id": "flow-abc", "type": "form"}
         flow_fail = {"type": "abort", "reason": "already_configured"}
@@ -177,7 +183,8 @@ class TestEnsureHelper:
 
     @pytest.mark.asyncio
     async def test_raises_on_missing_flow_id(self):
-        prov = HAProvisioner("http://ha:8123", "tok")
+        with patch("providers.secrets.resolve_secret", return_value="tok"):
+            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_404())
         mock_post = AsyncMock(return_value={"type": "error"})
 

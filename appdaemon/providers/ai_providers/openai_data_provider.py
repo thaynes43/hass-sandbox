@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ai_providers.types import DataProvider, DataProviderCapabilities, DataProviderName, ExternalDataGenError
+from .types import DataProvider, DataProviderCapabilities, DataProviderName, ExternalDataGenError
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,6 @@
 # AppDaemon - https://pypi.org/project/appdaemon/
 appdaemon>=4.5.0
+python-dotenv>=1.0
 # Async HTTP (Immich fetcher)
 aiohttp>=3.9
 # Testing

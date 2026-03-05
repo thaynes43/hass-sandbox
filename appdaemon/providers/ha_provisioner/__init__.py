@@ -5,6 +5,6 @@ Shared library (NOT an AppDaemon app) that apps use on startup to
 auto-create required HA entities (scripts, helpers) via the HA REST API.
 """
 
-from ha_provisioner.provisioner import HAProvisioner
+from .provisioner import HAProvisioner
 
 __all__ = ["HAProvisioner"]

@@ -14,10 +14,10 @@ def _png_bytes() -> bytes:
 def test_openai_edit_image_writes_output(tmp_path: Path) -> None:
     import sys
 
-    # Make `appdaemon/` importable for `ai_providers.*`
+    # Make `appdaemon/` importable for `providers.ai_providers.*`
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-    from ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
+    from providers.ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
 
     in_path = tmp_path / "best.jpg"
     in_path.write_bytes(b"\xff\xd8\xff" + b"\x00" * 128)  # minimal fake jpeg header-ish
@@ -51,8 +51,8 @@ def test_openai_edit_image_requires_input(tmp_path: Path) -> None:
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
-    from ai_providers.types import ExternalImageGenError
+    from providers.ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
+    from providers.ai_providers.types import ExternalImageGenError
 
     with pytest.raises(ExternalImageGenError):
         provider = OpenAIImageProvider(OpenAIImageEditConfig(api_key="k"))

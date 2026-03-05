@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from photo_providers.immich_data_provider import ImmichDataProvider
-from photo_providers.types import LocationAlias, PhotoAlbum, PhotoFilter, PhotoMetadata, PhotoPerson
+from providers.photo_providers.immich_data_provider import ImmichDataProvider
+from providers.photo_providers.types import LocationAlias, PhotoAlbum, PhotoFilter, PhotoMetadata, PhotoPerson
 
 
 # ---------------------------------------------------------------------------
@@ -44,10 +44,10 @@ class TestRefreshMetadata:
         mock_client.get_albums = AsyncMock(return_value=raw_albums)
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             metadata = await provider.refresh_metadata()
 
         assert len(metadata.people) == 3
@@ -75,10 +75,10 @@ class TestRefreshMetadata:
         mock_client.get_albums = AsyncMock(return_value=[])
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             await provider.refresh_metadata()
 
         assert provider._people_map_cache == {"Alice": "uuid-alice", "Bob": "uuid-bob"}
@@ -97,10 +97,10 @@ class TestFetchPhotoIds:
         )
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             provider._people_map_cache = {}
             pf = PhotoFilter(name="All", selection="all_photos")
             ids = await provider.fetch_photo_ids(pf, 5)
@@ -119,10 +119,10 @@ class TestFetchPhotoIds:
         )
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             provider._people_map_cache = {}
             pf = PhotoFilter(
                 name="Search",
@@ -147,10 +147,10 @@ class TestFetchPhotoIds:
         )
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             pf = PhotoFilter(
                 name="Album",
                 selection="album",
@@ -169,10 +169,10 @@ class TestFetchPhotoIds:
         mock_client.resolve_album_name = AsyncMock(return_value=None)
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             pf = PhotoFilter(
                 name="Missing",
                 selection="album",
@@ -192,10 +192,10 @@ class TestFetchPhotoIds:
         location_aliases = {"Europe": alias}
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             provider._people_map_cache = {}
             pf = PhotoFilter(
                 name="Loc",
@@ -216,10 +216,10 @@ class TestFetchPhotoIds:
         mock_client.search_random = AsyncMock(return_value=[{"id": "a1"}])
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             provider._people_map_cache = {"Alice": "uuid-alice", "Bob": "uuid-bob"}
             pf = PhotoFilter(
                 name="People",
@@ -245,10 +245,10 @@ class TestDownloadPhoto:
         )
 
         with patch(
-            "photo_providers.immich_data_provider.ImmichClient",
+            "providers.photo_providers.immich_data_provider.ImmichClient",
             return_value=mock_client,
-        ):
-            provider = ImmichDataProvider("https://immich.test", "key")
+        ), patch("providers.secrets.resolve_secret", return_value="key"):
+            provider = ImmichDataProvider(base_url="https://immich.test", api_key_env="IMMICH_API_KEY")
             data = await provider.download_photo("asset-123")
 
         assert data == b"\xff\xd8\xff\xe0FAKE_JPEG"

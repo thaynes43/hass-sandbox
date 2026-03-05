@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from photo_providers.types import (
+from providers.photo_providers.types import (
     LocationAlias,
     PhotoAlbum,
     PhotoFilter,

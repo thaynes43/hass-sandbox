@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai_providers.registry import (
+from providers.ai_providers.registry import (
     build_data_provider,
     build_image_provider,
     data_provider_config_from_appdaemon_args,

@@ -160,6 +160,7 @@ class ViewerCache:
     def refresh_www_from_stage(self) -> None:
         """
         Ask HA to wipe+fill `/config/www/.../<viewer_www_subdir>/` from the stage dir.
+        snapshot_ha_dir is the directory in the Home Assistant pod, not what is running locally.
         """
         snapshot_rel = self._snapshot_rel()
         www_dir = self._www_dir_ha()

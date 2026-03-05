@@ -78,10 +78,10 @@ def _resolve_media_path(p: Path) -> Path:
 def test_external_openai_image_edit_writes_png() -> None:
     import sys
 
-    # Make `appdaemon/` importable for `ai_providers.*`
+    # Make `appdaemon/` importable for `providers.ai_providers.*`
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-    from ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
+    from providers.ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
 
     secrets = _load_secrets()
     api_key = _env("AI_PROVIDER_KEY") or str(secrets.get("openapi_token") or secrets.get("ai_provider_key") or "")

@@ -23,7 +23,7 @@ from typing import Any
 
 import aiohttp
 
-from ha_provisioner.ha_rest_client import HaRestClient
+from .ha_rest_client import HaRestClient
 
 logger = logging.getLogger(__name__)
 
@@ -31,9 +31,12 @@ logger = logging.getLogger(__name__)
 class HAProvisioner:
     """Create HA entities via the REST API if they don't already exist."""
 
-    def __init__(self, ha_url: str, ha_token: str) -> None:
+    def __init__(self, ha_url: str, ha_token_env: str) -> None:
+        """ha_url comes from !secret (secrets.yaml); ha_token from env to avoid UI exposure."""
+        from providers.secrets import resolve_secret
+
         self._url = ha_url
-        self._token = ha_token
+        self._token = resolve_secret(ha_token_env)
 
     async def ensure_script(self, script_id: str, config: dict[str, Any]) -> bool:
         """Ensure ``script.<script_id>`` exists, creating it if missing.

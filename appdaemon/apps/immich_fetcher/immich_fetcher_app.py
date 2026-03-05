@@ -19,14 +19,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
-# live at `appdaemon/<lib>`, so add the AppDaemon root directory.
+# live at `appdaemon/providers`, so add the AppDaemon root directory.
 sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 import hassapi as hass
 
 from immich_fetcher.models import FetcherConfig
-from photo_providers.immich_data_provider import ImmichDataProvider
-from photo_providers.types import PhotoFilter, PhotoProvider
+from providers.photo_providers.immich_data_provider import ImmichDataProvider
+from providers.photo_providers.types import PhotoFilter, PhotoProvider
 
 logger = logging.getLogger(__name__)
 
@@ -45,15 +45,13 @@ class ImmichFetcherApp(hass.Hass):
     def initialize(self) -> None:
         args = self.args or {}
 
-        self._immich_url: str = args["immich_url"]
-        self._immich_api_key: str = args["immich_api_key"]
         self._output_dir: str = args.get("output_dir", "/media/immich-photos")
         self._config_file: str = args.get(
             "config_file", "/media/immich-fetcher/config.json"
         )
         self._provider: PhotoProvider = ImmichDataProvider(
-            base_url=self._immich_url,
-            api_key=self._immich_api_key,
+            base_url=args["immich_url"],
+            api_key_env=args["immich_api_key_env"],
         )
         # Caches populated on startup via provider.refresh_metadata()
         self._people_available: List[str] = []  # names ranked by photo count
@@ -166,17 +164,17 @@ class ImmichFetcherApp(hass.Hass):
     async def _provision_relay(self) -> None:
         """Create script.immich_fetcher_relay if it doesn't exist."""
         ha_url = self.args.get("ha_url")
-        ha_token = self.args.get("ha_token")
-        if not ha_url or not ha_token:
+        ha_token_env = self.args.get("ha_token_env")
+        if not ha_url or not ha_token_env:
             self.log(
-                "ha_url / ha_token not configured — skipping relay provisioning",
+                "ha_url / ha_token_env not configured — skipping relay provisioning",
                 level="WARNING",
             )
             return
 
-        from ha_provisioner import HAProvisioner
+        from providers.ha_provisioner import HAProvisioner
 
-        prov = HAProvisioner(ha_url=ha_url, ha_token=ha_token)
+        prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
         try:
             created = await prov.ensure_script("immich_fetcher_relay", {
                 "alias": "Immich Fetcher Relay",

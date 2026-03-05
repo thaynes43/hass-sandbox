@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 from typing import Dict, List, Optional
 
-from photo_providers.immich_client import ImmichClient
-from photo_providers.immich_selectors import create_selector
-from photo_providers.types import (
+from .immich_client import ImmichClient
+from .immich_selectors import create_selector
+from .types import (
     LocationAlias,
     PhotoAlbum,
     PhotoFilter,
@@ -21,9 +21,12 @@ logger = logging.getLogger(__name__)
 class ImmichDataProvider:
     """Concrete PhotoProvider implementation for Immich."""
 
-    def __init__(self, base_url: str, api_key: str) -> None:
+    def __init__(self, base_url: str, api_key_env: str) -> None:
+        """base_url comes from !secret (secrets.yaml); api_key from env to avoid UI exposure."""
+        from providers.secrets import resolve_secret
+
         self._base_url = base_url
-        self._api_key = api_key
+        self._api_key = resolve_secret(api_key_env)
         self._people_map_cache: Dict[str, str] = {}
 
     def _create_client(self) -> ImmichClient:

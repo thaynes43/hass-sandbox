@@ -31,12 +31,28 @@ sys.path.insert(0, str(_repo_root))
 
 from immich_fetcher.immich_fetcher_app import ImmichFetcherApp, SENSOR_ENTITY_ID
 from immich_fetcher.models import FetcherConfig
-from photo_providers.types import PhotoFilter, PhotoAlbum, PhotoMetadata, PhotoPerson
+from providers.photo_providers.types import PhotoFilter, PhotoAlbum, PhotoMetadata, PhotoPerson
 
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
+
+def _fake_resolve_secret(name: str) -> str:
+    """Return test values for env var names used by apps (only tokens/API keys)."""
+    m = {
+        "IMMICH_API_KEY": "test-key",
+        "TOKEN": "tok",
+    }
+    return m.get(name, "")
+
+
+@pytest.fixture(autouse=True)
+def patch_resolve_secret():
+    """Patch resolve_secret so apps can initialize without real env vars."""
+    with patch("providers.secrets.resolve_secret", side_effect=_fake_resolve_secret):
+        yield
+
 
 PEOPLE_API_RESPONSE: List[Dict[str, Any]] = [
     {"id": "uuid-alice", "name": "Alice", "assetCount": 50},
@@ -63,7 +79,9 @@ def _make_app(
 
     base_args: dict[str, Any] = {
         "immich_url": "https://immich.example.com",
-        "immich_api_key": "test-key",
+        "immich_api_key_env": "IMMICH_API_KEY",
+        "ha_url": "http://ha:8123",
+        "ha_token_env": "TOKEN",
         "output_dir": output_dir or "/tmp/test-immich-photos",
         "config_file": config_file or "/tmp/test-immich-fetcher/config.json",
         "update_interval_minutes": 60,
@@ -690,13 +708,13 @@ class TestViewerSourceReading:
 # Selector: pool → batch selection
 # ---------------------------------------------------------------------------
 
-from photo_providers.immich_selectors import (
+from providers.photo_providers.immich_selectors import (
     AllPhotosSelector,
     AlbumSelector,
     SearchSelector,
     create_selector,
 )
-from photo_providers.types import LocationAlias
+from providers.photo_providers.types import LocationAlias
 
 
 class TestSearchSelectorPoolSampling:
@@ -1323,7 +1341,7 @@ class TestProvisionRelay:
                 output_dir=os.path.join(td, "photos"),
                 extra_args={
                     "ha_url": "http://ha:8123",
-                    "ha_token": "test-token",
+                    "ha_token_env": "TOKEN",
                 },
             )
             app.initialize()
@@ -1332,12 +1350,12 @@ class TestProvisionRelay:
             mock_prov.ensure_script = AsyncMock(return_value=False)
 
             with patch(
-                "ha_provisioner.HAProvisioner",
+                "providers.ha_provisioner.HAProvisioner",
                 return_value=mock_prov,
             ) as mock_cls:
                 await app._provision_relay()
 
-            mock_cls.assert_called_once_with(ha_url="http://ha:8123", ha_token="test-token")
+            mock_cls.assert_called_once_with(ha_url="http://ha:8123", ha_token_env="TOKEN")
             mock_prov.ensure_script.assert_called_once()
 
             call_args = mock_prov.ensure_script.call_args
@@ -1353,22 +1371,23 @@ class TestProvisionRelay:
 
     @pytest.mark.asyncio
     async def test_provision_relay_skips_without_credentials(self):
-        """_provision_relay returns early when ha_url/ha_token are missing."""
+        """_provision_relay returns early when ha_url_env/ha_token_env are missing."""
         with tempfile.TemporaryDirectory() as td:
             app = _make_app(
                 config_file=os.path.join(td, "config.json"),
                 output_dir=os.path.join(td, "photos"),
+                extra_args={"ha_url": "", "ha_token_env": ""},  # override base_args to skip provisioning
             )
             app.initialize()
 
             with patch(
-                "ha_provisioner.HAProvisioner",
+                "providers.ha_provisioner.HAProvisioner",
             ) as mock_cls:
                 await app._provision_relay()
 
             mock_cls.assert_not_called()
             app.log.assert_any_call(
-                "ha_url / ha_token not configured — skipping relay provisioning",
+                "ha_url / ha_token_env not configured — skipping relay provisioning",
                 level="WARNING",
             )
 
@@ -1381,7 +1400,7 @@ class TestProvisionRelay:
                 output_dir=os.path.join(td, "photos"),
                 extra_args={
                     "ha_url": "http://ha:8123",
-                    "ha_token": "test-token",
+                    "ha_token_env": "TOKEN",
                 },
             )
             app.initialize()
@@ -1390,7 +1409,7 @@ class TestProvisionRelay:
             mock_prov.ensure_script = AsyncMock(side_effect=RuntimeError("connection refused"))
 
             with patch(
-                "ha_provisioner.HAProvisioner",
+                "providers.ha_provisioner.HAProvisioner",
                 return_value=mock_prov,
             ):
                 await app._provision_relay()

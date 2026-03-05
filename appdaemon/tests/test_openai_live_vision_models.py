@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-# Ensure `appdaemon/` is on sys.path so `ai_providers.*` imports work
+# Ensure `appdaemon/` is on sys.path so `providers.ai_providers.*` imports work
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from ai_providers.registry import build_data_provider, data_provider_config_from_appdaemon_args
+from providers.ai_providers.registry import build_data_provider, data_provider_config_from_appdaemon_args
 
 
 def _env(name: str) -> str:

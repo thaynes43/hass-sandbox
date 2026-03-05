@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -46,9 +46,10 @@ def _make_app(tmp_media_root: Path) -> DetectionSummary:
         },
         "data_instructions": "test",
         "image_instructions": "test",
-        "ai_provider_conf": {"provider": "openai", "api_key": "test-key"},
+        "ai_provider_conf": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
     }
-    app.initialize()
+    with patch("providers.secrets.resolve_secret", return_value="test-key"):
+        app.initialize()
     return app
 
 

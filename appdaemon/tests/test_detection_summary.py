@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Mock hassapi before importing detection_summary (tests run without AppDaemon)
 class _MockHass:
@@ -16,8 +18,10 @@ mock_hass = MagicMock()
 mock_hass.Hass = _MockHass
 sys.modules["hassapi"] = mock_hass
 
-# Add apps to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
+# Add appdaemon root and apps to path for imports (providers lives at appdaemon/providers)
+_repo = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_repo))
+sys.path.insert(0, str(_repo / "apps"))
 
 from detection_summary_app.manager import DetectionSummary
 
@@ -48,11 +52,11 @@ class TestDetectionSummary:
             "snapshot_interval_s": 0,
             "cooldown_s": 0,
             "retention_hours": 1,
-            "ai_provider_conf": {"provider": "openai", "api_key": "test-key"},
+            "ai_provider_conf": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
         }
 
-        app = self._make_app(args)
-
-        app.initialize()
+        with patch("providers.secrets.resolve_secret", return_value="test-key"):
+            app = self._make_app(args)
+            app.initialize()
         app.listen_state.assert_called_once()
 

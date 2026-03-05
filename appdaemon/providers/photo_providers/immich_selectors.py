@@ -12,8 +12,8 @@ import random
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
-from photo_providers.immich_client import ImmichClient
-from photo_providers.types import LocationAlias, PhotoFilter
+from .immich_client import ImmichClient
+from .types import LocationAlias, PhotoFilter
 
 logger = logging.getLogger(__name__)
 

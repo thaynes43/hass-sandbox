@@ -1,0 +1,81 @@
+---
+description: Security audit workflow for AppDaemon codebase before production deploy
+---
+# Security audit playbook (AppDaemon)
+
+Run this playbook **before deploying to production**. All checks must PASS. Do not deploy if any credential scan, provider boundary, or frontend exposure check fails.
+
+## Step 1 — Credential scan (automated)
+
+Search all `.py` files under `appdaemon/apps/` for:
+
+- Hardcoded strings matching API key formats: `sk-`, `Bearer`, `ghp_`, `xoxb-`
+- Bare assignments like `api_key = "..."` with literal string values
+- Direct `os.environ.get()` calls for **credential-like** env vars (e.g. `API_KEY`, `TOKEN`, `SECRET`, `PASSWORD`). Secrets must be resolved inside `providers/` only. **Exception:** `os.environ.get()` for non-credential config (paths, feature flags, e.g. `DETECTION_SUMMARY_STATE_PATH`) is acceptable.
+
+**PASS:** No credential-related matches. **FAIL:** Report file paths and line numbers.
+
+## Step 2 — YAML secret audit
+
+Scan `appdaemon/apps/apps-prod.yaml` and `appdaemon/apps/apps-dev.yaml` for:
+
+- Any remaining `!secret` references for credentials (API keys, tokens, URLs)
+
+**Rules:**
+
+- The only acceptable `!secret` references are in `appdaemon.yaml` for the HASS plugin (lines 15–16).
+- All credential config keys in app YAMLs must use the `_env` suffix pattern (e.g., `api_key_env: OPENAI_API_KEY`, `ha_url_env: HA_URL`).
+
+**PASS:** No `!secret` in app configs; all credentials use `_env` keys. **FAIL:** Report file and line.
+
+## Step 3 — Provider boundary check
+
+Verify that all `import requests`, `import aiohttp`, `import httpx`, or direct `urllib` usage in `appdaemon/apps/` is limited to imports from `providers/`. No app file should make direct HTTP calls to external services.
+
+**PASS:** No app file contains HTTP client imports or calls except via providers. **FAIL:** Report file paths.
+
+## Step 4 — Frontend exposure check
+
+- Scan all `fire_event` calls in app code — payloads must not contain variables named `token`, `api_key`, `secret`, `password`, or `credential`.
+- Scan all `set_state` calls — attributes must not contain credential-like keys.
+- Scan `.js` card files (e.g. under `apps/`) for `token`, `api_key`, `secret`, `Authorization`.
+
+**PASS:** No credential exposure in events, state, or card JS. **FAIL:** Report file paths and line numbers.
+
+## Step 5 — secrets.yaml / .env git check
+
+Run:
+
+```bash
+git log --all -- appdaemon/secrets.yaml appdaemon/.env
+```
+
+**PASS:** No commits found (or neither file ever committed). **FAIL:** If either was ever committed, flag for credential rotation.
+
+## Step 6 — Rule consistency check
+
+Verify:
+
+- `security-policy.mdc` exists and has `alwaysApply: true`
+- `appdaemon-deploy-playbook.mdc` references the security audit
+- `appdaemon-coding-guidelines.mdc` references the security policy
+- Provider imports in `apps/` use `from providers.`* paths (e.g., `from providers.ha_provisioner import HAProvisioner`)
+- `appdaemon/providers/secrets.py` exists with `resolve_secret()` utility
+- `appdaemon/.env.example` exists documenting required env vars
+
+**PASS:** All conditions met. **FAIL:** List missing items.
+
+## Step 7 — Report
+
+Produce a summary table:
+
+| Step | Check                         | Result | Details                    |
+|------|-------------------------------|--------|----------------------------|
+| 1    | Credential scan               | PASS/F | paths, line numbers        |
+| 2    | YAML secret audit             | PASS/F | file, line                 |
+| 3    | Provider boundary             | PASS/F | file paths                 |
+| 4    | Frontend exposure             | PASS/F | paths, line numbers        |
+| 5    | Git secrets check             | PASS/F | note                       |
+| 6    | Rule consistency              | PASS/F | missing items              |
+
+**Do not deploy if any step is FAIL.**

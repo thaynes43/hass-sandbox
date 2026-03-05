@@ -13,12 +13,13 @@ __pycache__/
 *.so
 .Python
 
-# Virtual environments
+# Virtual environments / env files
 .venv/
 .venv-wsl/
 venv/
 ENV/
 env/
+.env
 .env/
 
 # Packaging / build

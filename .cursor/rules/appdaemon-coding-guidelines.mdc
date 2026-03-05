@@ -4,28 +4,31 @@ alwaysApply: false
 ---
 # AppDaemon coding guidelines
 
+## Security policy
+
+The always-applied rule `security-policy.mdc` defines mandatory security practices:
+
+- No credentials in app code; use `_env` keys and `providers.secrets.resolve_secret()`
+- All external HTTP calls in `appdaemon/providers/`, never in `appdaemon/apps/`
+- No secret exposure to the frontend (events, state, card JS)
+
+Before production deploy, run the security audit playbook (`.cursor/playbooks/security-audit-playbook.mdc`).
+
 ## 1) Apps vs shared libraries
 
 - Put **AppDaemon apps** (modules/classes referenced by `appdaemon/apps/apps-prod.yaml` or `apps-dev.yaml`) in `appdaemon/apps/`.
 - Put **code that is only used by one app** alongside that app in `appdaemon/apps/`.
 
-## Dev environment (venvs + shell)
-
-- **Windows / PowerShell**: use the repo venv at `.venv` (invoke via `.\.venv\Scripts\python.exe ...`)
-- **WSL/Linux**: use the repo venv at `.venv-wsl` (activate via `source .venv-wsl/bin/activate`)
-- Agents may use **WSL** to execute Python dev commands (linting, quick scripts, local AppDaemon runs) because it often behaves more consistently than PowerShell — just make sure you’re using `.venv-wsl` when doing so.
-
-Examples:
-
-- `appdaemon/apps/garage_door_notify.py` (AppDaemon app)
-- `appdaemon/apps/detection_summary.py` (AppDaemon app)
+- Examples: `garage_door_notify`, `detection_summary_app`, `immich_fetcher`, `photo_frame_viewer`.
 
 ### Shared libraries (not apps)
 
 - Put **shared code used by multiple apps** outside `appdaemon/apps/`.
-- Prefer dedicated directories like:
-  - `appdaemon/ai_providers/` (LLM/provider plumbing)
-  - `appdaemon/<shared_module>/` (other shared utilities)
+- Prefer the consolidated `appdaemon/providers/` directory:
+  - `appdaemon/providers/ai_providers/` (LLM/provider plumbing)
+  - `appdaemon/providers/ha_provisioner/` (HA entity provisioning)
+  - `appdaemon/providers/photo_providers/` (photo sources: Immich, etc.)
+  - `appdaemon/providers/secrets.py` (env-var secret resolution)
 
 Rationale:
 
@@ -45,10 +48,11 @@ In many deployments, AppDaemon imports apps with `sys.path` containing **only** 
 This means imports like `import ai_providers...` will fail unless you explicitly add the AppDaemon root
 directory to the import path.
 
-- **Symptom**: `ModuleNotFoundError: No module named 'ai_providers'` during AppDaemon startup/import.
-- **Preferred fix**: set `import_paths:` in `appdaemon.yaml` to include `appdaemon/` (or `appdaemon/ai_providers/`).
+- **Symptom**: `ModuleNotFoundError: No module named 'providers'` during AppDaemon startup/import.
+- **Preferred fix**: set `import_paths:` in `appdaemon.yaml` to include `appdaemon/` (or `appdaemon/providers/`).
 - **Fallback fix** (in the app): append the **AppDaemon root** (not `apps/`) to `sys.path`, e.g.:
   - from a file under `appdaemon/apps/<pkg>/...`: `Path(__file__).resolve().parents[2]` is typically `appdaemon/`
+  - imports use `from providers.ai_providers...`, `from providers.ha_provisioner...`, etc.
 
 ## 2) Key tenet: offload AI work from Home Assistant
 
@@ -67,7 +71,7 @@ Home Assistant runs critical real-time workloads (device I/O, state machine, UI,
   - multiple images
   - retries/timeouts
   - any kind of queueing or batching
-- Instead, use `appdaemon/ai_providers/` to call providers directly (OpenAI now; Ollama/ComfyUI later).
+- Instead, use `appdaemon/providers/ai_providers/` to call providers directly (OpenAI now; Ollama/ComfyUI later).
 - Keep HA’s role focused on:
   - capturing snapshots (`camera.snapshot`)
   - exposing images for UI/notifications (e.g., `local_file` cameras, `/api/camera_proxy/...`)

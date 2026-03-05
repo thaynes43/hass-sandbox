@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List
 
-from photo_providers.types import LocationAlias, PhotoFilter
+from providers.photo_providers.types import LocationAlias, PhotoFilter
 
 
 DOWNLOAD_QUALITIES = ("preview", "fullsize", "original")

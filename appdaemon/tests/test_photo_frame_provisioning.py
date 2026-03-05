@@ -29,8 +29,8 @@ def _make_app(extra_args: dict | None = None) -> PhotoFrameViewerApp:
 
     td = tempfile.mkdtemp(prefix="pfv_prov_test_")
     base_args: dict = {
-        "ha_url": "http://homeassistant.local:8123",
-        "ha_token": "test_token_abc",
+        "ha_url": "http://ha:8123",
+        "ha_token_env": "TOKEN",
         "source_dir": td,
         "ha_local_url_base": "/local/photo-frame/live",
         "state_dir": td,
@@ -70,7 +70,7 @@ class TestProvisionRelayScript:
         mock_prov.ensure_script = AsyncMock(return_value=True)
         mock_prov.ensure_helper = AsyncMock(return_value=False)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         mock_prov.ensure_script.assert_called_once()
@@ -94,7 +94,7 @@ class TestProvisionRelayScript:
         mock_prov.ensure_script = AsyncMock(return_value=True)
         mock_prov.ensure_helper = AsyncMock(return_value=False)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         log_messages = [str(c) for c in app.log.call_args_list]
@@ -109,7 +109,7 @@ class TestProvisionRelayScript:
         mock_prov.ensure_script = AsyncMock(return_value=False)
         mock_prov.ensure_helper = AsyncMock(return_value=False)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         log_messages = [str(c) for c in app.log.call_args_list]
@@ -125,7 +125,7 @@ class TestProvisionPickerHelper:
         mock_prov.ensure_script = AsyncMock(return_value=False)
         mock_prov.ensure_helper = AsyncMock(return_value=True)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         mock_prov.ensure_helper.assert_called_once()
@@ -144,7 +144,7 @@ class TestProvisionPickerHelper:
         mock_prov.ensure_script = AsyncMock(return_value=False)
         mock_prov.ensure_helper = AsyncMock(return_value=True)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         log_messages = [str(c) for c in app.log.call_args_list]
@@ -154,10 +154,10 @@ class TestProvisionPickerHelper:
 
 class TestProvisionWithoutCredentials:
     def test_skips_provisioning_when_no_ha_url(self):
-        app = _make_app({"ha_url": "", "ha_token": "tok"})
+        app = _make_app({"ha_url": "", "ha_token_env": "TOKEN"})
         app.initialize()
 
-        with patch("ha_provisioner.HAProvisioner") as MockClass:
+        with patch("providers.ha_provisioner.HAProvisioner") as MockClass:
             _run(app._provision_entities())
 
         MockClass.assert_not_called()
@@ -165,10 +165,10 @@ class TestProvisionWithoutCredentials:
         assert any("skipping" in m.lower() for m in log_messages)
 
     def test_skips_provisioning_when_no_ha_token(self):
-        app = _make_app({"ha_url": "http://ha:8123", "ha_token": ""})
+        app = _make_app({"ha_url": "http://ha:8123", "ha_token_env": ""})
         app.initialize()
 
-        with patch("ha_provisioner.HAProvisioner") as MockClass:
+        with patch("providers.ha_provisioner.HAProvisioner") as MockClass:
             _run(app._provision_entities())
 
         MockClass.assert_not_called()
@@ -176,10 +176,10 @@ class TestProvisionWithoutCredentials:
     def test_skips_provisioning_when_credentials_missing_entirely(self):
         app = _make_app()
         app.args.pop("ha_url", None)
-        app.args.pop("ha_token", None)
+        app.args.pop("ha_token_env", None)
         app.initialize()
 
-        with patch("ha_provisioner.HAProvisioner") as MockClass:
+        with patch("providers.ha_provisioner.HAProvisioner") as MockClass:
             _run(app._provision_entities())
 
         MockClass.assert_not_called()
@@ -196,7 +196,7 @@ class TestProvisionErrorHandling:
         )
         mock_prov.ensure_helper = AsyncMock(return_value=False)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             # Must NOT raise — app continues even if provisioning fails
             _run(app._provision_entities())
 
@@ -214,7 +214,7 @@ class TestProvisionErrorHandling:
             side_effect=RuntimeError("Flow aborted")
         )
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         log_messages = [str(c) for c in app.log.call_args_list]
@@ -260,7 +260,7 @@ class TestEntityPrefixDerivation:
         mock_prov.ensure_script = AsyncMock(return_value=True)
         mock_prov.ensure_helper = AsyncMock(return_value=False)
 
-        with patch("ha_provisioner.HAProvisioner", return_value=mock_prov):
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
             _run(app._provision_entities())
 
         script_config = mock_prov.ensure_script.call_args[0][1]
