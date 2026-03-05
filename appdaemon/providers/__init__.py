@@ -10,8 +10,11 @@ from pathlib import Path
 try:
     from dotenv import load_dotenv
 
-    _env_path = Path(__file__).resolve().parents[1] / ".env"
-    if _env_path.exists():
-        load_dotenv(_env_path)
+    _providers_dir = Path(__file__).resolve().parent
+    # appdaemon/.env (next to providers/) or repo-root .env (two levels up)
+    for _candidate in [_providers_dir.parent / ".env", _providers_dir.parents[1] / ".env"]:
+        if _candidate.exists():
+            load_dotenv(_candidate)
+            break
 except ImportError:
     pass  # python-dotenv optional if env vars set by K8s

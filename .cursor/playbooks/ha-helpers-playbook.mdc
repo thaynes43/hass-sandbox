@@ -1,0 +1,234 @@
+---
+globs: home-assistant/**
+alwaysApply: false
+---
+## Home Assistant helpers: create / update / delete via MCP
+
+### When to use this
+
+Use the MCP tools to manage helpers so **entity IDs exist immediately** and can be referenced safely in `cards/**`, `automations/**`, and `scripts/**`. We do not maintain YAML files for helpers in the repo.
+
+### Critical rule: pass arguments as proper JSON
+
+All tool parameters must be valid JSON objects/values. Do not pass Python dict literals or mangled strings — the MCP server will reject them with `Invalid JSON`.
+
+---
+
+## Workflow: create a new helper
+
+**Step 1 — Discovery (1 call, optional)**
+
+Only needed if you are unsure whether the helper exists. Skip if you are certain it is new.
+
+```json
+{
+  "tool": "ha_search_entities",
+  "arguments": {
+    "query": "<name or keyword>",
+    "domain_filter": "input_text",
+    "limit": 10
+  }
+}
+```
+
+Or list all helpers of a type:
+
+```json
+{
+  "tool": "ha_config_list_helpers",
+  "arguments": {
+    "helper_type": "input_text"
+  }
+}
+```
+
+**Step 2 — Create (1 call)**
+
+Use `ha_config_set_helper`. Omit `helper_id` to create; provide it to update the config. The `entity_id` will be `<domain>.<name_lowercased_spaces_to_underscores>`.
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_text",
+    "name": "Wall Display Entry Locks Status",
+    "icon": "mdi:shield-lock"
+  }
+}
+```
+
+---
+
+## Workflow: update a helper's live value (1 call)
+
+To change the **current state** of an existing helper (e.g. write a new string into an `input_text`), call the domain service directly. The response contains the new state — no separate verification call is needed.
+
+**`input_text` — set value:**
+
+```json
+{
+  "tool": "ha_call_service",
+  "arguments": {
+    "domain": "input_text",
+    "service": "set_value",
+    "entity_id": "input_text.wall_display_entry_locks_status",
+    "data": { "value": "All OK" }
+  }
+}
+```
+
+The response includes `verified_state` confirming the new value. No extra `ha_get_state` call is required.
+
+**`input_boolean` — turn on / off / toggle:**
+
+```json
+{
+  "tool": "ha_call_service",
+  "arguments": {
+    "domain": "input_boolean",
+    "service": "turn_on",
+    "entity_id": "input_boolean.upstairs_primary_bathroom_use_shower_delay"
+  }
+}
+```
+
+**`input_select` — set option:**
+
+```json
+{
+  "tool": "ha_call_service",
+  "arguments": {
+    "domain": "input_select",
+    "service": "select_option",
+    "entity_id": "input_select.downstairs_bathroom_vanity_mmwave_normal_mode",
+    "data": { "option": "Vacancy" }
+  }
+}
+```
+
+---
+
+## Workflow: update a helper's configuration (1 call)
+
+To change the **definition** of a helper (name, icon, options, initial value, etc.) provide `helper_id`. The slug is the part after the domain in the entity_id (e.g. `wall_display_entry_locks_status` for `input_text.wall_display_entry_locks_status`). No discovery call is needed if you already know the entity_id.
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_text",
+    "helper_id": "wall_display_entry_locks_status",
+    "name": "Wall Display Entry Locks Status",
+    "icon": "mdi:shield-lock-outline"
+  }
+}
+```
+
+---
+
+## Workflow: delete a helper (1 call)
+
+Use `ha_config_remove_helper`. Provide the `helper_type` and the `helper_id` slug (the part after the dot in the entity_id). No discovery call is needed.
+
+```json
+{
+  "tool": "ha_config_remove_helper",
+  "arguments": {
+    "helper_type": "input_text",
+    "helper_id": "wall_display_entry_locks_status"
+  }
+}
+```
+
+The response confirms deletion including the `entity_id` that was removed. If you only have the full entity_id you may pass it as `helper_id` as well — both forms are accepted.
+
+**Warning**: deleting a helper that is referenced in automations, scripts, or cards will break those references. Confirm nothing depends on it before deleting.
+
+---
+
+## Helper types and known-good examples
+
+### `input_boolean` (simple latch / flag)
+
+- **Use cases**: sticky state — "use long off delay", "vacuum is running", etc.
+- **Entity id convention**: `input_boolean.<thing>`
+- **Icon**: `mdi:toggle-switch`, `mdi:timer-outline`, etc.
+- **Initial**: `false` is usually safest.
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_boolean",
+    "name": "Upstairs Primary Bathroom Use Shower Delay",
+    "icon": "mdi:timer-outline",
+    "initial": false
+  }
+}
+```
+
+### `input_text` (status string / cache)
+
+- **Use cases**: aggregate status strings, cached values, short text.
+- **Entity id convention**: `input_text.<thing>`
+- **Icon**: relevant `mdi:` icon (e.g. `mdi:shield-lock` for lock status).
+- **Initial**: optional; empty string or a sensible default.
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_text",
+    "name": "Wall Display Entry Locks Status",
+    "icon": "mdi:shield-lock",
+    "initial": ""
+  }
+}
+```
+
+### `input_select` (dropdown / enum)
+
+- **Use cases**: mode selectors, option lists.
+- **Entity id convention**: `input_select.<thing>`
+- **Icon**: relevant `mdi:` icon.
+
+```json
+{
+  "tool": "ha_config_set_helper",
+  "arguments": {
+    "helper_type": "input_select",
+    "name": "Downstairs Bathroom Vanity mmWave Normal Mode",
+    "icon": "mdi:motion-sensor",
+    "options": [
+      "Disabled",
+      "Occupancy (default)",
+      "Vacancy",
+      "Wasteful Occupancy",
+      "Mirrored Occupancy",
+      "Mirrored Vacancy",
+      "Mirrored Wasteful Occupancy"
+    ],
+    "initial": "Occupancy (default)"
+  }
+}
+```
+
+---
+
+## Inovelli mmWave normal-mode helpers (special case)
+
+- **Entity id convention**: `input_select.<zone>_mmwave_normal_mode`
+- **Options**: must match `select.*_mmwavecontrolwireddevice` options.
+
+After creating, also update:
+
+- **Cards**: pass `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode` (not hardcoded `normal_mode:`).
+- **Sync automation**: add to `automations/inovelli_mmwave_normal_mode_sync_input_select.yaml`.
+- **Clear-hold registry**: add `normal_mode_input_select` in `scripts/inovelli/entities-defined/clear_hold_on_all_inovelli_presence_controlled_switches.yaml`.
+
+---
+
+## After creating or deleting (don't forget)
+
+- **Scope communication**: follow `ha-change-scope-communication.mdc` — use **Repo YAML & Live HA Updated** and list the entity_id under **Live HA entities updated**.
+- **No repo YAML for helpers**: we do not maintain helper definition YAML files. The MCP-created entity is the source of truth.

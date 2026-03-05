@@ -88,4 +88,9 @@ alwaysApply: false
 |----------|---------|
 | `ha-helpers-creation-playbook.mdc` | Create/update HA helpers (input_text, input_boolean, input_select) via MCP |
 | `ha-automations-scripts-playbook.mdc` | Create/update HA automations and scripts via MCP |
+| `ha-provisioner-playbook.mdc` | Integrate `ha_provisioner` into an AppDaemon app for self-provisioning helpers and relay scripts |
+| `occupancy-based-lighting-playbook.mdc` | Add/update occupancy-based lighting zones: helpers, automations, holds, cards |
+| `appdaemon-deploy-playbook.mdc` | Deploy AppDaemon apps from dev to production |
+| `security-audit-playbook.mdc` | Audit AppDaemon apps for security policy violations |
+| `detection-app-playbook.mdc` | Build/extend the detection summary AppDaemon app |
 | `playbook-authoring-guide.mdc` | This file — how to write new playbooks |

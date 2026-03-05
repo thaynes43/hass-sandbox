@@ -123,73 +123,53 @@ class TestEnsureScript:
 
 class TestEnsureHelper:
     @pytest.mark.asyncio
-    async def test_creates_helper_via_config_flow(self):
+    async def test_creates_helper_via_websocket(self):
         with patch("providers.secrets.resolve_secret", return_value="tok"):
             prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_404())
-        flow_init = {"flow_id": "flow-abc", "type": "form"}
-        flow_complete = {"type": "create_entry", "title": "My Toggle"}
-        mock_post = AsyncMock(side_effect=[flow_init, flow_complete])
+        mock_ws = AsyncMock(return_value={"success": True, "result": {"id": "my_toggle"}})
 
         with patch.object(HaRestClient, "get", mock_get), \
-             patch.object(HaRestClient, "post", mock_post), \
+             patch.object(HaRestClient, "send_ws_command", mock_ws), \
              patch.object(HaRestClient, "close", new_callable=AsyncMock):
             created = await prov.ensure_helper(
                 "input_boolean", "My Toggle", icon="mdi:toggle"
             )
 
         assert created is True
-        assert mock_post.call_count == 2
-        # First call starts the config entry flow
-        mock_post.assert_any_call(
-            "/api/config/config_entries/flow",
-            json={"handler": "input_boolean", "show_advanced_options": False},
-        )
-        # Second call completes the flow with data
-        mock_post.assert_any_call(
-            "/api/config/config_entries/flow/flow-abc",
-            json={"name": "My Toggle", "icon": "mdi:toggle"},
-        )
+        mock_ws.assert_called_once_with({
+            "type": "input_boolean/create",
+            "name": "My Toggle",
+            "icon": "mdi:toggle",
+        })
 
     @pytest.mark.asyncio
     async def test_skips_when_helper_exists(self):
         with patch("providers.secrets.resolve_secret", return_value="tok"):
             prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(return_value={"entity_id": "input_boolean.my_toggle", "state": "off"})
-        mock_post = AsyncMock()
+        mock_ws = AsyncMock()
 
         with patch.object(HaRestClient, "get", mock_get), \
-             patch.object(HaRestClient, "post", mock_post), \
+             patch.object(HaRestClient, "send_ws_command", mock_ws), \
              patch.object(HaRestClient, "close", new_callable=AsyncMock):
             created = await prov.ensure_helper("input_boolean", "My Toggle")
 
         assert created is False
-        mock_post.assert_not_called()
+        mock_ws.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_raises_on_unexpected_flow_result(self):
+    async def test_raises_on_ws_error(self):
         with patch("providers.secrets.resolve_secret", return_value="tok"):
             prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
         mock_get = AsyncMock(side_effect=_make_404())
-        flow_init = {"flow_id": "flow-abc", "type": "form"}
-        flow_fail = {"type": "abort", "reason": "already_configured"}
-        mock_post = AsyncMock(side_effect=[flow_init, flow_fail])
+        mock_ws = AsyncMock(return_value={
+            "success": False,
+            "error": {"code": "unknown_error", "message": "Something went wrong"},
+        })
 
         with patch.object(HaRestClient, "get", mock_get), \
-             patch.object(HaRestClient, "post", mock_post), \
+             patch.object(HaRestClient, "send_ws_command", mock_ws), \
              patch.object(HaRestClient, "close", new_callable=AsyncMock):
-            with pytest.raises(RuntimeError, match="Unexpected config entry flow"):
+            with pytest.raises(RuntimeError, match="Something went wrong"):
                 await prov.ensure_helper("input_boolean", "My Toggle")
-
-    @pytest.mark.asyncio
-    async def test_raises_on_missing_flow_id(self):
-        with patch("providers.secrets.resolve_secret", return_value="tok"):
-            prov = HAProvisioner(ha_url="http://ha:8123", ha_token_env="TOKEN")
-        mock_get = AsyncMock(side_effect=_make_404())
-        mock_post = AsyncMock(return_value={"type": "error"})
-
-        with patch.object(HaRestClient, "get", mock_get), \
-             patch.object(HaRestClient, "post", mock_post), \
-             patch.object(HaRestClient, "close", new_callable=AsyncMock):
-            with pytest.raises(RuntimeError, match="did not return flow_id"):
-                await prov.ensure_helper("input_boolean", "Test")

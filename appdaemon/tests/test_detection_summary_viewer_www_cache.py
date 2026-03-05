@@ -1,4 +1,4 @@
-"""Unit tests for dashboard viewer staging pipeline."""
+"""Unit tests for dashboard viewer staging pipeline (viewer package)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 import pytest
 
 
-# Mock hassapi before importing detection_summary (tests run without AppDaemon)
+# Mock hassapi before importing (tests run without AppDaemon)
 class _MockHass:
     def __init__(self, ad, config):
         pass
@@ -19,8 +19,10 @@ mock_hass = MagicMock()
 mock_hass.Hass = _MockHass
 sys.modules["hassapi"] = mock_hass
 
-# Add apps to path for imports
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
+# Add appdaemon root and apps to path for imports
+_repo = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_repo))
+sys.path.insert(0, str(_repo / "apps"))
 
 from detection_summary_viewer.viewer_cache import ViewerCache, ViewerCacheConfig  # noqa: E402
 
@@ -30,9 +32,8 @@ def _make_cache(*, tmp_media_root: Path) -> tuple[ViewerCache, MagicMock, MagicM
     log = MagicMock()
 
     def ha_path_to_local_fs(ha_path: str) -> Path:
-        # emulate `/media` mapping in tests
         if ha_path.startswith("/media/"):
-            return tmp_media_root / ha_path[len("/media/") :]
+            return tmp_media_root / ha_path[len("/media/"):]
         return Path(ha_path)
 
     cache = ViewerCache(
@@ -85,4 +86,3 @@ def test_viewer_selected_file_paths(tmp_path: Path):
     best, gen = cache.selected_file_paths_for_run("rid-2")
     assert best == "/config/www/detection-summary/garage/viewer/rid-2_best.jpg"
     assert gen == "/config/www/detection-summary/garage/viewer/rid-2_generated.png"
-

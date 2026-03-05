@@ -12,8 +12,6 @@ This is the orchestrator that:
 
 from __future__ import annotations
 
-import os
-import shutil
 import threading
 import time
 import uuid
@@ -40,9 +38,7 @@ from .selection import ScoreResult, SelectionMeta, adaptive_select_and_score
 from .population import augment_image_instructions, compute_population_bounds
 from .narrative import NarrativeConfig, synthesize_run_narrative
 from .publish_gate import should_publish_bundle
-from .retention import delete_run_dir, prune_runs_to_max, recent_published_run_ids
-from .viewer_cache import ViewerCache, ViewerCacheConfig
-
+from .retention import delete_run_dir
 try:
     from providers.ai_providers.registry import (
         build_data_provider,
@@ -51,6 +47,7 @@ try:
         provider_config_from_appdaemon_args,
     )
     from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError
+    from providers.ha_provisioner import HAProvisioner
 except Exception:  # pragma: no cover
     import sys
 
@@ -64,6 +61,7 @@ except Exception:  # pragma: no cover
         provider_config_from_appdaemon_args,
     )
     from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError  # type: ignore
+    from providers.ha_provisioner import HAProvisioner  # type: ignore
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -146,24 +144,6 @@ class DetectionSummary(hass.Hass):
         "best_image_camera_entity_id": None,
         # Optional: HA helper (input_text) to store the most recent summary text.
         "summary_text_entity_id": None,
-        # Selected-run viewer (HA dashboard + helpers)
-        # - input_select contains run_ids (newest first)
-        # - selected_* artifacts are stable files that the dashboard shows
-        "run_picker_entity_id": None,
-        "run_picker_max_options": 25,
-        "selected_summary_text_entity_id": None,
-        "selected_best_image_camera_entity_id": None,
-        "selected_generated_image_camera_entity_id": None,
-        "selected_best_filename": "detection_summary_selected_best.jpg",
-        "selected_generated_filename": "detection_summary_selected_generated.png",
-        # Viewer cache (dashboard): stage required runs into `/media` with stable renamed files,
-        # then ask HA (shell_command) to wipe+fill `/config/www/.../<viewer_www_subdir>/`.
-        "viewer_enabled": True,
-        "viewer_stage_subdir": "viewer_stage",
-        "viewer_www_subdir": "viewer",
-        "viewer_refresh_shell_command": "ds_refresh_detection_summary_viewer_www",
-        # Optional: if >0, reset picker to latest after inactivity.
-        "selected_auto_reset_s": 900,
         # Run-level narrative summary (second LLM step; text-only)
         "run_narrative_enabled": True,
         "run_narrative_max_chars": 220,
@@ -253,53 +233,16 @@ class DetectionSummary(hass.Hass):
 
         self.media_fs_root = str(self.args.get("media_fs_root", self.DEFAULTS["media_fs_root"])).rstrip("/") or "/media"
 
-        # Viewer cache: keep dashboard files in `/config/www` small + bounded.
-        self.viewer_enabled: bool = _as_bool(self.args.get("viewer_enabled", self.DEFAULTS["viewer_enabled"]), default=True)
-        self.viewer_stage_subdir: str = str(self.args.get("viewer_stage_subdir", self.DEFAULTS["viewer_stage_subdir"])).strip("/") or "viewer_stage"
-        self.viewer_www_subdir: str = str(self.args.get("viewer_www_subdir", self.DEFAULTS["viewer_www_subdir"])).strip("/") or "viewer"
-        self.viewer_refresh_shell_command: str = str(
-            self.args.get("viewer_refresh_shell_command", self.DEFAULTS["viewer_refresh_shell_command"])
-        ).strip() or str(self.DEFAULTS["viewer_refresh_shell_command"])
-        self._viewer_cache: Optional[ViewerCache] = None
-        if self.viewer_enabled:
-            self._viewer_cache = ViewerCache(
-                cfg=ViewerCacheConfig(
-                    snapshot_ha_dir=self.snapshot_ha_dir,
-                    bundle_runs_subdir=self.bundle_runs_subdir,
-                    captured_subdir=self.captured_subdir,
-                    viewer_stage_subdir=self.viewer_stage_subdir,
-                    viewer_www_subdir=self.viewer_www_subdir,
-                    refresh_shell_command=self.viewer_refresh_shell_command,
-                ),
-                ha_path_to_local_fs=self._ha_path_to_local_fs,
-                call_service=self.call_service,
-                log=self.log,
-            )
-
         self.write_bundle_json: bool = _as_bool(self.args.get("write_bundle_json", self.DEFAULTS["write_bundle_json"]), default=True)
         self.generated_image_camera_entity_id: Optional[str] = hass_entities.get("generated_image_camera_entity_id")
         self.best_image_camera_entity_id: Optional[str] = hass_entities.get("best_image_camera_entity_id")
-        self.summary_text_entity_id: Optional[str] = hass_entities.get("summary_text_entity_id")
 
-        # Selected-run viewer config
-        self.run_picker_entity_id: Optional[str] = hass_entities.get("run_picker_entity_id")
-        self.run_picker_max_options: int = int(
-            self.args.get("run_picker_max_options", self.DEFAULTS["run_picker_max_options"])
+        # Helper entity ID: auto-derive from bundle_key when not explicitly provided.
+        self.summary_text_entity_id: Optional[str] = (
+            hass_entities.get("summary_text_entity_id")
+            or f"input_text.{self.bundle_key}_detection_summary"
         )
-        self.selected_summary_text_entity_id: Optional[str] = hass_entities.get("selected_summary_text_entity_id")
-        self.selected_best_image_camera_entity_id: Optional[str] = hass_entities.get("selected_best_image_camera_entity_id")
-        self.selected_generated_image_camera_entity_id: Optional[str] = hass_entities.get("selected_generated_image_camera_entity_id")
-        self.selected_best_filename: str = str(
-            self.args.get("selected_best_filename", self.DEFAULTS["selected_best_filename"])
-        ).strip() or str(self.DEFAULTS["selected_best_filename"])
-        self.selected_generated_filename: str = str(
-            self.args.get("selected_generated_filename", self.DEFAULTS["selected_generated_filename"])
-        ).strip() or str(self.DEFAULTS["selected_generated_filename"])
-        self.selected_auto_reset_s: float = _safe_float(
-            self.args.get("selected_auto_reset_s", self.DEFAULTS["selected_auto_reset_s"]),
-            default=0.0,
-        )
-        self._selected_last_set_ts: float = 0.0
+
         self.run_narrative_enabled: bool = _as_bool(
             self.args.get("run_narrative_enabled", self.DEFAULTS["run_narrative_enabled"]),
             default=True,
@@ -348,26 +291,8 @@ class DetectionSummary(hass.Hass):
             level="INFO",
         )
 
-        self.listen_state(self._on_trigger, self.trigger_entity_id, new=self.trigger_to)
-
-        # Selected-run viewer wiring (optional)
-        if self.run_picker_entity_id:
-            # Serialize selected-run materialization so rapid picker changes can't interleave
-            # "best" and "generated" file updates across different runs.
-            self._materialize_lock = threading.Lock()
-            self._materialize_seq = 0
-            # Keep selected artifacts in sync when the user changes the picker.
-            self.listen_state(self._on_run_picker_change, self.run_picker_entity_id)
-            # Allow selecting a specific run via notification action buttons.
-            self.listen_event(self._on_mobile_app_notification_action, "mobile_app_notification_action")
-            # Keep picker options reasonably fresh even if no new runs are published.
-            self.run_every(self._sync_run_picker_periodic, "now", 600)
-            # Also sync shortly after startup; mounts/integrations may not be ready at init time.
-            self.run_in(self._sync_run_picker_periodic, 2)
-            self.run_in(self._sync_run_picker_periodic, 15)
-            # Optional auto-reset to latest after inactivity.
-            if float(self.selected_auto_reset_s) > 0:
-                self.run_every(self._maybe_auto_reset_picker, "now", 60)
+        # Schedule async startup: provisions HA entities then wires all listeners.
+        self.run_in(self._async_startup_wrapper, 0)
 
     def _ha_path_to_local_fs(self, ha_path: str) -> Path:
         remainder = _strip_posix_prefix(ha_path, "/media")
@@ -375,443 +300,44 @@ class DetectionSummary(hass.Hass):
             return Path(ha_path)
         return Path(self.media_fs_root) / remainder
 
-    # --- selected-run viewer helpers ------------------------------------
-    # Viewer-cache details live in `detection_summary_app/viewer_cache.py`.
-    # This class only orchestrates: compute picker options → stage → refresh → repoint cameras.
+    # --- async startup --------------------------------------------------
 
-    def _update_selected_summary_text(self, run_id: str, *, local_run_dir: Optional[Path] = None) -> None:
-        if not self.selected_summary_text_entity_id:
-            return
-        text = ""
-        try:
-            bundle = DETECTION_SUMMARY_STORE.get_bundle_by_run_id(self.bundle_key, run_id, include_consumed=True)
-            if isinstance(bundle, dict):
-                rn = bundle.get("run_narrative")
-                if isinstance(rn, dict):
-                    text = str(rn.get("run_summary") or "").strip()
-                if not text:
-                    text = str(((bundle.get("best") or {}).get("summary") or "")).strip()
-            if not text:
-                # fall back to on-disk bundle JSON
-                if local_run_dir is None:
-                    local_run_dir = (self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir / run_id)
-                p = local_run_dir / "summary.json"
-                if p.exists():
-                    import json as _json
+    def _async_startup_wrapper(self, kwargs) -> None:
+        self.create_task(self._async_startup())
 
-                    parsed = _json.loads(p.read_text(encoding="utf-8"))
-                    if isinstance(parsed, dict):
-                        rn = parsed.get("run_narrative")
-                        if isinstance(rn, dict):
-                            text = str(rn.get("run_summary") or "").strip()
-                        if not text:
-                            text = str(((parsed.get("best") or {}).get("summary") or "")).strip()
-        except Exception:
-            text = text or ""
+    async def _async_startup(self) -> None:
+        await self._provision_entities()
+        # Wire the trigger listener after provisioning so the summary_text helper exists.
+        self.listen_state(self._on_trigger, self.trigger_entity_id, new=self.trigger_to)
 
-        value = str(text or "").strip()
-        if len(value) > 255:
+    async def _provision_entities(self) -> None:
+        ha_url = self.args.get("ha_url")
+        ha_token_env = self.args.get("ha_token_env")
+        if not ha_url or not ha_token_env:
             self.log(
-                f"DetectionSummary[{self.bundle_key}]: selected summary exceeded 255 chars; truncating run_id={run_id}",
-                level="WARNING",
-            )
-            value = value[:252] + "..."
-        try:
-            self.call_service(
-                "input_text/set_value",
-                entity_id=self.selected_summary_text_entity_id,
-                value=value,
-            )
-        except Exception as e:
-            self.log(
-                f"DetectionSummary[{self.bundle_key}]: update selected summary helper failed: {e!r}",
-                level="WARNING",
-            )
-
-    def _select_run_from_www_cache(self, run_id: str) -> None:
-        """
-        Select a run by repointing the two selected local_file cameras to the staged
-        files in `/config/www/.../<viewer_www_subdir>/`:
-        - `<run_id>_best.jpg`
-        - `<run_id>_generated.png`
-        """
-        run_id = str(run_id or "").strip()
-        if not run_id:
-            return
-
-        best_cam = str(self.selected_best_image_camera_entity_id or "").strip()
-        gen_cam = str(self.selected_generated_image_camera_entity_id or "").strip()
-        if not self._viewer_cache:
-            return
-        best_path, gen_path = self._viewer_cache.selected_file_paths_for_run(run_id)
-        if best_cam and best_path:
-            self.call_service("local_file/update_file_path", entity_id=best_cam, file_path=best_path)
-        if gen_cam and gen_path:
-            self.call_service("local_file/update_file_path", entity_id=gen_cam, file_path=gen_path)
-
-    def _parse_run_id_from_action(self, action: Any) -> Optional[str]:
-        s = str(action or "").strip()
-        # Expected format: GARAGE_DS_VIEW:<run_id>
-        if not s.startswith("GARAGE_DS_VIEW:"):
-            return None
-        run_id = s.split(":", 1)[1].strip()
-        return run_id or None
-
-    def _resolve_run_id_from_options(self, token: str, options: list[str]) -> Optional[str]:
-        """
-        Resolve a run token to a full run_id present in picker options.
-
-        We primarily expect full run_ids, but iOS notification action identifiers can be truncated,
-        so we also support short UUID prefixes (e.g., first 8 chars) as long as the match is unique.
-        """
-        token = str(token or "").strip()
-        if not token:
-            return None
-        if token in options:
-            return token
-        matches = [o for o in (options or []) if str(o).startswith(token)]
-        if len(matches) == 1:
-            return str(matches[0])
-        return None
-
-    def _on_mobile_app_notification_action(self, event_name, data, kwargs) -> None:
-        try:
-            if not self.run_picker_entity_id:
-                return
-            if not isinstance(data, dict):
-                return
-            run_id = self._parse_run_id_from_action(data.get("action"))
-            if not run_id:
-                return
-            self.log(f"DetectionSummary[{self.bundle_key}]: notification action select run_id={run_id}", level="INFO")
-            # Keep viewer/picker consistent: only select run_ids that are already staged.
-            # Refresh the picker (which stages + refreshes the viewer folder) then select.
-            self._sync_run_picker_periodic({})
-            try:
-                st = self.get_state(self.run_picker_entity_id, attribute="all") or {}
-                attrs = st.get("attributes") if isinstance(st, dict) else None
-                options = (attrs.get("options") if isinstance(attrs, dict) else None) or []
-                options = [str(o) for o in options] if isinstance(options, list) else []
-            except Exception:
-                options = []
-            resolved = self._resolve_run_id_from_options(run_id, options)
-            if not resolved:
-                self.log(
-                    f"DetectionSummary[{self.bundle_key}]: notification action run_id not in picker options (not staged); ignoring run_id={run_id}",
-                    level="WARNING",
-                )
-                return
-            self.call_service(
-                "input_select/select_option",
-                target={"entity_id": self.run_picker_entity_id},
-                option=resolved,
-            )
-        except Exception as e:
-            self.log(
-                f"DetectionSummary[{self.bundle_key}]: notification action handler failed: {e!r}",
-                level="WARNING",
-            )
-
-    def _on_run_picker_change(self, entity_id, attribute, old, new, kwargs) -> None:
-        try:
-            run_id = str(new or "").strip()
-            if not run_id or run_id == str(old or "").strip():
-                return
-            self._selected_last_set_ts = time.time()
-            self.log(f"DetectionSummary[{self.bundle_key}]: run picker changed -> {run_id}", level="INFO")
-            # Selection should be instant: the picker only changes camera file paths.
-            self._select_run_from_www_cache(run_id)
-            self._update_selected_summary_text(run_id)
-        except Exception as e:
-            self.log(f"DetectionSummary[{self.bundle_key}]: run picker change failed: {e!r}", level="WARNING")
-
-    def _maybe_auto_reset_picker(self, kwargs) -> None:
-        try:
-            if not self.run_picker_entity_id:
-                return
-            if float(self.selected_auto_reset_s) <= 0:
-                return
-            if float(self._selected_last_set_ts) <= 0:
-                return
-            if (time.time() - float(self._selected_last_set_ts)) < float(self.selected_auto_reset_s):
-                return
-            # Reset to latest (first option).
-            self.call_service(
-                "input_select/select_first",
-                target={"entity_id": self.run_picker_entity_id},
-            )
-        except Exception:
-            return
-
-    def _sync_run_picker_periodic(self, kwargs) -> None:
-        """
-        Periodically prune old runs and keep the run picker options in sync with disk.
-        """
-        if not self.run_picker_entity_id:
-            return
-        max_retained_runs = int(self.args.get("max_retained_runs", 100))
-        runs_dir = self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir
-        try:
-            pruned = prune_runs_to_max(runs_dir=runs_dir, max_runs=int(max_retained_runs))
-            options = recent_published_run_ids(runs_dir=runs_dir, max_options=int(self.run_picker_max_options))
-            self.log(
-                f"DetectionSummary[{self.bundle_key}]: sync run picker runs_dir={runs_dir} "
-                f"max_retained_runs={int(max_retained_runs)} pruned={int(pruned)} options={len(options)}",
-                level="INFO",
-            )
-            if not options:
-                return
-            # Stage required run_ids into `/media` and ask HA to wipe+fill `/config/www`
-            # so the picker always matches what exists in the www viewer folder.
-            if self._viewer_cache:
-                staged = self._viewer_cache.stage_run_ids_to_media(options)
-                if not staged:
-                    self.log(
-                        f"DetectionSummary[{self.bundle_key}]: viewer staging produced no runs; skipping picker update",
-                        level="WARNING",
-                    )
-                    return
-                self._viewer_cache.refresh_www_from_stage()
-                options = staged
-
-            current = str(self.get_state(self.run_picker_entity_id) or "").strip()
-            self.call_service(
-                "input_select/set_options",
-                target={"entity_id": self.run_picker_entity_id},
-                options=options,
-            )
-            if not current or current.lower() in {"unknown", "unavailable", "loading"} or current not in options:
-                self.call_service(
-                    "input_select/select_option",
-                    target={"entity_id": self.run_picker_entity_id},
-                    option=options[0],
-                )
-        except Exception as e:
-            self.log(
-                f"DetectionSummary[{self.bundle_key}]: sync run picker failed runs_dir={runs_dir}: {e!r}",
+                f"DetectionSummary[{self.bundle_key}]: ha_url / ha_token_env not configured — skipping provisioning",
                 level="WARNING",
             )
             return
 
-    def _set_run_picker_value(self, run_id: str) -> None:
-        """Ensure the picker contains run_id, then select it."""
-        if not self.run_picker_entity_id:
-            return
-        run_id = str(run_id or "").strip()
-        if not run_id:
-            return
+        bk = self.bundle_key
+        bk_display = bk.replace("_", " ").title()
+        prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
+
+        # Provision only the latest summary-text helper.
+        # The run picker, selected summary, and relay script are provisioned by detection_summary_viewer.
         try:
-            state = self.get_state(self.run_picker_entity_id, attribute="all") or {}
-            current = str(state.get("state") if isinstance(state, dict) else "").strip()
-            attrs = state.get("attributes") if isinstance(state, dict) else None
-            options = (attrs.get("options") if isinstance(attrs, dict) else None) or []
-            if not isinstance(options, list):
-                options = []
-            options = [str(o) for o in options if str(o).strip() and str(o).strip().lower() != "loading"]
-            new_options = [run_id] + [o for o in options if o != run_id]
-            new_options = new_options[: max(1, int(self.run_picker_max_options))]
-            self.call_service(
-                "input_select/set_options",
-                target={"entity_id": self.run_picker_entity_id},
-                options=new_options,
-            )
-            self.call_service(
-                "input_select/select_option",
-                target={"entity_id": self.run_picker_entity_id},
-                option=run_id,
-            )
-            self._selected_last_set_ts = time.time()
-        except Exception as e:
-            self.log(f"DetectionSummary[{self.bundle_key}]: failed to set run picker: {e!r}", level="WARNING")
-
-    def _add_run_id_to_picker(self, run_id: str) -> bool:
-        """
-        Add run_id to picker options (newest-first). Returns True if we selected it.
-        """
-        if not self.run_picker_entity_id:
-            return False
-        run_id = str(run_id or "").strip()
-        if not run_id:
-            return False
-        try:
-            state = self.get_state(self.run_picker_entity_id, attribute="all") or {}
-            current = str(state.get("state") if isinstance(state, dict) else "").strip()
-            attrs = state.get("attributes") if isinstance(state, dict) else None
-            options = (attrs.get("options") if isinstance(attrs, dict) else None) or []
-            if not isinstance(options, list):
-                options = []
-            options = [str(o) for o in options if str(o).strip() and str(o).strip().lower() != "loading"]
-            new_options = [run_id] + [o for o in options if o != run_id]
-            new_options = new_options[: max(1, int(self.run_picker_max_options))]
-
-            should_select = False
-            if not current or current.lower() in {"unknown", "unavailable", "loading"}:
-                should_select = True
-            if current and current not in new_options:
-                should_select = True
-            if float(self.selected_auto_reset_s) > 0 and float(self._selected_last_set_ts) > 0:
-                if (time.time() - float(self._selected_last_set_ts)) >= float(self.selected_auto_reset_s):
-                    should_select = True
-
-            self.call_service(
-                "input_select/set_options",
-                target={"entity_id": self.run_picker_entity_id},
-                options=new_options,
-            )
-            if should_select:
-                self.call_service(
-                    "input_select/select_option",
-                    target={"entity_id": self.run_picker_entity_id},
-                    option=run_id,
-                )
-                self._selected_last_set_ts = time.time()
-                return True
-        except Exception as e:
-            self.log(f"DetectionSummary[{self.bundle_key}]: failed to update run picker: {e!r}", level="WARNING")
-        return False
-
-    def _atomic_copy(self, src: Path, dst: Path) -> None:
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dst.with_suffix(dst.suffix + ".tmp")
-        # Important: do NOT preserve mtime/metadata.
-        # HA/local_file camera refresh behavior is more reliable when the stable file's mtime changes.
-        # (Similar to `cp` without `-p`.)
-        shutil.copyfile(src, tmp)
-        os.replace(tmp, dst)
-
-    def _materialize_selected_run(self, run_id: str) -> None:
-        """Copy per-run artifacts to stable selected filenames and update local_file cameras + helper text."""
-        run_id = str(run_id or "").strip()
-        if not run_id:
-            return
-        # Sequence number used to cancel stale work when the picker changes rapidly.
-        # We check this between copy steps to prevent mixed-run images.
-        try:
-            self._materialize_seq = int(getattr(self, "_materialize_seq", 0)) + 1
-        except Exception:
-            self._materialize_seq = 1
-        my_seq = int(self._materialize_seq)
-
-        def _stat(p: Path) -> str:
-            try:
-                if not p.exists():
-                    return "missing"
-                st = p.stat()
-                return f"exists size={int(st.st_size)} mtime={float(st.st_mtime):.3f}"
-            except Exception as e:
-                return f"stat_error={e!r}"
-
-        cfg = BundleConfig(
-            snapshot_ha_dir=self.snapshot_ha_dir,
-            bundle_runs_subdir=self.bundle_runs_subdir,
-            bundle_best_filename=self.bundle_best_filename,
-            external_generated_filename=self.external_generated_filename,
-            published_best_filename=self.published_best_filename,
-            published_generated_filename=self.published_generated_filename,
-            write_bundle_json=self.write_bundle_json,
-            trace=self.trace_cfg,
-        )
-        ha_run_dir = run_ha_dir(cfg, run_id)
-        local_run_dir = self._ha_path_to_local_fs(ha_run_dir)
-
-        best_src = local_run_dir / self.bundle_best_filename
-        gen_src = local_run_dir / self.external_generated_filename
-
-        base_local = self._ha_path_to_local_fs(self.snapshot_ha_dir)
-        best_dst = base_local / self.selected_best_filename
-        gen_dst = base_local / self.selected_generated_filename
-
-        lock = getattr(self, "_materialize_lock", None)
-        if lock is None:
-            # Shouldn't happen, but keep behavior safe.
-            lock = threading.Lock()
-            self._materialize_lock = lock
-
-        with lock:
-            # If a newer selection arrived while we were waiting, abort.
-            if int(getattr(self, "_materialize_seq", 0)) != my_seq:
-                return
-
+            created = await prov.ensure_helper("input_text", f"{bk_display} Detection Summary", max=255)
+            level = "INFO" if created else "DEBUG"
+            slug = prov._helper_slug("input_text", f"{bk_display} Detection Summary")
+            entity_id = f"input_text.{slug}"
+            msg = "created" if created else "already exists"
+            self.log(f"DetectionSummary[{bk}]: helper {entity_id} {msg}", level=level)
+        except Exception as exc:
             self.log(
-                f"DetectionSummary[{self.bundle_key}]: materialize selected start seq={my_seq} run_id={run_id} "
-                f"run_dir={local_run_dir} best_src={_stat(best_src)} gen_src={_stat(gen_src)}",
-                level="INFO",
+                f"DetectionSummary[{bk}]: failed to provision input_text '{bk_display} Detection Summary': {exc!r}",
+                level="ERROR",
             )
-
-            best_copied = False
-            gen_copied = False
-
-            try:
-                if best_src.exists():
-                    self._atomic_copy(best_src, best_dst)
-                    best_copied = True
-                else:
-                    # Fallback: derive best frame from summary.json and copy the captured frame.
-                    best_idx = None
-                    try:
-                        p = local_run_dir / "summary.json"
-                        if p.exists():
-                            import json as _json
-
-                            parsed = _json.loads(p.read_text(encoding="utf-8"))
-                            if isinstance(parsed, dict):
-                                best_idx = parsed.get("best_idx") or (parsed.get("summary") or {}).get("best_idx")
-                    except Exception:
-                        best_idx = None
-                    if best_idx is not None:
-                        alt = (local_run_dir / self.captured_subdir / f"frame_{int(best_idx):03d}.jpg")
-                        if alt.exists():
-                            self._atomic_copy(alt, best_dst)
-                            best_copied = True
-                            self.log(
-                                f"DetectionSummary[{self.bundle_key}]: materialize selected best fallback "
-                                f"seq={my_seq} run_id={run_id} best_idx={int(best_idx)} src={alt.name}",
-                                level="WARNING",
-                            )
-            except Exception as e:
-                self.log(
-                    f"DetectionSummary[{self.bundle_key}]: materialize selected best failed seq={my_seq} run_id={run_id}: {e!r}",
-                    level="WARNING",
-                )
-
-            # If a newer selection arrived, stop before touching generated to avoid mixed-run pairs.
-            if int(getattr(self, "_materialize_seq", 0)) != my_seq:
-                self.log(
-                    f"DetectionSummary[{self.bundle_key}]: materialize selected abort before generated "
-                    f"(newer selection) seq={my_seq} run_id={run_id}",
-                    level="INFO",
-                )
-                return
-
-            try:
-                if gen_src.exists():
-                    self._atomic_copy(gen_src, gen_dst)
-                    gen_copied = True
-                else:
-                    # Fallback: avoid leaving a stale generated image from a different run.
-                    # If generated.png is missing for this run, mirror best into the generated slot.
-                    if best_copied and best_dst.exists():
-                        self._atomic_copy(best_dst, gen_dst)
-                        gen_copied = True
-                        self.log(
-                            f"DetectionSummary[{self.bundle_key}]: materialize selected generated missing; "
-                            f"using best as fallback seq={my_seq} run_id={run_id}",
-                            level="WARNING",
-                        )
-            except Exception as e:
-                self.log(
-                    f"DetectionSummary[{self.bundle_key}]: materialize selected generated failed seq={my_seq} run_id={run_id}: {e!r}",
-                    level="WARNING",
-                )
-
-            self.log(
-                f"DetectionSummary[{self.bundle_key}]: materialize selected done seq={my_seq} run_id={run_id} "
-                f"best_dst={_stat(best_dst)} gen_dst={_stat(gen_dst)} copied_best={best_copied} copied_gen={gen_copied}",
-                level="INFO",
-            )
-
-        # Update selected summary helper (prefer bundle store; fall back to summary.json).
-        self._update_selected_summary_text(run_id, local_run_dir=local_run_dir)
 
     def _get_data_provider(self):
         if self._data_provider is not None:
@@ -1388,6 +914,11 @@ class DetectionSummary(hass.Hass):
                             "- Do NOT depict the same individual multiple times (no duplicates). If a person appears in multiple frames, show them only once.",
                             "- Do NOT exceed the max male/female/animal counts given above, even if the narrative suggests more.",
                             "",
+                            "Content safety:",
+                            "- Do NOT reproduce any recognizable branded, trademarked, or copyrighted characters, logos, or products visible in the reference frames.",
+                            "- Replace any such items with generic alternatives (plain toys, abstract shapes, unlabeled objects).",
+                            "- Omit text overlays like timestamps or watermarks from the reference frames.",
+                            "",
                             "Scene composition guidance:",
                             "- Generate ONE coherent illustration that captures the essence of what happened across the provided frames.",
                             "- Exact positioning/poses do not need to match a single frame; it can be a composite of the event.",
@@ -1531,30 +1062,6 @@ class DetectionSummary(hass.Hass):
                     )
                 except Exception as e:
                     self.log(f"DetectionSummary[{self.bundle_key}]: failed to update summary_text_entity_id: {e!r}", level="WARNING")
-
-            # Retention + run picker sync (newest-first, bounded).
-            if self.run_picker_entity_id:
-                try:
-                    # Refresh viewer + picker so the newest run is present under `/config/www/.../viewer/`
-                    # *before* we select it (prevents missing-file errors on mobile).
-                    self._sync_run_picker_periodic({})
-                    # Prefer selecting the newly published run_id when it's available.
-                    try:
-                        st = self.get_state(self.run_picker_entity_id, attribute="all") or {}
-                        attrs = st.get("attributes") if isinstance(st, dict) else None
-                        options = (attrs.get("options") if isinstance(attrs, dict) else None) or []
-                        options = [str(o) for o in options] if isinstance(options, list) else []
-                    except Exception:
-                        options = []
-                    if active.capture.run_id in options:
-                        self._selected_last_set_ts = time.time()
-                        self.call_service(
-                            "input_select/select_option",
-                            target={"entity_id": self.run_picker_entity_id},
-                            option=active.capture.run_id,
-                        )
-                except Exception as e:
-                    self.log(f"DetectionSummary[{self.bundle_key}]: run picker sync failed: {e!r}", level="WARNING")
 
             # Cooldown backoff behavior
             if active.capture.timed_out:

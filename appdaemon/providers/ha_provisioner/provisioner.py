@@ -63,7 +63,11 @@ class HAProvisioner:
         name: str,
         **kwargs: Any,
     ) -> bool:
-        """Ensure a helper entity exists, creating it via Config Entry Flow if missing.
+        """Ensure a helper entity exists, creating it via the HA WebSocket API if missing.
+
+        Uses the ``{helper_type}/create`` WebSocket command, which is the same
+        mechanism the HA frontend and ha-mcp use.  The old Config Entry Flow
+        REST API no longer supports helper types in modern HA versions.
 
         Supported helper_type values: ``input_boolean``, ``input_text``,
         ``input_number``, ``input_select``, ``input_button``, ``input_datetime``,
@@ -80,25 +84,21 @@ class HAProvisioner:
                 return False
 
             logger.info("Creating helper %s (type=%s)", entity_id, helper_type)
-            flow = await client.post(
-                "/api/config/config_entries/flow",
-                json={"handler": helper_type, "show_advanced_options": False},
-            )
-            flow_id = flow.get("flow_id")
-            if not flow_id:
-                raise RuntimeError(f"Config entry flow did not return flow_id: {flow}")
+            ws_message: dict[str, Any] = {
+                "type": f"{helper_type}/create",
+                "name": name,
+                **kwargs,
+            }
+            result = await client.send_ws_command(ws_message)
 
-            step_data: dict[str, Any] = {"name": name, **kwargs}
-            result = await client.post(
-                f"/api/config/config_entries/flow/{flow_id}",
-                json=step_data,
-            )
-            if result.get("type") == "create_entry":
+            if result.get("success"):
                 logger.info("Helper %s created successfully", entity_id)
                 return True
 
+            error = result.get("error", {})
+            error_msg = error.get("message", str(error)) if isinstance(error, dict) else str(error)
             raise RuntimeError(
-                f"Unexpected config entry flow result for {entity_id}: {result}"
+                f"Failed to create helper {entity_id}: {error_msg}"
             )
 
     # ------------------------------------------------------------------

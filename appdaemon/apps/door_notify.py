@@ -1,10 +1,13 @@
 """
-Garage RATGDO door open/close notifications.
+Generic door open/close notifications.
 
-Sends push notifications when either RATGDO garage door reports open or closed.
+Sends push notifications when a configured door entity reports open or closed.
 Consolidates rapid open->closed (or closed->open) into a single "was open/closed
 for n minutes m seconds" notification to avoid two alerts when someone leaves
 or arrives.
+
+Supports both cover entities (open/closed states) and binary_sensor entities
+(on/off states) via config-driven state mapping (door_open_state / door_closed_state).
 """
 
 import threading
@@ -16,20 +19,21 @@ import hassapi as hass
 from detection_summary_store import STORE as DETECTION_SUMMARY_STORE
 
 
-class GarageDoorNotify(hass.Hass):
-    """Notify on garage door open/close via RATGDO."""
+class DoorNotify(hass.Hass):
+    """Notify on door open/close via configurable entity type."""
 
     DEFAULTS = {
-        "doors": [
-            "cover.ratgdov25i_4a0325_door",
-            "cover.ratgdov25i_dbfa50_door",
-        ],
+        "doors": [],  # must be configured per-instance; no default door entities
         "notify_services": [
             "notify.mobile_app_toms_iphone_15_pro",
             "notify.mobile_app_toms_iphone_air",
             "notify.mobile_app_kellies_iphone_air",
         ],
         "consolidation_delay": 300,  # seconds to wait for second transition
+        # State values for this door entity type.
+        # Covers use "open"/"closed" (default); binary_sensors use "on"/"off".
+        "door_open_state": "open",
+        "door_closed_state": "closed",
         # Detection summary attachment (optional)
         "ai_enabled": False,
         "ai_bundle_key": "garage",
@@ -40,7 +44,7 @@ class GarageDoorNotify(hass.Hass):
         "ai_use_detection_summary_events": True,
         "ai_run_started_lookback_s": 900,
         # Mobile deep-link when tapping the notification.
-        # For custom dashboards, the path is typically: /<dashboard_url_path>/<view_path>
+        # For custom dashboards: /<dashboard_url_path>/<view_path>
         # Example: /detection-summary/garage
         "notification_url": "/detection-summary/garage",
     }
@@ -51,17 +55,30 @@ class GarageDoorNotify(hass.Hass):
         self._latest_run_started: dict[str, dict[str, Any]] = {}
         self._run_started_signal: dict[str, threading.Event] = {}
 
-        self.log(f"Namespaces: {self.list_namespaces()}")
-        self.log(f"Door state: {self.get_state('cover.ratgdov25i_4a0325_door')}")
-        covers = self.get_state("cover") or {}
-        self.log(f"Cover count: {len(covers)}")
-        self.log(f"Has entity? {'cover.ratgdov25i_4a0325_door' in covers}")
+        # State values for this door entity type (configurable for cover vs binary_sensor).
+        self._open_state = str(self.args.get("door_open_state", self.DEFAULTS["door_open_state"]))
+        self._closed_state = str(self.args.get("door_closed_state", self.DEFAULTS["door_closed_state"]))
+
+        # Intermediate state map for _from_state_display.
+        # Cover entities have "opening" -> "closed" and "closing" -> "open" transitions.
+        # Binary sensors have no intermediate states.
+        if self._open_state == "open" and self._closed_state == "closed":
+            default_intermediate_map: dict[str, str] = {"opening": "closed", "closing": "open"}
+        else:
+            default_intermediate_map = {}
+        self._intermediate_state_map: dict[str, str] = self.args.get(
+            "intermediate_state_map", default_intermediate_map
+        )
 
         doors = self.args.get("doors", self.DEFAULTS["doors"])
-        self.log(f"Listening for open/closed on {doors}", level="INFO")
+        self.log(
+            f"Listening for {self._open_state!r}/{self._closed_state!r} on {doors}",
+            level="INFO",
+        )
         for entity_id in doors:
-            self.listen_state(self._on_door_state, entity_id, new="open")
-            self.listen_state(self._on_door_state, entity_id, new="closed")
+            self.log(f"Door entity: {entity_id} state={self.get_state(entity_id)!r}", level="DEBUG")
+            self.listen_state(self._on_door_state, entity_id, new=self._open_state)
+            self.listen_state(self._on_door_state, entity_id, new=self._closed_state)
 
         # Subscribe to detection-summary events so we can wait by run_id rather than time windows.
         if self._ai_enabled() and self._ai_use_events():
@@ -149,15 +166,15 @@ class GarageDoorNotify(hass.Hass):
         door_name = self._door_name(entity_id)
         from_display = self._from_state_display(old)
 
-        # Check if we have a pending transition for the opposite state
-        opposite = "closed" if new == "open" else "open"
+        # Check if we have a pending transition for the opposite state.
+        opposite = self._closed_state if new == self._open_state else self._open_state
         pending = self._pending.get(entity_id)
         if pending and pending["state"] == opposite:
-            # Second transition within delay: consolidate
+            # Second transition within delay: consolidate.
             self._cancel_pending(entity_id)
             duration_secs = time.time() - pending["timestamp"]
             title, message = self._build_consolidated_notification(
-                door_name, was_open=(opposite == "open"), duration_secs=duration_secs
+                door_name, was_open=(opposite == self._open_state), duration_secs=duration_secs
             )
             window_start = pending["timestamp"] - self._ai_window_pad_s()
             window_end = time.time()
@@ -171,7 +188,7 @@ class GarageDoorNotify(hass.Hass):
             )
             return
 
-        # No matching pending: schedule single notification after delay
+        # No matching pending: schedule single notification after delay.
         delay = self.args.get("consolidation_delay", self.DEFAULTS["consolidation_delay"])
         handle = self.run_in(
             self._on_delay_expired,
@@ -235,12 +252,13 @@ class GarageDoorNotify(hass.Hass):
         return name if name else entity_id
 
     def _from_state_display(self, old: str) -> str:
-        """Map opening/closing to closed/open for display."""
-        if old == "opening":
-            return "closed"
-        if old == "closing":
-            return "open"
-        return old if old else "unknown"
+        """Map intermediate states (e.g. opening/closing for covers) using configurable map."""
+        if old is None:
+            return "unknown"
+        mapped = self._intermediate_state_map.get(old)
+        if mapped is not None:
+            return mapped
+        return old
 
     def _format_duration(self, seconds: float) -> str:
         """Format seconds as 'n minutes and m seconds'."""
@@ -265,7 +283,7 @@ class GarageDoorNotify(hass.Hass):
 
     def _build_notification(self, door_name: str, to_state: str, from_display: str) -> tuple[str, str]:
         """Build (title, message) for the notification."""
-        action = "Opened" if to_state == "open" else "Closed"
+        action = "Opened" if to_state == self._open_state else "Closed"
         title = f"{door_name} {action}"
         message = f"{door_name} is now {to_state} (was {from_display})."
         return title, message
@@ -471,7 +489,7 @@ class GarageDoorNotify(hass.Hass):
         if run_id:
             DETECTION_SUMMARY_STORE.mark_consumed(bundle_key, run_id)
 
-        # Prefer generated image only (garage notifications use the illustration).
+        # Prefer generated image only (notifications use the illustration).
         gen_url = (generated.get("image_url") or "").strip()
         gen_web_path = (generated.get("image_web_path") or "").strip()
         image_url = gen_url
@@ -543,7 +561,7 @@ class GarageDoorNotify(hass.Hass):
                 run_id=run_id,
             )
 
-        t = threading.Thread(target=_worker, name="garage_door_notify_ai")
+        t = threading.Thread(target=_worker, name=f"door_notify_{self._ai_bundle_key()}_ai")
         t.daemon = True
         t.start()
 

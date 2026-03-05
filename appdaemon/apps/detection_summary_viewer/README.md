@@ -1,8 +1,20 @@
-# Detection Summary Viewer (Home Assistant dashboard)
+# Detection Summary Viewer
 
-This folder documents the **Detection Summary Viewer** setup: a fast, mobile-friendly Lovelace page for browsing historical detection runs produced by `detection_summary_app`.
+This folder contains the **`DetectionSummaryViewer`** AppDaemon app — a standalone companion to `detection_summary_app` that manages the dashboard viewer: run picker, selected run display, viewer cache staging, and notification action handling.
 
 The key design decision: **the dashboard loads images from `/local/.../<run_id>_best.jpg`** (unique URLs per run), not from `camera_proxy`. That avoids sluggish dashboard caching and makes run switching feel instant.
+
+---
+
+## Architecture
+
+`DetectionSummaryViewer` is **fully decoupled** from `detection_summary_app`. Communication between the two uses:
+
+- **HA event `detection_summary/run_published`** (fired by `detection_summary_app` when a bundle is ready)
+- **Shared filesystem** under `snapshot_ha_dir` (both apps read from `/media/detection-summary/<bundle_key>/`)
+- **`detection_summary_store`** (shared in-process store; the viewer reads bundle data from here)
+
+`detection_summary_app` can run standalone with no viewer, and the viewer can be restarted independently without affecting detection.
 
 ---
 
@@ -10,13 +22,15 @@ The key design decision: **the dashboard loads images from `/local/.../<run_id>_
 
 For a given `bundle_key` (example: `garage`):
 
-1. AppDaemon maintains an `input_select` of recent `run_id`s (newest first).
-2. AppDaemon stages the files for those run_ids into `/media/.../viewer_stage/` with stable names:
+1. `detection_summary_app` fires `detection_summary/run_published` when a bundle is ready.
+2. `DetectionSummaryViewer` listens for this event and calls `_sync_run_picker_periodic`.
+3. AppDaemon stages the files for recent run_ids into `/media/.../viewer_stage/` with stable names:
    - `<run_id>_best.jpg`
    - `<run_id>_generated.png` (falls back to best if generated is missing)
-3. AppDaemon calls a Home Assistant `shell_command` that **atomically** refreshes:
+4. AppDaemon calls a Home Assistant `shell_command` that **atomically** refreshes:
    - `/config/www/detection-summary/<bundle_key>/viewer/`
-4. The Lovelace dashboard displays images directly from:
+5. AppDaemon updates `input_select.{bundle_key}_detection_summary_run_id` options.
+6. The Lovelace dashboard displays images directly from:
    - `/local/detection-summary/<bundle_key>/viewer/<run_id>_generated.png`
    - `/local/detection-summary/<bundle_key>/viewer/<run_id>_best.jpg`
 
@@ -24,26 +38,25 @@ Because the path includes `run_id`, the browser sees a new URL on every selectio
 
 ---
 
-## Required Home Assistant pieces
+## Self-provisioned entities
 
-### 1) Helpers
+On startup, `DetectionSummaryViewer` automatically creates (idempotent):
 
-Create these helpers (UI: **Settings → Devices & services → Helpers**):
+| Entity | Purpose |
+|---|---|
+| `input_select.{bundle_key}_detection_summary_run_id` | Run picker — lists recent `run_id`s newest-first |
+| `input_text.{bundle_key}_detection_summary_selected` | Selected run's summary text (max 255 chars) |
+| `script.{bundle_key}_detection_summary_relay` | Dashboard relay script for non-admin access |
 
-- **Run picker** (`input_select`):
-  - Example entity_id: `input_select.garage_detection_summary_run_id`
-  - Options will be managed by AppDaemon.
-- **Selected summary** (`input_text`, max 255):
-  - Example entity_id: `input_text.garage_detection_summary_selected`
+No manual helper creation is needed.
 
-### 2) `shell_command` (atomic refresh, wipe+fill)
+---
 
-Add this to `configuration.yaml`, then restart Home Assistant.
+## Required manual steps
 
-This implementation:
-- copies staged files into a temporary directory
-- swaps the directory into place with `mv` (no “half-copied” window)
-- does **not** replace the viewer folder with an empty one
+### 1) `shell_command` (atomic refresh, wipe+fill)
+
+Add this to `configuration.yaml`, then restart Home Assistant. This is the only manual step.
 
 ```yaml
 shell_command:
@@ -69,53 +82,69 @@ shell_command:
     fi'
 ```
 
-**Notes**
-- `snapshot_rel` is the part after `/media/`. For garage it’s `detection-summary/garage`.
+**Notes:**
+- `snapshot_rel` is the part after `/media/`. For garage it's `detection-summary/garage`.
 - This keeps `/config/www/.../viewer/` bounded to only the run_ids AppDaemon chose.
+
+### 2) `local_file` cameras for selected images (optional)
+
+The viewer can repoint two `local_file` cameras to the staged selected files via `local_file/update_file_path`. These are optional — the dashboard can reference `/local/...` paths directly without them.
+
+| Camera | Initial file path |
+|---|---|
+| `camera.{bundle_key}_detection_summary_selected_best` | `/config/www/detection-summary/{bundle_key}/viewer/placeholder_best.jpg` |
+| `camera.{bundle_key}_detection_summary_selected_generated` | `/config/www/detection-summary/{bundle_key}/viewer/placeholder_generated.png` |
+
+Add these to `hass_entities` in the app config if you want this feature.
 
 ---
 
-## AppDaemon configuration (per deployment)
+## App config format
 
-In `appdaemon/apps/apps.yaml` under your `DetectionSummary` instance:
+```yaml
+detection_viewer_garage_dev:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: garage
+  snapshot_ha_dir: /media/detection-summary/garage
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    # Optional: local_file cameras for selected run images
+    selected_best_image_camera_entity_id: camera.garage_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.garage_detection_summary_selected_generated
+  # notification_action_prefix: "GARAGE_DS_VIEW"  # enables iOS action button run selection
+```
 
-### Required entities (`hass_entities`)
+### Required args
 
-| Purpose | Suggested entity_id |
+| Key | Description |
 |---|---|
-| Trigger | `binary_sensor.g5_dome_motion` |
-| Camera | `camera.garage_g5_dome_medium_resolution_channel` |
-| Run picker | `input_select.garage_detection_summary_run_id` |
-| Selected summary text | `input_text.garage_detection_summary_selected` |
+| `bundle_key` | Identifies the detection summary bundle (e.g. `garage`, `bulkhead`) |
+| `snapshot_ha_dir` | Base HA path (e.g. `/media/detection-summary/garage`) |
+| `ha_url` | HA base URL for provisioner |
+| `ha_token_env` | Env var name holding the HA long-lived access token |
 
-### Optional entities
+### Optional args (with defaults)
 
-You can optionally create `local_file` cameras for debugging / entity-detail viewing:
-
-| Purpose | Example entity_id |
-|---|---|
-| Selected best (optional) | `camera.garage_detection_summary_selected_best` |
-| Selected generated (optional) | `camera.garage_detection_summary_selected_generated` |
-
-If you do not create them, leave these out of `hass_entities`; the dashboard still works because it reads `/local/...` directly.
-
-### Viewer cache args (defaults)
-
-These defaults are used unless overridden:
-
-- `viewer_enabled`: `true`
-- `viewer_stage_subdir`: `viewer_stage`
-- `viewer_www_subdir`: `viewer`
-- `viewer_refresh_shell_command`: `ds_refresh_detection_summary_viewer_www`
+| Key | Default | Description |
+|---|---|---|
+| `media_fs_root` | `/media` | Local filesystem path that maps to `/media` in HA |
+| `bundle_runs_subdir` | `runs` | Subdirectory under `snapshot_ha_dir` containing per-run directories |
+| `viewer_enabled` | `true` | Enable viewer cache staging |
+| `viewer_stage_subdir` | `viewer_stage` | Staging directory name under `snapshot_ha_dir` |
+| `viewer_www_subdir` | `viewer` | Viewer www directory name (under `/config/www/.../`) |
+| `viewer_refresh_shell_command` | `ds_refresh_detection_summary_viewer_www` | Shell command name |
+| `run_picker_max_options` | `25` | Maximum run_ids to show in the picker |
+| `selected_auto_reset_s` | `900` | Seconds of inactivity before picker auto-resets to latest (0 = disabled) |
+| `notification_action_prefix` | `None` | Prefix for iOS notification action buttons (e.g. `GARAGE_DS_VIEW`) |
 
 ---
 
 ## Dashboard (Lovelace) example
 
-Create (or update) a storage-mode dashboard and add a view like this.
-Example is for bundle_key `garage`.
-
-The two image cards are the important part: **they load `/local/.../<run_id>_...`**.
+For bundle_key `garage`. The two image cards load `/local/.../<run_id>_...` directly.
 
 ```yaml
 views:
@@ -199,54 +228,14 @@ views:
 
 ---
 
-## Cleanup / legacy notes
+## Files in this package
 
-If you previously created an automation that overwrote stable files like:
-- `/config/www/detection-summary/garage/selected_best.jpg`
-- `/config/www/detection-summary/garage/selected_generated.png`
-
-Turn it off or delete it; the viewer uses per-run files under `.../viewer/` now.
-
----
-
-## BIG TODO: refactor viewer out of `detection_summary_app`
-
-Today, `detection_summary_app` both:
-- generates bundles (core value), and
-- manages dashboard viewer staging + picker behavior.
-
-**TODO (next phase):** move the viewer logic into a standalone AppDaemon “addon app” living in this folder, so the detection summary code stays lean and reusable.
-
-Suggested shape:
-
-- New app (example): `detection_summary_viewer.app.DetectionSummaryViewer`
-- Inputs:
-  - `snapshot_ha_dir` + `media_fs_root` mapping
-  - run picker entity
-  - selected summary entity
-  - viewer stage / viewer dir names
-  - refresh shell_command name
-  - optionally: listen for an event like `detection_summary/bundle_published` with `{bundle_key, run_id}`
-- Responsibilities:
-  - maintain run picker options from disk (or store)
-  - stage renamed images into `/media/.../viewer_stage/`
-  - call HA shell_command to atomically refresh `/config/www/.../viewer/`
-  - update selected summary text when run changes
-
-When that’s done, `detection_summary_app` can focus on generating bundles (runs, summaries, best images, generated images) and become reusable beyond the garage door use case.
-
----
-
-## TODO: notification tap deep-link should auto-select the run
-
-Today (iOS especially), tapping the notification body can only open the dashboard URL; it cannot fire an event to select a `run_id`.
-Action buttons can fire events, but on iPhone they require a long-press UX which is not ideal for V1.
-
-**TODO (v2):** support `?run_id=<uuid>` (or similar) in the dashboard URL and add a tiny frontend helper (custom resource)
-that, on page load, parses the query param and calls the appropriate HA service to select that run (for example:
-`input_select.select_option` on the run picker).
-
-This should live with the viewer frontend/docs (or the standalone viewer app), not inside the bundle-generating app.
+| File | Purpose |
+|---|---|
+| `detection_summary_viewer_app.py` | Main `DetectionSummaryViewer` AppDaemon app |
+| `viewer_cache.py` | `ViewerCache` helper — stages files to `/media` and calls HA shell_command to refresh `/config/www` |
+| `__init__.py` | Package docstring |
+| `README.md` | This file |
 
 ---
 
@@ -257,26 +246,3 @@ On mobile, this can be slower than necessary.
 
 **TODO:** during staging into `/media/.../viewer_stage/`, generate smaller derivatives (for example: max width 1080, crop/cover to
 match desired aspect ratio, and compress) before the HA refresh copies them into `/config/www`.
-
----
-
-## TODO: move Vestaboard message generation into AppDaemon (richer + real home data)
-
-Today we generate Vestaboard messages directly in Home Assistant via `ai_task.generate_data`, which works but lacks
-context (and can produce generic output).
-
-**TODO:** move message generation into an AppDaemon app so we can:
-
-- Pull real, current home state (examples):
-  - actual thermostat setpoint and HVAC mode
-  - outside temperature / weather condition
-  - number of lights on
-  - alarm / lock status
-  - time of day
-- Let the model request which data it wants using structured output, e.g.:
-  - `required_facts`: list of fact keys (thermostat_setpoint, outside_temp, etc.)
-  - `template`: 22×6 message with placeholders like `{{ thermostat_setpoint }}` filled by AppDaemon
-- Validate and normalize the final 22×6 text before sending to the Vestaboard (retry/fallback on violations)
-
-Net result: **random messages that are coherent and include real information from the house**.
-
