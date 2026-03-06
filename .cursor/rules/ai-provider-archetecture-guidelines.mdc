@@ -1,0 +1,211 @@
+---
+globs: appdaemon/providers/ai_providers/**/*.py, appdaemon/apps/detection_summary_app/**/*.py
+description: AI provider architecture: capability bundles, model settings, prompt policy
+alwaysApply: false
+---
+# AI Provider Architecture Guidelines
+
+This rule enforces the AI-provider architecture for AppDaemon apps that use LLM/image providers. It supplements `security-policy.mdc` and `appdaemon-coding-guidelines.mdc`.
+
+## 1) Current architecture map
+
+The implemented architecture has these main layers:
+
+- Provider capability contracts:
+  - `appdaemon/providers/ai_providers/simple_text_provider.py`
+  - `appdaemon/providers/ai_providers/multimodal_text_provider.py`
+  - `appdaemon/providers/ai_providers/image_generation_provider.py`
+- Registry/config resolution:
+  - `appdaemon/providers/ai_providers/registry.py`
+- Shared model settings schema + loader:
+  - `appdaemon/providers/ai_providers/model_settings/schema.py`
+  - `appdaemon/providers/ai_providers/model_settings/loader.py`
+  - `appdaemon/providers/ai_providers/model_settings/*.yaml`
+- App-level prompt and schema policy:
+  - `appdaemon/apps/detection_summary_app/prompting/`
+
+When extending the system, preserve this layering. Do not collapse prompt policy back into providers or app YAML.
+
+## 2) No provider-local hardcoded prompt augmentation
+
+Provider adapters (OpenAI, Gemini, Ollama, ComfyUI) are **transport/capability layers only**. They must:
+
+- Accept the final prompt from the caller and send it as-is.
+- **Never** inject hidden prompt policy, steering text, or style instructions inside the adapter.
+- Never append or prepend provider-specific wording to user prompts.
+
+Prompt-shaping policy belongs in:
+
+- App-level prompt builders or config.
+- Capability bundle `prompt_augmentation` / `style_profile` fields in `model_settings`.
+- Explicit prompt-builder abstractions that compose instructions before calling the provider.
+
+If a provider seems to need special wording to behave well, move that wording into:
+
+- the bundle config in `model_settings/*.yaml`
+- or the app prompt builder
+
+Do not bury it in provider code.
+
+## 3) Capability bundles and model settings
+
+- Named capability bundles live under `appdaemon/providers/ai_providers/model_settings/`.
+- Each provider has a YAML file (e.g. `gemini.yaml`, `openai.yaml`) with `defaults` and `bundles`.
+- Apps should reference named bundles via `ai_provider_conf`:
+
+  ```yaml
+  ai_provider_conf:
+    simple_text: openai-budget
+    multimodal: gemini-default
+    image: gemini-sota
+  ```
+
+- Raw inline config (provider, model, api_key_env, etc.) remains supported for backward compatibility but is deprecated for new apps.
+
+The public API for this layer is:
+
+- `load_provider_settings()`
+- `load_bundle()`
+- `resolve_capability_config()`
+
+from `appdaemon/providers/ai_providers/model_settings/__init__.py`.
+
+Use those instead of reimplementing bundle parsing in apps or tests.
+
+## 4) Bundle resolution
+
+- The registry resolves capability-pointer refs (`simple_text`, `multimodal`, `image`) to full config via the model-settings loader.
+- Bundle names are globally unique or namespaced by provider (e.g. `gemini-default`, `openai-budget`).
+- Shared defaults (`api_key_env`, `base_url`) come from the provider's `defaults` in model_settings, not from app YAML.
+- Non-empty capability refs should be treated as bundle refs first. Do not maintain fragile hardcoded allowlists of “known” bundle names in apps.
+- Provider defaults such as `timeout_s`, `api_key_env`, `base_url`, or local URL env names should flow through bundle resolution instead of being copied into every app config.
+
+## 5) Provider adapters are transport-only
+
+Provider adapters must:
+
+- Validate capabilities (e.g. model supports vision, image generation).
+- Map normalized bundle fields to provider-specific API parameters (e.g. `media_resolution` → Gemini `mediaResolution`, OpenAI `image_detail`).
+- Make HTTP requests and return structured results.
+- **Not** own prompt policy, scoring guidance, or style wording.
+
+Provider adapters should fail fast during build/initialization when model/capability combinations are unsupported. Do not defer obvious config errors until after a live HTTP call if registry/provider metadata can reject them earlier.
+
+## 6) Normalized vs provider-specific fields
+
+- Use provider-neutral concepts in bundles: `media_resolution`, `max_output_tokens`, `timeout_s`.
+- Adapters translate to provider APIs:
+  - OpenAI: `image_detail` (low/high/auto), `max_completion_tokens`
+  - Gemini: `mediaResolution` (LOW/MEDIUM/HIGH), `maxOutputTokens`
+  - Ollama: no image generation; image bundle refs resolve to unsupported-capability path.
+
+Practical field guidance:
+
+- OpenAI multimodal:
+  - supports `multimodal_image_detail`
+  - may also accept normalized `media_resolution` if the adapter translates it
+- OpenAI image:
+  - supports provider-specific settings like `image_size`, `image_quality`, `image_output_format`
+- Gemini multimodal:
+  - prefers normalized `multimodal_media_resolution`
+  - does not have a real `image_quality` equivalent
+- Gemini image:
+  - uses image-capable models and response modality settings, not OpenAI-style output-format/quality knobs
+- Ollama:
+  - supports multimodal/simple-text bundles
+  - does not support image generation in this project
+- ComfyUI:
+  - should be modeled as an image provider with workflow-oriented `provider_options`
+  - likely needs bundle-level workflow path / preset selection rather than model-name semantics
+
+When a setting does not exist for a provider, represent that absence explicitly. Do not fake parity across providers.
+
+## 7) Prompt builders own task policy
+
+- Prompt builders (in apps or shared modules) own:
+  - Task instructions, scoring guidance, schema hints.
+  - Composing app intent + bundle augmentation + style profile.
+- Providers consume the final prompt only.
+
+For `DetectionSummary`, the implemented prompt policy lives under:
+
+- `appdaemon/apps/detection_summary_app/prompting/score_prompt_builder.py`
+- `appdaemon/apps/detection_summary_app/prompting/narrative_prompt_builder.py`
+- `appdaemon/apps/detection_summary_app/prompting/image_prompt_builder.py`
+- `appdaemon/apps/detection_summary_app/prompting/schema_specs.py`
+- `appdaemon/apps/detection_summary_app/prompting/score_normalizer.py`
+- `appdaemon/apps/detection_summary_app/prompting/style_variants.py`
+
+`manager.py` should orchestrate flow, not reintroduce large inline prompt templates or hardcoded structured-output parsing rules.
+
+## 8) Structured schema ownership
+
+Structured-output field requirements should be owned by schema/spec objects, not ad hoc string lists in app code.
+
+Examples:
+
+- score schema fields and guidance belong in `schema_specs.py`
+- normalization from raw provider JSON to app-specific result types belongs in a normalizer layer
+- prompt builders may render schema hints for providers, but apps should not duplicate the field contract in multiple places
+
+If a future app only cares about animals, backyard motion, or some other reduced schema, implement that by swapping schema/spec configuration rather than forking manager logic.
+
+## 9) Style and variety hooks
+
+Image style is a first-class config concern now.
+
+- Bundle-level fields like `image_prompt_augmentation`, `style_profile`, and `style_variant_profile` are allowed and encouraged.
+- Style overlays may alter rendering style and environment/background flavor.
+- They must not add/remove/transform foreground people, animals, or critical foreground objects.
+- Placeholder style catalogs are acceptable, but the hook plumbing must be real.
+
+For future providers like ComfyUI:
+
+- keep style/preset/workflow selection in bundle config or prompt-builder config
+- do not make provider code guess style intent from app names or hidden string wrappers
+
+## 10) Integration and manual-only tests
+
+Manual/live tests belong under:
+
+- `appdaemon/tests/integration-tests/`
+
+They must require explicit env-gate opt-in, for example:
+
+- `RUN_EXTERNAL_IMAGE_TESTS=1`
+- `RUN_HA_INTEGRATION_TESTS=1`
+- `RUN_GEMINI_TRIAGE_TESTS=1`
+- `RUN_OPENAI_LIVE_VISION_TESTS=1`
+- `RUN_REAL_PROVIDER_INTEGRATION_TESTS=1`
+
+Do not add live/provider-costly tests to the default unit-test path without an explicit opt-in gate.
+
+Runner scripts for those tests should also live in `appdaemon/tests/integration-tests/`.
+
+## 11) Security
+
+- API keys and tokens use `api_key_env` (env var names), resolved via `providers.secrets.resolve_secret()`.
+- No credentials in logs; no secrets in frontend/events/state.
+- All external HTTP stays under `appdaemon/providers/`.
+
+For local providers:
+
+- prefer env-based URL resolution (for example `base_url_env`) over embedding local URLs in many app configs
+- if a provider requires workflow paths or local filesystem references, keep those in provider options/bundles and document them clearly
+
+## 12) Adding a new provider
+
+When adding a provider such as ComfyUI later:
+
+1. Add provider capability adapters under `appdaemon/providers/ai_providers/<provider>/`
+2. Add/update model settings YAML under `appdaemon/providers/ai_providers/model_settings/`
+3. Extend validation metadata in `provider_settings.py`
+4. Wire capability resolution in `registry.py`
+5. Add unit tests plus opt-in integration tests if the provider is costly/live
+6. Keep prompts/config in bundle/prompt-builder layers, not provider internals
+
+If a provider only supports some capabilities:
+
+- express unsupported capabilities through validation and resolution paths
+- fail fast with clear messages
+- do not create fake no-op implementations just to satisfy symmetry

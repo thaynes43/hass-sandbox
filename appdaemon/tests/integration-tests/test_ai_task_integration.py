@@ -58,7 +58,7 @@ def _get_ha_config() -> tuple[str, str]:
     ha_url = os.environ.get("HA_URL")
     ha_token = os.environ.get("HA_TOKEN")
 
-    repo_root = Path(__file__).resolve().parents[2]  # .../appdaemon/tests -> repo root
+    repo_root = Path(__file__).resolve().parents[3]  # .../appdaemon/tests/integration-tests -> repo root
     appdaemon_yaml = repo_root / "appdaemon" / "appdaemon.yaml"
     secrets_yaml = repo_root / "appdaemon" / "secrets.yaml"
 
@@ -207,4 +207,3 @@ async def test_ai_task_generate_data_and_image():
             assert "media_source_id" in img_response
         finally:
             await ws.close()
-

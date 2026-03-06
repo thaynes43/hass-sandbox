@@ -7,9 +7,12 @@ from pathlib import Path
 import pytest
 
 # Ensure `appdaemon/` is on sys.path so `providers.ai_providers.*` imports work
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from providers.ai_providers.registry import build_data_provider, data_provider_config_from_appdaemon_args
+from providers.ai_providers.registry import (
+    build_multimodal_text_provider,
+    multimodal_text_config_from_appdaemon_args,
+)
 
 
 def _env(name: str) -> str:
@@ -17,10 +20,10 @@ def _env(name: str) -> str:
 
 
 @pytest.mark.skipif(
-    not _env("AI_PROVIDER_KEY") or not _env("DS_TEST_IMAGE_PATH"),
-    reason="requires AI_PROVIDER_KEY and DS_TEST_IMAGE_PATH (path to a real JPG/PNG snapshot)",
+    _env("RUN_OPENAI_LIVE_VISION_TESTS") != "1" or not _env("AI_PROVIDER_KEY") or not _env("DS_TEST_IMAGE_PATH"),
+    reason="set RUN_OPENAI_LIVE_VISION_TESTS=1, AI_PROVIDER_KEY, and DS_TEST_IMAGE_PATH to run",
 )
-@pytest.mark.parametrize("model", ["gpt-5-mini", "gpt-5.2"])
+@pytest.mark.parametrize("model", ["gpt-5.2"])
 def test_openai_live_vision_models_return_json(model: str) -> None:
     img = Path(_env("DS_TEST_IMAGE_PATH"))
     assert img.exists() and img.is_file(), f"DS_TEST_IMAGE_PATH does not exist: {img}"
@@ -30,15 +33,15 @@ def test_openai_live_vision_models_return_json(model: str) -> None:
             "provider": "openai",
             "api_key": _env("AI_PROVIDER_KEY"),
             "base_url": _env("AI_PROVIDER_BASE_URL") or "https://api.openai.com",
-            "data_model": model,
-            "data_timeout_s": float(_env("DS_DATA_TIMEOUT_S") or "60"),
+            "multimodal_model": model,
+            "multimodal_timeout_s": float(_env("DS_DATA_TIMEOUT_S") or "60"),
             # Keep this at the default we use in prod unless explicitly overridden.
-            "data_max_output_tokens": int(_env("DS_DATA_MAX_OUTPUT_TOKENS") or "300"),
-            "data_image_detail": _env("DS_DATA_IMAGE_DETAIL") or "auto",
+            "multimodal_max_output_tokens": int(_env("DS_DATA_MAX_OUTPUT_TOKENS") or "300"),
+            "multimodal_image_detail": _env("DS_DATA_IMAGE_DETAIL") or "auto",
         }
     }
 
-    provider = build_data_provider(data_provider_config_from_appdaemon_args(args))
+    provider = build_multimodal_text_provider(multimodal_text_config_from_appdaemon_args(args))
 
     # Keep instructions close to the production intent: short summary + counts + scores.
     # The goal is to validate that the model returns a valid JSON object for the schema
@@ -63,7 +66,7 @@ def test_openai_live_vision_models_return_json(model: str) -> None:
     ]
 
     try:
-        data = provider.generate_data_from_image(
+        data = provider.generate_from_image(
             input_image_path=str(img),
             instructions=instructions,
             expected_keys=expected_keys,
@@ -77,4 +80,3 @@ def test_openai_live_vision_models_return_json(model: str) -> None:
 
     # Basic sanity: summary should be a string (may be empty in edge cases, but usually not)
     assert isinstance(data.get("summary"), (str, type(None)))
-

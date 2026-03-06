@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 try:
-    from providers.ai_providers.types import DataProvider, ExternalDataGenError
+    from providers.ai_providers.simple_text_provider import SimpleTextProvider
+    from providers.ai_providers.multimodal_text_provider import ExternalDataGenError
 except Exception:  # pragma: no cover
     import sys
     from pathlib import Path
@@ -14,7 +15,10 @@ except Exception:  # pragma: no cover
     # AppDaemon often only adds `appdaemon/apps` to sys.path. Our shared libraries
     # live at `appdaemon/providers`, so add the AppDaemon root directory.
     sys.path.append(str(Path(__file__).resolve().parents[2]))
-    from providers.ai_providers.types import DataProvider, ExternalDataGenError  # type: ignore
+    from providers.ai_providers.simple_text_provider import SimpleTextProvider  # type: ignore
+    from providers.ai_providers.multimodal_text_provider import ExternalDataGenError  # type: ignore
+
+from .prompting.narrative_prompt_builder import NarrativePromptBuilder
 
 
 @dataclass(frozen=True)
@@ -23,34 +27,6 @@ class NarrativeConfig:
     max_chars: int = 220
     # Keep small for push notifications.
     expected_keys: tuple[str, ...] = ("run_summary", "people_min", "people_max", "confidence", "key_events")
-
-
-DEFAULT_NARRATIVE_INSTRUCTIONS = """
-You are writing a short push-notification narrative summarizing a short security-camera MOTION RUN.
-
-You are given a JSON list of frame observations. Each item includes:
-- t_s: seconds since the run started (float)
-- idx: frame index (int)
-- person_count: detected people count (int)
-- summary: brief description of what is happening in that frame
-- pose: coarse pose label
-- person_score/face_score/frame_score: numeric scoring signals
-
-Your job:
-- Produce ONE coherent narrative of what happened across the entire run (someone arrived/left / what they did).
-- Use time deltas between frames to estimate durations (e.g. "waited ~20s").
-- Handle contradictions by being conservative:
-  - If person counts differ, describe it as "someone" unless you're confident there were multiple.
-  - If summaries conflict, pick the most consistent storyline, and avoid over-specific claims.
-- Keep it human and action-focused (what they did), avoid environment descriptions.
-
-Output JSON ONLY with:
-- run_summary: string, MUST be <= {max_chars} characters (hard limit), past tense, 1 sentence preferred, no newlines
-- people_min: int (minimum people you believe appeared)
-- people_max: int (maximum people you believe appeared)
-- confidence: int 0-10 (your confidence the narrative is broadly accurate)
-- key_events: array of short strings (optional), ordered roughly by time
-""".strip()
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -62,7 +38,7 @@ def _safe_int(value: Any, default: int = 0) -> int:
 
 def synthesize_run_narrative(
     *,
-    provider: DataProvider,
+    provider: SimpleTextProvider,
     run_id: str,
     bundle_key: str,
     frame_facts: list[dict[str, Any]],
@@ -76,8 +52,7 @@ def synthesize_run_narrative(
 
     t0 = time.time()
     max_chars = max(60, int(cfg.max_chars))
-    inst = (instructions or "").strip() or DEFAULT_NARRATIVE_INSTRUCTIONS
-    inst = inst.format(max_chars=max_chars)
+    inst = NarrativePromptBuilder().build(instructions, max_chars)
 
     # Keep input small + stable; this is what the LLM should reason over.
     compact_facts: list[dict[str, Any]] = []
@@ -100,7 +75,7 @@ def synthesize_run_narrative(
     input_text = json.dumps(compact_facts, ensure_ascii=False, separators=(",", ":"))
 
     try:
-        out = provider.generate_data_from_text(
+        out = provider.generate_from_text(
             input_text=input_text,
             instructions=inst,
             expected_keys=list(cfg.expected_keys),

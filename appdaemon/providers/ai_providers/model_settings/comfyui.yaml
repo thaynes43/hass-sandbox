@@ -1,0 +1,12 @@
+# ComfyUI placeholder: workflow-based image generation.
+# No runtime provider implementation required yet.
+# Reserves config surface for workflow path / style preset / endpoint.
+
+defaults:
+  base_url_env: COMFYUI_URL
+  base_url: http://localhost:8188
+
+bundles:
+  comfyui-example:
+    provider_options:
+      workflow_config: placeholder

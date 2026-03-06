@@ -37,16 +37,24 @@ from .bundle import (
 )
 from .capture import CaptureConfig, CaptureState, CapturedFrame, next_delay_s, should_stop_capture
 from .selection import ScoreResult, SelectionMeta, adaptive_select_and_score
-from .population import augment_image_instructions, compute_population_bounds
+from .population import compute_population_bounds
 from .narrative import NarrativeConfig, synthesize_run_narrative
 from .publish_gate import should_publish_bundle
 from .retention import delete_run_dir
+from .prompting import (
+    ScorePromptBuilder,
+    ImagePromptBuilder,
+    normalize_score_data,
+    default_score_schema,
+)
 try:
     from providers.ai_providers.registry import (
-        build_data_provider,
         build_image_provider,
-        data_provider_config_from_appdaemon_args,
+        build_multimodal_text_provider,
+        build_simple_text_provider,
+        multimodal_text_config_from_appdaemon_args,
         provider_config_from_appdaemon_args,
+        simple_text_config_from_appdaemon_args,
     )
     from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError
     from providers.ha_provisioner import HAProvisioner
@@ -57,10 +65,12 @@ except Exception:  # pragma: no cover
     # live at `appdaemon/providers`, so add the AppDaemon root directory.
     sys.path.append(str(Path(__file__).resolve().parents[2]))
     from providers.ai_providers.registry import (  # type: ignore
-        build_data_provider,
         build_image_provider,
-        data_provider_config_from_appdaemon_args,
+        build_multimodal_text_provider,
+        build_simple_text_provider,
+        multimodal_text_config_from_appdaemon_args,
         provider_config_from_appdaemon_args,
+        simple_text_config_from_appdaemon_args,
     )
     from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError  # type: ignore
     from providers.ha_provisioner import HAProvisioner  # type: ignore
@@ -81,6 +91,10 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _provider_requires_api_key(provider: str) -> bool:
+    return str(provider or "").strip().lower() in {"openai", "gemini"}
 
 
 def _normalize_posix_path(path: str) -> str:
@@ -162,6 +176,7 @@ class DetectionSummary(hass.Hass):
         # storage (always uses HA /media; shared with AppDaemon via media_fs_root mapping)
         "media_fs_root": "/media",
         "write_bundle_json": True,
+        "debug_preserve_run_dirs": False,
         # local_file camera for stable generated
         "generated_image_camera_entity_id": None,
         # Optional: local_file camera for the *best* image.
@@ -196,18 +211,10 @@ class DetectionSummary(hass.Hass):
         self.trigger_entity_id: str = str(hass_entities["trigger_entity_id"])
         self.snapshot_ha_dir: str = _normalize_posix_path(self.args["snapshot_ha_dir"])
         self.data_instructions: str = self.args["data_instructions"]
-        # Fixed model output schema we depend on.
-        # Keep this in code so `apps.yaml` stays minimal and consistent.
-        self.expected_keys: list[str] = [
-            "male_count",
-            "female_count",
-            "animal_count",
-            "person_score",
-            "face_score",
-            "frame_score",
-            "pose",
-            "summary",
-        ]
+        # Schema-driven scoring; prompt builders own policy.
+        self._score_schema = default_score_schema()
+        self._score_prompt_builder = ScorePromptBuilder(schema=self._score_schema)
+        self._image_prompt_builder = ImagePromptBuilder()
 
         # Config
         self.trigger_to: str = str(self.args.get("trigger_to", self.DEFAULTS["trigger_to"]))
@@ -263,6 +270,10 @@ class DetectionSummary(hass.Hass):
         self.media_fs_root = str(self.args.get("media_fs_root", self.DEFAULTS["media_fs_root"])).rstrip("/") or "/media"
 
         self.write_bundle_json: bool = _as_bool(self.args.get("write_bundle_json", self.DEFAULTS["write_bundle_json"]), default=True)
+        self.debug_preserve_run_dirs: bool = _as_bool(
+            self.args.get("debug_preserve_run_dirs", self.DEFAULTS["debug_preserve_run_dirs"]),
+            default=False,
+        )
         self.generated_image_camera_entity_id: Optional[str] = hass_entities.get("generated_image_camera_entity_id")
         self.best_image_camera_entity_id: Optional[str] = hass_entities.get("best_image_camera_entity_id")
 
@@ -296,18 +307,50 @@ class DetectionSummary(hass.Hass):
         ai_conf = self.args.get("ai_provider_conf") or {}
         if not isinstance(ai_conf, dict):
             ai_conf = {}
+        # Capability-pointer config (bundle refs): simple_text/multimodal/image are strings
+        is_pointer_config = any(
+            isinstance(ai_conf.get(k), str) and str(ai_conf.get(k)).strip()
+            for k in ("simple_text", "multimodal", "image")
+        )
         provider = str(ai_conf.get("provider", "openai") or "").strip().lower()
         api_key_env = str(ai_conf.get("api_key_env") or "").strip()
-        if (self.ai_data_enabled or self.external_image_gen_enabled) and provider == "openai" and not api_key_env:
-            raise ValueError("ai_provider_conf.api_key_env is required for ai_provider_conf.provider='openai'")
+        api_key = str(ai_conf.get("api_key") or "").strip()
+        needs_text_provider = bool(self.ai_data_enabled or self.run_narrative_enabled)
+        # Inline config requires api_key_env; pointer config gets credentials from bundle resolution
+        if not is_pointer_config:
+            if needs_text_provider and _provider_requires_api_key(provider) and not (api_key_env or api_key):
+                raise ValueError(
+                    f"ai_provider_conf.api_key_env is required for ai_provider_conf.provider={provider!r} "
+                    "when AI scoring or run narrative is enabled"
+                )
+            if self.external_image_gen_enabled and _provider_requires_api_key(provider) and not (api_key_env or api_key):
+                raise ValueError(
+                    f"ai_provider_conf.api_key_env is required for ai_provider_conf.provider={provider!r} "
+                    "when external image generation is enabled"
+                )
         if self.external_image_gen_enabled and not self.image_instructions:
             raise ValueError("image_instructions is required when external_image_gen_enabled is true")
 
         # internal state
         self._in_flight = False
         self._last_run_ts = 0.0
-        self._data_provider = None
+        self._multimodal_provider = None
+        self._simple_text_provider = None
         self._active: Optional[_Run] = None
+
+        if self.ai_data_enabled:
+            self._get_multimodal_provider()
+        if self.run_narrative_enabled:
+            self._get_simple_text_provider()
+        if self.external_image_gen_enabled:
+            img_cfg = provider_config_from_appdaemon_args(self.args)
+            image_provider = build_image_provider(img_cfg)
+            if not getattr(image_provider, "capabilities", None) or not getattr(
+                image_provider.capabilities, "supports_image_to_image", False
+            ):
+                raise ValueError(
+                    f"ai_provider_conf provider={img_cfg.provider!r} does not support image-to-image generation"
+                )
 
         # ensure directories exist on shared mount
         base = self._ha_path_to_local_fs(self.snapshot_ha_dir)
@@ -316,7 +359,8 @@ class DetectionSummary(hass.Hass):
 
         self.log(
             f"DetectionSummary[{self.bundle_key}]: trigger={self.trigger_entity_id} -> {self.trigger_to}, "
-            f"camera={self.camera_entity_id}, base={self.snapshot_ha_dir}",
+            f"camera={self.camera_entity_id}, base={self.snapshot_ha_dir}, "
+            f"debug_preserve_run_dirs={self.debug_preserve_run_dirs}",
             level="INFO",
         )
 
@@ -392,12 +436,19 @@ class DetectionSummary(hass.Hass):
                 level="ERROR",
             )
 
-    def _get_data_provider(self):
-        if self._data_provider is not None:
-            return self._data_provider
-        cfg = data_provider_config_from_appdaemon_args(self.args)
-        self._data_provider = build_data_provider(cfg)
-        return self._data_provider
+    def _get_multimodal_provider(self):
+        if self._multimodal_provider is not None:
+            return self._multimodal_provider
+        cfg = multimodal_text_config_from_appdaemon_args(self.args)
+        self._multimodal_provider = build_multimodal_text_provider(cfg)
+        return self._multimodal_provider
+
+    def _get_simple_text_provider(self):
+        if self._simple_text_provider is not None:
+            return self._simple_text_provider
+        cfg = simple_text_config_from_appdaemon_args(self.args)
+        self._simple_text_provider = build_simple_text_provider(cfg)
+        return self._simple_text_provider
 
     def _on_trigger(self, entity_id, attribute, old, new, kwargs) -> None:
         now = time.time()
@@ -555,7 +606,14 @@ class DetectionSummary(hass.Hass):
                     trace=self.trace_cfg,
                 )
                 local_run_dir = self._ha_path_to_local_fs(run_ha_dir(cfg, run.capture.run_id))
-                delete_run_dir(local_run_dir)
+                if self.debug_preserve_run_dirs:
+                    self.log(
+                        f"DetectionSummary[{self.bundle_key}]: preserving failed run directory "
+                        f"run_id={run.capture.run_id} dir={local_run_dir}",
+                        level="WARNING",
+                    )
+                else:
+                    delete_run_dir(local_run_dir)
             except Exception:
                 pass
             self.log(f"DetectionSummary[{self.bundle_key}]: build failed run_id={run.capture.run_id}: {e!r}", level="WARNING")
@@ -579,9 +637,9 @@ class DetectionSummary(hass.Hass):
         local_run_dir = self._ha_path_to_local_fs(ha_dir)
         frames_dir = local_run_dir / self.captured_subdir
 
-        # Score function (LLM)
-        provider = self._get_data_provider()
-        expected_keys = list(self.expected_keys or [])
+        # Score function (LLM) — uses multimodal provider (image+text -> JSON)
+        multimodal_provider = self._get_multimodal_provider() if self.ai_data_enabled else None
+        expected_keys = self._score_schema.expected_keys()
         llm_events: list[dict[str, Any]] = []
 
         def score_one(i: int) -> tuple[int, ScoreResult, dict[str, Any]]:
@@ -589,49 +647,39 @@ class DetectionSummary(hass.Hass):
             t0 = time.time()
             data: dict[str, Any] = {}
             try:
-                if self.log_llm_events:
-                    self.log(
-                        f"DetectionSummary[{self.bundle_key}]: LLM score start run_id={run_id} idx={i} path={local_path}",
-                        level="INFO",
+                if not self.ai_data_enabled:
+                    data = {}
+                else:
+                    if self.log_llm_events:
+                        self.log(
+                            f"DetectionSummary[{self.bundle_key}]: LLM score start run_id={run_id} idx={i} path={local_path}",
+                            level="INFO",
+                        )
+                    # wait briefly for snapshot visibility on shared mount
+                    deadline = time.time() + 2.0
+                    while time.time() < deadline and not local_path.exists():
+                        time.sleep(0.1)
+                    instr = self._score_prompt_builder.build(self.data_instructions)
+                    data = multimodal_provider.generate_from_image(
+                        input_image_path=str(local_path),
+                        instructions=instr,
+                        expected_keys=expected_keys,
                     )
-                # wait briefly for snapshot visibility on shared mount
-                deadline = time.time() + 2.0
-                while time.time() < deadline and not local_path.exists():
-                    time.sleep(0.1)
-                # Always append our required schema + guidance. This keeps `apps.yaml` prompts smaller
-                # while ensuring we still get hardened structured output for scoring + image-gen facts.
-                instr = str(self.data_instructions or "").strip()
-                instr = (
-                    instr
-                    + "\n\nAdditional required fields:\n"
-                    + "- male_count: integer count of men/boys visible in the frame (0 if none)\n"
-                    + "- female_count: integer count of women/girls visible in the frame (0 if none)\n"
-                    + "- animal_count: integer count of animals/pets visible in the frame (0 if none)\n"
-                    + "\nScoring guidance:\n"
-                    + "- If animals are present and clearly visible, increase frame_score appropriately.\n"
-                    + "- face_score can be influenced by clearly visible faces of people OR animals.\n"
-                    + "- pose should describe the main subject (person or animal) when possible.\n"
-                    + "- summary should mention animals when they are relevant, but remain 1 sentence <= 140 characters.\n"
-                )
-                data = provider.generate_data_from_image(
-                    input_image_path=str(local_path),
-                    instructions=instr,
-                    expected_keys=expected_keys,
-                )
             except ExternalDataGenError as e:
                 self.log(f"DetectionSummary[{self.bundle_key}]: data gen failed for {local_path}: {e!r}", level="WARNING")
             except Exception as e:
                 self.log(f"DetectionSummary[{self.bundle_key}]: data gen error for {local_path}: {e!r}", level="WARNING")
             if not isinstance(data, dict):
                 data = {}
-            male_count = int(_safe_float(data.get("male_count"), default=0.0))
-            female_count = int(_safe_float(data.get("female_count"), default=0.0))
-            animal_count = int(_safe_float(data.get("animal_count"), default=0.0))
-            person = _safe_float(data.get("person_score", data.get("score")), default=0.0)
-            face = _safe_float(data.get("face_score"), default=0.0)
-            frame = _safe_float(data.get("frame_score"), default=person)
-            pose = str(data.get("pose") or "").strip().lower()
-            summary = str(data.get("summary", "") or "").strip()
+            res = normalize_score_data(data, schema=self._score_schema)
+            male_count = res.male_count
+            female_count = res.female_count
+            animal_count = res.animal_count
+            person = res.person_score
+            face = res.face_score
+            frame = res.frame_score
+            pose = res.pose
+            summary = res.summary
             if self.log_llm_events:
                 elapsed = time.time() - t0
                 self.log(
@@ -660,7 +708,7 @@ class DetectionSummary(hass.Hass):
                 "pose": pose,
                 "summary_preview": summary[:160],
             }
-            return i, ScoreResult(male_count, female_count, animal_count, person, face, frame, pose, summary, data), ev
+            return i, res, ev
 
         def score_index(i: int) -> ScoreResult:
             ii, res, ev = score_one(int(i))
@@ -746,8 +794,14 @@ class DetectionSummary(hass.Hass):
                 f"skipping image generation + store publish",
                 level="INFO",
             )
-            # Delete empty/skipped runs so they don't show up in viewers/pickers.
-            if delete_run_dir(local_run_dir):
+            # Delete empty/skipped runs so they don't show up in viewers/pickers unless debugging.
+            if self.debug_preserve_run_dirs:
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: preserving skipped run directory "
+                    f"run_id={run_id} dir={local_run_dir}",
+                    level="WARNING",
+                )
+            elif delete_run_dir(local_run_dir):
                 self.log(
                     f"DetectionSummary[{self.bundle_key}]: deleted skipped run directory run_id={run_id} dir={local_run_dir}",
                     level="INFO",
@@ -783,8 +837,9 @@ class DetectionSummary(hass.Hass):
                             "frame_score": float(getattr(fr, "frame_score", 0.0) or 0.0),
                         }
                     )
+                simple_text_provider = self._get_simple_text_provider()
                 run_narrative = synthesize_run_narrative(
-                    provider=provider,
+                    provider=simple_text_provider,
                     run_id=run_id,
                     bundle_key=self.bundle_key,
                     frame_facts=facts,
@@ -929,7 +984,9 @@ class DetectionSummary(hass.Hass):
                     # while keeping contents consistent with the chosen best frame.
                     provider_cfg = provider_config_from_appdaemon_args(self.args)
                     img_provider = build_image_provider(provider_cfg)
-                    if not getattr(img_provider, "capabilities", None) or not img_provider.capabilities.supports_image_to_image:
+                    if not getattr(img_provider, "capabilities", None) or not getattr(
+                        img_provider.capabilities, "supports_image_to_image", False
+                    ):
                         raise ExternalImageGenError("image provider does not support image-to-image")
 
                     # Narrative context is helpful, but should not be treated as a "hard rule" about subject count.
@@ -961,38 +1018,16 @@ class DetectionSummary(hass.Hass):
                         time_part = f" t={t_s:.1f}s" if isinstance(t_s, (int, float)) else ""
                         notes.append(f"- frame_{int(ii):03d}.jpg{time_part}: {summary or '(no summary)'} (m={m}, f={f}, animals={a})")
 
-                    base_prompt = augment_image_instructions(str(self.image_instructions), population_bounds)
-                    prompt_lines: list[str] = [base_prompt, ""]
-                    prompt_lines.extend(
-                        [
-                            "Reference frames:",
-                            f"- You are provided {len(input_paths)} image(s) captured close in time during ONE motion detection event.",
-                            "- These frames are only a subset of the event; people/animals may enter/leave between frames.",
-                            "",
-                            "Critical constraints:",
-                            "- ONLY include people and animals that are clearly present in at least ONE of the provided reference frames.",
-                            "- Do NOT invent/add animals or extra people that are not visible in any provided frame (avoid 'phantom' animals).",
-                            "- If you are uncertain whether a subject exists, OMIT it rather than hallucinating it.",
-                            "- Do NOT depict the same individual multiple times (no duplicates). If a person appears in multiple frames, show them only once.",
-                            "- Do NOT exceed the max male/female/animal counts given above, even if the narrative suggests more.",
-                            "",
-                            "Content safety:",
-                            "- Do NOT reproduce any recognizable branded, trademarked, or copyrighted characters, logos, or products visible in the reference frames.",
-                            "- Replace any such items with generic alternatives (plain toys, abstract shapes, unlabeled objects).",
-                            "- Omit text overlays like timestamps or watermarks from the reference frames.",
-                            "",
-                            "Scene composition guidance:",
-                            "- Generate ONE coherent illustration that captures the essence of what happened across the provided frames.",
-                            "- Exact positioning/poses do not need to match a single frame; it can be a composite of the event.",
-                            "- Use the narrative context below for mood/intent, but do not add subjects that are not visible in the frames.",
-                        ]
+                    prompt = self._image_prompt_builder.build(
+                        base_instructions=str(self.image_instructions),
+                        population_bounds=population_bounds,
+                        narrative_text=narrative_text,
+                        frame_notes=notes if notes else None,
+                        input_paths_count=len(input_paths),
+                        bundle_augmentation=getattr(provider_cfg, "image_prompt_augmentation", None),
+                        style_profile_id=getattr(provider_cfg, "style_profile", None),
+                        environment_variant_id=getattr(provider_cfg, "style_variant_profile", None),
                     )
-                    if narrative_text:
-                        prompt_lines.extend(["", "Narrative context:", narrative_text])
-                    if notes:
-                        prompt_lines.extend(["", "Frame notes (for the provided references):", *notes])
-
-                    prompt = "\n".join([ln.rstrip() for ln in prompt_lines]).strip()
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
                         f"inputs={len(input_paths)} out={out_path} prompt_len={len(prompt)}",

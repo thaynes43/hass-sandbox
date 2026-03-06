@@ -1,0 +1,34 @@
+# Gemini model settings: defaults and named capability bundles.
+# media_resolution maps to Gemini mediaResolution (LOW/MEDIUM/HIGH).
+# Gemini has no direct equivalent to OpenAI image_quality.
+
+defaults:
+  api_key_env: GEMINI_API_KEY
+  base_url: https://generativelanguage.googleapis.com/v1beta
+
+bundles:
+  gemini-sota:
+    multimodal_model: gemini-3.1-pro-preview
+    multimodal_max_output_tokens: 10000
+    multimodal_media_resolution: high
+    simple_text_model: gemini-3-flash-preview
+    simple_text_max_output_tokens: 4000
+    image_model: gemini-3.1-flash-image-preview
+
+  gemini-default:
+    multimodal_model: gemini-2.5-flash
+    multimodal_max_output_tokens: 1500
+    multimodal_media_resolution: high
+    simple_text_model: gemini-2.5-flash-lite
+    simple_text_max_output_tokens: 1500
+    image_model: gemini-3-pro-image-preview
+    image_prompt_augmentation: Make it like a cartoon
+    style_profile: cartoon
+
+  gemini-budget:
+    multimodal_model: gemini-2.5-flash-lite
+    multimodal_max_output_tokens: 1500
+    multimodal_media_resolution: medium
+    simple_text_model: gemini-2.5-flash-lite
+    simple_text_max_output_tokens: 1000
+    image_model: gemini-2.5-flash-image

@@ -1,0 +1,13 @@
+# Ollama model settings: local LLM, no image generation.
+# base_url_env: env var for Ollama URL (e.g. OLLAMA_URL).
+# Image capability is unsupported; image bundle refs resolve to unsupported path.
+
+defaults:
+  base_url_env: OLLAMA_URL
+  base_url: http://localhost:11434
+
+bundles:
+  ollama-qwen9b:
+    multimodal_model: qwen3.5:9b
+    simple_text_model: qwen3.5:9b
+    # image_model: absent - Ollama does not support image generation in this project

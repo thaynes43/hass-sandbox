@@ -17,7 +17,10 @@ def test_openai_edit_image_writes_output(tmp_path: Path) -> None:
     # Make `appdaemon/` importable for `providers.ai_providers.*`
     sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-    from providers.ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
+    from providers.ai_providers.openai.openai_image_generation_provider import (
+        OpenAIImageEditConfig,
+        OpenAIImageGenerationProvider,
+    )
 
     in_path = tmp_path / "best.jpg"
     in_path.write_bytes(b"\xff\xd8\xff" + b"\x00" * 128)  # minimal fake jpeg header-ish
@@ -37,7 +40,7 @@ def test_openai_edit_image_writes_output(tmp_path: Path) -> None:
     mock_resp.read.return_value = json.dumps(payload).encode("utf-8")
 
     with patch("urllib.request.urlopen", return_value=mock_resp) as urlopen:
-        provider = OpenAIImageProvider(OpenAIImageEditConfig(api_key="test-key", timeout_s=1))
+        provider = OpenAIImageGenerationProvider(OpenAIImageEditConfig(api_key="test-key", timeout_s=1))
         meta = provider.edit_image(input_image_paths=[str(in_path)], prompt="make it cartoony", output_image_path=str(out_path))
 
     assert out_path.exists()
@@ -51,10 +54,13 @@ def test_openai_edit_image_requires_input(tmp_path: Path) -> None:
     import sys
 
     sys.path.append(str(Path(__file__).resolve().parents[1]))
-    from providers.ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
-    from providers.ai_providers.types import ExternalImageGenError
+    from providers.ai_providers.openai.openai_image_generation_provider import (
+        OpenAIImageEditConfig,
+        OpenAIImageGenerationProvider,
+    )
+    from providers.ai_providers.image_generation_provider import ExternalImageGenError
 
     with pytest.raises(ExternalImageGenError):
-        provider = OpenAIImageProvider(OpenAIImageEditConfig(api_key="k"))
+        provider = OpenAIImageGenerationProvider(OpenAIImageEditConfig(api_key="k"))
         provider.edit_image(input_image_paths=[str(tmp_path / "missing.jpg")], prompt="x", output_image_path=str(tmp_path / "out.png"))
 

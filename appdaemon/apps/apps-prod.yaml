@@ -57,11 +57,9 @@ detection_summary_garage:
   image_instructions: >
     Create a simple, clean illustration representing the scene for a notification.
   ai_provider_conf:
-    provider: openai
-    api_key_env: OPENAPI_TOKEN
-    data_model: gpt-5.2
-    data_image_detail: auto
-    image_model: gpt-image-1.5
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
 
 detection_viewer_garage:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -115,11 +113,9 @@ detection_summary_bulkhead:
   image_instructions: >
     Create a simple, clean illustration representing the scene at a basement entrance.
   ai_provider_conf:
-    provider: openai
-    api_key_env: OPENAPI_TOKEN
-    data_model: gpt-5.2
-    data_image_detail: auto
-    image_model: gpt-image-1.5
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
 
 detection_viewer_bulkhead:
   module: detection_summary_viewer.detection_summary_viewer_app

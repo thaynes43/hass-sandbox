@@ -9,3 +9,5 @@ pytest-asyncio>=0.23
 coverage>=7.0
 # Deploy tooling (keeps YAML tags like !secret intact when merging)
 ruamel.yaml>=0.18
+# Model settings YAML loading
+pyyaml>=6.0

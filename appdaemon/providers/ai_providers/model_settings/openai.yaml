@@ -1,0 +1,26 @@
+# OpenAI model settings: defaults and named capability bundles.
+# multimodal_image_detail: low|high|auto (OpenAI API field).
+# Image bundles support size, quality, output_format in provider_options.
+
+defaults:
+  api_key_env: OPENAPI_TOKEN
+  base_url: https://api.openai.com
+
+bundles:
+  openai-sota:
+    multimodal_model: gpt-5.4
+    multimodal_image_detail: auto
+    simple_text_model: gpt-5.4
+    image_model: chatgpt-image-latest
+
+  openai-default:
+    multimodal_model: gpt-5.2
+    multimodal_image_detail: auto
+    simple_text_model: gpt-5-nano
+    image_model: gpt-image-1.5
+
+  openai-budget:
+    multimodal_model: gpt-5.2
+    multimodal_image_detail: auto
+    simple_text_model: gpt-5-nano
+    image_model: gpt-image-1.5

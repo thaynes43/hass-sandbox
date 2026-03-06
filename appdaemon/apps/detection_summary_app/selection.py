@@ -274,4 +274,3 @@ def adaptive_select_and_score(
         best_idx=int(best_idx),
     )
     return scored, meta
-

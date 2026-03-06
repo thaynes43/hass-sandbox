@@ -54,11 +54,9 @@ detection_summary_garage_dev:
   image_instructions: >
     Create a simple, clean illustration representing the scene for a notification.
   ai_provider_conf:
-    provider: openai
-    api_key_env: OPENAPI_TOKEN
-    data_model: gpt-5.2
-    data_image_detail: auto
-    image_model: gpt-image-1.5
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
 
 detection_viewer_garage_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -132,12 +130,11 @@ detection_summary_bulkhead_dev:
     trademarked, or copyrighted characters, logos, or products. Replace any such items
     with generic alternatives (plain toys, abstract shapes, unlabeled objects). Focus
     the illustration on the PEOPLE and their actions, not background objects.
+  debug_preserve_run_dirs: true
   ai_provider_conf:
-    provider: openai
-    api_key_env: OPENAPI_TOKEN
-    data_model: gpt-5.2
-    data_image_detail: low
-    image_model: gpt-image-1.5
+    simple_text: gemini-default
+    multimodal: gemini-default
+    image: gemini-default
 
 detection_viewer_bulkhead_dev:
   module: detection_summary_viewer.detection_summary_viewer_app

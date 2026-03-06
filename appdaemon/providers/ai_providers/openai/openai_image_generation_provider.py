@@ -1,3 +1,5 @@
+"""OpenAI image generation provider."""
+
 from __future__ import annotations
 
 import base64
@@ -10,7 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Sequence
 
-from .types import ExternalImageGenError, ImageProvider, ImageProviderName, ProviderCapabilities
+from ..image_generation_provider import (
+    ExternalImageGenError,
+    ImageGenerationProvider,
+    ImageProviderCapabilities,
+    ImageProviderName,
+)
+from ..provider_settings import validate_image_model
 
 
 @dataclass(frozen=True)
@@ -18,10 +26,10 @@ class OpenAIImageEditConfig:
     api_key: str
     base_url: str = "https://api.openai.com"
     model: str = "gpt-image-1.5"
-    size: str = "1024x1024"  # or "auto"
-    quality: str = "medium"  # low|medium|high|auto
-    output_format: str = "png"  # png|jpeg|webp
-    moderation: str = "auto"  # low|auto
+    size: str = "1024x1024"
+    quality: str = "medium"
+    output_format: str = "png"
+    moderation: str = "auto"
     timeout_s: float = 90.0
     user: Optional[str] = None
 
@@ -42,9 +50,9 @@ def _safe_json(obj: Any) -> bytes:
     return json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
-class OpenAIImageProvider(ImageProvider):
+class OpenAIImageGenerationProvider(ImageGenerationProvider):
     name = ImageProviderName.OPENAI
-    capabilities = ProviderCapabilities(
+    capabilities = ImageProviderCapabilities(
         supports_text_to_image=True,
         supports_image_to_image=True,
         supports_inpaint=True,
@@ -52,6 +60,9 @@ class OpenAIImageProvider(ImageProvider):
     )
 
     def __init__(self, config: OpenAIImageEditConfig):
+        ok, err = validate_image_model("openai", config.model)
+        if not ok and err:
+            raise ValueError(err)
         self._config = config
 
     def edit_image(
@@ -61,11 +72,15 @@ class OpenAIImageProvider(ImageProvider):
         prompt: str,
         output_image_path: str,
     ) -> Dict[str, Any]:
-        in_paths = [Path(p) for p in (list(input_image_paths) if input_image_paths is not None else []) if str(p).strip()]
+        in_paths = [
+            Path(p)
+            for p in (list(input_image_paths) if input_image_paths else [])
+            if str(p).strip()
+        ]
         out_path = Path(output_image_path)
 
         if not in_paths:
-            raise ExternalImageGenError("input_image_paths is required (one or more paths)")
+            raise ExternalImageGenError("input_image_paths is required")
         missing = [p for p in in_paths if not p.exists()]
         if missing:
             raise ExternalImageGenError(f"input image(s) do not exist: {[str(p) for p in missing]}")
@@ -114,7 +129,6 @@ class OpenAIImageProvider(ImageProvider):
         except Exception as e:
             raise ExternalImageGenError(f"openai request failed: {e!r}") from e
 
-        # For GPT image models, response uses base64 images (b64_json).
         data_list = payload.get("data")
         if not isinstance(data_list, list) or not data_list:
             raise ExternalImageGenError(f"openai response missing data: {payload!r}")
@@ -143,9 +157,5 @@ class OpenAIImageProvider(ImageProvider):
             "input_paths": [str(p) for p in in_paths],
             "output_path": str(out_path),
             "revised_prompt": first.get("revised_prompt"),
-            "request": {
-                "prompt_len": len(str(prompt)),
-                "prompt_preview": prompt_preview,
-            },
+            "request": {"prompt_len": len(str(prompt)), "prompt_preview": prompt_preview},
         }
-

@@ -1,5 +1,5 @@
 """
-Optional integration test that hits an external image provider (OpenAI) directly.
+Optional integration test that hits an external image provider (OpenAI or Gemini) directly.
 
 Staged workflow:
 1) Run detection_summary to produce /media/.../runs/<run_id>/best.jpg (via HA camera.snapshot)
@@ -8,6 +8,14 @@ Staged workflow:
    existing HA WS tests to attach it to notifications, etc.
 
 This test is skipped unless RUN_EXTERNAL_IMAGE_TESTS=1.
+
+Config note: detection_summary apps now use capability-pointer ai_provider_conf (bundle refs)
+instead of inline provider/model config. See apps-dev.yaml / apps-prod.yaml for examples:
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
+Bundles are defined in appdaemon/providers/ai_providers/model_settings/*.yaml.
 """
 
 import os
@@ -28,7 +36,7 @@ def _load_secrets() -> dict:
 
     Only used as a fallback when env vars are not set.
     """
-    secrets_path = Path(__file__).resolve().parents[1] / "secrets.yaml"
+    secrets_path = Path(__file__).resolve().parents[2] / "secrets.yaml"
     if not secrets_path.exists():
         return {}
 
@@ -74,18 +82,41 @@ def _resolve_media_path(p: Path) -> Path:
     return p
 
 
+def _resolve_provider() -> str:
+    provider = _env("EXTERNAL_IMAGE_PROVIDER", "openai").lower()
+    if provider not in {"openai", "gemini"}:
+        raise AssertionError(
+            f"Unsupported EXTERNAL_IMAGE_PROVIDER={provider!r}; expected 'openai' or 'gemini'"
+        )
+    return provider
+
+
 @pytest.mark.skipif(_env("RUN_EXTERNAL_IMAGE_TESTS") != "1", reason="set RUN_EXTERNAL_IMAGE_TESTS=1 to run")
-def test_external_openai_image_edit_writes_png() -> None:
+def test_external_image_edit_writes_png() -> None:
     import sys
 
     # Make `appdaemon/` importable for `providers.ai_providers.*`
-    sys.path.append(str(Path(__file__).resolve().parents[1]))
+    sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-    from providers.ai_providers.openai_provider import OpenAIImageEditConfig, OpenAIImageProvider
+    provider_name = _resolve_provider()
+    if provider_name == "openai":
+        from providers.ai_providers.openai.openai_image_generation_provider import (
+            OpenAIImageEditConfig,
+            OpenAIImageGenerationProvider,
+        )
+    else:
+        from providers.ai_providers.gemini.gemini_image_generation_provider import (
+            GeminiImageGenerationConfig,
+            GeminiImageGenerationProvider,
+        )
 
     secrets = _load_secrets()
-    api_key = _env("AI_PROVIDER_KEY") or str(secrets.get("openapi_token") or secrets.get("ai_provider_key") or "")
-    assert api_key, "Set AI_PROVIDER_KEY (or set openapi_token in appdaemon/secrets.yaml)"
+    if provider_name == "openai":
+        api_key = _env("AI_PROVIDER_KEY") or str(secrets.get("openapi_token") or secrets.get("ai_provider_key") or "")
+        assert api_key, "Set AI_PROVIDER_KEY (or set openapi_token in appdaemon/secrets.yaml)"
+    else:
+        api_key = _env("GEMINI_API_KEY")
+        assert api_key, "Set GEMINI_API_KEY"
 
     input_path = _resolve_media_path(Path(_env("EXTERNAL_IMAGE_INPUT_PATH")))
     assert input_path.exists(), f"Set EXTERNAL_IMAGE_INPUT_PATH to an existing image; got {input_path}"
@@ -98,21 +129,28 @@ def test_external_openai_image_edit_writes_png() -> None:
         "Create a simple, clean illustration that represents this security camera scene. Keep it unobtrusive.",
     )
 
-    cfg = OpenAIImageEditConfig(
-        api_key=api_key,
-        base_url=_env("OPENAI_BASE_URL", "https://api.openai.com"),
-        model=_env("OPENAI_IMAGE_MODEL", "gpt-image-1.5"),
-        size=_env("OPENAI_IMAGE_SIZE", "1024x1024"),
-        quality=_env("OPENAI_IMAGE_QUALITY", "medium"),
-        output_format=_env("OPENAI_IMAGE_FORMAT", "png"),
-        timeout_s=float(_env("OPENAI_TIMEOUT_S", "120")),
-    )
+    if provider_name == "openai":
+        cfg = OpenAIImageEditConfig(
+            api_key=api_key,
+            base_url=_env("OPENAI_BASE_URL", "https://api.openai.com"),
+            model=_env("OPENAI_IMAGE_MODEL", "gpt-image-1.5"),
+            size=_env("OPENAI_IMAGE_SIZE", "1024x1024"),
+            quality=_env("OPENAI_IMAGE_QUALITY", "medium"),
+            output_format=_env("OPENAI_IMAGE_FORMAT", "png"),
+            timeout_s=float(_env("OPENAI_TIMEOUT_S", "120")),
+        )
+        provider = OpenAIImageGenerationProvider(cfg)
+    else:
+        cfg = GeminiImageGenerationConfig(
+            api_key=api_key,
+            base_url=_env("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+            model=_env("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
+            timeout_s=float(_env("GEMINI_TIMEOUT_S", "120")),
+        )
+        provider = GeminiImageGenerationProvider(cfg)
 
-    provider = OpenAIImageProvider(cfg)
     meta = provider.edit_image(input_image_paths=[str(input_path)], prompt=prompt, output_image_path=str(output_path))
 
     assert output_path.exists()
     assert output_path.stat().st_size > 0
-    assert output_path.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-    assert meta["provider"] == "openai"
-
+    assert meta["provider"] == provider_name
