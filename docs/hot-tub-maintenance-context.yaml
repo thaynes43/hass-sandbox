@@ -1,0 +1,182 @@
+hot_tub:
+  manufacturer: Bullfrog Spas
+  series: M Series
+  model: M7
+  volume_gallons: 500
+  sanitizing_system: "FROG @ease XL (Minerals + SmartChlor XL)"
+  plan_start: 2026-03-05
+  plan_end: 2027-03-19
+
+rules_of_thumb:
+  test_strips: "Use FROG @ease Test Strips (SmartChlor reserve can read incorrectly on standard strips)."
+  smartchlor_target_free_chlorine_ppm: "0.5–1.0 (when water is balanced)."
+  balance_targets:
+    ph: "7.2–7.6"
+    total_alkalinity_ppm: "80–120"
+    hardness_ppm: "150–250"
+    tds: "<1500"
+    cyanuric_acid_ppm: "0–50"
+
+tasks:
+  # -------------------
+  # FROG @ease XL core
+  # -------------------
+
+  - id: frog_test_weekly
+    title: "Test water w/ FROG @ease Test Strips + correct balance"
+    frequency_days: 7
+    first_due: 2026-03-12
+    window:
+      before_days: 1
+      after_days: 2
+    severity: HIGH
+    checklist:
+      - "Use FROG @ease Test Strips (not standard chlorine strips)."
+      - "Adjust Total Alkalinity first (80–120 ppm), then pH (7.2–7.6), then Hardness (150–250 ppm)."
+      - "Add balancing chems in small increments w/ jets on; wait before retesting per product directions."
+
+  - id: frog_smartchlor_replace_estimated
+    title: "Replace FROG @ease SmartChlor XL when test strip indicates 'OUT' (estimate every ~3 weeks for 500 gal)"
+    frequency_days: 21
+    first_due: 2026-03-26
+    window:
+      before_days: 3
+      after_days: 7
+    severity: HIGH
+    checklist:
+      - "Check FROG @ease strip: replace when SmartChlor reads lighter than the OUT indicator."
+      - "Drain cartridge to confirm empty; discard properly."
+      - "After replacement, shock per FROG Maintain guidance (see monthly shock task)."
+    notes:
+      - "Manual baseline: ~3–4 weeks for ~400 gal; larger tubs/bather load may shorten life."
+
+  - id: frog_maintain_shock_monthly
+    title: "Shock with FROG Maintain (monthly OR when replacing SmartChlor)"
+    frequency_months: 1
+    first_due: 2026-04-05
+    window:
+      before_days: 7
+      after_days: 7
+    severity: MED
+    checklist:
+      - "Dose per FROG Maintain label directions."
+      - "Also perform whenever SmartChlor is replaced."
+
+  - id: frog_mineral_replace_4mo
+    title: "Replace FROG @ease Mineral cartridge (every 4 months OR every drain/refill)"
+    frequency_days: 122  # ~4 months
+    first_due: 2026-07-05
+    window:
+      before_days: 7
+      after_days: 14
+    severity: HIGH
+    checklist:
+      - "Set new Mineral cartridge dial to highest setting; no further adjustments."
+
+  # -------------------
+  # Bullfrog filters
+  # -------------------
+
+  - id: filter_clean_or_replace_4w
+    title: "Clean or replace Simplicity filters (every 4 weeks)"
+    frequency_days: 28
+    first_due: 2026-04-02
+    window:
+      before_days: 3
+      after_days: 4
+    severity: HIGH
+    checklist:
+      - "Spray filter pleats w/ garden hose; rinse thoroughly OR replace."
+      - "Reinstall correctly; ensure proper flow."
+
+  - id: filter_must_replace_14w
+    title: "Replace Simplicity filters (at least every 12–16 weeks)"
+    frequency_days: 98
+    first_due: 2026-06-11
+    window:
+      before_days: 7
+      after_days: 7
+    severity: MED
+    checklist:
+      - "Power off spa."
+      - "Remove JetPak in front of filter housing as needed."
+      - "Swap filters; reinstall; restore power."
+
+  # -------------------
+  # Cover / headrests
+  # -------------------
+
+  - id: cover_clean_monthly
+    title: "Clean spa cover (monthly)"
+    frequency_months: 1
+    first_due: 2026-04-05
+    window:
+      before_days: 7
+      after_days: 7
+    severity: LOW
+    checklist:
+      - "Spray/rinse debris; air dry; secure cover locks."
+
+  - id: headrests_clean_condition_monthly
+    title: "Headrests: clean + condition (monthly)"
+    frequency_months: 1
+    first_due: 2026-04-05
+    window:
+      before_days: 7
+      after_days: 7
+    severity: LOW
+    checklist:
+      - "Clean with mild soap/water."
+      - "Condition with non-petroleum product per dealer guidance."
+    notes:
+      - "Remove pillows during/after shocking or if sanitizer is high; leave cover open after shock."
+
+  # -------------------
+  # Drain/Dump + Refill (4 cycles)
+  # -------------------
+
+  - id: water_change_cycle_1
+    title: "DRAIN + REFILL (Cycle 1) + re-init @ease"
+    due_date: 2026-06-05
+    window: { start: 2026-05-22, end: 2026-06-19 }
+    escalate_after: 2026-06-19
+    severity: HIGH
+    procedure_ref: "water_change_procedure_m7_ease"
+
+  - id: water_change_cycle_2
+    title: "DRAIN + REFILL (Cycle 2) + re-init @ease"
+    due_date: 2026-09-05
+    window: { start: 2026-08-22, end: 2026-09-19 }
+    escalate_after: 2026-09-19
+    severity: HIGH
+    procedure_ref: "water_change_procedure_m7_ease"
+
+  - id: water_change_cycle_3
+    title: "DRAIN + REFILL (Cycle 3) + re-init @ease"
+    due_date: 2026-12-05
+    window: { start: 2026-11-21, end: 2026-12-19 }
+    escalate_after: 2026-12-19
+    severity: HIGH
+    procedure_ref: "water_change_procedure_m7_ease"
+
+  - id: water_change_cycle_4
+    title: "DRAIN + REFILL (Cycle 4) + re-init @ease"
+    due_date: 2027-03-05
+    window: { start: 2027-02-19, end: 2027-03-19 }
+    escalate_after: 2027-03-19
+    severity: HIGH
+    procedure_ref: "water_change_procedure_m7_ease"
+
+procedures:
+  water_change_procedure_m7_ease:
+    title: "Bullfrog drain/refill + FROG @ease XL re-init (M7 / 500 gal)"
+    steps:
+      - "POWER OFF: Turn off main breaker before draining."
+      - "DRAIN: Use Bullfrog drain spout + garden hose; drain fully; reset drain cap/spout when empty."
+      - "CLEAN: Remove JetPaks; clean shell + jet pod areas using spa surface cleaner."
+      - "REFILL: Fill to midpoint of filter intake grate; check equipment bay for leaks before power on."
+      - "PRIME: Perform External Air Bleeder procedure after refills; verify pumps move water."
+      - "RE-INIT @ease: Replace Mineral cartridge (required each refill); set Mineral dial to highest."
+      - "SMARTCHLOR SETTING: Set SmartChlor dial for M7 (Triangular=3, Round=4)."
+      - "STARTUP SANITIZER: After balancing, establish 0.5–1.0 ppm free chlorine using FROG Jump Start per label (manual notes 1 packet per 600 gal)."
+      - "ONGOING: Resume weekly @ease strip testing and monthly (or SmartChlor-change) shock w/ FROG Maintain."
