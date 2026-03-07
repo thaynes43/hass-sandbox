@@ -134,6 +134,19 @@ def test_build_image_provider_ollama_raises() -> None:
     assert "image generation" in str(exc_info.value).lower()
 
 
+def test_build_image_provider_comfyui() -> None:
+    cfg = ImageProviderConfig(
+        provider=ImageProviderName.COMFYUI,
+        base_url="https://comfyui.haynesops.com",
+        model="qwen-image-edit-2509",
+        provider_options={"workflow_path": "workflows/02_qwen_Image_edit_subgraphed_API.json"},
+    )
+    provider = build_image_provider(cfg)
+    assert provider.name == ImageProviderName.COMFYUI
+    assert provider.capabilities.supports_image_to_image
+    assert not provider.capabilities.supports_text_to_image
+
+
 def test_build_multimodal_provider_openai() -> None:
     cfg = MultimodalTextProviderConfig(
         provider=MultimodalProviderName.OPENAI,
@@ -148,6 +161,7 @@ def test_build_multimodal_provider_ollama() -> None:
     cfg = MultimodalTextProviderConfig(
         provider=MultimodalProviderName.OLLAMA,
         base_url="http://localhost:11434",
+        model="qwen3.5:9b",
     )
     provider = build_multimodal_text_provider(cfg)
     assert provider.name == MultimodalProviderName.OLLAMA
@@ -250,6 +264,36 @@ def test_provider_config_from_pointer_image() -> None:
         assert cfg.api_key == "test-gemini-key"
     finally:
         os.environ.pop("GEMINI_API_KEY", None)
+
+
+def test_provider_config_from_pointer_image_comfyui() -> None:
+    import os
+
+    os.environ["COMFYUI_URL"] = "https://comfyui.haynesops.com"
+    try:
+        args = {"ai_provider_conf": {"image": "comfyui-qwen-edit"}}
+        cfg = provider_config_from_appdaemon_args(args)
+        assert cfg.provider == ImageProviderName.COMFYUI
+        assert cfg.model == "qwen-image-edit-2509"
+        assert cfg.base_url == "https://comfyui.haynesops.com"
+        assert cfg.provider_options["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
+    finally:
+        os.environ.pop("COMFYUI_URL", None)
+
+
+def test_provider_config_from_scoped_bundle_override_comfyui() -> None:
+    args = {
+        "ai_provider_conf": {
+            "image": {
+                "bundle": "comfyui-qwen-edit",
+                "base_url": "https://override.example.com",
+            }
+        }
+    }
+    cfg = provider_config_from_appdaemon_args(args)
+    assert cfg.provider == ImageProviderName.COMFYUI
+    assert cfg.base_url == "https://override.example.com"
+    assert cfg.model == "qwen-image-edit-2509"
 
 
 def test_multimodal_config_from_pointer() -> None:

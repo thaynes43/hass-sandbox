@@ -26,6 +26,8 @@ def _resolve_secret(env_var: str) -> str:
         return "test-openai-key"
     if env_var == "OLLAMA_URL":
         return "http://localhost:11434"
+    if env_var == "COMFYUI_URL":
+        return "https://comfyui.haynesops.com"
     raise ValueError(f"Unknown env var: {env_var}")
 
 
@@ -53,6 +55,13 @@ def test_load_provider_settings_ollama() -> None:
     assert settings.provider == "ollama"
     assert settings.defaults.base_url_env == "OLLAMA_URL"
     assert "ollama-qwen9b" in settings.bundles
+
+
+def test_load_provider_settings_comfyui() -> None:
+    settings = load_provider_settings("comfyui")
+    assert settings.provider == "comfyui"
+    assert settings.defaults.base_url_env == "COMFYUI_URL"
+    assert "comfyui-qwen-edit" in settings.bundles
 
 
 def test_load_bundle_gemini_default() -> None:
@@ -88,6 +97,13 @@ def test_load_bundle_ollama_qwen9b() -> None:
     assert bundle.image_model is None
 
 
+def test_load_bundle_comfyui_qwen_edit() -> None:
+    bundle = load_bundle("comfyui-qwen-edit")
+    assert bundle.provider == "comfyui"
+    assert bundle.image_model == "qwen-image-edit-2509"
+    assert bundle.provider_options["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
+
+
 def test_load_bundle_not_found() -> None:
     with pytest.raises(ValueError) as exc_info:
         load_bundle("nonexistent-bundle")
@@ -116,6 +132,28 @@ def test_resolve_capability_config_pointer_image() -> None:
     flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
     assert flat["provider"] == "gemini"
     assert flat["model"] == "gemini-3.1-flash-image-preview"
+
+
+def test_resolve_capability_config_pointer_image_comfyui() -> None:
+    conf = {"image": "comfyui-qwen-edit"}
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider"] == "comfyui"
+    assert flat["model"] == "qwen-image-edit-2509"
+    assert flat["base_url"] == "https://comfyui.haynesops.com"
+    assert flat["provider_options"]["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
+
+
+def test_resolve_capability_config_scoped_bundle_override() -> None:
+    conf = {
+        "image": {
+            "bundle": "comfyui-qwen-edit",
+            "base_url": "https://override.example.com",
+        }
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider"] == "comfyui"
+    assert flat["base_url"] == "https://override.example.com"
+    assert flat["model"] == "qwen-image-edit-2509"
 
 
 def test_resolve_capability_config_uses_any_nonempty_bundle_ref(monkeypatch) -> None:

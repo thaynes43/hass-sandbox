@@ -62,7 +62,7 @@ def test_ollama_multimodal_generate_from_image_success(tmp_path: Path) -> None:
     response_body = json.dumps(
         {
             "model": "qwen3.5:9b",
-            "response": '{"score": 0.8, "label": "test"}',
+            "message": {"role": "assistant", "content": '{"score": 0.8, "label": "test"}'},
             "done": True,
             "done_reason": "stop",
             "load_duration": 0,
@@ -127,7 +127,7 @@ def test_ollama_multimodal_empty_response_raises(tmp_path: Path) -> None:
     img_path.write_bytes(b"\x89PNG\r\n\x1a\n")
 
     response_body = json.dumps(
-        {"model": "qwen3.5:9b", "response": "", "done": True}
+        {"model": "qwen3.5:9b", "message": {"role": "assistant", "content": ""}, "done": True}
     ).encode("utf-8")
     mock_resp = MagicMock()
     mock_resp.read.return_value = response_body

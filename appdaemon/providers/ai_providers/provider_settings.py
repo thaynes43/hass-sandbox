@@ -6,7 +6,8 @@ Capability metadata:
 - Gemini multimodal: uses mediaResolution (LOW/MEDIUM/HIGH), maxOutputTokens.
   Gemini has no direct equivalent to OpenAI image_quality; media_resolution is the closer analog.
 - Gemini image: uses responseModalities for image output; no OpenAI-style image_quality.
-- Ollama: multimodal/simple_text via /api/generate; no image generation in this project.
+- Ollama: multimodal/simple_text via /api/generate; image generation remains unsupported.
+- ComfyUI: workflow-based image generation via prompt/history/view APIs.
 """
 
 from __future__ import annotations
@@ -61,15 +62,13 @@ def validate_multimodal_model(provider: str, model: str) -> Tuple[bool, Optional
         return True, None
 
     if provider_lower == "ollama":
-        # qwen3.5:9b and variants support vision; document supported models
-        vision_models = frozenset(
-            {"qwen3.5:9b", "qwen3.5:4b", "qwen3.5:2b", "qwen2.5-vl:9b", "qwen2.5-vl:4b"}
-        )
+        # Vision support requires a multimodal VL-family model.
+        vision_models = frozenset({"qwen3.5:9b", "qwen2.5vl:7b"})
         model_lower = model_str.lower().strip()
         if model_str and model_lower not in vision_models:
             return False, (
                 f"Provider ollama model {model!r} may not support multimodal (image) input. "
-                f"Supported: {sorted(vision_models)}. Use qwen3.5:9b for best results."
+                f"Supported: {sorted(vision_models)}."
             )
         return True, None
 
@@ -129,6 +128,15 @@ def validate_image_model(provider: str, model: str) -> Tuple[bool, Optional[str]
             "Provider ollama does not support image generation in this project. "
             "Use provider=openai or provider=gemini for image generation."
         )
+    if provider_lower == "comfyui":
+        supported = frozenset({"qwen-image-edit-2509"})
+        model_lower = (model or "").strip().lower()
+        if model_lower and model_lower not in supported:
+            return False, (
+                f"Provider comfyui model {model!r} is not in the allowed image set. "
+                f"Supported: {sorted(supported)}."
+            )
+        return True, None
     if provider_lower == "openai":
         model_lower = (model or "").strip().lower()
         if model_lower and model_lower not in OPENAI_IMAGE_CANDIDATES:

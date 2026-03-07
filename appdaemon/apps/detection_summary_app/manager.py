@@ -307,9 +307,16 @@ class DetectionSummary(hass.Hass):
         ai_conf = self.args.get("ai_provider_conf") or {}
         if not isinstance(ai_conf, dict):
             ai_conf = {}
-        # Capability-pointer config (bundle refs): simple_text/multimodal/image are strings
+        # Capability-pointer config (bundle refs): simple_text/multimodal/image may be
+        # either a plain string ref or a dict like {bundle: "...", base_url: ...}.
         is_pointer_config = any(
-            isinstance(ai_conf.get(k), str) and str(ai_conf.get(k)).strip()
+            (
+                isinstance(ai_conf.get(k), str) and str(ai_conf.get(k)).strip()
+            )
+            or (
+                isinstance(ai_conf.get(k), dict)
+                and str((ai_conf.get(k) or {}).get("bundle") or (ai_conf.get(k) or {}).get("ref") or "").strip()
+            )
             for k in ("simple_text", "multimodal", "image")
         )
         provider = str(ai_conf.get("provider", "openai") or "").strip().lower()
@@ -1210,4 +1217,3 @@ class DetectionSummary(hass.Hass):
             self._last_run_ts = time.time()
             self._in_flight = False
             self._active = None
-

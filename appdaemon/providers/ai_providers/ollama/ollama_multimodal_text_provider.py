@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 # Default timeout allows for cold start / model download (first request can take minutes)
 OLLAMA_DEFAULT_TIMEOUT_S = 300.0
-OLLAMA_DEFAULT_MODEL = "qwen3.5:9b"  # multimodal; supports vision per ollama.com
+OLLAMA_DEFAULT_MODEL = "qwen3.5:9b"
+OLLAMA_COLD_START_LOG_THRESHOLD_S = 1.0
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class OllamaMultimodalConfig:
 
 class OllamaMultimodalTextProvider(MultimodalTextProvider):
     """
-    Ollama multimodal (vision) support via /api/generate.
+    Ollama multimodal (vision) support via /api/chat.
     Targets qwen3.5:9b for image+text input.
     Timeouts and logs account for cold-start/model download delays.
     """
@@ -79,14 +80,23 @@ class OllamaMultimodalTextProvider(MultimodalTextProvider):
 
         body: dict[str, Any] = {
             "model": self._config.model,
-            "prompt": prompt,
-            "images": [image_b64],
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                    "images": [image_b64],
+                }
+            ],
             "stream": False,
             "format": "json",
-            "options": {"num_predict": int(self._config.max_output_tokens)},
+            "think": False,
+            "options": {
+                "num_predict": int(self._config.max_output_tokens),
+                "temperature": 0,
+            },
         }
 
-        url = f"{self._config.base_url.rstrip('/')}/api/generate"
+        url = f"{self._config.base_url.rstrip('/')}/api/chat"
         req = urllib.request.Request(
             url=url,
             method="POST",
@@ -134,20 +144,32 @@ class OllamaMultimodalTextProvider(MultimodalTextProvider):
             raise ExternalDataGenError(f"ollama request failed: {e!r}") from e
 
         elapsed_s = time.time() - started
-        response_text = (payload.get("response") or "").strip()
+        response_text = (
+            ((payload.get("message") or {}).get("content"))
+            or payload.get("response")
+            or ""
+        ).strip()
+        thinking_text = (
+            ((payload.get("message") or {}).get("thinking"))
+            or payload.get("thinking")
+            or ""
+        ).strip()
         load_duration_ns = payload.get("load_duration")
         if load_duration_ns and load_duration_ns > 0:
             load_s = load_duration_ns / 1e9
-            logger.info(
-                "ollama cold start: load_duration_s=%.1f (model load/download). "
-                "Subsequent requests will be faster.",
-                load_s,
-            )
+            if load_s >= OLLAMA_COLD_START_LOG_THRESHOLD_S:
+                logger.info(
+                    "ollama cold start: load_duration_s=%.1f (model load/download). "
+                    "Subsequent requests will be faster.",
+                    load_s,
+                )
 
         if not response_text:
             raise ExternalDataGenError(
                 f"ollama returned empty response (done={payload.get('done')} "
-                f"done_reason={payload.get('done_reason')!r})"
+                f"done_reason={payload.get('done_reason')!r} thinking_len={len(thinking_text)}). "
+                "This can indicate an unsupported image request shape, model limitation, prompt/format mismatch, "
+                "or that the model spent its budget in a thinking trace instead of final content."
             )
 
         obj = parse_json_from_response(response_text)
@@ -171,4 +193,6 @@ class OllamaMultimodalTextProvider(MultimodalTextProvider):
             },
             "response": {"content_preview": response_text[:400]},
         }
+        if thinking_text:
+            obj["_meta"]["response"]["thinking_preview"] = thinking_text[:400]
         return obj

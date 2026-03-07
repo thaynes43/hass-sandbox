@@ -54,9 +54,15 @@ detection_summary_garage_dev:
   image_instructions: >
     Create a simple, clean illustration representing the scene for a notification.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    multimodal:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    image:
+      bundle: comfyui-qwen-edit
+      base_url: !secret comfyui_url
 
 detection_viewer_garage_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -132,9 +138,15 @@ detection_summary_bulkhead_dev:
     the illustration on the PEOPLE and their actions, not background objects.
   debug_preserve_run_dirs: true
   ai_provider_conf:
-    simple_text: gemini-default
-    multimodal: gemini-default
-    image: gemini-default
+    simple_text:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    multimodal:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    image:
+      bundle: comfyui-qwen-edit
+      base_url: !secret comfyui_url
 
 detection_viewer_bulkhead_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -181,9 +193,15 @@ detection_summary_front_door_dev:
     Create a simple, clean illustration representing the scene at a front door entrance.
   debug_preserve_run_dirs: true
   ai_provider_conf:
-    simple_text: gemini-default
-    multimodal: gemini-default
-    image: gemini-default
+    simple_text:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    multimodal:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    image:
+      bundle: comfyui-qwen-edit
+      base_url: !secret comfyui_url
 
 detection_viewer_front_door_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -197,4 +215,3 @@ detection_viewer_front_door_dev:
     selected_best_image_camera_entity_id: camera.front_door_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.front_door_detection_summary_selected_generated
   notification_action_prefix: "FRONT_DOOR_DS_VIEW"
-
