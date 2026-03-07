@@ -31,6 +31,7 @@ from detection_summary_viewer.detection_summary_viewer_app import (
     _format_timing_value,
     _format_cooldown_value,
 )
+from detection_summary_viewer.viewer_cache import ViewerCache, ViewerCacheConfig
 
 
 def _run_coro(coro):
@@ -108,6 +109,7 @@ class TestFormatTimingValue:
             "capture_duration_s": 90.0,
         }
         result = _format_timing_value(timing)
+        assert "1970-01-01" in result
         assert "10:00:00" in result
         assert "10:01:30" in result
         assert "1:30" in result
@@ -132,6 +134,19 @@ class TestFormatTimingValue:
         result = _format_timing_value(timing)
         # Should show H:MM:SS format
         assert "1:01:40" in result
+
+    def test_format_timing_crosses_day_shows_end_date(self):
+        epoch_start = 86370.0  # 1970-01-01 23:59:30 UTC
+        epoch_end = epoch_start + 90.0  # 1970-01-02 00:01:00 UTC
+        timing = {
+            "capture_started_epoch": epoch_start,
+            "capture_ended_epoch": epoch_end,
+            "capture_duration_s": 90.0,
+        }
+        result = _format_timing_value(timing)
+        assert "1970-01-01 23:59:30" in result
+        assert "1970-01-02 00:01:00" in result
+        assert "1:30" in result
 
 
 class TestFormatCooldownValue:
@@ -295,3 +310,126 @@ class TestUpdateRunDetailHelpers:
         # WARNING should be logged for the call_service failure
         warning_calls = [c for c in app.log.mock_calls if c.kwargs.get("level") == "WARNING"]
         assert warning_calls, "Expected WARNING log when call_service raises"
+
+
+# ---------------------------------------------------------------------------
+# ViewerCache path tests for empty viewer_www_subdir
+# ---------------------------------------------------------------------------
+
+
+def _make_cache(viewer_www_subdir: str = "viewer", snapshot_ha_dir: str = "/media/detection-summary/garage") -> ViewerCache:
+    cfg = ViewerCacheConfig(
+        snapshot_ha_dir=snapshot_ha_dir,
+        bundle_runs_subdir="runs",
+        captured_subdir="captured",
+        viewer_stage_subdir="viewer_stage",
+        viewer_www_subdir=viewer_www_subdir,
+        refresh_shell_command="ds_refresh_detection_summary_viewer_www",
+    )
+    return ViewerCache(
+        cfg=cfg,
+        ha_path_to_local_fs=MagicMock(side_effect=lambda p: Path("/fake") / p.lstrip("/")),
+        call_service=MagicMock(),
+        log=MagicMock(),
+    )
+
+
+class TestViewerCacheEmptyWwwSubdir:
+    """Tests that ViewerCache handles viewer_www_subdir='' correctly."""
+
+    def test_www_dir_ha_with_subdir(self):
+        cache = _make_cache("viewer")
+        assert cache._www_dir_ha() == "/config/www/detection-summary/garage/viewer"
+
+    def test_www_dir_ha_empty_subdir(self):
+        cache = _make_cache("")
+        assert cache._www_dir_ha() == "/config/www/detection-summary/garage"
+
+    def test_www_dir_ha_empty_subdir_no_trailing_slash(self):
+        cache = _make_cache("")
+        result = cache._www_dir_ha()
+        assert not result.endswith("/"), f"Should not have trailing slash: {result}"
+
+    def test_selected_file_paths_with_subdir(self):
+        cache = _make_cache("viewer")
+        best, gen = cache.selected_file_paths_for_run("run-123")
+        assert best == "/config/www/detection-summary/garage/viewer/run-123_best.jpg"
+        assert gen == "/config/www/detection-summary/garage/viewer/run-123_generated.png"
+
+    def test_selected_file_paths_empty_subdir(self):
+        cache = _make_cache("")
+        best, gen = cache.selected_file_paths_for_run("run-123")
+        assert best == "/config/www/detection-summary/garage/run-123_best.jpg"
+        assert gen == "/config/www/detection-summary/garage/run-123_generated.png"
+
+    def test_selected_file_paths_empty_subdir_no_double_slash(self):
+        cache = _make_cache("")
+        best, gen = cache.selected_file_paths_for_run("run-456")
+        assert "//" not in best, f"Double slash in best path: {best}"
+        assert "//" not in gen, f"Double slash in generated path: {gen}"
+
+    def test_selected_file_paths_doorbell_nested(self):
+        cache = _make_cache("", snapshot_ha_dir="/media/detection-summary/doorbell/front-door")
+        best, gen = cache.selected_file_paths_for_run("run-789")
+        assert best == "/config/www/detection-summary/doorbell/front-door/run-789_best.jpg"
+        assert gen == "/config/www/detection-summary/doorbell/front-door/run-789_generated.png"
+
+    def test_refresh_www_passes_empty_subdir(self):
+        cache = _make_cache("")
+        cache.refresh_www_from_stage()
+        cache._call_service.assert_called_once()
+        call_args = cache._call_service.call_args
+        assert call_args.kwargs.get("viewer_www_subdir") == ""
+
+
+class TestViewerAppEmptyWwwSubdir:
+    """Tests that DetectionSummaryViewer.initialize() accepts viewer_www_subdir=''."""
+
+    def test_initialize_with_empty_www_subdir(self, tmp_path: Path):
+        args = _base_args(tmp_path)
+        args["viewer_www_subdir"] = ""
+        with patch("detection_summary_viewer.detection_summary_viewer_app.HAProvisioner") as MockProv:
+            mock_prov = AsyncMock()
+            mock_prov.ensure_helper.return_value = False
+            mock_prov._helper_slug = MagicMock(return_value="garage_detection_summary_run_id")
+            MockProv.return_value = mock_prov
+            app = _make_viewer(args)
+            app.initialize()
+        assert app.viewer_www_subdir == ""
+        assert app._viewer_cache is not None
+
+    def test_initialize_default_www_subdir(self, tmp_path: Path):
+        args = _base_args(tmp_path)
+        with patch("detection_summary_viewer.detection_summary_viewer_app.HAProvisioner") as MockProv:
+            mock_prov = AsyncMock()
+            mock_prov.ensure_helper.return_value = False
+            mock_prov._helper_slug = MagicMock(return_value="garage_detection_summary_run_id")
+            MockProv.return_value = mock_prov
+            app = _make_viewer(args)
+            app.initialize()
+        assert app.viewer_www_subdir == "viewer"
+
+    def test_initialize_explicit_viewer_www_subdir(self, tmp_path: Path):
+        args = _base_args(tmp_path)
+        args["viewer_www_subdir"] = "custom_dir"
+        with patch("detection_summary_viewer.detection_summary_viewer_app.HAProvisioner") as MockProv:
+            mock_prov = AsyncMock()
+            mock_prov.ensure_helper.return_value = False
+            mock_prov._helper_slug = MagicMock(return_value="garage_detection_summary_run_id")
+            MockProv.return_value = mock_prov
+            app = _make_viewer(args)
+            app.initialize()
+        assert app.viewer_www_subdir == "custom_dir"
+
+    def test_initialize_viewer_www_subdir_none_treated_as_empty(self, tmp_path: Path):
+        """When viewer_www_subdir is explicitly null in YAML, treat as empty string."""
+        args = _base_args(tmp_path)
+        args["viewer_www_subdir"] = None
+        with patch("detection_summary_viewer.detection_summary_viewer_app.HAProvisioner") as MockProv:
+            mock_prov = AsyncMock()
+            mock_prov.ensure_helper.return_value = False
+            mock_prov._helper_slug = MagicMock(return_value="garage_detection_summary_run_id")
+            MockProv.return_value = mock_prov
+            app = _make_viewer(args)
+            app.initialize()
+        assert app.viewer_www_subdir == ""

@@ -83,7 +83,8 @@ shell_command:
 ```
 
 **Notes:**
-- `snapshot_rel` is the part after `/media/`. For garage it's `detection-summary/garage`.
+- `snapshot_rel` is the part after `/media/`. For garage it's `detection-summary/garage`; for nested layouts (e.g. doorbell) it's `detection-summary/doorbell/front-door`.
+- `viewer_www_subdir` must be non-empty (default `viewer`). The atomic swap uses a temp dir (`.viewer.tmp`) then renames it to `viewer` in one operation.
 - This keeps `/config/www/.../viewer/` bounded to only the run_ids AppDaemon chose.
 
 ### 2) `local_file` cameras for selected images (optional)
@@ -95,7 +96,7 @@ The viewer can repoint two `local_file` cameras to the staged selected files via
 | `camera.{bundle_key}_detection_summary_selected_best` | `/config/www/detection-summary/{bundle_key}/viewer/placeholder_best.jpg` |
 | `camera.{bundle_key}_detection_summary_selected_generated` | `/config/www/detection-summary/{bundle_key}/viewer/placeholder_generated.png` |
 
-Add these to `hass_entities` in the app config if you want this feature.
+Add these to `hass_entities` in the app config if you want this feature. For nested layouts (e.g. doorbell/front-door), the path includes the full `snapshot_rel` segment: `/config/www/detection-summary/doorbell/front-door/viewer/placeholder_best.jpg`.
 
 ---
 
@@ -134,7 +135,7 @@ detection_viewer_garage_dev:
 | `bundle_runs_subdir` | `runs` | Subdirectory under `snapshot_ha_dir` containing per-run directories |
 | `viewer_enabled` | `true` | Enable viewer cache staging |
 | `viewer_stage_subdir` | `viewer_stage` | Staging directory name under `snapshot_ha_dir` |
-| `viewer_www_subdir` | `viewer` | Viewer www directory name (under `/config/www/.../`) |
+| `viewer_www_subdir` | `viewer` | Viewer www directory name (under `/config/www/.../`). Must be non-empty for the atomic swap. |
 | `viewer_refresh_shell_command` | `ds_refresh_detection_summary_viewer_www` | Shell command name |
 | `run_picker_max_options` | `25` | Maximum run_ids to show in the picker |
 | `selected_auto_reset_s` | `900` | Seconds of inactivity before picker auto-resets to latest (0 = disabled) |

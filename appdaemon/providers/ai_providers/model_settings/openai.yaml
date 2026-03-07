@@ -16,7 +16,7 @@ bundles:
   openai-default:
     multimodal_model: gpt-5.2
     multimodal_image_detail: auto
-    simple_text_model: gpt-5-nano
+    simple_text_model: gpt-5.2
     image_model: gpt-image-1.5
 
   openai-budget:

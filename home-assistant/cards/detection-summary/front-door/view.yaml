@@ -1,0 +1,68 @@
+type: sections
+max_columns: 1
+path: front-door
+icon: mdi:doorbell-video
+title: Front Door Detection Summary
+dense_section_placement: true
+sections:
+  - type: grid
+    cards:
+      - type: custom:bubble-card
+        card_type: select
+        entity: input_select.front_door_detection_summary_run_id
+        name: Front Door - Navigation
+        show_name: true
+        rows: 1.719
+        sub_button:
+          main: []
+          bottom:
+            - sub_button_type: button
+              icon: mdi:chevron-left
+              tap_action:
+                action: call-service
+                service: input_select.select_previous
+                target:
+                  entity_id: input_select.front_door_detection_summary_run_id
+                data:
+                  cycle: false
+            - sub_button_type: button
+              icon: mdi:star-four-points
+              tap_action:
+                action: call-service
+                service: input_select.select_first
+                target:
+                  entity_id: input_select.front_door_detection_summary_run_id
+            - sub_button_type: button
+              icon: mdi:chevron-right
+              tap_action:
+                action: call-service
+                service: input_select.select_next
+                target:
+                  entity_id: input_select.front_door_detection_summary_run_id
+                data:
+                  cycle: false
+        icon: mdi:doorbell-video
+
+      - type: markdown
+        content: >
+          {{ states('input_text.front_door_detection_summary_selected') }}
+
+      - type: markdown
+        content: >
+          <img src="/local/detection-summary/doorbell/front-door/viewer/{{ states('input_select.front_door_detection_summary_run_id') }}_generated.png" />
+
+      - type: markdown
+        content: >
+          <img src="/local/detection-summary/doorbell/front-door/viewer/{{ states('input_select.front_door_detection_summary_run_id') }}_best.jpg"
+          style="width:100%;border-radius:12px;object-fit:cover;" />
+
+      - type: markdown
+        content: >
+          _Detection: {{ states('input_text.front_door_detection_summary_timing') }}_
+
+
+          _Cooldown: {{ states('input_text.front_door_detection_summary_cooldown') }}_
+
+
+          _Selection updated: {{ states.input_text.front_door_detection_summary_selected.last_updated }}_
+cards: []

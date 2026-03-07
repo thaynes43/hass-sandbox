@@ -74,6 +74,12 @@ def test_load_bundle_openai_budget() -> None:
     assert bundle.image_model == "gpt-image-1.5"
 
 
+def test_load_bundle_openai_default_uses_gpt52_for_simple_text() -> None:
+    bundle = load_bundle("openai-default")
+    assert bundle.provider == "openai"
+    assert bundle.simple_text_model == "gpt-5.2"
+
+
 def test_load_bundle_ollama_qwen9b() -> None:
     bundle = load_bundle("ollama-qwen9b")
     assert bundle.provider == "ollama"

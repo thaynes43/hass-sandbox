@@ -74,7 +74,9 @@ class ViewerCache:
         rel = self._snapshot_rel()
         if not rel:
             return None
-        return f"/config/www/{rel}/{self.cfg.viewer_www_subdir}"
+        if self.cfg.viewer_www_subdir:
+            return f"/config/www/{rel}/{self.cfg.viewer_www_subdir}"
+        return f"/config/www/{rel}"
 
     def _resolve_best_src(self, run_dir: Path) -> Optional[Path]:
         best_src = run_dir / "best.jpg"
@@ -192,6 +194,9 @@ class ViewerCache:
         run_id = str(run_id or "").strip()
         if not run_id:
             return (None, None)
-        base = f"/config/www/{snapshot_rel}/{self.cfg.viewer_www_subdir}"
+        if self.cfg.viewer_www_subdir:
+            base = f"/config/www/{snapshot_rel}/{self.cfg.viewer_www_subdir}"
+        else:
+            base = f"/config/www/{snapshot_rel}"
         return (f"{base}/{run_id}_best.jpg", f"{base}/{run_id}_generated.png")
 

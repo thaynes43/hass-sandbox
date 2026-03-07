@@ -1,0 +1,3 @@
+type: markdown
+content: >-
+  <img src="/local/detection-summary/doorbell/front-door/viewer/{{ states('input_select.front_door_detection_summary_run_id') }}_generated.png" />
