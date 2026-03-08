@@ -2,6 +2,8 @@
 globs:
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/multi-agent-plan.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## Multi-Agent Plans: Planner → Implementation → Validation
 
 ### When to use this

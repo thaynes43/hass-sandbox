@@ -146,12 +146,25 @@ def _recent_published_run_ids(runs_dir: Path, max_options: int) -> list[str]:
 
 
 def _format_timing_value(timing: dict) -> str:
-    """Format summary.json timing block to 'HH:MM:SS → HH:MM:SS (H:MM:SS)'."""
+    """Format summary.json timing block with date context for dashboard display."""
     started = float(timing.get("capture_started_epoch") or 0)
     ended = float(timing.get("capture_ended_epoch") or 0)
     duration = float(timing.get("capture_duration_s") or 0)
-    start_str = time.strftime("%H:%M:%S", time.gmtime(started)) if started else "?"
-    end_str = time.strftime("%H:%M:%S", time.gmtime(ended)) if ended else "?"
+    start_dt = time.gmtime(started) if started else None
+    end_dt = time.gmtime(ended) if ended else None
+    if start_dt:
+        start_str = time.strftime("%Y-%m-%d %H:%M:%S", start_dt)
+    else:
+        start_str = "?"
+    if end_dt:
+        same_day = bool(start_dt) and (
+            start_dt.tm_year == end_dt.tm_year
+            and start_dt.tm_mon == end_dt.tm_mon
+            and start_dt.tm_mday == end_dt.tm_mday
+        )
+        end_str = time.strftime("%H:%M:%S", end_dt) if same_day else time.strftime("%Y-%m-%d %H:%M:%S", end_dt)
+    else:
+        end_str = "?"
     h = int(duration // 3600)
     m = int((duration % 3600) // 60)
     s = int(duration % 60)
@@ -299,9 +312,13 @@ class DetectionSummaryViewer(hass.Hass):
             str(self.args.get("viewer_stage_subdir", self.DEFAULTS["viewer_stage_subdir"])).strip("/")
             or "viewer_stage"
         )
-        self.viewer_www_subdir: str = (
-            str(self.args.get("viewer_www_subdir", self.DEFAULTS["viewer_www_subdir"])).strip("/") or "viewer"
-        )
+        if "viewer_www_subdir" in self.args:
+            val = self.args["viewer_www_subdir"]
+            self.viewer_www_subdir = (
+                str(val).strip("/") if val is not None else ""
+            )
+        else:
+            self.viewer_www_subdir: str = str(self.DEFAULTS["viewer_www_subdir"])
         self.viewer_refresh_shell_command: str = (
             str(self.args.get("viewer_refresh_shell_command", self.DEFAULTS["viewer_refresh_shell_command"])).strip()
             or str(self.DEFAULTS["viewer_refresh_shell_command"])

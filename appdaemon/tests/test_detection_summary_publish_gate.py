@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
 from detection_summary_app.publish_gate import should_publish_bundle  # noqa: E402
 from detection_summary_app.selection import ScoreResult  # noqa: E402
+from detection_summary_app.profiles import PROFILE_DEFAULT, PROFILE_PACKAGES  # noqa: E402
 
 
 def test_publish_when_people_score_meets_threshold():

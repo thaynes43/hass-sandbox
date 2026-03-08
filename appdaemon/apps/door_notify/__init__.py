@@ -1,0 +1,1 @@
+"""Door notification app package."""

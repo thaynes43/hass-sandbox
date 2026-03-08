@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .profiles import DetectionProfile
 
 
 @dataclass
@@ -17,6 +20,7 @@ class ScoreResult:
     pose: str
     summary: str
     structured: dict[str, Any]
+    extra_signals: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -33,13 +37,44 @@ def _pose_rank(pose: str) -> int:
     return {"standing": 3, "stationary": 3, "sitting": 2, "walking": 1, "moving": 1}.get(p, 0)
 
 
-def _pick_key(res: ScoreResult) -> tuple:
-    has_subject = 1 if (int(res.animal_count) > 0 or res.person_score > 0) else 0
+def _get_signal_value(res: ScoreResult, key: str) -> Any:
+    """Get a signal value from ScoreResult, checking known attrs first then extra_signals."""
+    if hasattr(res, key) and key != "extra_signals":
+        return getattr(res, key, 0)
+    return res.extra_signals.get(key, 0)
+
+
+def _pick_key(res: ScoreResult, profile: DetectionProfile | None = None) -> tuple:
+    """Rank key for frame selection. Profile-aware when provided."""
+    if profile is None:
+        # Legacy behavior (backward compat)
+        has_subject = 1 if (int(res.animal_count) > 0 or res.person_score > 0) else 0
+        has_summary = 1 if (res.summary or "").strip() else 0
+        return (
+            has_subject,
+            res.person_score,
+            int(res.animal_count),
+            res.face_score,
+            res.frame_score,
+            _pose_rank(res.pose),
+            has_summary,
+        )
+
+    # Profile-aware: check all category count signals
+    total_subjects = 0
+    for cat in profile.categories:
+        for sig_key in cat.count_signals:
+            val = _get_signal_value(res, sig_key)
+            try:
+                total_subjects += max(0, int(val))
+            except (TypeError, ValueError):
+                pass
+    has_subject = 1 if total_subjects > 0 or res.person_score > 0 else 0
     has_summary = 1 if (res.summary or "").strip() else 0
     return (
         has_subject,
         res.person_score,
-        int(res.animal_count),
+        total_subjects,
         res.face_score,
         res.frame_score,
         _pose_rank(res.pose),

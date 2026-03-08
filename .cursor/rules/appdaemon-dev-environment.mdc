@@ -5,54 +5,85 @@ alwaysApply: false
 ---
 # AppDaemon development environment
 
-How to run tests, use venvs, and execute Python commands when iterating on `appdaemon/` code. For coding standards and architecture, see `appdaemon-coding-guidelines.mdc`.
+How to run tests, use venvs, and execute Python commands when iterating on `appdaemon/` code. For coding standards and architecture, see `appdaemon-coding-guidelines.mdc` and `appdaemon-architecture.mdc`.
+
+## Detect the current OS first
+
+Before running commands, check whether the environment is Linux (native or WSL) or Windows:
+
+```bash
+uname -s   # "Linux" → use bash commands directly
+           # If this fails or returns MINGW/MSYS → Windows/PowerShell
+```
+
+The instructions below are organized by OS. **Linux is the primary dev environment** (VSCode Server in WSL or native WSL CLI). Windows/PowerShell is the fallback.
 
 ## Virtual environments (repo root)
 
-- **`.venv-wsl`**: WSL/Linux venv. Primary for pytest and Python dev commands. Use this when running tests, linting, or local scripts.
-- **`.venv`**: Windows/PowerShell venv. May lag behind `requirements.txt`; run `pip install -r appdaemon/requirements.txt` if tests fail with missing deps.
+| Environment | Venv path | When to use |
+|-------------|-----------|-------------|
+| Linux (native or WSL-only) | `.venv/` | Single venv — always use this |
+| Windows (with WSL available) | `.venv-wsl/` | WSL/Linux venv (preferred for pytest) |
+| Windows (PowerShell only) | `.venv/` | Windows venv (fallback) |
 
-Both live at the **repo root**: `D:\labspace\hass-sandbox\` (Windows) / `/mnt/d/labspace/hass-sandbox/` (WSL).
+**How to tell which layout you have:**
+- If only `.venv/` exists → you're on Linux or a single-venv Windows setup
+- If both `.venv/` and `.venv-wsl/` exist → you're on Windows with dual venvs
 
-**Prefer WSL** for Python commands (pytest, linting, quick scripts, local AppDaemon runs). Bash behaves more consistently than PowerShell and avoids common agent mistakes.
+All venvs live at the **repo root** (e.g. `/home/thaynes/workspace/hass-sandbox/` on Linux, `D:\labspace\hass-sandbox\` on Windows).
 
-## Running tests — prefer WSL
+## Running tests
 
-**Use WSL when running pytest.** Bash works better for multi-step commands; PowerShell often trips agents up (e.g. `&&` not valid, path handling).
+### Linux (primary)
 
-### Command that works
+Run from the repo root. Activate the venv, cd to `appdaemon/`, then run pytest:
+
+```bash
+source .venv/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short
+```
+
+Single test file:
+
+```bash
+source .venv/bin/activate && cd appdaemon && python -m pytest tests/test_door_notify.py -v --tb=short
+```
+
+### Windows with WSL (preferred on Windows)
+
+Wrap the full command in `wsl bash -c`:
 
 ```bash
 wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"
 ```
 
-### Path translation
+### Windows PowerShell fallback
+
+Use the Windows venv python directly (run from repo root):
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest appdaemon/tests/ -v
+```
+
+**PowerShell pitfalls:**
+- `&&` is not a valid statement separator in older PowerShell; use `;` or run via `wsl bash -c "..."`.
+- Avoid complex chaining; prefer a single `wsl bash -c "..."` with the full sequence inside.
+
+### Path translation (Windows ↔ WSL)
 
 | Windows              | WSL                          |
 |----------------------|------------------------------|
 | `D:\labspace\hass-sandbox` | `/mnt/d/labspace/hass-sandbox` |
 
-### Step breakdown
-
-1. `cd /mnt/d/labspace/hass-sandbox` — repo root (where `.venv-wsl` lives)
-2. `source .venv-wsl/bin/activate` — activate venv
-3. `cd appdaemon` — tests expect `appdaemon/` as cwd
-4. `python -m pytest tests/ -v --tb=short` — run tests
-
-### PowerShell pitfalls
-
-- `&&` is not a valid statement separator in older PowerShell; use `;` or run the whole thing via `wsl bash -c "..."`.
-- Avoid complex PowerShell chaining; prefer a single `wsl bash -c "..."` with the full sequence inside.
-- If using `.venv` on Windows: `.\.venv\Scripts\python.exe -m pytest appdaemon/tests/ -v` (run from repo root).
-
 ### If tests fail
 
-- Ensure `.venv-wsl` exists and is up to date: `pip install -r appdaemon/requirements.txt` inside the venv.
+- Ensure the venv exists and is up to date: `pip install -r appdaemon/requirements.txt` inside the venv.
 - Run from repo root, then `cd appdaemon` before pytest (tests use `Path(__file__).resolve().parent.parent` to find `appdaemon/`).
 - For failures, paste the pytest output (especially `short test summary` and tracebacks) so fixes can be applied.
 
 ## Other Python commands (lint, scripts, local AppDaemon)
 
-- **Linting**: `python -m pylint appdaemon/...` or `python -m ruff check appdaemon/` — use the same WSL + `.venv-wsl` workflow.
-- **Local AppDaemon run**: `appdaemon -c appdaemon` — run from repo root with venv active; AppDaemon reads `appdaemon/appdaemon.yaml` and `apps-dev.yaml`.
-- **Windows fallback**: `.\.venv\Scripts\python.exe -m pytest appdaemon/tests/ -v` — use full path to venv python when not using WSL.
+All commands assume you've activated the appropriate venv first.
+
+- **Linting**: `python -m pylint appdaemon/...` or `python -m ruff check appdaemon/`
+- **Local AppDaemon run**: `appdaemon -c appdaemon` — run from repo root; reads `appdaemon/appdaemon.yaml` and `apps-dev.yaml`.
+- **Install deps**: `pip install -r appdaemon/requirements.txt`

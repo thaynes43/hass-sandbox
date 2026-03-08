@@ -1,0 +1,122 @@
+# AppDaemon deploy playbook
+
+Run this playbook when the user explicitly asks to deploy AppDaemon changes to production. This repo treats `appdaemon/` as the **development** workspace; production AppDaemon reads configs from `X:\` (mounted into Kubernetes).
+
+## Rules (before running workflow)
+
+- **Never auto-deploy**: `X:\` is not always mounted; the user mounts it on demand. Never run `deploy.py` automatically after making code changes. Only run when the user explicitly asks to deploy. After editing `appdaemon/**` files, tell the user what changed and that they can deploy when ready — do not attempt the deploy yourself.
+- **When to use**: The user says "deploy", "deploy AppDaemon", "deploy to production", or similar. If they did not ask, do not deploy.
+
+## Critical rule: Clarify merge vs. backend-only
+
+**The user must specify the deployment mode.** If they do not, **ask for clarification** before running the playbook:
+
+- **Backend-only**: Deploy app code + shared libraries (providers). No changes to the production app list. Use when you only changed Python under `appdaemon/` (apps, providers, tests) and did not add/remove/promote apps.
+- **Merge and deploy**: Promote dev apps from `apps-dev.yaml` into `apps-prod.yaml`, then deploy. Use when you added or modified dev apps and want them in production.
+
+**Ask:** "Do you want a backend-only deploy (no app list changes), or should I merge dev apps into production first?"
+
+## Workflow: Deploy to production
+
+### Step 0 — Clarify mode (0 calls)
+
+If the user did not specify merge vs. backend-only, ask for clarification and stop until they respond.
+
+### Step 1 — Security audit (run playbook)
+
+Run the security audit playbook (`.agents/playbooks/security-audit.md`). All checks must PASS. **Do not proceed if any check fails.**
+
+### Step 2 — Prerequisites
+
+Ensure `X:\` exists and is writable. If it does not exist, abort and tell the user to mount the production config volume.
+
+```powershell
+# Check from Windows PowerShell
+Test-Path "X:\"
+```
+
+### Step 3a — Merge dev apps (only if user requested merge)
+
+Run from repo root:
+
+```powershell
+.\.venv\Scripts\python.exe appdaemon\deploy.py --merge-dev-apps
+```
+
+This reads `apps-dev.yaml`, strips `_dev` suffixes, converts dev media paths to prod (`/media/...`), adds `disable: true`, and merges into `apps-prod.yaml`. **Nothing is deployed to `X:\`.**
+
+**Stop here.** Tell the user to review the updated `apps-prod.yaml`. Do **not** chain merge + deploy in one step. Wait for user confirmation before Step 3b.
+
+### Step 3b — Dry-run, then deploy
+
+From repo root, run dry-run first:
+
+```powershell
+.\.venv\Scripts\python.exe appdaemon\deploy.py --dry-run --target "X:\"
+```
+
+Show the user the dry-run output. After they confirm it looks correct, run deploy:
+
+```powershell
+.\.venv\Scripts\python.exe appdaemon\deploy.py --target "X:\"
+```
+
+**Notes:**
+
+- Default target is `X:\` (or `DEPLOY_TARGET` env). Omit `--target` if using default.
+- **WSL + `X:\`**: `X:\` is not a valid path in WSL. Run deploy from Windows PowerShell, or pass a WSL-visible path (e.g. `/mnt/x`) if the prod mount is exposed there.
+- **Venv**: Use `.\.venv\Scripts\python.exe` (Windows) from repo root. Ensure `ruamel.yaml` is installed: `pip install -r appdaemon/requirements.txt`.
+- **Deploy takes longer than expected**: Over SSHFS/network mounts, the deploy often runs 30+ seconds and may timeout the agent's command wait. This is expected. The deploy continues in the background; the user can confirm completion in the terminal or at https://appdaemon.haynesops.com/.
+
+## What deploy.py does (and does not do)
+
+- **Does**: Sync `appdaemon/apps/**` into `X:\apps/**`. Reads `apps-prod.yaml`, strips all `disable: true` flags, writes the result as `X:\apps\apps.yaml`. Also syncs `providers/` (ai_providers, ha_provisioner, photo_providers) into `X:\apps/providers/`.
+- **Never does**: Deploy `appdaemon.yaml` or `secrets.yaml` (production gets them via Flux ConfigMaps).
+- **Does not**: Install Python dependencies in the production container.
+
+## Merge behavior (when Step 3a applies)
+
+- **New app keys** in `apps-dev.yaml` are **added** to `apps-prod.yaml` with `disable: true` and prod paths.
+- **Existing app keys** (same prod name) in `apps-dev.yaml` **replace** the corresponding entry in `apps-prod.yaml`.
+- YAML tags like `!secret` are preserved via `ruamel.yaml`.
+
+### Custom dev media path
+
+If dev uses a different media mount:
+
+```powershell
+.\.venv\Scripts\python.exe appdaemon\deploy.py --merge-dev-apps --prod-media /mnt/other/media
+```
+
+## Shared code deployment
+
+Production AppDaemon commonly imports with `sys.path == ["/conf/apps", ...]`. Any shared library outside `appdaemon/apps/` must land under `X:\apps\...`. Update `deploy.py` `COPY_ITEMS` when adding a new shared library.
+
+## Common pitfalls
+
+| Symptom | Cause | Fix |
+|--------|-------|-----|
+| "Target directory does not exist" | `X:\` not mounted | User must mount the production config volume |
+| WSL: path `X:\` invalid | `X:\` is a Windows path | Run deploy from Windows PowerShell, or use WSL-visible path (e.g. `/mnt/x`) |
+| `ModuleNotFoundError: ruamel.yaml` | Missing dependency | `pip install -r appdaemon/requirements.txt` in the venv |
+| Production `ModuleNotFoundError` after deploy | New package in requirements.txt | Production container must install it; dev-only until image is updated |
+| Agent times out / returns to chat during deploy | Deploy over SSHFS/network takes 30+ s | Expected. Deploy continues in background; user confirms in terminal or at appdaemon UI |
+
+## Restructuring directories (move/rename/consolidate)
+
+`deploy.py` only **copies**; it never removes anything from the target. If you move or consolidate directories in the repo (e.g., move `ai_providers` under `providers/`), the old paths will remain on `X:\` and can cause import confusion.
+
+**Manual cleanup:** Before or right after deploying, manually remove obsolete dirs on the target:
+
+```powershell
+# Example: if you moved ai_providers, ha_provisioner, photo_providers under providers/
+Remove-Item -Recurse -Force "X:\apps\ai_providers" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "X:\apps\ha_provisioner" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "X:\apps\photo_providers" -ErrorAction SilentlyContinue
+```
+
+Only remove dirs that no longer exist in the repo's structure. After one-time cleanup, normal deploy will keep things correct.
+
+## Python dependencies: dev vs production
+
+Adding a line to `appdaemon/requirements.txt` only guarantees it exists in **dev**. Production will NOT have the dependency until the AppDaemon container installs it. If an app imports a missing package, AppDaemon will fail with `ModuleNotFoundError`.

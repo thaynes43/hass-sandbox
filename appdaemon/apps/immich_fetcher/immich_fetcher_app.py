@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -53,9 +53,13 @@ class ImmichFetcherApp(hass.Hass):
             base_url=args["immich_url"],
             api_key_env=args["immich_api_key_env"],
         )
-        # Caches populated on startup via provider.refresh_metadata()
+        # Metadata caches are refreshed on startup and periodically while running.
         self._people_available: List[str] = []  # names ranked by photo count
         self._albums_available: List[Dict[str, Any]] = []
+        self._metadata_last_refresh: Optional[datetime] = None
+        self._metadata_refresh_minutes: int = int(
+            args.get("metadata_refresh_minutes", 30)
+        )
 
         # Fetch rotation
         self._active_filter_index: int = 0
@@ -151,7 +155,9 @@ class ImmichFetcherApp(hass.Hass):
         await self._provision_relay()
 
         try:
-            await self._refresh_caches()
+            await self._refresh_caches_if_stale(
+                force=True, reason="startup"
+            )
         except Exception as exc:
             self.log(f"Cache refresh on startup failed: {exc}", level="WARNING")
 
@@ -221,12 +227,41 @@ class ImmichFetcherApp(hass.Hass):
             {"name": a.name, "id": a.id, "asset_count": a.asset_count}
             for a in metadata.albums
         ]
+        self._metadata_last_refresh = datetime.now(timezone.utc)
         self.log(
             f"Caches refreshed: {len(self._people_available)} people, "
             f"{len(self._albums_available)} albums | "
             f"top 10: {self._people_available[:10]}",
             level="INFO",
         )
+
+    async def _refresh_caches_if_stale(
+        self, *, force: bool = False, reason: str = "unspecified",
+    ) -> None:
+        """Refresh metadata cache if stale (or when forced)."""
+        if force:
+            self.log(f"Refreshing metadata cache ({reason})", level="DEBUG")
+            await self._refresh_caches()
+            return
+
+        if self._metadata_last_refresh is None:
+            self.log(
+                f"Refreshing metadata cache ({reason}; never refreshed yet)",
+                level="DEBUG",
+            )
+            await self._refresh_caches()
+            return
+
+        now = datetime.now(timezone.utc)
+        refresh_after = self._metadata_last_refresh + timedelta(
+            minutes=self._metadata_refresh_minutes
+        )
+        if now >= refresh_after:
+            self.log(
+                f"Refreshing metadata cache ({reason}; stale)",
+                level="DEBUG",
+            )
+            await self._refresh_caches()
 
     # ------------------------------------------------------------------
     # Sensor publication
@@ -318,6 +353,14 @@ class ImmichFetcherApp(hass.Hass):
         if not self._config.filters:
             self.log("No filters configured, skipping fetch", level="WARNING")
             return
+
+        try:
+            await self._refresh_caches_if_stale(reason="before_fetch")
+        except Exception as exc:
+            self.log(
+                f"Metadata cache refresh failed before fetch; using cached values: {exc}",
+                level="WARNING",
+            )
 
         idx = self._active_filter_index % len(self._config.filters)
         pf = self._config.filters[idx]

@@ -179,6 +179,24 @@ def resolve_capability_config(
         else:
             return _bundle_to_flat_config(bundle, capability, resolve_secret)
 
+    # Capability-scoped dict config:
+    #   simple_text:
+    #     bundle: ollama-qwen9b
+    #     base_url: !secret ollama_url
+    if isinstance(bundle_ref, dict):
+        scoped = dict(bundle_ref)
+        ref = str(scoped.get("bundle") or scoped.get("ref") or "").strip()
+        if ref:
+            try:
+                bundle = load_bundle(ref)
+            except (ValueError, FileNotFoundError):
+                raise ValueError(
+                    f"Capability {capability!r} references unknown bundle {ref!r}"
+                ) from None
+            flat = _bundle_to_flat_config(bundle, capability, resolve_secret)
+            return _merge_capability_overrides(flat, scoped, capability)
+        return _inline_to_flat_config(scoped, capability, resolve_secret)
+
     # Inline config path (backward compatibility)
     return _inline_to_flat_config(conf, capability, resolve_secret)
 
@@ -213,6 +231,7 @@ def _bundle_to_flat_config(
             "openai": "https://api.openai.com",
             "gemini": "https://generativelanguage.googleapis.com/v1beta",
             "ollama": "http://localhost:11434",
+            "comfyui": "http://localhost:8188",
         }
         base_url = defaults_map.get(provider, "")
 
@@ -293,8 +312,49 @@ def _inline_to_flat_config(
         result["quality"] = conf.get("image_quality")
         result["output_format"] = conf.get("image_output_format")
         result["image_prompt_augmentation"] = conf.get("image_prompt_augmentation")
+        result["provider_options"] = dict(conf.get("provider_options") or {})
 
     return result
+
+
+def _merge_capability_overrides(
+    base: Dict[str, Any],
+    overrides: Dict[str, Any],
+    capability: str,
+) -> Dict[str, Any]:
+    """Merge capability-scoped overrides onto a resolved bundle config."""
+    merged = dict(base)
+
+    common_keys = ("provider", "api_key", "base_url")
+    for key in common_keys:
+        if overrides.get(key) is not None:
+            merged[key] = overrides.get(key)
+
+    if capability == "simple_text":
+        for key in ("model", "timeout_s", "max_output_tokens"):
+            if overrides.get(key) is not None:
+                merged[key] = overrides.get(key)
+    elif capability == "multimodal":
+        for key in ("model", "timeout_s", "max_output_tokens", "image_detail", "media_resolution"):
+            if overrides.get(key) is not None:
+                merged[key] = overrides.get(key)
+    elif capability == "image":
+        for key in (
+            "model",
+            "timeout_s",
+            "size",
+            "quality",
+            "output_format",
+            "image_prompt_augmentation",
+            "style_profile",
+            "style_variant_profile",
+        ):
+            if overrides.get(key) is not None:
+                merged[key] = overrides.get(key)
+        if overrides.get("provider_options") is not None:
+            merged["provider_options"] = dict(overrides.get("provider_options") or {})
+
+    return merged
 
 
 def clear_cache() -> None:

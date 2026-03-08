@@ -2,6 +2,8 @@
 globs: appdaemon/providers/ai_providers/**
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/appdaemon-ai-provider.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## AppDaemon: Implement a new AI provider
 
 ### When to use this

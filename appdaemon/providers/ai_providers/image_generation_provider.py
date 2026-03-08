@@ -16,6 +16,7 @@ class ImageProviderName(str, Enum):
     OPENAI = "openai"
     GEMINI = "gemini"
     OLLAMA = "ollama"
+    COMFYUI = "comfyui"
 
     @classmethod
     def parse(cls, value: Any) -> "ImageProviderName":
@@ -26,6 +27,8 @@ class ImageProviderName(str, Enum):
             return cls.GEMINI
         if s in {"ollama"}:
             return cls.OLLAMA
+        if s in {"comfyui"}:
+            return cls.COMFYUI
         raise ValueError(f"Unsupported image provider: {value!r}")
 
 

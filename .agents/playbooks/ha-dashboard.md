@@ -1,0 +1,146 @@
+# Home Assistant Dashboards: edit views and cards via MCP
+
+### When to use this
+
+Use this playbook whenever an agent needs to **create, update, or populate dashboard views** on a Home Assistant storage-mode dashboard using the MCP server. Covers adding cards, updating existing views, and surgical edits.
+
+### Critical rule: never truncate config_hash
+
+`config_hash` is the optimistic-locking token returned by `ha_config_get_dashboard`. It **must** be passed to `ha_config_set_dashboard` exactly as received — the full string (typically 16 hex characters). Truncating it (e.g. using only the first 10 characters) will produce a **perpetual "Dashboard modified since last read (conflict)"** error that can never succeed.
+
+**Known failure mode:** An agent truncated `"8160465903b35377"` to `"8160465903"` and looped 15+ times with the same conflict error. This is the single most common dashboard editing failure.
+
+---
+
+### Workflow: update a dashboard view
+
+**Step 1 — Get the current dashboard config (1 MCP call)**
+
+```json
+{
+  "tool": "ha_config_get_dashboard",
+  "arguments": { "url_path": "my-dashboard" }
+}
+```
+
+Returns: `config` (full JSON), `config_hash` (string — save the ENTIRE value), `config_size_bytes`.
+
+**Step 2 — Identify the target view index**
+
+Inspect the returned `config.views` array. Find the view by its `path` field.
+
+**Step 3 — Build and apply the python_transform (1 MCP call)**
+
+Use `ha_config_set_dashboard` with `python_transform`. The variable `config` is the current dashboard config dict. Use standard Python dict/list operations separated by `;`.
+
+```json
+{
+  "tool": "ha_config_set_dashboard",
+  "arguments": {
+    "url_path": "my-dashboard",
+    "config_hash": "<FULL config_hash from Step 1 — do NOT truncate>",
+    "python_transform": "config['views'][1]['title'] = 'My View'; config['views'][1]['sections'] = [{'type': 'grid', 'cards': []}]"
+  }
+}
+```
+
+**Rules for python_transform strings:**
+
+- Use Python dict/list literals (single quotes for strings inside the transform).
+- Jinja2 templates in card `content` fields use double curly braces — escape inner single quotes with `\'` when inside a single-quoted Python string.
+- Separate multiple statements with `;`.
+- `True` / `False` / `None` (Python-cased, not JSON-cased).
+- No line breaks — the entire transform is a single-line string.
+- Keep it under ~4000 characters. For very large transforms, break into two sequential calls (get fresh `config_hash` between calls).
+
+**Step 4 — Verify (optional, 1 MCP call)**
+
+```json
+{
+  "tool": "ha_config_get_dashboard",
+  "arguments": { "url_path": "my-dashboard" }
+}
+```
+
+---
+
+### Known-good example: append a new view to a dashboard
+
+```json
+{
+  "tool": "ha_config_set_dashboard",
+  "arguments": {
+    "url_path": "my-dashboard",
+    "config_hash": "<FULL hash>",
+    "python_transform": "config['views'].append({'title': 'New View', 'path': 'new-view', 'type': 'sections', 'max_columns': 1, 'icon': 'mdi:plus', 'sections': [{'type': 'grid', 'cards': [{'type': 'markdown', 'content': 'Hello world'}]}], 'cards': []})"
+  }
+}
+```
+
+---
+
+### Known-good example: surgical card update with ha_dashboard_find_card
+
+**Step 1 — Find the card:**
+
+```json
+{
+  "tool": "ha_dashboard_find_card",
+  "arguments": {
+    "url_path": "my-dashboard",
+    "entity_id": "light.living_room"
+  }
+}
+```
+
+Returns `matches[].jq_path` and `config_hash`.
+
+**Step 2 — Update it with jq_transform:**
+
+```json
+{
+  "tool": "ha_config_set_dashboard",
+  "arguments": {
+    "url_path": "my-dashboard",
+    "config_hash": "<FULL hash from find_card>",
+    "jq_transform": ".views[0].sections[1].cards[0].icon = \"mdi:lamp\""
+  }
+}
+```
+
+---
+
+### Detection-summary view card template
+
+All detection-summary views follow the same 5-card pattern inside a single `grid` section:
+
+| Card # | Type | Purpose |
+|--------|------|---------|
+| 1 | `custom:bubble-card` (select) | Run picker with prev/first/next navigation sub-buttons |
+| 2 | `markdown` | Selected summary text from `input_text.{bk}_detection_summary_selected` |
+| 3 | `markdown` | Generated image: `<img src="/local/{img_base}/{{ run_id }}_generated.png" />` |
+| 4 | `markdown` | Best image: `<img src="/local/{img_base}/{{ run_id }}_best.jpg" style="width:100%;border-radius:12px;object-fit:cover;" />` |
+| 5 | `markdown` | Timing, cooldown, and last-updated metadata |
+
+Where:
+- `{bk}` = bundle_key (e.g. `front_door`, `garage`, `bulkhead`)
+- `{img_base}` = image path segment (e.g. `detection-summary/garage/viewer`, `detection-summary/doorbell/front-door/viewer`)
+- `run_id` = `{{ states('input_select.{bk}_detection_summary_run_id') }}`
+
+---
+
+### Common pitfalls
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Perpetual "Dashboard modified since last read (conflict)" | `config_hash` truncated or stale | Use the **full** hash string from `ha_config_get_dashboard`. Never truncate. If stale, re-fetch. |
+| `python_transform` syntax error | Invalid Python in the transform string | Test the expression mentally: all strings single-quoted, `True`/`False`/`None` Python-cased, statements separated by `;`, no line breaks. |
+| `Invalid JSON in config` error | Passed malformed dict as `config` parameter | When using full config replacement, pass a proper JSON object. Prefer `python_transform` for edits — it's less error-prone. |
+| Card content shows raw Jinja2 | Inner quotes not escaped properly | In single-quoted Python strings, escape inner single quotes: `\'`. Use `\"` inside the Jinja `states()` calls when the outer string uses double quotes. |
+| View appended but shouldn't have been | Didn't check existing views first | Always inspect `config.views` paths before appending. If a placeholder view exists, update it by index instead. |
+| Transform too long / fails silently | Transform string exceeds buffer | Break into two sequential calls. Get a fresh `config_hash` between each call. |
+
+### After editing a dashboard (don't forget)
+
+- Update the corresponding `home-assistant/cards/.../*.yaml` reference file in the repo if one exists, so it stays in sync with the live dashboard.
+- If using `ha_config_set_dashboard` with `jq_transform`, note that indices shift after delete/add operations — always re-fetch the config or use `ha_dashboard_find_card` for the next operation.

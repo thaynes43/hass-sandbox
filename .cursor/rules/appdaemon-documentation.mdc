@@ -1,0 +1,112 @@
+---
+globs: appdaemon/**
+alwaysApply: false
+---
+# AppDaemon documentation standards
+
+Every app and provider package must have a README.md. This rule defines what goes in each README and maintains a map of all documentation in the project.
+
+## README requirements by location
+
+### App READMEs (`appdaemon/apps/<app_name>/README.md`)
+
+Every app directory must have a README.md covering:
+
+1. **What the app does** — 1-2 sentence summary
+2. **How it works** — high-level flow (numbered steps)
+3. **Dependencies** — providers and other shared libraries used
+4. **Self-provisioned entities** — table of HA entities created on startup (entity ID pattern, type, purpose)
+5. **Associated card** — JS card filename if the app has a Lovelace card
+6. **Config reference** — required and optional config keys with defaults (from apps.yaml)
+7. **Manual setup required** — anything the provisioner cannot create (shell commands, `local_file` cameras, directories, Lovelace resources)
+8. **Upstream/downstream dependencies** — other apps this app depends on or that depend on it
+
+All apps should live in a package directory (e.g. `appdaemon/apps/door_notify/door_notify.py`) rather than as standalone files in `apps/`. This keeps the layout consistent and ensures every app has a place for its README.
+
+### Provider READMEs
+
+**Interface-level README** (`appdaemon/providers/<provider_group>/README.md`):
+- What the provider group does
+- The protocol/interface contracts
+- Table of implementations with capability summary
+- Links to per-implementation READMEs
+
+**Per-implementation README** (`appdaemon/providers/<provider_group>/<impl>/README.md`):
+- What this specific implementation does
+- Supported capabilities
+- Current limitations
+- Default models/settings
+- Dependencies
+
+### Repository-level documentation (`docs/`)
+
+Cross-cutting documentation that spans multiple apps or covers setup/operations:
+
+- Multi-app dependency flows
+- Infrastructure setup guides
+- Roadmaps and design documents
+- Button mappings and other reference docs
+
+## Documentation map
+
+Update this map when adding new apps, providers, or docs. Agents creating new apps or providers must add the README to this map.
+
+### Apps
+
+| App | README | Description |
+|-----|--------|-------------|
+| `detection_summary_app` | `appdaemon/apps/detection_summary_app/README.md` | Motion-triggered detection pipeline: capture, score, publish |
+| `detection_summary_viewer` | `appdaemon/apps/detection_summary_viewer/README.md` | Dashboard viewer for detection summary bundles |
+| `immich_fetcher` | `appdaemon/apps/immich_fetcher/README.md` | Periodic photo fetching from Immich |
+| `photo_frame_viewer` | `appdaemon/apps/photo_frame_viewer/README.md` | Photo slideshow on Lovelace dashboards |
+| `door_notify` | `appdaemon/apps/door_notify/README.md` | Door open/close push notifications with optional AI attachment |
+
+### Providers
+
+| Provider | README | Description |
+|----------|--------|-------------|
+| `ai_providers` (interface) | `appdaemon/providers/ai_providers/README.md` | LLM + image generation provider layer |
+| `ai_providers/openai` | `appdaemon/providers/ai_providers/openai/README.md` | OpenAI adapter (text, multimodal, image) |
+| `ai_providers/gemini` | `appdaemon/providers/ai_providers/gemini/README.md` | Google Gemini adapter (text, multimodal, image) |
+| `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal) |
+| `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image) |
+| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
+| `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
+
+### Repository docs (`docs/`)
+
+| Document | Description |
+|----------|-------------|
+| `docs/appdaemon-setup.md` | AppDaemon infrastructure setup guide |
+| `docs/appdaemon-testing.md` | Testing strategy and conventions |
+| `docs/wall-display-photo-frame-viewer-setup.md` | Wall display photo frame end-to-end setup |
+| `docs/button-mappings.md` | Switch button mapping reference (must stay in sync with automations) |
+| `docs/roadmap.md` | General project roadmap |
+| `docs/image-view-roadmap.md` | Image viewing feature roadmap |
+
+### Root
+
+| Document | Description |
+|----------|-------------|
+| `appdaemon/README.md` | AppDaemon root: deploy process, dev vs prod config |
+
+## App dependency graph
+
+```
+immich_fetcher
+  └─ writes photos to disk
+       └─ photo_frame_viewer (reads from same directory)
+
+detection_summary_app
+  └─ fires detection_summary/run_published event
+  └─ writes bundles to shared filesystem
+       └─ detection_summary_viewer (listens for events, reads filesystem)
+       └─ door_notify (optional: attaches AI summary to notifications)
+```
+
+## When creating a new app or provider
+
+1. Create the README.md following the requirements above.
+2. Add an entry to the documentation map in this file.
+3. If the new app depends on or is depended on by other apps, update the dependency graph.
+4. If the app requires cross-cutting setup documentation, add a guide to `docs/`.

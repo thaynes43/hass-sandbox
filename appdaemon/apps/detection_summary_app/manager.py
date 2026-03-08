@@ -37,15 +37,22 @@ from .bundle import (
 )
 from .capture import CaptureConfig, CaptureState, CapturedFrame, next_delay_s, should_stop_capture
 from .selection import ScoreResult, SelectionMeta, adaptive_select_and_score
-from .population import compute_population_bounds
+from .population import compute_population_bounds, compute_population_consensus
 from .narrative import NarrativeConfig, synthesize_run_narrative
 from .publish_gate import should_publish_bundle
 from .retention import delete_run_dir
+from .profiles import (
+    DetectionProfile,
+    load_default_profile,
+    load_profile_by_name,
+    load_profile_from_dict,
+)
 from .prompting import (
     ScorePromptBuilder,
     ImagePromptBuilder,
     normalize_score_data,
     default_score_schema,
+    schema_from_profile,
 )
 try:
     from providers.ai_providers.registry import (
@@ -211,9 +218,21 @@ class DetectionSummary(hass.Hass):
         self.trigger_entity_id: str = str(hass_entities["trigger_entity_id"])
         self.snapshot_ha_dir: str = _normalize_posix_path(self.args["snapshot_ha_dir"])
         self.data_instructions: str = self.args["data_instructions"]
+
+        # Load detection profile
+        profile_ref = self.args.get("detection_profile")
+        if profile_ref is None:
+            self._profile: DetectionProfile = load_default_profile()
+        elif isinstance(profile_ref, str):
+            self._profile = load_profile_by_name(profile_ref)
+        elif isinstance(profile_ref, dict):
+            self._profile = load_profile_from_dict(profile_ref)
+        else:
+            self._profile = load_default_profile()
+
         # Schema-driven scoring; prompt builders own policy.
-        self._score_schema = default_score_schema()
-        self._score_prompt_builder = ScorePromptBuilder(schema=self._score_schema)
+        self._score_schema = schema_from_profile(self._profile)
+        self._score_prompt_builder = ScorePromptBuilder(schema=self._score_schema, profile=self._profile)
         self._image_prompt_builder = ImagePromptBuilder()
 
         # Config
@@ -307,9 +326,16 @@ class DetectionSummary(hass.Hass):
         ai_conf = self.args.get("ai_provider_conf") or {}
         if not isinstance(ai_conf, dict):
             ai_conf = {}
-        # Capability-pointer config (bundle refs): simple_text/multimodal/image are strings
+        # Capability-pointer config (bundle refs): simple_text/multimodal/image may be
+        # either a plain string ref or a dict like {bundle: "...", base_url: ...}.
         is_pointer_config = any(
-            isinstance(ai_conf.get(k), str) and str(ai_conf.get(k)).strip()
+            (
+                isinstance(ai_conf.get(k), str) and str(ai_conf.get(k)).strip()
+            )
+            or (
+                isinstance(ai_conf.get(k), dict)
+                and str((ai_conf.get(k) or {}).get("bundle") or (ai_conf.get(k) or {}).get("ref") or "").strip()
+            )
             for k in ("simple_text", "multimodal", "image")
         )
         provider = str(ai_conf.get("provider", "openai") or "").strip().lower()
@@ -786,6 +812,7 @@ class DetectionSummary(hass.Hass):
             best_person_score=best_person,
             best_min_person_score=float(self.best_min_person_score),
             best_min_animal_count=int(self.best_min_animal_count),
+            profile=self._profile,
         ):
             self.log(
                 f"DetectionSummary[{self.bundle_key}]: run_id={run_id} no bundle generated "
@@ -884,6 +911,7 @@ class DetectionSummary(hass.Hass):
         # Generate image from best.jpg to per-run generated.png, then mirror to stable
         generated_image: Optional[dict[str, Any]] = None
         population_bounds = compute_population_bounds(scored)
+        consensus_bounds = compute_population_consensus(scored, self._profile)
         if self.external_image_gen_enabled:
             out_path = local_run_dir / self.external_generated_filename
             # wait for best to exist
@@ -1027,6 +1055,8 @@ class DetectionSummary(hass.Hass):
                         bundle_augmentation=getattr(provider_cfg, "image_prompt_augmentation", None),
                         style_profile_id=getattr(provider_cfg, "style_profile", None),
                         environment_variant_id=getattr(provider_cfg, "style_variant_profile", None),
+                        consensus_bounds=consensus_bounds,
+                        profile=self._profile,
                     )
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
@@ -1084,6 +1114,7 @@ class DetectionSummary(hass.Hass):
             cfg=cfg,
             llm_events=llm_events,
             population_bounds=population_bounds,
+            profile=self._profile,
         )
         maybe_write_bundle_json(local_run_dir=local_run_dir, bundle=bundle, enabled=self.write_bundle_json)
         return bundle
@@ -1210,4 +1241,3 @@ class DetectionSummary(hass.Hass):
             self._last_run_ts = time.time()
             self._in_flight = False
             self._active = None
-

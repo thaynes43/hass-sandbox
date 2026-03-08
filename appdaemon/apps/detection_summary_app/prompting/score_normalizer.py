@@ -70,6 +70,19 @@ def normalize_score_data(
     if frame == 0 and person != 0:
         frame = person
 
+    # Standard ScoreResult fields
+    _standard_keys = {
+        "male_count", "female_count", "animal_count",
+        "person_score", "face_score", "frame_score",
+        "pose", "summary",
+    }
+
+    # Extra signals: any schema fields not in the standard ScoreResult attrs
+    extra_signals: dict[str, Any] = {}
+    for key, val in by_key.items():
+        if key not in _standard_keys:
+            extra_signals[key] = val
+
     return ScoreResult(
         male_count=int(by_key.get("male_count", 0)),
         female_count=int(by_key.get("female_count", 0)),
@@ -80,4 +93,5 @@ def normalize_score_data(
         pose=str(by_key.get("pose", "") or "").strip().lower(),
         summary=str(by_key.get("summary", "") or "").strip(),
         structured=dict(data) if isinstance(data, dict) else {},
+        extra_signals=extra_signals,
     )

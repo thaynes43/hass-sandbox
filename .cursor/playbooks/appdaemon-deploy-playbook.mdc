@@ -3,6 +3,8 @@ globs: appdaemon/**
 description: Deploy AppDaemon configs to production (X:\)
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/appdaemon-deploy.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 # AppDaemon deploy playbook
 
 Run this playbook when the user explicitly asks to deploy AppDaemon changes to production. This repo treats `appdaemon/` as the **development** workspace; production AppDaemon reads configs from `X:\` (mounted into Kubernetes).

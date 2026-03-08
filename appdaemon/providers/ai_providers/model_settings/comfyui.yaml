@@ -1,12 +1,21 @@
-# ComfyUI placeholder: workflow-based image generation.
-# No runtime provider implementation required yet.
-# Reserves config surface for workflow path / style preset / endpoint.
+# ComfyUI workflow-based image generation.
+# Uses the bundled Qwen image edit workflow for local image-to-image generation.
 
 defaults:
+  base_url: https://comfyui.haynesops.com
   base_url_env: COMFYUI_URL
-  base_url: http://localhost:8188
+  timeout_s: 300
 
 bundles:
-  comfyui-example:
+  comfyui-qwen-edit:
+    image_model: qwen-image-edit-2509
+    image_timeout_s: 300
     provider_options:
-      workflow_config: placeholder
+      workflow_path: workflows/02_qwen_Image_edit_subgraphed_API.json
+      prompt_node_id: "115:111"
+      negative_prompt_node_id: "115:110"
+      load_image_node_id: "78"
+      save_image_node_id: "60"
+      sampler_node_id: "115:3"
+      sampler_seed_input: seed
+      filename_prefix: detection-summary

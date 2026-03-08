@@ -5,6 +5,8 @@ globs:
   - home-assistant/cards/**
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/occupancy-based-lighting.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## Occupancy-based lighting: add or update a zone
 
 ### When to use this

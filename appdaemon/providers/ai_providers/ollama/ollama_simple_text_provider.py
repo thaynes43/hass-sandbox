@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_DEFAULT_TIMEOUT_S = 300.0
 OLLAMA_DEFAULT_MODEL = "qwen3.5:9b"
+OLLAMA_COLD_START_LOG_THRESHOLD_S = 1.0
 
 
 @dataclass(frozen=True)
@@ -124,11 +125,12 @@ class OllamaSimpleTextProvider(SimpleTextProvider):
         load_duration_ns = payload.get("load_duration")
         if load_duration_ns and load_duration_ns > 0:
             load_s = load_duration_ns / 1e9
-            logger.info(
-                "ollama cold start: load_duration_s=%.1f (model load/download). "
-                "Subsequent requests will be faster.",
-                load_s,
-            )
+            if load_s >= OLLAMA_COLD_START_LOG_THRESHOLD_S:
+                logger.info(
+                    "ollama cold start: load_duration_s=%.1f (model load/download). "
+                    "Subsequent requests will be faster.",
+                    load_s,
+                )
 
         if not response_text:
             raise ExternalDataGenError(

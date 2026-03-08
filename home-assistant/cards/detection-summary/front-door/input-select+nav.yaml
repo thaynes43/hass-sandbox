@@ -1,0 +1,34 @@
+type: custom:bubble-card
+card_type: select
+entity: input_select.front_door_detection_summary_run_id
+name: Navigation
+show_name: true
+rows: 1
+sub_button:
+  main:
+    - sub_button_type: button
+      icon: mdi:chevron-left
+      tap_action:
+        action: call-service
+        service: input_select.select_previous
+        target:
+          entity_id: input_select.front_door_detection_summary_run_id
+        data:
+          cycle: false
+    - sub_button_type: button
+      icon: mdi:star-four-points
+      tap_action:
+        action: call-service
+        service: input_select.select_first
+        target:
+          entity_id: input_select.front_door_detection_summary_run_id
+    - sub_button_type: button
+      icon: mdi:chevron-right
+      tap_action:
+        action: call-service
+        service: input_select.select_next
+        target:
+          entity_id: input_select.front_door_detection_summary_run_id
+        data:
+          cycle: false
+  bottom: []

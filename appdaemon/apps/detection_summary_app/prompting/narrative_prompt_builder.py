@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..profiles import DetectionProfile
 
 DEFAULT_NARRATIVE_INSTRUCTIONS = """
 You are writing a short push-notification narrative summarizing a short security-camera MOTION RUN.
@@ -35,7 +38,29 @@ Output JSON ONLY with:
 class NarrativePromptBuilder:
     """Builds narrative instructions for run-level summary (text-only LLM)."""
 
-    def build(self, custom_instructions: Optional[str] = None, max_chars: int = 220) -> str:
-        """Build narrative instructions. Uses default template when custom is empty."""
+    def build(
+        self,
+        custom_instructions: Optional[str] = None,
+        max_chars: int = 220,
+        profile: Optional[DetectionProfile] = None,
+    ) -> str:
+        """Build narrative instructions. Uses default template when custom is empty.
+
+        When profile includes non-default categories, adds them to the JSON schema description.
+        """
         inst = (custom_instructions or "").strip() or DEFAULT_NARRATIVE_INSTRUCTIONS
-        return inst.format(max_chars=max(60, int(max_chars)))
+        result = inst.format(max_chars=max(60, int(max_chars)))
+
+        if profile is not None:
+            extra_cats = [
+                c for c in profile.categories
+                if c.name not in ("people", "animals")
+            ]
+            if extra_cats:
+                extra_signals: list[str] = []
+                for cat in extra_cats:
+                    extra_signals.extend(cat.count_signals)
+                if extra_signals:
+                    result += f"\n\nEach observation item also includes: {', '.join(extra_signals)}"
+
+        return result

@@ -2,7 +2,7 @@
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
 
 garage_door_notify_dev:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   notify_services:
     - notify.mobile_app_toms_iphone_15_pro
@@ -54,9 +54,15 @@ detection_summary_garage_dev:
   image_instructions: >
     Create a simple, clean illustration representing the scene for a notification.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    multimodal:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    image:
+      bundle: comfyui-qwen-edit
+      base_url: !secret comfyui_url
 
 detection_viewer_garage_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -72,7 +78,7 @@ detection_viewer_garage_dev:
   notification_action_prefix: "GARAGE_DS_VIEW"
 
 bulkhead_door_notify_dev:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   notify_services:
     - notify.mobile_app_toms_iphone_air
@@ -132,9 +138,15 @@ detection_summary_bulkhead_dev:
     the illustration on the PEOPLE and their actions, not background objects.
   debug_preserve_run_dirs: true
   ai_provider_conf:
-    simple_text: gemini-default
-    multimodal: gemini-default
-    image: gemini-default
+    simple_text:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    multimodal:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    image:
+      bundle: comfyui-qwen-edit
+      base_url: !secret comfyui_url
 
 detection_viewer_bulkhead_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -149,3 +161,70 @@ detection_viewer_bulkhead_dev:
     selected_generated_image_camera_entity_id: camera.bulkhead_detection_summary_selected_generated
   notification_action_prefix: "BULKHEAD_DS_VIEW"
 
+front_door_door_notify_dev:
+  module: door_notify.door_notify
+  class: DoorNotify
+  doors:
+    - binary_sensor.usl_entry_contact_3
+  door_open_state: "on"
+  door_closed_state: "off"
+  ai_enabled: true
+  ai_bundle_key: front_door
+  ai_wait_timeout_s: 180
+  ai_max_bundle_age_s: 900
+  notification_url: "/detection-summary/front-door"
+
+detection_summary_front_door_dev:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: front_door
+  snapshot_ha_dir: /media/detection-summary/doorbell/front-door
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.g4_doorbell_pro_poe_medium_resolution_channel
+    trigger_entity_id: binary_sensor.g4_doorbell_pro_poe_motion
+    best_image_camera_entity_id: camera.front_door_detection_summary_best
+    generated_image_camera_entity_id: camera.front_door_detection_summary_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot from a front door (doorbell) entrance.
+    Focus ONLY on the people and any animals.
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+    Include only: person/animal count, what they are doing, and where they are in
+    frame (e.g. "near left", "center", "back").
+    Also return male_count and female_count as integer counts of people by gender
+    (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank
+    frames.
+    Heavily favor frames where at least one person's FACE is clearly visible.
+    face_score meaning: 0=no face visible, 10=clear unobstructed face.
+    Prefer frames where the person is clearly visible and stationary.
+    If animals are present and clearly visible, increase frame_score appropriately.
+  image_instructions: >
+    Create a simple, clean illustration representing the scene at a front door entrance.
+  debug_preserve_run_dirs: true
+  ai_provider_conf:
+    simple_text:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    multimodal:
+      bundle: ollama-qwen9b
+      base_url: !secret ollama_url
+    image:
+      bundle: comfyui-qwen-edit
+      base_url: !secret comfyui_url
+
+detection_viewer_front_door_dev:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: front_door
+  snapshot_ha_dir: /media/detection-summary/doorbell/front-door
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    selected_best_image_camera_entity_id: camera.front_door_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.front_door_detection_summary_selected_generated
+  notification_action_prefix: "FRONT_DOOR_DS_VIEW"

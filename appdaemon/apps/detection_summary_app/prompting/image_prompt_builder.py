@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
-from ..population import augment_image_instructions, compute_population_bounds
+from ..population import augment_image_instructions, augment_image_instructions_with_consensus
 from .style_variants import get_environment_variant, get_style_profile
+
+if TYPE_CHECKING:
+    from ..profiles import DetectionProfile
 
 
 class ImagePromptBuilder:
@@ -21,6 +24,8 @@ class ImagePromptBuilder:
         bundle_augmentation: Optional[str] = None,
         style_profile_id: Optional[str] = None,
         environment_variant_id: Optional[str] = None,
+        consensus_bounds: Optional[dict[str, Any]] = None,
+        profile: Optional[DetectionProfile] = None,
     ) -> str:
         """Build full image prompt.
 
@@ -35,20 +40,32 @@ class ImagePromptBuilder:
         - Bundle augmentation (from provider config)
         - Style profile + environment variant (placeholders)
         """
-        base_prompt = augment_image_instructions(str(base_instructions or ""), population_bounds)
+        if consensus_bounds and profile:
+            base_prompt = augment_image_instructions_with_consensus(
+                str(base_instructions or ""), consensus_bounds, profile
+            )
+        else:
+            base_prompt = augment_image_instructions(str(base_instructions or ""), population_bounds)
+        # Build subject label for constraints based on profile categories
+        if profile and profile.categories:
+            subject_names = [c.display_name or c.name for c in profile.categories]
+            subjects_label = ", ".join(subject_names).lower()
+        else:
+            subjects_label = "people and animals"
+
         prompt_lines: list[str] = [base_prompt, ""]
         prompt_lines.extend(
             [
                 "Reference frames:",
                 f"- You are provided {input_paths_count} image(s) captured close in time during ONE motion detection event.",
-                "- These frames are only a subset of the event; people/animals may enter/leave between frames.",
+                f"- These frames are only a subset of the event; {subjects_label} may enter/leave between frames.",
                 "",
                 "Critical constraints:",
-                "- ONLY include people and animals that are clearly present in at least ONE of the provided reference frames.",
-                "- Do NOT invent/add animals or extra people that are not visible in any provided frame (avoid 'phantom' animals).",
+                f"- ONLY include {subjects_label} that are clearly present in at least ONE of the provided reference frames.",
+                f"- Do NOT invent/add extra {subjects_label} that are not visible in any provided frame (avoid 'phantom' subjects).",
                 "- If you are uncertain whether a subject exists, OMIT it rather than hallucinating it.",
                 "- Do NOT depict the same individual multiple times (no duplicates). If a person appears in multiple frames, show them only once.",
-                "- Do NOT exceed the max male/female/animal counts given above, even if the narrative suggests more.",
+                "- Do NOT exceed the max counts given above, even if the narrative suggests more.",
                 "",
                 "Content safety:",
                 "- Do NOT reproduce any recognizable branded, trademarked, or copyrighted characters, logos, or products visible in the reference frames.",

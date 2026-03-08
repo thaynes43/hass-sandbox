@@ -2,6 +2,8 @@
 globs: home-assistant/**
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/ha-helpers.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## Home Assistant helpers: create / update / delete via MCP
 
 ### When to use this

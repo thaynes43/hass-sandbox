@@ -76,6 +76,12 @@ def test_validate_image_accepts_gemini() -> None:
     assert err is None
 
 
+def test_validate_image_accepts_comfyui() -> None:
+    ok, err = validate_image_model("comfyui", "qwen-image-edit-2509")
+    assert ok is True
+    assert err is None
+
+
 def test_validate_multimodal_rejects_unknown_gemini_model() -> None:
     ok, err = validate_multimodal_model("gemini", "gemini-made-up")
     assert ok is False

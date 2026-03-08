@@ -1,7 +1,9 @@
 ---
-globs: 
+globs:
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/playbook-authoring-guide.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## Playbook authoring guide
 
 ### What is a playbook?
@@ -92,6 +94,7 @@ alwaysApply: false
 | `occupancy-based-lighting-playbook.mdc` | Add/update occupancy-based lighting zones: helpers, automations, holds, cards |
 | `appdaemon-deploy-playbook.mdc` | Deploy AppDaemon apps from dev to production |
 | `security-audit-playbook.mdc` | Audit AppDaemon apps for security policy violations |
+| `ha-dashboard-playbook.mdc` | Edit HA dashboard views/cards via MCP (config_hash, python_transform, pitfalls) |
 | `detection-app-playbook.mdc` | Build/extend the detection summary AppDaemon app |
 | `multi-agent-plan-playbook.mdc` | Structure multi-agent plans (Planner → Implementation → Validation) |
 | `playbook-authoring-guide.mdc` | This file — how to write new playbooks |

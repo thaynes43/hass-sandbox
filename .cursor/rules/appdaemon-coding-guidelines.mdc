@@ -12,7 +12,7 @@ The always-applied rule `security-policy.mdc` defines mandatory security practic
 - All external HTTP calls in `appdaemon/providers/`, never in `appdaemon/apps/`
 - No secret exposure to the frontend (events, state, card JS)
 
-Before production deploy, run the security audit playbook (`.cursor/playbooks/security-audit-playbook.mdc`).
+Before production deploy, run the security audit playbook (`.agents/playbooks/security-audit.md`).
 
 ## 1) Apps vs shared libraries
 

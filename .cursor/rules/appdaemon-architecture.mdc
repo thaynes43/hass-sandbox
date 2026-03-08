@@ -4,7 +4,68 @@ alwaysApply: false
 ---
 # AppDaemon architecture decisions
 
-This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.mdc` (coding conventions) and `appdaemon-deploy-playbook.mdc` (deployment).
+This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.mdc` (coding conventions) and the deploy playbook (`.agents/playbooks/appdaemon-deploy.md`).
+
+## 0) System overview: how it all fits together
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Browser / Wall Display / Mobile                                     │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  Custom Lovelace Card (.js)                                    │  │
+│  │  - Reads entity state via hass.states[entity_id]               │  │
+│  │  - Sends commands via hass.callService("script", "<app>_relay")│  │
+│  │  - Never calls fire_event (requires admin)                     │  │
+│  └──────────────┬─────────────────────────────┬───────────────────┘  │
+└─────────────────┼─────────────────────────────┼──────────────────────┘
+                  │ callService                 │ read state
+                  ▼                             ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  Home Assistant (HA)                                                 │
+│                                                                      │
+│  ┌──────────────┐  ┌────────────┐  ┌──────────────────────────────┐ │
+│  │ Relay Script  │  │  Helpers   │  │  Cameras / Sensors / Devices │ │
+│  │ script.<app>  │  │ input_*.*  │  │  camera.*, binary_sensor.*   │ │
+│  │ _relay        │  │            │  │  local_file cameras          │ │
+│  │               │  │ Provisioned│  │                              │ │
+│  │ Provisioned   │  │ by app on  │  │  Some provisioned, some     │ │
+│  │ by app on     │  │ startup    │  │  manual (local_file, shell)  │ │
+│  │ startup       │  │            │  │                              │ │
+│  └───────┬───────┘  └────────────┘  └──────────────────────────────┘ │
+│          │ fires event                                               │
+│          ▼                                                           │
+│  ┌─────────────────┐                                                 │
+│  │ <app>_command    │                                                 │
+│  │ event bus        │                                                 │
+│  └───────┬─────────┘                                                 │
+└──────────┼───────────────────────────────────────────────────────────┘
+           │ listen_event
+           ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  AppDaemon (Kubernetes pod or local dev)                              │
+│                                                                      │
+│  ┌──────────────────────────────┐  ┌──────────────────────────────┐ │
+│  │  App (appdaemon/apps/<pkg>/) │  │  Providers (appdaemon/       │ │
+│  │                              │  │  providers/)                  │ │
+│  │  - Extends hass.Hass         │  │                              │ │
+│  │  - listen_event / state      │  │  ai_providers/  — LLM calls  │ │
+│  │  - set_state (virtual sensor)│  │  ha_provisioner/ — REST/WS   │ │
+│  │  - call_service              │  │  photo_providers/ — Immich    │ │
+│  │  - Calls providers for AI,   │  │  secrets.py — env var lookup  │ │
+│  │    provisioning, photos      │  │                              │ │
+│  └──────────────────────────────┘  └──────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Data flow summary
+
+1. **Card → HA → AppDaemon (commands):** Card calls `hass.callService("script", "<app>_relay", {command, payload})`. The relay script fires an `<app>_command` event. AppDaemon's `listen_event` picks it up and routes to the handler.
+
+2. **AppDaemon → HA → Card (state):** AppDaemon writes state via `self.set_state()` (virtual sensors), `self.call_service("input_text/set_value", ...)`, or `self.call_service("input_select/select_option", ...)`. Cards read these entities reactively via `set hass(hass)`.
+
+3. **AppDaemon → External APIs (AI, photos):** Apps call provider libraries under `appdaemon/providers/` which make HTTP requests to OpenAI, Gemini, Ollama, Immich, etc. All external HTTP lives in providers, never in app code (security rule S2).
+
+4. **AppDaemon → HA (provisioning on startup):** Apps call `ha_provisioner` to create relay scripts and helpers via HA's REST and WebSocket APIs. This requires an elevated long-lived access token, passed as an env var name (`ha_token_env`).
 
 ## 1) Folder structure: apps vs shared libraries
 
@@ -37,6 +98,17 @@ The `.parents[2]` assumes the standard `appdaemon/apps/<app_name>/module.py` lay
 
 Apps **must not** assume that helpers, scripts, or other HA entities already exist. Instead, apps provision them on startup using the `ha_provisioner` shared library.
 
+### Why provisioning needs elevated access
+
+The `ha_provisioner` uses HA's REST API (for scripts) and WebSocket API (for helpers) — both require a **long-lived access token** with admin privileges. This token is:
+
+- Stored as an environment variable (e.g. `TOKEN` in Kubernetes via ExternalSecret, or in `.env` for dev)
+- Referenced in app config by env var **name** only: `ha_token_env: TOKEN`
+- Resolved at runtime by `providers.secrets.resolve_secret()` — never hardcoded, never in YAML values
+- Used **server-side only** by AppDaemon — never exposed to the frontend
+
+This is the only part of the system that requires admin-level HA access. The Lovelace cards themselves work with non-admin accounts (see §4).
+
 ### What this means in practice
 
 - **Never** instruct users to manually create helpers (`input_button`, `input_text`, `input_boolean`, etc.).
@@ -48,31 +120,38 @@ Apps **must not** assume that helpers, scripts, or other HA entities already exi
 
 | Need | Provision with |
 |------|---------------|
-| Card-to-AppDaemon communication | Relay script (see below) |
+| Card-to-AppDaemon communication | Relay script (see §3) |
 | User-facing state (pause toggle, interval slider) | Helper (`input_boolean`, `input_number`, etc.) |
 | App status / read-only state | `set_state()` virtual sensor (no provisioning needed) |
 
-### What is NOT yet auto-provisioned (manual steps)
+### What is NOT auto-provisioned (manual steps)
 
 These remain manual for now and should be documented per-app:
 
 - **Shell commands** — defined in HA `configuration.yaml`, no REST API to create them.
-- **Lovelace resources** — custom card JS registration (could be automated later).
-- **`local_file` cameras** — could be provisioned via Config Entry Flow but complex.
+- **Lovelace resources** — custom card JS registration (could be automated later via MCP).
+- **`local_file` cameras** — Config Entry integration, complex to automate.
+- **Directories** — `/media/...` or `/config/www/...` paths inside the HA container.
+- **Placeholder images** — files that must exist before `local_file` camera creation.
 
-### App config requirements (env-var secret pattern)
+For full provisioner API details and kwargs, see `.agents/playbooks/ha-provisioner.md`.
 
-Apps using `ha_provisioner` need `ha_url_env` and `ha_token_env` in their `apps-prod.yaml` / `apps-dev.yaml` args. These are env var **names** (not values); the provisioner resolves them at runtime via `providers.secrets.resolve_secret()`. This prevents the AppDaemon admin UI from displaying resolved secrets.
+### App config requirements
+
+Apps using `ha_provisioner` need `ha_url` and `ha_token_env` in their `apps-prod.yaml` / `apps-dev.yaml` args:
 
 ```yaml
 my_app:
   module: my_app.my_app_module
   class: MyApp
-  ha_url_env: HA_URL
-  ha_token_env: HA_TOKEN
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
 ```
 
-Production injects these env vars via Kubernetes ExternalSecret. Dev uses `.env` (gitignored) or `python-dotenv`. The token is the same long-lived access token that the HASS plugin uses, used **server-side only** by AppDaemon. It is never exposed to the frontend.
+- `ha_url` uses `!secret ha_url` — resolved from `secrets.yaml` (the HA base URL, not highly sensitive).
+- `ha_token_env` is the **name** of an environment variable — the provisioner resolves it at runtime via `providers.secrets.resolve_secret()`.
+
+Production injects env vars via Kubernetes ExternalSecret. Dev uses `.env` (gitignored) loaded by `python-dotenv`.
 
 ## 3) Relay script pattern: card-to-AppDaemon communication
 
@@ -167,7 +246,25 @@ All Lovelace card interactions **must** work without admin access:
 - **Never** use `fire_event`, `callApi("POST", "events/...")`, or `connection.sendMessagePromise({ type: "fire_event" })` from card code.
 - Desktop admin accounts are used for HA configuration; tablets/phones/wall displays use non-admin device-specific accounts.
 
-## 5) New app checklist
+## 5) Async startup pattern
+
+AppDaemon's `initialize()` is synchronous. Apps that need async provisioning use `run_in` + `create_task`:
+
+```python
+def initialize(self) -> None:
+    self.run_in(self._async_startup_wrapper, 0)
+
+def _async_startup_wrapper(self, kwargs) -> None:
+    self.create_task(self._async_startup())
+
+async def _async_startup(self) -> None:
+    await self._provision_entities()
+    # Register listeners AFTER provisioning so entities exist
+    self.listen_state(self._on_state_change, "input_select.my_picker")
+    self.listen_event(self._on_command, "my_app_command")
+```
+
+## 6) New app checklist
 
 When creating a new AppDaemon app with a Lovelace card:
 
@@ -176,5 +273,5 @@ When creating a new AppDaemon app with a Lovelace card:
 3. Call `ha_provisioner` on startup to ensure all entities exist.
 4. Card uses `callService("script", "<app>_relay", ...)` for all actions.
 5. AppDaemon listens for `<app>_command` event, routes commands.
-6. Add `ha_url_env` and `ha_token_env` to `apps-dev.yaml` and `apps-prod.yaml` (see security policy and `.env.example`).
-7. Document any manual steps (shell commands, Lovelace resources) in the app's README or setup docs.
+6. Add `ha_url: !secret ha_url` and `ha_token_env: TOKEN` to `apps-dev.yaml` and `apps-prod.yaml`.
+7. Document any manual steps (shell commands, Lovelace resources, `local_file` cameras) in the app's README.

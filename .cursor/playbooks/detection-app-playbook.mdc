@@ -2,6 +2,8 @@
 globs: appdaemon/**
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/detection-app.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## Detection App Setup: new entrance (summary + viewer + notification)
 
 ### When to use this
@@ -125,6 +127,7 @@ detection_summary_{bundle_key}_dev:
     If animals are present and clearly visible, increase frame_score appropriately.
   image_instructions: >
     Create a simple, clean illustration representing the scene at a {description} entrance.
+  debug_preserve_run_dirs: true
   ai_provider_conf:
     provider: openai
     api_key_env: OPENAPI_TOKEN
@@ -214,9 +217,13 @@ For `cover` entities (defaults match, so omit `door_open_state`/`door_closed_sta
 
 ---
 
-**Step 4 — Add dashboard view via MCP (1–2 MCP calls)**
+**Step 4 — Add dashboard view via MCP (MANDATORY — do not skip)**
 
-Get the current config and hash:
+> **Read [ha-dashboard-playbook.mdc](.cursor/playbooks/ha-dashboard-playbook.mdc) before executing this step.** It contains the full workflow, critical rules (especially about `config_hash`), and a tested example.
+
+The agent **must** populate the dashboard view using the Home Assistant MCP server (2 calls: 1 get + 1 set). Do **not** write Python scripts, helper files, or other workarounds.
+
+**Call 1 — Get dashboard config and hash:**
 
 ```json
 {
@@ -225,48 +232,30 @@ Get the current config and hash:
 }
 ```
 
-Then add the new view using `python_transform`. If the dashboard already has a placeholder view at the correct path, update that view by index (`config['views'][N]`). Otherwise, append:
+Save the **entire** `config_hash` string (all 16 hex characters). **Never truncate it.**
 
-```python
-# Example: appending a new view
-config['views'].append({
-    'title': '{Bundle Key} Detection Summary',
-    'path': '{bundle_key}',
-    'type': 'sections',
-    'max_columns': 1,
-    'dense_section_placement': True,
-    'icon': 'mdi:{view_icon}',
-    'sections': [{
-        'type': 'grid',
-        'cards': [
-            {
-                'type': 'custom:bubble-card',
-                'card_type': 'select',
-                'entity': 'input_select.{bundle_key}_detection_summary_run_id',
-                'name': '{Bundle Key} Monitoring - Navigation',
-                'show_name': True,
-                'rows': 1.719,
-                'icon': 'mdi:{view_icon}',
-                'sub_button': {
-                    'main': [],
-                    'bottom': [
-                        {'sub_button_type': 'button', 'icon': 'mdi:chevron-left', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_previous', 'target': {'entity_id': 'input_select.{bundle_key}_detection_summary_run_id'}, 'data': {'cycle': False}}},
-                        {'sub_button_type': 'button', 'icon': 'mdi:star-four-points', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_first', 'target': {'entity_id': 'input_select.{bundle_key}_detection_summary_run_id'}}},
-                        {'sub_button_type': 'button', 'icon': 'mdi:chevron-right', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_next', 'target': {'entity_id': 'input_select.{bundle_key}_detection_summary_run_id'}, 'data': {'cycle': False}}}
-                    ]
-                }
-            },
-            {'type': 'markdown', 'content': "{{ states('input_text.{bundle_key}_detection_summary_selected') }}"},
-            {'type': 'markdown', 'content': "<img src=\"/local/detection-summary/{bundle_key}/viewer/{{ states('input_select.{bundle_key}_detection_summary_run_id') }}_generated.png\" />"},
-            {'type': 'markdown', 'content': "<img src=\"/local/detection-summary/{bundle_key}/viewer/{{ states('input_select.{bundle_key}_detection_summary_run_id') }}_best.jpg\" style=\"width:100%;border-radius:12px;object-fit:cover;\" />"},
-            {'type': 'markdown', 'content': "_Detection: {{ states('input_text.{bundle_key}_detection_summary_timing') }}_\n\n_Cooldown: {{ states('input_text.{bundle_key}_detection_summary_cooldown') }}_\n\n_Selection updated: {{ states.input_text.{bundle_key}_detection_summary_selected.last_updated }}_"}
-        ]
-    }],
-    'cards': []
-})
+**Call 2 — Apply the view with python_transform:**
+
+Inspect `config.views` to find the target view by its `path` field. If a placeholder view exists at the correct path, update it by index. Otherwise, append a new view.
+
+Build a `python_transform` string following this template (substitute `{bk}`, `{bk_display}`, `{img_base}`, `{icon}`, and `{view_idx}`):
+
+```
+v = config['views'][{view_idx}]; v['title'] = '{bk_display} Detection Summary'; v['dense_section_placement'] = True; v['sections'] = [{'type': 'grid', 'cards': [{'type': 'custom:bubble-card', 'card_type': 'select', 'entity': 'input_select.{bk}_detection_summary_run_id', 'name': '{bk_display} - Navigation', 'show_name': True, 'rows': 1.719, 'sub_button': {'main': [], 'bottom': [{'sub_button_type': 'button', 'icon': 'mdi:chevron-left', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_previous', 'target': {'entity_id': 'input_select.{bk}_detection_summary_run_id'}, 'data': {'cycle': False}}}, {'sub_button_type': 'button', 'icon': 'mdi:star-four-points', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_first', 'target': {'entity_id': 'input_select.{bk}_detection_summary_run_id'}}}, {'sub_button_type': 'button', 'icon': 'mdi:chevron-right', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_next', 'target': {'entity_id': 'input_select.{bk}_detection_summary_run_id'}, 'data': {'cycle': False}}}]}, 'icon': '{icon}'}, {'type': 'markdown', 'content': "{{ states('input_text.{bk}_detection_summary_selected') }}"}, {'type': 'markdown', 'content': '<img src="/local/{img_base}/{{ states(\'input_select.{bk}_detection_summary_run_id\') }}_generated.png" />'}, {'type': 'markdown', 'content': '<img src="/local/{img_base}/{{ states(\'input_select.{bk}_detection_summary_run_id\') }}_best.jpg" style="width:100%;border-radius:12px;object-fit:cover;" />'}, {'type': 'markdown', 'content': "_Detection: {{ states('input_text.{bk}_detection_summary_timing') }}_\n\n_Cooldown: {{ states('input_text.{bk}_detection_summary_cooldown') }}_\n\n_Selection updated: {{ states.input_text.{bk}_detection_summary_selected.last_updated }}_"}]}]
 ```
 
-Pass `config_hash` from the get call for optimistic locking. Note that `{bundle_key}`, `{Bundle Key}`, and `{view_icon}` must be substituted before sending (e.g., `bulkhead`, `Bulkhead`, `mdi:door`).
+Substitution values:
+- `{view_idx}`: Index of the view in `config.views` (e.g. `1`)
+- `{bk}`: `bundle_key` in entity IDs (e.g. `front_door`, `garage`, `bulkhead`)
+- `{bk_display}`: Human-readable name (e.g. `Front Door`, `Garage`, `Bulkhead`)
+- `{img_base}`: Image path after `/local/` (e.g. `detection-summary/garage/viewer`, `detection-summary/doorbell/front-door/viewer`)
+- `{icon}`: MDI icon (e.g. `mdi:doorbell-video`, `mdi:garage-lock`, `mdi:door`)
+
+Pass the substituted transform string as `python_transform` with the **full** `config_hash` from Call 1.
+
+**If it fails with "conflict"**: Re-run Call 1 to get a fresh `config_hash` and retry Call 2. Do not loop more than 3 times — if it keeps failing, report the error to the user.
+
+**If HA MCP tools are unavailable**: Report to the user and instruct them to add the view manually via Settings > Dashboards > detection-summary > Edit, using `home-assistant/cards/detection-summary/{view_path}/view.yaml` as reference.
 
 ---
 
@@ -282,6 +271,34 @@ The viewer app calls `shell_command.ds_refresh_detection_summary_viewer_www` (pa
 ```
 
 If it is **not** present, instruct the user to add it to `configuration.yaml` and restart HA. The command definition is in [appdaemon/apps/detection_summary_viewer/README.md](appdaemon/apps/detection_summary_viewer/README.md#required-manual-steps). This is a one-time setup shared across all bundle keys.
+
+---
+
+### Self-provisioning (helpers + relay script)
+
+The `DetectionSummaryViewer` app self-provisions all required HA entities on startup using `HAProvisioner` (see [ha-provisioner-playbook.mdc](.cursor/playbooks/ha-provisioner-playbook.mdc) for the library reference). **No manual helper creation is needed.** The agent does not need to create helpers via MCP — the viewer app handles it.
+
+What gets provisioned automatically:
+
+| Entity | Purpose |
+|--------|---------|
+| `input_select.{bundle_key}_detection_summary_run_id` | Run picker (options populated by viewer) |
+| `input_text.{bundle_key}_detection_summary_selected` | Selected run's summary text (max 255 chars) |
+| `input_text.{bundle_key}_detection_summary_timing` | Detection period start/end/elapsed |
+| `input_text.{bundle_key}_detection_summary_cooldown` | Cooldown status and backoff info |
+| `script.{bundle_key}_detection_summary_relay` | Relay for non-admin dashboard users |
+
+The relay script is required because non-admin tablet/phone accounts cannot call `input_select.select_*` directly — they call the relay script via `callService`, which fires an event that AppDaemon handles. See [detection_summary_viewer/README.md](appdaemon/apps/detection_summary_viewer/README.md#self-provisioned-entities) for details.
+
+### Nested bundle paths (e.g. doorbell/front-door)
+
+When `snapshot_ha_dir` places files under a nested path (e.g. `/media/detection-summary/doorbell/front-door`), the image base path in the dashboard must include the full nesting:
+
+```
+/local/detection-summary/doorbell/front-door/viewer/{{ run_id }}_generated.png
+```
+
+The `{img_base}` substitution in Step 4 must match the path derived from `snapshot_ha_dir` + `viewer_www_subdir`. For the front-door doorbell: `detection-summary/doorbell/front-door/viewer`.
 
 ---
 
@@ -301,7 +318,7 @@ If it is **not** present, instruct the user to add it to `configuration.yaml` an
 
 ## Prod promotion
 
-After testing passes, add production entries to `appdaemon/apps/apps-prod.yaml` (omit `_dev` suffix, add `disable: true`):
+After testing passes, add production entries to `appdaemon/apps/apps-prod.yaml` (omit `_dev` suffix, add `disable: true`). **Remove `debug_preserve_run_dirs: true`** — it is dev-only and must not be in production configs (it prevents cleanup of old run directories).
 
 ```yaml
 detection_summary_{bundle_key}:
@@ -384,3 +401,4 @@ Verify at https://appdaemon.haynesops.com/ and check logs.
 | Notification URL doesn't navigate to correct view | `notification_url` not set in `door_notify` config | Add `notification_url: "/detection-summary/{bundle_key}"` |
 | Run picker not populating | Viewer app not running, or `detection_summary/run_published` event not fired | Check AppDaemon logs; ensure both `detection_summary_{bundle_key}` and `detection_viewer_{bundle_key}` instances are running |
 | `camera.{bundle_key}_detection_summary_selected_*` not updating | `hass_entities` block missing from viewer config | Add `selected_best_image_camera_entity_id` and `selected_generated_image_camera_entity_id` to `hass_entities` |
+| Dashboard view empty after MCP update | `config_hash` truncated or stale | Re-read [ha-dashboard-playbook.mdc](.cursor/playbooks/ha-dashboard-playbook.mdc). Use the **full** `config_hash` string (all 16 hex chars). If stale, re-fetch with `ha_config_get_dashboard`. |
