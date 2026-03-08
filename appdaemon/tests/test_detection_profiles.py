@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
 from detection_summary_app.profiles import (
     BUILTIN_PROFILES,
+    PROFILE_ANIMALS,
     PROFILE_DEFAULT,
     PROFILE_PACKAGES,
     PROFILE_VEHICLES,
@@ -82,6 +83,30 @@ class TestVehiclesProfile:
         assert "vehicles" in cat_names
 
 
+class TestAnimalsProfile:
+    def test_animals_profile_has_animals_required(self):
+        """Animals profile requires animals for publish, people are context only."""
+        p = PROFILE_ANIMALS
+        animals_cat = next(c for c in p.categories if c.name == "animals")
+        assert animals_cat.required_for_publish is True
+        assert "animal_count" in animals_cat.count_signals
+
+    def test_animals_profile_people_not_required(self):
+        """People category is NOT required for publish in animals profile."""
+        people_cat = next(c for c in PROFILE_ANIMALS.categories if c.name == "people")
+        assert people_cat.required_for_publish is False
+
+    def test_animals_profile_no_extra_score_fields(self):
+        """Animals profile uses only the 8 default score fields (no extras)."""
+        assert len(PROFILE_ANIMALS.score_fields) == 8
+        assert PROFILE_ANIMALS.score_fields == DEFAULT_SCORE_FIELDS
+
+    def test_load_profile_by_name_animals(self):
+        p = load_profile_by_name("animals")
+        assert p.name == "animals"
+        assert p is PROFILE_ANIMALS
+
+
 class TestProfileLoading:
     def test_load_profile_by_name_default(self):
         p = load_profile_by_name("default")
@@ -145,8 +170,9 @@ class TestProfileLoading:
         assert "package_count" in field_keys
         assert p.consensus_strategy == "median"
 
-    def test_builtin_profiles_has_three(self):
-        assert len(BUILTIN_PROFILES) >= 3
+    def test_builtin_profiles_count(self):
+        assert len(BUILTIN_PROFILES) >= 4
         assert "default" in BUILTIN_PROFILES
         assert "packages" in BUILTIN_PROFILES
         assert "vehicles" in BUILTIN_PROFILES
+        assert "animals" in BUILTIN_PROFILES
