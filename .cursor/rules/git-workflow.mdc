@@ -68,15 +68,17 @@ Keep under 70 characters. Use the commit prefix convention: `appdaemon: <descrip
 
 ### What triggers CI
 
-| Workflow | Trigger | Gate |
-|----------|---------|------|
-| Unit Tests | PR or push to `main` (appdaemon/** changed) | Required to pass |
-| Docs Build | PR (docs/**, mkdocs.yml changed) | Required to pass |
-| Agent Docs Audit | PR (appdaemon/** changed) | Advisory (Claude review comment) |
-| Docs Site Audit | PR (appdaemon/**, home-assistant/**, docs/** changed) | Advisory (Claude review comment) |
-| Code Review | PR opened/updated | Advisory (Claude review comment) |
-| CI Auto-Fix | Unit Tests workflow fails on PR | Auto-creates fix commit |
-| Deploy Docs | Push to `main` (docs/**, mkdocs.yml changed) | Deploys to GitHub Pages |
+All workflows trigger on every PR but skip expensive work when irrelevant files aren't changed. This ensures required checks always report a status to GitHub.
+
+| Workflow | Runs on | Skips if no changes to | Gate |
+|----------|---------|----------------------|------|
+| Unit Tests | Every PR + push to `main` | `appdaemon/` | Required to pass |
+| Docs Build | Every PR | `docs/`, `mkdocs.yml` | Required to pass |
+| Agent Docs Audit | Every PR | `appdaemon/` | Required to pass |
+| Docs Site Audit | Every PR | `appdaemon/`, `home-assistant/`, `docs/` | Required to pass |
+| Code Review | PR opened/reopened (not every push) | — | Required to pass |
+| CI Auto-Fix | Unit Tests workflow fails on PR | — | Auto-creates fix commit |
+| Deploy Docs | Push to `main` | `docs/`, `mkdocs.yml` | Deploys to GitHub Pages |
 
 ## Commit conventions
 
