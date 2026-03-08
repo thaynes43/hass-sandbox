@@ -35,7 +35,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
             Review the PR diff and check documentation consistency. Focus on:
 
             1. **README coverage**: If a new app or provider was added under `appdaemon/apps/` or
@@ -56,7 +61,8 @@ jobs:
             5. **YAML configs**: If a new app was added, verify entries exist in both
                `appdaemon/apps/apps-dev.yaml` and `appdaemon/apps/apps-prod.yaml`.
 
-            Post a review comment summarizing findings. If everything is in sync, post a
-            brief approval comment. If issues are found, list them as actionable items.
+            Post your findings as a PR comment using `gh pr comment`.
+            If everything is in sync, post a brief approval comment.
+            If issues are found, list them as actionable items.
 
             Only review files changed in this PR — do not audit the entire codebase.
