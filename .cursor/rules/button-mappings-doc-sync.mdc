@@ -2,12 +2,12 @@
 globs:
   - home-assistant/automations/switch-buttons/**
   - home-assistant/blueprints/**
-  - docs/button-mappings.md
+  - agent-docs/button-mappings.md
 alwaysApply: false
 ---
 # Button mappings doc sync (required)
 
-Whenever you change **button behavior** for any smart switch / scene controller, you MUST update `docs/button-mappings.md` in the same session.
+Whenever you change **button behavior** for any smart switch / scene controller, you MUST update `agent-docs/button-mappings.md` in the same session.
 
 This includes changes in (but not limited to):
 
@@ -30,7 +30,7 @@ This includes changes in (but not limited to):
 
 ## Why this rule exists
 
-`docs/button-mappings.md` is both:
+`agent-docs/button-mappings.md` is both:
 
 - the **requirements doc** for future work, and
 - the canonical **family-facing reference** for what buttons do.

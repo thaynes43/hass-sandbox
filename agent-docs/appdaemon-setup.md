@@ -61,7 +61,7 @@ python appdaemon/deploy.py --dry-run
 python -m pytest appdaemon/tests -v
 ```
 
-See `docs/appdaemon-testing.md` for mocking HA calls and testing patterns.
+See `agent-docs/appdaemon-testing.md` for mocking HA calls and testing patterns.
 
 ## References
 

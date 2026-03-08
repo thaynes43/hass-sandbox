@@ -34,6 +34,9 @@ dist/
 coverage.xml
 htmlcov/
 
+# MkDocs build output
+site/
+
 # Type checking / tooling caches
 .mypy_cache/
 .ruff_cache/

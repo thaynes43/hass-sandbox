@@ -70,7 +70,7 @@ Also check relevant playbooks listed in CLAUDE.md before starting implementation
 - Update or create README files for new/modified apps
 - Document configuration options, required HA entities (manual ones), and expected behavior
 - Update `apps-prod.yaml` and `apps-dev.yaml` entries as needed
-- If changing button behavior in `home-assistant/automations/switch-buttons/`, update `docs/button-mappings.md`
+- If changing button behavior in `home-assistant/automations/switch-buttons/`, update `agent-docs/button-mappings.md`
 
 ### 6. Custom Lovelace Cards (when applicable)
 - Extend `HTMLElement`, use `attachShadow({ mode: "open" })`

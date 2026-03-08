@@ -1,13 +1,11 @@
-name: Documentation Audit
+name: Agent Docs Audit
 
 on:
   pull_request:
     types: [opened, synchronize, ready_for_review, reopened]
-    paths:
-      - "appdaemon/**"
 
 jobs:
-  doc-audit:
+  agent-docs-audit:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,7 +19,19 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check for appdaemon changes
+        id: changes
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- appdaemon/)
+          if [ -n "$CHANGED" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "No appdaemon changes detected, skipping audit"
+          fi
+
       - name: Audit documentation with Claude
+        if: steps.changes.outputs.should_run == 'true'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

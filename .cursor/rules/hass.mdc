@@ -75,7 +75,7 @@ Some domain knowledge will be difficult to pick up from the files in this repo a
 - They share a **`/media` NFS mount** for passing files between them. AppDaemon maps this via `media_fs_root` config.
 - **`/config/www/`** is HA's local served directory. AppDaemon **cannot** access it directly. To operate on files there, AppDaemon must call HA `shell_command` services (which execute inside the HA container).
 - `/config/www/` should remain lightweight -- if you need to store many or large files, stage them in `/media/` and copy only what the dashboard needs to display into `/config/www/` via a `shell_command`.
-- **Known exception / tech debt**: `/config/www/immich-album/` is a single-folder NFS mount shared between the `hass-immich-addon` pod and HA's pod. This predates the `/media` convention and should eventually be migrated so the Immich addon writes to `/media/` instead. See `docs/image-view-roadmap.md` for the migration note.
+- **Known exception / tech debt**: `/config/www/immich-album/` is a single-folder NFS mount shared between the `hass-immich-addon` pod and HA's pod. This predates the `/media` convention and should eventually be migrated so the Immich addon writes to `/media/` instead. See `agent-docs/image-view-roadmap.md` for the migration note.
 
 ### Inovelli hold LED colors are state
 
