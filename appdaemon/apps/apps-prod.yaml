@@ -140,6 +140,8 @@ bulkhead_door_notify:
     - notify.mobile_app_kellies_iphone_air
   doors:
     - binary_sensor.usl_entry_contact
+  door_names:
+    binary_sensor.usl_entry_contact: "Bulkhead Door"
   door_open_state: "on"
   door_closed_state: "off"
   ai_enabled: true
