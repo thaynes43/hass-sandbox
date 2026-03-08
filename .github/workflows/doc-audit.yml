@@ -1,0 +1,52 @@
+name: Documentation Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    paths:
+      - "appdaemon/**"
+
+jobs:
+  doc-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Audit documentation with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review the PR diff and check documentation consistency. Focus on:
+
+            1. **README coverage**: If a new app or provider was added under `appdaemon/apps/` or
+               `appdaemon/providers/`, verify it has a README.md following the requirements in
+               `.cursor/rules/appdaemon-documentation.mdc`.
+
+            2. **Documentation map**: If a new app/provider was added, check that
+               `.cursor/rules/appdaemon-documentation.mdc` was updated with the new entry
+               in the documentation map table.
+
+            3. **Config sync**: If app behavior changed (new config keys, removed keys, changed
+               defaults), verify the app's README.md config reference table matches.
+
+            4. **Dependency graph**: If app dependencies changed (new imports, new event
+               listeners/publishers), verify the dependency graph in
+               `.cursor/rules/appdaemon-documentation.mdc` was updated.
+
+            5. **YAML configs**: If a new app was added, verify entries exist in both
+               `appdaemon/apps/apps-dev.yaml` and `appdaemon/apps/apps-prod.yaml`.
+
+            Post a review comment summarizing findings. If everything is in sync, post a
+            brief approval comment. If issues are found, list them as actionable items.
+
+            Only review files changed in this PR — do not audit the entire codebase.

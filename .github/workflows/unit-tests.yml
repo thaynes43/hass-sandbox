@@ -1,0 +1,41 @@
+name: Unit Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "appdaemon/**"
+      - ".github/workflows/unit-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "appdaemon/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: appdaemon/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r appdaemon/requirements.txt
+
+      - name: Run unit tests
+        working-directory: appdaemon
+        run: python -m pytest tests/ -v --tb=short --junitxml=../test-results.xml
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml

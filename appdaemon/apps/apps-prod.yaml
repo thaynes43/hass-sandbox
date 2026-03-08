@@ -3,7 +3,7 @@
 # Promote dev apps with: python appdaemon/deploy.py --merge-dev-apps
 
 garage_door_notify:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   disable: true
   notify_services:
@@ -132,7 +132,7 @@ detection_viewer_bulkhead:
   notification_action_prefix: "BULKHEAD_DS_VIEW"
 
 bulkhead_door_notify:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   disable: true
   notify_services:

@@ -1,11 +1,13 @@
 # AppDaemon rules
 
 When working in `appdaemon/`, read these for full detail:
-- `.cursor/rules/appdaemon-architecture.mdc` — folder structure, self-provisioning, relay script pattern, new app checklist
+- `.cursor/rules/appdaemon-architecture.mdc` — system overview, folder structure, self-provisioning, relay script pattern, new app checklist
 - `.cursor/rules/appdaemon-coding-guidelines.mdc` — apps vs shared libs, AI offloading, dev/prod naming
-- `.cursor/rules/appdaemon-dev-environment.mdc` — venvs, test commands, WSL vs PowerShell
+- `.cursor/rules/appdaemon-dev-environment.mdc` — venvs, test commands, cross-platform (Linux/WSL/Windows)
+- `.cursor/rules/appdaemon-documentation.mdc` — README requirements, documentation map, app dependency graph
 - `.cursor/rules/ai-provider-archetecture-guidelines.mdc` — capability bundles, model settings, prompt policy layering
 - `.cursor/rules/security-policy.mdc` — always applies; see also `.claude/rules/security.md`
+- `.cursor/rules/git-workflow.mdc` — branching, PRs, CI gates, commit conventions
 
 ## Key decisions to know before coding
 

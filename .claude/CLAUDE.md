@@ -15,16 +15,21 @@ A Home Assistant YAML sandbox + AppDaemon Python apps. HA YAML (automations, scr
 
 ## Commands
 
-### Running tests (prefer WSL)
+### Running tests
 
 ```bash
-# From repo root in WSL
-wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"
+# Linux (primary) — from repo root
+source .venv/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short
 ```
 
 Run a single test file:
 ```bash
-wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/test_door_notify.py -v --tb=short"
+source .venv/bin/activate && cd appdaemon && python -m pytest tests/test_door_notify.py -v --tb=short
+```
+
+Windows with WSL (from PowerShell):
+```bash
+wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"
 ```
 
 Windows fallback (from repo root, no WSL):
@@ -80,9 +85,9 @@ appdaemon/
 │   ├── apps-dev.yaml    # Dev-only apps (keys must end in _dev); never deployed
 │   ├── detection_summary_app/
 │   ├── detection_summary_viewer/
+│   ├── door_notify/
 │   ├── immich_fetcher/
-│   ├── photo_frame_viewer/
-│   └── door_notify.py
+│   └── photo_frame_viewer/
 └── providers/           # Shared libraries (not AppDaemon apps)
     ├── ai_providers/    # LLM/image provider adapters (OpenAI, Gemini, Ollama, ComfyUI)
     ├── ha_provisioner/  # HA entity provisioning via REST API
