@@ -41,7 +41,9 @@ All work must go through a feature branch and pull request. Never commit directl
 
 4. **PR must pass** before merge:
    - Unit tests (`.github/workflows/unit-tests.yml`)
-   - Documentation audit (`.github/workflows/doc-audit.yml`)
+   - Docs build (`.github/workflows/docs-build.yml`) — if docs/** changed
+   - Agent docs audit (`.github/workflows/agent-docs-audit.yml`)
+   - Docs site audit (`.github/workflows/docs-site-audit.yml`)
    - Code review (`.github/workflows/claude-code-review.yml`)
 
 5. **After merge to main**, deploy if ready:
@@ -69,9 +71,12 @@ Keep under 70 characters. Use the commit prefix convention: `appdaemon: <descrip
 | Workflow | Trigger | Gate |
 |----------|---------|------|
 | Unit Tests | PR or push to `main` (appdaemon/** changed) | Required to pass |
-| Doc Audit | PR (appdaemon/** changed) | Advisory (Claude review comment) |
+| Docs Build | PR (docs/**, mkdocs.yml changed) | Required to pass |
+| Agent Docs Audit | PR (appdaemon/** changed) | Advisory (Claude review comment) |
+| Docs Site Audit | PR (appdaemon/**, home-assistant/**, docs/** changed) | Advisory (Claude review comment) |
 | Code Review | PR opened/updated | Advisory (Claude review comment) |
 | CI Auto-Fix | Unit Tests workflow fails on PR | Auto-creates fix commit |
+| Deploy Docs | Push to `main` (docs/**, mkdocs.yml changed) | Deploys to GitHub Pages |
 
 ## Commit conventions
 

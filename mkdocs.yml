@@ -41,9 +41,12 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Features:
+      - GenAI Camera Notifications: features/camera-notifications.md
+      - Occupancy-Based Lighting: features/occupancy-lighting.md
+      - Immich Photo Frame: features/photo-frame.md
   - Architecture:
       - Overview: architecture/overview.md
-  - AppDaemon Apps:
-      - Overview: apps/index.md
+      - AppDaemon Apps: apps/index.md
   - Setup:
       - Getting Started: setup/getting-started.md

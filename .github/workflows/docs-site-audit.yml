@@ -1,0 +1,57 @@
+name: Docs Site Audit
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+    paths:
+      - "appdaemon/**"
+      - "home-assistant/**"
+      - "docs/**"
+      - "mkdocs.yml"
+
+jobs:
+  docs-site-audit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Audit docs site with Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            Review the PR diff and check if the mkdocs documentation site (docs/) needs updating.
+            Focus on:
+
+            1. **Feature pages**: If AppDaemon app behavior changed significantly (new features,
+               renamed apps, changed architecture), check if the relevant feature page in
+               `docs/features/` should be updated.
+
+            2. **Architecture page**: If the system architecture changed (new apps, new providers,
+               changed data flows), check if `docs/architecture/overview.md` needs updates.
+
+            3. **Navigation**: If new docs pages were added to `docs/`, verify they are included
+               in the `nav:` section of `mkdocs.yml`.
+
+            4. **Broken links**: Check for any internal links in `docs/` that point to
+               non-existent pages or moved files.
+
+            5. **Image references**: If images were added, moved, or deleted, verify that
+               `docs/` pages referencing them are updated.
+
+            This audit covers the human-facing documentation site only (docs/ + mkdocs.yml),
+            not the agent-facing docs (agent-docs/) which are covered by a separate workflow.
+
+            Post a review comment summarizing findings. If everything is in sync, post a
+            brief approval comment. If issues are found, list them as actionable items.
+
+            Only review files changed in this PR — do not audit the entire codebase.

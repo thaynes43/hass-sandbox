@@ -1,4 +1,4 @@
-name: Documentation Audit
+name: Agent Docs Audit
 
 on:
   pull_request:
