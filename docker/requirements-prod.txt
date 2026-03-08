@@ -1,0 +1,3 @@
+# Runtime dependencies not included in the base acockburn/appdaemon image.
+# Dev-only packages (pytest, ruamel.yaml, coverage) are excluded.
+python-dotenv>=1.0
