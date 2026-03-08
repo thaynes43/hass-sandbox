@@ -2,7 +2,7 @@
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
 
 garage_door_notify_dev:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   notify_services:
     - notify.mobile_app_toms_iphone_15_pro
@@ -78,7 +78,7 @@ detection_viewer_garage_dev:
   notification_action_prefix: "GARAGE_DS_VIEW"
 
 bulkhead_door_notify_dev:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   notify_services:
     - notify.mobile_app_toms_iphone_air
@@ -162,7 +162,7 @@ detection_viewer_bulkhead_dev:
   notification_action_prefix: "BULKHEAD_DS_VIEW"
 
 front_door_door_notify_dev:
-  module: door_notify
+  module: door_notify.door_notify
   class: DoorNotify
   doors:
     - binary_sensor.usl_entry_contact_3

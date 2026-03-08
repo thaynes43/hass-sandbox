@@ -30,7 +30,7 @@ _APPS_DIR = Path(__file__).resolve().parents[1] / "apps"
 if str(_APPS_DIR) not in sys.path:
     sys.path.insert(0, str(_APPS_DIR))
 
-from door_notify import DoorNotify  # noqa: E402
+from door_notify.door_notify import DoorNotify  # noqa: E402
 
 
 class _FakeStore:
@@ -212,7 +212,7 @@ class TestDoorNotifyCovers:
         app._pending = {}
         app.run_in = MagicMock(return_value="handle_123")
 
-        with patch("door_notify.time.time", side_effect=[1000.0, 1000.0]):
+        with patch("door_notify.door_notify.time.time", side_effect=[1000.0, 1000.0]):
             app._on_door_state("cover.door", None, "closed", "open", {})
 
         # Simulate delay expiry: call the callback (AppDaemon passes kwargs dict)
@@ -232,7 +232,7 @@ class TestDoorNotifyCovers:
             "generated_image": {"image_url": "/api/camera_proxy/camera.gen"},
         }
         store = _FakeStore(bundle=None, wait_bundle=bundle)
-        monkeypatch.setattr(sys.modules["door_notify"], "DETECTION_SUMMARY_STORE", store)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
 
         app = self._make_app(
             {"ai_enabled": True, "ai_bundle_key": "garage", "ai_wait_timeout_s": 5, "ai_max_bundle_age_s": 120}
@@ -269,7 +269,7 @@ class TestDoorNotifyCovers:
             "ai_run_id": None,
             "ai_run_started_ts": None,
         }
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: 120.0)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: 120.0)
 
         # Simulate run_started arriving during consolidation window
         app._on_detection_summary_run_started(
@@ -286,7 +286,7 @@ class TestDoorNotifyCovers:
             "generated_image": {"image_url": "/api/camera_proxy/camera.gen"},
         }
         store = _FakeStore(bundle=None, wait_bundle=bundle)
-        monkeypatch.setattr(sys.modules["door_notify"], "DETECTION_SUMMARY_STORE", store)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
 
         app = self._make_app(
             {
@@ -300,7 +300,7 @@ class TestDoorNotifyCovers:
         )
         # Simulate that we observed a recent run_started event.
         app._latest_run_started = {"garage": {"run_id": "r99", "started_ts": 105.0}}
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: 110.0)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: 110.0)
 
         got = app._get_detection_summary(10, 20)
         assert got is not None
@@ -311,7 +311,7 @@ class TestDoorNotifyCovers:
 
     def test_on_delay_expired_schedules_async_send_with_ai(self, monkeypatch):
         # Force thread to run inline for determinism
-        monkeypatch.setattr(sys.modules["door_notify"].threading, "Thread", _ImmediateThread)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
 
         bundle = {
             "run_id": "r2",
@@ -319,7 +319,7 @@ class TestDoorNotifyCovers:
             "generated_image": {"image_url": "/api/camera_proxy/camera.gen"},
         }
         store = _FakeStore(bundle=bundle)
-        monkeypatch.setattr(sys.modules["door_notify"], "DETECTION_SUMMARY_STORE", store)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
 
         app = self._make_app(
             {
@@ -348,7 +348,7 @@ class TestDoorNotifyCovers:
             return "h"
 
         app.run_in.side_effect = run_in_side_effect
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: 110.0)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: 110.0)
 
         app._on_delay_expired({"entity_id": entity_id})
         assert app._send_notifications.call_count == 1
@@ -356,16 +356,16 @@ class TestDoorNotifyCovers:
         assert kwargs["image_web_path"] == "/api/camera_proxy/camera.gen"
 
     def test_consolidated_transition_cancels_timer_and_schedules_send(self, monkeypatch):
-        monkeypatch.setattr(sys.modules["door_notify"].threading, "Thread", _ImmediateThread)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
         store = _FakeStore(bundle=None)
-        monkeypatch.setattr(sys.modules["door_notify"], "DETECTION_SUMMARY_STORE", store)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
 
         app = self._make_app({"ai_enabled": False, "consolidation_delay": 300})
         app._send_notifications = MagicMock()
 
         entity_id = "cover.ratgdov25i_x_door"
         t = SimpleNamespace(now=1000.0)
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: t.now)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: t.now)
 
         # First transition schedules delayed notification
         app._on_door_state(entity_id, "state", "closed", "open", {})
@@ -466,7 +466,7 @@ class TestDoorNotifyBinarySensor:
         app._pending = {}
         app.run_in = MagicMock(return_value="handle_123")
 
-        with patch("door_notify.time.time", side_effect=[1000.0, 1000.0]):
+        with patch("door_notify.door_notify.time.time", side_effect=[1000.0, 1000.0]):
             app._on_door_state("binary_sensor.usl_entry_contact", None, "off", "on", {})
 
         cb = app.run_in.call_args[0][0]
@@ -480,16 +480,16 @@ class TestDoorNotifyBinarySensor:
 
     def test_binary_sensor_consolidation_rapid_open_close(self, monkeypatch):
         """Rapid on->off consolidates into single notification."""
-        monkeypatch.setattr(sys.modules["door_notify"].threading, "Thread", _ImmediateThread)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
         store = _FakeStore(bundle=None)
-        monkeypatch.setattr(sys.modules["door_notify"], "DETECTION_SUMMARY_STORE", store)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
 
         app = self._make_app({"ai_enabled": False, "consolidation_delay": 300})
         app._send_notifications = MagicMock()
 
         entity_id = "binary_sensor.usl_entry_contact"
         t = SimpleNamespace(now=1000.0)
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: t.now)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: t.now)
 
         # First: off -> on (door opened)
         app._on_door_state(entity_id, "state", "off", "on", {})
@@ -515,7 +515,7 @@ class TestDoorNotifyBinarySensor:
 
     def test_binary_sensor_ai_enrichment(self, monkeypatch):
         """AI enrichment attaches generated image when bundle available for bulkhead."""
-        monkeypatch.setattr(sys.modules["door_notify"].threading, "Thread", _ImmediateThread)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
 
         bundle = {
             "run_id": "r-bulkhead-1",
@@ -523,7 +523,7 @@ class TestDoorNotifyBinarySensor:
             "generated_image": {"image_url": "/api/camera_proxy/camera.bulkhead_gen"},
         }
         store = _FakeStore(bundle=bundle)
-        monkeypatch.setattr(sys.modules["door_notify"], "DETECTION_SUMMARY_STORE", store)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
 
         app = self._make_app(
             {
@@ -551,7 +551,7 @@ class TestDoorNotifyBinarySensor:
             return "h"
 
         app.run_in.side_effect = run_in_side_effect
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: 110.0)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: 110.0)
 
         app._on_delay_expired({"entity_id": entity_id})
 
@@ -579,7 +579,7 @@ class TestDoorNotifyBinarySensor:
             "ai_run_id": None,
             "ai_run_started_ts": None,
         }
-        monkeypatch.setattr(sys.modules["door_notify"].time, "time", lambda: 120.0)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: 120.0)
 
         app._on_detection_summary_run_started(
             "detection_summary/run_started",
