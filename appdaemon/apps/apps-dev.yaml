@@ -161,6 +161,19 @@ detection_viewer_bulkhead_dev:
     selected_generated_image_camera_entity_id: camera.bulkhead_detection_summary_selected_generated
   notification_action_prefix: "BULKHEAD_DS_VIEW"
 
+front_door_door_notify_dev:
+  module: door_notify
+  class: DoorNotify
+  doors:
+    - binary_sensor.usl_entry_contact_3
+  door_open_state: "on"
+  door_closed_state: "off"
+  ai_enabled: true
+  ai_bundle_key: front_door
+  ai_wait_timeout_s: 180
+  ai_max_bundle_age_s: 900
+  notification_url: "/detection-summary/front-door"
+
 detection_summary_front_door_dev:
   module: detection_summary_app.manager
   class: DetectionSummary

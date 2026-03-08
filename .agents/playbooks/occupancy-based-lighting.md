@@ -1,13 +1,4 @@
----
-globs:
-  - home-assistant/automations/occupancy-based-lighting/**
-  - home-assistant/automations/switch-buttons/**
-  - home-assistant/cards/**
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/occupancy-based-lighting.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
-## Occupancy-based lighting: add or update a zone
+# Occupancy-based lighting: add or update a zone
 
 ### When to use this
 
@@ -40,11 +31,8 @@ This applies everywhere: cards, switch-button automations, and entity-defined ho
   - manual hold toggle (switch button mapping)
   - auto-hold integration (global hold/clear scripts)
 - **Extra sensors**: additional occupancy sensors that influence lights but do **not** own holds/mmWave mode.
-  - A second Inovelli used only for `binary_sensor.*_occupancy` should **not** be added to hold/clear registries if it doesn't control the load.
 
 **Step 2 — Create helpers via MCP (3 calls)**
-
-See [Known-good examples: helpers](#known-good-examples-helpers) below.
 
 - `input_select.<zone>_mmwave_normal_mode` — options must match `select.<switch_name>_mmwavecontrolwireddevice`. Default: **`Disabled`** if zone automations own the load.
 - `input_select.<zone>_occupancy_off_delay` — stores `HH:MM:SS` strings. Recommended default: `00:02:00`.
@@ -72,9 +60,7 @@ Create under `automations/occupancy-based-lighting/`:
     3. Re-check sensors are still `off`
     4. Re-check hold guard again
     5. `light.turn_off`
-  - `mode: restart` (equivalent to trigger `for:` semantics)
-
-See [Known-good example: motion-cleared automation](#known-good-example-motion-cleared-automation) below.
+  - `mode: restart`
 
 **Step 5 — Wire manual hold (switch button mapping) (1 call)**
 
@@ -102,8 +88,6 @@ Update **for the control switch only**:
 Both need: `switch_name`, `helper: input_text.<zone>_led_color`, `automation_entity_ids`.
 Clear script also needs: `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode`.
 
-> **Important:** entity-defined scripts store per-zone data in arrays. Only edit the entry where `switch_name` matches the zone you are changing.
-
 **Step 7 — Create cards (repo only; place manually in HA)**
 
 Create `cards/<area>/<zone>/` with:
@@ -111,67 +95,18 @@ Create `cards/<area>/<zone>/` with:
 - `*-history.yaml`
 - `*-advanced.yaml`
 
-Use `cards/rumpus-room/` and `cards/concessions/` as reference "new format" templates. Place on dashboard manually in HA for layout/visual confirmation.
+Use `cards/rumpus-room/` and `cards/concessions/` as reference "new format" templates.
 
 ---
 
 ### MCP call sequence (token-efficient)
 
-Minimize round-trips. Recommended order:
-
-1. **Verify exact entity IDs** (1 call — batch):
-   - Occupancy sensors (`binary_sensor.*`)
-   - Target light/group (`light.*`)
-   - Control switch mmWave select (`select.<switch_name>_mmwavecontrolwireddevice`)
-
-   ```json
-   {
-     "tool": "ha_search_entities",
-     "arguments": {
-       "query": "<zone keyword>",
-       "domain_filter": "binary_sensor",
-       "limit": 10
-     }
-   }
-   ```
-
-2. **Get mmWave normal-mode options** from the device (1 call):
-
-   ```json
-   {
-     "tool": "ha_get_state",
-     "arguments": {
-       "entity_id": "select.<switch_name>_mmwavecontrolwireddevice"
-     }
-   }
-   ```
-
-   The `attributes.options` list is what you use for the `input_select` options.
-
-3. **Create the 3 helpers** (3 calls — see known-good examples below).
-
-4. **Update sync automation + create zone automations** (3 calls).
-
-5. **Wire manual hold + register auto-hold** (3 calls).
-
-6. **One verification pass** after all creates (1 call — batch):
-
-   ```json
-   {
-     "tool": "ha_get_states",
-     "arguments": {
-       "entity_ids": [
-         "input_select.<zone>_mmwave_normal_mode",
-         "input_select.<zone>_occupancy_off_delay",
-         "input_text.<zone>_led_color"
-       ]
-     }
-   }
-   ```
-
-**Token-saving tips:**
-- Keep a short "zone variable list" per zone: `zone_slug`, `switch_name`, `light_target`, `occupancy_sensors[]`, helper entity_ids.
-- Copy a known-good config and adapt — reduces schema mistakes and verification calls.
+1. **Verify exact entity IDs** (1 call — batch): occupancy sensors, target light/group, control switch mmWave select
+2. **Get mmWave normal-mode options** from the device (1 call): `ha_get_state` on `select.<switch_name>_mmwavecontrolwireddevice` — `attributes.options` is what you use for the `input_select` options
+3. **Create the 3 helpers** (3 calls)
+4. **Update sync automation + create zone automations** (3 calls)
+5. **Wire manual hold + register auto-hold** (3 calls)
+6. **One verification pass** (1 call — batch all new helper entity_ids)
 
 ---
 
@@ -186,15 +121,7 @@ Minimize round-trips. Recommended order:
     "helper_type": "input_select",
     "name": "Basement Server Room mmWave Normal Mode",
     "icon": "mdi:motion-sensor",
-    "options": [
-      "Disabled",
-      "Occupancy (default)",
-      "Vacancy",
-      "Wasteful Occupancy",
-      "Mirrored Occupancy",
-      "Mirrored Vacancy",
-      "Mirrored Wasteful Occupancy"
-    ],
+    "options": ["Disabled", "Occupancy (default)", "Vacancy", "Wasteful Occupancy", "Mirrored Occupancy", "Mirrored Vacancy", "Mirrored Wasteful Occupancy"],
     "initial": "Disabled"
   }
 }
@@ -209,16 +136,7 @@ Minimize round-trips. Recommended order:
     "helper_type": "input_select",
     "name": "Basement Server Room Occupancy Off Delay",
     "icon": "mdi:timer-outline",
-    "options": [
-      "00:00:00",
-      "00:00:15",
-      "00:00:30",
-      "00:01:00",
-      "00:02:00",
-      "00:05:00",
-      "00:15:00",
-      "00:30:00"
-    ],
+    "options": ["00:00:00", "00:00:15", "00:00:30", "00:01:00", "00:02:00", "00:05:00", "00:15:00", "00:30:00"],
     "initial": "00:02:00"
   }
 }
@@ -280,20 +198,18 @@ mode: restart
 | Lights turn off immediately despite hold | Hold guard only checked before delay, not after | Add second hold check after the `delay:` action |
 | Occupancy off delay not respected | Using `for:` on trigger instead of action `delay:` | Remove trigger `for:`, use action `delay:` reading from the helper |
 | Only control switch in hold registry | Extra sensors (non-control) added to hold/clear scripts | Only add the single control switch to hold/clear registries |
-| Sync automation doesn't fire on helper change | Zone not added to `inovelli_mmwave_normal_mode_sync_input_select.yaml` | Add trigger for `input_select.<zone>_mmwave_normal_mode` |
-| 4 sub-buttons in a single group row look cramped | All sensors in one `group:` | Split into groups of 2–3 (e.g. "Inovelli State" + "Other Sensors") |
 
 ---
 
 ### After creating (don't forget)
 
-- [ ] Helpers exist in HA and states are correct (`ha_get_states` verify pass)
+- [ ] Helpers exist in HA and states are correct
 - [ ] `inovelli_mmwave_normal_mode_sync_input_select.yaml` includes the new zone
 - [ ] Both zone automations are enabled in HA
-- [ ] Switch-button automation for the control switch references `normal_mode_input_select` (not `normal_mode`)
+- [ ] Switch-button automation references `normal_mode_input_select` (not `normal_mode`)
 - [ ] Control switch is registered in both global hold and clear scripts
 - [ ] Cards created in `cards/<area>/<zone>/` and placed on dashboard
-- [ ] No `normal_mode:` (hardcoded) references remain for this zone — search `normal_mode:` in scope
+- [ ] No `normal_mode:` (hardcoded) references remain for this zone
 
 ---
 
@@ -303,87 +219,25 @@ Holds temporarily disable occupancy control and indicate state via **reserved LE
 
 ### Hold types
 
-- **Manual hold** — triggered by physical switch action (`automations/switch-buttons/*`), identified by the LED color stored in `input_text.inovelli_manual_hold`
-- **Auto/automation hold** (e.g. cleaners-mode) — triggered by automations/scripts, identified by `input_text.inovelli_auto_hold`
+- **Manual hold** — triggered by physical switch action, identified by LED color stored in `input_text.inovelli_manual_hold`
+- **Auto/automation hold** — triggered by automations/scripts, identified by `input_text.inovelli_auto_hold`
 
 ### Hold rules (must follow)
 
-- **Reserved colors are state**: any LED bar color used to indicate "hold" is reserved for that purpose only — do not reuse for other notifications.
-- **Manual vs automation holds must differ**: they use different `input_text` helpers (and therefore different LED colors) so they can be distinguished.
+- **Reserved colors are state**: any LED bar color used to indicate "hold" is reserved for that purpose only.
+- **Manual vs automation holds must differ**: they use different `input_text` helpers (different LED colors) so they can be distinguished.
 - **Clearing behavior**: automations clearing holds must only clear holds matching the **automation hold** color, so manual holds are preserved.
 
-### Manual hold: physical switch → script call
-
-Location: `automations/switch-buttons/*.yaml`
-
-Maps switch button events to script calls:
-
-- `script.inovelli_toggle_mmwave_hold_led_indicator` (common for manual hold toggle)
-
-### Auto hold: scripts + automations
-
-- Generic scripts: `scripts/inovelli/generic/`
-- Zone/group definitions: `scripts/inovelli/entities-defined/`
-
-These work by:
-1. Disabling the zone's occupancy automations
-2. Setting the Inovelli mmWave control to `Disabled`
-3. Setting LED colors to a reserved "hold" color
-4. Later clearing: restoring mmWave mode from `normal_mode_input_select` + restoring LED state
-
 ---
 
-## Reference: cards (Bubble Card)
+## Reference: Inovelli entity naming
 
-Cards are stored in `cards/<area>/<zone>/` as YAML snippets. Use `cards/rumpus-room/` and `cards/concessions/` as canonical reference patterns.
+For Inovelli "presence dimmer" devices, entity IDs are consistent across zones. Pick a known-good zone and **substitute the switch name** everywhere.
 
-### Standard UI pattern: 1 button + 2 popups
-
-- **Entry button** (`*-open-popups.yaml`)
-  - `bubble-card` `card_type: button`
-  - Navigates to `#<zone>-history`
-
-- **History popup** (`*-history.yaml`)
-  - `bubble-card` `card_type: pop-up` with `hash: "#<zone>-history"`
-  - Header navigates to `#<zone>-advanced`
-  - Includes: key sensors/lights, 1-hour history graph, hold status, automations on/off, normal-mode dropdown (`input_select.<zone>_mmwave_normal_mode`), off-delay dropdown (`input_select.<zone>_occupancy_off_delay`), hold buttons
-
-- **Advanced popup** (`*-advanced.yaml`)
-  - `bubble-card` `card_type: pop-up` with `hash: "#<zone>-advanced"`
-  - **Back** button returning to `#<zone>-history`
-  - mmWave clear timing controls — keep **both** input styles:
-    - `tile` cards with `numeric-input` (fast +/- tweaks)
-    - `entities` cards (one entity each) right below for text entry
-      - `number.<switch_name>_mmwaveholdtime`
-      - `number.<switch_name>_mmwavestaylife`
-
-### Sensor presentation
-
-- **Graph-worthy sensors** (temperature, humidity, illuminance, battery %, occupancy): show as **sub-buttons**
-- **Text-only status flags** (e.g. "replace battery soon" boolean): condense into **markdown**
-- **Sub-button sizing**: do not put 4+ sensors in a single `group:` row — split into groups of 2–3
-
----
-
-## Reference: Inovelli entity naming (copy/paste trick)
-
-For Inovelli "presence dimmer" devices, entity IDs are consistent across zones. Pick a known-good zone (e.g. `cards/basement/rumpus-room/`) and **substitute the switch name** everywhere.
-
-### Steps
-
-1. Identify the **source switch name** in the reference card (e.g. `basement_rumpus_room_inovelli_presence`)
-2. Decide the **target switch name** for the new zone (e.g. `basement_server_inovelli_presence`)
-3. String-replace every occurrence — everything after `_inovelli_presence` (the suffix) is consistent.
-
-### Common suffixes (after `<switch_name>_`)
-
-Replace `<source_switch>` with `<target_switch>` in entity IDs like:
-
+Common suffixes (after `<switch_name>_`):
 - `select.<switch_name>_mmwavedetectsensitivity`
-- `select.<switch_name>_mmwavedetecttrigger`
 - `select.<switch_name>_mmwavecontrolwireddevice`
 - `select.<switch_name>_outputmode`
-- `select.<switch_name>_smartbulbmode`
 - `number.<switch_name>_mmwaveholdtime`
 - `number.<switch_name>_mmwavestaylife`
 - `number.<switch_name>_mmwavedepthmin` / `mmwavedepthmax`
@@ -405,38 +259,9 @@ When migrating any script call or card that uses a hardcoded `normal_mode:` para
 
 Applies to: cards (`cards/**`), switch-button automations (`automations/switch-buttons/**`), entity-defined scripts (`scripts/inovelli/entities-defined/**`).
 
-**Search terms:**
-- Find all references for a zone: `switch_name: <zone>_inovelli_presence`
-- Find old-style: `normal_mode:`
-- Find new-style: `normal_mode_input_select:`
-
 ### Per-zone "lights off delay" (replacing hardcoded trigger `for:`)
-
-Migrating zones from hardcoded `for: "00:05:00"` on the trigger:
 
 - Remove the trigger `for:` entirely
 - Add action `delay:` reading from `input_select.<zone>_occupancy_off_delay` with fallback to the old value
 - Add post-delay condition to verify zone is still empty
 - Use `mode: restart`
-
-### Registry lists (group hold / clear-all scripts)
-
-When adding or migrating a zone, ensure the `switch_name` entry is correct in both:
-
-- `scripts/inovelli/entities-defined/hold_all_inovelli_presence_controlled_switches.yaml`
-  - Add/update `automation_entity_ids` so holds properly disable occupancy lighting
-- `scripts/inovelli/entities-defined/clear_hold_on_all_inovelli_presence_controlled_switches.yaml`
-  - Add/update `automation_entity_ids`
-  - If zone uses input_select pattern: `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode` (not `normal_mode: Disabled`)
-
-### Migrating old card format
-
-During migration you will often paste **one zone's old card YAML** into chat for conversion.
-
-- Assume the old format may not exist in the repo anymore.
-- Use `cards/rumpus-room/` and `cards/concessions/` as the reference "new format".
-- Ensure hold buttons in cards pass `normal_mode_input_select` (not a string `normal_mode`).
-
-### Mudroom zone note
-
-Now that **Downstairs Mudroom** has occupancy-based lighting automations, `input_select.downstairs_mudroom_mmwave_normal_mode` should be set to **`Disabled`** so holds restore to Disabled (instead of the switch's default `Occupancy (default)` behavior).

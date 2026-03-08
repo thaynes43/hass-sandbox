@@ -1,10 +1,4 @@
----
-globs: appdaemon/**/*.py
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/ha-provisioner.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
-## HAProvisioner: integrate self-provisioning into an AppDaemon app
+# HAProvisioner: integrate self-provisioning into an AppDaemon app
 
 ### When to use this
 
@@ -15,8 +9,6 @@ Also reference this when an agent encounters provisioner errors or needs to unde
 ### Critical rule: helpers use WebSocket, not the REST Config Entry Flow
 
 The provisioner creates **scripts** via the HA REST API (`POST /api/config/script/config/{id}`) and creates **helpers** via the HA **WebSocket** API (`{helper_type}/create` command). The old Config Entry Flow REST API (`POST /api/config/config_entries/flow`) does **not** support helper types (`input_text`, `input_select`, etc.) in modern HA versions (confirmed broken on HA 2026.2.x). Never use the Config Entry Flow for helpers.
-
-This is consistent with how [ha-mcp creates helpers](https://github.com/homeassistant-ai/ha-mcp/blob/master/src/ha_mcp/tools/tools_config_helpers.py) — it sends `{"type": "{helper_type}/create", "name": "..."}` over WebSocket.
 
 ---
 
@@ -41,15 +33,11 @@ These require manual user setup. Document them as **prerequisites** in the app's
 | Directories (`/media/...`, `/config/www/...`) | Filesystem operations inside HA container | User SSHs/execs into container and runs `mkdir -p` |
 | Placeholder images for `local_file` cameras | Files must exist before camera creation | User copies existing images to the new paths |
 
-When an app has prerequisites the provisioner cannot handle, the app's README or playbook **must** list them with exact commands. If writing a playbook, include an **agent gate** that verifies prerequisites via MCP before proceeding (see `detection-app-playbook.mdc` for an example).
-
 ---
 
 ### Workflow: add provisioner to a new app
 
 **Step 1 — Add `sys.path` fix (if not already present)**
-
-The app module must be able to import from `appdaemon/providers/`. Add this near the top, **before** `import hassapi`:
 
 ```python
 import sys
@@ -59,7 +47,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 import hassapi as hass
 ```
 
-For apps in `appdaemon/apps/<package>/module.py`, `.parents[2]` resolves to `appdaemon/`. Adjust the index if the file depth differs. Wrap in a try/except if the import may already work (see `detection_summary_app/manager.py` for the pattern).
+For apps in `appdaemon/apps/<package>/module.py`, `.parents[2]` resolves to `appdaemon/`.
 
 **Step 2 — Add `ha_url` and `ha_token_env` to app config (2 files)**
 
@@ -84,7 +72,7 @@ my_app:
   ha_token_env: TOKEN
 ```
 
-`ha_url` resolves via `!secret` from `secrets.yaml`. `ha_token_env` is the **name** of an environment variable (not the token itself) — the provisioner resolves it at runtime via `providers.secrets.resolve_secret()`. This prevents the token from appearing in the AppDaemon admin UI.
+`ha_token_env` is the **name** of an environment variable — the provisioner resolves it at runtime via `providers.secrets.resolve_secret()`.
 
 **Step 3 — Implement `_provision_entities` (async method)**
 
@@ -145,7 +133,6 @@ AppDaemon's `initialize()` is synchronous. Use `run_in` + `create_task`:
 
 ```python
 def initialize(self) -> None:
-    # ... sync config parsing, directory creation ...
     self.run_in(self._async_startup_wrapper, 0)
 
 def _async_startup_wrapper(self, kwargs) -> None:
@@ -163,24 +150,13 @@ async def _async_startup(self) -> None:
 ```python
 from unittest.mock import AsyncMock, MagicMock, patch
 
-# Mock HAProvisioner so tests don't hit the real HA server
 mock_prov = MagicMock()
 mock_prov.ensure_script = AsyncMock(return_value=False)
 mock_prov.ensure_helper = AsyncMock(return_value=False)
 
 with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
-    app.create_task = MagicMock()  # skip async startup in init tests
+    app.create_task = MagicMock()
     app.initialize()
-```
-
-For tests that need to verify provisioning was called:
-
-```python
-with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
-    asyncio.get_event_loop().run_until_complete(app._provision_entities())
-
-mock_prov.ensure_script.assert_called_once()
-assert mock_prov.ensure_helper.call_count == 2  # one per helper
 ```
 
 ---
@@ -189,7 +165,7 @@ assert mock_prov.ensure_helper.call_count == 2  # one per helper
 
 | Helper type | Required kwargs | Optional kwargs |
 |---|---|---|
-| `input_text` | — | `min` (int), `max` (int, **default 100 -- set to 255 for summaries**), `mode` ("text"/"password"), `initial` (str) |
+| `input_text` | — | `min` (int), `max` (int, **default 100 — set to 255 for summaries**), `mode` ("text"/"password"), `initial` (str) |
 | `input_select` | `options` (list[str]) | `initial` (str, must be in options) |
 | `input_boolean` | — | `initial` (bool) |
 | `input_number` | — | `min` (float), `max` (float), `step` (float), `mode` ("box"/"slider"), `unit_of_measurement` (str) |
@@ -204,15 +180,13 @@ All types accept `icon` (str, e.g. `"mdi:text"`) as an optional kwarg.
 
 ### Entity ID derivation
 
-The provisioner derives the expected entity ID from the helper name using `_helper_slug`:
-
 ```
 Name: "Garage Detection Summary Run Id"
 Slug: garage_detection_summary_run_id
 Entity ID: input_select.garage_detection_summary_run_id
 ```
 
-Rules: lowercase, non-alphanumeric chars become underscores, consecutive underscores collapsed. This matches HA's own slug generation. If the entity ID you want differs from what `_helper_slug` produces, adjust the `name` parameter accordingly.
+Rules: lowercase, non-alphanumeric chars become underscores, consecutive underscores collapsed. If the entity ID you want differs, adjust the `name` parameter.
 
 ---
 
@@ -220,17 +194,16 @@ Rules: lowercase, non-alphanumeric chars become underscores, consecutive undersc
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `ValueError: Required secret env var 'TOKEN' is not set` | `python-dotenv` not installed or `.env` file not found | Run `pip install -r appdaemon/requirements.txt`. Verify `.env` exists at repo root or `appdaemon/.env` |
-| `ClientResponseError 404: Invalid handler specified` | Using the old Config Entry Flow REST API for helpers | Update provisioner to use WebSocket `{helper_type}/create`. This is already fixed in the current `provisioner.py` |
+| `ValueError: Required secret env var 'TOKEN' is not set` | `python-dotenv` not installed or `.env` file not found | Run `pip install -r appdaemon/requirements.txt`. Verify `.env` exists |
+| `ClientResponseError 404: Invalid handler specified` | Using the old Config Entry Flow REST API for helpers | Use WebSocket `{helper_type}/create` — already fixed in current `provisioner.py` |
 | `ModuleNotFoundError: No module named 'providers'` | Missing `sys.path` fix | Add `sys.path.append(str(Path(__file__).resolve().parents[2]))` before imports |
-| Provisioner runs but helper entity ID doesn't match expected | Name doesn't slug to the expected entity ID | Check `HAProvisioner._helper_slug(helper_type, name)` output. Adjust name to produce the desired slug |
-| `input_text/set_value` silently fails or truncates | Helper created with default `max: 100` but value exceeds 100 chars | Always pass `max=255` when creating `input_text` helpers for summaries or long text |
-| `ensure_helper` skips but entity doesn't exist | Entity was deleted but HA state cache is stale | Restart HA or wait for state refresh. The existence check uses `GET /api/states/{entity_id}` |
-| App starts without errors but helpers missing | `ha_url` or `ha_token_env` not in config — provisioner silently skips | Check app config in `apps-dev.yaml` for `ha_url: !secret ha_url` and `ha_token_env: TOKEN` |
+| Provisioner runs but helper entity ID doesn't match | Name doesn't slug to the expected entity ID | Check `HAProvisioner._helper_slug(helper_type, name)` output |
+| `input_text/set_value` silently fails or truncates | Helper created with default `max: 100` but value exceeds 100 chars | Always pass `max=255` when creating `input_text` helpers for summaries |
+| App starts without errors but helpers missing | `ha_url` or `ha_token_env` not in config | Check app config in `apps-dev.yaml` |
 
 ### After integrating (don't forget)
 
 - **Both config files**: Add `ha_url` and `ha_token_env` to both `apps-dev.yaml` and `apps-prod.yaml`.
 - **Tests**: Mock `HAProvisioner` in unit tests. Verify `ensure_script` and `ensure_helper` are called with expected args.
-- **README**: Document any manual prerequisites the provisioner cannot handle (directories, `local_file` cameras, shell commands).
-- **Old helper cleanup**: If converting from manually-created helpers, delete the old ones via MCP after confirming the app provisions and uses them correctly (see `.cursor/playbooks/ha-helpers-playbook.mdc` for deletion workflow).
+- **README**: Document any manual prerequisites the provisioner cannot handle.
+- **Old helper cleanup**: If converting from manually-created helpers, delete the old ones via MCP after confirming the app provisions correctly (see `ha-helpers.md` for deletion workflow).

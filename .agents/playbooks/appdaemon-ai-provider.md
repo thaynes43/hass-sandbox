@@ -1,10 +1,4 @@
----
-globs: appdaemon/providers/ai_providers/**
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/appdaemon-ai-provider.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
-## AppDaemon: Implement a new AI provider
+# AppDaemon: Implement a new AI provider
 
 ### When to use this
 
@@ -18,19 +12,19 @@ Use this playbook when adding a new AI provider (e.g. Gemini, Ollama) to `appdae
 2. **Simple text** — text only → structured JSON (e.g. narrative synthesis)
 3. **Image generation** — image edit/generation (separate from text providers)
 
-Do **not** reintroduce a single `DataProvider` that handles both image-to-JSON and text-to-JSON. Use separate providers and config paths. Example: `manager.py` uses the multimodal provider for frame scoring and the simple-text provider for run narrative.
+Do **not** reintroduce a single `DataProvider` that handles both image-to-JSON and text-to-JSON. Use separate providers and config paths.
 
 ### Critical rule: Model capability validation must run before live calls
 
-**Unsupported model/capability combinations must fail fast with a clear error.** The `gpt-5-mini` multimodal failure motivated this refactor: that model does not support vision, and the API returns vague errors. Validate in `provider_settings.py` and in each provider constructor so misconfigurations fail before the first HTTP request.
+**Unsupported model/capability combinations must fail fast with a clear error.** Validate in `provider_settings.py` and in each provider constructor so misconfigurations fail before the first HTTP request.
 
 ### Critical rule: Secrets use `_env` keys
 
-Config passes env var **names** (e.g. `api_key_env: GEMINI_API_KEY`). Providers resolve via `providers.secrets.resolve_secret()`. Never hardcode API keys in code, logs, or tests. See `security-policy.mdc`.
+Config passes env var **names** (e.g. `api_key_env: GEMINI_API_KEY`). Providers resolve via `providers.secrets.resolve_secret()`. Never hardcode API keys in code, logs, or tests.
 
 ### Critical rule: Logging must be safe and explicit
 
-Log provider name, capability mode, model, endpoint/base URL, timeout, truncated request/response previews (e.g. first 400 chars). Never log full tokens or API keys. Mask if needed: `****{last4}`.
+Log provider name, capability mode, model, endpoint/base URL, timeout, truncated request/response previews (e.g. first 400 chars). Never log full tokens or API keys.
 
 ---
 
@@ -38,11 +32,11 @@ Log provider name, capability mode, model, endpoint/base URL, timeout, truncated
 
 **Step 1 — Create provider package (1 dir)**
 
-Create a folder under `appdaemon/providers/ai_providers/<provider>/` with an `__init__.py`. Example: `appdaemon/providers/ai_providers/gemini/`.
+Create a folder under `appdaemon/providers/ai_providers/<provider>/` with an `__init__.py`.
 
 **Step 2 — Add provider-local settings (1 file)**
 
-Add a provider-local settings map or validation in `provider_settings.py` (or a `_settings.py` inside the provider package). Register supported models and capability compatibility. Example: `gpt-5.2` supports multimodal; `gpt-5-mini` does not.
+Add a provider-local settings map or validation in `provider_settings.py` (or a `_settings.py` inside the provider package). Register supported models and capability compatibility.
 
 **Step 3 — Add capability-specific provider classes (3 files)**
 
@@ -58,15 +52,17 @@ In `registry.py`:
 
 - Add the new provider to the enum(s): `ImageProviderName`, `MultimodalProviderName`, `SimpleTextProviderName`
 - Add a branch in `build_image_provider`, `build_multimodal_text_provider`, `build_simple_text_provider`
-- Add config parsing for the new provider’s keys in `provider_config_from_appdaemon_args`, `multimodal_text_config_from_appdaemon_args`, `simple_text_config_from_appdaemon_args`
+- Add config parsing for the new provider's keys
 
 **Step 5 — Add tests**
 
 - Unit tests for each capability class (mock HTTP)
 - Registry/config parsing tests
 - Provider-settings validation tests (unsupported model fails before request)
-- Run full pytest:  
-  `wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"`
+- Run full pytest:
+  ```bash
+  wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"
+  ```
 
 ---
 
@@ -96,7 +92,6 @@ appdaemon/providers/ai_providers/
 ### Known-good example: Provider class pattern
 
 ```python
-# openai_multimodal_text_provider.py
 from ..multimodal_text_provider import (
     ExternalDataGenError,
     MultimodalProviderName,
@@ -123,17 +118,15 @@ class OpenAIMultimodalTextProvider(MultimodalTextProvider):
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Vague API error for vision request | Model does not support vision (e.g. `gpt-5-mini`) | Add validation in `provider_settings.validate_multimodal_model` and call it in the provider constructor |
+| Vague API error for vision request | Model does not support vision | Add validation in `provider_settings.validate_multimodal_model` and call it in the provider constructor |
 | `ModuleNotFoundError: providers` | AppDaemon only has `apps/` on `sys.path` | Add AppDaemon root via `import_paths` in `appdaemon.yaml` or `sys.path.append` in app |
 | Secret in logs | Logging full response or token | Truncate previews (e.g. 400 chars), never log `api_key` or tokens |
 | Single provider for image+text | Reintroducing unified DataProvider | Use separate multimodal and simple-text providers and config paths |
-| Wrong import path | Importing from deleted `openai_provider` | Use `openai.openai_image_generation_provider` etc. |
 
 ---
 
-### After creating (don’t forget)
+### After creating (don't forget)
 
 1. Run full pytest.
 2. Verify `manager.py` and `narrative.py` use the correct capability providers (multimodal for scoring, simple-text for narrative).
 3. Do **not** run `deploy.py` or copy to `X:\` unless the user explicitly asks.
-4. Add Gemini/Ollama to the playbook’s known-good examples once implemented.

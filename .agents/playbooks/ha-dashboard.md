@@ -1,10 +1,4 @@
----
-globs: home-assistant/cards/**
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/ha-dashboard.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
-## Home Assistant Dashboards: edit views and cards via MCP
+# Home Assistant Dashboards: edit views and cards via MCP
 
 ### When to use this
 
@@ -33,7 +27,7 @@ Returns: `config` (full JSON), `config_hash` (string — save the ENTIRE value),
 
 **Step 2 — Identify the target view index**
 
-Inspect the returned `config.views` array. Find the view by its `path` field. Example: if `views[0].path == "garage"` and `views[1].path == "front-door"`, the front-door view is at index 1.
+Inspect the returned `config.views` array. Find the view by its `path` field.
 
 **Step 3 — Build and apply the python_transform (1 MCP call)**
 
@@ -45,7 +39,7 @@ Use `ha_config_set_dashboard` with `python_transform`. The variable `config` is 
   "arguments": {
     "url_path": "my-dashboard",
     "config_hash": "<FULL config_hash from Step 1 — do NOT truncate>",
-    "python_transform": "config['views'][1]['title'] = 'My View'; config['views'][1]['sections'] = [{'type': 'grid', 'cards': [...]}]"
+    "python_transform": "config['views'][1]['title'] = 'My View'; config['views'][1]['sections'] = [{'type': 'grid', 'cards': []}]"
   }
 }
 ```
@@ -68,27 +62,6 @@ Use `ha_config_set_dashboard` with `python_transform`. The variable `config` is 
 }
 ```
 
-Confirm the view at the target index has the expected cards.
-
----
-
-### Known-good example: populate a detection-summary view (bubble-card pattern)
-
-This is the standard pattern for detection summary dashboard views (garage, bulkhead, front-door, etc.). Substitute `{bk}` = bundle_key in entity IDs, `{img_base}` = image URL base path, `{icon}` = view icon, `{name}` = display name.
-
-```json
-{
-  "tool": "ha_config_set_dashboard",
-  "arguments": {
-    "url_path": "detection-summary",
-    "config_hash": "8160465903b35377",
-    "python_transform": "v = config['views'][1]; v['title'] = 'Front Door Detection Summary'; v['dense_section_placement'] = True; v['sections'] = [{'type': 'grid', 'cards': [{'type': 'custom:bubble-card', 'card_type': 'select', 'entity': 'input_select.front_door_detection_summary_run_id', 'name': 'Front Door - Navigation', 'show_name': True, 'rows': 1.719, 'sub_button': {'main': [], 'bottom': [{'sub_button_type': 'button', 'icon': 'mdi:chevron-left', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_previous', 'target': {'entity_id': 'input_select.front_door_detection_summary_run_id'}, 'data': {'cycle': False}}}, {'sub_button_type': 'button', 'icon': 'mdi:star-four-points', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_first', 'target': {'entity_id': 'input_select.front_door_detection_summary_run_id'}}}, {'sub_button_type': 'button', 'icon': 'mdi:chevron-right', 'tap_action': {'action': 'call-service', 'service': 'input_select.select_next', 'target': {'entity_id': 'input_select.front_door_detection_summary_run_id'}, 'data': {'cycle': False}}}]}, 'icon': 'mdi:doorbell-video'}, {'type': 'markdown', 'content': \"{{ states('input_text.front_door_detection_summary_selected') }}\"}, {'type': 'markdown', 'content': '<img src=\"/local/detection-summary/doorbell/front-door/viewer/{{ states(\\'input_select.front_door_detection_summary_run_id\\') }}_generated.png\" />'}, {'type': 'markdown', 'content': '<img src=\"/local/detection-summary/doorbell/front-door/viewer/{{ states(\\'input_select.front_door_detection_summary_run_id\\') }}_best.jpg\" style=\"width:100%;border-radius:12px;object-fit:cover;\" />'}, {'type': 'markdown', 'content': \"_Detection: {{ states('input_text.front_door_detection_summary_timing') }}_\\n\\n_Cooldown: {{ states('input_text.front_door_detection_summary_cooldown') }}_\\n\\n_Selection updated: {{ states.input_text.front_door_detection_summary_selected.last_updated }}_\"}]}]"
-  }
-}
-```
-
-**This example was tested and succeeded.** The `config_hash` shown is a real value from a specific call — always use the fresh hash from your own `ha_config_get_dashboard` response.
-
 ---
 
 ### Known-good example: append a new view to a dashboard
@@ -107,8 +80,6 @@ This is the standard pattern for detection summary dashboard views (garage, bulk
 ---
 
 ### Known-good example: surgical card update with ha_dashboard_find_card
-
-For updating a single card within an existing view:
 
 **Step 1 — Find the card:**
 

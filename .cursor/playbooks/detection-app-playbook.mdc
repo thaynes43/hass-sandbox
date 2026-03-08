@@ -2,6 +2,8 @@
 globs: appdaemon/**
 alwaysApply: false
 ---
+> **Shared playbook**: canonical source at `.agents/playbooks/detection-app.md`. This `.mdc` wrapper adds Cursor-specific metadata.
+
 ## Detection App Setup: new entrance (summary + viewer + notification)
 
 ### When to use this

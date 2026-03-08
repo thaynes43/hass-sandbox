@@ -1,10 +1,3 @@
----
-globs: appdaemon/**
-description: Deploy AppDaemon configs to production (X:\)
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/appdaemon-deploy.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
 # AppDaemon deploy playbook
 
 Run this playbook when the user explicitly asks to deploy AppDaemon changes to production. This repo treats `appdaemon/` as the **development** workspace; production AppDaemon reads configs from `X:\` (mounted into Kubernetes).
@@ -31,7 +24,7 @@ If the user did not specify merge vs. backend-only, ask for clarification and st
 
 ### Step 1 — Security audit (run playbook)
 
-Run the security audit playbook (`.cursor/playbooks/security-audit-playbook.mdc`). All checks must PASS. **Do not proceed if any check fails.**
+Run the security audit playbook (`.agents/playbooks/security-audit.md`). All checks must PASS. **Do not proceed if any check fails.**
 
 ### Step 2 — Prerequisites
 

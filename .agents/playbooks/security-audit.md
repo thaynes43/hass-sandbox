@@ -1,8 +1,3 @@
----
-description: Security audit workflow for AppDaemon codebase before production deploy
----
-> **Shared playbook**: canonical source at `.agents/playbooks/security-audit.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
 # Security audit playbook (AppDaemon)
 
 Run this playbook **before deploying to production**. All checks must PASS. Do not deploy if any credential scan, provider boundary, or frontend exposure check fails.

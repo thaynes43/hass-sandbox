@@ -1,10 +1,4 @@
----
-globs: home-assistant/**
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/ha-automations-scripts.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
-## Home Assistant automations & scripts: creation via MCP
+# Home Assistant automations & scripts: creation via MCP
 
 ### When to use this
 
@@ -56,8 +50,8 @@ Pass the full config as a JSON object to `ha_config_set_automation`. Omit `ident
       "alias": "My Automation Name",
       "description": "What this does.",
       "mode": "single",
-      "trigger": [ ... ],
-      "action": [ ... ]
+      "trigger": [ "..." ],
+      "action": [ "..." ]
     }
   }
 }
@@ -70,7 +64,7 @@ For updates, add `identifier`:
   "tool": "ha_config_set_automation",
   "arguments": {
     "identifier": "automation.my_automation_name",
-    "config": { ... }
+    "config": { "...": "..." }
   }
 }
 ```
@@ -99,7 +93,7 @@ Same pattern using `ha_config_set_script` / `ha_config_get_script`. Scripts requ
       "alias": "My Script Name",
       "description": "What this does.",
       "mode": "single",
-      "sequence": [ ... ]
+      "sequence": [ "..." ]
     }
   }
 }
@@ -135,86 +129,6 @@ This automation writes an aggregate lock status string to an `input_text` helper
           "data": {
             "value": "{% set must_lock = ['lock.front_door_lock','lock.side_door_lock','lock.bulkhead_lock'] %} {% set ok_unlock = ['lock.mudroom_door_lock'] %} {% set bad_must_lock = must_lock | reject('is_state','locked') | list %} {% set bad_ok_unlock = ok_unlock | reject('is_state','unlocked') | list %} {% set bad = bad_must_lock + bad_ok_unlock %} {% if bad | length == 0 %} All OK {% else %} {% set ns = namespace(names=[]) %} {% for e in bad %} {% set ns.names = ns.names + [state_attr(e,'friendly_name') or e] %} {% endfor %} {% if ns.names | length == 1 %} Check {{ ns.names[0] }} {% elif ns.names | length == 2 %} Check {{ ns.names[0] }} and {{ ns.names[1] }} {% else %} Check {{ ns.names[0:-1] | join(', ') }}, and {{ ns.names[-1] }} {% endif %} {% endif %}"
           }
-        }
-      ]
-    }
-  }
-}
-```
-
-### Known-good example: complex automation (parallel mode, variables, choose, wait_template)
-
-This automation handles lock/unlock UI feedback with pending state, timeouts, and error handling:
-
-```json
-{
-  "tool": "ha_config_set_automation",
-  "arguments": {
-    "config": {
-      "alias": "Wall Display - Entry Locks Pending",
-      "description": "UI feedback for Schlage locks: tapping sets per-lock pending helper (idle/locking/unlocking/error). This automation issues the lock/unlock and clears pending when state matches or after 60s timeout.",
-      "mode": "parallel",
-      "max": 10,
-      "variables": {
-        "lock_map": {
-          "input_select.front_door_lock_pending": "lock.front_door_lock",
-          "input_select.side_door_lock_pending": "lock.side_door_lock",
-          "input_select.bulkhead_lock_pending": "lock.bulkhead_lock",
-          "input_select.mudroom_lock_pending": "lock.mudroom_door_lock"
-        }
-      },
-      "trigger": [
-        {
-          "platform": "state",
-          "entity_id": [
-            "input_select.front_door_lock_pending",
-            "input_select.side_door_lock_pending",
-            "input_select.bulkhead_lock_pending",
-            "input_select.mudroom_lock_pending"
-          ],
-          "to": ["locking", "unlocking"]
-        }
-      ],
-      "action": [
-        {
-          "variables": {
-            "pending_entity": "{{ trigger.entity_id }}",
-            "pending_action": "{{ trigger.to_state.state }}",
-            "lock_entity": "{{ lock_map[trigger.entity_id] }}",
-            "target_state": "{{ 'locked' if trigger.to_state.state == 'locking' else 'unlocked' }}"
-          }
-        },
-        {
-          "choose": [
-            {
-              "conditions": [{"condition": "template", "value_template": "{{ is_state(lock_entity, target_state) }}"}],
-              "sequence": [{"service": "input_select.select_option", "data": {"entity_id": "{{ pending_entity }}", "option": "idle"}}]
-            }
-          ],
-          "default": [
-            {
-              "choose": [
-                {
-                  "conditions": [{"condition": "template", "value_template": "{{ pending_action == 'locking' }}"}],
-                  "sequence": [{"service": "lock.lock", "data": {"entity_id": "{{ lock_entity }}"}}]
-                },
-                {
-                  "conditions": [{"condition": "template", "value_template": "{{ pending_action == 'unlocking' }}"}],
-                  "sequence": [{"service": "lock.unlock", "data": {"entity_id": "{{ lock_entity }}"}}]
-                }
-              ]
-            },
-            {"wait_template": "{{ is_state(lock_entity, target_state) }}", "timeout": "00:01:00", "continue_on_timeout": true},
-            {
-              "choose": [
-                {
-                  "conditions": [{"condition": "template", "value_template": "{{ is_state(lock_entity, target_state) }}"}],
-                  "sequence": [{"service": "input_select.select_option", "data": {"entity_id": "{{ pending_entity }}", "option": "idle"}}]
-                }
-              ],
-              "default": [{"service": "input_select.select_option", "data": {"entity_id": "{{ pending_entity }}", "option": "error"}}]
-            }
-          ]
         }
       ]
     }

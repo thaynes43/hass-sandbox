@@ -1,10 +1,4 @@
----
-globs: home-assistant/**
-alwaysApply: false
----
-> **Shared playbook**: canonical source at `.agents/playbooks/ha-helpers.md`. This `.mdc` wrapper adds Cursor-specific metadata.
-
-## Home Assistant helpers: create / update / delete via MCP
+# Home Assistant helpers: create / update / delete via MCP
 
 ### When to use this
 
@@ -84,20 +78,9 @@ Only needed if you are unsure whether the helper exists. Skip if you are certain
 }
 ```
 
-Or list all helpers of a type:
-
-```json
-{
-  "tool": "ha_config_list_helpers",
-  "arguments": {
-    "helper_type": "input_text"
-  }
-}
-```
-
 **Step 2 — Create (1 call)**
 
-Use `ha_config_set_helper`. Omit `helper_id` to create; provide it to update the config. The `entity_id` will be `<domain>.<name_lowercased_spaces_to_underscores>`.
+Use `ha_config_set_helper`. Omit `helper_id` to create; provide it to update the config.
 
 ```json
 {
@@ -114,8 +97,6 @@ Use `ha_config_set_helper`. Omit `helper_id` to create; provide it to update the
 
 ## Workflow: update a helper's live value (1 call)
 
-To change the **current state** of an existing helper (e.g. write a new string into an `input_text`), call the domain service directly. The response contains the new state — no separate verification call is needed.
-
 **`input_text` — set value:**
 
 ```json
@@ -129,8 +110,6 @@ To change the **current state** of an existing helper (e.g. write a new string i
   }
 }
 ```
-
-The response includes `verified_state` confirming the new value. No extra `ha_get_state` call is required.
 
 **`input_boolean` — turn on / off / toggle:**
 
@@ -163,7 +142,7 @@ The response includes `verified_state` confirming the new value. No extra `ha_ge
 
 ## Workflow: update a helper's configuration (1 call)
 
-To change the **definition** of a helper (name, icon, options, initial value, etc.) provide `helper_id`. The slug is the part after the domain in the entity_id (e.g. `wall_display_entry_locks_status` for `input_text.wall_display_entry_locks_status`). No discovery call is needed if you already know the entity_id.
+Provide `helper_id` (the slug after the domain in entity_id). No discovery call needed if you know the entity_id.
 
 ```json
 {
@@ -181,8 +160,6 @@ To change the **definition** of a helper (name, icon, options, initial value, et
 
 ## Workflow: delete a helper (1 call)
 
-Use `ha_config_remove_helper`. Provide the `helper_type` and the `helper_id` slug (the part after the dot in the entity_id). No discovery call is needed.
-
 ```json
 {
   "tool": "ha_config_remove_helper",
@@ -193,21 +170,13 @@ Use `ha_config_remove_helper`. Provide the `helper_type` and the `helper_id` slu
 }
 ```
 
-The response confirms deletion including the `entity_id` that was removed. If you only have the full entity_id you may pass it as `helper_id` as well — both forms are accepted.
-
 **Warning**: deleting a helper that is referenced in automations, scripts, or cards will break those references. Confirm nothing depends on it before deleting.
 
 ---
 
 ## Helper types and known-good examples
 
-### `input_boolean` (simple latch / flag)
-
-- **Use cases**: sticky state — "use long off delay", "vacuum is running", etc.
-- **Entity id convention**: `input_boolean.<thing>`
-- **Icon**: `mdi:toggle-switch`, `mdi:timer-outline`, etc.
-- **Initial**: `false` is usually safest.
-
+### `input_boolean`
 ```json
 {
   "tool": "ha_config_set_helper",
@@ -220,13 +189,7 @@ The response confirms deletion including the `entity_id` that was removed. If yo
 }
 ```
 
-### `input_text` (status string / cache)
-
-- **Use cases**: aggregate status strings, cached values, short text.
-- **Entity id convention**: `input_text.<thing>`
-- **Icon**: relevant `mdi:` icon (e.g. `mdi:shield-lock` for lock status).
-- **Initial**: optional; empty string or a sensible default.
-
+### `input_text`
 ```json
 {
   "tool": "ha_config_set_helper",
@@ -239,12 +202,7 @@ The response confirms deletion including the `entity_id` that was removed. If yo
 }
 ```
 
-### `input_select` (dropdown / enum)
-
-- **Use cases**: mode selectors, option lists.
-- **Entity id convention**: `input_select.<thing>`
-- **Icon**: relevant `mdi:` icon.
-
+### `input_select`
 ```json
 {
   "tool": "ha_config_set_helper",
