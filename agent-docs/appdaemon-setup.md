@@ -1,12 +1,13 @@
 # AppDaemon Setup
 
-This repo uses `appdaemon/` as the **development environment** for AppDaemon apps. Production runs in **Kubernetes** on the cluster; configs are mounted from `X:\`.
+This repo uses `appdaemon/` as the **development environment** for AppDaemon apps. Production runs in **Kubernetes** as a custom Docker image.
 
 ## Production
 
 - **AppDaemon UI**: https://appdaemon.haynesops.com/
-- **Config location**: `X:\` (production configs mounted here)
-- **Deploy**: Use `appdaemon/deploy.py` to sync dev changes to production when ready.
+- **Docker image**: `ghcr.io/thaynes43/appdaemon`
+- **Deploy**: Automatic on merge to `main` — GitHub Actions builds the image, Flux rolls the deployment.
+- **Versioning**: `VERSION` file at repo root. Main builds get semver tags (`0.1.0`, `0.1.0-abc1234`, `latest`). Feature branches get `branchname.sha` tags.
 
 ## Development environment (`appdaemon/`)
 
@@ -15,14 +16,11 @@ appdaemon/
 ├── appdaemon.yaml           # Local dev config (committed; never deployed)
 ├── secrets.yaml             # Local dev secrets (.gitignored; never deployed)
 ├── requirements.txt         # Python deps (pip install -r)
-├── deploy.py                # Deploy script (apps/ + shared libs → X:\)
 ├── apps/
-│   ├── apps-prod.yaml       # Production app list (all disable: true); deploy writes apps.yaml
-│   ├── apps-dev.yaml        # Dev-only app list (keys end in _dev); never deployed
+│   ├── apps-prod.yaml       # Production app list (all disable: true); Docker build strips disable
+│   ├── apps-dev.yaml        # Dev-only app list (keys end in _dev); never in image
 │   └── ...
-├── photo_providers/         # Shared library: photo source provider plumbing (Immich; extensible)
-├── ai_providers/            # Shared library: LLM/provider plumbing
-└── ha_provisioner/          # Shared library: HA entity provisioning
+└── providers/               # Shared libraries (AI, photos, provisioning)
 ```
 
 ### Local setup (pip)
@@ -37,23 +35,16 @@ pip install -r appdaemon/requirements.txt
 appdaemon -c appdaemon
 ```
 
-### Verifying environment_test locally
+## Docker image build
 
-1. Run `appdaemon -c appdaemon` (config dir is `appdaemon/`).
-2. Check logs for: `Environment test: AppDaemon dev environment loaded`.
-3. Edit `environment_test.py` and save; AppDaemon auto-reloads.
+The Docker build (`docker/Dockerfile`) does the following:
 
-## Deploying to production
+1. Installs runtime deps from `docker/requirements-prod.txt`
+2. Processes `apps-prod.yaml` → `apps.yaml` (strips `disable` and `debug_preserve_run_dirs`)
+3. Stages code at `/opt/appdaemon-code/`
+4. At runtime, entrypoint copies to `/conf/apps/` (writable emptyDir)
 
-See `.cursor/rules/appdaemon-vs-ha-yaml.mdc` for the full deploy procedure. Summary:
-
-```bash
-python appdaemon/deploy.py
-# or with explicit target:
-python appdaemon/deploy.py --target X:\
-# dry run first:
-python appdaemon/deploy.py --dry-run
-```
+`appdaemon.yaml` and `secrets.yaml` come from Kubernetes Secret mounts — never in the image.
 
 ## Running tests
 
@@ -63,8 +54,13 @@ python -m pytest appdaemon/tests -v
 
 See `agent-docs/appdaemon-testing.md` for mocking HA calls and testing patterns.
 
+## Adding new Python dependencies
+
+- **Dev-only** (pytest, linters): add to `appdaemon/requirements.txt`
+- **Runtime** (needed in prod): add to `docker/requirements-prod.txt`
+
 ## References
 
 - [AppDaemon docs](https://appdaemon.readthedocs.io/en/latest/)
 - [Writing AppDaemon Apps](https://appdaemon.readthedocs.io/en/latest/APPGUIDE.html)
-- `.cursor/rules/appdaemon-vs-ha-yaml.mdc` — deploy procedure and AppDaemon vs HA YAML
+- `.cursor/rules/appdaemon-vs-ha-yaml.mdc` — AppDaemon vs HA YAML

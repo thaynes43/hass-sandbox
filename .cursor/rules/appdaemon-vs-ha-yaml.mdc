@@ -46,67 +46,48 @@ Most of this repo (occupancy-based lighting, Inovelli hold logic, switch mapping
 
 | | Dev | Production |
 |---|---|---|
-| **Location** | `hass-sandbox/appdaemon/` | `X:\` (mounted in Kubernetes) |
+| **Location** | `hass-sandbox/appdaemon/` | Docker image `ghcr.io/thaynes43/appdaemon` |
 | **AppDaemon** | Run locally with `appdaemon -c appdaemon` | Runs in Kubernetes on cluster |
 | **UI** | N/A | https://appdaemon.haynesops.com/ |
 
-Everything we do in this repo considers `appdaemon/` as the **development environment**. AppDaemon itself runs in Kubernetes; production configs live at `X:\`. Iterate on apps in `appdaemon/`, then deploy when ready.
+Everything we do in this repo considers `appdaemon/` as the **development environment**. AppDaemon runs in Kubernetes as a custom Docker image. Iterate on apps in `appdaemon/`, then merge to `main` to deploy.
 
 ---
 
 ## Deploy procedure (production)
 
-**Agents must follow this procedure** when deploying AppDaemon changes to production.
+Production deploys are automated via Docker image builds.
 
-### Prerequisites
+### How it works
 
-- Production config directory `X:\` exists and is writable (typically a mounted volume).
-- Changes in `appdaemon/` are complete and tested locally.
+1. Developer merges PR to `main`
+2. GitHub Actions (`.github/workflows/build-appdaemon.yml`) builds a Docker image
+3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
+4. Flux detects the new image tag and rolls the Kubernetes deployment
 
-### Deploy script
+### What the Docker build does
 
-Use `appdaemon/deploy.py` to sync dev contents to production:
+- Installs runtime deps from `docker/requirements-prod.txt`
+- Processes `apps-prod.yaml` → `apps.yaml` (strips `disable: true` and `debug_preserve_run_dirs`)
+- Stages app code and providers in the image
+- At runtime, entrypoint copies code to `/conf/apps/` (writable emptyDir)
 
-```bash
-# Dry run first (show what would be copied)
-python appdaemon/deploy.py --dry-run
+### What is NOT in the image
 
-# Deploy to default target X:\
-python appdaemon/deploy.py
+- `appdaemon.yaml` and `secrets.yaml` — come from Kubernetes Secret mounts
+- Test files, dev configs, `.venv`, `__pycache__` — excluded by `.dockerignore`
 
-# Deploy to explicit target
-python appdaemon/deploy.py --target X:\
+### After merge
 
-# Custom target via env
-DEPLOY_TARGET=D:\prod\appdaemon python appdaemon/deploy.py
-```
-
-### What gets deployed
-
-- `appdaemon/apps/` → `X:\apps/` (all `.py`; `apps-prod.yaml` is processed: disable flags stripped, written as `apps.yaml`)
-- Excludes: `.venv`, `__pycache__`, `.git`, `.cursor`, `apps-dev.yaml`
-
-### What never gets deployed
-
-- `appdaemon.yaml` and `secrets.yaml` are **never** deployed. Production injects them via Kubernetes ExternalSecret. `appdaemon.yaml` is committed for local dev; `secrets.yaml` is `.gitignored` (create locally with your token).
-
-### After deploy
-
-- AppDaemon in Kubernetes reads configs from `X:\`.
-- If auto-reload is enabled, changes may apply without restart; otherwise restart the AppDaemon pod/container.
-- Verify at https://appdaemon.haynesops.com/ and check logs.
+- Verify GitHub Actions build succeeded
+- Check Flux reconciliation and pod status
+- Verify at https://appdaemon.haynesops.com/ and check logs
 
 ### Scope communication
 
-When you edit `appdaemon/**` and deploy:
+When you edit `appdaemon/**`:
 
-- **Repo YAML/Python Updated - Deployed to production**
-- List: `appdaemon/**` files changed, that `deploy.py` was run, and prod path `X:\`.
-
-If you edit `appdaemon/**` but **do not** deploy:
-
-- **Repo YAML/Python Only - You copy paste or deploy**
-- List: `appdaemon/**` paths changed, and that the user must run `python appdaemon/deploy.py` (or copy manually) to apply to production.
+- **Repo Updated** — changes are in the repo; will deploy automatically when merged to `main` via Docker image build
 
 ---
 
@@ -114,14 +95,19 @@ If you edit `appdaemon/**` but **do not** deploy:
 
 ```
 appdaemon/                    # Dev environment (Python apps)
-├── appdaemon.yaml            # Local dev config (committed; never deployed)
-├── secrets.yaml              # Local dev secrets (.gitignored; create with token)
+├── appdaemon.yaml            # Local dev config (committed; never in image)
+├── secrets.yaml              # Local dev secrets (.gitignored; never in image)
 ├── requirements.txt
-├── deploy.py                 # Deploy script: apps/ → X:\
 └── apps/
-    ├── apps-prod.yaml     # Production app list (all disable: true). Deploy strips disable and writes apps.yaml to prod.
-    ├── apps-dev.yaml      # Dev-only app list (keys end in _dev). Never deployed. Use deploy.py --merge-dev-apps to promote into apps-prod.yaml.
+    ├── apps-prod.yaml     # Production app list (all disable: true). Docker build strips disable and writes apps.yaml.
+    ├── apps-dev.yaml      # Dev-only app list (keys end in _dev). Never in image.
     └── ...
+
+docker/                       # Docker build files
+├── Dockerfile
+├── entrypoint.sh
+├── process-apps-yaml.py
+└── requirements-prod.txt
 
 automations/                  # HA automations (YAML)
 scripts/                      # HA scripts (YAML)

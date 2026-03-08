@@ -119,7 +119,7 @@ run the full test suite and fix any failures before finishing:
 
   <test suite command>
 
-DO NOT run deploy.py or copy any files to X:\. All changes stay in the dev environment only.
+DO NOT manually deploy to production. All changes stay in the dev environment until merged to main. All changes stay in the dev environment only.
 ```
 
 **Parallel Implementation Agents** (when tracks are independent):
@@ -144,7 +144,7 @@ After completing your todos, run the test suite and fix any failures:
 
   <test suite command>
 
-DO NOT run deploy.py or copy any files to X:\.
+DO NOT manually deploy to production. All changes stay in the dev environment until merged to main.
 ```
 
 **Validation Agent** (always one, always last):
@@ -212,8 +212,7 @@ REQUIRED FIX
 2. <Second action>
 3. ...
 
-Read the plan file and rules before making changes. Do not run deploy.py or copy
-files to X:\. Run the full test suite after your changes and confirm it passes:
+Read the plan file and rules before making changes. Do not manually deploy to production. Run the full test suite after your changes and confirm it passes:
 
   <test suite command>
 ```
@@ -336,8 +335,7 @@ REQUIRED FIX
 1. <First action>
 2. <Second action>
 
-Read the plan file and rules before making changes. Do not run deploy.py or copy
-files to X:\. Run the full test suite after your changes and confirm it passes:
+Read the plan file and rules before making changes. Do not manually deploy to production. Run the full test suite after your changes and confirm it passes:
   <test suite command>
 \```
 ```
@@ -354,7 +352,7 @@ files to X:\. Run the full test suite after your changes and confirm it passes:
 | Validation Agent modifies code | Prompt didn't say read-only | Always include "DO NOT modify any files" in the Validation prompt |
 | Agent uses wrong rule files | Prompt didn't list them | Always list `@` rule references explicitly in every prompt |
 | Fresh agent re-explores the whole codebase | Plan lacked context | Include file paths, line numbers, and architecture diagram |
-| Agent tries to deploy to production | Not stated in prompt | Always include "DO NOT run deploy.py" |
+| Agent tries to deploy to production | Not stated in prompt | Always include "DO NOT manually deploy to production" |
 | Implementation Agent skips the test suite | Test command not in prompt | Always include the exact test command with WSL path |
 | User doesn't know what order to run agents | Plan doesn't explain the dependency | Parallelism analysis must clearly state which tracks can run simultaneously and which must be sequential |
 | Validation re-prompt is hard to act on | FAIL output is vague or not copy-pasteable | Validation Agent must produce a fenced \`\`\`text\`\`\` block with a complete Implementation Agent prompt: defects (file + defect + fix), required actions, test command, no-deploy constraint |

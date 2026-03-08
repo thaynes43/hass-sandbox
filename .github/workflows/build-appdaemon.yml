@@ -6,8 +6,14 @@ on:
     paths:
       - "appdaemon/apps/**"
       - "appdaemon/providers/**"
-      - "appdaemon/requirements.txt"
       - "docker/**"
+      - "VERSION"
+  pull_request:
+    paths:
+      - "appdaemon/apps/**"
+      - "appdaemon/providers/**"
+      - "docker/**"
+      - "VERSION"
   workflow_dispatch:
 
 env:
@@ -25,6 +31,42 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          # Take everything after the last slash (feature/foo → foo), then replace remaining invalid chars
+          sanitized=$(echo "$ref" | sed 's|.*/||' | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "name=$sanitized" >> "$GITHUB_OUTPUT"
+
+      - name: Compute tags
+        id: tags
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          version="${{ steps.version.outputs.version }}"
+          short_sha="${{ steps.sha.outputs.short }}"
+          branch="${{ steps.branch.outputs.name }}"
+
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # Main branch: semver tags
+            tags="${image}:${version}"
+            tags="${tags},${image}:${version}-${short_sha}"
+            tags="${tags},${image}:latest"
+          else
+            # Feature branch: dev tags
+            tags="${image}:${branch}.${short_sha}"
+            tags="${tags},${image}:${branch}"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -32,20 +74,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=sha,prefix=
-            type=raw,value=latest
-
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}

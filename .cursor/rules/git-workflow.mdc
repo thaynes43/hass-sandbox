@@ -47,10 +47,7 @@ All work must go through a feature branch and pull request. Never commit directl
    - Docs site audit (`.github/workflows/docs-site-audit.yml`)
    - Code review (`.github/workflows/claude-code-review.yml`)
 
-5. **After merge to main**, deploy if ready:
-   ```bash
-   python appdaemon/deploy.py
-   ```
+5. **After merge to main**, deployment is automatic — GitHub Actions builds the Docker image, Flux rolls the Kubernetes deployment.
 
 ## PR requirements
 

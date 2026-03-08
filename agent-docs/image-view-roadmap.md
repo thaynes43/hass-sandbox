@@ -76,7 +76,7 @@ Reference: repo intent and "HA YAML as glue / AppDaemon for brittle logic" direc
 
 ## Phase 3: Shared "viewer" library (optional)
 
-If the wall photo frame viewer and detection summary viewer converge, extract shared pieces into a reusable module (e.g. under `appdaemon/` and deployed via `deploy.py`):
+If the wall photo frame viewer and detection summary viewer converge, extract shared pieces into a reusable module (e.g. under `appdaemon/providers/`):
 
 - helper syncing patterns (`input_select` options + selection preservation)
 - stable image publishing patterns (`shell_command` copy + cache-bust)

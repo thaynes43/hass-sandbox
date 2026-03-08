@@ -48,7 +48,7 @@ You create plans that follow the format and methodology defined in `.agents/play
 - Security rules (S1-S7) always apply in `appdaemon/`
 - HA YAML changes require copy-paste communication protocol
 - Tests run via WSL: `wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"`
-- Deploy via `python appdaemon/deploy.py`
+- Deploy is automatic on merge to `main` via Docker image build
 - Custom cards must handle touch/click deduplication and Android compatibility
 
 ## Output Format

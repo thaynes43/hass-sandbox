@@ -1,5 +1,5 @@
 # Docker build context exclusions for AppDaemon image.
-# Mirrors deploy.py EXCLUDE_DIRS / EXCLUDE_SUFFIXES plus non-prod files.
+# Excludes non-production files from the Docker build context.
 
 # Version control & editor state
 .git

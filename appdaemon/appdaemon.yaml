@@ -1,5 +1,5 @@
 # AppDaemon main configuration - local dev
-# Production: appdaemon.yaml and secrets.yaml are deployed via Flux (ConfigMaps); deploy.py never overwrites them.
+# Production: appdaemon.yaml and secrets.yaml come from Kubernetes Secret mounts; never baked into the Docker image.
 # See: https://appdaemon.readthedocs.io/en/latest/CONFIGURE.html
 #
 # Dev uses apps: apps/apps-dev.yaml to load the dev app list (path relative to config dir).

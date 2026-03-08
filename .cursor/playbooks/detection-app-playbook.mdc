@@ -379,14 +379,7 @@ detection_viewer_{bundle_key}:
   notification_url: "/detection-summary/{bundle_key}"
 ```
 
-Then deploy:
-
-```bash
-python appdaemon/deploy.py --dry-run
-python appdaemon/deploy.py
-```
-
-Verify at https://appdaemon.haynesops.com/ and check logs.
+Then deploy by merging to `main` — GitHub Actions builds the Docker image and Flux rolls the Kubernetes deployment automatically. Verify at https://appdaemon.haynesops.com/ and check logs.
 
 ---
 

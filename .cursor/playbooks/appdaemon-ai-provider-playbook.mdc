@@ -135,5 +135,5 @@ class OpenAIMultimodalTextProvider(MultimodalTextProvider):
 
 1. Run full pytest.
 2. Verify `manager.py` and `narrative.py` use the correct capability providers (multimodal for scoring, simple-text for narrative).
-3. Do **not** run `deploy.py` or copy to `X:\` unless the user explicitly asks.
+3. Do **not** manually deploy to production — deployment is automatic on merge to `main` via Docker image build.
 4. Add Gemini/Ollama to the playbook’s known-good examples once implemented.

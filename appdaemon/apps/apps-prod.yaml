@@ -1,6 +1,5 @@
 # Production app list. All apps have disable: true so local AppDaemon does not run them.
-# Deploy strips disable flags when writing X:\apps\apps.yaml.
-# Promote dev apps with: python appdaemon/deploy.py --merge-dev-apps
+# Docker build strips disable flags when producing apps.yaml for the image.
 
 garage_door_notify:
   module: door_notify.door_notify
