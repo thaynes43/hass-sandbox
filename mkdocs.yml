@@ -1,0 +1,49 @@
+site_name: HaynesOps Home Automation
+site_url: https://thaynes43.github.io/hass-sandbox
+site_description: Home Assistant + AppDaemon automation documentation
+
+repo_url: https://github.com/thaynes43/hass-sandbox
+repo_name: thaynes43/hass-sandbox
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - attr_list
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - Overview: architecture/overview.md
+  - AppDaemon Apps:
+      - Overview: apps/index.md
+  - Setup:
+      - Getting Started: setup/getting-started.md

@@ -229,4 +229,4 @@ pod.  It periodically queries the Immich API and writes photos to
 
 > **Tech debt**: An older NFS mount still exists between the Immich addon pod
 > and HA's pod at `/config/www/immich-album/`.  See
-> `docs/image-view-roadmap.md` for the planned migration to `/media/`.
+> `agent-docs/image-view-roadmap.md` for the planned migration to `/media/`.

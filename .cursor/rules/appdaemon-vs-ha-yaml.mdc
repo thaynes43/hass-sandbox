@@ -9,7 +9,7 @@ This rule guides when to use **AppDaemon** (Python apps) vs **Home Assistant YAM
 
 ## Right tool for the job
 
-From `docs/roadmap.md`:
+From `agent-docs/roadmap.md`:
 
 - **HA YAML**: Keep simple glue — automations, scripts, helpers, dashboards.
 - **AppDaemon**: Use when YAML gets brittle — persistent/derived state, multi-step sequences, structured code, better logs.
@@ -134,5 +134,5 @@ helpers/                      # Example helper configs (reference only)
 - [AppDaemon docs](https://appdaemon.readthedocs.io/en/latest/)
 - [Writing AppDaemon Apps](https://appdaemon.readthedocs.io/en/latest/APPGUIDE.html)
 - [HASS Plugin/API](https://appdaemon.readthedocs.io/en/latest/HASS_API_REFERENCE.html)
-- `docs/roadmap.md` — AppDaemon tooling direction
-- `docs/appdaemon-setup.md` — Dev setup and deploy summary
+- `agent-docs/roadmap.md` — AppDaemon tooling direction
+- `agent-docs/appdaemon-setup.md` — Dev setup and deploy summary

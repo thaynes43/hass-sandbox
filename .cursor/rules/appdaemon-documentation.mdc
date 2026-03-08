@@ -38,14 +38,18 @@ All apps should live in a package directory (e.g. `appdaemon/apps/door_notify/do
 - Default models/settings
 - Dependencies
 
-### Repository-level documentation (`docs/`)
+### Documentation site (`docs/`)
 
-Cross-cutting documentation that spans multiple apps or covers setup/operations:
+The `docs/` directory is a **mkdocs-material** static site (built with `mkdocs serve` / `mkdocs build`). This is the human-facing documentation published to GitHub Pages. Content here should be polished and reader-friendly.
 
-- Multi-app dependency flows
-- Infrastructure setup guides
-- Roadmaps and design documents
-- Button mappings and other reference docs
+- `mkdocs.yml` at the repo root defines site structure and navigation
+- Add new pages to `docs/` and update the `nav:` section in `mkdocs.yml`
+- Build locally: `mkdocs serve` (from repo root with venv active)
+- Deploy: `mkdocs gh-deploy`
+
+### Agent-facing reference docs (`agent-docs/`)
+
+Internal reference material for agents and developers — roadmaps, setup guides, button mappings. Not published to the doc site.
 
 ## Documentation map
 
@@ -73,16 +77,16 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 
-### Repository docs (`docs/`)
+### Repository docs (`agent-docs/`)
 
 | Document | Description |
 |----------|-------------|
-| `docs/appdaemon-setup.md` | AppDaemon infrastructure setup guide |
-| `docs/appdaemon-testing.md` | Testing strategy and conventions |
-| `docs/wall-display-photo-frame-viewer-setup.md` | Wall display photo frame end-to-end setup |
-| `docs/button-mappings.md` | Switch button mapping reference (must stay in sync with automations) |
-| `docs/roadmap.md` | General project roadmap |
-| `docs/image-view-roadmap.md` | Image viewing feature roadmap |
+| `agent-docs/appdaemon-setup.md` | AppDaemon infrastructure setup guide |
+| `agent-docs/appdaemon-testing.md` | Testing strategy and conventions |
+| `agent-docs/wall-display-photo-frame-viewer-setup.md` | Wall display photo frame end-to-end setup |
+| `agent-docs/button-mappings.md` | Switch button mapping reference (must stay in sync with automations) |
+| `agent-docs/roadmap.md` | General project roadmap |
+| `agent-docs/image-view-roadmap.md` | Image viewing feature roadmap |
 
 ### Root
 
@@ -109,4 +113,4 @@ detection_summary_app
 1. Create the README.md following the requirements above.
 2. Add an entry to the documentation map in this file.
 3. If the new app depends on or is depended on by other apps, update the dependency graph.
-4. If the app requires cross-cutting setup documentation, add a guide to `docs/`.
+4. If the app requires cross-cutting setup documentation, add a guide to `agent-docs/`.

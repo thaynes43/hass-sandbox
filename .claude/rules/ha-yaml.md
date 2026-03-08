@@ -19,7 +19,7 @@ Dependent changes (helpers + automations + scripts + button mappings) must be ap
 
 ## Required: button mapping doc sync
 
-Any change to `home-assistant/automations/switch-buttons/**` or related blueprints must update `docs/button-mappings.md` in the same session.
+Any change to `home-assistant/automations/switch-buttons/**` or related blueprints must update `agent-docs/button-mappings.md` in the same session.
 
 ## Relevant playbooks
 

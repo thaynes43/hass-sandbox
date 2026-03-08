@@ -178,7 +178,7 @@ After any `appdaemon/` change, state whether it was deployed:
 
 ### Button mapping doc sync (required)
 
-Any change to switch button behavior in `home-assistant/automations/switch-buttons/**` or related blueprints **must** also update `docs/button-mappings.md` in the same session.
+Any change to switch button behavior in `home-assistant/automations/switch-buttons/**` or related blueprints **must** also update `agent-docs/button-mappings.md` in the same session.
 
 ### Night light imports
 
