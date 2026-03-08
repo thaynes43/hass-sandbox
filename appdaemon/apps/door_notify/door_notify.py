@@ -2,9 +2,16 @@
 Generic door open/close notifications.
 
 Sends push notifications when a configured door entity reports open or closed.
-Consolidates rapid open->closed (or closed->open) into a single "was open/closed
-for n minutes m seconds" notification to avoid two alerts when someone leaves
-or arrives.
+Aggregates all open/close events within the consolidation window into a single
+notification to avoid duplicate alerts when a door opens and closes multiple times
+before a bundle is generated.
+
+- 1 event: "Garage Door Opened" / "Garage Door Closed"
+- 2 events: "Garage Door Opened & Closed" (was open for N seconds)
+- 3+ events: "In the last N minutes, the Garage Door was opened and closed twice"
+
+Each new state change cancels the pending timer and restarts it, so only one
+notification fires per inactivity window.
 
 Supports both cover entities (open/closed states) and binary_sensor entities
 (on/off states) via config-driven state mapping (door_open_state / door_closed_state).
@@ -157,7 +164,13 @@ class DoorNotify(hass.Hass):
         return run_id
 
     def _on_door_state(self, entity_id, attribute, old, new, kwargs):
-        """Handle door state change to open or closed."""
+        """Handle door state change to open or closed.
+
+        All events for a door are accumulated into a list.  Each new event cancels
+        the existing consolidation timer and restarts it, so only ONE notification
+        fires per inactivity window — regardless of how many open/close cycles occur
+        before the timer expires.
+        """
         self.log(f"Door state: {entity_id} {old!r} -> {new!r}", level="DEBUG")
         if not self._should_notify(old, new):
             self.log(f"Skipping notify: old={old!r} new={new!r}", level="DEBUG")
@@ -165,63 +178,53 @@ class DoorNotify(hass.Hass):
 
         door_name = self._door_name(entity_id)
         from_display = self._from_state_display(old)
+        now = time.time()
 
-        # Check if we have a pending transition for the opposite state.
-        opposite = self._closed_state if new == self._open_state else self._open_state
         pending = self._pending.get(entity_id)
-        if pending and pending["state"] == opposite:
-            # Second transition within delay: consolidate.
-            self._cancel_pending(entity_id)
-            duration_secs = time.time() - pending["timestamp"]
-            title, message = self._build_consolidated_notification(
-                door_name, was_open=(opposite == self._open_state), duration_secs=duration_secs
-            )
-            window_start = pending["timestamp"] - self._ai_window_pad_s()
-            window_end = time.time()
-            preferred_run_id = pending.get("ai_run_id")
-            self._send_notifications_with_optional_ai_async(
-                title,
-                message,
-                window_start_epoch=window_start,
-                window_end_epoch=window_end,
-                preferred_run_id=str(preferred_run_id) if preferred_run_id else None,
-            )
-            return
+        if pending:
+            # Cancel the existing timer and append this event to the running list.
+            if "handle" in pending:
+                self.cancel_timer(pending["handle"])
+            pending["events"].append({"state": new, "timestamp": now})
+            pending["state"] = new
+        else:
+            # First event for this door: create the pending entry.
+            pending = {
+                "events": [{"state": new, "timestamp": now}],
+                "state": new,
+                "timestamp": now,  # first-event time; used by ai_run_id attachment logic
+                "door_name": door_name,
+                "from_display": from_display,
+                "ai_run_id": None,
+                "ai_run_started_ts": None,
+            }
+            self._pending[entity_id] = pending
 
-        # No matching pending: schedule single notification after delay.
+        # (Re-)schedule the consolidation timer.
         delay = self.args.get("consolidation_delay", self.DEFAULTS["consolidation_delay"])
         handle = self.run_in(
             self._on_delay_expired,
             delay,
             entity_id=entity_id,
-            new_state=new,
-            door_name=door_name,
-            from_display=from_display,
         )
-        self._pending[entity_id] = {
-            "state": new,
-            "timestamp": time.time(),
-            "handle": handle,
-            "door_name": door_name,
-            "from_display": from_display,
-            "ai_run_id": None,
-            "ai_run_started_ts": None,
-        }
+        pending["handle"] = handle
         self.log(
-            f"Door pending: {entity_id} state={new!r} delay={float(delay):.0f}s",
+            f"Door pending: {entity_id} state={new!r} events={len(pending['events'])} delay={float(delay):.0f}s",
             level="INFO",
         )
 
     def _on_delay_expired(self, kwargs):
-        """Called when consolidation delay expires: send single notification."""
+        """Called when consolidation delay expires: send notification summarising all events."""
         entity_id = kwargs["entity_id"]
         pending = self._pending.pop(entity_id, None)
         if not pending:
             return
-        title, message = self._build_notification(
-            pending["door_name"], pending["state"], pending["from_display"]
-        )
-        window_start = pending["timestamp"] - self._ai_window_pad_s()
+        events = pending.get("events") or []
+        door_name = pending["door_name"]
+        from_display = pending["from_display"]
+        first_timestamp = pending["timestamp"]
+        title, message = self._build_notification_from_events(door_name, events, from_display)
+        window_start = first_timestamp - self._ai_window_pad_s()
         window_end = time.time()
         preferred_run_id = pending.get("ai_run_id")
         self._send_notifications_with_optional_ai_async(
@@ -286,6 +289,76 @@ class DoorNotify(hass.Hass):
         action = "Opened" if to_state == self._open_state else "Closed"
         title = f"{door_name} {action}"
         message = f"{door_name} is now {to_state} (was {from_display})."
+        return title, message
+
+    def _build_notification_from_events(
+        self,
+        door_name: str,
+        events: list[dict],
+        from_display: str,
+    ) -> tuple[str, str]:
+        """Dispatch to the right notification builder based on how many events accumulated."""
+        if not events:
+            # Defensive fallback — should never happen.
+            return f"{door_name} Activity", f"{door_name} had door activity."
+        if len(events) == 1:
+            return self._build_notification(door_name, events[0]["state"], from_display)
+        if len(events) == 2:
+            first, second = events
+            was_open = first["state"] == self._open_state
+            duration_secs = second["timestamp"] - first["timestamp"]
+            return self._build_consolidated_notification(door_name, was_open=was_open, duration_secs=duration_secs)
+        # 3+ events: produce an aggregated summary.
+        activity_secs = events[-1]["timestamp"] - events[0]["timestamp"]
+        return self._build_multi_event_notification(door_name, events, activity_secs)
+
+    def _build_multi_event_notification(
+        self, door_name: str, events: list[dict], activity_secs: float
+    ) -> tuple[str, str]:
+        """Build a phone-friendly summary for 3+ open/close events within a single window.
+
+        Examples
+        --------
+        2 opens + 2 closes   → "In the last 3 minutes, the Garage Door was opened and closed twice."
+        2 opens + 1 close    → "In the last minute, the Garage Door was opened and closed, then left open."
+        3 opens + 2 closes   → "In the last 5 minutes, the Garage Door was opened and closed twice, then left open."
+        """
+        open_count = sum(1 for e in events if e["state"] == self._open_state)
+        close_count = sum(1 for e in events if e["state"] == self._closed_state)
+
+        def _count_phrase(n: int) -> str:
+            return {1: "once", 2: "twice"}.get(n, f"{n} times")
+
+        # Time qualifier
+        if activity_secs < 60:
+            time_phrase = "a short time"
+        elif activity_secs < 120:
+            time_phrase = "the last minute"
+        else:
+            mins = int(round(activity_secs / 60))
+            time_phrase = f"the last {mins} minutes"
+
+        if open_count == close_count:
+            # Equal opens and closes: symmetric cycles.
+            action = f"opened and closed {_count_phrase(open_count)}"
+        elif open_count == close_count + 1:
+            # Ends open.
+            if close_count == 0:
+                action = f"opened {_count_phrase(open_count)}"
+            else:
+                action = f"opened and closed {_count_phrase(close_count)}, then left open"
+        elif close_count == open_count + 1:
+            # Ends closed.
+            if open_count == 0:
+                action = f"closed {_count_phrase(close_count)}"
+            else:
+                action = f"closed and opened {_count_phrase(open_count)}, then left closed"
+        else:
+            # Unexpected imbalance — generic fallback.
+            action = f"changed state {len(events)} times"
+
+        title = f"{door_name} Multiple Events"
+        message = f"In {time_phrase}, the {door_name} was {action}."
         return title, message
 
     def _send_notifications(

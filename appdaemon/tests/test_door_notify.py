@@ -334,6 +334,7 @@ class TestDoorNotifyCovers:
 
         entity_id = "cover.ratgdov25i_x_door"
         app._pending[entity_id] = {
+            "events": [{"state": "open", "timestamp": 100.0}],
             "state": "open",
             "timestamp": 100.0,
             "handle": "handle-1",
@@ -355,7 +356,9 @@ class TestDoorNotifyCovers:
         _, kwargs = app._send_notifications.call_args
         assert kwargs["image_web_path"] == "/api/camera_proxy/camera.gen"
 
-    def test_consolidated_transition_cancels_timer_and_schedules_send(self, monkeypatch):
+    def test_consolidated_transition_cancels_timer_and_reschedules(self, monkeypatch):
+        """Second transition within the window cancels old timer and restarts it; notification
+        fires only when the rescheduled timer expires — not immediately on the second event."""
         monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
         store = _FakeStore(bundle=None)
         monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
@@ -367,17 +370,153 @@ class TestDoorNotifyCovers:
         t = SimpleNamespace(now=1000.0)
         monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: t.now)
 
-        # First transition schedules delayed notification
+        # Capture run_in callbacks so we can trigger them manually.
+        handle_holder: list = []
+
+        def run_in_capture(cb, delay, **kw):
+            handle_holder.append((cb, kw))
+            return f"handle-{len(handle_holder)}"
+
+        app.run_in = MagicMock(side_effect=run_in_capture)
+
+        # First transition: open.
         app._on_door_state(entity_id, "state", "closed", "open", {})
         assert entity_id in app._pending
+        assert len(app._pending[entity_id]["events"]) == 1
 
-        # Second transition triggers consolidated send
+        # Second transition: close — should cancel old timer and restart, NOT send immediately.
         t.now = 1010.0
-        app.run_in.side_effect = lambda cb, delay, **kw: cb(kw) if delay == 0 else "h"
         app._on_door_state(entity_id, "state", "open", "closed", {})
 
         app.cancel_timer.assert_called_once()
+        assert app._send_notifications.call_count == 0  # not sent yet
+        assert len(app._pending[entity_id]["events"]) == 2
+
+        # Trigger the rescheduled timer — now the consolidated notification fires.
+        t.now = 1310.0
+        last_cb, last_kw = handle_holder[-1]
+        last_cb(last_kw)
+
         assert app._send_notifications.call_count == 1
+        call_positional, _ = app._send_notifications.call_args
+        assert "Opened & Closed" in call_positional[0]  # title
+
+    def test_multiple_open_close_cycles_produce_single_notification(self, monkeypatch):
+        """Open→close→open→close within consolidation window: exactly one notification sent."""
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
+        store = _FakeStore(bundle=None)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
+
+        app = self._make_app({"ai_enabled": False, "consolidation_delay": 300})
+        app._send_notifications = MagicMock()
+
+        entity_id = "cover.ratgdov25i_x_door"
+        t = SimpleNamespace(now=1000.0)
+        monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: t.now)
+
+        handle_holder: list = []
+
+        def run_in_capture(cb, delay, **kw):
+            handle_holder.append((cb, kw))
+            return f"handle-{len(handle_holder)}"
+
+        app.run_in = MagicMock(side_effect=run_in_capture)
+
+        # Four state changes: open → close → open → close
+        transitions = [
+            ("closed", "open", 1000.0),
+            ("open", "closed", 1010.0),
+            ("closed", "open", 1020.0),
+            ("open", "closed", 1030.0),
+        ]
+        for old, new, ts in transitions:
+            t.now = ts
+            app._on_door_state(entity_id, "state", old, new, {})
+
+        # Only one notification should exist; notification not sent yet.
+        assert app._send_notifications.call_count == 0
+        assert len(app._pending[entity_id]["events"]) == 4
+        # cancel_timer called 3 times (once per follow-up event)
+        assert app.cancel_timer.call_count == 3
+
+        # Trigger the final timer → single aggregated notification.
+        t.now = 1330.0
+        last_cb, last_kw = handle_holder[-1]
+        last_cb(last_kw)
+
+        assert app._send_notifications.call_count == 1
+        call_positional, _ = app._send_notifications.call_args
+        # Multi-event title and message
+        assert "Multiple Events" in call_positional[0]
+        assert "twice" in call_positional[1]
+
+    def test_build_multi_event_notification_symmetric_cycles(self):
+        """2 opens + 2 closes → 'opened and closed twice'."""
+        app = self._make_app({})
+        events = [
+            {"state": "open",   "timestamp": 1000.0},
+            {"state": "closed", "timestamp": 1010.0},
+            {"state": "open",   "timestamp": 1020.0},
+            {"state": "closed", "timestamp": 1030.0},
+        ]
+        title, message = app._build_multi_event_notification("Garage Door", events, activity_secs=30.0)
+        assert title == "Garage Door Multiple Events"
+        assert "opened and closed twice" in message
+
+    def test_build_multi_event_notification_ends_open(self):
+        """2 opens + 1 close → 'opened and closed, then left open'."""
+        app = self._make_app({})
+        events = [
+            {"state": "open",   "timestamp": 1000.0},
+            {"state": "closed", "timestamp": 1010.0},
+            {"state": "open",   "timestamp": 1020.0},
+        ]
+        title, message = app._build_multi_event_notification("Garage Door", events, activity_secs=20.0)
+        assert title == "Garage Door Multiple Events"
+        assert "left open" in message
+
+    def test_build_multi_event_notification_time_phrases(self):
+        """Time phrases reflect the activity duration correctly."""
+        app = self._make_app({})
+        events = [{"state": "open", "timestamp": 0.0}, {"state": "closed", "timestamp": 10.0}, {"state": "open", "timestamp": 20.0}]
+        # < 60s → "a short time"
+        _, msg = app._build_multi_event_notification("Door", events, activity_secs=20.0)
+        assert "a short time" in msg
+        # 60–119s → "the last minute"
+        _, msg = app._build_multi_event_notification("Door", events, activity_secs=90.0)
+        assert "the last minute" in msg
+        # >= 120s → "the last N minutes"
+        _, msg = app._build_multi_event_notification("Door", events, activity_secs=180.0)
+        assert "the last 3 minutes" in msg
+
+    def test_build_notification_from_events_delegates_correctly(self):
+        """_build_notification_from_events dispatches based on event count."""
+        app = self._make_app({})
+        # 1 event → single notification
+        title, _ = app._build_notification_from_events(
+            "Garage Door", [{"state": "open", "timestamp": 0.0}], "closed"
+        )
+        assert title == "Garage Door Opened"
+
+        # 2 events → consolidated notification
+        title, _ = app._build_notification_from_events(
+            "Garage Door",
+            [{"state": "open", "timestamp": 0.0}, {"state": "closed", "timestamp": 10.0}],
+            "closed",
+        )
+        assert title == "Garage Door Opened & Closed"
+
+        # 3+ events → multi-event notification
+        title, _ = app._build_notification_from_events(
+            "Garage Door",
+            [
+                {"state": "open", "timestamp": 0.0},
+                {"state": "closed", "timestamp": 10.0},
+                {"state": "open", "timestamp": 20.0},
+            ],
+            "closed",
+        )
+        assert title == "Garage Door Multiple Events"
 
 
 # ---------------------------------------------------------------------------
@@ -479,7 +618,8 @@ class TestDoorNotifyBinarySensor:
         assert "is now on" in call_kwargs["message"]
 
     def test_binary_sensor_consolidation_rapid_open_close(self, monkeypatch):
-        """Rapid on->off consolidates into single notification."""
+        """Rapid on->off: second event cancels old timer and restarts it; consolidated
+        notification fires only when the rescheduled timer expires."""
         monkeypatch.setattr(sys.modules["door_notify.door_notify"].threading, "Thread", _ImmediateThread)
         store = _FakeStore(bundle=None)
         monkeypatch.setattr(sys.modules["door_notify.door_notify"], "DETECTION_SUMMARY_STORE", store)
@@ -491,20 +631,36 @@ class TestDoorNotifyBinarySensor:
         t = SimpleNamespace(now=1000.0)
         monkeypatch.setattr(sys.modules["door_notify.door_notify"].time, "time", lambda: t.now)
 
+        handle_holder: list = []
+
+        def run_in_capture(cb, delay, **kw):
+            handle_holder.append((cb, kw))
+            return f"handle-{len(handle_holder)}"
+
+        app.run_in = MagicMock(side_effect=run_in_capture)
+
         # First: off -> on (door opened)
         app._on_door_state(entity_id, "state", "off", "on", {})
         assert entity_id in app._pending
         assert app._pending[entity_id]["state"] == "on"
+        assert len(app._pending[entity_id]["events"]) == 1
 
-        # Second: on -> off (door closed) within consolidation window
+        # Second: on -> off (door closed) within consolidation window — timer restarts, no immediate send.
         t.now = 1010.0
-        app.run_in.side_effect = lambda cb, delay, **kw: cb(kw) if delay == 0 else "h"
         app._on_door_state(entity_id, "state", "on", "off", {})
 
         app.cancel_timer.assert_called_once()
+        assert app._send_notifications.call_count == 0  # not sent yet
+        assert len(app._pending[entity_id]["events"]) == 2
+
+        # Trigger the rescheduled timer.
+        t.now = 1310.0
+        last_cb, last_kw = handle_holder[-1]
+        last_cb(last_kw)
+
         assert app._send_notifications.call_count == 1
         call_positional, _ = app._send_notifications.call_args
-        assert "Opened & Closed" in call_positional[0]  # positional title arg
+        assert "Opened & Closed" in call_positional[0]  # title
 
     def test_binary_sensor_consolidated_was_open_message(self, monkeypatch):
         """Consolidated notification correctly describes 'was open'."""
@@ -538,6 +694,7 @@ class TestDoorNotifyBinarySensor:
 
         entity_id = "binary_sensor.usl_entry_contact"
         app._pending[entity_id] = {
+            "events": [{"state": "on", "timestamp": 100.0}],
             "state": "on",
             "timestamp": 100.0,
             "handle": "handle-1",
