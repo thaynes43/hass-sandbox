@@ -6,7 +6,7 @@ Welcome to the documentation for the HaynesOps smart home — a Home Assistant +
 
 ## Highlights
 
-- **AI-powered camera notifications** — motion-triggered detection with LLM-generated summaries delivered as push notifications
+- **AI-powered camera notifications** — motion-triggered detection with LLM-generated summaries and AI illustrations delivered as push notifications
 - **Occupancy-based lighting** — mmWave presence sensors + Inovelli switches for automatic, zone-aware lighting across the house
 - **Immich photo frame** — wall-mounted displays cycling personal photos from a self-hosted Immich library
 - **Custom Lovelace dashboards** — purpose-built cards for wall displays, mobile, and desktop

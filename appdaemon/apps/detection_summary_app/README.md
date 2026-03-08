@@ -1,6 +1,6 @@
 # Detection Summary App
 
-Generic motion-triggered detection pipeline: capture → score → publish.
+Generic motion-triggered detection pipeline: capture → score → publish. Supports built-in profiles for people, animals, packages, and vehicles.
 
 - Capture snapshots **while motion is ON**
 - Stop when motion has been **OFF for a grace period** (default 15 s)
