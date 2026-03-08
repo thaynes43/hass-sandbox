@@ -7,6 +7,7 @@ When working in `appdaemon/`, read these for full detail:
 - `.cursor/rules/appdaemon-documentation.mdc` — README requirements, documentation map, app dependency graph
 - `.cursor/rules/ai-provider-archetecture-guidelines.mdc` — capability bundles, model settings, prompt policy layering
 - `.cursor/rules/security-policy.mdc` — always applies; see also `.claude/rules/security.md`
+- `.cursor/rules/git-workflow.mdc` — branching, PRs, CI gates, commit conventions
 
 ## Key decisions to know before coding
 
