@@ -5,10 +5,13 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
 
 from .capture import CaptureState
-from .selection import ScoreResult, SelectionMeta
+from .selection import ScoreResult, SelectionMeta, _pick_key, _get_signal_value
+
+if TYPE_CHECKING:
+    from .profiles import DetectionProfile
 
 
 @dataclass
@@ -100,11 +103,27 @@ def write_trace(
                 "frame_score": float(r.frame_score),
                 "pose": r.pose,
                 "summary": r.summary,
+                **(r.extra_signals if hasattr(r, "extra_signals") and r.extra_signals else {}),
             }
             for i, r in scored.items()
         },
     }
     (trace_dir / "meta.json").write_text(json.dumps(meta_out, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _build_scores_dict(res: Optional[ScoreResult]) -> dict[str, Any]:
+    """Build scores dict with standard + extra signals."""
+    d: dict[str, Any] = {
+        "male_count": int(getattr(res, "male_count", 0) or 0) if res else 0,
+        "female_count": int(getattr(res, "female_count", 0) or 0) if res else 0,
+        "animal_count": int(getattr(res, "animal_count", 0) or 0) if res else 0,
+        "person_score": float(res.person_score if res else 0.0),
+        "face_score": float(res.face_score if res else 0.0),
+        "frame_score": float(res.frame_score if res else 0.0),
+    }
+    if res and hasattr(res, "extra_signals") and res.extra_signals:
+        d.update(res.extra_signals)
+    return d
 
 
 def build_bundle_dict(
@@ -123,30 +142,18 @@ def build_bundle_dict(
     cfg: BundleConfig,
     llm_events: list[dict[str, Any]],
     population_bounds: Optional[dict[str, Any]] = None,
+    profile: Optional[DetectionProfile] = None,
 ) -> dict[str, Any]:
     published_ts = time.time()
     ha_dir = run_ha_dir(cfg, run_id)
 
     def _rank_key(res: ScoreResult) -> tuple:
-        person_count = int(getattr(res, "person_count", 0) or 0)
-        has_person = 1 if (person_count > 0 or float(res.person_score) > 0) else 0
-        has_summary = 1 if (res.summary or "").strip() else 0
-        pose = (res.pose or "").strip().lower()
-        pose_rank = {"standing": 3, "stationary": 3, "sitting": 2, "walking": 1, "moving": 1}.get(pose, 0)
-        return (
-            has_person,
-            person_count,
-            float(res.face_score),
-            float(res.frame_score),
-            pose_rank,
-            float(res.person_score),
-            has_summary,
-        )
+        return _pick_key(res, profile=profile)
 
     def _cand(idx: int) -> dict[str, Any]:
         fr = scored.get(idx)
         cap_fr = next((f for f in capture.frames if f.idx == idx), None)
-        return {
+        d: dict[str, Any] = {
             "idx": idx,
             "image_filename": (cap_fr.filename if cap_fr else f"frame_{idx:03d}.jpg"),
             "image_ha_path": (cap_fr.image_ha_path if cap_fr else ""),
@@ -160,6 +167,10 @@ def build_bundle_dict(
             "ai_summary": getattr(fr, "summary", "") if fr else "",
             "ai_structured": getattr(fr, "structured", {}) if fr else {},
         }
+        # Include extra_signals from profile-specific fields
+        if fr and hasattr(fr, "extra_signals") and fr.extra_signals:
+            d["ai_extra_signals"] = dict(fr.extra_signals)
+        return d
 
     best_res = scored.get(best_idx)
     best_summary = (best_res.summary if best_res else "").strip()
@@ -209,14 +220,7 @@ def build_bundle_dict(
         "best_idx": int(best_idx),
         "text": best_summary,
         "run_text": run_summary,
-        "scores": {
-            "male_count": int(getattr(best_res, "male_count", 0) or 0),
-            "female_count": int(getattr(best_res, "female_count", 0) or 0),
-            "animal_count": int(getattr(best_res, "animal_count", 0) or 0),
-            "person_score": float(best_res.person_score if best_res else 0.0),
-            "face_score": float(best_res.face_score if best_res else 0.0),
-            "frame_score": float(best_res.frame_score if best_res else 0.0),
-        },
+        "scores": _build_scores_dict(best_res),
         "timing": {
             "capture_started_epoch": float(capture.started_ts),
             "capture_ended_epoch": capture_ended_epoch,

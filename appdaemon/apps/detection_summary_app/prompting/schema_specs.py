@@ -7,7 +7,10 @@ that own field names, type/default behavior, and ranking/gating participation.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..profiles import DetectionProfile
 
 
 @dataclass(frozen=True)
@@ -154,3 +157,8 @@ class ScoreSchemaSpec:
 def default_score_schema() -> ScoreSchemaSpec:
     """Default schema with people + animals + full scoring fields."""
     return ScoreSchemaSpec(fields=DEFAULT_SCORE_FIELDS)
+
+
+def schema_from_profile(profile: "DetectionProfile") -> ScoreSchemaSpec:
+    """Generate a ScoreSchemaSpec from a DetectionProfile's score_fields."""
+    return ScoreSchemaSpec(fields=profile.score_fields)

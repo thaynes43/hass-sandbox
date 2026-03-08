@@ -1,0 +1,4 @@
+# Normalize all text files to LF in the repo.
+# git will auto-detect text vs binary and convert on checkout,
+# so Windows tools (Cursor, VS Code) won't pollute the repo with CRLF.
+* text=auto eol=lf
