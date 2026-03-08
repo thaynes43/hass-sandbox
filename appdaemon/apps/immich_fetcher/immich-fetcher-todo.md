@@ -23,6 +23,24 @@ After bumping, instruct the user to hard-refresh (Ctrl+Shift+R / pull-to-refresh
 
 ---
 
+## Metadata Cache Refresh (albums/people)
+
+**Issue observed:** Newly created Immich albums did not appear in the fetcher card album dropdown until app restart. Manually typing the album name still worked.
+
+**Root cause:** The backend caches (`people_available`, `albums_available`) were only refreshed on app startup, and the card dropdown reads those cached sensor attributes.
+
+**Short-term fix implemented (backend only):**
+- `immich_fetcher_app.py` now tracks metadata cache freshness and refreshes stale metadata before fetch runs (default every 30 minutes via `metadata_refresh_minutes`).
+- This requires no frontend changes and keeps existing card behavior.
+- Result: New albums/people appear automatically after the next scheduled/manual fetch that triggers a stale-cache refresh.
+
+**Long-term robust plan (frontend + backend):**
+- Add explicit relay commands (for example, `refresh_metadata`) that the card can call when the user opens album/people pickers or toggles into album/search modes.
+- Optionally expose a `last_metadata_refresh` sensor attribute and a UI hint/button in the card so users can force a metadata refresh on demand.
+- Keep the backend TTL refresh as a safety net even after event-driven refresh is added.
+
+---
+
 ## Task 1: Filter row mobile layout (fetcher card)
 
 **Problem:** Filter rows are a single cramped line. On mobile screens the name, badges, and 5+ icon buttons are unreadable and nearly impossible to tap.
@@ -372,6 +390,7 @@ Each task should be implemented, tested, and cache-busted independently before m
 | 9 | Task 5: Photo frame display card | Viewer (new) | High | New card. Replaces markdown card on main dashboard. Test aspect ratio behavior with many photo orientations. |
 | 10 | Task 6: Heartbeat / offline detection | Both | Low | Touches both AppDaemon apps and both cards. Independent of other tasks. |
 | 11 | Task 4 Tier 2: Cross-card dirty indicator | Both | Medium | Requires provisioner changes + coordination between cards. Do after Task 5. |
+| 12 | Metadata Cache Refresh (albums/people) — long-term event-driven refresh | Fetcher | Low | Lower priority now that TTL-based backend refresh is in place. Add frontend-triggered metadata refresh + optional last-refresh indicator for robust on-demand updates. |
 
 ---
 
