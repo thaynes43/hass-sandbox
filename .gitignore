@@ -37,6 +37,10 @@ htmlcov/
 # MkDocs build output
 site/
 
+# Claude Code local settings (permissions, session-specific)
+.claude/settings.json
+.claude/settings.local.json
+
 # Type checking / tooling caches
 .mypy_cache/
 .ruff_cache/
