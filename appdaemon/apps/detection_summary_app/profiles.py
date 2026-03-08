@@ -176,10 +176,36 @@ PROFILE_VEHICLES = DetectionProfile(
     consensus_strategy="mode",
 )
 
+PROFILE_ANIMALS = DetectionProfile(
+    name="animals",
+    description="Animals-only detection; people are context only",
+    categories=(
+        SubjectCategory(
+            name="animals",
+            display_name="Animals",
+            required_for_publish=True,
+            count_signals=("animal_count",),
+            min_count_for_publish=1,
+            image_constraint_signals=("animal_count",),
+        ),
+        SubjectCategory(
+            name="people",
+            display_name="People",
+            required_for_publish=False,
+            count_signals=("male_count", "female_count"),
+            min_count_for_publish=1,
+            image_constraint_signals=("male_count", "female_count"),
+        ),
+    ),
+    score_fields=DEFAULT_SCORE_FIELDS,
+    consensus_strategy="mode",
+)
+
 BUILTIN_PROFILES: dict[str, DetectionProfile] = {
     "default": PROFILE_DEFAULT,
     "packages": PROFILE_PACKAGES,
     "vehicles": PROFILE_VEHICLES,
+    "animals": PROFILE_ANIMALS,
 }
 
 

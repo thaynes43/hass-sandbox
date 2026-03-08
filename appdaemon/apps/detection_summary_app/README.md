@@ -41,6 +41,7 @@ A **`DetectionProfile`** defines what signals to extract from frames, what thres
 | `default` | people (male_count + female_count), animals (animal_count) | — |
 | `packages` | people, animals, packages (package_count) | `package_count` |
 | `vehicles` | people, animals, vehicles (vehicle_count) | `vehicle_count`, `vehicle_type` |
+| `animals` | animals (animal_count) | People are context only (not required for publish) |
 
 ### Configuration
 
@@ -317,65 +318,7 @@ detection_summary_front_door_packages_dev:
 
 ### 2) Animals-only detection: back yard camera (dev app)
 
-Add `detection_summary_backyard_animals_dev` to `apps-dev.yaml` using a custom animals-only inline profile.
-
-**Camera**: Back Yard AI Pro
-**Trigger**: `binary_sensor.back_yard_ai_pro_motion`
-**Profile**: Custom inline — animals `required_for_publish: true`, people `required_for_publish: false`
-
-The `default` profile requires people OR animals to publish. For an animals-only app we want the reverse: only animals gate publishing; people in the frame are context but not a trigger. Use an inline profile with only the animals category marked required, and set `best_min_person_score: 0` to disable the legacy person gate entirely.
-
-```yaml
-detection_summary_backyard_animals_dev:
-  module: detection_summary_app.manager
-  class: DetectionSummary
-  ha_url: !secret ha_url
-  ha_token_env: TOKEN
-  bundle_key: backyard_animals
-  best_min_person_score: 0
-  best_min_animal_count: 1
-  detection_profile:
-    name: animals_only
-    description: Publishes only when animals are detected; people are context only
-    categories:
-      - name: animals
-        display_name: Animals
-        required_for_publish: true
-        count_signals: [animal_count]
-        min_count_for_publish: 1
-        image_constraint_signals: [animal_count]
-      - name: people
-        display_name: People
-        required_for_publish: false
-        count_signals: [male_count, female_count]
-        image_constraint_signals: [male_count, female_count]
-    consensus_strategy: mode
-  snapshot_ha_dir: /media/detection-summary/backyard-animals
-  media_fs_root: !secret media_fs_root
-  hass_entities:
-    camera_entity_id: camera.back_yard_ai_pro_high_resolution_channel
-    trigger_entity_id: binary_sensor.back_yard_ai_pro_motion
-  data_instructions: |
-    You are analyzing ONE security camera snapshot from a backyard camera.
-    Focus primarily on animals/pets — dogs, cats, birds, deer, squirrels, raccoons, etc.
-    Count animals carefully. Identify the species when you can.
-    People may appear in the frame but are secondary; still count them accurately.
-  image_instructions: |
-    Create a simple, clean illustration of the backyard scene.
-    Animals are the focus — make them prominent and clearly identifiable by species.
-  ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
-```
-
-**Manual HA steps after first run**:
-- Add `local_file` camera entries for `detection_summary_best.jpg` / `detection_summary_generated.png` in `configuration.yaml`
-
-**Open questions / tuning**:
-- Consider `off_grace_s: 8` — animals move through the yard faster than people
-- Consider `no_people_threshold: 0` to disable the person-based cutoff heuristic (which stops scoring when person_score drops; for animals, frame_score is a better signal)
-- An `animal_type` extra score field (e.g. `"dog, cat, bird, deer, raccoon, squirrel, none"`) would improve narrative quality and image generation — add it via `extra_score_fields` in the profile once the basic app is working
+Implemented as `detection_summary_back_deck_pets_dev` in `apps-dev.yaml` using the built-in `animals` profile (`detection_profile: animals`). The `animals` built-in profile gates publishing on `animal_count >= 1` only; people in the frame are context but do not trigger publishing on their own.
 
 ---
 

@@ -35,7 +35,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
             Review the PR diff and check if the mkdocs documentation site (docs/) needs updating.
             Focus on:
 
@@ -58,7 +63,8 @@ jobs:
             This audit covers the human-facing documentation site only (docs/ + mkdocs.yml),
             not the agent-facing docs (agent-docs/) which are covered by a separate workflow.
 
-            Post a review comment summarizing findings. If everything is in sync, post a
-            brief approval comment. If issues are found, list them as actionable items.
+            Post your findings as a PR comment using `gh pr comment`.
+            If everything is in sync, post a brief approval comment.
+            If issues are found, list them as actionable items.
 
             Only review files changed in this PR — do not audit the entire codebase.
