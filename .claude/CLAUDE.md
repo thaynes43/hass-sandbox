@@ -9,8 +9,7 @@ A Home Assistant YAML sandbox + AppDaemon Python apps. HA YAML (automations, scr
 ## Agent file structure
 
 - `.agents/playbooks/` — shared playbooks (generic, usable by any AI agent)
-- `.cursor/rules/` — detailed architecture and coding rules (originally Cursor-formatted but content applies to all agents)
-- `.cursor/playbooks/` — Cursor wrappers around `.agents/playbooks/` with Cursor-specific metadata
+- `.cursor/rules/` — detailed architecture and coding rules (Cursor-formatted but content applies to all agents)
 - `.claude/rules/` — Claude-specific rule files that index the above
 
 ## Commands
