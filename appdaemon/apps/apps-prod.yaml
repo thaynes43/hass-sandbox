@@ -476,3 +476,46 @@ photo_frame_viewer_wall_display:
   default_interval_s: 10
   state_dir: /media/photo-frame-viewer/wall_display
   disable: true
+
+dashboard_notify:
+  module: dashboard_notify.dashboard_notify_app
+  class: DashboardNotify
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  www_subdir: dashboard-notify
+  stage_shell_command: dashboard_notify_stage
+  carousel_interval_s: 10
+  default_ttl_s: 3600
+  no_notification_refresh_s: 3600
+  ai_provider_conf:
+    image: gemini-default
+  notifications:
+    - id: school_bus_pickup
+      class: BasicTextImage
+      text: "Time to catch the school bus!"
+      prompt_hint: "children waiting for a yellow school bus at a suburban bus stop"
+      schedule: { start: "08:20", end: "09:00" }
+      ttl_s: 2400
+    - id: go_to_work_tom
+      class: BasicTextImage
+      text: "Time to head to work, Tom!"
+      prompt_hint: "person getting ready for work in the morning"
+      schedule: { start: "07:30", end: "08:30", days: [mon, tue, wed, thu] }
+      ttl_s: 3600
+    - id: school_bus_dropoff
+      class: BasicTextImage
+      text: "School bus arriving soon!"
+      prompt_hint: "school bus dropping off children in a neighborhood"
+      schedule: { start: "15:00", end: "15:30" }
+      ttl_s: 1800
+    - id: no_more_snacks
+      class: FunPictureImage
+      text: "No more snacks! Kitchen is closed."
+      prompt_hint: "funny closed kitchen sign with a padlock on the fridge"
+      schedule: { start: "21:30", end: "01:00" }
+      ttl_s: 12600
+  detection_summary_hook:
+    enabled: true
+    ttl_s: 7200
+    bundle_keys: [garage, bulkhead, front_door, package, back_deck_pets, back_yard_pets, shed]

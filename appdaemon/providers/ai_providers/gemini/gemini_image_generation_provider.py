@@ -64,13 +64,12 @@ class GeminiImageGenerationProvider(ImageGenerationProvider):
         ]
         out_path = Path(output_image_path)
 
-        if not in_paths:
-            raise ExternalImageGenError("input_image_paths is required")
-        missing = [p for p in in_paths if not p.exists()]
-        if missing:
-            raise ExternalImageGenError(
-                f"input image(s) do not exist: {[str(p) for p in missing]}"
-            )
+        if in_paths:
+            missing = [p for p in in_paths if not p.exists()]
+            if missing:
+                raise ExternalImageGenError(
+                    f"input image(s) do not exist: {[str(p) for p in missing]}"
+                )
         if not prompt or not str(prompt).strip():
             raise ExternalImageGenError("prompt is required")
 
