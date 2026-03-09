@@ -6,7 +6,7 @@ Push notifications when configured door entities open or close. Consolidates rap
 
 1. Listens for state changes on configured door entities (covers or binary sensors).
 2. On first transition (e.g. closed → open), schedules a delayed notification.
-3. If the opposite transition occurs within the consolidation delay (default 5 min), cancels the pending notification and sends a single consolidated message instead.
+3. If the opposite transition occurs within the consolidation delay (default 60 s), cancels the pending notification and sends a single consolidated message instead.
 4. If AI is enabled, waits briefly for a detection summary bundle from `detection_summary_app` and attaches the generated image + narrative to the notification.
 
 ## Entity types supported
@@ -45,7 +45,7 @@ garage_door_notify:
 |-----|---------|-------------|
 | `door_open_state` | `open` | State value that means "door is open" |
 | `door_closed_state` | `closed` | State value that means "door is closed" |
-| `consolidation_delay` | `300` | Seconds to wait for second transition before sending |
+| `consolidation_delay` | `60` | Seconds to wait for second transition before sending |
 | `intermediate_state_map` | Auto (covers) | Map intermediate states to display names |
 | `notification_url` | `/detection-summary/garage` | Deep-link URL in push notification |
 
