@@ -154,7 +154,7 @@ class DetectionSummary(hass.Hass):
         "off_grace_s": 15,
         "capture_max_s": 300,
         # cooldown
-        "cooldown_s": 150,
+        "cooldown_s": 90,
         "cooldown_backoff_max_s": 1800,
         "cooldown_backoff_window_n": 3,
         # selection/scoring
