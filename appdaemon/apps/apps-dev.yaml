@@ -19,7 +19,7 @@ dashboard_notify_dev:
       class: BasicTextImage
       text: "Time to catch the school bus!"
       prompt_hint: "children waiting for a yellow school bus at a suburban bus stop"
-      schedule: { start: "08:20", end: "09:00" }
+      schedule: { start: "07:30", end: "09:00" }
       ttl_s: 2400
     - id: go_to_work_tom
       class: BasicTextImage
