@@ -165,6 +165,10 @@ Followed by: what needs copy-pasting into HA, and what was updated in the repo.
 After any `appdaemon/` change, state what was changed:
 - **Repo Updated** — changes are in the repo; will deploy automatically when merged to `main` via Docker image build
 
+### Pull requests must be created as draft (required)
+
+Always create PRs as **draft** (`gh pr create --draft`). Claude Code Review, Agent Docs Audit, and Docs Site Audit workflows only trigger when a PR is marked "Ready for review" — creating as non-draft wastes CI budget and leaves checks in a stuck state. The user will mark the PR as ready when it's complete.
+
 ### Button mapping doc sync (required)
 
 Any change to switch button behavior in `home-assistant/automations/switch-buttons/**` or related blueprints **must** also update `agent-docs/button-mappings.md` in the same session.

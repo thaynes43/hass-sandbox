@@ -70,11 +70,12 @@ All workflows trigger on every PR but skip expensive work when irrelevant files 
 
 | Workflow | Runs on | Skips if no changes to | Gate |
 |----------|---------|----------------------|------|
-| Unit Tests | Every PR + push to `main` | `appdaemon/` | Required to pass |
-| Docs Build | Every PR | `docs/`, `mkdocs.yml` | Required to pass |
-| Agent Docs Audit | Every PR | `appdaemon/` | Required to pass |
-| Docs Site Audit | Every PR | `appdaemon/`, `home-assistant/`, `docs/` | Required to pass |
-| Code Review | PR opened/reopened/ready (skips drafts) | — | Required to pass |
+| Unit Tests | Every PR push + push to `main` | `appdaemon/` | Required to pass |
+| Docs Build | Every PR push | `docs/`, `mkdocs.yml` | Required to pass |
+| Agent Docs Audit | PR marked ready / reopened | `appdaemon/` | Required to pass |
+| Docs Site Audit | PR marked ready / reopened | `appdaemon/`, `home-assistant/`, `docs/` | Required to pass |
+| Code Review | PR marked ready / reopened | — | Required to pass |
+| Build AppDaemon | PR push (build only) + push to `main` (build+push) | `appdaemon/`, `docker/`, `VERSION` | Required to pass |
 | CI Auto-Fix | Unit Tests workflow fails on PR | — | Auto-creates fix commit |
 | Deploy Docs | Push to `main` | `docs/`, `mkdocs.yml` | Deploys to GitHub Pages |
 
