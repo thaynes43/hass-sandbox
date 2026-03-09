@@ -23,7 +23,12 @@ from detection_summary_app.prompting import (
     STYLE_PROFILES,
     ENVIRONMENT_VARIANTS,
 )
-from detection_summary_app.prompting.style_variants import get_environment_variant, get_style_profile
+from detection_summary_app.prompting.style_variants import (
+    get_environment_variant,
+    get_style_profile,
+    random_environment_variant,
+    random_style_profile,
+)
 from detection_summary_app.selection import ScoreResult
 
 
@@ -210,10 +215,38 @@ class TestStyleVariants:
     def test_style_profiles_exist(self):
         assert "cartoon" in STYLE_PROFILES
         assert "default" in STYLE_PROFILES
+        # Should have many profiles for variety
+        assert len(STYLE_PROFILES) >= 20
 
     def test_environment_variants_exist(self):
         assert "default" in ENVIRONMENT_VARIANTS
         assert "underwater" in ENVIRONMENT_VARIANTS
+        # Should have many variants for variety
+        assert len(ENVIRONMENT_VARIANTS) >= 15
+
+    def test_all_style_profiles_have_required_fields(self):
+        for pid, profile in STYLE_PROFILES.items():
+            assert profile.id == pid
+            assert isinstance(profile.prompt_suffix, str)
+            assert isinstance(profile.description, str)
+            assert profile.description  # non-empty description
+
+    def test_all_environment_variants_have_required_fields(self):
+        for vid, variant in ENVIRONMENT_VARIANTS.items():
+            assert variant.id == vid
+            assert isinstance(variant.prompt_suffix, str)
+            assert isinstance(variant.description, str)
+            assert variant.description  # non-empty description
+
+    def test_default_style_has_empty_suffix(self):
+        p = get_style_profile("default")
+        assert p is not None
+        assert p.prompt_suffix == ""
+
+    def test_default_environment_has_empty_suffix(self):
+        v = get_environment_variant("default")
+        assert v is not None
+        assert v.prompt_suffix == ""
 
     def test_get_style_profile_returns_none_for_unknown(self):
         assert get_style_profile("nonexistent") is None
@@ -223,10 +256,20 @@ class TestStyleVariants:
     def test_get_style_profile_returns_profile(self):
         p = get_style_profile("cartoon")
         assert p is not None
-        assert "cartoon" in p.prompt_suffix.lower()
+        assert p.prompt_suffix  # non-empty
 
     def test_get_environment_variant_returns_none_for_unknown(self):
         assert get_environment_variant("nonexistent") is None
+
+    def test_random_style_profile_returns_valid(self):
+        for _ in range(20):
+            p = random_style_profile()
+            assert p.id in STYLE_PROFILES
+
+    def test_random_environment_variant_returns_valid(self):
+        for _ in range(20):
+            v = random_environment_variant()
+            assert v.id in ENVIRONMENT_VARIANTS
 
     def test_image_prompt_builder_applies_style_profile(self):
         builder = ImagePromptBuilder()
@@ -236,3 +279,32 @@ class TestStyleVariants:
             style_profile_id="cartoon",
         )
         assert "cartoon" in out.lower()
+
+    def test_image_prompt_builder_random_selection_when_no_id(self):
+        """When no style/environment IDs are passed, builder randomly selects."""
+        builder = ImagePromptBuilder()
+        # Run multiple times — at least one should get a non-default style or variant
+        results = set()
+        for _ in range(50):
+            out = builder.build(
+                base_instructions="Base",
+                population_bounds={},
+            )
+            # Check if any style suffix appears (non-default profiles have non-empty suffixes)
+            has_style = any(
+                p.prompt_suffix and p.prompt_suffix in out
+                for p in STYLE_PROFILES.values()
+                if p.id != "default"
+            )
+            has_variant = any(
+                v.prompt_suffix and v.prompt_suffix in out
+                for v in ENVIRONMENT_VARIANTS.values()
+                if v.id != "default"
+            )
+            if has_style:
+                results.add("style")
+            if has_variant:
+                results.add("variant")
+        # With 25 styles and 21 variants, 50 runs should hit at least one non-default
+        assert "style" in results, "Random style selection never picked a non-default style in 50 runs"
+        assert "variant" in results, "Random variant selection never picked a non-default variant in 50 runs"

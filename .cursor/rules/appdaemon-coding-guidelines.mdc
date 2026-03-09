@@ -86,5 +86,5 @@ This keeps AI processing off HA while still sharing artifacts reliably.
 
 - **`apps-dev.yaml`**: App keys must end with `_dev` (e.g. `immich_fetcher_dev`, `photo_frame_viewer_wall_display_dev`). Use dev paths (e.g. `/mnt/cephfs-hdd/misc/hass-media/...`).
 - **`apps-prod.yaml`**: App keys use the production name **without** the `_dev` suffix (e.g. `immich_fetcher`, `photo_frame_viewer_wall_display`). Use prod paths (e.g. `/media/...`). Every entry has `disable: true`.
-- When adding a new app: define it in `apps-dev.yaml` with the `_dev` suffix. When promoting to prod via `deploy.py --merge-dev-apps`, the prod entry in `apps-prod.yaml` will omit the suffix automatically.
+- When adding a new app: define it in `apps-dev.yaml` with the `_dev` suffix. When promoting to prod, manually add the entry to `apps-prod.yaml` without the `_dev` suffix and with `disable: true`. The Docker build strips `disable` automatically.
 

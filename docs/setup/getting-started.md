@@ -62,7 +62,6 @@ appdaemon/
 ├── appdaemon.yaml       # Local dev config (committed; never deployed)
 ├── secrets.yaml         # Local dev secrets (.gitignored)
 ├── requirements.txt
-├── deploy.py            # Syncs apps/ + providers/ → production
 ├── apps/                # AppDaemon app modules
 └── providers/           # Shared libraries (AI, photos, provisioning)
 ```

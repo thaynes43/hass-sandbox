@@ -45,4 +45,4 @@ All API keys and tokens in app configs must use the `_env` key pattern (e.g., `a
 
 ### Enforcement
 
-Before deploying to production, run the security audit playbook (`.cursor/playbooks/security-audit-playbook.mdc`). See `.cursor/playbooks/appdaemon-deploy-playbook.mdc` for the deploy workflow.
+Before deploying to production, run the security audit playbook (`.agents/playbooks/security-audit.md`). See `.agents/playbooks/appdaemon-deploy.md` for the deploy workflow.

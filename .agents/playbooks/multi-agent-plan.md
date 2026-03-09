@@ -108,7 +108,7 @@ run the full test suite and fix any failures before finishing:
 
   wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"
 
-DO NOT run deploy.py or copy any files to X:\. All changes stay in the dev environment only.
+DO NOT manually deploy to production. All changes stay in the dev environment until merged to main.
 ```
 
 **Validation Agent** (always one, always last, read-only):
@@ -181,8 +181,8 @@ REQUIRED FIX
 1. <First action>
 2. <Second action>
 
-Read the plan file and rules before making changes. Do not run deploy.py or copy
-files to X:\. Run the full test suite after your changes and confirm it passes:
+Read the plan file and rules before making changes. Do not manually deploy to production.
+Run the full test suite after your changes and confirm it passes:
 
   wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"
 ```
@@ -197,7 +197,7 @@ files to X:\. Run the full test suite after your changes and confirm it passes:
 | Validation Agent gives a vague "PASS" without checking | Checklist not specific enough | Each checklist item must be verifiable by reading one file/method |
 | Parallel agents conflict on the same file | Parallelism analysis missing or wrong | Map every file to exactly one track; shared files go in one track |
 | Validation Agent modifies code | Prompt didn't say read-only | Always include "DO NOT modify any files" in the Validation prompt |
-| Agent tries to deploy to production | Not stated in prompt | Always include "DO NOT run deploy.py" |
+| Agent tries to deploy to production | Not stated in prompt | Always include "DO NOT manually deploy to production" |
 | Implementation Agent skips the test suite | Test command not in prompt | Always include the exact test command |
 | Validation re-prompt is hard to act on | FAIL output is vague or not copy-pasteable | Validation Agent must produce a fenced `text` block with complete details |
 

@@ -13,7 +13,7 @@ When working in `appdaemon/`, read these for full detail:
 
 ### Apps vs providers
 - `appdaemon/apps/` — AppDaemon app modules only (referenced by `apps-prod.yaml` / `apps-dev.yaml`)
-- `appdaemon/providers/` — shared libraries used by multiple apps; deployed to `X:\apps/providers/`
+- `appdaemon/providers/` — shared libraries used by multiple apps; baked into Docker image at `apps/providers/`
 - Never put shared libs inside `appdaemon/apps/`
 
 ### sys.path fix (required for all apps importing providers)
@@ -34,7 +34,7 @@ Cards call `hass.callService("script", "<app>_relay", { command, payload })`. Ne
 - Dev keys end in `_dev`; prod keys do not; prod entries always have `disable: true`
 
 ### Relevant playbooks
-- `.agents/playbooks/appdaemon-deploy.md` — deploy to production
+- `.agents/playbooks/appdaemon-deploy.md` — Docker image build and deploy process
 - `.agents/playbooks/ha-provisioner.md` — add self-provisioning to an app
 - `.agents/playbooks/appdaemon-ai-provider.md` — add a new AI provider
 - `.agents/playbooks/detection-app.md` — add a new detection summary entrance

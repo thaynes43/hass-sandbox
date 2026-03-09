@@ -400,5 +400,5 @@ Each task should be implemented, tested, and cache-busted independently before m
 - **Update `custom-card-guidelines.mdc`** with any new findings (e.g., drag-to-reorder touch patterns, `aspect-ratio` CSS quirks on Android webviews).
 - **Never auto-save** structural changes (add/remove/reorder). Always use `_markDirty()` per custom-card-guidelines §4.
 - **Cache bust after every JS change** using MCP `ha_config_set_dashboard_resource`. Resource IDs are listed at the top of this document.
-- **Do not run `deploy.py`** unless the user explicitly asks. Card JS files are copied manually to `/config/www/photo-frame/` on the HA server.
+- **Card JS files** are copied manually to `/config/www/photo-frame/` on the HA server (not part of the Docker image deploy).
 - **Test on the UniFi Connect Display** for every change involving touch or form inputs. It is the most fragile target.

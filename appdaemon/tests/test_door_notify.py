@@ -127,6 +127,18 @@ class TestDoorNotifyCovers:
         assert app._from_state_display("closed") == "closed"
         assert app._from_state_display(None) == "unknown"
 
+    def test_door_name_uses_config_override(self):
+        app = self._make_app({"door_names": {"cover.ratgdov25i_4a0325_door": "Tesla Garage"}})
+        assert app._door_name("cover.ratgdov25i_4a0325_door") == "Tesla Garage"
+        # Falls back to friendly_name for unmapped entities
+        assert app._door_name("cover.other_door") == "Garage Door"  # mock returns friendly_name
+
+    def test_state_label_cover(self):
+        app = self._make_app({})
+        assert app._state_label("open") == "open"
+        assert app._state_label("closed") == "closed"
+        assert app._state_label("opening") == "opening"
+
     def test_build_notification_open(self):
         app = self._make_app({})
         title, message = app._build_notification("Garage Door", "open", "closed")
@@ -560,21 +572,39 @@ class TestDoorNotifyBinarySensor:
         assert app._from_state_display("opening") == "opening"
         assert app._from_state_display("closing") == "closing"
 
+    def test_binary_sensor_state_label(self):
+        """State labels map on/off to open/closed for human-readable messages."""
+        app = self._make_app({})
+        assert app._state_label("on") == "open"
+        assert app._state_label("off") == "closed"
+        assert app._state_label("something_else") == "something_else"
+
+    def test_binary_sensor_door_name_override(self):
+        """door_names config overrides HA friendly_name for ugly entity names."""
+        app = self._make_app({
+            "door_names": {
+                "binary_sensor.shed_door_open_closed_sensor_window_door_is_open": "Shed Door",
+            },
+        })
+        assert app._door_name("binary_sensor.shed_door_open_closed_sensor_window_door_is_open") == "Shed Door"
+        # Unmapped entity falls back to friendly_name
+        assert app._door_name("binary_sensor.usl_entry_contact") == "Bulkhead Door"
+
     def test_binary_sensor_build_notification_open(self):
-        """'on' state maps to Opened action."""
+        """'on' state maps to Opened action with human-readable labels."""
         app = self._make_app({})
         title, message = app._build_notification("Bulkhead Door", "on", "off")
         assert title == "Bulkhead Door Opened"
-        assert "is now on" in message
-        assert "was off" in message
+        assert "is now open" in message
+        assert "was closed" in message
 
     def test_binary_sensor_build_notification_closed(self):
-        """'off' state maps to Closed action."""
+        """'off' state maps to Closed action with human-readable labels."""
         app = self._make_app({})
         title, message = app._build_notification("Bulkhead Door", "off", "on")
         assert title == "Bulkhead Door Closed"
-        assert "is now off" in message
-        assert "was on" in message
+        assert "is now closed" in message
+        assert "was open" in message
 
     def test_binary_sensor_should_notify_filters(self):
         """Standard unknown/unavailable/same-state filtering applies."""
@@ -588,11 +618,11 @@ class TestDoorNotifyBinarySensor:
     def test_binary_sensor_notification_url_in_data(self):
         """Notification uses bulkhead-specific URL."""
         app = self._make_app({"ai_enabled": False})
-        app._send_notifications("Bulkhead Door Opened", "Bulkhead Door is now on (was off).")
+        app._send_notifications("Bulkhead Door Opened", "Bulkhead Door is now open (was closed).")
         app.call_service.assert_called_once_with(
             "notify/test_service",
             title="Bulkhead Door Opened",
-            message="Bulkhead Door is now on (was off).",
+            message="Bulkhead Door is now open (was closed).",
             data={
                 "url": "/detection-summary/bulkhead",
                 "clickAction": "/detection-summary/bulkhead",
@@ -615,7 +645,7 @@ class TestDoorNotifyBinarySensor:
         app.call_service.assert_called_once()
         _, call_kwargs = app.call_service.call_args
         assert "Bulkhead Door Opened" in call_kwargs["title"]
-        assert "is now on" in call_kwargs["message"]
+        assert "is now open" in call_kwargs["message"]
 
     def test_binary_sensor_consolidation_rapid_open_close(self, monkeypatch):
         """Rapid on->off: second event cancels old timer and restarts it; consolidated

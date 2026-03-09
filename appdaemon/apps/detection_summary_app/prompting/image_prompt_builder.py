@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any, Optional, TYPE_CHECKING
 
 from ..population import augment_image_instructions, augment_image_instructions_with_consensus
-from .style_variants import get_environment_variant, get_style_profile
+from .style_variants import (
+    get_environment_variant,
+    get_style_profile,
+    random_environment_variant,
+    random_style_profile,
+)
 
 if TYPE_CHECKING:
     from ..profiles import DetectionProfile
@@ -38,7 +43,7 @@ class ImagePromptBuilder:
         - Narrative context
         - Frame notes
         - Bundle augmentation (from provider config)
-        - Style profile + environment variant (placeholders)
+        - Style profile + environment variant (randomly selected for variety)
         """
         if consensus_bounds and profile:
             base_prompt = augment_image_instructions_with_consensus(
@@ -91,13 +96,19 @@ class ImagePromptBuilder:
             if aug:
                 prompt = f"{prompt}\n\n{aug}".strip()
 
-        # Style profile (placeholder)
-        style = get_style_profile(style_profile_id)
+        # Style profile: use specific ID if provided, otherwise randomly select
+        if style_profile_id:
+            style = get_style_profile(style_profile_id)
+        else:
+            style = random_style_profile()
         if style and style.prompt_suffix:
             prompt = f"{prompt}\n\n{style.prompt_suffix}".strip()
 
-        # Environment variant (placeholder)
-        env = get_environment_variant(environment_variant_id)
+        # Environment variant: use specific ID if provided, otherwise randomly select
+        if environment_variant_id:
+            env = get_environment_variant(environment_variant_id)
+        else:
+            env = random_environment_variant()
         if env and env.prompt_suffix:
             prompt = f"{prompt}\n\n{env.prompt_suffix}".strip()
 

@@ -84,6 +84,8 @@ bulkhead_door_notify_dev:
     - notify.mobile_app_toms_iphone_air
   doors:
     - binary_sensor.usl_entry_contact
+  door_names:
+    binary_sensor.usl_entry_contact: "Bulkhead Door"
   door_open_state: "on"
   door_closed_state: "off"
   ai_enabled: true
@@ -166,6 +168,8 @@ front_door_door_notify_dev:
   class: DoorNotify
   doors:
     - binary_sensor.usl_entry_contact_3
+  door_names:
+    binary_sensor.usl_entry_contact_3: "Front Door"
   door_open_state: "on"
   door_closed_state: "off"
   ai_enabled: true
@@ -455,6 +459,8 @@ shed_door_notify_dev:
     - notify.mobile_app_kellies_iphone_air
   doors:
     - binary_sensor.shed_door_open_closed_sensor_window_door_is_open
+  door_names:
+    binary_sensor.shed_door_open_closed_sensor_window_door_is_open: "Shed Door"
   door_open_state: "on"
   door_closed_state: "off"
   ai_enabled: true

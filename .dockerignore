@@ -1,0 +1,50 @@
+# Docker build context exclusions for AppDaemon image.
+# Excludes non-production files from the Docker build context.
+
+# Version control & editor state
+.git
+.gitignore
+.cursor
+.claude
+.agents
+agent-docs
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+
+# Editor / OS temp files
+*.swp
+*.bak
+*.tmp
+.DS_Store
+
+# Virtual environments
+.venv
+.venv-wsl
+
+# AppDaemon dev-only / runtime state
+appdaemon/appdaemon.yaml
+appdaemon/secrets.yaml
+appdaemon/tests
+_state
+
+# Home Assistant YAML (not used in AppDaemon image)
+home-assistant
+
+# Documentation site
+docs
+mkdocs.yml
+scripts
+
+# Secrets / env files
+.env
+*.env
+secrets.yaml
+
+# CI / repo meta (not needed in image)
+.github
+*.md
+LICENSE

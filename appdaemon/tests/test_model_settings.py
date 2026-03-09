@@ -72,7 +72,7 @@ def test_load_bundle_gemini_default() -> None:
     assert bundle.multimodal_model == "gemini-2.5-flash"
     assert bundle.simple_text_model == "gemini-2.5-flash-lite"
     assert bundle.image_model == "gemini-3-pro-image-preview"
-    assert bundle.image_prompt_augmentation == "Make it like a cartoon"
+    assert bundle.image_prompt_augmentation is None
 
 
 def test_load_bundle_openai_budget() -> None:
@@ -225,7 +225,8 @@ bundles:
 
 def test_image_bundle_exposes_style_hooks() -> None:
     bundle = load_bundle("gemini-default")
-    assert bundle.style_profile == "cartoon"
+    # Style hooks removed from bundle config — random selection happens at prompt build time
+    assert bundle.style_profile is None
 
 
 def test_clear_cache() -> None:

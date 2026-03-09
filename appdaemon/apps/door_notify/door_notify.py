@@ -250,7 +250,10 @@ class DoorNotify(hass.Hass):
         return old != new
 
     def _door_name(self, entity_id: str) -> str:
-        """Get friendly name or fall back to entity_id."""
+        """Get display name: config override > HA friendly_name > entity_id."""
+        door_names = self.args.get("door_names", {})
+        if isinstance(door_names, dict) and entity_id in door_names:
+            return door_names[entity_id]
         name = self.get_state(entity_id, attribute="friendly_name")
         return name if name else entity_id
 
@@ -284,11 +287,19 @@ class DoorNotify(hass.Hass):
             message = f"{door_name} was closed for {duration_str} before it opened."
         return title, message
 
+    def _state_label(self, raw_state: str) -> str:
+        """Map raw state values to human-readable labels (e.g., 'on' → 'open')."""
+        if raw_state == self._open_state:
+            return "open"
+        if raw_state == self._closed_state:
+            return "closed"
+        return raw_state
+
     def _build_notification(self, door_name: str, to_state: str, from_display: str) -> tuple[str, str]:
         """Build (title, message) for the notification."""
         action = "Opened" if to_state == self._open_state else "Closed"
         title = f"{door_name} {action}"
-        message = f"{door_name} is now {to_state} (was {from_display})."
+        message = f"{door_name} is now {self._state_label(to_state)} (was {self._state_label(from_display)})."
         return title, message
 
     def _build_notification_from_events(

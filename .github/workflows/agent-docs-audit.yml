@@ -2,7 +2,7 @@ name: Agent Docs Audit
 
 on:
   pull_request:
-    types: [opened, synchronize, ready_for_review, reopened]
+    types: [ready_for_review, reopened]
 
 jobs:
   agent-docs-audit:

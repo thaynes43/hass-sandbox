@@ -9,8 +9,7 @@ A Home Assistant YAML sandbox + AppDaemon Python apps. HA YAML (automations, scr
 ## Agent file structure
 
 - `.agents/playbooks/` — shared playbooks (generic, usable by any AI agent)
-- `.cursor/rules/` — detailed architecture and coding rules (originally Cursor-formatted but content applies to all agents)
-- `.cursor/playbooks/` — Cursor wrappers around `.agents/playbooks/` with Cursor-specific metadata
+- `.cursor/rules/` — detailed architecture and coding rules (Cursor-formatted but content applies to all agents)
 - `.claude/rules/` — Claude-specific rule files that index the above
 
 ## Commands
@@ -46,17 +45,9 @@ appdaemon -c appdaemon
 
 ### Deploy to production
 
-```bash
-python appdaemon/deploy.py --dry-run   # preview
-python appdaemon/deploy.py             # deploy to X:\
-python appdaemon/deploy.py --target X:\
-```
+Production deploys are automated via Docker image builds. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux detects the new image and rolls the Kubernetes deployment.
 
-### Promote dev app to prod
-
-```bash
-python appdaemon/deploy.py --merge-dev-apps  # merges apps-dev.yaml into apps-prod.yaml (repo only)
-```
+Bump `VERSION` on the feature branch before merging — the merge to `main` automatically produces the semver tag. Use semver: patch for fixes, minor for features, major for breaking changes.
 
 ### Install dependencies
 
@@ -70,7 +61,7 @@ pip install -r appdaemon/requirements.txt
 
 **`home-assistant/`** — HA YAML configs (automations, scripts, cards, helpers, blueprints). No CI; changes are copy-pasted into the HA UI. This is reference/backup, not source of truth for HA.
 
-**`appdaemon/`** — Python AppDaemon apps. Dev here, deploy to prod at `X:\` via `deploy.py`. Tests live in `appdaemon/tests/`.
+**`appdaemon/`** — Python AppDaemon apps. Dev here, production deploys via Docker image build on merge to `main`. Tests live in `appdaemon/tests/`.
 
 ### AppDaemon folder layout
 
@@ -79,9 +70,8 @@ appdaemon/
 ├── appdaemon.yaml       # Local dev config (committed; never deployed)
 ├── secrets.yaml         # Local dev secrets (.gitignored)
 ├── requirements.txt
-├── deploy.py            # Syncs apps/ + providers/ → X:\
 ├── apps/
-│   ├── apps-prod.yaml   # All entries have disable: true; deploy strips this and writes apps.yaml
+│   ├── apps-prod.yaml   # All entries have disable: true; Docker build strips this and writes apps.yaml
 │   ├── apps-dev.yaml    # Dev-only apps (keys must end in _dev); never deployed
 │   ├── detection_summary_app/
 │   ├── detection_summary_viewer/
@@ -172,9 +162,12 @@ Followed by: what needs copy-pasting into HA, and what was updated in the repo.
 
 ### AppDaemon deploy communication (required)
 
-After any `appdaemon/` change, state whether it was deployed:
-- **Repo YAML/Python Updated - Deployed to production** (ran `deploy.py`)
-- **Repo YAML/Python Only - You copy paste or deploy** (user must run `python appdaemon/deploy.py`)
+After any `appdaemon/` change, state what was changed:
+- **Repo Updated** — changes are in the repo; will deploy automatically when merged to `main` via Docker image build
+
+### Pull requests must be created as draft (required)
+
+Always create PRs as **draft** (`gh pr create --draft`). Claude Code Review, Agent Docs Audit, and Docs Site Audit workflows only trigger when a PR is marked "Ready for review" — creating as non-draft wastes CI budget and leaves checks in a stuck state. The user will mark the PR as ready when it's complete.
 
 ### Button mapping doc sync (required)
 
@@ -198,7 +191,7 @@ When starting a task that matches one of these, read the playbook first:
 
 | Playbook | When to use |
 |----------|-------------|
-| `.agents/playbooks/appdaemon-deploy.md` | Deploying AppDaemon to production |
+| `.agents/playbooks/appdaemon-deploy.md` | AppDaemon Docker image build and deploy process |
 | `.agents/playbooks/security-audit.md` | Pre-deploy security audit |
 | `.agents/playbooks/ha-provisioner.md` | Adding self-provisioning to an AppDaemon app |
 | `.agents/playbooks/appdaemon-ai-provider.md` | Adding a new AI provider |

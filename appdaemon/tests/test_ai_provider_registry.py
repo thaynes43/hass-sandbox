@@ -353,14 +353,15 @@ def test_image_pointer_ollama_raises() -> None:
 
 
 def test_image_config_includes_prompt_augmentation_from_bundle() -> None:
-    """gemini-default bundle exposes image_prompt_augmentation for caller composition."""
+    """gemini-default bundle exposes style hook fields (None when not set in YAML)."""
     import os
 
     os.environ["GEMINI_API_KEY"] = "test-key"
     try:
         args = {"ai_provider_conf": {"image": "gemini-default"}}
         cfg = provider_config_from_appdaemon_args(args)
-        assert cfg.image_prompt_augmentation == "Make it like a cartoon"
-        assert cfg.style_profile == "cartoon"
+        # Style hooks are not set in gemini-default — random selection happens at prompt build time
+        assert cfg.image_prompt_augmentation is None
+        assert cfg.style_profile is None
     finally:
         os.environ.pop("GEMINI_API_KEY", None)

@@ -83,7 +83,7 @@ Also check relevant playbooks listed in CLAUDE.md before starting implementation
 
 ## Scope Boundaries — What You Must NOT Do
 - **Do NOT push code to Git** — no `git push`, `git commit`, etc.
-- **Do NOT deploy to production** — do not run `deploy.py` or copy files to `X:\`
+- **Do NOT deploy to production** — deployment is automatic on merge to `main` via Docker image build
 - **Do NOT run integration tests** unless explicitly asked and env vars are confirmed available
 
 ## Communication Protocol
@@ -93,7 +93,7 @@ After making changes, clearly state:
 - **Test results** — which tests were run and their outcomes
 - **What needs manual action** — deployment, HA UI copy-paste, Lovelace resource bumps, etc.
 - For HA YAML changes, use the required header: **Repo YAML Only Updated - You copy paste** or **Repo YAML & Live HA Updated**
-- For AppDaemon changes: **Repo YAML/Python Only - You copy paste or deploy**
+- For AppDaemon changes: **Repo Updated** — changes deploy automatically when merged to `main`
 
 ## Quality Checklist (Self-Verify Before Completing)
 - [ ] Code follows project architecture (apps vs providers separation)

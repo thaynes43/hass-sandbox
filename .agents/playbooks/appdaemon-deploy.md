@@ -1,122 +1,116 @@
 # AppDaemon deploy playbook
 
-Run this playbook when the user explicitly asks to deploy AppDaemon changes to production. This repo treats `appdaemon/` as the **development** workspace; production AppDaemon reads configs from `X:\` (mounted into Kubernetes).
+Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon`) in Kubernetes. App code is baked into the image at build time. Deploys happen automatically when code merges to `main`.
 
-## Rules (before running workflow)
+## How deployment works
 
-- **Never auto-deploy**: `X:\` is not always mounted; the user mounts it on demand. Never run `deploy.py` automatically after making code changes. Only run when the user explicitly asks to deploy. After editing `appdaemon/**` files, tell the user what changed and that they can deploy when ready — do not attempt the deploy yourself.
-- **When to use**: The user says "deploy", "deploy AppDaemon", "deploy to production", or similar. If they did not ask, do not deploy.
+1. Developer merges PR to `main` (or pushes directly for hotfixes)
+2. GitHub Actions workflow (`.github/workflows/build-appdaemon.yml`) builds a Docker image
+3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
+4. Flux detects the new image tag and rolls the Kubernetes deployment
+5. The container's entrypoint copies baked-in app code to `/conf/apps/` and starts AppDaemon
 
-## Critical rule: Clarify merge vs. backend-only
+## Versioning
 
-**The user must specify the deployment mode.** If they do not, **ask for clarification** before running the playbook:
+- **`VERSION` file** at repo root contains the semver version (e.g., `0.1.0`)
+- **Main branch** tags: `<version>`, `<version>-<sha>`, `latest`
+- **Feature branches** tags: `<version>-<branch>.<sha>`, `<version>-<branch>` (for testing pre-merge)
+- Bump `VERSION` on the feature branch before merging so the merge to `main` produces the correct semver tag
 
-- **Backend-only**: Deploy app code + shared libraries (providers). No changes to the production app list. Use when you only changed Python under `appdaemon/` (apps, providers, tests) and did not add/remove/promote apps.
-- **Merge and deploy**: Promote dev apps from `apps-dev.yaml` into `apps-prod.yaml`, then deploy. Use when you added or modified dev apps and want them in production.
+## What the Docker build does
 
-**Ask:** "Do you want a backend-only deploy (no app list changes), or should I merge dev apps into production first?"
+- Installs runtime deps from `docker/requirements-prod.txt`
+- Processes `apps-prod.yaml` → `apps.yaml` (strips `disable: true` and `debug_preserve_run_dirs: true`)
+- Stages app code at `/opt/appdaemon-code/apps/` and `/opt/appdaemon-code/providers/`
+- Removes `apps-dev.yaml` and `apps-prod.yaml` from the image
+- At runtime, entrypoint copies code to `/conf/apps/` (writable emptyDir) including `providers/` → `apps/providers/`
 
-## Workflow: Deploy to production
+## What is NOT in the image
 
-### Step 0 — Clarify mode (0 calls)
+- `appdaemon.yaml` — comes from Kubernetes Secret mount at `/conf/appdaemon.yaml`
+- `secrets.yaml` — comes from Kubernetes Secret mount at `/conf/secrets.yaml`
+- Test files, dev configs, `.venv`, `__pycache__` — excluded by `.dockerignore`
 
-If the user did not specify merge vs. backend-only, ask for clarification and stop until they respond.
+## App lifecycle: dev → prod → dev
 
-### Step 1 — Security audit (run playbook)
+Apps move between `apps-dev.yaml` (local development) and `apps-prod.yaml` (Kubernetes production). This is a manually driven process.
 
-Run the security audit playbook (`.agents/playbooks/security-audit.md`). All checks must PASS. **Do not proceed if any check fails.**
+### Promote dev app to prod
 
-### Step 2 — Prerequisites
+When a new app is ready for production testing:
 
-Ensure `X:\` exists and is writable. If it does not exist, abort and tell the user to mount the production config volume.
+1. **Copy the app config** from `apps-dev.yaml` to `apps-prod.yaml`
+2. **Strip the `_dev` suffix** from the app key (e.g., `my_app_dev` → `my_app`)
+3. **Add `disable: true`** (Docker build strips this; prevents local AppDaemon from running prod apps)
+4. **Remove `debug_preserve_run_dirs: true`** if present
+5. **Convert `ai_provider_conf`** from dev providers (ollama/comfyui with `!secret` URLs) to prod providers (e.g., `openai-default`):
+   ```yaml
+   # Dev format (inline bundle + URL):
+   ai_provider_conf:
+     simple_text:
+       bundle: ollama-qwen9b
+       base_url: !secret ollama_url
+     multimodal:
+       bundle: ollama-qwen9b
+       base_url: !secret ollama_url
+     image:
+       bundle: comfyui-qwen-edit
+       base_url: !secret comfyui_url
 
-```powershell
-# Check from Windows PowerShell
-Test-Path "X:\"
-```
+   # Prod format (simple bundle reference):
+   ai_provider_conf:
+     simple_text: openai-default
+     multimodal: openai-default
+     image: openai-default
+   ```
+6. **Remove the app from `apps-dev.yaml`** — dev file should be empty when all apps are in prod
+7. **Commit on a feature branch**, push, and test with the dev-tagged Docker image before merging to `main`
 
-### Step 3a — Merge dev apps (only if user requested merge)
+### Pull prod app back to dev
 
-Run from repo root:
+When a running prod app needs enhancements, bug fixes, or new features:
 
-```powershell
-.\.venv\Scripts\python.exe appdaemon\deploy.py --merge-dev-apps
-```
+1. **Copy the app config** from `apps-prod.yaml` to `apps-dev.yaml`
+2. **Add the `_dev` suffix** to the app key (e.g., `my_app` → `my_app_dev`)
+3. **Remove `disable: true`** (dev apps run locally)
+4. **Convert `ai_provider_conf`** from prod providers to dev providers (ollama/comfyui with `!secret` URLs)
+5. **Optionally add `debug_preserve_run_dirs: true`** for troubleshooting
+6. **Remove the app from `apps-prod.yaml`** so the next Docker build excludes it from production
+7. **Push a new image tag** to Kubernetes that doesn't include this app (production will stop running it)
+8. **Do dev work locally**, then follow the "Promote" flow when ready
 
-This reads `apps-dev.yaml`, strips `_dev` suffixes, converts dev media paths to prod (`/media/...`), adds `disable: true`, and merges into `apps-prod.yaml`. **Nothing is deployed to `X:\`.**
+### Key rules
 
-**Stop here.** Tell the user to review the updated `apps-prod.yaml`. Do **not** chain merge + deploy in one step. Wait for user confirmation before Step 3b.
+- An app should only exist in ONE file at a time — never both `apps-dev.yaml` and `apps-prod.yaml`
+- `apps-dev.yaml` should be empty when all development is complete and all apps are in prod
+- Dev uses local AI providers (ollama, comfyui); prod uses cloud providers (openai)
+- The `disable: true` flag is only in `apps-prod.yaml` — it prevents local AppDaemon from running prod apps; Docker build strips it
 
-### Step 3b — Dry-run, then deploy
+### Future: runtime app disable
 
-From repo root, run dry-run first:
+Currently, removing an app from production requires building and deploying a new image. A future improvement could allow pausing/disabling individual apps at runtime without redeploying (e.g., via an HA helper toggle or AppDaemon admin API). This would make the dev↔prod cycle faster and less disruptive.
 
-```powershell
-.\.venv\Scripts\python.exe appdaemon\deploy.py --dry-run --target "X:\"
-```
+## Adding new Python dependencies
 
-Show the user the dry-run output. After they confirm it looks correct, run deploy:
+1. Add the dependency to `docker/requirements-prod.txt`
+2. The next Docker build will install it in the image
+3. Dev dependencies (pytest, ruamel.yaml, etc.) stay in `appdaemon/requirements.txt` only
 
-```powershell
-.\.venv\Scripts\python.exe appdaemon\deploy.py --target "X:\"
-```
+## Verification
 
-**Notes:**
-
-- Default target is `X:\` (or `DEPLOY_TARGET` env). Omit `--target` if using default.
-- **WSL + `X:\`**: `X:\` is not a valid path in WSL. Run deploy from Windows PowerShell, or pass a WSL-visible path (e.g. `/mnt/x`) if the prod mount is exposed there.
-- **Venv**: Use `.\.venv\Scripts\python.exe` (Windows) from repo root. Ensure `ruamel.yaml` is installed: `pip install -r appdaemon/requirements.txt`.
-- **Deploy takes longer than expected**: Over SSHFS/network mounts, the deploy often runs 30+ seconds and may timeout the agent's command wait. This is expected. The deploy continues in the background; the user can confirm completion in the terminal or at https://appdaemon.haynesops.com/.
-
-## What deploy.py does (and does not do)
-
-- **Does**: Sync `appdaemon/apps/**` into `X:\apps/**`. Reads `apps-prod.yaml`, strips all `disable: true` flags, writes the result as `X:\apps\apps.yaml`. Also syncs `providers/` (ai_providers, ha_provisioner, photo_providers) into `X:\apps/providers/`.
-- **Never does**: Deploy `appdaemon.yaml` or `secrets.yaml` (production gets them via Flux ConfigMaps).
-- **Does not**: Install Python dependencies in the production container.
-
-## Merge behavior (when Step 3a applies)
-
-- **New app keys** in `apps-dev.yaml` are **added** to `apps-prod.yaml` with `disable: true` and prod paths.
-- **Existing app keys** (same prod name) in `apps-dev.yaml` **replace** the corresponding entry in `apps-prod.yaml`.
-- YAML tags like `!secret` are preserved via `ruamel.yaml`.
-
-### Custom dev media path
-
-If dev uses a different media mount:
-
-```powershell
-.\.venv\Scripts\python.exe appdaemon\deploy.py --merge-dev-apps --prod-media /mnt/other/media
-```
-
-## Shared code deployment
-
-Production AppDaemon commonly imports with `sys.path == ["/conf/apps", ...]`. Any shared library outside `appdaemon/apps/` must land under `X:\apps\...`. Update `deploy.py` `COPY_ITEMS` when adding a new shared library.
+After merge to `main`:
+- Check GitHub Actions for successful build
+- Verify image appears in GHCR: `ghcr.io/thaynes43/appdaemon`
+- Check Flux reconciliation and pod status in Kubernetes
+- Verify at https://appdaemon.haynesops.com/
 
 ## Common pitfalls
 
 | Symptom | Cause | Fix |
 |--------|-------|-----|
-| "Target directory does not exist" | `X:\` not mounted | User must mount the production config volume |
-| WSL: path `X:\` invalid | `X:\` is a Windows path | Run deploy from Windows PowerShell, or use WSL-visible path (e.g. `/mnt/x`) |
-| `ModuleNotFoundError: ruamel.yaml` | Missing dependency | `pip install -r appdaemon/requirements.txt` in the venv |
-| Production `ModuleNotFoundError` after deploy | New package in requirements.txt | Production container must install it; dev-only until image is updated |
-| Agent times out / returns to chat during deploy | Deploy over SSHFS/network takes 30+ s | Expected. Deploy continues in background; user confirms in terminal or at appdaemon UI |
-
-## Restructuring directories (move/rename/consolidate)
-
-`deploy.py` only **copies**; it never removes anything from the target. If you move or consolidate directories in the repo (e.g., move `ai_providers` under `providers/`), the old paths will remain on `X:\` and can cause import confusion.
-
-**Manual cleanup:** Before or right after deploying, manually remove obsolete dirs on the target:
-
-```powershell
-# Example: if you moved ai_providers, ha_provisioner, photo_providers under providers/
-Remove-Item -Recurse -Force "X:\apps\ai_providers" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force "X:\apps\ha_provisioner" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force "X:\apps\photo_providers" -ErrorAction SilentlyContinue
-```
-
-Only remove dirs that no longer exist in the repo's structure. After one-time cleanup, normal deploy will keep things correct.
-
-## Python dependencies: dev vs production
-
-Adding a line to `appdaemon/requirements.txt` only guarantees it exists in **dev**. Production will NOT have the dependency until the AppDaemon container installs it. If an app imports a missing package, AppDaemon will fail with `ModuleNotFoundError`.
+| Image build fails | Bad YAML in apps-prod.yaml | Fix YAML syntax, re-push |
+| Pod CrashLoopBackOff | Missing secret mounts or bad config | Check K8s secret mounts, pod logs |
+| `ModuleNotFoundError` in prod | Missing dep in `docker/requirements-prod.txt` | Add dep, rebuild image |
+| Old code running after merge | Flux hasn't reconciled yet | Check Flux status, force reconcile |
+| `!secret` tags lost in apps.yaml | process-apps-yaml.py bug | Check `docker/process-apps-yaml.py` SecretTag handling |
+| App running in dev AND prod | Config exists in both YAML files | Remove from one — app should only be in one file at a time |

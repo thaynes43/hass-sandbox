@@ -1,0 +1,87 @@
+name: Build AppDaemon Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "appdaemon/apps/**"
+      - "appdaemon/providers/**"
+      - "docker/**"
+      - "VERSION"
+  pull_request:
+    paths:
+      - "appdaemon/apps/**"
+      - "appdaemon/providers/**"
+      - "docker/**"
+      - "VERSION"
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/appdaemon
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+
+      - name: Compute short SHA
+        id: sha
+        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Sanitize branch name
+        id: branch
+        run: |
+          ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          # Take everything after the last slash (feature/foo → foo), then replace remaining invalid chars
+          sanitized=$(echo "$ref" | sed 's|.*/||' | sed 's/[^a-zA-Z0-9._-]/-/g')
+          echo "name=$sanitized" >> "$GITHUB_OUTPUT"
+
+      - name: Compute tags
+        id: tags
+        run: |
+          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
+          version="${{ steps.version.outputs.version }}"
+          short_sha="${{ steps.sha.outputs.short }}"
+          branch="${{ steps.branch.outputs.name }}"
+
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            # Main branch: semver tags
+            tags="${image}:${version}"
+            tags="${tags},${image}:${version}-${short_sha}"
+            tags="${tags},${image}:latest"
+          else
+            # Feature branch: dev tags with semver baseline
+            tags="${image}:${version}-${branch}.${short_sha}"
+            tags="${tags},${image}:${version}-${branch}"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}

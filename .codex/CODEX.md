@@ -13,8 +13,7 @@ A Home Assistant YAML sandbox plus AppDaemon Python apps.
 ## Agent file structure
 
 - `.agents/playbooks/` — shared playbooks for any agent
-- `.cursor/rules/` — canonical detailed architecture and coding rules
-- `.cursor/playbooks/` — Cursor-specific wrappers around shared playbooks
+- `.cursor/rules/` — detailed architecture and coding rules
 - `.claude/` — Claude-specific index files
 - `.codex/` — Codex-specific index files
 
@@ -64,13 +63,7 @@ appdaemon -c appdaemon
 
 ### Deploy AppDaemon
 
-```bash
-python appdaemon/deploy.py --dry-run
-python appdaemon/deploy.py
-python appdaemon/deploy.py --merge-dev-apps
-```
-
-Do not deploy unless the user explicitly asks.
+Production deploys are automated. Merging to `main` triggers a Docker image build and push to GHCR. Flux rolls the Kubernetes deployment automatically.
 
 ## Core repository facts
 
@@ -80,7 +73,6 @@ Do not deploy unless the user explicitly asks.
 appdaemon/
 ├── appdaemon.yaml
 ├── secrets.yaml                  # local only, gitignored
-├── deploy.py
 ├── apps/
 │   ├── apps-dev.yaml
 │   ├── apps-prod.yaml

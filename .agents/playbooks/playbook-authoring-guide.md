@@ -2,7 +2,7 @@
 
 ### What is a playbook?
 
-A playbook is a markdown document that teaches AI agents **how to complete a specific task** using MCP tools or repo conventions in as few steps as possible. Playbooks live in `.agents/playbooks/` (shared/canonical) and optionally have wrapper files in `.cursor/playbooks/` (with Cursor-specific frontmatter) for Cursor auto-loading.
+A playbook is a markdown document that teaches AI agents **how to complete a specific task** using MCP tools or repo conventions in as few steps as possible. Playbooks live in `.agents/playbooks/` as the single source of truth.
 
 ### When to create a playbook
 
@@ -68,10 +68,9 @@ Every playbook follows this skeleton:
 
 ### File conventions
 
-- **Canonical location**: `.agents/playbooks/<name>.md` — plain markdown, no frontmatter
-- **Cursor wrapper**: `.cursor/playbooks/<name>-playbook.mdc` — add Cursor frontmatter (`globs`, `alwaysApply: false`) pointing to the shared file
+- **Location**: `.agents/playbooks/<name>.md` — plain markdown, no frontmatter
 - **Naming**: `ha-<domain>.md` for Home Assistant tasks, `appdaemon-<domain>.md` for AppDaemon tasks
-- **Reference in**: `.claude/CLAUDE.md` playbook table and `.cursor/playbooks/playbook-authoring-guide.mdc` existing playbooks table
+- **Reference in**: `.claude/CLAUDE.md` playbook table
 
 ### Existing playbooks
 
