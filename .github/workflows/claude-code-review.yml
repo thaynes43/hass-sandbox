@@ -27,4 +27,9 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
           plugins: 'code-review@claude-code-plugins'
-          prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          prompt: |
+            CONTEXT: This workflow only triggers when a PR is marked "Ready for review" (ready_for_review event).
+            The PR was created as a draft and has now been marked ready — this is the expected SDLC flow.
+            Do NOT flag the PR as "not created as draft" — it was draft and is now intentionally ready for review.
+
+            /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
