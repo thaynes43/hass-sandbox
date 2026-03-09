@@ -12,6 +12,7 @@ garage_door_notify_dev:
     - cover.ratgdov25i_4a0325_door
     - cover.ratgdov25i_dbfa50_door
   # door_open_state/door_closed_state default to "open"/"closed" for cover entities
+  consolidation_delay: 300
   ai_enabled: true
   ai_bundle_key: garage
   ai_wait_timeout_s: 180

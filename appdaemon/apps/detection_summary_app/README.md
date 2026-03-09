@@ -192,7 +192,7 @@ ai_provider_conf:
 | `snapshot_interval_s` | `2.5` | Seconds between frame captures while motion is on |
 | `off_grace_s` | `15` | Seconds motion must be OFF before capture ends |
 | `capture_max_s` | `300` | Hard cap on total capture duration |
-| `cooldown_s` | `150` | Base post-finalize cooldown (seconds) |
+| `cooldown_s` | `90` | Base post-finalize cooldown (seconds) |
 | `cooldown_backoff_max_s` | `1800` | Hard cap on effective cooldown |
 | `cooldown_backoff_window_n` | `3` | Backoff window multiplier |
 
@@ -255,7 +255,7 @@ After a pipeline completes (published **or** skipped), triggers are suppressed f
 - **Next image outside window** → reset to `cooldown_s`
 - **Skipped run** (no subjects detected) → always resets to `cooldown_s`; does not affect backoff chain
 
-Backoff progression from 150 s base: **150 → 300 → 600 → 1200 → 1800 s** (cap).
+Backoff progression from 90 s base: **90 → 180 → 360 → 720 → 1440 → 1800 s** (cap).
 
 Suppression and backoff are logged at `WARNING` level. Resets are logged at `INFO`.
 
