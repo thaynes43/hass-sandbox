@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
@@ -37,6 +39,34 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
     return bool(value)
+
+
+def _next_boundary_seconds(hour: int, minute: int, now: float) -> float:
+    """Return seconds from now until the next occurrence of HH:MM (today or tomorrow)."""
+    dt_now = datetime.fromtimestamp(now)
+    candidate = dt_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    if candidate <= dt_now:
+        candidate += timedelta(days=1)
+    return (candidate - dt_now).total_seconds()
+
+
+def _seconds_until_next_matching_day(
+    hour: int, minute: int, days: list[str], now: float
+) -> float:
+    """Return seconds until the next HH:MM on one of the listed days."""
+    dt_now = datetime.fromtimestamp(now)
+    day_names = [d.strip().lower() for d in days]
+    for offset in range(8):
+        candidate = (dt_now + timedelta(days=offset)).replace(
+            hour=hour, minute=minute, second=0, microsecond=0
+        )
+        if offset == 0 and candidate <= dt_now:
+            continue
+        day_name = candidate.strftime("%a").lower()
+        if day_name in day_names:
+            return (candidate - dt_now).total_seconds()
+    # Fallback: 7 days
+    return 7 * 86400.0
 
 
 class DashboardNotify(hass.Hass):
@@ -93,6 +123,12 @@ class DashboardNotify(hass.Hass):
         self._placeholder_url: str = ""
         self._active_generations: set[str] = set()
 
+        # Schedule handles: {nid: {"start": handle_or_None, "end": handle_or_None}}
+        self._schedule_handles: dict[str, dict[str, Any]] = {}
+
+        # Expiry handles: {nid: handle}
+        self._expiry_handles: dict[str, Any] = {}
+
         # Build image provider
         try:
             img_cfg = provider_config_from_appdaemon_args(cfg)
@@ -109,9 +145,8 @@ class DashboardNotify(hass.Hass):
         # Schedule async startup (provisioning)
         self.run_in(self._async_startup, 0)
 
-        # Schedule checker + expiry pruner (every 60s, first tick after 5s)
-        self.run_in(self._tick, 5)
-        self.run_every(self._tick, "now+65", 60)
+        # Schedule one-time startup reconciliation (after a short delay to let AD settle)
+        self.run_in(self._startup_reconcile, 5)
 
         # Carousel advance timer
         self.run_every(self._carousel_advance, "now+15", self._carousel_interval_s)
@@ -196,65 +231,291 @@ class DashboardNotify(hass.Hass):
             self.log("Error provisioning relay script: %s", e, level="WARNING")
 
     # ------------------------------------------------------------------
-    # Schedule checker + expiry (runs every 60s)
+    # Startup reconciliation — one-time, replaces the old _tick poller
     # ------------------------------------------------------------------
 
-    def _tick(self, kwargs: Any) -> None:
+    def _startup_reconcile(self, kwargs: Any) -> None:
+        """One-time startup reconciliation.
+
+        - Evaluates each configured notification against current time and
+          starts generation for already-active schedules.
+        - Backfills recent detection-summary bundles still within TTL.
+        - Installs the placeholder if there are no active notifications.
+        - Schedules per-config start/end boundary timers going forward.
+        """
         now = time.time()
-        self.log("Tick: %d active, %d generating", self._manager.count(), len(self._active_generations))
+        self.log("Startup reconciliation running (now=%d)", int(now))
 
-        # Prune expired
-        expired = self._manager.prune_expired(now)
-        if expired:
-            self.log("Pruned %d expired notifications: %s", len(expired), expired)
-            self._sync_staged_dir()
-
-        # Check notification schedules
+        # Evaluate scheduled notifications
         for config in self._notification_configs:
             nid = config.get("id", "")
             if not nid:
                 continue
             if self._is_schedule_active(config.get("schedule"), now):
                 if not self._manager.has(nid) and nid not in self._active_generations:
-                    self._generate_notification(config, now)
-            # If schedule inactive, let TTL handle expiry naturally
+                    self.log("Startup: schedule '%s' is active, enqueuing generation", nid)
+                    self._request_notification_generation(config, now)
+            # Schedule boundary timers for all configs
+            self._schedule_next_boundaries(config, now)
 
-        # Handle placeholder when no notifications
-        if self._manager.count() == 0:
-            self._ensure_placeholder(now)
+        # Backfill detection-summary bundles
+        if _as_bool(self._detection_hook.get("enabled"), False):
+            self._backfill_detection_bundles(now)
+
+        # Install placeholder if nothing active yet
+        if self._manager.count() == 0 and not self._active_generations:
+            self._request_placeholder_generation(now)
 
         self._publish_state()
+        self.log("Startup reconciliation complete")
 
-    def _is_schedule_active(
-        self, schedule: dict[str, Any] | None, now: float
-    ) -> bool:
-        """Check if current time falls within schedule window."""
+    def _backfill_detection_bundles(self, now: float) -> None:
+        """Scan on-disk detection-summary run dirs for bundles still within TTL."""
+        allowed_keys = self._detection_hook.get("bundle_keys", [])
+        ttl_s = int(self._detection_hook.get("ttl_s", 7200))
+        max_per_key = int(self._detection_hook.get("backfill_max_per_key", 3))
+
+        for bundle_key in allowed_keys:
+            runs_dir = os.path.join(
+                self._media_fs_root, "detection-summary", bundle_key, "runs"
+            )
+            if not os.path.isdir(runs_dir):
+                continue
+
+            # Collect eligible runs sorted by created_at_epoch descending
+            candidates: list[tuple[float, str]] = []
+            for run_id in os.listdir(runs_dir):
+                run_dir = os.path.join(runs_dir, run_id)
+                summary_path = os.path.join(run_dir, "summary.json")
+                generated_path = os.path.join(run_dir, "generated.png")
+                if not os.path.isfile(summary_path) or not os.path.isfile(generated_path):
+                    continue
+                try:
+                    with open(summary_path, "r") as f:
+                        summary_data = json.load(f)
+                    created_at = float(summary_data.get("created_at_epoch", 0))
+                except Exception:
+                    continue
+                if created_at + ttl_s > now:
+                    candidates.append((created_at, run_id))
+
+            # Most recent first, cap per key
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            for created_at, run_id in candidates[:max_per_key]:
+                nid = f"detection_{bundle_key}_{run_id}"
+                if self._manager.has(nid):
+                    continue
+
+                generated_image = os.path.join(
+                    self._media_fs_root,
+                    "detection-summary",
+                    bundle_key,
+                    "runs",
+                    run_id,
+                    "generated.png",
+                )
+                filename = f"{nid}.png"
+                dest_path = os.path.join(self._media_dir, "staged", filename)
+                try:
+                    shutil.copy2(generated_image, dest_path)
+                except Exception as e:
+                    self.log(
+                        "Backfill: failed to copy %s: %s", generated_image, e,
+                        level="WARNING"
+                    )
+                    continue
+
+                expires_at = created_at + ttl_s
+                local_url = f"/local/{self._www_subdir}/{filename}"
+                try:
+                    with open(os.path.join(runs_dir, run_id, "summary.json"), "r") as f:
+                        summary_data = json.load(f)
+                    summary_text = str(summary_data.get("summary", "Detection event"))[:200]
+                except Exception:
+                    summary_text = "Detection event"
+
+                notification = Notification(
+                    id=nid,
+                    notification_class="PreexistingImage",
+                    text=summary_text,
+                    image_path=dest_path,
+                    local_url=local_url,
+                    created_at=created_at,
+                    expires_at=expires_at,
+                    priority=priority_for_class("PreexistingImage"),
+                    source_id=bundle_key,
+                )
+                self._manager.add(notification)
+                self._schedule_expiry(nid, expires_at, now)
+                self.log(
+                    "Backfill: added detection notification %s (expires in %.0fs)",
+                    nid, expires_at - now
+                )
+
+        if self._manager.count() > 0:
+            self.call_service("shell_command/" + self._stage_shell_command)
+
+    # ------------------------------------------------------------------
+    # Schedule boundary timers
+    # ------------------------------------------------------------------
+
+    def _schedule_next_boundaries(self, config: dict[str, Any], now: float) -> None:
+        """Schedule the next start and end boundary timers for a config."""
+        nid = config.get("id", "")
+        if not nid:
+            return
+        schedule = config.get("schedule")
         if not schedule:
-            return False
-
-        dt = datetime.fromtimestamp(now)
-        current_minutes = dt.hour * 60 + dt.minute
+            return
 
         start_str = str(schedule.get("start", "00:00"))
         end_str = str(schedule.get("end", "23:59"))
+        days = schedule.get("days")
 
         start_parts = start_str.split(":")
         end_parts = end_str.split(":")
-        start_minutes = int(start_parts[0]) * 60 + int(start_parts[1])
-        end_minutes = int(end_parts[0]) * 60 + int(end_parts[1])
+        start_h, start_m = int(start_parts[0]), int(start_parts[1])
+        end_h, end_m = int(end_parts[0]), int(end_parts[1])
 
-        # Check day filter
-        days = schedule.get("days")
+        if nid not in self._schedule_handles:
+            self._schedule_handles[nid] = {"start": None, "end": None}
+
+        # Cancel existing handles
+        for key in ("start", "end"):
+            h = self._schedule_handles[nid].get(key)
+            if h is not None:
+                try:
+                    self.cancel_timer(h)
+                except Exception:
+                    pass
+            self._schedule_handles[nid][key] = None
+
+        # Schedule next start boundary
         if days:
-            day_name = dt.strftime("%a").lower()
-            if day_name not in [str(d).lower() for d in days]:
-                return False
-
-        # Handle overnight windows (e.g. 21:30 - 01:00)
-        if start_minutes > end_minutes:
-            return current_minutes >= start_minutes or current_minutes < end_minutes
+            delay_start = _seconds_until_next_matching_day(start_h, start_m, days, now)
         else:
-            return start_minutes <= current_minutes < end_minutes
+            delay_start = _next_boundary_seconds(start_h, start_m, now)
+
+        handle_start = self.run_in(
+            self._on_schedule_start,
+            delay_start,
+            nid=nid,
+            config=config,
+        )
+        self._schedule_handles[nid]["start"] = handle_start
+        self.log(
+            "Schedule '%s': next start in %.0fs (at %s)",
+            nid, delay_start, start_str
+        )
+
+        # Schedule next end boundary
+        if days:
+            delay_end = _seconds_until_next_matching_day(end_h, end_m, days, now)
+        else:
+            delay_end = _next_boundary_seconds(end_h, end_m, now)
+
+        handle_end = self.run_in(
+            self._on_schedule_end,
+            delay_end,
+            nid=nid,
+            config=config,
+        )
+        self._schedule_handles[nid]["end"] = handle_end
+        self.log(
+            "Schedule '%s': next end in %.0fs (at %s)",
+            nid, delay_end, end_str
+        )
+
+    def _on_schedule_start(self, kwargs: Any) -> None:
+        """Fired when a schedule's start boundary arrives."""
+        nid = kwargs.get("nid", "")
+        config = kwargs.get("config", {})
+        now = time.time()
+        self.log("Schedule start fired for '%s'", nid)
+
+        if not self._manager.has(nid) and nid not in self._active_generations:
+            self._request_notification_generation(config, now)
+
+        # Schedule next start (next occurrence after this one)
+        schedule = config.get("schedule", {})
+        days = schedule.get("days")
+        start_str = str(schedule.get("start", "00:00"))
+        start_parts = start_str.split(":")
+        start_h, start_m = int(start_parts[0]), int(start_parts[1])
+        if days:
+            delay = _seconds_until_next_matching_day(start_h, start_m, days, now)
+        else:
+            delay = _next_boundary_seconds(start_h, start_m, now)
+        handle = self.run_in(self._on_schedule_start, delay, nid=nid, config=config)
+        self._schedule_handles.setdefault(nid, {})["start"] = handle
+
+    def _on_schedule_end(self, kwargs: Any) -> None:
+        """Fired when a schedule's end boundary arrives."""
+        nid = kwargs.get("nid", "")
+        config = kwargs.get("config", {})
+        now = time.time()
+        self.log("Schedule end fired for '%s'", nid)
+
+        # Cancel any pending expiry timer — we're removing it explicitly now
+        self._cancel_expiry(nid)
+        if self._manager.has(nid):
+            self._manager.remove(nid)
+            self.log("Schedule '%s' expired at end boundary, removed", nid)
+            self._sync_staged_dir()
+            self._publish_state()
+
+        # Transition to placeholder if empty
+        self._maybe_request_placeholder(now)
+
+        # Schedule next end (next occurrence after this one)
+        schedule = config.get("schedule", {})
+        days = schedule.get("days")
+        end_str = str(schedule.get("end", "23:59"))
+        end_parts = end_str.split(":")
+        end_h, end_m = int(end_parts[0]), int(end_parts[1])
+        if days:
+            delay = _seconds_until_next_matching_day(end_h, end_m, days, now)
+        else:
+            delay = _next_boundary_seconds(end_h, end_m, now)
+        handle = self.run_in(self._on_schedule_end, delay, nid=nid, config=config)
+        self._schedule_handles.setdefault(nid, {})["end"] = handle
+
+    # ------------------------------------------------------------------
+    # Expiry timers
+    # ------------------------------------------------------------------
+
+    def _schedule_expiry(self, nid: str, expires_at: float, now: float) -> None:
+        """Schedule a one-shot expiry callback for a notification."""
+        self._cancel_expiry(nid)
+        delay = max(0.0, expires_at - now)
+        handle = self.run_in(self._on_notification_expired, delay, nid=nid)
+        self._expiry_handles[nid] = handle
+        self.log("Expiry timer set for '%s' in %.0fs", nid, delay)
+
+    def _cancel_expiry(self, nid: str) -> None:
+        """Cancel any outstanding expiry timer for a notification."""
+        h = self._expiry_handles.pop(nid, None)
+        if h is not None:
+            try:
+                self.cancel_timer(h)
+            except Exception:
+                pass
+
+    def _on_notification_expired(self, kwargs: Any) -> None:
+        """Fired when a notification's TTL expires."""
+        nid = kwargs.get("nid", "")
+        if not self._manager.has(nid):
+            return
+        self._manager.remove(nid)
+        self.log("Notification '%s' expired, removed", nid)
+        self._sync_staged_dir()
+        self._publish_state()
+        self._maybe_request_placeholder(time.time())
+
+    def _maybe_request_placeholder(self, now: float) -> None:
+        """Request placeholder generation if the manager is now empty."""
+        if self._manager.count() == 0 and not self._active_generations:
+            self._request_placeholder_generation(now)
 
     # ------------------------------------------------------------------
     # File staging
@@ -290,100 +551,178 @@ class DashboardNotify(hass.Hass):
                     pass
         if removed:
             self.log("Cleaned %d stale files from staged dir", removed)
-            self._stage_to_www()
+            self.call_service("shell_command/" + self._stage_shell_command)
 
-    def _stage_to_www(self) -> None:
-        """Call staging shell command immediately and schedule a retry.
+    # ------------------------------------------------------------------
+    # Image generation — two-phase: request on AD thread, work off-thread
+    # ------------------------------------------------------------------
 
-        The retry handles CephFS propagation delay in dev environments
-        where AppDaemon and HA mount the same network storage but writes
-        may not be immediately visible across mounts.
+    def _start_generation_thread(self, job: dict[str, Any]) -> None:
+        """Start a background worker thread for image generation.
+
+        The worker performs provider API calls and filesystem work only.
+        It schedules a completion callback back on the AppDaemon thread via run_in.
         """
-        self.call_service("shell_command/" + self._stage_shell_command)
-        self.run_in(self._stage_retry, 5)
+        job_id = job["job_id"]
+        kind = job["kind"]
+        thread_name = f"dashboard_notify_gen_{job_id[:16]}"
+        self.log("Starting generation thread '%s' (kind=%s)", thread_name, kind)
 
-    def _stage_retry(self, kwargs: Any) -> None:
-        """Delayed retry of staging shell command."""
-        self.call_service("shell_command/" + self._stage_shell_command)
+        def _worker():
+            if kind == "notification":
+                result = self._generate_notification_background(job)
+                self.run_in(self._complete_notification_generation, 0, result=result)
+            elif kind == "placeholder":
+                result = self._generate_placeholder_background(job)
+                self.run_in(self._complete_placeholder_generation, 0, result=result)
+            else:
+                self.log("Unknown generation kind: %s", kind, level="WARNING")
 
-    # ------------------------------------------------------------------
-    # Image generation
-    # ------------------------------------------------------------------
+        t = threading.Thread(target=_worker, name=thread_name)
+        t.daemon = True
+        t.start()
 
-    def _generate_notification(self, config: dict[str, Any], now: float) -> None:
-        """Generate an AI image for a notification config (synchronous)."""
+    # -- Scheduled notification generation --
+
+    def _request_notification_generation(
+        self, config: dict[str, Any], now: float
+    ) -> None:
+        """Reserve a generation slot and start the background worker (AppDaemon thread)."""
         if not self._image_provider:
             self.log("No image provider configured, skipping generation")
             return
 
         nid = config["id"]
+        if nid in self._active_generations:
+            return
+
         self._active_generations.add(nid)
 
+        notification_class = config.get("class", "BasicTextImage")
+        text = config.get("text", "")
+        prompt_hint = config.get("prompt_hint", "")
+        ttl_s = int(config.get("ttl_s", self._default_ttl_s))
+        timestamp = int(now)
+        filename = f"{nid}_{timestamp}.png"
+
+        job: dict[str, Any] = {
+            "job_id": f"{nid}_{timestamp}",
+            "kind": "notification",
+            "nid": nid,
+            "notification_class": notification_class,
+            "text": text,
+            "prompt_hint": prompt_hint,
+            "ttl_s": ttl_s,
+            "now": now,
+            "filename": filename,
+            "output_path": os.path.join(self._media_dir, "generated", filename),
+            "staged_path": os.path.join(self._media_dir, "staged", filename),
+            "local_url": f"/local/{self._www_subdir}/{filename}",
+            "www_subdir": self._www_subdir,
+        }
+
+        self.log("Requesting notification generation for '%s' (job_id=%s)", nid, job["job_id"])
+        self._start_generation_thread(job)
+
+    def _generate_notification_background(self, job: dict[str, Any]) -> dict[str, Any]:
+        """Worker: build prompt, call provider, write files. No HA calls allowed here."""
+        nid = job["nid"]
+        result: dict[str, Any] = {
+            "job_id": job["job_id"],
+            "kind": "notification",
+            "nid": nid,
+            "success": False,
+            "error": None,
+        }
         try:
-            notification_class = config.get("class", "BasicTextImage")
-            text = config.get("text", "")
-            prompt_hint = config.get("prompt_hint", "")
-            ttl_s = int(config.get("ttl_s", self._default_ttl_s))
-
             prompt = build_notification_prompt(
-                notification_text=text,
-                prompt_hint=prompt_hint,
-                image_class=notification_class,
+                notification_text=job["text"],
+                prompt_hint=job["prompt_hint"],
+                image_class=job["notification_class"],
             )
 
-            timestamp = int(now)
-            filename = f"{nid}_{timestamp}.png"
-            output_path = os.path.join(
-                self._media_dir, "generated", filename
+            self.log(
+                "Generation thread: calling image provider for notification '%s'", nid
             )
-
-            self.log("Generating image for notification '%s' → %s", nid, output_path)
-            result = self._image_provider.edit_image(
+            provider_result = self._image_provider.edit_image(
                 input_image_paths=[],
                 prompt=prompt,
-                output_image_path=output_path,
+                output_image_path=job["output_path"],
             )
             self.log(
-                "Notification '%s' API call complete: model=%s elapsed_s=%s",
+                "Generation thread: notification '%s' API complete model=%s elapsed_s=%s",
                 nid,
-                result.get("model", "?"),
-                result.get("elapsed_s", "?"),
+                provider_result.get("model", "?"),
+                provider_result.get("elapsed_s", "?"),
             )
 
-            # Stage for HA serving
-            staged_path = os.path.join(
-                self._media_dir, "staged", filename
-            )
-            shutil.copy2(output_path, staged_path)
-            self.log("Staged notification '%s' → %s", nid, staged_path)
-            self._stage_to_www()
+            shutil.copy2(job["output_path"], job["staged_path"])
+            self.log("Generation thread: staged notification '%s' → %s", nid, job["staged_path"])
 
-            local_url = f"/local/{self._www_subdir}/{filename}"
-
-            notification = Notification(
-                id=nid,
-                notification_class=notification_class,
-                text=text,
-                image_path=output_path,
-                local_url=local_url,
-                created_at=now,
-                expires_at=now + ttl_s,
-                priority=priority_for_class(notification_class),
-                source_id=nid,
-            )
-            self._manager.add(notification)
-            self.log("Notification '%s' generated and added (ttl=%ds)", nid, ttl_s)
-            self._publish_state()
-
+            result.update({
+                "success": True,
+                "notification_class": job["notification_class"],
+                "text": job["text"],
+                "output_path": job["output_path"],
+                "staged_path": job["staged_path"],
+                "local_url": job["local_url"],
+                "now": job["now"],
+                "ttl_s": job["ttl_s"],
+            })
         except Exception as e:
-            self.log(
-                "Error generating notification '%s': %s", nid, e, level="WARNING"
-            )
-        finally:
-            self._active_generations.discard(nid)
+            result["error"] = str(e)
+            self.log("Generation thread: error for notification '%s': %s", nid, e, level="WARNING")
+        return result
 
-    def _ensure_placeholder(self, now: float) -> None:
-        """Generate a placeholder image when no notifications are active."""
+    def _complete_notification_generation(self, kwargs: Any) -> None:
+        """AppDaemon completion callback for notification generation."""
+        result = kwargs.get("result", {})
+        nid = result.get("nid", "")
+
+        # Always release the generation lock
+        self._active_generations.discard(nid)
+
+        if not result.get("success"):
+            self.log(
+                "Notification generation failed for '%s': %s",
+                nid, result.get("error"), level="WARNING"
+            )
+            return
+
+        # Stale-job guard: if already present, skip
+        if self._manager.has(nid):
+            self.log("Notification '%s' already exists (stale completion), skipping", nid)
+            return
+
+        now = time.time()
+        created_at = result["now"]
+        ttl_s = result["ttl_s"]
+        expires_at = created_at + ttl_s
+
+        notification = Notification(
+            id=nid,
+            notification_class=result["notification_class"],
+            text=result["text"],
+            image_path=result["output_path"],
+            local_url=result["local_url"],
+            created_at=created_at,
+            expires_at=expires_at,
+            priority=priority_for_class(result["notification_class"]),
+            source_id=nid,
+        )
+        self._manager.add(notification)
+        self._schedule_expiry(nid, expires_at, now)
+
+        # Stage to www
+        self.call_service("shell_command/" + self._stage_shell_command)
+
+        self.log("Notification '%s' generated and added (ttl=%ds)", nid, ttl_s)
+        self._publish_state()
+
+    # -- Placeholder generation --
+
+    def _request_placeholder_generation(self, now: float) -> None:
+        """Reserve placeholder slot and start the background worker (AppDaemon thread)."""
         if not self._image_provider:
             return
         if (
@@ -396,44 +735,99 @@ class DashboardNotify(hass.Hass):
 
         self._active_generations.add("placeholder")
 
+        timestamp = int(now)
+        filename = f"no_notifications_{timestamp}.png"
+        job: dict[str, Any] = {
+            "job_id": f"placeholder_{timestamp}",
+            "kind": "placeholder",
+            "now": now,
+            "filename": filename,
+            "output_path": os.path.join(self._media_dir, "generated", filename),
+            "staged_path": os.path.join(self._media_dir, "staged", filename),
+            "local_url": f"/local/{self._www_subdir}/{filename}",
+        }
+
+        self.log("Requesting placeholder generation (job_id=%s)", job["job_id"])
+        self._start_generation_thread(job)
+
+    def _generate_placeholder_background(self, job: dict[str, Any]) -> dict[str, Any]:
+        """Worker: build prompt, call provider, write files. No HA calls allowed here."""
+        result: dict[str, Any] = {
+            "job_id": job["job_id"],
+            "kind": "placeholder",
+            "success": False,
+            "error": None,
+        }
         try:
             prompt = build_placeholder_prompt()
-            timestamp = int(now)
-            filename = f"no_notifications_{timestamp}.png"
-            output_path = os.path.join(
-                self._media_dir, "generated", filename
-            )
 
-            self.log("Generating placeholder image → %s", output_path)
-            result = self._image_provider.edit_image(
+            self.log("Generation thread: calling image provider for placeholder")
+            provider_result = self._image_provider.edit_image(
                 input_image_paths=[],
                 prompt=prompt,
-                output_image_path=output_path,
+                output_image_path=job["output_path"],
             )
             self.log(
-                "Placeholder API call complete: model=%s elapsed_s=%s",
-                result.get("model", "?"),
-                result.get("elapsed_s", "?"),
+                "Generation thread: placeholder API complete model=%s elapsed_s=%s",
+                provider_result.get("model", "?"),
+                provider_result.get("elapsed_s", "?"),
             )
 
-            staged_path = os.path.join(
-                self._media_dir, "staged", filename
-            )
-            shutil.copy2(output_path, staged_path)
-            self.log("Staged placeholder → %s", staged_path)
-            self._stage_to_www()
+            shutil.copy2(job["output_path"], job["staged_path"])
+            self.log("Generation thread: staged placeholder → %s", job["staged_path"])
 
-            self._placeholder_url = f"/local/{self._www_subdir}/{filename}"
-            self._placeholder_generated_at = now
-            self.log("Placeholder image generated and staged")
-            self._publish_state()
-
+            result.update({
+                "success": True,
+                "output_path": job["output_path"],
+                "staged_path": job["staged_path"],
+                "local_url": job["local_url"],
+                "now": job["now"],
+            })
         except Exception as e:
+            result["error"] = str(e)
+            self.log("Generation thread: error for placeholder: %s", e, level="WARNING")
+        return result
+
+    def _complete_placeholder_generation(self, kwargs: Any) -> None:
+        """AppDaemon completion callback for placeholder generation."""
+        result = kwargs.get("result", {})
+
+        # Always release the generation lock
+        self._active_generations.discard("placeholder")
+
+        if not result.get("success"):
             self.log(
-                "Error generating placeholder: %s", e, level="WARNING"
+                "Placeholder generation failed: %s",
+                result.get("error"), level="WARNING"
             )
-        finally:
-            self._active_generations.discard("placeholder")
+            return
+
+        # Stale-job guard: if real notifications appeared while we were generating, discard
+        if self._manager.count() > 0:
+            self.log("Placeholder completed but notifications now exist, discarding placeholder")
+            return
+
+        self._placeholder_url = result["local_url"]
+        self._placeholder_generated_at = result["now"]
+
+        # Stage to www
+        self.call_service("shell_command/" + self._stage_shell_command)
+
+        self.log("Placeholder image generated and staged")
+        self._publish_state()
+
+        # Schedule next placeholder refresh
+        now = time.time()
+        next_refresh_delay = self._no_notification_refresh_s - (now - self._placeholder_generated_at)
+        next_refresh_delay = max(60.0, next_refresh_delay)
+        self.run_in(self._on_placeholder_refresh, next_refresh_delay)
+        self.log("Placeholder refresh scheduled in %.0fs", next_refresh_delay)
+
+    def _on_placeholder_refresh(self, kwargs: Any) -> None:
+        """Fire placeholder regeneration if we're still in idle state."""
+        now = time.time()
+        if self._manager.count() == 0:
+            self._request_placeholder_generation(now)
 
     # ------------------------------------------------------------------
     # Detection summary hook
@@ -471,16 +865,22 @@ class DashboardNotify(hass.Hass):
         ttl_s = int(self._detection_hook.get("ttl_s", 7200))
         now = time.time()
 
+        # Deduplicate — may have been backfilled on startup
+        if self._manager.has(nid):
+            self.log("Detection notification '%s' already exists, skipping duplicate", nid)
+            return
+
         # Copy to our media dir
         filename = f"{nid}.png"
         dest_path = os.path.join(self._media_dir, "staged", filename)
         try:
             shutil.copy2(generated_image, dest_path)
-            self._stage_to_www()
+            self.call_service("shell_command/" + self._stage_shell_command)
         except Exception as e:
             self.log("Detection hook copy failed: %s", e, level="WARNING")
             return
 
+        expires_at = now + ttl_s
         local_url = f"/local/{self._www_subdir}/{filename}"
         notification = Notification(
             id=nid,
@@ -489,11 +889,12 @@ class DashboardNotify(hass.Hass):
             image_path=dest_path,
             local_url=local_url,
             created_at=now,
-            expires_at=now + ttl_s,
+            expires_at=expires_at,
             priority=priority_for_class("PreexistingImage"),
             source_id=bundle_key,
         )
         self._manager.add(notification)
+        self._schedule_expiry(nid, expires_at, now)
         self.log("Detection notification added: %s (ttl=%ds)", nid, ttl_s)
         self._publish_state()
 
@@ -528,10 +929,12 @@ class DashboardNotify(hass.Hass):
         elif command == "dismiss":
             if count > 0 and 0 <= self._current_index < count:
                 nid = notifications[self._current_index].id
+                self._cancel_expiry(nid)
                 self._manager.remove(nid)
                 if self._current_index >= self._manager.count():
                     self._current_index = 0
                 self.log("Dismissed notification: %s", nid)
+                self._maybe_request_placeholder(time.time())
         else:
             self.log("Unknown command: %s", command, level="WARNING")
             return
@@ -580,3 +983,38 @@ class DashboardNotify(hass.Hass):
             attrs["placeholder_url"] = f"{self._placeholder_url}?t={cache_bust}"
 
         self.set_state(self.SENSOR_ENTITY, state=state_text, attributes=attrs)
+
+    # ------------------------------------------------------------------
+    # Schedule check utility (kept for tests and schedule active check)
+    # ------------------------------------------------------------------
+
+    def _is_schedule_active(
+        self, schedule: dict[str, Any] | None, now: float
+    ) -> bool:
+        """Check if current time falls within schedule window."""
+        if not schedule:
+            return False
+
+        dt = datetime.fromtimestamp(now)
+        current_minutes = dt.hour * 60 + dt.minute
+
+        start_str = str(schedule.get("start", "00:00"))
+        end_str = str(schedule.get("end", "23:59"))
+
+        start_parts = start_str.split(":")
+        end_parts = end_str.split(":")
+        start_minutes = int(start_parts[0]) * 60 + int(start_parts[1])
+        end_minutes = int(end_parts[0]) * 60 + int(end_parts[1])
+
+        # Check day filter
+        days = schedule.get("days")
+        if days:
+            day_name = dt.strftime("%a").lower()
+            if day_name not in [str(d).lower() for d in days]:
+                return False
+
+        # Handle overnight windows (e.g. 21:30 - 01:00)
+        if start_minutes > end_minutes:
+            return current_minutes >= start_minutes or current_minutes < end_minutes
+        else:
+            return start_minutes <= current_minutes < end_minutes
