@@ -61,9 +61,9 @@ jobs:
             tags="${tags},${image}:${version}-${short_sha}"
             tags="${tags},${image}:latest"
           else
-            # Feature branch: dev tags
-            tags="${image}:${branch}.${short_sha}"
-            tags="${tags},${image}:${branch}"
+            # Feature branch: dev tags with semver baseline
+            tags="${image}:${version}-${branch}.${short_sha}"
+            tags="${tags},${image}:${version}-${branch}"
           fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
@@ -79,7 +79,7 @@ jobs:
         with:
           context: .
           file: docker/Dockerfile
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

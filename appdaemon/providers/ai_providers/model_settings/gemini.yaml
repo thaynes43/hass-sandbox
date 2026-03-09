@@ -22,8 +22,6 @@ bundles:
     simple_text_model: gemini-2.5-flash-lite
     simple_text_max_output_tokens: 1500
     image_model: gemini-3-pro-image-preview
-    image_prompt_augmentation: Make it like a cartoon
-    style_profile: cartoon
 
   gemini-budget:
     multimodal_model: gemini-2.5-flash-lite

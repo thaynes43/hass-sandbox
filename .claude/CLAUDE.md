@@ -47,7 +47,7 @@ appdaemon -c appdaemon
 
 Production deploys are automated via Docker image builds. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux detects the new image and rolls the Kubernetes deployment.
 
-To release: bump `VERSION`, merge to `main`, and Flux picks up the new tag.
+Bump `VERSION` on the feature branch before merging — the merge to `main` automatically produces the semver tag. Use semver: patch for fixes, minor for features, major for breaking changes.
 
 ### Install dependencies
 

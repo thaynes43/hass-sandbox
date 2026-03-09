@@ -75,9 +75,21 @@ All workflows trigger on every PR but skip expensive work when irrelevant files 
 | Agent Docs Audit | PR marked ready / reopened | `appdaemon/` | Required to pass |
 | Docs Site Audit | PR marked ready / reopened | `appdaemon/`, `home-assistant/`, `docs/` | Required to pass |
 | Code Review | PR marked ready / reopened | — | Required to pass |
-| Build AppDaemon | PR push (build only) + push to `main` (build+push) | `appdaemon/`, `docker/`, `VERSION` | Required to pass |
+| Build AppDaemon | PR push (build+push dev tags) + push to `main` (build+push semver tags) | `appdaemon/`, `docker/`, `VERSION` | Required to pass |
 | CI Auto-Fix | Unit Tests workflow fails on PR | — | Auto-creates fix commit |
 | Deploy Docs | Push to `main` | `docs/`, `mkdocs.yml` | Deploys to GitHub Pages |
+
+## Versioning
+
+The `VERSION` file at the repo root controls Docker image tags. Bump it on the feature branch before merging so the merge to `main` automatically produces the new semver tag.
+
+| Change type | Version bump | Example |
+|---|---|---|
+| New feature / app | Minor | `0.1.0` → `0.2.0` |
+| Bug fix / cosmetic | Patch | `0.1.0` → `0.1.1` |
+| Breaking / architectural | Major | `0.1.0` → `1.0.0` |
+
+On PRs, dev tags include the version + branch name (e.g. `0.2.0-my-feature.abc1234`). On merge to `main`, semver tags are pushed (`0.2.0`, `0.2.0-abc1234`, `latest`).
 
 ## Commit conventions
 
