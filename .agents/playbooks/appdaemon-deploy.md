@@ -14,8 +14,8 @@ Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon
 
 - **`VERSION` file** at repo root contains the semver version (e.g., `0.1.0`)
 - **Main branch** tags: `<version>`, `<version>-<sha>`, `latest`
-- **Feature branches** tags: `<branch>.<sha>`, `<branch>` (for testing pre-merge)
-- Bump `VERSION` when releasing meaningful changes
+- **Feature branches** tags: `<version>-<branch>.<sha>`, `<version>-<branch>` (for testing pre-merge)
+- Bump `VERSION` on the feature branch before merging so the merge to `main` produces the correct semver tag
 
 ## What the Docker build does
 
@@ -31,13 +31,64 @@ Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon
 - `secrets.yaml` — comes from Kubernetes Secret mount at `/conf/secrets.yaml`
 - Test files, dev configs, `.venv`, `__pycache__` — excluded by `.dockerignore`
 
-## Promote dev app to prod
+## App lifecycle: dev → prod → dev
 
-The `--merge-dev-apps` workflow is a manual pre-commit step. It strips `_dev` suffixes, converts media paths, and adds `disable: true` to `apps-prod.yaml`. This must be done before merging to `main`:
+Apps move between `apps-dev.yaml` (local development) and `apps-prod.yaml` (Kubernetes production). This is a manually driven process.
 
-1. Edit `apps-prod.yaml` manually (or use a script) to promote dev app configs
-2. Commit the updated `apps-prod.yaml`
-3. The Docker build will strip `disable: true` automatically
+### Promote dev app to prod
+
+When a new app is ready for production testing:
+
+1. **Copy the app config** from `apps-dev.yaml` to `apps-prod.yaml`
+2. **Strip the `_dev` suffix** from the app key (e.g., `my_app_dev` → `my_app`)
+3. **Add `disable: true`** (Docker build strips this; prevents local AppDaemon from running prod apps)
+4. **Remove `debug_preserve_run_dirs: true`** if present
+5. **Convert `ai_provider_conf`** from dev providers (ollama/comfyui with `!secret` URLs) to prod providers (e.g., `openai-default`):
+   ```yaml
+   # Dev format (inline bundle + URL):
+   ai_provider_conf:
+     simple_text:
+       bundle: ollama-qwen9b
+       base_url: !secret ollama_url
+     multimodal:
+       bundle: ollama-qwen9b
+       base_url: !secret ollama_url
+     image:
+       bundle: comfyui-qwen-edit
+       base_url: !secret comfyui_url
+
+   # Prod format (simple bundle reference):
+   ai_provider_conf:
+     simple_text: openai-default
+     multimodal: openai-default
+     image: openai-default
+   ```
+6. **Remove the app from `apps-dev.yaml`** — dev file should be empty when all apps are in prod
+7. **Commit on a feature branch**, push, and test with the dev-tagged Docker image before merging to `main`
+
+### Pull prod app back to dev
+
+When a running prod app needs enhancements, bug fixes, or new features:
+
+1. **Copy the app config** from `apps-prod.yaml` to `apps-dev.yaml`
+2. **Add the `_dev` suffix** to the app key (e.g., `my_app` → `my_app_dev`)
+3. **Remove `disable: true`** (dev apps run locally)
+4. **Convert `ai_provider_conf`** from prod providers to dev providers (ollama/comfyui with `!secret` URLs)
+5. **Optionally add `debug_preserve_run_dirs: true`** for troubleshooting
+6. **Remove the app from `apps-prod.yaml`** so the next Docker build excludes it from production
+7. **Push a new image tag** to Kubernetes that doesn't include this app (production will stop running it)
+8. **Do dev work locally**, then follow the "Promote" flow when ready
+
+### Key rules
+
+- An app should only exist in ONE file at a time — never both `apps-dev.yaml` and `apps-prod.yaml`
+- `apps-dev.yaml` should be empty when all development is complete and all apps are in prod
+- Dev uses local AI providers (ollama, comfyui); prod uses cloud providers (openai)
+- The `disable: true` flag is only in `apps-prod.yaml` — it prevents local AppDaemon from running prod apps; Docker build strips it
+
+### Future: runtime app disable
+
+Currently, removing an app from production requires building and deploying a new image. A future improvement could allow pausing/disabling individual apps at runtime without redeploying (e.g., via an HA helper toggle or AppDaemon admin API). This would make the dev↔prod cycle faster and less disruptive.
 
 ## Adding new Python dependencies
 
@@ -62,3 +113,4 @@ After merge to `main`:
 | `ModuleNotFoundError` in prod | Missing dep in `docker/requirements-prod.txt` | Add dep, rebuild image |
 | Old code running after merge | Flux hasn't reconciled yet | Check Flux status, force reconcile |
 | `!secret` tags lost in apps.yaml | process-apps-yaml.py bug | Check `docker/process-apps-yaml.py` SecretTag handling |
+| App running in dev AND prod | Config exists in both YAML files | Remove from one — app should only be in one file at a time |

@@ -74,6 +74,24 @@ detection_viewer_garage:
     selected_generated_image_camera_entity_id: camera.garage_detection_summary_selected_generated
   notification_action_prefix: "GARAGE_DS_VIEW"
 
+bulkhead_door_notify:
+  module: door_notify.door_notify
+  class: DoorNotify
+  disable: true
+  notify_services:
+    - notify.mobile_app_toms_iphone_air
+  doors:
+    - binary_sensor.usl_entry_contact
+  door_names:
+    binary_sensor.usl_entry_contact: "Bulkhead Door"
+  door_open_state: "on"
+  door_closed_state: "off"
+  ai_enabled: true
+  ai_bundle_key: bulkhead
+  ai_wait_timeout_s: 180
+  ai_max_bundle_age_s: 900
+  notification_url: "/detection-summary/bulkhead"
+
 detection_summary_bulkhead:
   module: detection_summary_app.manager
   class: DetectionSummary
@@ -95,6 +113,9 @@ detection_summary_bulkhead:
     The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
     Include only: person/animal count, what they are doing, and where they are in
     frame (e.g. "near left", "center", "back").
+    Do NOT describe or name any branded merchandise, collectible figurines, licensed
+    characters, or copyrighted items visible in the background. Treat them as generic
+    "decorative items" or "shelf items" if you must reference them at all.
     Also return male_count and female_count as integer counts of people by gender
     (0 if none).
     Also return animal_count as an integer count of visible animals/pets (0 if none).
@@ -111,6 +132,11 @@ detection_summary_bulkhead:
     If animals are present and clearly visible, increase frame_score appropriately.
   image_instructions: >
     Create a simple, clean illustration representing the scene at a basement entrance.
+    IMPORTANT: The background may contain collectible figurines, branded merchandise, or
+    licensed characters on shelves. You MUST NOT reproduce any recognizable branded,
+    trademarked, or copyrighted characters, logos, or products. Replace any such items
+    with generic alternatives (plain toys, abstract shapes, unlabeled objects). Focus
+    the illustration on the PEOPLE and their actions, not background objects.
   ai_provider_conf:
     simple_text: openai-default
     multimodal: openai-default
@@ -130,7 +156,270 @@ detection_viewer_bulkhead:
     selected_generated_image_camera_entity_id: camera.bulkhead_detection_summary_selected_generated
   notification_action_prefix: "BULKHEAD_DS_VIEW"
 
-bulkhead_door_notify:
+front_door_door_notify:
+  module: door_notify.door_notify
+  class: DoorNotify
+  disable: true
+  doors:
+    - binary_sensor.usl_entry_contact_3
+  door_names:
+    binary_sensor.usl_entry_contact_3: "Front Door"
+  door_open_state: "on"
+  door_closed_state: "off"
+  ai_enabled: true
+  ai_bundle_key: front_door
+  ai_wait_timeout_s: 180
+  ai_max_bundle_age_s: 900
+  notification_url: "/detection-summary/front-door"
+
+detection_summary_front_door:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: front_door
+  snapshot_ha_dir: /media/detection-summary/doorbell/front-door
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.g4_doorbell_pro_poe_medium_resolution_channel
+    trigger_entity_id: binary_sensor.g4_doorbell_pro_poe_motion
+    best_image_camera_entity_id: camera.front_door_detection_summary_best
+    generated_image_camera_entity_id: camera.front_door_detection_summary_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot from a front door (doorbell) entrance.
+    Focus ONLY on the people and any animals.
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+    Include only: person/animal count, what they are doing, and where they are in
+    frame (e.g. "near left", "center", "back").
+    Also return male_count and female_count as integer counts of people by gender
+    (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank
+    frames.
+    Heavily favor frames where at least one person's FACE is clearly visible.
+    face_score meaning: 0=no face visible, 10=clear unobstructed face.
+    Prefer frames where the person is clearly visible and stationary.
+    If animals are present and clearly visible, increase frame_score appropriately.
+  image_instructions: >
+    Create a simple, clean illustration representing the scene at a front door entrance.
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
+
+detection_viewer_front_door:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: front_door
+  snapshot_ha_dir: /media/detection-summary/doorbell/front-door
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    selected_best_image_camera_entity_id: camera.front_door_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.front_door_detection_summary_selected_generated
+  notification_action_prefix: "FRONT_DOOR_DS_VIEW"
+
+detection_summary_package:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: package
+  detection_profile: packages
+  best_min_person_score: 0
+  capture_max_s: 60
+  snapshot_ha_dir: /media/detection-summary/doorbell/package
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.g4_doorbell_pro_poe_package_camera
+    trigger_entity_id: binary_sensor.g4_doorbell_pro_poe_package_detected
+    best_image_camera_entity_id: camera.package_detection_summary_best
+    generated_image_camera_entity_id: camera.package_detection_summary_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot from a front door doorbell camera.
+    Focus on people, packages/parcels/boxes, and delivery activity.
+    Count packages carefully — a box, bag, or parcel on the porch counts even if no
+    person is present. Cardboard boxes, shipping bags, and parcels all count as packages.
+    Also return male_count and female_count as integer counts of people by gender (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Also return package_count as an integer count of visible packages (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
+    Favor frames where packages are clearly visible and identifiable.
+    If a delivery person is present, favor frames where both the person and package are visible.
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+  image_instructions: >
+    Create a simple, clean illustration of the front door scene.
+    If packages are visible, make them prominent in the illustration.
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
+
+detection_viewer_package:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: package
+  snapshot_ha_dir: /media/detection-summary/doorbell/package
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    selected_best_image_camera_entity_id: camera.package_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.package_detection_summary_selected_generated
+  notification_action_prefix: "PACKAGE_DS_VIEW"
+
+detection_summary_back_deck_pets:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: back_deck_pets
+  best_min_person_score: 0
+  best_min_animal_count: 1
+  detection_profile: animals
+  snapshot_ha_dir: /media/detection-summary/back-yard/back-deck-pets
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.back_yard_ai_pro_medium_resolution_channel
+    trigger_entity_id: binary_sensor.back_yard_ai_pro_animal_detected
+    best_image_camera_entity_id: camera.back_deck_pets_detection_summary_best
+    generated_image_camera_entity_id: camera.back_deck_pets_detection_summary_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot from a backyard camera.
+    Focus primarily on animals/pets — dogs, cats, birds, deer, squirrels, raccoons, etc.
+    Count animals carefully. Identify the species when you can.
+    People may appear in the frame but are secondary; still count them accurately.
+    Also return male_count and female_count as integer counts of people by gender (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
+    Favor frames where animals are clearly visible and identifiable by species.
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+  image_instructions: >
+    Create a simple, clean illustration of the backyard scene.
+    Animals are the focus — make them prominent and clearly identifiable by species.
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
+
+detection_viewer_back_deck_pets:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: back_deck_pets
+  snapshot_ha_dir: /media/detection-summary/back-yard/back-deck-pets
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    selected_best_image_camera_entity_id: camera.back_deck_pets_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.back_deck_pets_detection_summary_selected_generated
+  notification_action_prefix: "BACK_DECK_PETS_DS_VIEW"
+
+detection_summary_back_yard_pets:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: back_yard_pets
+  best_min_person_score: 0
+  best_min_animal_count: 1
+  detection_profile: animals
+  snapshot_ha_dir: /media/detection-summary/back-yard/back-yard-pets
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.shed_g5_ptz_medium_resolution_channel
+    trigger_entity_id: binary_sensor.shed_g5_ptz_animal_detected
+    best_image_camera_entity_id: camera.back_yard_pets_detection_summary_best
+    generated_image_camera_entity_id: camera.back_yard_pets_detection_summary_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot from a backyard camera near a shed.
+    Focus primarily on animals/pets — dogs, cats, birds, deer, squirrels, raccoons, etc.
+    Count animals carefully. Identify the species when you can.
+    People may appear in the frame but are secondary; still count them accurately.
+    Also return male_count and female_count as integer counts of people by gender (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
+    Favor frames where animals are clearly visible and identifiable by species.
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+  image_instructions: >
+    Create a simple, clean illustration of the backyard scene near a shed.
+    Animals are the focus — make them prominent and clearly identifiable by species.
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
+
+detection_viewer_back_yard_pets:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: back_yard_pets
+  snapshot_ha_dir: /media/detection-summary/back-yard/back-yard-pets
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    selected_best_image_camera_entity_id: camera.back_yard_pets_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.back_yard_pets_detection_summary_selected_generated
+  notification_action_prefix: "BACK_YARD_PETS_DS_VIEW"
+
+detection_summary_shed:
+  module: detection_summary_app.manager
+  class: DetectionSummary
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: shed
+  snapshot_ha_dir: /media/detection-summary/shed
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    camera_entity_id: camera.shed_ai_turret_medium_resolution_channel
+    trigger_entity_id: binary_sensor.ai_turret_motion
+    best_image_camera_entity_id: camera.shed_detection_summary_best
+    generated_image_camera_entity_id: camera.shed_detection_summary_generated
+  data_instructions: >
+    You are analyzing ONE security camera snapshot from a shed/outdoor building camera.
+    Focus ONLY on the people and any animals.
+    The summary should be short and notification-friendly: 1 sentence, <= 140 characters.
+    Include only: person/animal count, what they are doing, and where they are in
+    frame (e.g. "near left", "center", "back").
+    Also return male_count and female_count as integer counts of people by gender (0 if none).
+    Also return animal_count as an integer count of visible animals/pets (0 if none).
+    Return scores on a 0-10 scale (integers preferred) with enough spread to rank frames.
+    Heavily favor frames where at least one person's FACE is clearly visible.
+    face_score meaning: 0=no face visible, 10=clear unobstructed face.
+    Prefer frames where the person is clearly visible and stationary.
+    If animals are present and clearly visible, increase frame_score appropriately.
+  image_instructions: >
+    Create a simple, clean illustration representing the scene near a shed/outdoor building.
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: openai-default
+
+detection_viewer_shed:
+  module: detection_summary_viewer.detection_summary_viewer_app
+  class: DetectionSummaryViewer
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  bundle_key: shed
+  snapshot_ha_dir: /media/detection-summary/shed
+  media_fs_root: !secret media_fs_root
+  hass_entities:
+    selected_best_image_camera_entity_id: camera.shed_detection_summary_selected_best
+    selected_generated_image_camera_entity_id: camera.shed_detection_summary_selected_generated
+  notification_action_prefix: "SHED_DS_VIEW"
+
+shed_door_notify:
   module: door_notify.door_notify
   class: DoorNotify
   disable: true
@@ -139,16 +428,16 @@ bulkhead_door_notify:
     - notify.mobile_app_toms_iphone_air
     - notify.mobile_app_kellies_iphone_air
   doors:
-    - binary_sensor.usl_entry_contact
+    - binary_sensor.shed_door_open_closed_sensor_window_door_is_open
   door_names:
-    binary_sensor.usl_entry_contact: "Bulkhead Door"
+    binary_sensor.shed_door_open_closed_sensor_window_door_is_open: "Shed Door"
   door_open_state: "on"
   door_closed_state: "off"
   ai_enabled: true
-  ai_bundle_key: bulkhead
+  ai_bundle_key: shed
   ai_wait_timeout_s: 180
   ai_max_bundle_age_s: 900
-  notification_url: "/detection-summary/bulkhead"
+  notification_url: "/detection-summary/shed"
 
 immich_fetcher:
   module: immich_fetcher.immich_fetcher_app
@@ -166,6 +455,7 @@ immich_fetcher:
     - name: Random
       selection: all_photos
   disable: true
+
 photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
