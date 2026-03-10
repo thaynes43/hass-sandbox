@@ -102,7 +102,12 @@ class ImagePromptBuilder:
         else:
             style = random_style_profile()
         if style and style.prompt_suffix:
-            prompt = f"{prompt}\n\n{style.prompt_suffix}".strip()
+            prompt = (
+                f"{prompt}\n\n"
+                f"Rendering style directive (apply to visual appearance only — "
+                f"do NOT replace or omit the subjects identified above):\n"
+                f"{style.prompt_suffix}"
+            ).strip()
 
         # Environment variant: use specific ID if provided, otherwise randomly select
         if environment_variant_id:
@@ -110,6 +115,11 @@ class ImagePromptBuilder:
         else:
             env = random_environment_variant()
         if env and env.prompt_suffix:
-            prompt = f"{prompt}\n\n{env.prompt_suffix}".strip()
+            prompt = (
+                f"{prompt}\n\n"
+                f"Environment/setting directive (modify background and setting only — "
+                f"ALL subjects from the reference frames MUST remain clearly present in the output):\n"
+                f"{env.prompt_suffix}"
+            ).strip()
 
         return prompt

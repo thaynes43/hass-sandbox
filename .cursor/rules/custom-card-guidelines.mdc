@@ -226,14 +226,58 @@ For swipe navigation:
 - If continuous drag is used, move slide layers, not a shared strip, and test on iOS specifically.
 - Do not block all touch interaction behind preload gates; if media readiness matters, degrade gracefully.
 
-## 9) Shadow DOM and styling
+## 9) Manual navigation often has multiple code paths
+
+If a card supports both buttons and swipe navigation, assume they do **not** share the same execution path unless you verify it directly.
+
+### The problem
+
+A common regression is to implement a behavioral change such as "manual navigation should pause autoplay" in the button handler only, while swipe completion still calls the backend command directly. That makes one interaction path correct and the other inconsistent.
+
+There is also a state-ordering issue: if a swipe sends `pause` before `next`/`previous`, the card can briefly re-render the old item in a paused state before the index update arrives.
+
+### Required pattern
+
+- Route all manual navigation through one helper when possible.
+- If swipe completion must bypass the normal button dispatcher, explicitly apply the same side effects there too.
+- When a swipe should both navigate and pause, prefer sending the navigation command first and the pause command second.
+
+```javascript
+_pauseForManualNav() {
+  if (this._isPaused()) return;
+  this._callRelay("toggle_pause");
+}
+
+_dispatchAction(action) {
+  if (action === "next" || action === "previous") {
+    this._pauseForManualNav();
+  }
+  this._callRelay(action);
+}
+
+_finishSwipe(direction) {
+  const cmd = direction === "left" ? "next" : "previous";
+  this._callRelay(cmd);
+  this._pauseForManualNav();
+}
+```
+
+### Rules
+
+| Rule | Why |
+|---|---|
+| Test button nav and swipe nav separately after any behavior change | They often bypass each other |
+| Do not assume swipe uses the same dispatcher as buttons | Many cards call relay commands directly in swipe completion |
+| For "navigate + pause", send nav first and pause second | Prevents a stale paused render of the old item |
+
+## 10) Shadow DOM and styling
 
 - All card HTML lives inside `this.shadowRoot` (via `attachShadow({ mode: "open" })`)
 - Styles are scoped to the shadow DOM — use `<style>` tags inside the shadow root
 - HA theme CSS variables (e.g., `var(--primary-color)`, `var(--card-background-color)`) are inherited into shadow DOM and should be used for consistent theming
 - External stylesheets and global CSS do not penetrate the shadow boundary
 
-## 10) Card structure
+## 11) Card structure
 
 Every custom card must:
 

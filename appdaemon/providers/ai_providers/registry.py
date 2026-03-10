@@ -93,7 +93,7 @@ def build_image_provider(cfg: ImageProviderConfig) -> ImageGenerationProvider:
                 api_key=_require_api_key("openai", cfg.api_key),
                 base_url=str(cfg.base_url or "https://api.openai.com"),
                 model=str(cfg.model or "gpt-image-1.5"),
-                size=str(cfg.size or "1024x1024"),
+                size=str(cfg.size or "1536x1024"),
                 quality=str(cfg.quality or "medium"),
                 output_format=str(cfg.output_format or "png"),
                 timeout_s=float(cfg.timeout_s or 90.0),
