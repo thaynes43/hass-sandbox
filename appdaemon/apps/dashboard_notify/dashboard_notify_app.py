@@ -293,7 +293,12 @@ class DashboardNotify(hass.Hass):
                 try:
                     with open(summary_path, "r") as f:
                         summary_data = json.load(f)
-                    created_at = float(summary_data.get("created_at_epoch", 0))
+                    # created_at_epoch is nested under "summary" key
+                    summary_obj = summary_data.get("summary", {})
+                    if isinstance(summary_obj, dict):
+                        created_at = float(summary_obj.get("created_at_epoch", 0))
+                    else:
+                        created_at = float(summary_data.get("created_at_epoch", 0))
                 except Exception:
                     continue
                 if created_at + ttl_s > now:
@@ -330,9 +335,20 @@ class DashboardNotify(hass.Hass):
                 try:
                     with open(os.path.join(runs_dir, run_id, "summary.json"), "r") as f:
                         summary_data = json.load(f)
-                    summary_text = str(summary_data.get("summary", "Detection event"))[:200]
+                    # summary.json has nested structure: {"summary": {"run_text": "...", "text": "..."}}
+                    summary_obj = summary_data.get("summary", {})
+                    if isinstance(summary_obj, dict):
+                        summary_text = str(
+                            summary_obj.get("run_text") or summary_obj.get("text") or "Detection event"
+                        )[:200]
+                    else:
+                        summary_text = str(summary_obj)[:200]
                 except Exception:
                     summary_text = "Detection event"
+                self.log(
+                    "Backfill: %s/%s — %s (expires in %ds)",
+                    bundle_key, run_id, summary_text, int(expires_at - now),
+                )
 
                 notification = Notification(
                     id=nid,

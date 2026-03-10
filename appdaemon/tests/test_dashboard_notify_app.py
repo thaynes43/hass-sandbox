@@ -1107,7 +1107,7 @@ class TestBackfillDetection:
             f.write(b"fake image")
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"created_at_epoch": created_at, "summary": "Backfill person"}, f)
+            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "Backfill person"}}, f)
 
         app._backfill_detection_bundles(now)
 
@@ -1139,7 +1139,7 @@ class TestBackfillDetection:
             f.write(b"fake image")
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"created_at_epoch": created_at, "summary": "Expired"}, f)
+            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "Expired"}}, f)
 
         app._backfill_detection_bundles(now)
 
@@ -1167,7 +1167,7 @@ class TestBackfillDetection:
         # No generated.png, only summary.json
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"created_at_epoch": created_at, "summary": "No image"}, f)
+            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "No image"}}, f)
 
         app._backfill_detection_bundles(now)
 
@@ -1196,7 +1196,7 @@ class TestBackfillDetection:
             f.write(b"fake")
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"created_at_epoch": created_at, "summary": "Dup"}, f)
+            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "Dup"}}, f)
 
         nid = f"detection_garage_{run_id}"
         # Pre-add the notification
