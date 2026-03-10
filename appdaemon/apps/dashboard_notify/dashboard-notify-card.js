@@ -4,7 +4,8 @@
  * Custom Lovelace carousel card for wall-display notifications.
  * Reads state from sensor.dashboard_notify_status.
  * Sends commands via the relay script (dashboard_notify_relay).
- * Supports swipe navigation, crossfade transitions, auto-advance.
+ * Supports swipe navigation with interactive drag, horizontal slide
+ * transitions on advance, and touch/click deduplication.
  */
 
 const DN_DEFAULTS = {
@@ -19,11 +20,18 @@ class DashboardNotifyCard extends HTMLElement {
     this._config = { ...DN_DEFAULTS };
     this._hass = null;
     this._lastSnapshot = null;
-    this._delegatedBound = false;
-    this._touchStartX = 0;
-    this._touchStartY = 0;
+    this._domBuilt = false;
     this._touchActive = false;
-    this._pauseResumeTimer = null;
+
+    // Slide/swipe state
+    this._sliding = false;
+    this._swipeDragX = 0;
+    this._swipeStartX = 0;
+    this._swipeStartY = 0;
+    this._swipeLocked = false; // true once we know it's horizontal
+    this._prevImageUrl = "";
+    this._prevText = "";
+    this._prevMeta = "";
   }
 
   setConfig(config) {
@@ -33,25 +41,41 @@ class DashboardNotifyCard extends HTMLElement {
   set hass(hass) {
     const firstSet = !this._hass;
     this._hass = hass;
-    if (firstSet) {
-      this._render();
-      this._lastSnapshot = this._snapshot();
-      return;
-    }
+
     const snap = this._snapshot();
-    if (snap === this._lastSnapshot) return;
+    if (!firstSet && snap === this._lastSnapshot) return;
+
+    const oldIndex = this._lastActiveIndex ?? -1;
     this._lastSnapshot = snap;
 
-    // Focus guard: skip re-render if an input has focus
+    const notifications = this._sensorAttr("notifications") || [];
+    const activeIndex = this._sensorAttr("active_index") || 0;
+    this._lastActiveIndex = activeIndex;
+
+    if (!this._domBuilt) {
+      this._buildDom();
+      this._update();
+      return;
+    }
+
+    // Focus guard
     const active = this.shadowRoot?.activeElement;
     if (active) {
       const tag = active.tagName;
-      const isText =
-        tag === "TEXTAREA" || (tag === "INPUT" && active.type !== "range");
-      if (isText) return;
+      if (tag === "TEXTAREA" || (tag === "INPUT" && active.type !== "range")) return;
     }
 
-    this._render();
+    // Determine slide direction when index changes and we have multiple items
+    if (!this._sliding && notifications.length > 1 && oldIndex >= 0 && oldIndex !== activeIndex) {
+      const count = notifications.length;
+      // Determine direction: going forward or backward?
+      const fwd =
+        (activeIndex === (oldIndex + 1) % count) ||
+        (oldIndex === count - 1 && activeIndex === 0);
+      this._slideTransition(fwd ? "left" : "right");
+    } else if (!this._sliding) {
+      this._update();
+    }
   }
 
   // ── State helpers ────────────────────────────────────────────────
@@ -65,6 +89,30 @@ class DashboardNotifyCard extends HTMLElement {
   _sensorAttr(attr) {
     const s = this._hass?.states?.[this._config.status_entity];
     return s?.attributes?.[attr];
+  }
+
+  _getDisplayData() {
+    const notifications = this._sensorAttr("notifications") || [];
+    const activeIndex = this._sensorAttr("active_index") || 0;
+    const paused = this._sensorAttr("paused") || false;
+    const placeholderUrl = this._sensorAttr("placeholder_url") || "";
+    const count = notifications.length;
+
+    let imageUrl = "", text = "", notifClass = "", metaLine = "";
+
+    if (count > 0 && activeIndex < count) {
+      const c = notifications[activeIndex];
+      imageUrl = c.image_url || "";
+      text = c.text || "";
+      notifClass = c["class"] || "";
+      metaLine = this._buildMetaLine(c.created_at, c.expires_at);
+    } else if (placeholderUrl) {
+      imageUrl = placeholderUrl;
+      text = "No new notifications";
+      notifClass = "placeholder";
+    }
+
+    return { notifications, activeIndex, paused, placeholderUrl, count, imageUrl, text, notifClass, metaLine };
   }
 
   _buildMetaLine(createdAt, expiresAt) {
@@ -105,66 +153,277 @@ class DashboardNotifyCard extends HTMLElement {
       });
   }
 
-  // ── Render ─────────────────────────────────────────────────────
+  // ── DOM build (once) ────────────────────────────────────────────
 
-  _render() {
-    const notifications = this._sensorAttr("notifications") || [];
-    const activeIndex = this._sensorAttr("active_index") || 0;
-    const paused = this._sensorAttr("paused") || false;
-    const placeholderUrl = this._sensorAttr("placeholder_url") || "";
-    const count = notifications.length;
-
-    let imageUrl = "";
-    let text = "";
-    let notifClass = "";
-
-    let metaLine = "";
-
-    if (count > 0 && activeIndex < count) {
-      const current = notifications[activeIndex];
-      imageUrl = current.image_url || "";
-      text = current.text || "";
-      notifClass = current["class"] || "";
-      metaLine = this._buildMetaLine(current.created_at, current.expires_at);
-    } else if (placeholderUrl) {
-      imageUrl = placeholderUrl;
-      text = "No new notifications";
-      notifClass = "placeholder";
-    }
-
-    // Build navigation dots
-    let dotsHtml = "";
-    for (let i = 0; i < count; i++) {
-      const active = i === activeIndex ? "active" : "";
-      dotsHtml += `<span class="dot ${active}" data-action="goto" data-index="${i}"></span>`;
-    }
-
+  _buildDom() {
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
       <ha-card>
         <div class="image-area">
-          ${imageUrl ? `<img src="${imageUrl}" alt="Notification" onerror="this.onerror=null; ${placeholderUrl ? `this.src='${placeholderUrl}';` : `this.style.display='none';`}" />` : '<div class="no-image">No image</div>'}
-          ${paused ? '<div class="pause-overlay"><ha-icon icon="mdi:pause-circle-outline"></ha-icon></div>' : ""}
-        </div>
-        <div class="text-area ${notifClass.toLowerCase()}">
-          <div class="notif-text">${text}</div>
-          ${metaLine ? `<div class="notif-meta">${metaLine}</div>` : ""}
-        </div>
-        ${count > 1 ? `<div class="nav-dots">${dotsHtml}</div>` : ""}
-        <div class="controls">
-          ${count > 1 ? '<button class="btn-icon" data-action="previous"><ha-icon icon="mdi:chevron-left"></ha-icon></button>' : ""}
-          <button class="btn-icon" data-action="toggle_pause">
-            <ha-icon icon="${paused ? "mdi:play" : "mdi:pause"}"></ha-icon>
+          <div class="slide-container">
+            <div class="slide slide-prev"><img /></div>
+            <div class="slide slide-current"><img /></div>
+            <div class="slide slide-next"><img /></div>
+          </div>
+          <div class="pause-overlay" style="display:none">
+            <ha-icon icon="mdi:pause-circle-outline"></ha-icon>
+          </div>
+          <button class="dismiss-btn" data-action="dismiss" style="display:none">
+            <ha-icon icon="mdi:delete-outline"></ha-icon>
           </button>
-          ${count > 0 ? '<button class="btn-icon" data-action="dismiss"><ha-icon icon="mdi:close"></ha-icon></button>' : ""}
-          ${count > 1 ? '<button class="btn-icon" data-action="next"><ha-icon icon="mdi:chevron-right"></ha-icon></button>' : ""}
+        </div>
+        <div class="text-area">
+          <div class="notif-text"></div>
+          <div class="notif-meta"></div>
+        </div>
+        <div class="nav-dots"></div>
+        <div class="controls">
+          <button class="btn-icon btn-prev" data-action="previous" style="display:none">
+            <ha-icon icon="mdi:chevron-left"></ha-icon>
+          </button>
+          <button class="btn-icon" data-action="toggle_pause">
+            <ha-icon icon="mdi:pause"></ha-icon>
+          </button>
+          <button class="btn-icon btn-next" data-action="next" style="display:none">
+            <ha-icon icon="mdi:chevron-right"></ha-icon>
+          </button>
         </div>
       </ha-card>
     `;
 
-    if (!this._delegatedBound) {
-      this._bindDelegatedEvents();
-      this._delegatedBound = true;
+    // Cache element refs
+    const root = this.shadowRoot;
+    this._els = {
+      slideContainer: root.querySelector(".slide-container"),
+      slidePrev: root.querySelector(".slide-prev img"),
+      slideCurrent: root.querySelector(".slide-current img"),
+      slideNext: root.querySelector(".slide-next img"),
+      pauseOverlay: root.querySelector(".pause-overlay"),
+      dismissBtn: root.querySelector(".dismiss-btn"),
+      textArea: root.querySelector(".text-area"),
+      notifText: root.querySelector(".notif-text"),
+      notifMeta: root.querySelector(".notif-meta"),
+      navDots: root.querySelector(".nav-dots"),
+      btnPrev: root.querySelector(".btn-prev"),
+      btnNext: root.querySelector(".btn-next"),
+      pauseBtn: root.querySelector('[data-action="toggle_pause"]'),
+      pauseIcon: root.querySelector('[data-action="toggle_pause"] ha-icon'),
+    };
+
+    this._bindDelegatedEvents();
+    this._domBuilt = true;
+  }
+
+  // ── Update DOM in place ─────────────────────────────────────────
+
+  _update() {
+    if (!this._els) return;
+    const d = this._getDisplayData();
+    const e = this._els;
+    const placeholderUrl = d.placeholderUrl;
+
+    // Current image
+    if (d.imageUrl) {
+      e.slideCurrent.src = d.imageUrl;
+      e.slideCurrent.style.display = "";
+      e.slideCurrent.onerror = () => {
+        e.slideCurrent.onerror = null;
+        if (placeholderUrl) e.slideCurrent.src = placeholderUrl;
+        else e.slideCurrent.style.display = "none";
+      };
+    } else {
+      e.slideCurrent.style.display = "none";
+    }
+
+    // Save for slide transitions
+    this._prevImageUrl = d.imageUrl;
+    this._prevText = d.text;
+    this._prevMeta = d.metaLine;
+
+    // Text
+    e.textArea.className = `text-area ${(d.notifClass || "").toLowerCase()}`;
+    e.notifText.textContent = d.text;
+    e.notifMeta.textContent = d.metaLine;
+    e.notifMeta.style.display = d.metaLine ? "" : "none";
+
+    // Overlays
+    e.pauseOverlay.style.display = d.paused ? "" : "none";
+    e.dismissBtn.style.display = d.count > 0 ? "" : "none";
+    e.pauseIcon.setAttribute("icon", d.paused ? "mdi:play" : "mdi:pause");
+
+    // Nav buttons
+    e.btnPrev.style.display = d.count > 1 ? "" : "none";
+    e.btnNext.style.display = d.count > 1 ? "" : "none";
+
+    // Nav dots
+    if (d.count > 1) {
+      let dots = "";
+      for (let i = 0; i < d.count; i++) {
+        dots += `<span class="dot ${i === d.activeIndex ? "active" : ""}" data-action="goto" data-index="${i}"></span>`;
+      }
+      e.navDots.innerHTML = dots;
+      e.navDots.style.display = "";
+    } else {
+      e.navDots.innerHTML = "";
+      e.navDots.style.display = "none";
+    }
+
+    // Reset slide container position
+    e.slideContainer.style.transition = "none";
+    e.slideContainer.style.transform = "translateX(0)";
+  }
+
+  // ── Slide transition ────────────────────────────────────────────
+
+  _slideTransition(direction) {
+    if (!this._els) return;
+    this._sliding = true;
+    const e = this._els;
+    const d = this._getDisplayData();
+    const placeholderUrl = d.placeholderUrl;
+
+    // Put the old image in prev/next slot, new image in current
+    if (direction === "left") {
+      // Sliding left: old is current, new arrives from right
+      e.slidePrev.src = this._prevImageUrl || "";
+      e.slidePrev.parentElement.style.display = "";
+      e.slideNext.parentElement.style.display = "none";
+      e.slideCurrent.src = d.imageUrl || "";
+      e.slideCurrent.onerror = () => {
+        e.slideCurrent.onerror = null;
+        if (placeholderUrl) e.slideCurrent.src = placeholderUrl;
+      };
+      // Start with container shifted right so prev is visible
+      e.slideContainer.style.transition = "none";
+      e.slideContainer.style.transform = "translateX(-100%)";
+    } else {
+      // Sliding right: old is current, new arrives from left
+      e.slideNext.src = this._prevImageUrl || "";
+      e.slideNext.parentElement.style.display = "";
+      e.slidePrev.parentElement.style.display = "none";
+      e.slideCurrent.src = d.imageUrl || "";
+      e.slideCurrent.onerror = () => {
+        e.slideCurrent.onerror = null;
+        if (placeholderUrl) e.slideCurrent.src = placeholderUrl;
+      };
+      // Start with container shifted left so next is visible
+      e.slideContainer.style.transition = "none";
+      e.slideContainer.style.transform = "translateX(100%)";
+    }
+
+    // Update text immediately
+    e.textArea.className = `text-area ${(d.notifClass || "").toLowerCase()}`;
+    e.notifText.textContent = d.text;
+    e.notifMeta.textContent = d.metaLine;
+    e.notifMeta.style.display = d.metaLine ? "" : "none";
+
+    // Force reflow then animate to center
+    void e.slideContainer.offsetWidth;
+    e.slideContainer.style.transition = "transform 0.35s ease-out";
+    e.slideContainer.style.transform = "translateX(0)";
+
+    const onDone = () => {
+      e.slideContainer.removeEventListener("transitionend", onDone);
+      e.slidePrev.parentElement.style.display = "none";
+      e.slideNext.parentElement.style.display = "none";
+      this._prevImageUrl = d.imageUrl;
+      this._prevText = d.text;
+      this._prevMeta = d.metaLine;
+      this._sliding = false;
+
+      // Update remaining UI (dots, buttons, etc.)
+      this._update();
+    };
+    e.slideContainer.addEventListener("transitionend", onDone);
+
+    // Safety timeout in case transitionend doesn't fire
+    setTimeout(() => {
+      if (this._sliding) onDone();
+    }, 500);
+  }
+
+  // ── Interactive swipe drag ──────────────────────────────────────
+
+  _onSwipeStart(x, y) {
+    this._swipeStartX = x;
+    this._swipeStartY = y;
+    this._swipeDragX = 0;
+    this._swipeLocked = false;
+
+    const d = this._getDisplayData();
+    if (d.count <= 1) return;
+
+    // Preload neighbor images into prev/next slots
+    const prevIdx = (d.activeIndex - 1 + d.count) % d.count;
+    const nextIdx = (d.activeIndex + 1) % d.count;
+    const e = this._els;
+    e.slidePrev.src = d.notifications[prevIdx]?.image_url || "";
+    e.slideNext.src = d.notifications[nextIdx]?.image_url || "";
+    e.slidePrev.parentElement.style.display = "";
+    e.slideNext.parentElement.style.display = "";
+    e.slideContainer.style.transition = "none";
+  }
+
+  _onSwipeMove(x, y) {
+    const d = this._getDisplayData();
+    if (d.count <= 1) return;
+
+    const dx = x - this._swipeStartX;
+    const dy = y - this._swipeStartY;
+
+    if (!this._swipeLocked) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      // Lock to horizontal or vertical
+      if (Math.abs(dy) > Math.abs(dx)) return; // vertical scroll, bail
+      this._swipeLocked = true;
+    }
+
+    this._swipeDragX = dx;
+    const e = this._els;
+    e.slideContainer.style.transform = `translateX(${dx}px)`;
+  }
+
+  _onSwipeEnd() {
+    const d = this._getDisplayData();
+    if (d.count <= 1 || !this._swipeLocked) {
+      this._swipeLocked = false;
+      return false;
+    }
+
+    const e = this._els;
+    const containerWidth = e.slideContainer.offsetWidth || 300;
+    const threshold = containerWidth * 0.2;
+    const dx = this._swipeDragX;
+    this._swipeLocked = false;
+
+    if (Math.abs(dx) > threshold) {
+      // Complete the swipe with animation
+      const dir = dx > 0 ? "right" : "left";
+      const target = dir === "left" ? -containerWidth : containerWidth;
+      e.slideContainer.style.transition = "transform 0.25s ease-out";
+      e.slideContainer.style.transform = `translateX(${target}px)`;
+
+      const onDone = () => {
+        e.slideContainer.removeEventListener("transitionend", onDone);
+        e.slidePrev.parentElement.style.display = "none";
+        e.slideNext.parentElement.style.display = "none";
+        this._callRelay(dir === "left" ? "next" : "previous");
+      };
+      e.slideContainer.addEventListener("transitionend", onDone);
+      setTimeout(() => onDone(), 350);
+      return true;
+    } else {
+      // Snap back
+      e.slideContainer.style.transition = "transform 0.2s ease-out";
+      e.slideContainer.style.transform = "translateX(0)";
+      const cleanup = () => {
+        e.slideContainer.removeEventListener("transitionend", cleanup);
+        e.slidePrev.parentElement.style.display = "none";
+        e.slideNext.parentElement.style.display = "none";
+      };
+      e.slideContainer.addEventListener("transitionend", cleanup);
+      setTimeout(cleanup, 300);
+      return true; // consumed the gesture
     }
   }
 
@@ -173,37 +432,36 @@ class DashboardNotifyCard extends HTMLElement {
   _bindDelegatedEvents() {
     const root = this.shadowRoot;
 
-    // Touch events for swipe detection
     root.addEventListener(
       "touchstart",
       (e) => {
-        this._touchStartX = e.changedTouches[0].clientX;
-        this._touchStartY = e.changedTouches[0].clientY;
+        const t = e.changedTouches[0];
+        this._onSwipeStart(t.clientX, t.clientY);
       },
       { passive: true }
+    );
+
+    root.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!this._swipeLocked && !this._swipeStartX) return;
+        const t = e.changedTouches[0];
+        this._onSwipeMove(t.clientX, t.clientY);
+        if (this._swipeLocked) e.preventDefault();
+      },
+      { passive: false }
     );
 
     root.addEventListener("touchend", (e) => {
       const target = e.target;
       const tag = target?.tagName;
-      // Never preventDefault on form elements
       if (tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA") return;
 
-      const dx = e.changedTouches[0].clientX - this._touchStartX;
-      const dy = e.changedTouches[0].clientY - this._touchStartY;
-
-      // Swipe detection: horizontal delta > 50px and greater than vertical
-      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      // Try swipe completion first
+      if (this._onSwipeEnd()) {
         e.preventDefault();
         this._touchActive = true;
-        setTimeout(() => {
-          this._touchActive = false;
-        }, 400);
-        if (dx > 0) {
-          this._callRelay("previous");
-        } else {
-          this._callRelay("next");
-        }
+        setTimeout(() => { this._touchActive = false; }, 400);
         return;
       }
 
@@ -212,9 +470,7 @@ class DashboardNotifyCard extends HTMLElement {
       if (actionEl) {
         e.preventDefault();
         this._touchActive = true;
-        setTimeout(() => {
-          this._touchActive = false;
-        }, 400);
+        setTimeout(() => { this._touchActive = false; }, 400);
         this._dispatchAction(actionEl);
       }
     });
@@ -234,9 +490,6 @@ class DashboardNotifyCard extends HTMLElement {
     if (!action) return;
 
     if (action === "goto") {
-      const idx = parseInt(el.dataset.index, 10);
-      // goto is just next/prev to reach that index; for simplicity send next
-      // The card re-renders from sensor state, so we just call next/prev
       this._callRelay("next");
       return;
     }
@@ -261,11 +514,27 @@ class DashboardNotifyCard extends HTMLElement {
         overflow: hidden;
         background: #111;
       }
-      .image-area img {
+      .slide-container {
+        display: flex;
+        width: 100%;
+        height: 100%;
+        will-change: transform;
+      }
+      .slide {
+        flex: 0 0 100%;
+        width: 100%;
+        height: 100%;
+      }
+      .slide-prev {
+        margin-left: -100%;
+      }
+      .slide-next {
+        /* sits naturally after current */
+      }
+      .slide img {
         width: 100%;
         height: 100%;
         object-fit: cover;
-        transition: opacity 0.5s ease-in-out;
       }
       .no-image {
         display: flex;
@@ -281,6 +550,24 @@ class DashboardNotifyCard extends HTMLElement {
         right: 8px;
         color: rgba(255, 255, 255, 0.8);
         --mdc-icon-size: 28px;
+        pointer-events: none;
+      }
+      .dismiss-btn {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        background: rgba(0, 0, 0, 0.45);
+        border: none;
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        color: rgba(255, 255, 255, 0.85);
+        --mdc-icon-size: 18px;
+        padding: 0;
       }
       .text-area {
         padding: 12px 16px;
