@@ -119,7 +119,7 @@ Actions that modify the card's data model (add, remove, reorder items) should ca
 
 Auto-save is only appropriate for actions that are explicitly confirmatory (the Save button itself).
 
-## 5) Cache busting
+## 5) Static card JS cache busting
 
 Custom cards served from `/local/` or `/config/www/` are aggressively cached by browsers and HA companion apps. After updating a card's JS file on the HA server:
 
@@ -133,14 +133,107 @@ resource_id: "<id from ha_config_list_dashboard_resources>"
 url: "/local/path/to/card.js?v=<N+1>"
 ```
 
-## 6) Shadow DOM and styling
+## 6) Dynamic media URLs must be stable across state updates
+
+For cards that display images from HA sensors, do **not** append `?t=${Date.now()}` or similar per-render / per-publish cache-busters to image URLs.
+
+### The problem
+
+If the backend republishes the same image file with a fresh timestamp query param on every state update, companion apps treat it as a brand-new image and re-fetch it. On iOS this causes:
+
+- black frames while the image reloads
+- slow repaints after taps/swipes
+- one client showing the correct next image while another still displays the old bitmap
+
+This was the root cause of the wall-display notification/photo-frame iOS regressions.
+
+### Required pattern
+
+- Card JS files: use manual Lovelace resource `?v=N` cache busting as described in §5.
+- Media/image URLs from AppDaemon sensors: keep them stable unless the underlying file actually changes.
+- Prefer a file-derived version such as mtime or generation ID:
+
+```python
+def _versioned_media_url(local_url: str, file_path: str | None) -> str:
+    if not local_url or not file_path:
+        return local_url
+    try:
+        version = int(os.path.getmtime(file_path))
+    except OSError:
+        return local_url
+    return f"{local_url}?v={version}"
+```
+
+### Rules
+
+| Rule | Why |
+|---|---|
+| Never use `time.time()` / `Date.now()` as a media URL query param on every publish | Forces pointless re-downloads |
+| Only change media URL when file content changes | Lets browsers keep decoded images alive |
+| Keep card JS cache busting separate from media URL versioning | They solve different caching problems |
+
+## 7) Fixed-size media cards
+
+Cards that show photos, generated images, or camera-like stills should reserve a stable visual footprint. Do not let the card height depend on the currently displayed image's aspect ratio.
+
+### Required pattern
+
+- Use a fixed `aspect-ratio` or explicit `height` on the media container.
+- Display the main image with `object-fit: contain`.
+- Use a neutral or blurred backdrop behind the contained image so landscape and portrait assets both look intentional.
+
+```css
+.frame-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4; /* or configurable */
+  overflow: hidden;
+}
+
+.frame-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+```
+
+### Rules
+
+| Rule | Why |
+|---|---|
+| Do not use markdown `<img>` cards for rotating photo/media layouts | Card height shifts with image aspect ratio |
+| Prefer `aspect_ratio` config, allow `height` override | Makes dashboard sizing intentional |
+| Use backdrop filler instead of stretching/cropping | Keeps photo-frame look without layout jump |
+
+## 8) iOS WebView image rendering is special
+
+The HA iOS app can keep painting an old bitmap even after state and text update correctly. This is especially likely when animating `<img>` elements or when reusing the same DOM node during rapid source changes.
+
+### Safer patterns
+
+- Prefer discrete transitions (cross-fade on release) over live drag transforms of `<img>` content.
+- If the visible image refuses to repaint, replace the current `<img>` node instead of only mutating `src`.
+- Keep off-screen image layers mounted if they are part of an animation.
+- Avoid depending on a container-width measurement during first paint for layout; use CSS positioning for base slide placement.
+
+### Swipe guidance
+
+For swipe navigation:
+
+- Prefer "gesture on release triggers next/previous" over continuous dragging unless live drag is truly necessary.
+- If continuous drag is used, move slide layers, not a shared strip, and test on iOS specifically.
+- Do not block all touch interaction behind preload gates; if media readiness matters, degrade gracefully.
+
+## 9) Shadow DOM and styling
 
 - All card HTML lives inside `this.shadowRoot` (via `attachShadow({ mode: "open" })`)
 - Styles are scoped to the shadow DOM — use `<style>` tags inside the shadow root
 - HA theme CSS variables (e.g., `var(--primary-color)`, `var(--card-background-color)`) are inherited into shadow DOM and should be used for consistent theming
 - External stylesheets and global CSS do not penetrate the shadow boundary
 
-## 7) Card structure
+## 10) Card structure
 
 Every custom card must:
 
@@ -176,7 +269,7 @@ class MyCard extends HTMLElement {
 customElements.define("my-card", MyCard);
 ```
 
-## 8) Testing across devices
+## 11) Testing across devices
 
 When testing custom cards, verify on all three target platforms:
 
@@ -190,3 +283,12 @@ When testing custom cards, verify on all three target platforms:
 | Relay service calls | always works | works if non-admin safe | works if non-admin safe |
 
 Items marked "fragile" on Android/UniFi are sensitive to `preventDefault()` — follow §2 strictly.
+
+Additional media-card checks:
+
+| Feature | Desktop | iOS App | Android / UniFi |
+|---|---|---|---|
+| Same image stays visible across pause/state changes | verify | critical | verify |
+| Next image appears without black frame | verify | critical | verify |
+| Portrait and landscape images preserve card height | verify | verify | verify |
+| Swipe navigation updates both text and image | verify | critical | verify |

@@ -1,75 +1,8 @@
-type: vertical-stack
-cards:
-  - type: custom:bubble-card
-    card_type: button
-    entity: input_select.wall_display_photo_frame_image
-    name: Photo Frame
-    show_name: true
-    rows: 1
-    styles: |-
-      .bubble-sub-button-1,
-      .bubble-sub-button-2,
-      .bubble-sub-button-3 {
-        transition: background-color 200ms ease;
-      }
-      .bubble-sub-button-2 {
-        background-color: ${(() => {
-          const active = 'rgba(var(--rgb-accent-color), 0.45)';
-          const sensor = hass.states['sensor.wall_display_photo_frame_status'];
-          const paused = sensor?.attributes?.paused;
-          return paused === 'true' || paused === true ? active : '';
-        })()} !important;
-      }
-    sub_button:
-      main:
-        - sub_button_type: button
-          icon: mdi:chevron-left
-          tap_action:
-            action: call-service
-            service: input_select.select_previous
-            target:
-              entity_id: input_select.wall_display_photo_frame_image
-            data:
-              cycle: true
-        - sub_button_type: button
-          icon: mdi:pause
-          tap_action:
-            action: call-service
-            service: script.turn_on
-            target:
-              entity_id: script.wall_display_photo_frame_relay
-            data:
-              variables:
-                command: toggle_pause
-                payload: "{}"
-        - sub_button_type: button
-          icon: mdi:chevron-right
-          tap_action:
-            action: call-service
-            service: input_select.select_next
-            target:
-              entity_id: input_select.wall_display_photo_frame_image
-            data:
-              cycle: true
-        - entity: input_select.wall_display_photo_frame_image
-          sub_button_type: select
-          scrolling_effect: false
-          show_icon: false
-          show_arrow: true
-      bottom: []
-    tap_action:
-      action: navigate
-      navigation_path: "#photo-frame-settings"
-    icon: mdi:cog-outline
-    button_type: switch
-    button_action:
-      tap_action:
-        action: navigate
-        navigation_path: "#photo-frame-settings"
-    slider_fill_orientation: left
-    slider_value_position: right
-  - type: markdown
-    content: >-
-      <img style="width: 100%; height: auto;" src="{{
-      state_attr('sensor.wall_display_photo_frame_status', 'image_url') }}?cb={{
-      state_attr('sensor.wall_display_photo_frame_status', 'cache_bust') }}" />
+type: custom:photo-display-card
+status_entity: sensor.wall_display_photo_frame_status
+picker_entity: input_select.wall_display_photo_frame_image
+relay_script: wall_display_photo_frame_relay
+fetcher_entity: sensor.immich_fetcher_status
+navigation_path: "#photo-frame-settings"
+aspect_ratio: "3 / 4"
+title_label: Immich Filter
