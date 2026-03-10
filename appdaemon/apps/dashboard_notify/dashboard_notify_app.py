@@ -121,6 +121,7 @@ class DashboardNotify(hass.Hass):
         self._paused: bool = False
         self._placeholder_generated_at: float = 0.0
         self._placeholder_url: str = ""
+        self._placeholder_path: str = ""
         self._active_generations: set[str] = set()
 
         # Schedule handles: {nid: {"start": handle_or_None, "end": handle_or_None}}
@@ -270,55 +271,54 @@ class DashboardNotify(hass.Hass):
         self.log("Startup reconciliation complete")
 
     def _backfill_detection_bundles(self, now: float) -> None:
-        """Scan on-disk detection-summary run dirs for bundles still within TTL."""
-        allowed_keys = self._detection_hook.get("bundle_keys", [])
+        """Scan on-disk detection-summary tree for runs still within TTL.
+
+        Walks all ``runs/`` directories under ``<media_fs_root>/detection-summary/``
+        and reads ``bundle_key`` from each ``summary.json`` to match against the
+        configured ``bundle_keys``.  This avoids any assumed mapping between
+        ``bundle_key`` and the filesystem path (which is controlled by each
+        entrance's ``snapshot_ha_dir``).
+        """
+        allowed_keys = set(self._detection_hook.get("bundle_keys", []))
         ttl_s = int(self._detection_hook.get("ttl_s", 7200))
         max_per_key = int(self._detection_hook.get("backfill_max_per_key", 3))
 
-        for bundle_key in allowed_keys:
-            runs_dir = os.path.join(
-                self._media_fs_root, "detection-summary", bundle_key, "runs"
-            )
-            if not os.path.isdir(runs_dir):
+        ds_root = os.path.join(self._media_fs_root, "detection-summary")
+        if not os.path.isdir(ds_root):
+            return
+
+        # Collect all eligible (bundle_key, created_at, run_dir) tuples
+        candidates: dict[str, list[tuple[float, str, str]]] = {}  # key -> [(created, run_id, run_dir)]
+        for dirpath, dirnames, filenames in os.walk(ds_root):
+            if "summary.json" not in filenames or "generated.png" not in filenames:
                 continue
-
-            # Collect eligible runs sorted by created_at_epoch descending
-            candidates: list[tuple[float, str]] = []
-            for run_id in os.listdir(runs_dir):
-                run_dir = os.path.join(runs_dir, run_id)
-                summary_path = os.path.join(run_dir, "summary.json")
-                generated_path = os.path.join(run_dir, "generated.png")
-                if not os.path.isfile(summary_path) or not os.path.isfile(generated_path):
+            summary_path = os.path.join(dirpath, "summary.json")
+            try:
+                with open(summary_path, "r") as f:
+                    summary_data = json.load(f)
+                summary_obj = summary_data.get("summary", {})
+                if not isinstance(summary_obj, dict):
                     continue
-                try:
-                    with open(summary_path, "r") as f:
-                        summary_data = json.load(f)
-                    # created_at_epoch is nested under "summary" key
-                    summary_obj = summary_data.get("summary", {})
-                    if isinstance(summary_obj, dict):
-                        created_at = float(summary_obj.get("created_at_epoch", 0))
-                    else:
-                        created_at = float(summary_data.get("created_at_epoch", 0))
-                except Exception:
+                bundle_key = summary_obj.get("bundle_key", "")
+                if bundle_key not in allowed_keys:
                     continue
-                if created_at + ttl_s > now:
-                    candidates.append((created_at, run_id))
+                created_at = float(summary_obj.get("created_at_epoch", 0))
+            except Exception:
+                continue
+            if created_at + ttl_s <= now:
+                continue
+            run_id = summary_obj.get("run_id", os.path.basename(dirpath))
+            candidates.setdefault(bundle_key, []).append((created_at, run_id, dirpath))
 
+        for bundle_key, runs in candidates.items():
             # Most recent first, cap per key
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            for created_at, run_id in candidates[:max_per_key]:
+            runs.sort(key=lambda x: x[0], reverse=True)
+            for created_at, run_id, run_dir in runs[:max_per_key]:
                 nid = f"detection_{bundle_key}_{run_id}"
                 if self._manager.has(nid):
                     continue
 
-                generated_image = os.path.join(
-                    self._media_fs_root,
-                    "detection-summary",
-                    bundle_key,
-                    "runs",
-                    run_id,
-                    "generated.png",
-                )
+                generated_image = os.path.join(run_dir, "generated.png")
                 filename = f"{nid}.png"
                 dest_path = os.path.join(self._media_dir, "staged", filename)
                 try:
@@ -333,9 +333,8 @@ class DashboardNotify(hass.Hass):
                 expires_at = created_at + ttl_s
                 local_url = f"/local/{self._www_subdir}/{filename}"
                 try:
-                    with open(os.path.join(runs_dir, run_id, "summary.json"), "r") as f:
+                    with open(os.path.join(run_dir, "summary.json"), "r") as f:
                         summary_data = json.load(f)
-                    # summary.json has nested structure: {"summary": {"run_text": "...", "text": "..."}}
                     summary_obj = summary_data.get("summary", {})
                     if isinstance(summary_obj, dict):
                         summary_text = str(
@@ -824,6 +823,7 @@ class DashboardNotify(hass.Hass):
             return
 
         self._placeholder_url = result["local_url"]
+        self._placeholder_path = result["staged_path"]
         self._placeholder_generated_at = result["now"]
 
         # Stage to www
@@ -859,23 +859,17 @@ class DashboardNotify(hass.Hass):
         run_id = data.get("run_id", "")
         summary = data.get("summary", "Detection event")
 
-        # Derive the generated image filesystem path from bundle_key + run_id.
-        # Detection summary stores images at:
-        #   <media_fs_root>/detection-summary/<bundle_key>/runs/<run_id>/generated.png
-        generated_image = os.path.join(
-            self._media_fs_root,
-            "detection-summary",
-            bundle_key,
-            "runs",
-            run_id,
-            "generated.png",
-        )
-
-        if not os.path.exists(generated_image):
+        # Find the generated image on disk.  The directory structure varies per
+        # entrance (controlled by snapshot_ha_dir) so we search by run_id (UUID).
+        ds_root = Path(self._media_fs_root) / "detection-summary"
+        matches = list(ds_root.glob(f"**/runs/{run_id}/generated.png"))
+        if not matches:
             self.log(
-                "Detection hook: no generated image at %s", generated_image
+                "Detection hook: no generated image found for run_id=%s under %s",
+                run_id, ds_root,
             )
             return
+        generated_image = str(matches[0])
 
         nid = f"detection_{bundle_key}_{run_id}"
         ttl_s = int(self._detection_hook.get("ttl_s", 7200))
@@ -972,14 +966,16 @@ class DashboardNotify(hass.Hass):
         elif self._current_index >= count:
             self._current_index = count - 1
 
-        # Build notification list with cache-bust URLs
-        cache_bust = int(time.time())
+        # Build notification list with stable per-file cache keys.
+        # Using time.time() here forces every client to re-fetch the bitmap on
+        # every state update (pause, swipe, dot change), which is especially bad
+        # for the iOS app WebView.
         notif_list = []
         for n in notifications:
             notif_list.append({
                 "id": n.id,
                 "text": n.text,
-                "image_url": f"{n.local_url}?t={cache_bust}",
+                "image_url": self._versioned_media_url(n.local_url, n.image_path),
                 "class": n.notification_class,
                 "priority": n.priority,
                 "source_id": n.source_id,
@@ -998,9 +994,24 @@ class DashboardNotify(hass.Hass):
 
         # Add placeholder info when no notifications
         if count == 0 and self._placeholder_url:
-            attrs["placeholder_url"] = f"{self._placeholder_url}?t={cache_bust}"
+            attrs["placeholder_url"] = self._versioned_media_url(
+                self._placeholder_url,
+                self._placeholder_path,
+            )
 
         self.set_state(self.SENSOR_ENTITY, state=state_text, attributes=attrs)
+
+    def _versioned_media_url(self, local_url: str, file_path: str | None) -> str:
+        """Return a cache-stable URL that only changes when the file changes."""
+        if not local_url:
+            return ""
+        if not file_path:
+            return local_url
+        try:
+            version = int(os.path.getmtime(file_path))
+        except OSError:
+            return local_url
+        return f"{local_url}?v={version}"
 
     # ------------------------------------------------------------------
     # Schedule check utility (kept for tests and schedule active check)
