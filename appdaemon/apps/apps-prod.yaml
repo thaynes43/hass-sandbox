@@ -519,3 +519,16 @@ dashboard_notify:
     enabled: true
     ttl_s: 7200
     bundle_keys: [garage, bulkhead, front_door, package, back_deck_pets, back_yard_pets, shed]
+
+calendar_hot_tub_maintenance:
+  module: calendar_from_schedule_app.calendar_schedule_app
+  class: CalendarScheduleApp
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  schedule_dir: /media/calendar-schedules
+  schedule_file: hot-tub-maintenance.yaml
+  calendar_entity_id: calendar.hot_tub_maintenance
+  state_dir: /media/calendar-schedules/sync-state
+  horizon_days: 90
+  sync_interval_hours: 6

@@ -64,6 +64,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `immich_fetcher` | `appdaemon/apps/immich_fetcher/README.md` | Periodic photo fetching from Immich |
 | `photo_frame_viewer` | `appdaemon/apps/photo_frame_viewer/README.md` | Photo slideshow on Lovelace dashboards |
 | `door_notify` | `appdaemon/apps/door_notify/README.md` | Door open/close push notifications with optional AI attachment |
+| `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
 
 ### Providers
 
@@ -106,6 +107,8 @@ detection_summary_app
   └─ writes bundles to shared filesystem
        └─ detection_summary_viewer (listens for events, reads filesystem)
        └─ door_notify (optional: attaches AI summary to notifications)
+
+calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 ```
 
 ## When creating a new app or provider
