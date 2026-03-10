@@ -32,6 +32,9 @@ class DashboardNotifyCard extends HTMLElement {
     this._prevImageUrl = "";
     this._prevText = "";
     this._prevMeta = "";
+    this._renderToken = 0;
+    this._neighborToken = 0;
+    this._transitionToken = 0;
   }
 
   setConfig(config) {
@@ -139,6 +142,153 @@ class DashboardNotifyCard extends HTMLElement {
     return `Created ${timeStr} \u00b7 ${remainStr} remaining`;
   }
 
+  _getNotificationDisplay(notification, placeholderUrl) {
+    if (notification) {
+      return {
+        imageUrl: notification.image_url || "",
+        text: notification.text || "",
+        notifClass: notification["class"] || "",
+        metaLine: this._buildMetaLine(notification.created_at, notification.expires_at),
+      };
+    }
+
+    if (placeholderUrl) {
+      return {
+        imageUrl: placeholderUrl,
+        text: "No new notifications",
+        notifClass: "placeholder",
+        metaLine: "",
+      };
+    }
+
+    return {
+      imageUrl: "",
+      text: "",
+      notifClass: "",
+      metaLine: "",
+    };
+  }
+
+  _preloadImage(url, fallbackUrl = "") {
+    const tryLoad = (candidate, allowFallback) =>
+      new Promise((resolve) => {
+        if (!candidate) {
+          resolve("");
+          return;
+        }
+
+        const probe = new Image();
+        let settled = false;
+        const finish = (loadedUrl) => {
+          if (settled) return;
+          settled = true;
+          resolve(loadedUrl);
+        };
+
+        probe.onload = () => finish(candidate);
+        probe.onerror = () => {
+          if (allowFallback && fallbackUrl && candidate !== fallbackUrl) {
+            tryLoad(fallbackUrl, false).then(finish);
+            return;
+          }
+          finish("");
+        };
+        probe.src = candidate;
+        if (probe.complete && probe.naturalWidth > 0) finish(candidate);
+      });
+
+    return tryLoad(url, true);
+  }
+
+  _applyImage(img, url) {
+    if (!img) return;
+    if (url) {
+      if (img === this._els?.slideCurrent && img.getAttribute("src") !== url) {
+        const replacement = img.cloneNode(false);
+        replacement.style.display = "";
+        replacement.src = url;
+        img.replaceWith(replacement);
+        this._els.slideCurrent = replacement;
+        return;
+      }
+      img.style.display = "";
+      if (img.getAttribute("src") !== url) img.src = url;
+      return;
+    }
+
+    img.removeAttribute("src");
+    img.style.display = "none";
+  }
+
+  _renderCurrentImage(d) {
+    const token = ++this._renderToken;
+    this._preloadImage(d.imageUrl, d.placeholderUrl).then((resolvedUrl) => {
+      if (token !== this._renderToken || !this._els) return;
+      this._applyImage(this._els.slideCurrent, resolvedUrl);
+    });
+  }
+
+  _preloadNeighbors(d) {
+    const token = ++this._neighborToken;
+    const e = this._els;
+    if (!e || d.count <= 1) {
+      this._applyImage(e?.slidePrev, "");
+      this._applyImage(e?.slideNext, "");
+      return;
+    }
+
+    const prevIdx = (d.activeIndex - 1 + d.count) % d.count;
+    const nextIdx = (d.activeIndex + 1) % d.count;
+    const prevDisplay = this._getNotificationDisplay(d.notifications[prevIdx], d.placeholderUrl);
+    const nextDisplay = this._getNotificationDisplay(d.notifications[nextIdx], d.placeholderUrl);
+
+    Promise.all([
+      this._preloadImage(prevDisplay.imageUrl, d.placeholderUrl),
+      this._preloadImage(nextDisplay.imageUrl, d.placeholderUrl),
+    ]).then(([prevUrl, nextUrl]) => {
+      if (token !== this._neighborToken || !this._els) return;
+      this._applyImage(this._els.slidePrev, prevUrl);
+      this._applyImage(this._els.slideNext, nextUrl);
+    });
+  }
+
+  _applyText(display) {
+    const e = this._els;
+    e.textArea.className = `text-area ${(display.notifClass || "").toLowerCase()}`;
+    e.notifText.textContent = display.text;
+    e.notifMeta.textContent = display.metaLine;
+    e.notifMeta.style.display = display.metaLine ? "" : "none";
+  }
+
+  _setSwipeNeighbors(d) {
+    const e = this._els;
+    if (!e || d.count <= 1) return;
+
+    const prevIdx = (d.activeIndex - 1 + d.count) % d.count;
+    const nextIdx = (d.activeIndex + 1) % d.count;
+    const prevDisplay = this._getNotificationDisplay(d.notifications[prevIdx], d.placeholderUrl);
+    const nextDisplay = this._getNotificationDisplay(d.notifications[nextIdx], d.placeholderUrl);
+
+    this._applyImage(e.slidePrev, prevDisplay.imageUrl || d.placeholderUrl || "");
+    this._applyImage(e.slideNext, nextDisplay.imageUrl || d.placeholderUrl || "");
+  }
+
+  _setSlideTransition(value) {
+    const e = this._els;
+    if (!e) return;
+    e.slidePrevEl.style.transition = value;
+    e.slideCurrentEl.style.transition = value;
+    e.slideNextEl.style.transition = value;
+  }
+
+  _setSlidePositions(offsetPx = 0) {
+    const e = this._els;
+    if (!e) return;
+    e.slidePrevEl.style.transform = `translate3d(${offsetPx}px, 0, 0)`;
+    e.slideCurrentEl.style.transform = `translate3d(${offsetPx}px, 0, 0)`;
+    e.slideNextEl.style.transform = `translate3d(${offsetPx}px, 0, 0)`;
+  }
+
   // ── Service calls ──────────────────────────────────────────────
 
   _callRelay(command, data) {
@@ -195,6 +345,9 @@ class DashboardNotifyCard extends HTMLElement {
     const root = this.shadowRoot;
     this._els = {
       slideContainer: root.querySelector(".slide-container"),
+      slidePrevEl: root.querySelector(".slide-prev"),
+      slideCurrentEl: root.querySelector(".slide-current"),
+      slideNextEl: root.querySelector(".slide-next"),
       slidePrev: root.querySelector(".slide-prev img"),
       slideCurrent: root.querySelector(".slide-current img"),
       slideNext: root.querySelector(".slide-next img"),
@@ -220,20 +373,8 @@ class DashboardNotifyCard extends HTMLElement {
     if (!this._els) return;
     const d = this._getDisplayData();
     const e = this._els;
-    const placeholderUrl = d.placeholderUrl;
-
-    // Current image
-    if (d.imageUrl) {
-      e.slideCurrent.src = d.imageUrl;
-      e.slideCurrent.style.display = "";
-      e.slideCurrent.onerror = () => {
-        e.slideCurrent.onerror = null;
-        if (placeholderUrl) e.slideCurrent.src = placeholderUrl;
-        else e.slideCurrent.style.display = "none";
-      };
-    } else {
-      e.slideCurrent.style.display = "none";
-    }
+    this._renderCurrentImage(d);
+    this._preloadNeighbors(d);
 
     // Save for slide transitions
     this._prevImageUrl = d.imageUrl;
@@ -241,10 +382,7 @@ class DashboardNotifyCard extends HTMLElement {
     this._prevMeta = d.metaLine;
 
     // Text
-    e.textArea.className = `text-area ${(d.notifClass || "").toLowerCase()}`;
-    e.notifText.textContent = d.text;
-    e.notifMeta.textContent = d.metaLine;
-    e.notifMeta.style.display = d.metaLine ? "" : "none";
+    this._applyText(d);
 
     // Overlays
     e.pauseOverlay.style.display = d.paused ? "" : "none";
@@ -268,9 +406,8 @@ class DashboardNotifyCard extends HTMLElement {
       e.navDots.style.display = "none";
     }
 
-    // Reset slide container position
-    e.slideContainer.style.transition = "none";
-    e.slideContainer.style.transform = "translateX(0)";
+    this._setSlideTransition("none");
+    this._setSlidePositions(0);
   }
 
   // ── Slide transition ────────────────────────────────────────────
@@ -278,68 +415,60 @@ class DashboardNotifyCard extends HTMLElement {
   _slideTransition(direction) {
     if (!this._els) return;
     this._sliding = true;
+    const transitionToken = ++this._transitionToken;
     const e = this._els;
     const d = this._getDisplayData();
-    const placeholderUrl = d.placeholderUrl;
+    const arrivalImg = direction === "left" ? e.slideNext : e.slidePrev;
+    const arrivalEl = direction === "left" ? e.slideNextEl : e.slidePrevEl;
+    const currentEl = e.slideCurrentEl;
+    let safetyTimer = null;
 
-    // Put the old image in prev/next slot, new image in current
-    if (direction === "left") {
-      // Sliding left: old is current, new arrives from right
-      e.slidePrev.src = this._prevImageUrl || "";
-      e.slidePrev.parentElement.style.display = "";
-      e.slideNext.parentElement.style.display = "none";
-      e.slideCurrent.src = d.imageUrl || "";
-      e.slideCurrent.onerror = () => {
-        e.slideCurrent.onerror = null;
-        if (placeholderUrl) e.slideCurrent.src = placeholderUrl;
-      };
-      // Start with container shifted right so prev is visible
-      e.slideContainer.style.transition = "none";
-      e.slideContainer.style.transform = "translateX(-100%)";
-    } else {
-      // Sliding right: old is current, new arrives from left
-      e.slideNext.src = this._prevImageUrl || "";
-      e.slideNext.parentElement.style.display = "";
-      e.slidePrev.parentElement.style.display = "none";
-      e.slideCurrent.src = d.imageUrl || "";
-      e.slideCurrent.onerror = () => {
-        e.slideCurrent.onerror = null;
-        if (placeholderUrl) e.slideCurrent.src = placeholderUrl;
-      };
-      // Start with container shifted left so next is visible
-      e.slideContainer.style.transition = "none";
-      e.slideContainer.style.transform = "translateX(100%)";
-    }
+    this._preloadImage(d.imageUrl, d.placeholderUrl).then((resolvedUrl) => {
+      if (transitionToken !== this._transitionToken || !this._els) return;
 
-    // Update text immediately
-    e.textArea.className = `text-area ${(d.notifClass || "").toLowerCase()}`;
-    e.notifText.textContent = d.text;
-    e.notifMeta.textContent = d.metaLine;
-    e.notifMeta.style.display = d.metaLine ? "" : "none";
+      this._applyImage(arrivalImg, resolvedUrl);
+      this._setSlideTransition("none");
+      this._setSlidePositions(0);
+      this._applyText(d);
 
-    // Force reflow then animate to center
-    void e.slideContainer.offsetWidth;
-    e.slideContainer.style.transition = "transform 0.35s ease-out";
-    e.slideContainer.style.transform = "translateX(0)";
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (transitionToken !== this._transitionToken || !this._els) return;
+          const width = e.slideContainer.offsetWidth || 300;
+          const target = direction === "left" ? -width : width;
+          this._setSlideTransition("transform 0.35s ease-out");
+          currentEl.style.transform = `translate3d(${target}px, 0, 0)`;
+          arrivalEl.style.transform = `translate3d(${target}px, 0, 0)`;
+          safetyTimer = setTimeout(() => {
+            if (this._sliding) onDone(null);
+          }, 600);
+        });
+      });
+    });
 
-    const onDone = () => {
-      e.slideContainer.removeEventListener("transitionend", onDone);
-      e.slidePrev.parentElement.style.display = "none";
-      e.slideNext.parentElement.style.display = "none";
-      this._prevImageUrl = d.imageUrl;
+    let settled = false;
+    const onDone = (ev) => {
+      // Only react to the transform property (ignore bubbled transitions)
+      if (ev && ev.propertyName && ev.propertyName !== "transform") return;
+      if (settled) return;
+      if (transitionToken !== this._transitionToken) return;
+      settled = true;
+      if (safetyTimer) clearTimeout(safetyTimer);
+      arrivalEl.removeEventListener("transitionend", onDone);
+      // Copy already-loaded src from arrival slot into current
+      this._applyImage(e.slideCurrent, arrivalImg.getAttribute("src") || "");
+      this._prevImageUrl = arrivalImg.getAttribute("src") || "";
       this._prevText = d.text;
       this._prevMeta = d.metaLine;
-      this._sliding = false;
-
-      // Update remaining UI (dots, buttons, etc.)
-      this._update();
+      // Wait for paint, then reset positions
+      requestAnimationFrame(() => {
+        this._setSlideTransition("none");
+        this._setSlidePositions(0);
+        this._sliding = false;
+        this._update();
+      });
     };
-    e.slideContainer.addEventListener("transitionend", onDone);
-
-    // Safety timeout in case transitionend doesn't fire
-    setTimeout(() => {
-      if (this._sliding) onDone();
-    }, 500);
+    arrivalEl.addEventListener("transitionend", onDone);
   }
 
   // ── Interactive swipe drag ──────────────────────────────────────
@@ -353,15 +482,11 @@ class DashboardNotifyCard extends HTMLElement {
     const d = this._getDisplayData();
     if (d.count <= 1) return;
 
-    // Preload neighbor images into prev/next slots
-    const prevIdx = (d.activeIndex - 1 + d.count) % d.count;
-    const nextIdx = (d.activeIndex + 1) % d.count;
     const e = this._els;
-    e.slidePrev.src = d.notifications[prevIdx]?.image_url || "";
-    e.slideNext.src = d.notifications[nextIdx]?.image_url || "";
-    e.slidePrev.parentElement.style.display = "";
-    e.slideNext.parentElement.style.display = "";
-    e.slideContainer.style.transition = "none";
+    this._setSwipeNeighbors(d);
+    this._preloadNeighbors(d);
+    this._setSlideTransition("none");
+    this._setSlidePositions(0);
   }
 
   _onSwipeMove(x, y) {
@@ -379,14 +504,17 @@ class DashboardNotifyCard extends HTMLElement {
     }
 
     this._swipeDragX = dx;
-    const e = this._els;
-    e.slideContainer.style.transform = `translateX(${dx}px)`;
+    this._setSlideTransition("none");
+    this._setSlidePositions(dx);
   }
 
   _onSwipeEnd() {
     const d = this._getDisplayData();
     if (d.count <= 1 || !this._swipeLocked) {
       this._swipeLocked = false;
+      this._swipeStartX = 0;
+      this._swipeStartY = 0;
+      this._swipeDragX = 0;
       return false;
     }
 
@@ -395,33 +523,59 @@ class DashboardNotifyCard extends HTMLElement {
     const threshold = containerWidth * 0.2;
     const dx = this._swipeDragX;
     this._swipeLocked = false;
+    this._swipeStartX = 0;
+    this._swipeStartY = 0;
 
     if (Math.abs(dx) > threshold) {
       // Complete the swipe with animation
       const dir = dx > 0 ? "right" : "left";
       const target = dir === "left" ? -containerWidth : containerWidth;
-      e.slideContainer.style.transition = "transform 0.25s ease-out";
-      e.slideContainer.style.transform = `translateX(${target}px)`;
+      const currentEl = e.slideCurrentEl;
+      const arrivalEl = dir === "left" ? e.slideNextEl : e.slidePrevEl;
+      this._setSlideTransition("transform 0.25s ease-out");
+      currentEl.style.transform = `translate3d(${target}px, 0, 0)`;
+      arrivalEl.style.transform = `translate3d(${target}px, 0, 0)`;
 
+      let swipeDone = false;
       const onDone = () => {
-        e.slideContainer.removeEventListener("transitionend", onDone);
-        e.slidePrev.parentElement.style.display = "none";
-        e.slideNext.parentElement.style.display = "none";
-        this._callRelay(dir === "left" ? "next" : "previous");
+        if (swipeDone) return;
+        swipeDone = true;
+        arrivalEl.removeEventListener("transitionend", onDone);
+        // Pre-update expected index so set hass() doesn't re-trigger a slide
+        const cmd = dir === "left" ? "next" : "previous";
+        if (cmd === "next") {
+          this._lastActiveIndex = (d.activeIndex + 1) % d.count;
+        } else {
+          this._lastActiveIndex = (d.activeIndex - 1 + d.count) % d.count;
+        }
+        const targetDisplay = this._getNotificationDisplay(d.notifications[this._lastActiveIndex], d.placeholderUrl);
+        // Copy the already-loaded src from the arrival slot into current
+        const arrivalImg = dir === "left" ? e.slideNext : e.slidePrev;
+        this._applyImage(e.slideCurrent, arrivalImg.getAttribute("src") || "");
+        this._prevImageUrl = arrivalImg.getAttribute("src") || "";
+        this._prevText = targetDisplay.text;
+        this._prevMeta = targetDisplay.metaLine;
+        this._applyText(targetDisplay);
+        // Wait for paint, then reset positions
+        requestAnimationFrame(() => {
+          this._setSlideTransition("none");
+          this._setSlidePositions(0);
+          this._swipeDragX = 0;
+          this._callRelay(cmd);
+        });
       };
-      e.slideContainer.addEventListener("transitionend", onDone);
+      arrivalEl.addEventListener("transitionend", onDone);
       setTimeout(() => onDone(), 350);
       return true;
     } else {
       // Snap back
-      e.slideContainer.style.transition = "transform 0.2s ease-out";
-      e.slideContainer.style.transform = "translateX(0)";
+      this._setSlideTransition("transform 0.2s ease-out");
+      this._setSlidePositions(0);
       const cleanup = () => {
-        e.slideContainer.removeEventListener("transitionend", cleanup);
-        e.slidePrev.parentElement.style.display = "none";
-        e.slideNext.parentElement.style.display = "none";
+        e.slideCurrentEl.removeEventListener("transitionend", cleanup);
+        this._swipeDragX = 0;
       };
-      e.slideContainer.addEventListener("transitionend", cleanup);
+      e.slideCurrentEl.addEventListener("transitionend", cleanup);
       setTimeout(cleanup, 300);
       return true; // consumed the gesture
     }
@@ -515,21 +669,29 @@ class DashboardNotifyCard extends HTMLElement {
         background: #111;
       }
       .slide-container {
-        display: flex;
+        position: relative;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      .slide {
+        position: absolute;
+        top: 0;
+        left: 0;
         width: 100%;
         height: 100%;
         will-change: transform;
-      }
-      .slide {
-        flex: 0 0 100%;
-        width: 100%;
-        height: 100%;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
       }
       .slide-prev {
-        margin-left: -100%;
+        left: -100%;
+      }
+      .slide-current {
+        left: 0;
       }
       .slide-next {
-        /* sits naturally after current */
+        left: 100%;
       }
       .slide img {
         width: 100%;
