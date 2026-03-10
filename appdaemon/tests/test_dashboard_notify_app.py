@@ -447,9 +447,15 @@ class TestSensorPublishing:
         app.initialize()
 
         now = time.time()
+        # Create a real temp file so _versioned_media_url can read its mtime
+        img_path = os.path.join(app._media_dir, "staged", "test.png")
+        os.makedirs(os.path.dirname(img_path), exist_ok=True)
+        with open(img_path, "wb") as f:
+            f.write(b"fake")
+
         app._manager.add(Notification(
             id="test", notification_class="BasicTextImage",
-            text="Hello", image_path="/p/t.png",
+            text="Hello", image_path=img_path,
             local_url="/local/t.png", created_at=now,
             expires_at=now + 3600, priority=50, source_id="test",
         ))
@@ -462,7 +468,7 @@ class TestSensorPublishing:
         attrs = call_args[1]["attributes"]
         assert len(attrs["notifications"]) == 1
         assert attrs["notifications"][0]["id"] == "test"
-        assert "?t=" in attrs["notifications"][0]["image_url"]
+        assert "?v=" in attrs["notifications"][0]["image_url"]
 
     def test_publishes_placeholder_when_empty(self):
         app = _make_app()
@@ -1107,7 +1113,7 @@ class TestBackfillDetection:
             f.write(b"fake image")
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "Backfill person"}}, f)
+            json.dump({"summary": {"bundle_key": "garage", "run_id": run_id, "created_at_epoch": created_at, "run_text": "Backfill person"}}, f)
 
         app._backfill_detection_bundles(now)
 
@@ -1139,7 +1145,7 @@ class TestBackfillDetection:
             f.write(b"fake image")
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "Expired"}}, f)
+            json.dump({"summary": {"bundle_key": "garage", "run_id": run_id, "created_at_epoch": created_at, "run_text": "Expired"}}, f)
 
         app._backfill_detection_bundles(now)
 
@@ -1167,7 +1173,7 @@ class TestBackfillDetection:
         # No generated.png, only summary.json
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "No image"}}, f)
+            json.dump({"summary": {"bundle_key": "garage", "run_id": run_id, "created_at_epoch": created_at, "run_text": "No image"}}, f)
 
         app._backfill_detection_bundles(now)
 
@@ -1196,7 +1202,7 @@ class TestBackfillDetection:
             f.write(b"fake")
         import json
         with open(os.path.join(run_dir, "summary.json"), "w") as f:
-            json.dump({"summary": {"created_at_epoch": created_at, "run_text": "Dup"}}, f)
+            json.dump({"summary": {"bundle_key": "garage", "run_id": run_id, "created_at_epoch": created_at, "run_text": "Dup"}}, f)
 
         nid = f"detection_garage_{run_id}"
         # Pre-add the notification
