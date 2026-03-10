@@ -1,0 +1,36 @@
+entities:
+  - entity: calendar.hayneshome01886_gmail_com
+    accent_color: "#00d1ff"
+  - entity: calendar.holidays_for_united_states_ma
+    accent_color: "#ffd24a"
+  - entity: calendar.hot_tub_maintenance
+    label: ♨️
+days_to_show: 7
+compact_events_to_show: 3
+compact_events_complete_days: true
+title: Upcoming Events
+title_font_size: 18px
+title_color: var(--primary-text-color)
+background_color: rgba(20, 25, 35, 0.35)
+day_spacing: 6px
+event_spacing: 8px
+event_background_opacity: 18
+weather:
+  position: date
+  date:
+    show_conditions: true
+    show_high_temp: true
+    show_low_temp: false
+    icon_size: 14px
+    font_size: 12px
+    color: var(--primary-text-color)
+  event:
+    show_conditions: true
+    show_temp: true
+    icon_size: 14px
+    font_size: 12px
+    color: var(--primary-text-color)
+tap_action:
+  action: navigate
+  navigation_path: "#skylight-calendar"
+type: custom:calendar-card-pro

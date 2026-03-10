@@ -1,0 +1,35 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#photo-frame-settings"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Photo Frame Settings
+    show_icon: true
+    icon: mdi:cog
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#"
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+    slider_fill_orientation: left
+    slider_value_position: right
+  - type: custom:photo-frame-viewer-card
+  - type: custom:immich-fetcher-card

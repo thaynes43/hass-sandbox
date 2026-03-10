@@ -37,6 +37,8 @@ class PhotoDisplayCard extends HTMLElement {
     this._swipeDragX = 0;
     this._swipeAnimating = false;
     this._displayedImageUrl = "";
+    this._pendingImageUrl = "";
+    this._pendingImageDeadline = 0;
   }
 
   setConfig(config) {
@@ -337,6 +339,20 @@ class PhotoDisplayCard extends HTMLElement {
   _renderImage(imageUrl, forceImage) {
     const e = this._els;
     const state = this._state();
+    const pendingActive =
+      this._pendingImageUrl && Date.now() < this._pendingImageDeadline;
+
+    if (pendingActive && imageUrl && imageUrl !== this._pendingImageUrl) {
+      this._syncAdjacentSlides(state);
+      if (!this._swipeAnimating) this._setSwipeOffset(0);
+      return;
+    }
+
+    if (imageUrl === this._pendingImageUrl) {
+      this._pendingImageUrl = "";
+      this._pendingImageDeadline = 0;
+    }
+
     e.backdrop.style.backgroundImage = imageUrl ? `url("${imageUrl}")` : "none";
     e.emptyState.style.display = imageUrl ? "none" : "";
 
@@ -379,6 +395,8 @@ class PhotoDisplayCard extends HTMLElement {
     const arrivalUrl = String(arrivalImg?.getAttribute("src") || "").trim();
     if (!arrivalUrl) return;
 
+    this._pendingImageUrl = arrivalUrl;
+    this._pendingImageDeadline = Date.now() + 1500;
     this._displayedImageUrl = arrivalUrl;
     this._setImageElement(this._els.currentImage, arrivalUrl);
     this._els.backdrop.style.backgroundImage = `url("${arrivalUrl}")`;
