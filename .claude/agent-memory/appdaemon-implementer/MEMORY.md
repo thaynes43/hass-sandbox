@@ -38,6 +38,30 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - metadata template: `_Detection: {{ states('input_text.{bk}_detection_summary_timing') }}_\n\n_Cooldown: ...cooldown..._\n\n_Selection updated: {{ states.input_text.{bk}_detection_summary_selected.last_updated }}_`
 
 ### Test suite
-- 506 unit tests + 6 integration-skipped tests as of this session
+- 624 unit tests + 6 integration-skipped tests as of dashboard_notify threading refactor
 - Run: `source .venv/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short`
 - WSL path: `wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"`
+
+### dashboard_notify threading model (confirmed pattern)
+- Two-phase generation: `_request_*_generation()` on AD thread → `_generate_*_background()` on worker thread → `_complete_*_generation()` back on AD thread via `self.run_in(callback, 0, result=result)`
+- Worker receives a plain `job: dict` with all needed data (paths, text, ttl_s, etc.)
+- Worker returns a plain `result: dict` with success flag, error, and output paths
+- `_active_generations: set[str]` is the in-memory dedup lock — reserve before thread start, release only in completion callback
+- Completion callback always calls `self._active_generations.discard(nid)` first (even on failure)
+- Stale-job guard: completion callback re-checks `_manager.has(nid)` before adding
+- Placeholder guard: completion callback checks `_manager.count() == 0` before installing placeholder
+- Use `threading.Thread(target=_worker, name="dashboard_notify_gen_<job_id>", daemon=True)`
+- Never call `call_service`, `set_state`, or `listen_event` from the worker thread
+
+### dashboard_notify timer model (explicit timers, no tick poller)
+- `run_every` for `_tick` is gone; replaced with one-time startup reconcile + per-config boundary timers
+- `_schedule_handles[nid] = {"start": handle, "end": handle}` tracks per-config boundary timers
+- `_expiry_handles[nid] = handle` tracks per-notification expiry timers
+- `_on_schedule_start` / `_on_schedule_end` self-reschedule their next occurrence at the end
+- `_on_notification_expired` fires removal + triggers placeholder if empty
+- Startup reconcile: evaluate active schedules, backfill detection bundles, install placeholder if empty, then schedule all boundaries
+
+### dashboard_notify staging (no retry)
+- Removed `_stage_to_www()` and `_stage_retry()` — both were wrong
+- Correct pattern: `self.call_service("shell_command/" + self._stage_shell_command)` exactly once, in the completion callback or event handler after the file is known to exist on disk
+- `_sync_staged_dir()` also calls the staging service directly (single call) when stale files are removed

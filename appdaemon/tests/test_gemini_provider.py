@@ -226,18 +226,21 @@ def test_gemini_image_gen_parse_success(tmp_path: Path) -> None:
     assert result["output_path"] == str(out_img)
 
 
-def test_gemini_image_gen_missing_input_raises(tmp_path: Path) -> None:
-    """Gemini image gen raises when input_image_paths empty."""
+def test_gemini_image_gen_empty_input_is_text_to_image(tmp_path: Path) -> None:
+    """Gemini image gen with empty input_image_paths performs text-to-image."""
     provider = GeminiImageGenerationProvider(
         GeminiImageGenerationConfig(api_key="test-key")
     )
+    # Empty input_image_paths is now valid (text-to-image); it will hit
+    # the API and fail with an auth error since the key is fake.
     with pytest.raises(ExternalImageGenError) as exc_info:
         provider.edit_image(
             input_image_paths=[],
-            prompt="x",
+            prompt="A beautiful sunset",
             output_image_path=str(tmp_path / "out.png"),
         )
-    assert "required" in str(exc_info.value).lower()
+    # Should fail with HTTP error (API key invalid), not "required"
+    assert "http error" in str(exc_info.value).lower() or "request failed" in str(exc_info.value).lower()
 
 
 def test_gemini_image_gen_nonexistent_input_raises(tmp_path: Path) -> None:

@@ -121,7 +121,7 @@ class PhotoFrameViewerApp(hass.Hass):
         # Internal state (replaces input_boolean and input_number helpers)
         self._paused: bool = False
         self._interval: float = self._load_interval(float(cfg.get("default_interval_s", 10)))
-        self._cache_bust: str = str(int(time.time()))
+        self._cache_bust: str = "0"
 
         # Slideshow timer
         self._timer_handle: Optional[Any] = None
@@ -132,6 +132,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self._label_to_path: dict[str, str] = {}
         self._path_to_label: dict[str, str] = {}
         self._last_published_local_url: Optional[str] = None
+        self._last_published_source_path: Optional[str] = None
 
         # Generation state
         self._current_gen_id: Optional[str] = None
@@ -410,6 +411,15 @@ class PhotoFrameViewerApp(hass.Hass):
                 "friendly_name": f"{self._entity_prefix.replace('_', ' ').title()} Photo Frame",
             },
         )
+
+    def _version_token_for_path(self, path: str) -> str:
+        candidate = str(path or "").strip()
+        if not candidate:
+            return "0"
+        try:
+            return str(int(os.path.getmtime(candidate)))
+        except Exception:
+            return "0"
 
     # ------------------------------------------------------------------
     # Relay command handler
@@ -782,7 +792,8 @@ class PhotoFrameViewerApp(hass.Hass):
             level="DEBUG",
         )
         self._last_published_local_url = local_url
-        self._cache_bust = str(int(time.time()))
+        self._last_published_source_path = path
+        self._cache_bust = self._version_token_for_path(path)
         self._publish_sensor_state()
 
     def _finalize_pending(self, *, reason: str) -> None:

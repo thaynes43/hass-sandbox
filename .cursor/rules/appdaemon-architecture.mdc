@@ -264,7 +264,108 @@ async def _async_startup(self) -> None:
     self.listen_event(self._on_command, "my_app_command")
 ```
 
-## 6) New app checklist
+## 6) File serving: `/media/` storage → `/config/www/` via shell commands
+
+AppDaemon apps that generate or manage files (images, JS assets) must follow a two-directory pattern dictated by HA's architecture:
+
+### Why two directories?
+
+- **`/media/`** — Large, unbounded storage. Backed by CephFS (or equivalent network storage). **Not backed up** by HA. AppDaemon and HA pods both mount this. Use for generated images, archives, and any files that grow over time.
+- **`/config/www/`** — Served by HA as `/local/...` URLs. **Backed up** by HA snapshots. Must stay small. Only contains files actively needed by the frontend.
+
+### The staging pattern
+
+```
+AppDaemon writes to:     /media/<app>/staged/<file>.png
+                              ↓
+Shell command copies to:  /config/www/<app>/<file>.png
+                              ↓
+Card loads from:          /local/<app>/<file>.png
+```
+
+1. **AppDaemon generates files** into `/media/<app>/generated/` (archive) and copies them to `/media/<app>/staged/` (ready for serving).
+2. **AppDaemon manages staged/** — only actively displayed files remain. When content expires or is dismissed, the app removes stale files from staged/.
+3. **AppDaemon calls** `self.call_service("shell_command/<app>_stage")` to trigger the sync.
+4. **The shell command** (defined in HA's `configuration.yaml` or `packages/`) syncs `/config/www/<app>/` to match `/media/<app>/staged/` — copies new files and removes files no longer in staged.
+5. **The Lovelace card** references `/local/<app>/<filename>` with a cache-bust query param (`?t=<epoch>`).
+
+### Shell command rules
+
+**Must use `/bin/sh -c '...'` wrapper.** HA's `shell_command` runs via `asyncio.create_subprocess_shell` with busybox `sh`. Bare commands with `&&`, glob `*`, or redirects (`2>/dev/null`) can fail silently or behave unexpectedly. Always wrap in `/bin/sh -c '...'` — this is what all working shell commands in this project use.
+
+**Must clean up `/config/www/`.** The shell command should remove files from `/config/www/<app>/` that are no longer in `/media/<app>/staged/`. The app is responsible for keeping staged/ clean (only active assets). The shell command syncs www to match. This prevents `/config/www/` from growing unbounded — it's backed up by HA snapshots and must stay small.
+
+**Never suppress errors with `2>/dev/null; true`.** HA logs shell command errors even with exit code 0 override, but `2>/dev/null` hides the actual error message, making debugging impossible.
+
+### Shell command template
+
+```yaml
+shell_command:
+  my_app_stage: >-
+    /bin/sh -c 'set -e;
+    dest="/config/www/my-app";
+    src="/media/my-app/staged";
+    mkdir -p "$dest";
+    for f in "$dest"/*.png; do
+      [ -f "$f" ] || continue;
+      bn=$(basename "$f");
+      [ -f "$src/$bn" ] || rm -f "$f";
+    done;
+    [ -n "$(ls -A "$src" 2>/dev/null)" ] && cp -f "$src"/* "$dest/"'
+```
+
+How it works:
+1. `mkdir -p` creates the www directory if needed (as HA process user — currently root in our setup)
+2. Loop removes `.png` files from www that are no longer in staged (cleanup)
+3. Copies all staged files to www (only if staged is non-empty)
+
+**App-side staged dir management:** The app must keep `/media/<app>/staged/` clean. When notifications expire or are dismissed, remove their staged files. Only actively displayed images + the current placeholder should remain in staged. See `dashboard_notify._sync_staged_dir()` for reference.
+
+### File ownership
+
+Never create files in `/config/www/` manually via `kubectl exec` — they'll be owned by root. Let the shell command create the directory and files on first run so ownership is consistent. If you must create files manually, ensure they're owned by the same user the HA process runs as (`ps aux | grep homeassistant` in the pod to check).
+
+### Path mapping across environments
+
+| Context | `/media/` path | `/config/www/` path |
+|---------|---------------|---------------------|
+| HA pod | `/media/<app>/` | `/config/www/<app>/` |
+| AppDaemon pod | `/media/<app>/` | N/A (uses shell_command) |
+| Local dev (WSL) | `/mnt/cephfs-hdd/misc/hass-media/<app>/` | N/A (uses shell_command) |
+
+In local dev, AppDaemon writes to the cephfs mount directly. The shell command still runs on the HA pod where `/media/` is mounted at the standard path.
+
+### Dev config: `media_fs_root` override
+
+Apps use a single `media_fs_root` config (default: `/media`) rather than per-app `media_dir` paths. The app computes its own subdirectory (e.g. `<media_fs_root>/dashboard-notify`). This approach has two benefits:
+
+1. **One config point** controls all media paths — the app's own files and cross-app references (e.g. dashboard_notify reading detection-summary images).
+2. **No path duplication** — the app name subdirectory is hardcoded in the app, not repeated in YAML.
+
+In production, both the AppDaemon pod and HA pod mount the same CephFS volume at `/media`, so the default works. In local dev, `/media/` on the dev machine is a different (root-owned) mount, so override to the cephfs mount point:
+
+```yaml
+# apps-prod.yaml — omit media_fs_root (default /media works)
+my_app:
+  www_subdir: my-app
+
+# apps-dev.yaml — override to local cephfs mount
+my_app_dev:
+  media_fs_root: /mnt/cephfs-hdd/misc/hass-media
+  www_subdir: my-app
+```
+
+**Why not just `media_dir`?** Some apps need to access files from _other_ apps' media directories (e.g. `dashboard_notify` copies detection-summary generated images). With `media_fs_root`, the app can construct paths to any `/media/` subdirectory using the same root. A per-app `media_dir` would require a second config key for each cross-app reference.
+
+### Existing apps using this pattern
+
+| App | Media dir | Shell command | www subdir |
+|-----|-----------|--------------|------------|
+| `photo_frame_viewer` | `/media/immich-photos` | `photo_frame_stage_gen` | `/config/www/photo-frame/live/<gen>/` |
+| `detection_summary_viewer` | `/media/detection-summary/<bundle>` | `ds_refresh_detection_summary_viewer_www` | `/config/www/detection-summary/<bundle>/viewer/` |
+| `dashboard_notify` | `/media/dashboard-notify` | `dashboard_notify_stage` | `/config/www/dashboard-notify/` |
+
+## 7) New app checklist
 
 When creating a new AppDaemon app with a Lovelace card:
 
@@ -274,4 +375,5 @@ When creating a new AppDaemon app with a Lovelace card:
 4. Card uses `callService("script", "<app>_relay", ...)` for all actions.
 5. AppDaemon listens for `<app>_command` event, routes commands.
 6. Add `ha_url: !secret ha_url` and `ha_token_env: TOKEN` to `apps-dev.yaml` and `apps-prod.yaml`.
-7. Document any manual steps (shell commands, Lovelace resources, `local_file` cameras) in the app's README.
+7. If the app generates files for the frontend, follow the `/media/` → `/config/www/` staging pattern (§6). Define a shell command, use `media_fs_root` config, and document the shell command in the README.
+8. Document any manual steps (shell commands, Lovelace resources, `local_file` cameras, directory creation) in the app's README.

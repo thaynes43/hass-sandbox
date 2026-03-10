@@ -79,31 +79,45 @@ class OpenAIImageGenerationProvider(ImageGenerationProvider):
         ]
         out_path = Path(output_image_path)
 
-        if not in_paths:
-            raise ExternalImageGenError("input_image_paths is required")
-        missing = [p for p in in_paths if not p.exists()]
-        if missing:
-            raise ExternalImageGenError(f"input image(s) do not exist: {[str(p) for p in missing]}")
+        if in_paths:
+            missing = [p for p in in_paths if not p.exists()]
+            if missing:
+                raise ExternalImageGenError(f"input image(s) do not exist: {[str(p) for p in missing]}")
         if not prompt or not str(prompt).strip():
             raise ExternalImageGenError("prompt is required")
 
-        data_urls = [{"image_url": _file_to_data_url(p)} for p in in_paths]
         prompt_preview = str(prompt)[:400]
 
-        body: dict[str, Any] = {
-            "images": data_urls,
-            "prompt": str(prompt),
-            "model": self._config.model,
-            "size": self._config.size,
-            "quality": self._config.quality,
-            "output_format": self._config.output_format,
-            "moderation": self._config.moderation,
-            "n": 1,
-        }
-        if self._config.user:
-            body["user"] = self._config.user
-
-        url = f"{self._config.base_url.rstrip('/')}/v1/images/edits"
+        if in_paths:
+            # Image-to-image edit
+            data_urls = [{"image_url": _file_to_data_url(p)} for p in in_paths]
+            body: dict[str, Any] = {
+                "images": data_urls,
+                "prompt": str(prompt),
+                "model": self._config.model,
+                "size": self._config.size,
+                "quality": self._config.quality,
+                "output_format": self._config.output_format,
+                "moderation": self._config.moderation,
+                "n": 1,
+            }
+            if self._config.user:
+                body["user"] = self._config.user
+            url = f"{self._config.base_url.rstrip('/')}/v1/images/edits"
+        else:
+            # Text-to-image generation (no input images)
+            body = {
+                "prompt": str(prompt),
+                "model": self._config.model,
+                "size": self._config.size,
+                "quality": self._config.quality,
+                "output_format": self._config.output_format,
+                "moderation": self._config.moderation,
+                "n": 1,
+            }
+            if self._config.user:
+                body["user"] = self._config.user
+            url = f"{self._config.base_url.rstrip('/')}/v1/images/generations"
         req = urllib.request.Request(
             url=url,
             method="POST",

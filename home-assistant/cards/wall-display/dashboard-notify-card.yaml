@@ -1,0 +1,3 @@
+type: custom:dashboard-notify-card
+status_entity: sensor.dashboard_notify_status
+relay_script: dashboard_notify_relay
