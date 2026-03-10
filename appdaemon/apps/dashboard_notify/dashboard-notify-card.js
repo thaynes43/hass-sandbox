@@ -303,6 +303,16 @@ class DashboardNotifyCard extends HTMLElement {
       });
   }
 
+  _isPaused() {
+    const paused = this._sensorAttr("paused") || false;
+    return paused === true || paused === "true";
+  }
+
+  _pauseForManualNav() {
+    if (this._isPaused()) return;
+    this._callRelay("toggle_pause");
+  }
+
   // ── DOM build (once) ────────────────────────────────────────────
 
   _buildDom() {
@@ -562,6 +572,7 @@ class DashboardNotifyCard extends HTMLElement {
           this._setSlidePositions(0);
           this._swipeDragX = 0;
           this._callRelay(cmd);
+          this._pauseForManualNav();
         });
       };
       arrivalEl.addEventListener("transitionend", onDone);
@@ -643,7 +654,12 @@ class DashboardNotifyCard extends HTMLElement {
     const action = el.dataset.action;
     if (!action) return;
 
+    if (action === "next" || action === "previous") {
+      this._pauseForManualNav();
+    }
+
     if (action === "goto") {
+      this._pauseForManualNav();
       this._callRelay("next");
       return;
     }

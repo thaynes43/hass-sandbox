@@ -123,6 +123,12 @@ class PhotoDisplayCard extends HTMLElement {
     this._hass.callService(domain, service, data);
   }
 
+  _ensurePausedForManualNav() {
+    const pausedRaw = this._sensorAttr(this._config.status_entity, "paused", false);
+    const paused = pausedRaw === true || pausedRaw === "true";
+    if (!paused) this._callRelay("toggle_pause");
+  }
+
   _navigate(path) {
     const targetPath = String(path || "").trim();
     if (!targetPath) return;
@@ -507,6 +513,7 @@ class PhotoDisplayCard extends HTMLElement {
     }
 
     if (action === "prev") {
+      this._ensurePausedForManualNav();
       this._callService("input_select", "select_previous", {
         entity_id: this._config.picker_entity,
         cycle: true,
@@ -515,6 +522,7 @@ class PhotoDisplayCard extends HTMLElement {
     }
 
     if (action === "next") {
+      this._ensurePausedForManualNav();
       this._callService("input_select", "select_next", {
         entity_id: this._config.picker_entity,
         cycle: true,
