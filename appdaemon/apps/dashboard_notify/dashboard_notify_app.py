@@ -983,6 +983,8 @@ class DashboardNotify(hass.Hass):
                 "class": n.notification_class,
                 "priority": n.priority,
                 "source_id": n.source_id,
+                "created_at": n.created_at,
+                "expires_at": n.expires_at,
             })
 
         state_text = f"{count} notification{'s' if count != 1 else ''}"

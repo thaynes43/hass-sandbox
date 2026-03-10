@@ -67,6 +67,30 @@ class DashboardNotifyCard extends HTMLElement {
     return s?.attributes?.[attr];
   }
 
+  _buildMetaLine(createdAt, expiresAt) {
+    if (!createdAt || !expiresAt) return "";
+    const now = Date.now() / 1000;
+    const created = new Date(createdAt * 1000);
+    const h = created.getHours();
+    const m = created.getMinutes();
+    const ampm = h >= 12 ? "PM" : "AM";
+    const h12 = h % 12 || 12;
+    const timeStr = `${h12}:${String(m).padStart(2, "0")} ${ampm}`;
+
+    const remainS = Math.max(0, Math.round(expiresAt - now));
+    let remainStr;
+    if (remainS >= 3600) {
+      const hrs = Math.floor(remainS / 3600);
+      const mins = Math.floor((remainS % 3600) / 60);
+      remainStr = mins > 0 ? `${hrs}h ${mins}m` : `${hrs}h`;
+    } else if (remainS >= 60) {
+      remainStr = `${Math.floor(remainS / 60)}m`;
+    } else {
+      remainStr = `${remainS}s`;
+    }
+    return `Created ${timeStr} \u00b7 ${remainStr} remaining`;
+  }
+
   // ── Service calls ──────────────────────────────────────────────
 
   _callRelay(command, data) {
@@ -94,11 +118,14 @@ class DashboardNotifyCard extends HTMLElement {
     let text = "";
     let notifClass = "";
 
+    let metaLine = "";
+
     if (count > 0 && activeIndex < count) {
       const current = notifications[activeIndex];
       imageUrl = current.image_url || "";
       text = current.text || "";
       notifClass = current["class"] || "";
+      metaLine = this._buildMetaLine(current.created_at, current.expires_at);
     } else if (placeholderUrl) {
       imageUrl = placeholderUrl;
       text = "No new notifications";
@@ -121,7 +148,7 @@ class DashboardNotifyCard extends HTMLElement {
         </div>
         <div class="text-area ${notifClass.toLowerCase()}">
           <div class="notif-text">${text}</div>
-          ${count > 0 ? `<div class="notif-class">${notifClass}</div>` : ""}
+          ${metaLine ? `<div class="notif-meta">${metaLine}</div>` : ""}
         </div>
         ${count > 1 ? `<div class="nav-dots">${dotsHtml}</div>` : ""}
         <div class="controls">
@@ -267,11 +294,9 @@ class DashboardNotifyCard extends HTMLElement {
         font-weight: 500;
         color: var(--primary-text-color);
       }
-      .notif-class {
+      .notif-meta {
         font-size: 0.8em;
         color: var(--secondary-text-color, #888);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
       }
       .text-area.placeholder .notif-text {
         color: var(--secondary-text-color, #888);
