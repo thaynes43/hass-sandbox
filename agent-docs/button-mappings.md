@@ -446,6 +446,21 @@ These switches share coordinated “whole bathroom” behaviors using templates/
 
 ---
 
+### Back Yard — Spotlight
+
+- **Type**: Inovelli Blue (dimmer)
+- **HA entity**: `light.downstairs_kitchen_back_yard_spotlight`
+- **SwitchType (HA)**: `select.downstairs_kitchen_back_yard_spotlight_switchtype` = `Single Pole`
+- **Source automation**: `automations/switch-buttons/inovelli-button-mapping/switch_inovelli_blue_back_yard_spotlight_press_or_hold_switch_mappings.yaml`
+
+| Button | 1x | 2x | 3x | Notes |
+|---|---|---|---|---|
+| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
+| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Config |  | **Toggle hold** |  | Disables/enables `automation.switch_back_yard_slider_opens_turn_on_spotlight`, `automation.switch_back_yard_camera_detects_motion_turn_on_lights`, and `automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight` |
+
+---
+
 ## ZEN32 — Current Mappings
 
 All ZEN32 mappings come from their per-location automation, and share the same underlying event model:
@@ -638,4 +653,3 @@ These also exist in HA and may need standardized config-button mappings.
 - Inovelli blueprint: `blueprints/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml`
 - ZEN32 blueprint: `blueprints/ZEN32-control-track.yaml`
 - ZEN37 blueprint: `blueprints/Zen37-ZwaveJS-blueprint.yaml`
-

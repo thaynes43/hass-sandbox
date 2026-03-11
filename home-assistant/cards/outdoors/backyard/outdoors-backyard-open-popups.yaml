@@ -1,0 +1,16 @@
+type: custom:bubble-card
+card_type: button
+button_type: state
+sub_button:
+  main: []
+  bottom: []
+entity: light.downstairs_kitchen_back_yard_spotlight
+name: Back Yard
+icon: mdi:clipboard-text-clock-outline
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#outdoors-backyard-history"
+grid_options:
+  columns: 6
+  rows: auto

@@ -1,0 +1,210 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#outdoors-backyard-advanced"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Return to Overview
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: "#outdoors-backyard-history"
+    tap_action:
+      action: navigate
+      navigation_path: "#outdoors-backyard-history"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#outdoors-backyard-history"
+
+  - type: markdown
+    content: |
+      ## Back Yard - Sensors
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Trigger Sensors
+          buttons_layout: inline
+          group:
+            - entity: binary_sensor.kitchen_slider_usl_entry_contact
+              name: Slider
+              icon: mdi:door-sliding
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.back_yard_ai_pro_person_detected
+              name: Person
+              icon: mdi:account
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.back_yard_ai_pro_animal_detected
+              name: Animal
+              icon: mdi:paw
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.backyard_all_clear
+              name: All Clear
+              icon: mdi:motion-sensor-off
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Spotlight State
+          buttons_layout: inline
+          group:
+            - entity: sensor.downstairs_kitchen_back_yard_spotlight_internaltemperature
+              name: Temp
+              icon: mdi:thermometer
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.downstairs_kitchen_back_yard_spotlight_overheat
+              name: Overheat
+              icon: mdi:thermometer-alert
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.downstairs_kitchen_back_yard_spotlight_power
+              name: Power
+              icon: mdi:flash
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.downstairs_kitchen_back_yard_spotlight_led_effect
+              name: LED Effect
+              icon: mdi:led-strip-variant
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+      bottom_layout: rows
+    rows: 3.45
+
+  - type: markdown
+    content: |
+      ## Switch Parameters
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Modes
+          buttons_layout: inline
+          group:
+            - entity: select.downstairs_kitchen_back_yard_spotlight_outputmode
+              sub_button_type: default
+              name: Output
+              icon: mdi:light-switch
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+            - entity: select.downstairs_kitchen_back_yard_spotlight_smartbulbmode
+              sub_button_type: default
+              name: Smart Bulb
+              icon: mdi:lightbulb-outline
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+        - name: Local Config
+          buttons_layout: inline
+          group:
+            - entity: select.downstairs_kitchen_back_yard_spotlight_switchtype
+              sub_button_type: default
+              name: Switch Type
+              icon: mdi:electric-switch
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+            - entity: select.downstairs_kitchen_back_yard_spotlight_buttondelay
+              sub_button_type: default
+              name: Button Delay
+              icon: mdi:gesture-double-tap
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+      bottom_layout: rows
+    rows: 2.4
+
+  - type: markdown
+    content: |
+      #### LED Defaults
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: number.downstairs_kitchen_back_yard_spotlight_ledcolorwhenon
+        name: LED Color On
+        vertical: false
+        hide_state: false
+        tap_action:
+          action: none
+      - type: tile
+        entity: number.downstairs_kitchen_back_yard_spotlight_ledcolorwhenoff
+        name: LED Color Off
+        vertical: false
+        hide_state: false
+        tap_action:
+          action: none
+      - type: tile
+        entity: number.downstairs_kitchen_back_yard_spotlight_defaultled1colorwhenon
+        name: LED1 On
+        vertical: false
+        hide_state: false
+        tap_action:
+          action: none
+      - type: tile
+        entity: number.downstairs_kitchen_back_yard_spotlight_defaultled1colorwhenoff
+        name: LED1 Off
+        vertical: false
+        hide_state: false
+        tap_action:
+          action: none

@@ -1,0 +1,259 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#outdoors-backyard-history"
+    button_type: name
+    width_desktop: 75vw
+    show_header: true
+    name: Toggle Advanced Settings
+    show_icon: true
+    icon: mdi:tune-variant
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#outdoors-backyard-advanced"
+    sub_button:
+      main: []
+      bottom: []
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#outdoors-backyard-advanced"
+
+  - type: markdown
+    content: |
+      ## Back Yard
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Triggers
+          buttons_layout: inline
+          group:
+            - entity: binary_sensor.kitchen_slider_usl_entry_contact
+              name: Slider
+              icon: mdi:door-sliding
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.back_yard_ai_pro_person_detected
+              name: Person
+              icon: mdi:account
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.back_yard_ai_pro_animal_detected
+              name: Animal
+              icon: mdi:paw
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: binary_sensor.backyard_all_clear
+              name: All Clear
+              icon: mdi:motion-sensor-off
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Spotlight
+          buttons_layout: inline
+          group:
+            - entity: light.downstairs_kitchen_back_yard_spotlight
+              name: Spotlight
+              icon: mdi:spotlight-beam
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.downstairs_kitchen_back_yard_spotlight_power
+              name: Power
+              icon: mdi:flash
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Automations
+          buttons_layout: inline
+          group:
+            - entity: automation.switch_back_yard_slider_opens_turn_on_spotlight
+              name: Slider -> On
+              icon: mdi:door-open
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: automation.switch_back_yard_camera_detects_motion_turn_on_lights
+              name: Camera -> On
+              icon: mdi:cctv
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+              name: Clear 5m -> Off
+              icon: mdi:timer-off-outline
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+      bottom_layout: rows
+    rows: 3.4
+    show_header_toggle: false
+
+  - type: history-graph
+    entities:
+      - entity: binary_sensor.kitchen_slider_usl_entry_contact
+        name: Slider
+      - entity: binary_sensor.back_yard_ai_pro_person_detected
+        name: Person
+      - entity: binary_sensor.back_yard_ai_pro_animal_detected
+        name: Animal
+      - entity: binary_sensor.backyard_all_clear
+        name: All Clear
+      - entity: light.downstairs_kitchen_back_yard_spotlight
+        name: Spotlight
+    hours_to_show: 1
+    grid_options:
+      columns: full
+
+  - type: markdown
+    content: >
+      {% set s = 'downstairs_kitchen_back_yard_spotlight' %} {% set manual =
+      states('input_text.inovelli_manual_hold') | int(85) %} {% set auto =
+      states('input_text.inovelli_auto_hold') | int(0) %} {% set led1 =
+      states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+
+      {% if led1 == manual %}
+        {% set hold_label = 'Manual Hold' %}
+      {% elif led1 == auto %}
+        {% set hold_label = 'Auto Hold' %}
+      {% else %}
+        {% set hold_label = 'Clear' %}
+      {% endif %}
+
+      {% set on_vals = namespace(out='') %} {% for i in range(1,8) %}
+        {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
+        {% set on_vals.out = on_vals.out ~ (', ' if i > 1 else '') ~ v %}
+      {% endfor %}
+
+      {% set off_vals = namespace(out='') %} {% for i in range(1,8) %}
+        {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenoff') %}
+        {% set off_vals.out = off_vals.out ~ (', ' if i > 1 else '') ~ v %}
+      {% endfor %}
+
+      <ha-icon icon="mdi:lock-check"></ha-icon> **Manual/Auto Hold:** {{
+      hold_label }}
+
+      <ha-icon icon="mdi:palette"></ha-icon> **LED ON Colors (1-7):** {{
+      on_vals.out }}
+
+      <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1-7):**
+      {{ off_vals.out }}
+
+      <ha-icon icon="mdi:lightbulb-auto-outline"></ha-icon> **Hold behavior:**
+      the slider-open, camera-on, and all-clear automations stay disabled while
+      this zone is on hold.
+
+  - type: custom:mod-card
+    card:
+      type: entities
+      entities:
+        - entity: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+          name: Cached LED Color
+      card_mod:
+        style: |
+          ha-card { padding: 0 !important; }
+          .card-content { padding: 0px 12px 6px 12px !important; }
+          #states { padding-top: 0 !important; margin-top: 0 !important; }
+    style: |
+      ha-card { padding: 0 !important; }
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Hold Buttons
+          buttons_layout: inline
+          group:
+            - name: Toggle
+              icon: mdi:hand-back-left
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+                target: {}
+                data:
+                  switch_name: downstairs_kitchen_back_yard_spotlight
+                  hold_color: input_text.inovelli_manual_hold
+                  prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+                  automation_entity_ids:
+                    - automation.switch_back_yard_slider_opens_turn_on_spotlight
+                    - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+                    - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+              entity: script.inovelli_toggle_mmwave_hold_led_indicator
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              fill_width: true
+              custom_height: 80
+              scrolling_effect: false
+            - entity: script.inovelli_set_mmwave_hold_led_indicator
+              name: Set Auto Hold
+              icon: mdi:lock
+              show_name: true
+              show_state: false
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_set_mmwave_hold_led_indicator
+                target: {}
+                data:
+                  switch_name: downstairs_kitchen_back_yard_spotlight
+                  hold_color: input_text.inovelli_auto_hold
+                  prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+                  automation_entity_ids:
+                    - automation.switch_back_yard_slider_opens_turn_on_spotlight
+                    - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+                    - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+              content_layout: icon-top
+              custom_height: 80
+              scrolling_effect: false
+            - entity: script.inovelli_clear_mmwave_hold_restore_led_indicator
+              name: Clear Auto Hold
+              icon: mdi:lock-open
+              show_name: true
+              show_state: false
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+                target: {}
+                data:
+                  switch_name: downstairs_kitchen_back_yard_spotlight
+                  hold_color: input_text.inovelli_auto_hold
+                  prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+                  automation_entity_ids:
+                    - automation.switch_back_yard_slider_opens_turn_on_spotlight
+                    - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+                    - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+              content_layout: icon-top
+              custom_height: 80
+              scrolling_effect: false
+      bottom_layout: rows
+    rows: 1.65
+    show_header_toggle: false

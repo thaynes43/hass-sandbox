@@ -1,0 +1,22 @@
+alias: "[Switch] : [Back Yard] : [Camera Detects Person or Animal] : [Turn On Spotlight]"
+description: ""
+mode: single
+trigger:
+  - platform: state
+    entity_id: binary_sensor.back_yard_ai_pro_person_detected
+    to: "on"
+  - platform: state
+    entity_id: binary_sensor.back_yard_ai_pro_animal_detected
+    to: "on"
+  - platform: state
+    entity_id: binary_sensor.shed_g5_ptz_person_detected
+    to: "on"
+condition:
+  - condition: state
+    entity_id: sun.sun
+    state: below_horizon
+action:
+  - action: light.turn_on
+    target:
+      entity_id: light.downstairs_kitchen_back_yard_spotlight
+    data: {}
