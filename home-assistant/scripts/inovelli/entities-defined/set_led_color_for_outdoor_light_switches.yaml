@@ -1,0 +1,28 @@
+alias: Set LED Color For Outdoor Light Switches
+description: >
+  Placeholder script for outdoor-light Inovelli switches discovered from MQTT
+  entities. Reads a 0-255 LED color value from an input_number helper and
+  applies it to the configured switch list. Audit the switches list before this
+  is wired into dashboard-debug cards.
+fields:
+  color_helper:
+    description: input_number entity_id containing the desired 0-255 LED color
+    example: input_number.outdoor_light_inovelli_led_color
+sequence:
+  - variables:
+      helper_entity_id: "{{ color_helper | default('input_number.outdoor_light_inovelli_led_color') }}"
+      switches:
+        - downstairs_front_porch_inovelli_dimmer
+        - garage_driveway_inovelli_dimmer
+        - garage_back_yard_inovelli_dimmer
+        - downstairs_kitchen_back_yard_spotlight
+        - downstairs_front_door_inovelli_on_off
+  - repeat:
+      for_each: "{{ switches }}"
+      sequence:
+        - action: script.inovelli_set_led_1_7_color_from_input_text
+          data:
+            switch_name: "{{ repeat.item }}"
+            color_helper: "{{ helper_entity_id }}"
+mode: single
+icon: mdi:outdoor-lamp

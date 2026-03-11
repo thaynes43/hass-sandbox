@@ -254,6 +254,22 @@ cards:
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
+            - entity: script.inovelli_set_led_1_7_color_from_input_text
+              name: Set LED Color
+              icon: mdi:palette
+              show_name: true
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_set_led_1_7_color_from_input_text
+                target: {}
+                data:
+                  switch_name: downstairs_kitchen_back_yard_spotlight
+                  color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+              content_layout: icon-top
+              fill_width: true
+              custom_height: 80
+              show_background: true
+              scrolling_effect: false
       bottom_layout: rows
     rows: 1.65
     show_header_toggle: false

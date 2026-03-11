@@ -1,0 +1,29 @@
+type: horizontal-stack
+cards:
+  - type: entities
+    entities:
+      - entity: input_number.outdoor_light_inovelli_led_color
+        name: LED
+  - type: custom:bubble-card
+    card_type: button
+    button_type: name
+    entity: script.set_led_color_for_outdoor_light_switches
+    name: Apply
+    icon: mdi:palette
+    rows: 1.5
+    sub_button:
+      main:
+        - entity: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+          show_name: false
+          show_state: true
+          icon: mdi:spotlight
+      bottom: []
+    tap_action:
+      action: perform-action
+      perform_action: script.set_led_color_for_outdoor_light_switches
+      target: {}
+    button_action:
+      tap_action:
+        action: perform-action
+        perform_action: script.set_led_color_for_outdoor_light_switches
+        target: {}
