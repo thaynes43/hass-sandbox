@@ -15,7 +15,10 @@ Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon
 - **`VERSION` file** at repo root contains the semver version (e.g., `0.1.0`)
 - **Main branch** tags: `<version>`, `<version>-<sha>`, `latest`
 - **Feature branches** tags: `<version>-<branch>.<sha>`, `<version>-<branch>` (for testing pre-merge)
-- Bump `VERSION` on the feature branch before merging so the merge to `main` produces the correct semver tag
+- Agents must bump `VERSION` on the feature branch before creating or updating a PR, unless the user explicitly says not to
+- PR prep is incomplete until the version bump is committed on the branch
+- Use semver: patch for fixes/internal changes, minor for features, major for breaking changes
+- The merge to `main` then produces the correct semver tag
 
 ## What the Docker build does
 

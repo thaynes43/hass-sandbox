@@ -65,6 +65,8 @@ appdaemon -c appdaemon
 
 Production deploys are automated. Merging to `main` triggers a Docker image build and push to GHCR. Flux rolls the Kubernetes deployment automatically.
 
+If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes.
+
 ## Core repository facts
 
 ### AppDaemon layout

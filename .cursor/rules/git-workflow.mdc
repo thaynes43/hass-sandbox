@@ -81,7 +81,11 @@ All workflows trigger on every PR but skip expensive work when irrelevant files 
 
 ## Versioning
 
-The `VERSION` file at the repo root controls Docker image tags. Bump it on the feature branch before merging so the merge to `main` automatically produces the new semver tag.
+The `VERSION` file at the repo root controls Docker image tags.
+
+- Agents must bump `VERSION` on the feature branch before creating or updating a PR, unless the user explicitly says not to.
+- A PR is not ready to open if the branch changes AppDaemon code, Docker build inputs, or deployment behavior and `VERSION` has not been updated.
+- The merge to `main` then automatically produces the new semver tag.
 
 | Change type | Version bump | Example |
 |---|---|---|
@@ -104,9 +108,10 @@ On PRs, dev tags include the version + branch name (e.g. `0.2.0-my-feature.abc12
 Agents (Claude Code, Cursor, etc.) creating PRs from local sessions must:
 1. Create a feature branch (never commit to `main`)
 2. Run tests locally before pushing
-3. Create the PR as **draft** (`gh pr create --draft`) to avoid triggering Code Review
-4. Include a test plan in the PR body
-5. Reference the issue/story if one exists
-6. The user will mark the PR as "Ready for review" when it's complete
+3. Bump `VERSION` using semver before opening the PR, unless the user explicitly opts out
+4. Create the PR as **draft** (`gh pr create --draft`) to avoid triggering Code Review
+5. Include a test plan in the PR body
+6. Reference the issue/story if one exists
+7. The user will mark the PR as "Ready for review" when it's complete
 
 PRs created by agents via GitHub (e.g. `@claude` in issues) open as ready immediately — Code Review will run on those automatically.
