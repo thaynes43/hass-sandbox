@@ -65,6 +65,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `photo_frame_viewer` | `appdaemon/apps/photo_frame_viewer/README.md` | Photo slideshow on Lovelace dashboards |
 | `door_notify` | `appdaemon/apps/door_notify/README.md` | Door open/close push notifications with optional AI attachment |
 | `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
+| `dashboard_notify` | `appdaemon/apps/dashboard_notify/README.md` | AI-generated notification carousel for wall displays |
 
 ### Providers
 
@@ -107,6 +108,7 @@ detection_summary_app
   └─ writes bundles to shared filesystem
        └─ detection_summary_viewer (listens for events, reads filesystem)
        └─ door_notify (optional: attaches AI summary to notifications)
+       └─ dashboard_notify (listens for events, copies generated images)
 
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 ```

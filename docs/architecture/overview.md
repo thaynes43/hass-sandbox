@@ -21,6 +21,7 @@
                                      │  ├─ door_notify    │
                                      │  ├─ detection_*    │
                                      │  ├─ photo_frame_*  │
+                                     │  ├─ dashboard_notify│
                                      │  └─ immich_fetcher │
                                      │                    │
                                      │  providers/        │

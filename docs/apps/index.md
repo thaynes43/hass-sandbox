@@ -8,6 +8,7 @@
 | **detection_summary_app** | Motion-triggered detection pipeline: capture, AI scoring, publish |
 | **detection_summary_viewer** | Dashboard viewer for detection summary bundles |
 | **photo_frame_viewer** | Photo slideshow on Lovelace dashboards (wall displays) |
+| **dashboard_notify** | AI-generated notification carousel for wall displays |
 | **immich_fetcher** | Periodic photo fetching from Immich photo library |
 
 ## Shared providers
@@ -30,6 +31,7 @@ detection_summary_app
   └─ writes bundles to shared filesystem
        └─ detection_summary_viewer (listens for events, reads filesystem)
        └─ door_notify (optional: attaches AI summary to notifications)
+       └─ dashboard_notify (listens for events, copies generated images)
 ```
 
 !!! note "Per-app documentation"
