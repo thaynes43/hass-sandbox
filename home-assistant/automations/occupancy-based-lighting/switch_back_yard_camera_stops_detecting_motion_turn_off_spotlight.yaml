@@ -1,0 +1,18 @@
+alias: "[Switch] : [Back Yard] : [All Clear 5m] : [Turn Off Spotlight]"
+description: ""
+mode: single
+trigger:
+  - platform: state
+    entity_id: binary_sensor.backyard_all_clear
+    to: "on"
+    for:
+      minutes: 5
+condition:
+  - condition: sun
+    after: sunset
+    after_offset: "01:00:00"
+action:
+  - action: light.turn_off
+    target:
+      entity_id: light.downstairs_kitchen_back_yard_spotlight
+    data: {}

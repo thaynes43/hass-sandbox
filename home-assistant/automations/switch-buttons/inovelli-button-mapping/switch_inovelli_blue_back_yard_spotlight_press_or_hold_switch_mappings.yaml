@@ -1,0 +1,20 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Back Yard] [Spotlight] : [Press or Hold] :
+  [Switch Mappings]
+description: >-
+  Config double-click toggles manual hold for the backyard spotlight occupancy
+  automations.
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: b7e1b085755e3d7ea3584240fea3dac3
+    config_double:
+      - action: script.inovelli_toggle_mmwave_hold_led_indicator
+        data:
+          switch_name: downstairs_kitchen_back_yard_spotlight
+          hold_color: input_text.inovelli_manual_hold
+          prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+          automation_entity_ids:
+            - automation.switch_back_yard_slider_opens_turn_on_spotlight
+            - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+            - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
