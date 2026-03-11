@@ -26,7 +26,7 @@ class OpenAIImageEditConfig:
     api_key: str
     base_url: str = "https://api.openai.com"
     model: str = "gpt-image-1.5"
-    size: str = "1024x1024"
+    size: str = "1536x1024"
     quality: str = "medium"
     output_format: str = "png"
     moderation: str = "auto"

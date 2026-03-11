@@ -1,0 +1,216 @@
+schedule:
+  name: "Hot Tub Maintenance"
+  plan_start: 2026-03-05
+  plan_end: 2027-03-19
+
+context:
+  hot_tub:
+    manufacturer: Bullfrog Spas
+    series: M Series
+    model: M7
+    volume_gallons: 500
+
+  sanitizer_system:
+    type: "FROG @ease XL"
+    smartchlor_shape: triangular
+    dial_settings:
+      mineral_blue: MAX
+      smartchlor_gray:
+        configured: 5
+        max: 6
+        manufacturer_recommended_m7: 3
+
+  balance_targets:
+    hardness_ppm: "150-250"
+    total_alkalinity_ppm: "80-120"
+    ph: "7.2-7.6"
+
+  frog_products:
+    soothe_hardness_increaser:
+      dose_for_500gal_if_0ppm_cups: 2.5
+      dose_for_500gal_if_50ppm_cups: 1.875
+      instructions:
+        - "Jets ON"
+        - "Keep cover OFF during initial circulate"
+        - "Circulate 30 minutes"
+        - "After 2 hours retest and repeat until hardness is 150-250"
+
+    target_alkalinity_increaser:
+      dose_for_500gal_if_0ppm_cups: 1.25
+      dose_for_500gal_if_40ppm_cups: 0.625
+      instructions:
+        - "Jets ON"
+        - "Keep spa hot and UNCOVERED when running jets"
+        - "Circulate 30 minutes"
+        - "After 2 hours retest and repeat until TA is 80-120"
+
+    jumph_ph_increaser:
+      dose_for_500gal_if_below_6_8_tbsp: 1.25
+      dose_for_500gal_if_below_7_2_tbsp: 0.625
+      instructions:
+        - "Jets ON"
+        - "Distribute and circulate 30 minutes"
+        - "Keep spa hot with cover OFF"
+        - "After 2 hours retest and repeat until pH is 7.2-7.6"
+
+    stomps_shock:
+      dose_for_500gal_cups: 0.3125
+      instructions:
+        - "Jets ON"
+        - "Cover UP (per vendor label note)"
+        - "Dump in and run 15 minutes"
+      vendor_note: "Shock when water temp is over 100F"
+
+consumables:
+  filters:
+    product_name: "Bullfrog Simplicity Filter"
+    part_number: "10-00814"
+    pack_size: 4
+    starting_inventory_packs: 1
+    reorder_when_remaining_filters: 1
+
+tasks:
+  # ---- Weekly: test + adjust ----
+  - id: weekly_water_test_and_adjust
+    title: "Weekly water test + adjust (TA > pH > Hardness) + verify sanitizer"
+    frequency_days: 7
+    first_due: 2026-03-12
+    window:
+      before_days: 2
+      after_days: 2
+    escalate_after_days: 2
+    severity: HIGH
+    checklist:
+      - "Test with @ease strips (and/or preferred kit)."
+      - "If TA low: dose FROG Target (1.25 cups/500gal if 0ppm); circulate 30 min uncovered; retest after 2 hours; repeat."
+      - "If pH low: dose FROG Jumph (1.25 Tbsp/500gal if below 6.8); circulate 30 min uncovered; retest after 2 hours; repeat."
+      - "If hardness low: dose FROG Soothe (2.5 cups/500gal if 0ppm); circulate 30 min uncovered; retest after 2 hours; repeat."
+      - "Verify sanitizer is in-range per @ease guidance."
+
+  # ---- Shock ----
+  - id: monthly_shock_or_as_needed
+    title: "Shock with FROG Stomps (monthly baseline + as-needed)"
+    frequency_months: 1
+    first_due: 2026-04-05
+    window:
+      before_days: 7
+      after_days: 7
+    escalate_after_days: 7
+    severity: MED
+    checklist:
+      - "Dose: 0.3125 cups for 500 gal (scaled from 0.25 cups/400 gal)."
+      - "Jets ON; cover UP; run 15 minutes."
+      - "Vendor note: shock when water temp > 100F."
+
+  # ---- Cartridge maintenance ----
+  - id: smartchlor_replace_strip_driven
+    title: "Replace SmartChlor XL when strip indicates OUT (plan ~every 3 weeks)"
+    frequency_days: 21
+    first_due: 2026-03-26
+    window:
+      before_days: 3
+      after_days: 7
+    escalate_after_days: 7
+    severity: HIGH
+    checklist:
+      - "Check @ease strip OUT indicator."
+      - "Replace gray SmartChlor XL (triangular). Set dial to configured value (5)."
+      - "Shock same day (FROG Stomps) if scheduled/needed."
+
+  - id: mineral_replace_every_refill_or_4mo
+    title: "Replace blue Mineral cartridge (every refill; otherwise every 4 months)"
+    frequency_days: 122
+    first_due: 2026-07-05
+    window:
+      before_days: 7
+      after_days: 14
+    escalate_after_days: 14
+    severity: HIGH
+    checklist:
+      - "Replace blue Mineral cartridge."
+      - "Set dial to MAX and leave it."
+
+  # ---- Filters ----
+  - id: monthly_filter_rinse
+    title: "Rinse/clean Simplicity filters (monthly)"
+    frequency_months: 1
+    first_due: 2026-04-05
+    window:
+      before_days: 7
+      after_days: 7
+    escalate_after_days: 7
+    severity: MED
+    checklist:
+      - "Rinse pleats thoroughly; good rinsing extends life."
+
+  - id: filter_replace_min_12_16_weeks
+    title: "Replace Simplicity filters (every ~14 weeks baseline)"
+    frequency_days: 98
+    first_due: 2026-06-11
+    window:
+      before_days: 7
+      after_days: 7
+    escalate_after_days: 7
+    severity: MED
+    checklist:
+      - "Replace with Bullfrog Simplicity Filter (part #10-00814)."
+      - "Update filter inventory counter."
+
+  - id: order_filters_when_one_left
+    title: "Order Simplicity Filters when 1 remains (Bullfrog part #10-00814)"
+    trigger: "inventory_threshold"
+    threshold:
+      item: "filters"
+      remaining_filters_lte: 1
+    severity: LOW
+    checklist:
+      - "Order 1 new 4-pack of Bullfrog Simplicity Filter (part #10-00814)."
+      - "Update inventory: +4 filters when received."
+
+  # ---- Drain & refill cycles ----
+  - id: drain_refill_cycle_1
+    title: "Drain & Refill Cycle 1 (includes rebalance + reinstall @ease)"
+    due_date: 2026-06-05
+    window: { start: 2026-05-22, end: 2026-06-19 }
+    escalate_after: 2026-06-19
+    severity: HIGH
+    procedure_ref: drain_refill_startup_procedure
+
+  - id: drain_refill_cycle_2
+    title: "Drain & Refill Cycle 2"
+    due_date: 2026-09-05
+    window: { start: 2026-08-22, end: 2026-09-19 }
+    escalate_after: 2026-09-19
+    severity: HIGH
+    procedure_ref: drain_refill_startup_procedure
+
+  - id: drain_refill_cycle_3
+    title: "Drain & Refill Cycle 3"
+    due_date: 2026-12-05
+    window: { start: 2026-11-21, end: 2026-12-19 }
+    escalate_after: 2026-12-19
+    severity: HIGH
+    procedure_ref: drain_refill_startup_procedure
+
+  - id: drain_refill_cycle_4
+    title: "Drain & Refill Cycle 4"
+    due_date: 2027-03-05
+    window: { start: 2027-02-19, end: 2027-03-19 }
+    escalate_after: 2027-03-19
+    severity: HIGH
+    procedure_ref: drain_refill_startup_procedure
+
+procedures:
+  drain_refill_startup_procedure:
+    title: "Drain/Refill + startup balance (M7 / 500 gal / FROG @ease XL + FROG chems)"
+    steps:
+      - "Power OFF breaker; drain tub fully; clean shell/JetPak areas; refill."
+      - "Set filtration program (your chosen standard/beginner style)."
+      - "Balance in this order (weekly logic too):"
+      - "  1) Total Alkalinity: FROG Target (scale by 1.25x for 500 gal), circulate 30 min uncovered; retest after 2 hours; repeat."
+      - "  2) pH: FROG Jumph (scale by 1.25x), circulate 30 min uncovered; retest after 2 hours; repeat."
+      - "  3) Hardness: FROG Soothe (scale by 1.25x), circulate 30 min uncovered; retest after 2 hours; repeat."
+      - "Install @ease cartridges:"
+      - "  - Blue Mineral: set MAX"
+      - "  - Gray SmartChlor XL (triangular): set to configured dial value (5)"
+      - "Shock: FROG Stomps dose for 500 gal (0.3125 cups); jets on; cover up; 15 minutes."

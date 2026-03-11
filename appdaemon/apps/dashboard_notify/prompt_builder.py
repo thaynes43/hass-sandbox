@@ -75,13 +75,21 @@ def build_notification_prompt(
     if style_profile is None:
         style_profile = random_style_profile()
     if style_profile and style_profile.prompt_suffix:
-        prompt = f"{prompt}\n\n{style_profile.prompt_suffix}"
+        prompt = (
+            f"{prompt}\n\n"
+            f"Rendering style (apply to visual appearance only — preserve all subjects and the scene theme above):\n"
+            f"{style_profile.prompt_suffix}"
+        )
 
     # Environment variant
     if environment_variant is None:
         environment_variant = random_environment_variant()
     if environment_variant and environment_variant.prompt_suffix:
-        prompt = f"{prompt}\n\n{environment_variant.prompt_suffix}"
+        prompt = (
+            f"{prompt}\n\n"
+            f"Environment/setting (modify background and setting only — all subjects and notification theme must remain clearly present):\n"
+            f"{environment_variant.prompt_suffix}"
+        )
 
     return prompt.strip()
 
@@ -113,11 +121,19 @@ def build_placeholder_prompt(
     if style_profile is None:
         style_profile = random_style_profile()
     if style_profile and style_profile.prompt_suffix:
-        prompt = f"{prompt}\n\n{style_profile.prompt_suffix}"
+        prompt = (
+            f"{prompt}\n\n"
+            f"Rendering style (apply to visual appearance only — preserve all subjects and the scene theme above):\n"
+            f"{style_profile.prompt_suffix}"
+        )
 
     if environment_variant is None:
         environment_variant = random_environment_variant()
     if environment_variant and environment_variant.prompt_suffix:
-        prompt = f"{prompt}\n\n{environment_variant.prompt_suffix}"
+        prompt = (
+            f"{prompt}\n\n"
+            f"Environment/setting (modify background and setting only — all subjects and scene theme must remain clearly present):\n"
+            f"{environment_variant.prompt_suffix}"
+        )
 
     return prompt.strip()

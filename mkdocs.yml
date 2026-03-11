@@ -45,6 +45,7 @@ nav:
       - GenAI Camera Notifications: features/camera-notifications.md
       - Occupancy-Based Lighting: features/occupancy-lighting.md
       - Immich Photo Frame: features/photo-frame.md
+      - Dashboard Notify: features/dashboard-notify.md
   - Architecture:
       - Overview: architecture/overview.md
       - AppDaemon Apps: apps/index.md

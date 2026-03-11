@@ -1,0 +1,54 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#skylight-calendar"
+    button_type: name
+    name: Family Calendar
+    icon: mdi:calendar
+    width_desktop: calc(100vw - var(--mdc-drawer-width, 0px) - 2vw)
+    margin_left_desktop: calc(var(--mdc-drawer-width, 0px) + 1vw)
+    margin_top_desktop: 1vh
+    width_mobile: 100vw
+    margin_left_mobile: 0px
+    margin_top_mobile: 0px
+    bg_opacity: 96
+    shadow_opacity: 20
+    show_header: true
+    sub_button:
+      main: []
+      bottom: []
+  - type: custom:skylight-calendar-card
+    title: Family Calendar
+    entities:
+      - calendar.hayneshome01886_gmail_com
+      - calendar.holidays_for_united_states_ma
+      - calendar.hot_tub_maintenance
+    view_mode: month
+    show_week_numbers: false
+    first_day_of_week: 0
+    week_days:
+      - 0
+      - 1
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+    week_start_hour: 8
+    week_end_hour: 21
+    hide_event_calendar_bubble: false
+    hide_times_for_calendars: []
+    show_current_time_bar: false
+    enable_event_management: true
+    rolling_days: 6
+    height_scale: 1
+    compact_height: false
+    default_dark_mode: true
+    card_mod:
+      style: |
+        /* Fill the popup body area */
+        ha-card {
+          height: calc(98vh - 80px) !important; /* ~80px accounts for popup header */
+          overflow: auto !important;
+        }

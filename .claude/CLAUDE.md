@@ -160,6 +160,10 @@ After any `home-assistant/` change, the response must start with exactly one of:
 
 Followed by: what needs copy-pasting into HA, and what was updated in the repo.
 
+### App README required (required)
+
+Every new AppDaemon app **must** include a `README.md` in its package directory. See `.cursor/rules/appdaemon-documentation.mdc` for the full template. Also add the app to the documentation map and dependency graph in that file.
+
 ### AppDaemon deploy communication (required)
 
 After any `appdaemon/` change, state what was changed:

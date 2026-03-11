@@ -20,6 +20,19 @@ dashboard-notify-card.js     # Custom Lovelace carousel card
 
 State is published to `sensor.dashboard_notify_status`. The card reads from this sensor and sends commands via `script.dashboard_notify_relay`.
 
+## Dependencies
+
+| Provider | Usage |
+|----------|-------|
+| `ha_provisioner` | Creates relay script and status sensor on startup |
+| `ai_providers` (image capability) | Generates notification and placeholder images via `edit_image` |
+
+## Upstream/downstream dependencies
+
+| Direction | App | Relationship |
+|-----------|-----|--------------|
+| Upstream | `detection_summary_app` | Listens for `detection_summary/run_published` events; copies the generated image from the bundle into the notification carousel |
+
 ## Self-Provisioned Entities
 
 - `script.dashboard_notify_relay` — Card-to-AppDaemon relay script

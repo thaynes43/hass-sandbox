@@ -37,6 +37,8 @@ class PhotoDisplayCard extends HTMLElement {
     this._swipeDragX = 0;
     this._swipeAnimating = false;
     this._displayedImageUrl = "";
+    this._pendingImageUrl = "";
+    this._pendingImageDeadline = 0;
   }
 
   setConfig(config) {
@@ -119,6 +121,12 @@ class PhotoDisplayCard extends HTMLElement {
   _callService(domain, service, data) {
     if (!this._hass) return;
     this._hass.callService(domain, service, data);
+  }
+
+  _ensurePausedForManualNav() {
+    const pausedRaw = this._sensorAttr(this._config.status_entity, "paused", false);
+    const paused = pausedRaw === true || pausedRaw === "true";
+    if (!paused) this._callRelay("toggle_pause");
   }
 
   _navigate(path) {
@@ -337,6 +345,20 @@ class PhotoDisplayCard extends HTMLElement {
   _renderImage(imageUrl, forceImage) {
     const e = this._els;
     const state = this._state();
+    const pendingActive =
+      this._pendingImageUrl && Date.now() < this._pendingImageDeadline;
+
+    if (pendingActive && imageUrl && imageUrl !== this._pendingImageUrl) {
+      this._syncAdjacentSlides(state);
+      if (!this._swipeAnimating) this._setSwipeOffset(0);
+      return;
+    }
+
+    if (imageUrl === this._pendingImageUrl) {
+      this._pendingImageUrl = "";
+      this._pendingImageDeadline = 0;
+    }
+
     e.backdrop.style.backgroundImage = imageUrl ? `url("${imageUrl}")` : "none";
     e.emptyState.style.display = imageUrl ? "none" : "";
 
@@ -379,6 +401,8 @@ class PhotoDisplayCard extends HTMLElement {
     const arrivalUrl = String(arrivalImg?.getAttribute("src") || "").trim();
     if (!arrivalUrl) return;
 
+    this._pendingImageUrl = arrivalUrl;
+    this._pendingImageDeadline = Date.now() + 1500;
     this._displayedImageUrl = arrivalUrl;
     this._setImageElement(this._els.currentImage, arrivalUrl);
     this._els.backdrop.style.backgroundImage = `url("${arrivalUrl}")`;
@@ -489,6 +513,7 @@ class PhotoDisplayCard extends HTMLElement {
     }
 
     if (action === "prev") {
+      this._ensurePausedForManualNav();
       this._callService("input_select", "select_previous", {
         entity_id: this._config.picker_entity,
         cycle: true,
@@ -497,6 +522,7 @@ class PhotoDisplayCard extends HTMLElement {
     }
 
     if (action === "next") {
+      this._ensurePausedForManualNav();
       this._callService("input_select", "select_next", {
         entity_id: this._config.picker_entity,
         cycle: true,

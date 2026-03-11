@@ -46,7 +46,9 @@ Custom Lovelace card (wall display dashboard)
 
 ## Dashboard card
 
-The viewer card uses a relay script for pause/next/previous controls — works on non-admin wall display accounts. Settings are managed through a companion settings popup card.
+The viewer uses a `custom:photo-display-card` element with pause/next/previous controls via a relay script — works on non-admin wall display accounts. Settings are managed through a companion settings popup card.
+
+`cache_bust` is derived from the file's modification time (mtime), so the browser reloads the image when it changes without requiring a full page refresh.
 
 | Card | Path |
 |------|------|
