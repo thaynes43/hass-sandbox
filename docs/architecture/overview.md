@@ -22,6 +22,7 @@
                                      │  ├─ detection_*    │
                                      │  ├─ photo_frame_*  │
                                      │  ├─ dashboard_notify│
+                                     │  ├─ calendar_from_*│
                                      │  └─ immich_fetcher │
                                      │                    │
                                      │  providers/        │

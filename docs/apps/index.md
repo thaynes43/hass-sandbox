@@ -9,6 +9,7 @@
 | **detection_summary_viewer** | Dashboard viewer for detection summary bundles |
 | **photo_frame_viewer** | Photo slideshow on Lovelace dashboards (wall displays) |
 | **dashboard_notify** | AI-generated notification carousel for wall displays |
+| **calendar_from_schedule_app** | Sync YAML maintenance schedules to HA local calendar |
 | **immich_fetcher** | Periodic photo fetching from Immich photo library |
 
 ## Shared providers
@@ -32,6 +33,8 @@ detection_summary_app
        └─ detection_summary_viewer (listens for events, reads filesystem)
        └─ door_notify (optional: attaches AI summary to notifications)
        └─ dashboard_notify (listens for events, copies generated images)
+
+calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 ```
 
 !!! note "Per-app documentation"
