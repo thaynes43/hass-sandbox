@@ -10,7 +10,6 @@ on:
       - "VERSION"
       - ".github/workflows/build-appdaemon.yml"
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 env:
