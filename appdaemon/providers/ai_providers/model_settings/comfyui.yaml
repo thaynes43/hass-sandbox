@@ -2,7 +2,6 @@
 # Uses the bundled Qwen image edit workflow for local image-to-image generation.
 
 defaults:
-  base_url: https://comfyui.haynesops.com
   base_url_env: COMFYUI_URL
   timeout_s: 300
 

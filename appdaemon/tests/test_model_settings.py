@@ -92,6 +92,8 @@ def test_load_bundle_openai_default_uses_gpt52_for_simple_text() -> None:
 def test_load_bundle_ollama_qwen9b() -> None:
     bundle = load_bundle("ollama-qwen9b")
     assert bundle.provider == "ollama"
+    assert bundle.base_url is None
+    assert bundle.base_url_env == "OLLAMA_URL"
     assert bundle.multimodal_model == "qwen3.5:9b"
     assert bundle.simple_text_model == "qwen3.5:9b"
     assert bundle.image_model is None
@@ -100,6 +102,8 @@ def test_load_bundle_ollama_qwen9b() -> None:
 def test_load_bundle_comfyui_qwen_edit() -> None:
     bundle = load_bundle("comfyui-qwen-edit")
     assert bundle.provider == "comfyui"
+    assert bundle.base_url is None
+    assert bundle.base_url_env == "COMFYUI_URL"
     assert bundle.image_model == "qwen-image-edit-2509"
     assert bundle.provider_options["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
 
