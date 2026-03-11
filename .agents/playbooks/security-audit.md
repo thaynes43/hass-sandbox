@@ -23,7 +23,17 @@ Scan `appdaemon/apps/apps-prod.yaml` and `appdaemon/apps/apps-dev.yaml` for:
 - The only acceptable `!secret` references are in `appdaemon.yaml` for the HASS plugin (lines 15–16).
 - All credential config keys in app YAMLs must use the `_env` suffix pattern (e.g., `api_key_env: OPENAI_API_KEY`, `ha_url_env: HA_URL`).
 
-**PASS:** No `!secret` in app configs; all credentials use `_env` keys. **FAIL:** Report file and line.
+**Known exclusions (⚠️ WARN, not FAIL):**
+
+The following `!secret` keys in `apps-prod.yaml` / `apps-dev.yaml` are per-environment infrastructure config (not credentials) and are tracked for migration in [issue #17](https://github.com/thaynes43/hass-sandbox/issues/17). Flag as **WARNING** only until the issue is resolved:
+
+| Key | Reason |
+|-----|--------|
+| `ha_url` | HA cluster-internal URL, not a secret |
+| `media_fs_root` | Filesystem mount path, not a secret |
+| `immich_url` | Immich cluster-internal URL, not a secret |
+
+**PASS:** No `!secret` in app configs beyond the known exclusions above; all credentials use `_env` keys. **WARN:** Known exclusion keys present — see issue #17. **FAIL:** Any other `!secret` usage in app configs; report file and line.
 
 ## Step 3 — Provider boundary check
 
