@@ -90,7 +90,7 @@ relay_script: dashboard_notify_relay
 
 See `apps-prod.yaml` for full config. Key settings:
 
-- `media_fs_root` — Local filesystem root mapping to HA's `/media` (default: `/media`; override in dev to e.g. `/mnt/cephfs-hdd/misc/hass-media`)
+- `media_fs_root` or `media_fs_root_env` — Local filesystem root mapping to HA's `/media` (default: `/media`; override in dev to e.g. `/mnt/cephfs-hdd/misc/hass-media`)
 - `carousel_interval_s` — Auto-advance interval (default: 10s)
 - `default_ttl_s` — Default notification TTL (default: 1hr)
 - `no_notification_refresh_s` — Placeholder refresh interval (default: 1hr)

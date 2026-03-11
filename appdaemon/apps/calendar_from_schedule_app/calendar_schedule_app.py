@@ -24,7 +24,7 @@ from calendar_from_schedule_app.calendar_sync import refresh_uids, sync_calendar
 from calendar_from_schedule_app.event_generator import generate_events
 from calendar_from_schedule_app.schedule_parser import compute_file_hash, load_schedule
 from calendar_from_schedule_app.sync_state import load_sync_state, save_sync_state
-from providers.secrets import resolve_secret
+from providers.secrets import resolve_arg_secret, resolve_secret
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class CalendarScheduleApp(hass.Hass):
         self._schedule_file: str = args["schedule_file"]
         self._calendar_entity_id: str = args["calendar_entity_id"]
         self._state_dir: str = args.get("state_dir", "/media/calendar-schedules/sync-state")
-        self._ha_url: str = args["ha_url"]
+        self._ha_url: str = str(resolve_arg_secret(args, "ha_url", required=True))
         self._ha_token_env: str = args["ha_token_env"]
         self._horizon_days: int = int(args.get("horizon_days", 90))
         self._sync_interval_hours: float = float(args.get("sync_interval_hours", 6))

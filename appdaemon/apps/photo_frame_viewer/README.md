@@ -42,7 +42,7 @@ Where `{prefix}` defaults to `wall_display` (configurable via `entity_prefix`).
 photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   stage_shell_command: photo_frame_stage_gen
   cleanup_shell_command: photo_frame_cleanup_gen

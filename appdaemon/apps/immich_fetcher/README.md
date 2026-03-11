@@ -36,9 +36,9 @@ Periodically fetches photos from an [Immich](https://immich.app/) photo library 
 immich_fetcher:
   module: immich_fetcher.immich_fetcher_app
   class: ImmichFetcherApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
-  immich_url: !secret immich_url
+  immich_url_env: IMMICH_URL
   immich_api_key_env: IMMICH_API_KEY
 ```
 

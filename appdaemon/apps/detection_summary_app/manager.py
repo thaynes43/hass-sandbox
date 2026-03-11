@@ -65,6 +65,7 @@ try:
     )
     from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError
     from providers.ha_provisioner import HAProvisioner
+    from providers.secrets import resolve_arg_secret
 except Exception:  # pragma: no cover
     import sys
 
@@ -81,6 +82,7 @@ except Exception:  # pragma: no cover
     )
     from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError  # type: ignore
     from providers.ha_provisioner import HAProvisioner  # type: ignore
+    from providers.secrets import resolve_arg_secret  # type: ignore
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -286,7 +288,13 @@ class DetectionSummary(hass.Hass):
         self.bundle_runs_subdir: str = str(self.args.get("bundle_runs_subdir", self.DEFAULTS["bundle_runs_subdir"])).strip("/") or "runs"
         self.captured_subdir: str = str(self.args.get("captured_subdir", self.DEFAULTS["captured_subdir"])).strip("/") or "captured"
 
-        self.media_fs_root = str(self.args.get("media_fs_root", self.DEFAULTS["media_fs_root"])).rstrip("/") or "/media"
+        self.media_fs_root = str(
+            resolve_arg_secret(
+                self.args,
+                "media_fs_root",
+                default=self.DEFAULTS["media_fs_root"],
+            )
+        ).rstrip("/") or "/media"
 
         self.write_bundle_json: bool = _as_bool(self.args.get("write_bundle_json", self.DEFAULTS["write_bundle_json"]), default=True)
         self.debug_preserve_run_dirs: bool = _as_bool(
@@ -434,7 +442,7 @@ class DetectionSummary(hass.Hass):
         self.listen_state(self._on_trigger, self.trigger_entity_id, new=self.trigger_to)
 
     async def _provision_entities(self) -> None:
-        ha_url = self.args.get("ha_url")
+        ha_url = str(resolve_arg_secret(self.args, "ha_url", default=""))
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(

@@ -106,11 +106,11 @@ Add these to `hass_entities` in the app config if you want this feature. For nes
 detection_viewer_garage_dev:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: garage
   snapshot_ha_dir: /media/detection-summary/garage
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     # Optional: local_file cameras for selected run images
     selected_best_image_camera_entity_id: camera.garage_detection_summary_selected_best
@@ -124,14 +124,14 @@ detection_viewer_garage_dev:
 |---|---|
 | `bundle_key` | Identifies the detection summary bundle (e.g. `garage`, `bulkhead`) |
 | `snapshot_ha_dir` | Base HA path (e.g. `/media/detection-summary/garage`) |
-| `ha_url` | HA base URL for provisioner |
+| `ha_url` or `ha_url_env` | HA base URL for provisioner |
 | `ha_token_env` | Env var name holding the HA long-lived access token |
 
 ### Optional args (with defaults)
 
 | Key | Default | Description |
 |---|---|---|
-| `media_fs_root` | `/media` | Local filesystem path that maps to `/media` in HA |
+| `media_fs_root` or `media_fs_root_env` | `/media` | Local filesystem path that maps to `/media` in HA |
 | `bundle_runs_subdir` | `runs` | Subdirectory under `snapshot_ha_dir` containing per-run directories |
 | `viewer_enabled` | `true` | Enable viewer cache staging |
 | `viewer_stage_subdir` | `viewer_stage` | Staging directory name under `snapshot_ha_dir` |

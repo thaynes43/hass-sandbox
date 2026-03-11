@@ -168,6 +168,46 @@ class TestDetectionSummary:
         warning_calls = [c for c in app.log.mock_calls if "WARNING" in str(c)]
         assert warning_calls, "Expected a WARNING log about missing provisioner credentials"
 
+    def test_initialize_supports_env_backed_media_fs_root_and_ha_url(self):
+        args = {
+            "bundle_key": "garage",
+            "ha_url_env": "HA_URL",
+            "ha_token_env": "TOKEN",
+            "hass_entities": {
+                "camera_entity_id": "camera.garage",
+                "trigger_entity_id": "binary_sensor.garage_person",
+            },
+            "snapshot_ha_dir": "/media/detection-summary/garage",
+            "media_fs_root_env": "MEDIA_FS_ROOT",
+            "data_instructions": "test",
+            "image_instructions": "image",
+            "ai_provider_conf": {"provider": "openai", "api_key_env": "OPENAI_API_KEY"},
+        }
+
+        def resolve_secret(env_var: str) -> str:
+            return {
+                "HA_URL": "http://homeassistant.local:8123",
+                "MEDIA_FS_ROOT": str(Path(__file__).resolve().parent / "_tmp_media"),
+                "TOKEN": "test-key",
+                "OPENAI_API_KEY": "test-key",
+            }[env_var]
+
+        with patch("detection_summary_app.manager.HAProvisioner") as MockProv:
+            mock_prov = AsyncMock()
+            mock_prov.ensure_helper.return_value = False
+            mock_prov._helper_slug = MagicMock(return_value="garage_detection_summary")
+            MockProv.return_value = mock_prov
+            with patch("providers.secrets.resolve_secret", side_effect=resolve_secret):
+                app = self._make_app(args)
+                app.initialize()
+                app._async_startup_wrapper({})
+
+        assert app.media_fs_root.endswith("_tmp_media")
+        MockProv.assert_called_once_with(
+            ha_url="http://homeassistant.local:8123",
+            ha_token_env="TOKEN",
+        )
+
     def test_initialize_requires_api_key_env_for_gemini_narrative(self):
         args = {
             "bundle_key": "garage",
@@ -374,4 +414,3 @@ class TestDetectionSummary:
 
         assert result is None
         delete_run_dir.assert_not_called()
-

@@ -27,6 +27,7 @@ import hassapi as hass
 from immich_fetcher.models import FetcherConfig
 from providers.photo_providers.immich_data_provider import ImmichDataProvider
 from providers.photo_providers.types import PhotoFilter, PhotoProvider
+from providers.secrets import resolve_arg_secret
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ class ImmichFetcherApp(hass.Hass):
             "config_file", "/media/immich-fetcher/config.json"
         )
         self._provider: PhotoProvider = ImmichDataProvider(
-            base_url=args["immich_url"],
+            base_url=str(resolve_arg_secret(args, "immich_url", required=True)),
             api_key_env=args["immich_api_key_env"],
         )
         # Metadata caches are refreshed on startup and periodically while running.
@@ -169,7 +170,7 @@ class ImmichFetcherApp(hass.Hass):
 
     async def _provision_relay(self) -> None:
         """Create script.immich_fetcher_relay if it doesn't exist."""
-        ha_url = self.args.get("ha_url")
+        ha_url = str(resolve_arg_secret(self.args, "ha_url", default=""))
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(

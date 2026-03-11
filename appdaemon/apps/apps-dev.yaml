@@ -4,7 +4,7 @@
 calendar_hot_tub_maintenance_dev:
   module: calendar_from_schedule_app.calendar_schedule_app
   class: CalendarScheduleApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   schedule_dir: /mnt/cephfs-hdd/misc/hass-media/calendar-schedules
   schedule_file: hot-tub-maintenance.yaml

@@ -22,7 +22,7 @@ class ImmichDataProvider:
     """Concrete PhotoProvider implementation for Immich."""
 
     def __init__(self, base_url: str, api_key_env: str) -> None:
-        """base_url comes from !secret (secrets.yaml); api_key from env to avoid UI exposure."""
+        """base_url is the resolved Immich URL; api_key stays env-backed to avoid UI exposure."""
         from providers.secrets import resolve_secret
 
         self._base_url = base_url

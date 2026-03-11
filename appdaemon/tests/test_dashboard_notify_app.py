@@ -137,6 +137,20 @@ class TestInitialization:
         run_in_callbacks = [c[0][0] for c in app.run_in.call_args_list]
         assert app._startup_reconcile in run_in_callbacks
 
+    def test_initialize_supports_env_backed_paths_and_ha_url(self):
+        with patch(
+            "dashboard_notify.dashboard_notify_app.resolve_arg_secret",
+            side_effect=lambda args, key, **kwargs: {
+                "media_fs_root": "/tmp/dashboard-media",
+                "ha_url": "http://ha:8123",
+            }.get(key, kwargs.get("default", "")),
+        ):
+            app = _make_app({"media_fs_root": "", "media_fs_root_env": "MEDIA_FS_ROOT", "ha_url": "", "ha_url_env": "HA_URL"})
+            app.initialize()
+
+        assert app._media_fs_root == "/tmp/dashboard-media"
+        assert app._ha_url == "http://ha:8123"
+
 
 class TestProvisioning:
     def test_provision_creates_relay_script(self):

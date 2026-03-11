@@ -184,6 +184,25 @@ class TestProvisionWithoutCredentials:
 
         MockClass.assert_not_called()
 
+    def test_supports_ha_url_env_for_provisioning(self):
+        app = _make_app({"ha_url": "", "ha_url_env": "HA_URL"})
+        app.initialize()
+
+        mock_prov = MagicMock()
+        mock_prov.ensure_script = AsyncMock(return_value=False)
+        mock_prov.ensure_helper = AsyncMock(return_value=False)
+
+        with patch(
+            "providers.secrets.resolve_secret",
+            side_effect=lambda env_var: {"HA_URL": "http://ha:8123", "TOKEN": "tok"}[env_var],
+        ), patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov) as MockClass:
+            _run(app._provision_entities())
+
+        MockClass.assert_called_once_with(
+            ha_url="http://ha:8123",
+            ha_token_env="TOKEN",
+        )
+
 
 class TestProvisionErrorHandling:
     def test_relay_script_failure_is_caught_and_logged(self):

@@ -6,7 +6,7 @@ Idempotent provisioning library for Home Assistant scripts and helpers. Apps cal
 
 ### `HAProvisioner(ha_url, ha_token_env)`
 
-- `ha_url` — HA base URL (e.g. from `!secret ha_url`)
+- `ha_url` or `ha_url_env` — HA base URL value, either inline or resolved from an environment variable
 - `ha_token_env` — env var **name** containing a long-lived access token (resolved at runtime via `providers.secrets.resolve_secret()`)
 
 ### `await ensure_script(script_id, config) -> bool`
