@@ -8,12 +8,9 @@ on:
       - "appdaemon/providers/**"
       - "docker/**"
       - "VERSION"
+      - ".github/workflows/build-appdaemon.yml"
   pull_request:
-    paths:
-      - "appdaemon/apps/**"
-      - "appdaemon/providers/**"
-      - "docker/**"
-      - "VERSION"
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -31,15 +28,36 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check for AppDaemon image changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- appdaemon/apps/ appdaemon/providers/ docker/ VERSION .github/workflows/build-appdaemon.yml)
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            CHANGED=$(git diff --name-only HEAD~1 -- appdaemon/apps/ appdaemon/providers/ docker/ VERSION .github/workflows/build-appdaemon.yml)
+          else
+            CHANGED="workflow_dispatch"
+          fi
+
+          if [ -n "$CHANGED" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "No AppDaemon image changes detected, skipping build"
+          fi
+
       - name: Read version
+        if: steps.changes.outputs.should_run == 'true'
         id: version
         run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
 
       - name: Compute short SHA
+        if: steps.changes.outputs.should_run == 'true'
         id: sha
         run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
 
       - name: Sanitize branch name
+        if: steps.changes.outputs.should_run == 'true'
         id: branch
         run: |
           ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
@@ -48,6 +66,7 @@ jobs:
           echo "name=$sanitized" >> "$GITHUB_OUTPUT"
 
       - name: Compute tags
+        if: steps.changes.outputs.should_run == 'true'
         id: tags
         run: |
           image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
@@ -68,6 +87,7 @@ jobs:
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
+        if: steps.changes.outputs.should_run == 'true'
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
@@ -75,6 +95,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push
+        if: steps.changes.outputs.should_run == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
