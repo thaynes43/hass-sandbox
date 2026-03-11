@@ -36,7 +36,7 @@ class DoorNotify(hass.Hass):
             "notify.mobile_app_toms_iphone_air",
             "notify.mobile_app_kellies_iphone_air",
         ],
-        "consolidation_delay": 60,  # seconds to wait for second transition
+        "consolidation_delay": 180,  # seconds to wait for second transition
         # State values for this door entity type.
         # Covers use "open"/"closed" (default); binary_sensors use "on"/"off".
         "door_open_state": "open",

@@ -434,6 +434,7 @@ shed_door_notify:
     binary_sensor.shed_door_open_closed_sensor_window_door_is_open: "Shed Door"
   door_open_state: "on"
   door_closed_state: "off"
+  consolidation_delay: 600
   ai_enabled: true
   ai_bundle_key: shed
   ai_wait_timeout_s: 180
