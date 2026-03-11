@@ -67,6 +67,8 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
 | `dashboard_notify` | `appdaemon/apps/dashboard_notify/README.md` | AI-generated notification carousel for wall displays |
 | `school_lunch_app` | `appdaemon/apps/school_lunch_app/README.md` | Fetch daily school lunch menus and publish to HA sensor |
+| `vestaboard_controller_app` | `appdaemon/apps/vestaboard_controller_app/README.md` | Vestaboard board controller with frame queue and automations |
+| `vestaboard_configuration_app` | `appdaemon/apps/vestaboard_configuration_app/README.md` | Vestaboard configuration bridge for card ↔ controller communication |
 
 ### Providers
 
@@ -80,6 +82,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
+| `vestaboard` | `appdaemon/providers/vestaboard/` (no README yet) | Vestaboard local API client and character encoding |
 
 ### Repository docs (`agent-docs/`)
 
@@ -115,6 +118,10 @@ detection_summary_app
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 
 school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
+
+vestaboard_controller_app
+  └─ controls physical Vestaboard via provider
+       └─ vestaboard_configuration_app (forwards user commands)
 ```
 
 ## When creating a new app or provider

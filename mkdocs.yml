@@ -47,6 +47,7 @@ nav:
       - Immich Photo Frame: features/photo-frame.md
       - Dashboard Notify: features/dashboard-notify.md
       - School Lunch Menu: features/school-lunch.md
+      - Vestaboard: features/vestaboard.md
   - Architecture:
       - Overview: architecture/overview.md
       - AppDaemon Apps: apps/index.md

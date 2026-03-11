@@ -1,2 +1,42 @@
 # Local dev app list (AppDaemon reads this via `appdaemon/appdaemon.yaml`).
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
+
+vestaboard_controller_dev:
+  module: vestaboard_controller_app.vestaboard_controller_app
+  class: VestaboardControllerApp
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  vestaboard_ip_env: VESTABOARD_IP
+  vestaboard_api_key_env: VESTABOARD_API_KEY
+  tick_interval_s: 15
+  automations:
+    calendar_clock:
+      enabled: true
+    random_message:
+      enabled: false
+      ai_provider_conf:
+        simple_text: openai-default
+    random_art:
+      enabled: false
+    ai_art_generator:
+      enabled: false
+      ai_provider_conf:
+        simple_text: openai-default
+    calendar_summary:
+      enabled: false
+      calendar_entities:
+        - calendar.family
+      reminder_minutes: 15
+
+vestaboard_configuration_dev:
+  module: vestaboard_configuration_app.vestaboard_configuration_app
+  class: VestaboardConfigurationApp
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  frame_library_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/frame-library.json
+  creators:
+    - Mom
+    - Dad
+    - Jackson
+    - Penelope
+    - Anonymous

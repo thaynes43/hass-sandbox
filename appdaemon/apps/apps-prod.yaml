@@ -521,6 +521,48 @@ dashboard_notify:
     ttl_s: 7200
     bundle_keys: [garage, bulkhead, front_door, package, back_deck_pets, back_yard_pets, shed]
 
+vestaboard_controller:
+  module: vestaboard_controller_app.vestaboard_controller_app
+  class: VestaboardControllerApp
+  disable: true
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  vestaboard_ip_env: VESTABOARD_IP
+  vestaboard_api_key_env: VESTABOARD_API_KEY
+  tick_interval_s: 15
+  automations:
+    calendar_clock:
+      enabled: true
+    random_message:
+      enabled: false
+      ai_provider_conf:
+        simple_text: openai-default
+    random_art:
+      enabled: false
+    ai_art_generator:
+      enabled: false
+      ai_provider_conf:
+        simple_text: openai-default
+    calendar_summary:
+      enabled: false
+      calendar_entities:
+        - calendar.family
+      reminder_minutes: 15
+
+vestaboard_configuration:
+  module: vestaboard_configuration_app.vestaboard_configuration_app
+  class: VestaboardConfigurationApp
+  disable: true
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  frame_library_path: /media/vestaboard/frame-library.json
+  creators:
+    - Mom
+    - Dad
+    - Jackson
+    - Penelope
+    - Anonymous
+
 calendar_hot_tub_maintenance:
   module: calendar_from_schedule_app.calendar_schedule_app
   class: CalendarScheduleApp
