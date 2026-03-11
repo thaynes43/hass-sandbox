@@ -234,6 +234,31 @@ class TestInitialize:
             app.initialize()
             assert app.run_in.call_count >= 1
 
+    def test_initialize_supports_env_backed_urls(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(
+                config_file=os.path.join(td, "config.json"),
+                output_dir=os.path.join(td, "photos"),
+                extra_args={
+                    "immich_url": "",
+                    "immich_url_env": "IMMICH_URL",
+                    "ha_url": "",
+                    "ha_url_env": "HA_URL",
+                },
+            )
+            with patch(
+                "providers.secrets.resolve_secret",
+                side_effect=lambda name: {
+                    "IMMICH_URL": "https://immich.example.com",
+                    "HA_URL": "http://ha:8123",
+                    "TOKEN": "tok",
+                    "IMMICH_API_KEY": "test-key",
+                }[name],
+            ):
+                app.initialize()
+
+            assert getattr(app._provider, "_base_url", None) == "https://immich.example.com"
+
 
 # ---------------------------------------------------------------------------
 # Cache refresh

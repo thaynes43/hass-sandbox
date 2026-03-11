@@ -29,6 +29,7 @@ from providers.ai_providers.registry import (
     build_image_provider,
     provider_config_from_appdaemon_args,
 )
+from providers.secrets import resolve_arg_secret
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -84,7 +85,7 @@ class DashboardNotify(hass.Hass):
         # In prod (AppDaemon pod), this is /media (shared mount).
         # In dev, override to e.g. /mnt/cephfs-hdd/misc/hass-media.
         self._media_fs_root: str = str(
-            cfg.get("media_fs_root", "/media")
+            resolve_arg_secret(cfg, "media_fs_root", default="/media")
         ).rstrip("/") or "/media"
         # media_subdir: subdirectory under media_fs_root for this app's files
         self._media_subdir: str = "dashboard-notify"
@@ -102,7 +103,7 @@ class DashboardNotify(hass.Hass):
         )
 
         # HA credentials for provisioning
-        self._ha_url: str = str(cfg.get("ha_url", ""))
+        self._ha_url: str = str(resolve_arg_secret(cfg, "ha_url", default=""))
         self._ha_token_env: str = str(cfg.get("ha_token_env", ""))
 
         # Notification configs from YAML

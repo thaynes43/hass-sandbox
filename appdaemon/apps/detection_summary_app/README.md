@@ -144,7 +144,7 @@ Consumers (e.g. `DoorNotify`) listen for `detection_summary/run_published` match
 ```yaml
 bundle_key: garage                              # Unique identifier
 snapshot_ha_dir: /media/detection-summary/zone # HA /media snapshot path
-media_fs_root: !secret media_fs_root            # Local filesystem mapping of HA /media
+media_fs_root_env: MEDIA_FS_ROOT            # Local filesystem mapping of HA /media
 data_instructions: |                            # Scoring instructions for multimodal LLM
   ...
 hass_entities:
@@ -283,13 +283,13 @@ Starter config:
 detection_summary_front_door_packages_dev:
   module: detection_summary_app.manager
   class: DetectionSummary
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: front_door_packages
   detection_profile: packages
   best_min_person_score: 0
   snapshot_ha_dir: /media/detection-summary/front-door-packages
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.g4_doorbell_pro_poe_high_resolution_channel
     trigger_entity_id: binary_sensor.g4_doorbell_pro_poe_motion

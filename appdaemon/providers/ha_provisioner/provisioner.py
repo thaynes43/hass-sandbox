@@ -5,9 +5,10 @@ Usage from an AppDaemon app::
     from ha_provisioner import HAProvisioner
 
     async def _async_startup(self):
+        ha_url = resolve_arg_secret(self.args, "ha_url", required=True)
         prov = HAProvisioner(
-            ha_url=self.args["ha_url"],
-            ha_token=self.args["ha_token"],
+            ha_url=ha_url,
+            ha_token_env=self.args["ha_token_env"],
         )
         await prov.ensure_script("my_app_relay", { ...config... })
         await prov.ensure_helper("input_boolean", "My Toggle", icon="mdi:toggle")
@@ -32,7 +33,7 @@ class HAProvisioner:
     """Create HA entities via the REST API if they don't already exist."""
 
     def __init__(self, ha_url: str, ha_token_env: str) -> None:
-        """ha_url comes from !secret (secrets.yaml); ha_token from env to avoid UI exposure."""
+        """ha_url is the resolved HA base URL; ha_token stays env-backed to avoid UI exposure."""
         from providers.secrets import resolve_secret
 
         self._url = ha_url

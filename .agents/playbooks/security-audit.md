@@ -23,17 +23,27 @@ Scan `appdaemon/apps/apps-prod.yaml` and `appdaemon/apps/apps-dev.yaml` for:
 - The only acceptable `!secret` references are in `appdaemon.yaml` for the HASS plugin (lines 15–16).
 - All credential config keys in app YAMLs must use the `_env` suffix pattern (e.g., `api_key_env: OPENAI_API_KEY`, `ha_url_env: HA_URL`).
 
-**Known exclusions (⚠️ WARN, not FAIL):**
+**PASS:** No `!secret` usage in app configs; all credential or environment-specific config uses `_env` keys. **FAIL:** Any `!secret` usage in app configs; report file and line.
 
-The following `!secret` keys in `apps-prod.yaml` / `apps-dev.yaml` are per-environment infrastructure config (not credentials) and are tracked for migration in [issue #17](https://github.com/thaynes43/hass-sandbox/issues/17). Flag as **WARNING** only until the issue is resolved:
+## Step 2b — `secrets.yaml` template audit
 
-| Key | Reason |
-|-----|--------|
-| `ha_url` | HA cluster-internal URL, not a secret |
-| `media_fs_root` | Filesystem mount path, not a secret |
-| `immich_url` | Immich cluster-internal URL, not a secret |
+Audit any committed AppDaemon `secrets.yaml` templates. In this repo layout, that usually means the sibling Infra manifest:
 
-**PASS:** No `!secret` in app configs beyond the known exclusions above; all credentials use `_env` keys. **WARN:** Known exclusion keys present — see issue #17. **FAIL:** Any other `!secret` usage in app configs; report file and line.
+- `../haynes-ops/kubernetes/main/apps/home-automation/appdaemon/app/externalsecret.yaml`
+
+If that file is unavailable, inspect any other committed template source that renders AppDaemon `secrets.yaml`.
+
+**Rules:**
+
+- `secrets.yaml` must be limited to values the AppDaemon core plugin itself consumes directly.
+- Only these keys are allowed in committed `secrets.yaml` templates:
+  - `ha_url`
+  - `token`
+- Any other environment-specific path or service URL must NOT live in `secrets.yaml`.
+  Examples: `media_fs_root`, `immich_url`, `comfyui_url`, `ollama_url`
+- Those values must instead be exposed as plain env vars and consumed through project-level `_env` config or provider bundle `*_env` settings.
+
+**PASS:** `secrets.yaml` template contains only `ha_url` and `token`. **FAIL:** Any additional key is present; report file and key names.
 
 ## Step 3 — Provider boundary check
 
@@ -80,6 +90,7 @@ Produce a summary table:
 |------|-------------------------------|--------|----------------------------|
 | 1    | Credential scan               | PASS/F | paths, line numbers        |
 | 2    | YAML secret audit             | PASS/F | file, line                 |
+| 2b   | `secrets.yaml` template audit | PASS/F | file, keys                 |
 | 3    | Provider boundary             | PASS/F | file paths                 |
 | 4    | Frontend exposure             | PASS/F | paths, line numbers        |
 | 5    | Git secrets check             | PASS/F | note                       |

@@ -7,6 +7,7 @@ In dev, python-dotenv loads them from appdaemon/.env (gitignored).
 from __future__ import annotations
 
 import os
+from typing import Any
 
 
 def resolve_secret(env_var_name: str) -> str:
@@ -22,3 +23,35 @@ def resolve_secret(env_var_name: str) -> str:
             "Set it in your .env file or environment."
         )
     return value
+
+
+def resolve_arg_secret(
+    args: dict[str, Any],
+    key: str,
+    *,
+    default: Any = "",
+    required: bool = False,
+) -> Any:
+    """Resolve a config arg directly or via a sibling ``*_env`` pointer.
+
+    Resolution order:
+    1. ``<key>_env`` -> environment variable value via ``resolve_secret()``
+    2. direct ``<key>`` value from the args dict
+    3. provided default
+    """
+    env_key = f"{key}_env"
+    env_var_name = str(args.get(env_key) or "").strip()
+    if env_var_name:
+        return resolve_secret(env_var_name)
+
+    value = args.get(key)
+    if value not in (None, ""):
+        return value
+
+    if required:
+        raise ValueError(
+            f"Required config '{key}' is missing. Provide either '{key}' "
+            f"or '{env_key}' in apps.yaml."
+        )
+
+    return default

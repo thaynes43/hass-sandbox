@@ -21,6 +21,7 @@ from photo_frame_viewer.gen_helpers import (
     parse_gen_id_from_url,
     source_paths_to_gen_paths,
 )
+from providers.secrets import resolve_arg_secret
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -306,7 +307,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
     async def _provision_entities(self) -> None:
         """Provision relay script and input_select via ha_provisioner."""
-        ha_url = self.args.get("ha_url")
+        ha_url = str(resolve_arg_secret(self.args, "ha_url", default=""))
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(

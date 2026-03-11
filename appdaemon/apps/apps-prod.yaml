@@ -23,11 +23,11 @@ detection_summary_garage:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: garage
   snapshot_ha_dir: /media/detection-summary/garage
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.garage_g5_dome_medium_resolution_channel
     trigger_entity_id: binary_sensor.g5_dome_motion
@@ -65,11 +65,11 @@ detection_viewer_garage:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: garage
   snapshot_ha_dir: /media/detection-summary/garage
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.garage_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.garage_detection_summary_selected_generated
@@ -97,11 +97,11 @@ detection_summary_bulkhead:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: bulkhead
   snapshot_ha_dir: /media/detection-summary/bulkhead
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.basement_g5_dome_ultra_medium_resolution_channel
     trigger_entity_id: binary_sensor.basement_g5_dome_ultra_motion
@@ -147,11 +147,11 @@ detection_viewer_bulkhead:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: bulkhead
   snapshot_ha_dir: /media/detection-summary/bulkhead
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.bulkhead_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.bulkhead_detection_summary_selected_generated
@@ -177,11 +177,11 @@ detection_summary_front_door:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: front_door
   snapshot_ha_dir: /media/detection-summary/doorbell/front-door
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.g4_doorbell_pro_poe_medium_resolution_channel
     trigger_entity_id: binary_sensor.g4_doorbell_pro_poe_motion
@@ -213,11 +213,11 @@ detection_viewer_front_door:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: front_door
   snapshot_ha_dir: /media/detection-summary/doorbell/front-door
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.front_door_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.front_door_detection_summary_selected_generated
@@ -227,14 +227,14 @@ detection_summary_package:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: package
   detection_profile: packages
   best_min_person_score: 0
   capture_max_s: 60
   snapshot_ha_dir: /media/detection-summary/doorbell/package
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.g4_doorbell_pro_poe_package_camera
     trigger_entity_id: binary_sensor.g4_doorbell_pro_poe_package_detected
@@ -264,11 +264,11 @@ detection_viewer_package:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: package
   snapshot_ha_dir: /media/detection-summary/doorbell/package
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.package_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.package_detection_summary_selected_generated
@@ -278,14 +278,14 @@ detection_summary_back_deck_pets:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: back_deck_pets
   best_min_person_score: 0
   best_min_animal_count: 1
   detection_profile: animals
   snapshot_ha_dir: /media/detection-summary/back-yard/back-deck-pets
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.back_yard_ai_pro_medium_resolution_channel
     trigger_entity_id: binary_sensor.back_yard_ai_pro_animal_detected
@@ -313,11 +313,11 @@ detection_viewer_back_deck_pets:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: back_deck_pets
   snapshot_ha_dir: /media/detection-summary/back-yard/back-deck-pets
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.back_deck_pets_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.back_deck_pets_detection_summary_selected_generated
@@ -327,14 +327,14 @@ detection_summary_back_yard_pets:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: back_yard_pets
   best_min_person_score: 0
   best_min_animal_count: 1
   detection_profile: animals
   snapshot_ha_dir: /media/detection-summary/back-yard/back-yard-pets
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.shed_g5_ptz_medium_resolution_channel
     trigger_entity_id: binary_sensor.shed_g5_ptz_animal_detected
@@ -362,11 +362,11 @@ detection_viewer_back_yard_pets:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: back_yard_pets
   snapshot_ha_dir: /media/detection-summary/back-yard/back-yard-pets
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.back_yard_pets_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.back_yard_pets_detection_summary_selected_generated
@@ -376,11 +376,11 @@ detection_summary_shed:
   module: detection_summary_app.manager
   class: DetectionSummary
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: shed
   snapshot_ha_dir: /media/detection-summary/shed
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     camera_entity_id: camera.shed_ai_turret_medium_resolution_channel
     trigger_entity_id: binary_sensor.ai_turret_motion
@@ -410,11 +410,11 @@ detection_viewer_shed:
   module: detection_summary_viewer.detection_summary_viewer_app
   class: DetectionSummaryViewer
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   bundle_key: shed
   snapshot_ha_dir: /media/detection-summary/shed
-  media_fs_root: !secret media_fs_root
+  media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
     selected_best_image_camera_entity_id: camera.shed_detection_summary_selected_best
     selected_generated_image_camera_entity_id: camera.shed_detection_summary_selected_generated
@@ -444,9 +444,9 @@ shed_door_notify:
 immich_fetcher:
   module: immich_fetcher.immich_fetcher_app
   class: ImmichFetcherApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
-  immich_url: !secret immich_url
+  immich_url_env: IMMICH_URL
   immich_api_key_env: IMMICH_API_KEY
   output_dir: /media/immich-photos
   config_file: /media/immich-fetcher/config.json
@@ -461,7 +461,7 @@ immich_fetcher:
 photo_frame_viewer_wall_display:
   module: photo_frame_viewer.photo_frame_viewer_app
   class: PhotoFrameViewerApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   source_dir: /media/immich-photos
   ha_source_dir: /media/immich-photos
@@ -482,7 +482,7 @@ dashboard_notify:
   module: dashboard_notify.dashboard_notify_app
   class: DashboardNotify
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   www_subdir: dashboard-notify
   stage_shell_command: dashboard_notify_stage
@@ -525,7 +525,7 @@ calendar_hot_tub_maintenance:
   module: calendar_from_schedule_app.calendar_schedule_app
   class: CalendarScheduleApp
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   schedule_dir: /media/calendar-schedules
   schedule_file: hot-tub-maintenance.yaml

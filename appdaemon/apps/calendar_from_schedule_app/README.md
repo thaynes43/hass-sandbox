@@ -36,7 +36,7 @@ None. The calendar entity must be created manually (see Manual setup below).
 
 | Key | Required | Default | Description |
 |-----|----------|---------|-------------|
-| `ha_url` | Yes | — | Home Assistant base URL |
+| `ha_url` or `ha_url_env` | Yes | — | Home Assistant base URL |
 | `ha_token_env` | Yes | — | Env var name for HA long-lived access token |
 | `schedule_dir` | No | `/media/calendar-schedules` | Directory containing schedule YAML files |
 | `schedule_file` | Yes | — | Filename of the schedule YAML (e.g. `hot-tub-maintenance.yaml`) |

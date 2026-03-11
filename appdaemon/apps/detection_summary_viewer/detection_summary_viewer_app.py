@@ -33,6 +33,7 @@ from .viewer_cache import ViewerCache, ViewerCacheConfig
 
 try:
     from providers.ha_provisioner import HAProvisioner
+    from providers.secrets import resolve_arg_secret
 except Exception:  # pragma: no cover
     import sys
 
@@ -40,6 +41,7 @@ except Exception:  # pragma: no cover
     # live at `appdaemon/providers`, so add the AppDaemon root directory.
     sys.path.append(str(Path(__file__).resolve().parents[2]))
     from providers.ha_provisioner import HAProvisioner  # type: ignore
+    from providers.secrets import resolve_arg_secret  # type: ignore
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -234,7 +236,14 @@ class DetectionSummaryViewer(hass.Hass):
             hass_entities = {}
 
         self.media_fs_root: str = (
-            str(self.args.get("media_fs_root", self.DEFAULTS["media_fs_root"])).rstrip("/") or "/media"
+            str(
+                resolve_arg_secret(
+                    self.args,
+                    "media_fs_root",
+                    default=self.DEFAULTS["media_fs_root"],
+                )
+            ).rstrip("/")
+            or "/media"
         )
 
         # Filesystem layout
@@ -390,7 +399,7 @@ class DetectionSummaryViewer(hass.Hass):
             self.run_every(self._maybe_auto_reset_picker, "now", 60)
 
     async def _provision_entities(self) -> None:
-        ha_url = self.args.get("ha_url")
+        ha_url = str(resolve_arg_secret(self.args, "ha_url", default=""))
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(

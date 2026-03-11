@@ -182,7 +182,7 @@ def resolve_capability_config(
     # Capability-scoped dict config:
     #   simple_text:
     #     bundle: ollama-qwen9b
-    #     base_url: !secret ollama_url
+    #     base_url_env: OLLAMA_URL
     if isinstance(bundle_ref, dict):
         scoped = dict(bundle_ref)
         ref = str(scoped.get("bundle") or scoped.get("ref") or "").strip()

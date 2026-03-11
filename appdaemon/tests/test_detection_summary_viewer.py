@@ -105,6 +105,39 @@ class TestDetectionSummaryViewerInit:
         warning_calls = [c for c in app.log.mock_calls if "WARNING" in str(c)]
         assert warning_calls, "Expected a WARNING log about missing provisioner credentials"
 
+    def test_initialize_supports_env_backed_media_fs_root_and_ha_url(self, tmp_path: Path):
+        args = {
+            "bundle_key": "garage",
+            "ha_url_env": "HA_URL",
+            "ha_token_env": "TOKEN",
+            "snapshot_ha_dir": "/media/detection-summary/garage",
+            "media_fs_root_env": "MEDIA_FS_ROOT",
+        }
+
+        with patch(
+            "providers.secrets.resolve_secret",
+            side_effect=lambda env_var: {
+                "HA_URL": "http://homeassistant.local:8123",
+                "MEDIA_FS_ROOT": str(tmp_path / "media"),
+                "TOKEN": "tok",
+            }[env_var],
+        ), patch("detection_summary_viewer.detection_summary_viewer_app.HAProvisioner") as MockProv:
+            mock_prov = AsyncMock()
+            mock_prov.ensure_helper.return_value = False
+            mock_prov.ensure_script.return_value = False
+            mock_prov._helper_slug = MagicMock(return_value="slug")
+            MockProv.return_value = mock_prov
+
+            app = _make_viewer(args)
+            app.initialize()
+            app._async_startup_wrapper({})
+
+        assert app.media_fs_root == str(tmp_path / "media")
+        MockProv.assert_called_once_with(
+            ha_url="http://homeassistant.local:8123",
+            ha_token_env="TOKEN",
+        )
+
     def test_initialize_auto_derives_entity_ids_from_bundle_key(self, tmp_path: Path):
         args = _base_args(tmp_path)
         args.pop("ha_url", None)

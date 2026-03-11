@@ -4,7 +4,6 @@
 
 defaults:
   base_url_env: OLLAMA_URL
-  base_url: http://localhost:11434
 
 bundles:
   ollama-qwen9b:
