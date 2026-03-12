@@ -8,6 +8,14 @@ if TYPE_CHECKING:
     from .profiles import DetectionProfile
 
 
+def _person_gate_enabled(best_min_person_score: float) -> bool:
+    """best_min_person_score <= 0 explicitly disables the person-score shortcut."""
+    try:
+        return float(best_min_person_score) > 0
+    except Exception:
+        return False
+
+
 def should_publish_bundle(
     *,
     scored: dict[int, ScoreResult],
@@ -44,11 +52,12 @@ def _legacy_gate(
     best_min_animal_count: int,
 ) -> bool:
     """Original publish gate: people score OR animal count."""
-    try:
-        if float(best_person_score) >= float(best_min_person_score):
-            return True
-    except Exception:
-        pass
+    if _person_gate_enabled(best_min_person_score):
+        try:
+            if float(best_person_score) >= float(best_min_person_score):
+                return True
+        except Exception:
+            pass
 
     min_animals = 1
     try:
@@ -73,12 +82,15 @@ def _profile_gate(
     best_min_person_score: float,
 ) -> bool:
     """Profile-driven publish gate: any required category meets threshold."""
-    # Keep the person_score check as a fallback for the people category
-    try:
-        if float(best_person_score) >= float(best_min_person_score):
-            return True
-    except Exception:
-        pass
+    # Keep the person_score check as a fallback for the people category, but let
+    # best_min_person_score <= 0 explicitly disable it so profile counts control
+    # publishing for package/animal-only flows.
+    if _person_gate_enabled(best_min_person_score):
+        try:
+            if float(best_person_score) >= float(best_min_person_score):
+                return True
+        except Exception:
+            pass
 
     for cat in profile.categories:
         if not cat.required_for_publish:
