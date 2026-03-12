@@ -1,0 +1,51 @@
+type: custom:bubble-card
+card_type: sub-buttons
+sub_button:
+  main: []
+  bottom:
+    - name: Shed
+      icon: mdi:greenhouse
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 25
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#shed-popup"
+    - name: Front Yard
+      icon: mdi:post-lamp
+      show_name: true
+      fill_width: false
+      width: 25
+      custom_height: 72
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#front-yard-popup"
+    - name: Back Yard
+      icon: mdi:grass
+      show_name: true
+      fill_width: false
+      width: 25
+      custom_height: 72
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#back-yard-popup"
+    - name: Driveway
+      icon: mdi:road-variant
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 25
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#driveway-popup"
+rows: 1.5
+card_layout: large
+styles: |
+  .bubble-sub-button-icon {
+    --mdc-icon-size: 32px !important;
+  }

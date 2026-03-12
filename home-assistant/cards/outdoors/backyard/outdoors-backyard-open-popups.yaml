@@ -5,8 +5,8 @@ sub_button:
   main: []
   bottom: []
 entity: light.downstairs_kitchen_back_yard_spotlight
-name: Back Yard
-icon: mdi:clipboard-text-clock-outline
+name: Back Yard Spotlight
+icon: mdi:spotlight
 button_action:
   tap_action:
     action: navigate

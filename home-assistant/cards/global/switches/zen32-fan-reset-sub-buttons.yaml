@@ -1,0 +1,129 @@
+type: custom:bubble-card
+card_type: sub-buttons
+sub_button:
+  main: []
+  bottom:
+    - name: Downstairs
+      buttons_layout: inline
+      group:
+        - name: Living
+          icon: mdi:fan-alert
+          show_name: true
+          fill_width: false
+          width: 33
+          custom_height: 72
+          content_layout: icon-top
+          tap_action:
+            action: perform-action
+            perform_action: script.zen32_hard_reset
+            target: {}
+            data:
+              power_switch_entity: switch.downstairs_livingroom_scene_controller
+              relay_control_select_entity: select.downstairs_livingroom_scene_controller_relay_control
+              scene_control_select_entity: >-
+                select.downstairs_livingroom_scene_controller_scene_control_relay
+              unavailable_fan_entity: fan.livingroom_fan_fan
+          entity: fan.livingroom_fan_fan
+          show_state: true
+        - name: Office
+          icon: mdi:fan-alert
+          show_name: true
+          fill_width: false
+          width: 33
+          custom_height: 72
+          content_layout: icon-top
+          tap_action:
+            action: perform-action
+            perform_action: script.zen32_hard_reset
+            target: {}
+            data:
+              power_switch_entity: switch.downstairs_study_scene_controller
+              relay_control_select_entity: select.downstairs_study_scene_controller_relay_control
+              scene_control_select_entity: select.downstairs_study_scene_controller_scene_control_relay
+              unavailable_fan_entity: fan.study_fan_fan
+          entity: fan.study_fan_fan
+          show_state: true
+        - name: Primary
+          icon: mdi:fan-alert
+          show_name: true
+          fill_width: false
+          width: 33
+          custom_height: 72
+          content_layout: icon-top
+          tap_action:
+            action: perform-action
+            perform_action: script.zen32_hard_reset
+            target: {}
+            data:
+              power_switch_entity: switch.upstairs_primary_bedroom_scene_controller
+              relay_control_select_entity: select.upstairs_primary_bedroom_scene_controller_relay_control
+              scene_control_select_entity: >-
+                select.upstairs_primary_bedroom_scene_controller_scene_control_relay
+              unavailable_fan_entity: fan.primary_bedroom_fan_fan
+          entity: fan.primary_bedroom_fan_fan
+          show_state: true
+    - name: Upstairs
+      buttons_layout: inline
+      group:
+        - name: Pink
+          icon: mdi:fan-alert
+          show_name: true
+          fill_width: false
+          width: 33
+          custom_height: 72
+          content_layout: icon-top
+          tap_action:
+            action: perform-action
+            perform_action: script.zen32_hard_reset
+            target: {}
+            data:
+              power_switch_entity: switch.upstairs_pink_room_scene_controller
+              relay_control_select_entity: select.upstairs_pink_room_scene_controller_relay_control
+              scene_control_select_entity: select.upstairs_pink_room_scene_controller_scene_control_relay
+              unavailable_fan_entity: fan.pink_room_fan_fan
+          entity: fan.pink_room_fan_fan
+          show_state: true
+        - name: Blue
+          icon: mdi:fan-alert
+          show_name: true
+          fill_width: false
+          width: 33
+          custom_height: 72
+          content_layout: icon-top
+          tap_action:
+            action: perform-action
+            perform_action: script.zen32_hard_reset
+            target: {}
+            data:
+              power_switch_entity: switch.upstairs_blue_room_scene_controller
+              relay_control_select_entity: select.upstairs_blue_room_scene_controller_relay_control
+              scene_control_select_entity: select.upstairs_blue_room_scene_controller_scene_control_relay
+              unavailable_fan_entity: fan.blue_room_fan_fan
+          entity: fan.blue_room_fan_fan
+          sub_button_type: default
+          show_state: true
+        - name: White
+          icon: mdi:fan-alert
+          show_name: true
+          fill_width: false
+          width: 33
+          custom_height: 72
+          content_layout: icon-top
+          tap_action:
+            action: perform-action
+            perform_action: script.zen32_hard_reset
+            target: {}
+            data:
+              power_switch_entity: switch.upstairs_white_room_scene_controller
+              relay_control_select_entity: select.upstairs_white_room_scene_controller_relay_control
+              scene_control_select_entity: select.upstairs_white_room_scene_controller_scene_control_relay
+              unavailable_fan_entity: fan.white_room_fan_fan
+          entity: fan.white_room_fan_fan
+          show_state: true
+  bottom_layout: rows
+rows: 2.75
+card_layout: large
+styles: |
+  .bubble-sub-button-icon {
+    --mdc-icon-size: 32px !important;
+  }

@@ -1,0 +1,48 @@
+alias: "[Switch] : [Back Yard] : [Spa Lights] : [Manage Spotlight Auto Hold]"
+description: >
+  When the spa lights turn on, put the backyard spotlight on auto hold and turn
+  it off. When the spa lights turn off, clear that auto hold and let the normal
+  backyard automations decide whether the spotlight should come back on.
+mode: restart
+trigger:
+  - platform: state
+    entity_id: light.haynes_spa_light_1
+    to: "on"
+    id: spa_on
+  - platform: state
+    entity_id: light.haynes_spa_light_1
+    to: "off"
+    id: spa_off
+condition: []
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: spa_on
+        sequence:
+          - action: script.inovelli_set_mmwave_hold_led_indicator
+            data:
+              switch_name: downstairs_kitchen_back_yard_spotlight
+              hold_color: input_text.inovelli_auto_hold
+              prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+              automation_entity_ids:
+                - automation.switch_back_yard_slider_opens_turn_on_spotlight
+                - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+                - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+          - action: light.turn_off
+            target:
+              entity_id: light.downstairs_kitchen_back_yard_spotlight
+            data: {}
+      - conditions:
+          - condition: trigger
+            id: spa_off
+        sequence:
+          - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+            data:
+              switch_name: downstairs_kitchen_back_yard_spotlight
+              hold_color: input_text.inovelli_auto_hold
+              prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+              automation_entity_ids:
+                - automation.switch_back_yard_slider_opens_turn_on_spotlight
+                - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+                - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
