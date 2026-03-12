@@ -115,7 +115,6 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editorRating = 0;
     this._editorTtlEnabled = false;
     this._editorTtlMinutes = 30;
-    this._editorRespectTtl = false;
     this._editingFrameId = null;
 
     // Library state
@@ -559,16 +558,10 @@ class VestaboardConfigurationCard extends HTMLElement {
           <div class="save-row ttl-row">
             <label class="checkbox-label">
               <input type="checkbox" data-action="toggle-ttl" ${this._editorTtlEnabled ? "checked" : ""}>
-              TTL override
+              Auto-expire
             </label>
             ${this._editorTtlEnabled ? `<input type="number" class="vbc-input vbc-input-sm" data-action="set-ttl-minutes" value="${this._editorTtlMinutes}" min="1" max="1440">` : ""}
             <span class="ttl-unit">${this._editorTtlEnabled ? "min" : ""}</span>
-          </div>
-          <div class="save-row">
-            <label class="checkbox-label">
-              <input type="checkbox" data-action="toggle-respect-ttl" ${this._editorRespectTtl ? "checked" : ""}>
-              Respect existing TTL
-            </label>
           </div>
           <div class="save-actions">
             <button class="vbc-btn vbc-btn-secondary" data-action="save-to-library">${this._editingFrameId ? "Update in Library" : "Save to Library"}</button>
@@ -1192,9 +1185,6 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._render();
         break;
 
-      case "toggle-respect-ttl":
-        this._editorRespectTtl = el.checked;
-        break;
 
       case "lib-sort":
         this._librarySort = el.value;
@@ -1278,12 +1268,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     if (this._editorTtlEnabled) {
       data.ttl_minutes = this._editorTtlMinutes;
     }
-
-    if (this._editorRespectTtl) {
-      this._callRelay("push_frame_respect_ttl", data);
-    } else {
-      this._callRelay("push_frame", data);
-    }
+    this._callRelay("push_frame", data);
   }
 
   _viewLibraryFrame(frameId) {
@@ -1319,11 +1304,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     if (this._editorTtlEnabled) {
       data.ttl_minutes = this._editorTtlMinutes;
     }
-    if (this._editorRespectTtl) {
-      this._callRelay("push_library_frame", data);
-    } else {
-      this._callRelay("push_library_frame", data);
-    }
+    this._callRelay("push_library_frame", data);
   }
 
   _saveAutomationConfig(autoId) {

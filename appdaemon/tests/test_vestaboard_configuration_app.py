@@ -371,17 +371,6 @@ class TestPushFrame:
         fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
         assert fired_payload["respect_ttl"] is False
 
-    def test_push_frame_respect_ttl_sets_true(self, tmp_path):
-        """push_frame_respect_ttl should send respect_ttl=True."""
-        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
-        app.initialize()
-
-        payload = json.dumps({"frame": _make_dummy_frame()})
-        app._on_command("vestaboard_configuration_command", {"command": "push_frame_respect_ttl", "payload": payload}, {})
-
-        app.fire_event.assert_called_once()
-        fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
-        assert fired_payload["respect_ttl"] is True
 
 
 class TestPushLibraryFrame:
@@ -430,11 +419,10 @@ class TestToggleAutomation:
         event = app.fire_event.call_args[0][0]
         assert event == VestaboardConfigurationApp.CONTROLLER_COMMAND_EVENT
         fired_command = app.fire_event.call_args[1]["command"]
-        assert fired_command == "toggle_automation"
+        assert fired_command == "activate_automation"
 
         fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
         assert fired_payload["automation_id"] == "calendar_clock"
-        assert fired_payload["enabled"] is True
 
     def test_toggle_automation_missing_id_logs_warning(self, tmp_path):
         """toggle_automation with no automation_id should log a warning."""
@@ -561,11 +549,16 @@ class TestStatusPublish:
         app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
         app.initialize()
 
-        # Simulate controller status being cached
+        # Simulate controller status being cached (using controller attr names)
         app._controller_attrs = {
-            "current_source": "calendar_clock",
-            "queue": [{"source": "garage_door"}],
-            "automations": [{"id": "calendar_clock", "enabled": True}],
+            "displayed_frame": {"characters": [[0]*22]*6, "source": "calendar_clock"},
+            "displayed_source": "calendar_clock",
+            "displayed_ttl_remaining_s": 30,
+            "queue_state": {
+                "pending": [{"source": "garage_door"}],
+                "fallback": [{"source": "user"}],
+            },
+            "all_automations": [{"id": "calendar_clock", "enabled": True}],
         }
         app.set_state.reset_mock()
 
@@ -573,7 +566,10 @@ class TestStatusPublish:
 
         attrs = app.set_state.call_args[1]["attributes"]
         assert attrs["current_source"] == "calendar_clock"
+        assert attrs["current_frame"] == [[0]*22]*6
+        assert attrs["current_ttl_expires"] is not None
         assert len(attrs["queue"]) == 1
+        assert attrs["fallback_source"] == "user"
         assert len(attrs["automations"]) == 1
 
 
@@ -587,8 +583,8 @@ class TestControllerStatusMirroring:
         app.get_state = MagicMock(
             return_value={
                 "attributes": {
-                    "current_source": "random_message",
-                    "queue": [],
+                    "displayed_source": "random_message",
+                    "queue_state": {"pending": [], "fallback": []},
                 }
             }
         )
@@ -603,7 +599,7 @@ class TestControllerStatusMirroring:
         )
 
         app.set_state.assert_called()
-        assert app._controller_attrs.get("current_source") == "random_message"
+        assert app._controller_attrs.get("displayed_source") == "random_message"
 
 
 class TestGenerateArt:

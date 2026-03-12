@@ -178,8 +178,8 @@ class TestTTLExpirationMatrix:
         tick1 = q.tick(now=1025.0)
         assert tick1.display_frame is None
 
-        # Push a second frame after TTL (30s)
-        f2 = make_frame(ttl_s=None, expiration_s=None, created_at=1031.0)
+        # Push a second frame (different source) after TTL (30s)
+        f2 = make_frame(source="other", ttl_s=None, expiration_s=None, created_at=1031.0)
         # TTL expires at 1030 so push at 1031 should display immediately
         # because displayed f's TTL has expired
         action = q.push(f2, now=1031.0)

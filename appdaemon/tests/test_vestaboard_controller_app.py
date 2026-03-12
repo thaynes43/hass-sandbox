@@ -45,15 +45,16 @@ def _make_app(extra_args: dict | None = None) -> VestaboardControllerApp:
     app.get_state = MagicMock(return_value=None)
     app.set_state = MagicMock()
     app.call_service = MagicMock()
-    app.listen_state = MagicMock(return_value="handle-ls")
+    app.listen_state = AsyncMock(return_value="handle-ls")
     app.listen_event = MagicMock(return_value="handle-le")
-    app.run_every = MagicMock(return_value="handle-re")
+    app.run_every = AsyncMock(return_value="handle-re")
     app.run_in = MagicMock()
-    app.cancel_timer = MagicMock()
+    app.cancel_timer = AsyncMock()
+    app.cancel_listen_state = AsyncMock()
     app.timer_running = MagicMock(return_value=False)
     app.datetime = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
     app.name = "vestaboard_controller"
 
     return app
@@ -230,7 +231,7 @@ class TestCommandRouting:
             "ttl_s": 60,
             "override_ttl": True,
         }
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
         app._on_command(
             "vestaboard_controller_command",
             {"command": "push_frame", "payload": json.dumps(payload)},
@@ -251,7 +252,7 @@ class TestCommandRouting:
 
     def test_clear_board_calls_queue_clear(self):
         app = self._setup_app()
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
         mock_queue = MagicMock()
         mock_queue.clear = MagicMock(return_value=MagicMock(dropped_frames=[]))
@@ -291,7 +292,7 @@ class TestCommandRouting:
         mock_auto.get_triggers = MagicMock(return_value=[])
         app._automations["test_auto"] = mock_auto
         # Add a dummy trigger handle
-        app._trigger_handles[("test_auto", 0)] = "some-handle"
+        app._trigger_handles[("test_auto", 0)] = ("some-handle", "timer")
 
         app._on_command(
             "vestaboard_controller_command",
@@ -306,7 +307,7 @@ class TestCommandRouting:
         app = self._setup_app()
         grid = _blank_grid()
         payload = {"characters": grid, "source": "ui", "override_ttl": True}
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
         app._on_command(
             "vestaboard_controller_command",
@@ -377,7 +378,7 @@ class TestTick:
         app._automations = {}
         app._trigger_handles = {}
         app._last_write_ok = None
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
         # Mock set_state for status
         app.set_state = MagicMock()
         return app
@@ -525,19 +526,25 @@ class TestStatusPublishing:
         attrs = app.set_state.call_args[1]["attributes"]
         assert attrs["pending_count"] == 3
 
-    def test_publish_status_includes_active_automations(self):
+    def test_publish_status_includes_all_automations(self):
         app = self._setup_app()
 
         mock_auto = MagicMock()
         mock_auto.name = "CalendarClock"
         app._automations["calendar_clock"] = mock_auto
+        app._automation_configs["calendar_clock"] = {"enabled": True}
+        app._automation_configs["random_message"] = {"enabled": False}
+        app._active_automations = {"calendar_clock"}
 
         app._publish_status()
         attrs = app.set_state.call_args[1]["attributes"]
-        active = attrs["active_automations"]
-        assert len(active) == 1
-        assert active[0]["id"] == "calendar_clock"
-        assert active[0]["name"] == "CalendarClock"
+        all_autos = attrs["all_automations"]
+        assert len(all_autos) == 2
+        enabled = [a for a in all_autos if a["id"] == "calendar_clock"][0]
+        assert enabled["name"] == "CalendarClock"
+        assert enabled["enabled"] is True
+        disabled = [a for a in all_autos if a["id"] == "random_message"][0]
+        assert disabled["enabled"] is False
 
     def test_publish_status_includes_displayed_characters(self):
         app = self._setup_app()
@@ -575,12 +582,14 @@ class TestAutomationRegistration:
         app._queue = FrameQueue(log_fn=app.log)
         app._trigger_handles = {}
         app._automations = {}
+        app._active_automations = set()
         app._last_write_ok = None
 
         app._init_automations()
 
-        # calendar_clock should not be in automations since it's disabled
-        assert "calendar_clock" not in app._automations
+        # calendar_clock should be instantiated but not active
+        assert "calendar_clock" in app._automations
+        assert "calendar_clock" not in app._active_automations
 
     def test_init_automations_skips_unknown_type(self):
         app = _make_app({"automations": {"nonexistent_automation": {"enabled": True}}})
@@ -624,7 +633,9 @@ class TestAutomationRegistration:
 
         app._activate_automation("test_auto")
 
-        assert app.run_every.call_count >= 1
+        # Activation schedules async registration via create_task
+        assert app.create_task.called
+        assert "test_auto" in app._active_automations
 
     def test_activate_automation_registers_state_trigger(self):
         app = _make_app()
@@ -642,8 +653,9 @@ class TestAutomationRegistration:
 
         app._activate_automation("test_auto")
 
-        assert app.listen_state.call_count >= 1
-        assert ("test_auto", 0) in app._trigger_handles
+        # Activation schedules async registration via create_task
+        assert app.create_task.called
+        assert "test_auto" in app._active_automations
 
     def test_deactivate_automation_cancels_triggers(self):
         app = _make_app()
@@ -652,9 +664,9 @@ class TestAutomationRegistration:
         app._automations = {}
         app._last_write_ok = None
         app._trigger_handles = {
-            ("my_auto", 0): "handle-A",
-            ("my_auto", 1): "handle-B",
-            ("other_auto", 0): "handle-C",
+            ("my_auto", 0): ("handle-A", "timer"),
+            ("my_auto", 1): ("handle-B", "state"),
+            ("other_auto", 0): ("handle-C", "timer"),
         }
 
         mock_auto = MagicMock()
@@ -752,7 +764,7 @@ class TestFrameQueueIntegration:
         app._trigger_handles = {}
         app._last_write_ok = None
         app.set_state = MagicMock()
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
         grid = _blank_grid()
         app._push_automation_frame(
@@ -776,7 +788,7 @@ class TestFrameQueueIntegration:
         app._trigger_handles = {}
         app._last_write_ok = None
         app.set_state = MagicMock()
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
         # First frame: displayed with active TTL
         now = time.time()
@@ -815,7 +827,7 @@ class TestFrameQueueIntegration:
         app._trigger_handles = {}
         app._last_write_ok = None
         app.set_state = MagicMock()
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
         # First frame: displayed with active TTL
         now = time.time()
@@ -854,7 +866,7 @@ class TestFrameQueueIntegration:
         app._trigger_handles = {}
         app._last_write_ok = None
         app.set_state = MagicMock()
-        app.create_task = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
         # Display a frame with active TTL
         now = time.time()

@@ -152,22 +152,35 @@ class FrameQueue:
         dropped += self._prune_expired(now)
 
         # Step 2: Decide whether to display now or queue
+        # Same-source frames always replace the displayed frame (e.g. clock updates)
+        same_source = (
+            self._displayed is not None
+            and self._displayed.source == frame.source
+        )
         should_display_now = (
             frame.override_ttl
             or self._displayed is None
             or _ttl_expired(self._displayed, now)
+            or same_source
         )
 
         if should_display_now:
-            # Move old displayed to fallback (if it hasn't expired)
-            if self._displayed is not None and not _is_expired(self._displayed, now):
+            # Move old displayed to fallback (if it hasn't expired),
+            # but discard same-source frames (they're just stale updates)
+            if (self._displayed is not None
+                    and not _is_expired(self._displayed, now)
+                    and not same_source):
                 self._fallback.append(self._displayed)
+            elif same_source and self._displayed is not None:
+                dropped.append(self._displayed)
 
             frame.displayed_at = now
             self._displayed = frame
 
             if frame.override_ttl:
                 reason = "override_ttl=True — pre-empting any active TTL"
+            elif same_source:
+                reason = f"same source {frame.source!r} — replacing displayed frame"
             elif len(self._fallback) == 0 and not self._pending:
                 reason = "queue was empty — displaying immediately"
             else:

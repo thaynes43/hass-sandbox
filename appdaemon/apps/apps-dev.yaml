@@ -25,7 +25,7 @@ vestaboard_controller_dev:
     calendar_summary:
       enabled: false
       calendar_entities:
-        - calendar.family
+        - calendar.hot_tub_maintenance
       reminder_minutes: 15
 
 vestaboard_configuration_dev:

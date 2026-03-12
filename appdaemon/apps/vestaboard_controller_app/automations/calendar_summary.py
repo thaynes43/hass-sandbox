@@ -130,6 +130,11 @@ class CalendarSummaryAutomation(BoardAutomation):
         """Called on interval to check for upcoming events."""
         self.app.create_task(self._fire_frame_if_event())
 
+    async def generate_frame(self) -> list[list[int]]:
+        """Generate a frame for the nearest upcoming event, or blank grid."""
+        await self._fire_frame_if_event()
+        return blank_grid()
+
     async def _fire_frame_if_event(self) -> None:
         """Check calendar entities and push a frame if an event is upcoming."""
         entities: list[str] = list(self.config.get("calendar_entities") or [])

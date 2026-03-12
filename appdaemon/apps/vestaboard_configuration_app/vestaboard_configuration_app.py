@@ -93,12 +93,16 @@ class VestaboardConfigurationApp(hass.Hass):
         self.log("Listening for %s events", self.COMMAND_EVENT)
 
         # Mirror controller status into our sensor
-        self.listen_state(self._on_controller_status, self.CONTROLLER_STATUS_ENTITY)
+        self.listen_state(self._on_controller_status, self.CONTROLLER_STATUS_ENTITY, attribute="all")
         self.log("Listening for controller status changes on %s", self.CONTROLLER_STATUS_ENTITY)
 
         # Publish initial status so the card has data on first load
         self._publish_status()
         self.log("VestaboardConfigurationApp async startup complete")
+
+        # Schedule a delayed read of controller status to cover startup race
+        # (controller may not have published yet when we start)
+        self.run_in(self._deferred_controller_sync, 5)
 
     async def _provision_entities(self) -> None:
         """Provision relay script and helpers via HAProvisioner."""
@@ -219,7 +223,6 @@ class VestaboardConfigurationApp(hass.Hass):
             "delete_frame": self._cmd_delete_frame,
             "push_frame": self._cmd_push_frame,
             "push_library_frame": self._cmd_push_library_frame,
-            "push_frame_respect_ttl": self._cmd_push_frame_respect_ttl,
             "toggle_automation": self._cmd_toggle_automation,
             "set_automation_config": self._cmd_set_automation_config,
             "refresh_status": self._cmd_refresh_status,
@@ -343,20 +346,6 @@ class VestaboardConfigurationApp(hass.Hass):
         self._forward_to_controller("push_frame", ctrl_payload)
         self.log("Forwarded library frame frame_id=%r to controller", frame_id)
 
-    def _cmd_push_frame_respect_ttl(self, payload: dict) -> None:
-        """Push a frame to the controller respecting any active TTL."""
-        frame = payload.get("frame")
-        if not frame:
-            self.log("push_frame_respect_ttl: missing 'frame' in payload", level="WARNING")
-            return
-
-        ctrl_payload = {
-            "frame": frame,
-            "ttl_minutes": payload.get("ttl_minutes"),
-            "respect_ttl": True,
-        }
-        self._forward_to_controller("push_frame", ctrl_payload)
-
     # ------------------------------------------------------------------
     # Command handlers — automation management (forwarded to controller)
     # ------------------------------------------------------------------
@@ -368,8 +357,9 @@ class VestaboardConfigurationApp(hass.Hass):
         if automation_id is None:
             self.log("toggle_automation: missing 'automation_id' in payload", level="WARNING")
             return
-        self._forward_to_controller("toggle_automation", {"automation_id": automation_id, "enabled": enabled})
-        self.log("toggle_automation automation_id=%r enabled=%r", automation_id, enabled)
+        command = "activate_automation" if enabled else "deactivate_automation"
+        self._forward_to_controller(command, {"automation_id": automation_id})
+        self.log("toggle_automation automation_id=%r enabled=%r → %s", automation_id, enabled, command)
 
     def _cmd_set_automation_config(self, payload: dict) -> None:
         """Update TTL/expiration configuration for a board automation."""
@@ -488,6 +478,20 @@ class VestaboardConfigurationApp(hass.Hass):
             )
         self._publish_status()
 
+    def _deferred_controller_sync(self, kwargs: Any) -> None:
+        """Read controller status after a short delay to cover startup race."""
+        try:
+            ctrl_state = self.get_state(self.CONTROLLER_STATUS_ENTITY, attribute="all") or {}
+            new_attrs = dict(ctrl_state.get("attributes", {}))
+            if new_attrs and new_attrs != self._controller_attrs:
+                self._controller_attrs = new_attrs
+                self._publish_status()
+                self.log("Deferred controller sync — status updated", level="INFO")
+            else:
+                self.log("Deferred controller sync — no new data", level="DEBUG")
+        except Exception as exc:
+            self.log("Deferred controller sync failed: %r", exc, level="WARNING")
+
     # ------------------------------------------------------------------
     # Status publishing
     # ------------------------------------------------------------------
@@ -495,15 +499,31 @@ class VestaboardConfigurationApp(hass.Hass):
     def _publish_status(self) -> None:
         """Write the configuration status sensor with merged controller data."""
         ca = self._controller_attrs
+
+        # Map controller attribute names to what the card expects
+        displayed = ca.get("displayed_frame")  # dict with characters, source, etc.
+        queue_state = ca.get("queue_state", {})
+
+        # Compute TTL expiry ISO timestamp from remaining seconds
+        ttl_remaining = ca.get("displayed_ttl_remaining_s")
+        ttl_expires = None
+        if ttl_remaining is not None and ttl_remaining > 0:
+            import datetime
+            ttl_expires = (
+                datetime.datetime.now(datetime.timezone.utc)
+                + datetime.timedelta(seconds=ttl_remaining)
+            ).isoformat()
+
         attrs = {
-            "current_frame": ca.get("current_frame"),
-            "current_source": ca.get("current_source", "none"),
-            "current_ttl_expires": ca.get("current_ttl_expires"),
-            "queue": ca.get("queue", []),
-            "fallback_source": ca.get("fallback_source"),
+            "current_frame": displayed.get("characters") if displayed else None,
+            "current_source": ca.get("displayed_source", "none"),
+            "current_ttl_expires": ttl_expires,
+            "queue": queue_state.get("pending", []),
+            "fallback_source": (queue_state.get("fallback", [{}])[0].get("source")
+                                if queue_state.get("fallback") else None),
             "library": self._frame_library.to_json(),
             "creators": self._creators,
-            "automations": ca.get("automations", []),
+            "automations": ca.get("all_automations", []),
             "status": "ok",
         }
         try:

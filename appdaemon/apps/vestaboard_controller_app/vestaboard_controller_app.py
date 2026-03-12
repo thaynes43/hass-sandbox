@@ -105,6 +105,9 @@ class VestaboardControllerApp(hass.Hass):
         # Timer handles for automation triggers: (automation_id, trigger_idx) -> handle
         self._trigger_handles: dict[tuple[str, int], Any] = {}
 
+        # Set of currently active (enabled) automation IDs
+        self._active_automations: set[str] = set()
+
         # Last known board state for status publishing
         self._last_write_ok: Optional[bool] = None
 
@@ -129,7 +132,8 @@ class VestaboardControllerApp(hass.Hass):
         self.log(f"Listening for {self.COMMAND_EVENT} events", level="INFO")
 
         # Register periodic tick
-        self.run_every(self._tick_wrapper, "now", self._tick_interval_s)
+        from datetime import datetime as dt
+        await self.run_every(self._tick_wrapper, dt.now(), self._tick_interval_s)
         self.log(f"Tick timer registered every {self._tick_interval_s}s", level="INFO")
 
         # Initialise automations from config
@@ -442,9 +446,6 @@ class VestaboardControllerApp(hass.Hass):
                 auto_cfg = {}
 
             enabled = bool(auto_cfg.get("enabled", True))
-            if not enabled:
-                self.log(f"Automation {automation_id!r} disabled in config", level="INFO")
-                continue
 
             # Merge global AI conf into automation config (automation config takes priority)
             merged_cfg = {**auto_cfg}
@@ -463,10 +464,14 @@ class VestaboardControllerApp(hass.Hass):
                 instance = cls(app=self, config=merged_cfg)
                 self._automations[automation_id] = instance
                 self.log(
-                    f"Automation {automation_id!r} ({cls.__name__}) instantiated",
+                    f"Automation {automation_id!r} ({cls.__name__}) instantiated"
+                    f" enabled={enabled}",
                     level="INFO",
                 )
-                self._activate_automation(automation_id)
+                if enabled:
+                    self._activate_automation(automation_id)
+                else:
+                    self.log(f"Automation {automation_id!r} disabled in config", level="INFO")
             except Exception as exc:
                 self.log(
                     f"Failed to instantiate automation {automation_id!r}: {exc!r}",
@@ -483,26 +488,59 @@ class VestaboardControllerApp(hass.Hass):
             )
             return
 
-        # Cancel any existing triggers first
-        self._cancel_triggers(automation_id)
+        self._active_automations.add(automation_id)
 
         triggers = automation.get_triggers()
         if not triggers:
             self.log(
-                f"Automation {automation_id!r} has no triggers (on-demand only)",
-                level="DEBUG",
+                f"Automation {automation_id!r} activated (on-demand only, no triggers)",
+                level="INFO",
             )
+            self._publish_status()
             return
 
+        # Schedule async registration (cancel + register + initial frame)
+        self.create_task(self._register_triggers_async(automation_id, triggers))
+
+    async def _register_triggers_async(self, automation_id: str, triggers: list) -> None:
+        """Register triggers asynchronously so run_every handles resolve."""
+        # Cancel any existing triggers first
+        await self._cancel_triggers(automation_id)
+
         for idx, trigger in enumerate(triggers):
-            handle = self._register_trigger(automation_id, idx, trigger)
-            if handle is not None:
-                self._trigger_handles[(automation_id, idx)] = handle
+            result = await self._register_trigger_async(automation_id, idx, trigger)
+            if result is not None:
+                self._trigger_handles[(automation_id, idx)] = result
 
         self.log(
             f"Automation {automation_id!r} activated with {len(triggers)} trigger(s)",
             level="INFO",
         )
+
+        # Fire an initial frame immediately so the user gets visual feedback
+        await self._fire_automation_frame(automation_id)
+        self._publish_status()
+
+    async def _fire_automation_frame(self, automation_id: str) -> None:
+        """Generate and push a frame from an automation."""
+        automation = self._automations.get(automation_id)
+        if automation is None:
+            return
+        try:
+            grid = await automation.generate_frame()
+            if grid:
+                self._push_automation_frame(
+                    automation_id=automation_id,
+                    source_label=automation.name,
+                    grid=grid,
+                    ttl_s=automation.default_ttl_s,
+                    expiration_s=automation.default_expiration_s,
+                )
+        except Exception as exc:
+            self.log(
+                f"Initial frame generation for {automation_id!r} failed: {exc!r}",
+                level="WARNING",
+            )
 
     def _deactivate_automation(self, automation_id: str) -> None:
         """Cancel all triggers for an automation."""
@@ -512,25 +550,26 @@ class VestaboardControllerApp(hass.Hass):
                 level="WARNING",
             )
             return
-        self._cancel_triggers(automation_id)
-        self.log(f"Automation {automation_id!r} deactivated", level="INFO")
+        self._active_automations.discard(automation_id)
+        self.create_task(self._deactivate_async(automation_id))
 
-    def _register_trigger(
+    async def _register_trigger_async(
         self, automation_id: str, idx: int, trigger: dict
-    ) -> Optional[Any]:
-        """Register a single trigger and return its handle."""
+    ) -> Optional[tuple[Any, str]]:
+        """Register a single trigger and return (handle, type) tuple."""
         trigger_type = str(trigger.get("type", ""))
         callback = trigger.get("callback")
 
         if trigger_type == "time_interval":
             interval_s = int(trigger.get("interval_s", 60))
-            handle = self.run_every(callback, "now", interval_s)
+            from datetime import datetime as dt
+            handle = await self.run_every(callback, dt.now(), interval_s)
             self.log(
                 f"Registered interval trigger for {automation_id!r}[{idx}]: "
                 f"every {interval_s}s",
                 level="DEBUG",
             )
-            return handle
+            return (handle, "timer")
 
         elif trigger_type == "state":
             entity_id = str(trigger.get("entity_id", ""))
@@ -540,12 +579,12 @@ class VestaboardControllerApp(hass.Hass):
                     level="WARNING",
                 )
                 return None
-            handle = self.listen_state(callback, entity_id)
+            handle = await self.listen_state(callback, entity_id)
             self.log(
                 f"Registered state trigger for {automation_id!r}[{idx}]: {entity_id!r}",
                 level="DEBUG",
             )
-            return handle
+            return (handle, "state")
 
         else:
             self.log(
@@ -554,15 +593,24 @@ class VestaboardControllerApp(hass.Hass):
             )
             return None
 
-    def _cancel_triggers(self, automation_id: str) -> None:
+    async def _deactivate_async(self, automation_id: str) -> None:
+        """Async deactivation — cancel triggers and publish status."""
+        await self._cancel_triggers(automation_id)
+        self.log(f"Automation {automation_id!r} deactivated", level="INFO")
+        self._publish_status()
+
+    async def _cancel_triggers(self, automation_id: str) -> None:
         """Cancel all registered triggers for an automation."""
         keys_to_remove = [
             key for key in self._trigger_handles if key[0] == automation_id
         ]
         for key in keys_to_remove:
-            handle = self._trigger_handles.pop(key)
+            handle, handle_type = self._trigger_handles.pop(key)
             try:
-                self.cancel_timer(handle)
+                if handle_type == "state":
+                    await self.cancel_listen_state(handle)
+                else:
+                    await self.cancel_timer(handle)
             except Exception:
                 pass  # handle may already be invalid
 
@@ -595,7 +643,7 @@ class VestaboardControllerApp(hass.Hass):
         self.log(
             f"Automation {automation_id!r} pushing frame | "
             f"ttl_s={ttl_s} expiration_s={expiration_s} override_ttl={override_ttl}",
-            level="DEBUG",
+            level="INFO",
         )
 
         action = self._queue.push(frame, now)
@@ -622,14 +670,14 @@ class VestaboardControllerApp(hass.Hass):
                 "characters": displayed.characters,
             }
 
-        active_automations = [
-            {
+        all_automations = []
+        for automation_id in self._automation_configs:
+            auto = self._automations.get(automation_id)
+            all_automations.append({
                 "id": automation_id,
-                "name": auto.name,
-                "enabled": True,
-            }
-            for automation_id, auto in self._automations.items()
-        ]
+                "name": auto.name if auto else automation_id.replace("_", " ").title(),
+                "enabled": automation_id in self._active_automations,
+            })
 
         attributes: dict[str, Any] = {
             "displayed_frame": displayed_frame_info,
@@ -638,7 +686,7 @@ class VestaboardControllerApp(hass.Hass):
             "displayed_ttl_remaining_s": state.displayed_ttl_remaining_s,
             "pending_count": len(state.pending),
             "fallback_count": len(state.fallback_stack),
-            "active_automations": active_automations,
+            "all_automations": all_automations,
             "last_write_ok": self._last_write_ok,
             "queue_state": {
                 "pending": [
