@@ -1,0 +1,58 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#shed-popup"
+    button_type: name
+    width_desktop: 75vw
+    width_mobile: 90vw
+    show_header: true
+    name: Return To Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: switch.upstairs_cloffice_fridge_power_switch
+        name: E-Bike Power
+        vertical: false
+        features_position: bottom
+        features:
+          - type: toggle
+      - type: sensor
+        entity: sensor.upstairs_cloffice_fridge_power_switch_electric_consumption_w
+        name: E-Bike Consumption
+        icon: mdi:bike
+        graph: line
+        detail: 1
+        hours_to_show: 3
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: switch.shed_mombike_power_switch
+        name: Mom-Bike Power
+        vertical: false
+        features_position: bottom
+        features:
+          - type: toggle
+      - type: sensor
+        entity: sensor.shed_mombike_power_switch_electric_consumption_w
+        name: Mom-Bike Consumption
+        icon: mdi:bike
+        graph: line
+        detail: 1
+        hours_to_show: 3
