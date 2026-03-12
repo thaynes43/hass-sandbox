@@ -57,9 +57,9 @@ detection_summary_garage:
   image_instructions: >
     Create a simple, clean illustration representing the scene for a notification.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_garage:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -139,9 +139,9 @@ detection_summary_bulkhead:
     with generic alternatives (plain toys, abstract shapes, unlabeled objects). Focus
     the illustration on the PEOPLE and their actions, not background objects.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_bulkhead:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -205,9 +205,9 @@ detection_summary_front_door:
   image_instructions: >
     Create a simple, clean illustration representing the scene at a front door entrance.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_front_door:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -256,9 +256,9 @@ detection_summary_package:
     Create a simple, clean illustration of the front door scene.
     If packages are visible, make them prominent in the illustration.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_package:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -305,9 +305,9 @@ detection_summary_back_deck_pets:
     Create a simple, clean illustration of the backyard scene.
     Animals are the focus — make them prominent and clearly identifiable by species.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_back_deck_pets:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -354,9 +354,9 @@ detection_summary_back_yard_pets:
     Create a simple, clean illustration of the backyard scene near a shed.
     Animals are the focus — make them prominent and clearly identifiable by species.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_back_yard_pets:
   module: detection_summary_viewer.detection_summary_viewer_app
@@ -402,9 +402,9 @@ detection_summary_shed:
   image_instructions: >
     Create a simple, clean illustration representing the scene near a shed/outdoor building.
   ai_provider_conf:
-    simple_text: openai-default
-    multimodal: openai-default
-    image: openai-default
+    simple_text: ollama-qwen9b
+    multimodal: ollama-qwen9b
+    image: comfyui-qwen-edit
 
 detection_viewer_shed:
   module: detection_summary_viewer.detection_summary_viewer_app
