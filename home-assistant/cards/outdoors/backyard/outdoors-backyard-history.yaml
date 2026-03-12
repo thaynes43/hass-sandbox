@@ -86,6 +86,14 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
+            - entity: light.haynes_spa_light_1
+              name: Spa Lights
+              icon: mdi:hot-tub
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
         - name: Automations
           buttons_layout: inline
           group:
@@ -113,6 +121,14 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
+            - entity: automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold
+              name: Spa -> Hold
+              icon: mdi:hot-tub
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
       bottom_layout: rows
     rows: 3.4
     show_header_toggle: false
@@ -127,6 +143,8 @@ cards:
         name: Animal
       - entity: binary_sensor.backyard_all_clear
         name: All Clear
+      - entity: light.haynes_spa_light_1
+        name: Spa Lights
       - entity: light.downstairs_kitchen_back_yard_spotlight
         name: Spotlight
     hours_to_show: 1
@@ -253,6 +271,18 @@ cards:
                     - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
               content_layout: icon-top
               custom_height: 80
+              scrolling_effect: false
+            - entity: automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold
+              name: Spa Auto Hold
+              icon: mdi:robot
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              fill_width: true
+              custom_height: 80
+              tap_action:
+                action: toggle
+              show_background: true
               scrolling_effect: false
             - entity: script.inovelli_set_led_1_7_color_from_input_text
               name: Set LED Color
