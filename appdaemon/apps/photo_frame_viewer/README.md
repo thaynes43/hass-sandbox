@@ -1,14 +1,15 @@
 # Photo Frame Viewer
 
-Displays rotating photos from a source directory on a Lovelace dashboard card with slideshow controls: pause/resume, interval adjustment, and manual navigation.
+Displays rotating photos from a source directory on a Lovelace dashboard card with slideshow controls: pause/resume, interval adjustment, auto-unpause configuration, and manual navigation.
 
 ## How it works
 
 1. On startup, provisions a relay script, an image picker (`input_select`), and a status sensor.
 2. Polls a source directory (typically `immich_fetcher` output) for image files.
 3. Stages images for serving via HA shell commands that atomically swap content into `/config/www/photo-frame/live/`.
-4. Cycles through images on a configurable interval, publishing the current image URL via the status sensor.
+4. Cycles through images on a configurable interval, publishing the current image URL and runtime settings via the status sensor.
 5. Dashboard card reads the sensor for the current image URL with cache-busting.
+6. Dashboard-managed slide interval and auto-unpause settings persist across AppDaemon restarts via `state_dir/state.json`.
 
 ## Dependencies
 
@@ -25,14 +26,14 @@ Displays rotating photos from a source directory on a Lovelace dashboard card wi
 | Entity | Type | Purpose |
 |--------|------|---------|
 | `input_select.{prefix}_photo_frame_image` | Input Select | Image picker dropdown |
-| `sensor.{prefix}_photo_frame_status` | Virtual sensor | State (paused/playing), image URL, interval |
+| `sensor.{prefix}_photo_frame_status` | Virtual sensor | State (paused/playing), image URL, interval, and auto-unpause metadata |
 | `script.{prefix}_photo_frame_relay` | Script | Card-to-AppDaemon relay |
 
 Where `{prefix}` defaults to `wall_display` (configurable via `entity_prefix`).
 
 ## Associated card
 
-`photo-frame-viewer-card.js` — Lovelace card for pause, interval slider, next/previous navigation.
+`photo-frame-viewer-card.js` — Lovelace card for pause, interval slider, enable/disable auto-unpause, auto-unpause seconds, and next/previous navigation.
 
 ## Config (apps.yaml)
 
