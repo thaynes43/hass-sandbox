@@ -87,10 +87,20 @@ _ensureDelegatedListeners() {
 | Rule | Why |
 |---|---|
 | **Never** `preventDefault()` on `<input>`, `<select>`, `<textarea>` touchend | Android webviews won't open keyboard or dropdown |
+| Prefer avoiding `preventDefault()` on `touchend` entirely when click dedupe is already handled by a `touchActive` guard | Android wall-display webviews can treat it as scroll-hostile even for non-form controls |
 | Use `{ passive: true }` for `touchstart`, `touchmove`, `touchcancel`, `scroll` | Required by modern browsers; improves scroll performance |
 | Gate click handler with `if (touchActive) return` | Prevents double-fire on touch devices |
 | Use 300–400ms timeout to clear `touchActive` | Covers the touch→click delay on all platforms |
 | Use `e.composedPath()` to find `data-action` target | Works correctly inside shadow DOM |
+
+### Android wall-display note
+
+On Android wall tablets / embedded webviews, global shadow-root touch listeners are more likely to interfere with native vertical scrolling than on phones.
+
+- Prefer tap-to-act for dense editor surfaces instead of touch-drag interactions.
+- If mouse drag behavior is needed, keep it mouse-only unless touch drag is essential.
+- Set `touch-action: pan-y` on `:host`, primary card containers, and large editor wrappers so the browser can keep vertical scroll ownership.
+- Do not assume behavior seen in the Android phone companion app matches the wall tablet webview.
 
 ## 3) Form inputs must not lose focus on re-render
 

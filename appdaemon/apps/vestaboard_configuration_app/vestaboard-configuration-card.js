@@ -96,6 +96,34 @@ function vbcCloneGrid(grid) {
   return grid.map((row) => [...row]);
 }
 
+/**
+ * Parse a grid value that may be a JSON string (to avoid HA stripping zeros
+ * from nested integer arrays) or already a parsed array.
+ */
+function vbcParseGrid(value) {
+  if (typeof value === "string") {
+    try { return JSON.parse(value); } catch (_) { return null; }
+  }
+  return value;
+}
+
+function vbcNormalizeGrid(grid) {
+  const normalized = vbcEmptyGrid();
+  grid = vbcParseGrid(grid);
+  if (!Array.isArray(grid)) return normalized;
+
+  for (let r = 0; r < VBC_ROWS; r++) {
+    const row = grid[r];
+    if (!Array.isArray(row)) continue;
+    for (let c = 0; c < VBC_COLS; c++) {
+      const code = Number(row[c]);
+      normalized[r][c] = Number.isFinite(code) ? code : 0;
+    }
+  }
+
+  return normalized;
+}
+
 /* ── Main card class ────────────────────────────────────────────────── */
 
 class VestaboardConfigurationCard extends HTMLElement {
@@ -308,10 +336,14 @@ class VestaboardConfigurationCard extends HTMLElement {
     // Editor grid: full-width responsive (1fr columns, aspect-ratio cells)
     // Preview/mini grids: fixed pixel cells, inline-grid for centering
     const isEditor = interactive || idPrefix === "editor";
+    const normalizedGrid = vbcNormalizeGrid(grid);
 
     const colTemplate = isEditor
       ? `repeat(${VBC_COLS},1fr)`
       : `repeat(${VBC_COLS},${cellSize}px)`;
+    const rowTemplate = isEditor
+      ? ""
+      : `grid-template-rows:repeat(${VBC_ROWS},${cellSize}px);`;
     const cellSizeStyle = isEditor
       ? ""
       : `width:${cellSize}px;height:${cellSize}px;`;
@@ -320,7 +352,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const cells = [];
     for (let r = 0; r < VBC_ROWS; r++) {
       for (let c = 0; c < VBC_COLS; c++) {
-        const code = (grid[r] && grid[r][c]) || 0;
+        const code = normalizedGrid[r][c] || 0;
         const isColor = COLOR_MAP[code];
         const bg = isColor || (code === 0 ? "#000" : "rgba(0,0,0,0.22)");
         const ch = (isColor || code === 0) ? "" : (CODE_TO_CHAR[code] || "");
@@ -334,7 +366,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       }
     }
 
-    return `<div class="${gridClass}" style="grid-template-columns:${colTemplate};gap:${gap}px;">${cells.join("")}</div>`;
+    return `<div class="${gridClass}" style="grid-template-columns:${colTemplate};${rowTemplate}gap:${gap}px;">${cells.join("")}</div>`;
   }
 
   /* ── Text mode helpers ──────────────────────────────────────────── */
@@ -990,6 +1022,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const root = this.shadowRoot;
     let touchActive = false;
     let touchCancelled = false;
+    let touchStartTarget = null;
 
     const findTarget = (e) => {
       for (const el of e.composedPath()) {
@@ -998,49 +1031,46 @@ class VestaboardConfigurationCard extends HTMLElement {
       return null;
     };
 
-    // Cancel touch on scroll/move
-    ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
+    ["touchcancel", "scroll"].forEach((evt) => {
       root.addEventListener(evt, () => { touchCancelled = true; }, { passive: true });
     });
 
     root.addEventListener("touchstart", (e) => {
       touchActive = true;
       touchCancelled = false;
-
-      // Paint drag start
-      if (this._editorMode === "paint") {
-        const el = findTarget(e);
-        if (el && el.dataset.action === "grid-cell") {
-          this._isPainting = true;
-          this._paintCell(el);
-        }
-      }
+      touchStartTarget = findTarget(e);
     }, { passive: true });
 
     root.addEventListener("touchend", (e) => {
       this._isPainting = false;
-      const el = findTarget(e);
+      const touch = e.changedTouches?.[0];
+      const pointTarget = touch ? root.elementFromPoint(touch.clientX, touch.clientY) : null;
+      const el = (pointTarget instanceof Element && pointTarget.dataset?.action)
+        ? pointTarget
+        : findTarget(e) || touchStartTarget;
       if (touchCancelled || !el) { touchActive = false; return; }
 
-      const tag = el.tagName?.toLowerCase();
-      const nativeEl = tag === "input" || tag === "select" || tag === "textarea";
-      if (!nativeEl && e.cancelable) e.preventDefault();
-
-      this._dispatchAction(el);
+      if (this._editorMode === "paint" && el.dataset.action === "grid-cell") {
+        this._paintCell(el);
+      } else {
+        this._dispatchAction(el);
+      }
+      touchStartTarget = null;
       setTimeout(() => { touchActive = false; }, 400);
     });
 
     root.addEventListener("touchmove", (e) => {
-      // Paint drag
       if (this._isPainting && this._editorMode === "paint") {
         const touch = e.touches[0];
         if (touch) {
           const target = root.elementFromPoint(touch.clientX, touch.clientY);
           if (target && target.dataset?.action === "grid-cell") {
             this._paintCell(target);
+            return;
           }
         }
       }
+      touchCancelled = true;
     }, { passive: true });
 
     // Desktop mouse paint drag
@@ -1064,6 +1094,10 @@ class VestaboardConfigurationCard extends HTMLElement {
     });
 
     root.addEventListener("mouseup", () => {
+      this._isPainting = false;
+    });
+
+    root.addEventListener("mouseleave", () => {
       this._isPainting = false;
     });
 
@@ -1555,7 +1589,15 @@ class VestaboardConfigurationCard extends HTMLElement {
         --vbc-muted: #9e9e9e;
       }
 
-      ha-card { overflow: hidden; }
+      :host {
+        display: block;
+        touch-action: pan-y;
+      }
+
+      ha-card {
+        overflow: hidden;
+        touch-action: pan-y;
+      }
 
       .card-header { padding: var(--vbc-spacing) var(--vbc-spacing) 0; }
 
@@ -1589,6 +1631,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: var(--vbc-spacing);
+        touch-action: pan-y;
       }
 
       /* Board Preview */
@@ -1602,6 +1645,9 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .vb-grid {
         display: inline-grid;
+        justify-content: center;
+        align-content: start;
+        grid-auto-flow: row;
       }
       .vb-grid.vb-grid-editor {
         display: grid;
@@ -1609,9 +1655,11 @@ class VestaboardConfigurationCard extends HTMLElement {
       }
       .vb-grid-editor .vb-cell {
         aspect-ratio: 1;
+        touch-action: manipulation;
       }
 
       .vb-cell {
+        box-sizing: border-box;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1717,6 +1765,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: 12px;
+        touch-action: pan-y;
       }
 
       .mode-toggle {
@@ -1755,6 +1804,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         padding: 8px;
         background: var(--vbc-surface-variant);
         border-radius: var(--vbc-radius-sm);
+        touch-action: pan-y;
       }
 
       .editor-grid-wrap .vb-cell {
@@ -1772,6 +1822,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: 8px;
+        touch-action: pan-y;
       }
 
       .palette-strip {

@@ -65,3 +65,8 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - Removed `_stage_to_www()` and `_stage_retry()` — both were wrong
 - Correct pattern: `self.call_service("shell_command/" + self._stage_shell_command)` exactly once, in the completion callback or event handler after the file is known to exist on disk
 - `_sync_staged_dir()` also calls the staging service directly (single call) when stale files are removed
+
+### Vestaboard provider (appdaemon/providers/vestaboard/)
+- `vestaboard_client.py`: `VestaboardClient(ip, api_key, session=None)` — async context manager, POST/GET to `http://{ip}:7000/local-api/message`, header `X-Vestaboard-Local-Api-Key`
+- `character_encoding.py`: `CHAR_TO_CODE` (A-Z=1-26, 1-9=27-35, 0=36, punct), `COLOR_CODES` (red=63..black=70), `blank_grid()`, `encode_char()`, `encode_text()`, `decode_grid()`, `text_to_grid(justify, align)`
+- Test pattern: inject `MagicMock` session with `__aenter__`/`__aexit__` AsyncMock; mock `.post`/`.get` returns mock response with `.status` and `.json = AsyncMock()`
