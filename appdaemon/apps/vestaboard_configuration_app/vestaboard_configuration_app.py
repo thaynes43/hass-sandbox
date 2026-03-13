@@ -294,6 +294,10 @@ class VestaboardConfigurationApp(hass.Hass):
         }
         update_fields.pop("frame_id", None)
 
+        # The card sends "frame" but the dataclass field is "characters"
+        if "frame" in update_fields:
+            update_fields["characters"] = update_fields.pop("frame")
+
         updated = self._frame_library.update_frame(frame_id, **update_fields)
         if updated:
             self._publish_status()
