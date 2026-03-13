@@ -1039,6 +1039,13 @@ class VestaboardConfigurationCard extends HTMLElement {
       touchActive = true;
       touchCancelled = false;
       touchStartTarget = findTarget(e);
+
+      if (this._editorMode === "paint"
+          && touchStartTarget
+          && touchStartTarget.dataset.action === "grid-cell") {
+        this._isPainting = true;
+        this._paintCell(touchStartTarget);
+      }
     }, { passive: true });
 
     root.addEventListener("touchend", (e) => {
