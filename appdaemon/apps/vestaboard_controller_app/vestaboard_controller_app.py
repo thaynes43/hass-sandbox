@@ -367,6 +367,8 @@ class VestaboardControllerApp(hass.Hass):
         if "frequency_min_minutes" in new_config or "frequency_max_minutes" in new_config:
             self._reschedule_random_interval(automation_id)
 
+        self._publish_status()
+
     def _find_automation(self, *candidate_ids: str) -> tuple[Optional[str], Optional[Any]]:
         """Find first matching automation by trying multiple IDs."""
         for aid in candidate_ids:
