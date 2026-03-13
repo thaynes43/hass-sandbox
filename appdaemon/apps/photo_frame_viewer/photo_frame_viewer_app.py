@@ -103,7 +103,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self.auto_cycle: bool = _as_bool(cfg["auto_cycle"], True)
         self.reset_timer_on_manual_nav: bool = _as_bool(cfg["reset_timer_on_manual_nav"], True)
         self.pause_auto_resume_s: float = max(
-            0.0, _safe_float(cfg.get("pause_auto_resume_s"), 0.0)
+            0.0, _safe_float(cfg.get("pause_auto_resume_s"), 600.0)
         )
 
         # Entity prefix — derives entity IDs for all provisioned entities.
@@ -126,6 +126,7 @@ class PhotoFrameViewerApp(hass.Hass):
         # Internal state (replaces input_boolean and input_number helpers)
         self._paused: bool = False
         self._interval: float = self._load_interval(float(cfg.get("default_interval_s", 10)))
+        self.pause_auto_resume_s = self._load_pause_auto_resume(self.pause_auto_resume_s)
         self._cache_bust: str = "0"
         self._pause_auto_resume_handle: Optional[Any] = None
         self._pause_auto_resume_deadline: Optional[float] = None
@@ -235,37 +236,53 @@ class PhotoFrameViewerApp(hass.Hass):
     # Interval persistence
     # ------------------------------------------------------------------
 
-    def _load_interval(self, default: float) -> float:
-        """Load persisted interval from state file, or return default."""
+    def _load_runtime_state(self) -> dict[str, Any]:
+        """Load persisted runtime settings from state file."""
         try:
             state_path = Path(self._state_file)
             if state_path.is_file():
                 data = json.loads(state_path.read_text(encoding="utf-8"))
-                val = float(data.get("interval_seconds", default))
-                if val > 0:
-                    return max(1.0, val)
+                if isinstance(data, dict):
+                    return data
         except Exception as exc:
             self.log(
-                f"PhotoFrameViewerApp: failed to load interval state: {exc}",
+                f"PhotoFrameViewerApp: failed to load runtime state: {exc}",
                 level="WARNING",
             )
+        return {}
+
+    def _load_interval(self, default: float) -> float:
+        """Load persisted interval from state file, or return default."""
+        data = self._load_runtime_state()
+        val = _safe_float(data.get("interval_seconds", default), default)
+        if val > 0:
+            return max(1.0, val)
         return max(1.0, default)
 
-    def _save_interval(self) -> None:
-        """Persist current interval to state file."""
+    def _load_pause_auto_resume(self, default: float) -> float:
+        """Load persisted auto-resume seconds from state file, or return default."""
+        data = self._load_runtime_state()
+        return max(0.0, _safe_float(data.get("pause_auto_resume_s", default), default))
+
+    def _save_runtime_state(self) -> None:
+        """Persist runtime settings to state file."""
         try:
             os.makedirs(self._state_dir, exist_ok=True)
             Path(self._state_file).write_text(
-                json.dumps({"interval_seconds": self._interval}),
+                json.dumps({
+                    "interval_seconds": self._interval,
+                    "pause_auto_resume_s": self.pause_auto_resume_s,
+                }),
                 encoding="utf-8",
             )
             self.log(
-                f"PhotoFrameViewerApp: interval persisted ({self._interval}s)",
+                "PhotoFrameViewerApp: runtime state persisted "
+                f"(interval={self._interval}s pause_auto_resume_s={self.pause_auto_resume_s}s)",
                 level="DEBUG",
             )
         except Exception as exc:
             self.log(
-                f"PhotoFrameViewerApp: failed to save interval state: {exc}",
+                f"PhotoFrameViewerApp: failed to save runtime state: {exc}",
                 level="ERROR",
             )
 
@@ -451,6 +468,8 @@ class PhotoFrameViewerApp(hass.Hass):
             self._handle_toggle_pause()
         elif cmd == "set_interval":
             self._handle_set_interval(payload)
+        elif cmd == "set_pause_auto_resume":
+            self._handle_set_pause_auto_resume(payload)
         elif cmd == "next":
             self._handle_next()
         elif cmd == "previous":
@@ -531,12 +550,33 @@ class PhotoFrameViewerApp(hass.Hass):
             )
             return
         self._interval = max(1.0, seconds)
-        self._save_interval()
+        self._save_runtime_state()
         self.log(
             f"PhotoFrameViewerApp: interval={self._interval}s via relay",
             level="INFO",
         )
         self._sync_timer(reason="set_interval")
+        self._publish_sensor_state()
+
+    def _handle_set_pause_auto_resume(self, payload: dict) -> None:
+        raw = payload.get("seconds", 0)
+        seconds = _safe_float(raw, -1.0)
+        if seconds < 0:
+            self.log(
+                f"PhotoFrameViewerApp: set_pause_auto_resume invalid value: {raw!r}",
+                level="WARNING",
+            )
+            return
+        self.pause_auto_resume_s = max(0.0, seconds)
+        self._save_runtime_state()
+        if self._paused:
+            self._schedule_pause_auto_resume(reason="set_pause_auto_resume")
+        else:
+            self._cancel_pause_auto_resume()
+        self.log(
+            f"PhotoFrameViewerApp: pause_auto_resume_s={self.pause_auto_resume_s}s via relay",
+            level="INFO",
+        )
         self._publish_sensor_state()
 
     def _handle_next(self) -> None:

@@ -64,7 +64,7 @@ photo_frame_viewer_wall_display:
 | `default_interval_s` | `10` | Slideshow interval in seconds |
 | `pause_auto_resume_s` | `600` | Automatically resume after this many paused seconds (`0` disables) |
 | `entity_prefix` | `wall_display` | Prefix for all provisioned entity IDs |
-| `state_dir` | `/media/photo-frame-viewer/{prefix}` | Persisted state directory |
+| `state_dir` | `/media/photo-frame-viewer/{prefix}` | Persisted state directory for dashboard-managed settings like interval and auto-unpause |
 
 ## Manual setup required
 

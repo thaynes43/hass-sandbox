@@ -233,6 +233,71 @@ class TestSetInterval:
         app.run_in.assert_called()
 
 
+class TestSetPauseAutoResume:
+    def test_set_pause_auto_resume_valid(self):
+        app = _make_app()
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": 300})
+
+        assert app.pause_auto_resume_s == 300.0
+
+    def test_set_pause_auto_resume_zero_disables(self):
+        app = _make_app()
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": 0})
+
+        assert app.pause_auto_resume_s == 0.0
+
+    def test_set_pause_auto_resume_invalid_ignored(self):
+        app = _make_app()
+        original = app.pause_auto_resume_s
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": "banana"})
+
+        assert app.pause_auto_resume_s == original
+
+    def test_set_pause_auto_resume_persists_state(self):
+        app = _make_app()
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": 300})
+
+        state_path = Path(app._state_file)
+        assert state_path.is_file()
+        data = json.loads(state_path.read_text())
+        assert data["pause_auto_resume_s"] == 300.0
+
+    def test_set_pause_auto_resume_updates_sensor(self):
+        app = _make_app()
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": 300})
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["pause_auto_resume_s"] == 300.0
+
+    def test_set_pause_auto_resume_reschedules_when_paused(self):
+        app = _make_app()
+        app._paused = True
+        app.run_in.reset_mock()
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": 300})
+
+        app.run_in.assert_any_call(app._handle_pause_auto_resume, 300.0)
+
+    def test_set_pause_auto_resume_cancels_existing_when_disabled_while_paused(self):
+        app = _make_app()
+        auto_resume_handle = MagicMock()
+        app._paused = True
+        app._pause_auto_resume_handle = auto_resume_handle
+        app._pause_auto_resume_deadline = 123.0
+        app.timer_running.return_value = True
+
+        _dispatch(app, "set_pause_auto_resume", {"seconds": 0})
+
+        app.cancel_timer.assert_any_call(auto_resume_handle)
+        assert app._pause_auto_resume_handle is None
+        assert app._pause_auto_resume_deadline is None
+
+
 class TestNextCommand:
     def test_next_calls_select_next(self):
         app = _make_app()
@@ -374,3 +439,44 @@ class TestSensorStatePublishing:
         attrs = app.set_state.call_args[1]["attributes"]
         assert attrs["pause_auto_resume_s"] == 90.0
         assert attrs["pause_resume_at"] == 12345.0
+
+
+class TestRuntimeStatePersistence:
+    def test_initialize_loads_persisted_interval_and_auto_resume(self):
+        td = tempfile.mkdtemp(prefix="pfv_runtime_state_")
+        for fname in ["IMG_001.jpg", "IMG_002.jpg"]:
+            Path(td, fname).write_bytes(b"")
+        Path(td, "state.json").write_text(
+            json.dumps({
+                "interval_seconds": 42,
+                "pause_auto_resume_s": 900,
+            })
+        )
+
+        ad = MagicMock()
+        app = PhotoFrameViewerApp(ad, MagicMock())
+        app.args = {
+            "source_dir": td,
+            "ha_local_url_base": "/local/photo-frame/live",
+            "state_dir": td,
+            "default_interval_s": 10,
+            "pause_auto_resume_s": 600,
+        }
+        app.get_state = MagicMock(return_value=None)
+        app.set_state = MagicMock()
+        app.call_service = MagicMock()
+        app.listen_state = MagicMock()
+        app.listen_event = MagicMock()
+        app.run_every = MagicMock()
+        app.run_in = MagicMock()
+        app.cancel_timer = MagicMock()
+        app.timer_running = MagicMock(return_value=False)
+        app.datetime = MagicMock()
+        app.log = MagicMock()
+        app.create_task = MagicMock()
+        app.name = "photo_frame_viewer_wall_display"
+
+        app.initialize()
+
+        assert app._interval == 42.0
+        assert app.pause_auto_resume_s == 900.0
