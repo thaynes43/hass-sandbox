@@ -76,6 +76,7 @@ class PhotoFrameViewerApp(hass.Hass):
         "auto_cycle": True,
         "reset_timer_on_manual_nav": True,
         "default_interval_s": 10,
+        "pause_auto_resume_s": 600,
     }
 
     # ------------------------------------------------------------------
@@ -101,6 +102,9 @@ class PhotoFrameViewerApp(hass.Hass):
         self.refresh_options_every_s: float = max(10.0, float(cfg["refresh_options_every_s"]))
         self.auto_cycle: bool = _as_bool(cfg["auto_cycle"], True)
         self.reset_timer_on_manual_nav: bool = _as_bool(cfg["reset_timer_on_manual_nav"], True)
+        self.pause_auto_resume_s: float = max(
+            0.0, _safe_float(cfg.get("pause_auto_resume_s"), 0.0)
+        )
 
         # Entity prefix — derives entity IDs for all provisioned entities.
         self._entity_prefix: str = self._derive_entity_prefix(cfg)
@@ -123,6 +127,8 @@ class PhotoFrameViewerApp(hass.Hass):
         self._paused: bool = False
         self._interval: float = self._load_interval(float(cfg.get("default_interval_s", 10)))
         self._cache_bust: str = "0"
+        self._pause_auto_resume_handle: Optional[Any] = None
+        self._pause_auto_resume_deadline: Optional[float] = None
 
         # Slideshow timer
         self._timer_handle: Optional[Any] = None
@@ -408,6 +414,8 @@ class PhotoFrameViewerApp(hass.Hass):
                 "cache_bust": self._cache_bust,
                 "paused": "true" if self._paused else "false",
                 "interval_seconds": self._interval,
+                "pause_auto_resume_s": self.pause_auto_resume_s,
+                "pause_resume_at": self._pause_auto_resume_deadline,
                 "current_gen": self._current_gen_id or "",
                 "friendly_name": f"{self._entity_prefix.replace('_', ' ').title()} Photo Frame",
             },
@@ -456,13 +464,55 @@ class PhotoFrameViewerApp(hass.Hass):
             )
 
     def _handle_toggle_pause(self) -> None:
-        self._paused = not self._paused
+        self._set_paused(not self._paused, reason="toggle_pause")
+
+    def _set_paused(self, paused: bool, *, reason: str) -> None:
+        self._paused = paused
+        if paused:
+            self._schedule_pause_auto_resume(reason=reason)
+        else:
+            self._cancel_pause_auto_resume()
         self.log(
-            f"PhotoFrameViewerApp: paused={self._paused} via relay",
+            f"PhotoFrameViewerApp: paused={self._paused} reason={reason}",
             level="INFO",
         )
-        self._sync_timer(reason="toggle_pause")
+        self._sync_timer(reason=reason)
         self._publish_sensor_state()
+
+    def _cancel_pause_auto_resume(self) -> None:
+        handle = self._pause_auto_resume_handle
+        self._pause_auto_resume_handle = None
+        self._pause_auto_resume_deadline = None
+        if handle is None:
+            return
+        try:
+            if self.timer_running(handle):
+                self.cancel_timer(handle)
+        except Exception:
+            pass
+
+    def _schedule_pause_auto_resume(self, *, reason: str) -> None:
+        self._cancel_pause_auto_resume()
+        timeout = self.pause_auto_resume_s
+        if timeout <= 0:
+            return
+        self._pause_auto_resume_deadline = time.time() + timeout
+        self._pause_auto_resume_handle = self.run_in(
+            self._handle_pause_auto_resume,
+            timeout,
+        )
+        self.log(
+            f"PhotoFrameViewerApp: auto-resume scheduled in {timeout:.1f}s "
+            f"reason={reason}",
+            level="INFO",
+        )
+
+    def _handle_pause_auto_resume(self, kwargs: Any) -> None:
+        self._pause_auto_resume_handle = None
+        self._pause_auto_resume_deadline = None
+        if not self._paused:
+            return
+        self._set_paused(False, reason="auto_resume")
 
     def _handle_set_interval(self, payload: dict) -> None:
         raw = payload.get("seconds")

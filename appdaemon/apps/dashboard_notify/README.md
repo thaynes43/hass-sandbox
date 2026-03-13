@@ -92,6 +92,7 @@ See `apps-prod.yaml` for full config. Key settings:
 
 - `media_fs_root` or `media_fs_root_env` — Local filesystem root mapping to HA's `/media` (default: `/media`; override in dev to e.g. `/mnt/cephfs-hdd/misc/hass-media`)
 - `carousel_interval_s` — Auto-advance interval (default: 10s)
+- `pause_auto_resume_s` — Automatically resume after this many paused seconds (default: 600; `0` disables it)
 - `default_ttl_s` — Default notification TTL (default: 1hr)
 - `no_notification_refresh_s` — Placeholder refresh interval (default: 1hr)
 - `notifications` — List of scheduled notification configs

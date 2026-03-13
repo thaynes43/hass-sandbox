@@ -240,6 +240,45 @@ class TestRelayCommands:
         app._handle_command("", {"command": "toggle_pause"}, {})
         assert app._paused is False
 
+    def test_toggle_pause_schedules_auto_resume_when_configured(self):
+        app = _make_app({"pause_auto_resume_s": 120})
+        app.initialize()
+        app.run_in.reset_mock()
+
+        app._handle_command("", {"command": "toggle_pause"}, {})
+
+        app.run_in.assert_any_call(app._handle_pause_auto_resume, 120.0)
+
+    def test_toggle_pause_cancels_auto_resume_when_resuming_manually(self):
+        app = _make_app({"pause_auto_resume_s": 120})
+        app.initialize()
+        auto_resume_handle = MagicMock()
+        app._paused = True
+        app._pause_auto_resume_handle = auto_resume_handle
+        app._pause_auto_resume_deadline = 123.0
+        app.timer_running.return_value = True
+
+        app._handle_command("", {"command": "toggle_pause"}, {})
+
+        app.cancel_timer.assert_called_with(auto_resume_handle)
+        assert app._pause_auto_resume_handle is None
+        assert app._pause_auto_resume_deadline is None
+
+    def test_auto_resume_callback_resumes_and_publishes(self):
+        app = _make_app({"pause_auto_resume_s": 120})
+        app.initialize()
+        app._paused = True
+        app._pause_auto_resume_handle = MagicMock()
+        app._pause_auto_resume_deadline = 123.0
+        app.set_state.reset_mock()
+
+        app._handle_pause_auto_resume({})
+
+        assert app._paused is False
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["paused"] is False
+        assert app._pause_auto_resume_deadline is None
+
     def test_dismiss_removes_notification(self):
         app = _make_app()
         app.initialize()
@@ -503,6 +542,18 @@ class TestSensorPublishing:
         app._publish_state()
 
         assert app._current_index == 0
+
+    def test_publish_state_includes_auto_resume_metadata(self):
+        app = _make_app({"pause_auto_resume_s": 90})
+        app.initialize()
+        app._paused = True
+        app._pause_auto_resume_deadline = 12345.0
+
+        app._publish_state()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["pause_auto_resume_s"] == 90.0
+        assert attrs["pause_resume_at"] == 12345.0
 
 
 class TestCarouselAdvance:

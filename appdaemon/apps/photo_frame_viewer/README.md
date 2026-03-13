@@ -62,6 +62,7 @@ photo_frame_viewer_wall_display:
 | `auto_cycle` | `true` | Auto-advance images |
 | `reset_timer_on_manual_nav` | `true` | Restart timer on manual selection |
 | `default_interval_s` | `10` | Slideshow interval in seconds |
+| `pause_auto_resume_s` | `600` | Automatically resume after this many paused seconds (`0` disables) |
 | `entity_prefix` | `wall_display` | Prefix for all provisioned entity IDs |
 | `state_dir` | `/media/photo-frame-viewer/{prefix}` | Persisted state directory |
 
