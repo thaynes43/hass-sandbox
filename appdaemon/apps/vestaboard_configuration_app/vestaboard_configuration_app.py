@@ -262,6 +262,22 @@ class VestaboardConfigurationApp(hass.Hass):
             self.log("save_frame: missing 'frame' in payload", level="WARNING")
             return
 
+        # Deduplicate: if a frame with identical characters exists, update it
+        existing = self._frame_library.find_by_characters(frame_data)
+        if existing is not None:
+            self._frame_library.update_frame(
+                existing.frame_id, name=name, creator=creator, rating=rating,
+            )
+            self._publish_status()
+            self.log(
+                "save_frame: duplicate characters — updated existing "
+                "frame_id=%r name=%r creator=%r",
+                existing.frame_id,
+                name,
+                creator,
+            )
+            return
+
         frame = LibraryFrame(
             frame_id=uuid.uuid4().hex,
             characters=frame_data,

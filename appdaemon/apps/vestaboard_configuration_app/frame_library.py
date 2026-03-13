@@ -137,6 +137,13 @@ class FrameLibrary:
     # CRUD operations
     # ------------------------------------------------------------------
 
+    def find_by_characters(self, characters: list[list[int]]) -> Optional[LibraryFrame]:
+        """Return the first frame whose characters match exactly, or None."""
+        for frame in self._frames:
+            if frame.characters == characters:
+                return frame
+        return None
+
     def add_frame(self, frame: LibraryFrame) -> None:
         """Add a frame to the library and persist."""
         self._frames.append(frame)
