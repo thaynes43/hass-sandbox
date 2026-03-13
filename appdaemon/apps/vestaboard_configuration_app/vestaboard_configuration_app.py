@@ -237,6 +237,9 @@ class VestaboardConfigurationApp(hass.Hass):
             "set_automation_config": self._cmd_set_automation_config,
             "refresh_status": self._cmd_refresh_status,
             "add_creator": self._cmd_add_creator,
+            "move_frame": self._cmd_move_frame,
+            "quick_save_art": self._cmd_quick_save_art,
+            "clear_art_preview": self._cmd_clear_art_preview,
             "generate_art": self._cmd_generate_art,
             "generate_ai_message": self._cmd_generate_ai_message,
             "save_art_to_library": self._cmd_save_art_to_library,
@@ -252,11 +255,16 @@ class VestaboardConfigurationApp(hass.Hass):
     # ------------------------------------------------------------------
 
     def _cmd_save_frame(self, payload: dict) -> None:
-        """Save a new static frame to the library."""
+        """Save a new static frame to the library.
+
+        Accepts an optional ``category`` field ("message" or "art").
+        Defaults to "message" for backward compatibility.
+        """
         frame_data = payload.get("frame")
         name = str(payload.get("name", "Untitled"))
         creator = str(payload.get("creator", "Anonymous"))
         rating = int(payload.get("rating", 0))
+        category = str(payload.get("category", "message"))
 
         if not frame_data:
             self.log("save_frame: missing 'frame' in payload", level="WARNING")
@@ -267,14 +275,16 @@ class VestaboardConfigurationApp(hass.Hass):
         if existing is not None:
             self._frame_library.update_frame(
                 existing.frame_id, name=name, creator=creator, rating=rating,
+                category=category,
             )
             self._publish_status()
             self.log(
                 "save_frame: duplicate characters — updated existing "
-                "frame_id=%r name=%r creator=%r",
+                "frame_id=%r name=%r creator=%r category=%r",
                 existing.frame_id,
                 name,
                 creator,
+                category,
             )
             return
 
@@ -285,14 +295,16 @@ class VestaboardConfigurationApp(hass.Hass):
             created_at=time.time(),
             rating=rating,
             name=name,
+            category=category,
         )
         self._frame_library.add_frame(frame)
         self._publish_status()
         self.log(
-            "Saved frame frame_id=%r name=%r creator=%r",
+            "Saved frame frame_id=%r name=%r creator=%r category=%r",
             frame.frame_id,
             name,
             creator,
+            category,
         )
 
     def _cmd_update_frame(self, payload: dict) -> None:
@@ -334,6 +346,63 @@ class VestaboardConfigurationApp(hass.Hass):
             self.log("Deleted frame frame_id=%r", frame_id)
         else:
             self.log("delete_frame: frame_id=%r not found", frame_id, level="WARNING")
+
+    def _cmd_move_frame(self, payload: dict) -> None:
+        """Move a frame between categories (e.g. message ↔ art)."""
+        frame_id = payload.get("frame_id")
+        category = payload.get("category")
+        if not frame_id:
+            self.log("move_frame: missing 'frame_id' in payload", level="WARNING")
+            return
+        if not category:
+            self.log("move_frame: missing 'category' in payload", level="WARNING")
+            return
+
+        updated = self._frame_library.update_frame(frame_id, category=category)
+        if updated:
+            self._publish_status()
+            self.log("Moved frame frame_id=%r to category=%r", frame_id, category)
+        else:
+            self.log("move_frame: frame_id=%r not found", frame_id, level="WARNING")
+
+    def _cmd_quick_save_art(self, payload: dict) -> None:
+        """Quick-save generated art with backend-generated defaults.
+
+        Saves with:
+          - category: "art"
+          - creator: "AI" (or payload override)
+          - name: auto-generated unique name ("AI Art <short-hex>")
+          - rating: 0
+
+        TTL and should_expire are push-time concepts, not stored on
+        library frames.  The frontend should set those when pushing.
+        """
+        frame = payload.get("frame")
+        if not frame:
+            self.log("quick_save_art: missing 'frame' in payload", level="WARNING")
+            return
+
+        short_id = uuid.uuid4().hex[:8]
+        name = str(payload.get("name", f"AI Art {short_id}"))
+        creator = str(payload.get("creator", "AI"))
+
+        lib_frame = LibraryFrame(
+            frame_id=uuid.uuid4().hex,
+            characters=frame,
+            creator=creator,
+            created_at=time.time(),
+            rating=0,
+            name=name,
+            category="art",
+        )
+        self._frame_library.add_frame(lib_frame)
+        self._publish_status()
+        self.log(
+            "Quick-saved art frame_id=%r name=%r creator=%r",
+            lib_frame.frame_id,
+            name,
+            creator,
+        )
 
     # ------------------------------------------------------------------
     # Command handlers — push to controller
@@ -459,11 +528,21 @@ class VestaboardConfigurationApp(hass.Hass):
 
         self._publish_status()
 
+    def _cmd_clear_art_preview(self, payload: dict) -> None:
+        """Clear the AI art preview from status."""
+        self._forward_to_controller("clear_ai_art_preview", {})
+        self.log("clear_art_preview forwarded to controller")
+
     def _cmd_generate_art(self, payload: dict) -> None:
-        """Forward an art generation request to the controller."""
+        """Forward an art generation request to the controller as a preview.
+
+        The controller generates the art but does NOT push it to the board.
+        Instead it stores the result in ``ai_art_preview`` status attribute,
+        which mirrors into our sensor so the card can render it as a preview.
+        """
         subject = payload.get("subject", "")
-        self._forward_to_controller("generate_ai_art", {"subject": subject})
-        self.log("generate_art subject=%r forwarded to controller as generate_ai_art", subject)
+        self._forward_to_controller("generate_ai_art_preview", {"subject": subject})
+        self.log("generate_art subject=%r forwarded to controller as generate_ai_art_preview", subject)
 
     def _cmd_generate_ai_message(self, payload: dict) -> None:
         """Forward an AI message generation request to the controller."""
@@ -580,6 +659,7 @@ class VestaboardConfigurationApp(hass.Hass):
             "library": self._frame_library.to_json(),
             "creators": self._creators,
             "automations": ca.get("all_automations", []),
+            "ai_art_preview": ca.get("ai_art_preview"),
             "status": "ok",
         }
         try:

@@ -652,8 +652,8 @@ class TestControllerStatusMirroring:
 
 
 class TestGenerateArt:
-    def test_generate_art_forwards_to_controller(self, tmp_path):
-        """generate_art should fire the controller command event with subject as generate_ai_art."""
+    def test_generate_art_forwards_to_controller_as_preview(self, tmp_path):
+        """generate_art should fire the controller command as generate_ai_art_preview (not push)."""
         app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
         app.initialize()
 
@@ -662,9 +662,61 @@ class TestGenerateArt:
 
         app.fire_event.assert_called_once()
         fired_command = app.fire_event.call_args[1]["command"]
-        assert fired_command == "generate_ai_art"
+        assert fired_command == "generate_ai_art_preview"
         fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
         assert fired_payload["subject"] == "a rocket ship"
+
+
+class TestClearArtPreview:
+    def test_clear_art_preview_forwards_to_controller(self, tmp_path):
+        """clear_art_preview should fire clear_ai_art_preview to controller."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        payload = json.dumps({})
+        app._on_command("vestaboard_configuration_command", {"command": "clear_art_preview", "payload": payload}, {})
+
+        app.fire_event.assert_called_once()
+        fired_command = app.fire_event.call_args[1]["command"]
+        assert fired_command == "clear_ai_art_preview"
+
+
+class TestAiArtPreviewPassthrough:
+    def test_ai_art_preview_included_in_status(self, tmp_path):
+        """ai_art_preview from controller should appear in published status."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        preview_data = {
+            "characters": [[1] * 22 for _ in range(6)],
+            "subject": "sunset",
+            "generated_at": 1710000000.0,
+        }
+        app._controller_attrs = {
+            "displayed_frame": None,
+            "displayed_source": None,
+            "displayed_ttl_remaining_s": None,
+            "queue_state": {"pending": [], "fallback": []},
+            "all_automations": [],
+            "ai_art_preview": preview_data,
+        }
+        app.set_state.reset_mock()
+
+        app._publish_status()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["ai_art_preview"] == preview_data
+
+    def test_ai_art_preview_none_when_no_preview(self, tmp_path):
+        """ai_art_preview should be None when controller has no preview."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.set_state.reset_mock()
+
+        app._publish_status()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["ai_art_preview"] is None
 
 
 class TestSaveArtToLibrary:
@@ -682,6 +734,206 @@ class TestSaveArtToLibrary:
         art_frames = [f for f in frames if f.name == "Cool Art"]
         assert len(art_frames) == 1
         assert art_frames[0].creator == "AI"
+
+
+class TestSaveFrameCategory:
+    def test_save_frame_default_category_is_message(self, tmp_path):
+        """save_frame without explicit category should default to 'message'."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        frame_data = [[1] * 22 for _ in range(6)]
+        payload = json.dumps({"frame": frame_data, "name": "Text Msg", "creator": "Tom"})
+        app._on_command("vestaboard_configuration_command", {"command": "save_frame", "payload": payload}, {})
+
+        frames = app._frame_library.list_frames()
+        saved = [f for f in frames if f.name == "Text Msg"]
+        assert len(saved) == 1
+        assert saved[0].category == "message"
+
+    def test_save_frame_explicit_art_category(self, tmp_path):
+        """save_frame with category='art' should save as art."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        frame_data = [[2] * 22 for _ in range(6)]
+        payload = json.dumps({"frame": frame_data, "name": "Painted", "creator": "Tom", "category": "art"})
+        app._on_command("vestaboard_configuration_command", {"command": "save_frame", "payload": payload}, {})
+
+        frames = app._frame_library.list_frames()
+        saved = [f for f in frames if f.name == "Painted"]
+        assert len(saved) == 1
+        assert saved[0].category == "art"
+
+    def test_save_frame_dedup_updates_category(self, tmp_path):
+        """save_frame with duplicate characters should update the category too."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        frame_data = [[3] * 22 for _ in range(6)]
+        # First save as message
+        payload = json.dumps({"frame": frame_data, "name": "First", "creator": "Tom", "category": "message"})
+        app._on_command("vestaboard_configuration_command", {"command": "save_frame", "payload": payload}, {})
+        # Second save with same chars but category=art
+        payload = json.dumps({"frame": frame_data, "name": "First", "creator": "Tom", "category": "art"})
+        app._on_command("vestaboard_configuration_command", {"command": "save_frame", "payload": payload}, {})
+
+        frames = app._frame_library.list_frames()
+        saved = [f for f in frames if f.name == "First"]
+        assert len(saved) == 1
+        assert saved[0].category == "art"
+
+
+class TestMoveFrame:
+    def test_move_frame_changes_category(self, tmp_path):
+        """move_frame should change a frame's category."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        # Seed frame is category="message" by default
+        frames = app._frame_library.list_frames()
+        frame_id = frames[0].frame_id
+        assert frames[0].category == "message"
+
+        payload = json.dumps({"frame_id": frame_id, "category": "art"})
+        app._on_command("vestaboard_configuration_command", {"command": "move_frame", "payload": payload}, {})
+
+        updated = app._frame_library.get_frame(frame_id)
+        assert updated.category == "art"
+
+    def test_move_frame_publishes_status(self, tmp_path):
+        """move_frame should call set_state after moving."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.set_state.reset_mock()
+
+        frames = app._frame_library.list_frames()
+        frame_id = frames[0].frame_id
+
+        payload = json.dumps({"frame_id": frame_id, "category": "art"})
+        app._on_command("vestaboard_configuration_command", {"command": "move_frame", "payload": payload}, {})
+
+        app.set_state.assert_called()
+
+    def test_move_frame_missing_frame_id_logs_warning(self, tmp_path):
+        """move_frame without frame_id should log a warning."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.log.reset_mock()
+
+        payload = json.dumps({"category": "art"})
+        app._on_command("vestaboard_configuration_command", {"command": "move_frame", "payload": payload}, {})
+
+        levels = [c[1].get("level", "INFO") for c in app.log.call_args_list]
+        assert "WARNING" in levels
+
+    def test_move_frame_missing_category_logs_warning(self, tmp_path):
+        """move_frame without category should log a warning."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.log.reset_mock()
+
+        payload = json.dumps({"frame_id": "some-id"})
+        app._on_command("vestaboard_configuration_command", {"command": "move_frame", "payload": payload}, {})
+
+        levels = [c[1].get("level", "INFO") for c in app.log.call_args_list]
+        assert "WARNING" in levels
+
+    def test_move_frame_not_found_logs_warning(self, tmp_path):
+        """move_frame with unknown frame_id should log a warning."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.log.reset_mock()
+
+        payload = json.dumps({"frame_id": "nonexistent", "category": "art"})
+        app._on_command("vestaboard_configuration_command", {"command": "move_frame", "payload": payload}, {})
+
+        levels = [c[1].get("level", "INFO") for c in app.log.call_args_list]
+        assert "WARNING" in levels
+
+
+class TestQuickSaveArt:
+    def test_quick_save_art_adds_frame_with_defaults(self, tmp_path):
+        """quick_save_art should add a frame with category='art', creator='AI', rating=0."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        initial_count = len(app._frame_library.list_frames())
+
+        frame_data = [[4] * 22 for _ in range(6)]
+        payload = json.dumps({"frame": frame_data})
+        app._on_command("vestaboard_configuration_command", {"command": "quick_save_art", "payload": payload}, {})
+
+        frames = app._frame_library.list_frames()
+        assert len(frames) == initial_count + 1
+        new_frames = [f for f in frames if f.category == "art"]
+        assert len(new_frames) == 1
+        assert new_frames[0].creator == "AI"
+        assert new_frames[0].rating == 0
+        assert new_frames[0].name.startswith("AI Art ")
+
+    def test_quick_save_art_generates_unique_name(self, tmp_path):
+        """quick_save_art should generate a unique name each time."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        frame1 = [[5] * 22 for _ in range(6)]
+        frame2 = [[6] * 22 for _ in range(6)]
+        app._on_command("vestaboard_configuration_command", {"command": "quick_save_art", "payload": json.dumps({"frame": frame1})}, {})
+        app._on_command("vestaboard_configuration_command", {"command": "quick_save_art", "payload": json.dumps({"frame": frame2})}, {})
+
+        art_frames = [f for f in app._frame_library.list_frames() if f.category == "art"]
+        assert len(art_frames) == 2
+        assert art_frames[0].name != art_frames[1].name
+
+    def test_quick_save_art_accepts_custom_name(self, tmp_path):
+        """quick_save_art should accept an optional name override."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        frame_data = [[7] * 22 for _ in range(6)]
+        payload = json.dumps({"frame": frame_data, "name": "My Custom Art"})
+        app._on_command("vestaboard_configuration_command", {"command": "quick_save_art", "payload": payload}, {})
+
+        art_frames = [f for f in app._frame_library.list_frames() if f.name == "My Custom Art"]
+        assert len(art_frames) == 1
+
+    def test_quick_save_art_missing_frame_logs_warning(self, tmp_path):
+        """quick_save_art without frame data should log a warning."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.log.reset_mock()
+
+        payload = json.dumps({})
+        app._on_command("vestaboard_configuration_command", {"command": "quick_save_art", "payload": payload}, {})
+
+        levels = [c[1].get("level", "INFO") for c in app.log.call_args_list]
+        assert "WARNING" in levels
+
+    def test_quick_save_art_publishes_status(self, tmp_path):
+        """quick_save_art should publish status after saving."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+        app.set_state.reset_mock()
+
+        frame_data = [[8] * 22 for _ in range(6)]
+        payload = json.dumps({"frame": frame_data})
+        app._on_command("vestaboard_configuration_command", {"command": "quick_save_art", "payload": payload}, {})
+
+        app.set_state.assert_called()
+
+
+class TestSaveArtToLibraryCategory:
+    def test_save_art_to_library_sets_art_category(self, tmp_path):
+        """save_art_to_library should always save with category='art'."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        payload = json.dumps({"frame": _make_dummy_frame(), "name": "Generated Art"})
+        app._on_command("vestaboard_configuration_command", {"command": "save_art_to_library", "payload": payload}, {})
+
+        art_frames = [f for f in app._frame_library.list_frames() if f.name == "Generated Art"]
+        assert len(art_frames) == 1
+        assert art_frames[0].category == "art"
 
 
 class TestInvalidPayload:

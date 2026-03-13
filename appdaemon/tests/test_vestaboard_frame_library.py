@@ -266,6 +266,48 @@ class TestListFrames:
         names = [f.name for f in results]
         assert names == sorted(names)
 
+    def test_filter_by_category(self, tmp_path):
+        lib = make_library(tmp_path)
+        msg = make_lib_frame(name="Message Frame", created_at=1000.0)
+        art = make_lib_frame(name="Art Frame", created_at=2000.0)
+        art.category = "art"
+        lib.add_frame(msg)
+        lib.add_frame(art)
+        assert len(lib.list_frames(category="message")) == 1
+        assert lib.list_frames(category="message")[0].name == "Message Frame"
+        assert len(lib.list_frames(category="art")) == 1
+        assert lib.list_frames(category="art")[0].name == "Art Frame"
+
+    def test_default_category_is_message(self, tmp_path):
+        """Frames created without explicit category should default to 'message'."""
+        lib = make_library(tmp_path)
+        frame = make_lib_frame(name="Old Frame", created_at=1000.0)
+        lib.add_frame(frame)
+        assert frame.category == "message"
+        results = lib.list_frames(category="message")
+        assert any(f.name == "Old Frame" for f in results)
+
+    def test_update_category(self, tmp_path):
+        lib = make_library(tmp_path)
+        frame = make_lib_frame(name="Movable")
+        lib.add_frame(frame)
+        assert frame.category == "message"
+        lib.update_frame(frame.frame_id, category="art")
+        assert lib.get_frame(frame.frame_id).category == "art"
+
+    def test_category_persists_roundtrip(self, tmp_path):
+        storage_path = str(tmp_path / "library.json")
+        lib1 = FrameLibrary(storage_path=storage_path)
+        lib1.load()
+        frame = make_lib_frame(name="Art Piece")
+        frame.category = "art"
+        lib1.add_frame(frame)
+
+        lib2 = FrameLibrary(storage_path=storage_path)
+        lib2.load()
+        retrieved = lib2.get_frame(frame.frame_id)
+        assert retrieved.category == "art"
+
     def test_invalid_sort_by_defaults_to_created_at(self, tmp_path):
         lib = self._populated_lib(tmp_path)
         # Should not raise; falls back to created_at

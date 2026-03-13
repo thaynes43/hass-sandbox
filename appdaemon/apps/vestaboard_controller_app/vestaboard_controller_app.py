@@ -142,6 +142,9 @@ class VestaboardControllerApp(hass.Hass):
         # Last known board state for status publishing
         self._last_write_ok: Optional[bool] = None
 
+        # AI art preview (generate-only, not pushed to board)
+        self._ai_art_preview: Optional[dict[str, Any]] = None
+
         self.log(
             f"VestaboardControllerApp initializing — ip={self._vb_ip!r} "
             f"tick_interval_s={self._tick_interval_s}",
@@ -284,6 +287,12 @@ class VestaboardControllerApp(hass.Hass):
             self.create_task(self._handle_generate_random_art(payload))
         elif command == "generate_ai_art":
             self.create_task(self._handle_generate_ai_art(payload))
+        elif command == "generate_ai_art_preview":
+            self.create_task(self._handle_generate_ai_art_preview(payload))
+        elif command == "clear_ai_art_preview":
+            self._ai_art_preview = None
+            self._publish_status()
+            self.log("AI art preview cleared")
         elif command == "generate_ai_message":
             self.create_task(self._handle_generate_ai_message(payload))
         else:
@@ -473,6 +482,32 @@ class VestaboardControllerApp(hass.Hass):
             )
         except Exception as exc:
             self.log(f"generate_ai_art failed: {exc!r}", level="ERROR")
+
+    async def _handle_generate_ai_art_preview(self, payload: dict) -> None:
+        """Generate AI pixel art and store as preview — does NOT push to board."""
+        auto_id, automation = self._find_automation(
+            "art_generated_by_ai", "ai_art_generator"
+        )
+        if automation is None:
+            self.log(
+                "generate_ai_art_preview: art_generated_by_ai automation not active",
+                level="WARNING",
+            )
+            return
+        subject = str(payload.get("subject", "abstract art"))
+        try:
+            grid = await automation.generate_frame(subject=subject)
+            self._ai_art_preview = {
+                "characters": grid,
+                "subject": subject,
+                "generated_at": time.time(),
+            }
+            self._publish_status()
+            self.log(
+                f"generate_ai_art_preview: preview ready for subject={subject!r}",
+            )
+        except Exception as exc:
+            self.log(f"generate_ai_art_preview failed: {exc!r}", level="ERROR")
 
     async def _handle_generate_ai_message(self, payload: dict) -> None:
         """Generate and push an AI message from MessageGeneratedByAiAutomation."""
@@ -1029,6 +1064,7 @@ class VestaboardControllerApp(hass.Hass):
             "fallback_count": len(state.fallback_stack),
             "all_automations": all_automations,
             "last_write_ok": self._last_write_ok,
+            "ai_art_preview": self._ai_art_preview,
             "queue_state": {
                 "pending": [
                     {

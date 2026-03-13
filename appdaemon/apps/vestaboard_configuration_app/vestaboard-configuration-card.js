@@ -35,13 +35,11 @@ const COLOR_NAMES = {
   67: "Blue", 68: "Violet", 69: "White", 70: "Black",
 };
 
-/* Palette: all character codes in display order */
-const PALETTE_CODES = [
-  0,
+const PALETTE_COLOR_CODES = [0, 63, 64, 65, 66, 67, 68, 69];
+const PALETTE_CHARACTER_CODES = [
   ...Array.from({ length: 26 }, (_, i) => i + 1),
   36, ...Array.from({ length: 9 }, (_, i) => i + 27),
   37, 38, 39, 40, 41, 42, 44, 46, 47, 48, 49, 50, 52, 53, 54, 55, 56, 59, 60,
-  63, 64, 65, 66, 67, 68, 69, 70,
 ];
 
 const VBC_ROWS = 6;
@@ -157,7 +155,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._librarySort = "newest";
     this._libraryFilterCreator = "All";
     this._libraryFilterRating = 0;
-    this._librarySubTab = "messages"; // "messages" or "art"
+    this._librarySubTab = "art"; // "messages" or "art"
 
     // Automation / Store state (pending edits keyed by automation_id)
     this._automationEdits = {};
@@ -174,7 +172,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     // Delete confirmation
     this._confirmDeleteId = null;
 
-    // AI art result (stored locally until pushed/saved)
+    // AI art preview/result from backend status
+    this._artPreview = null;
     this._artResultFrame = null;
     this._artGenerating = false;
   }
@@ -225,7 +224,11 @@ class VestaboardConfigurationCard extends HTMLElement {
     const s = this._hass?.states?.[this._config.status_entity];
     if (!s) return null;
     const a = s.attributes || {};
-    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${a.generated_art_frame ? "art" : ""}`;
+    const preview = a.ai_art_preview;
+    const previewStamp = preview && typeof preview === "object"
+      ? `${preview.generated_at || ""}|${preview.subject || ""}`
+      : "";
+    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${previewStamp}`;
   }
 
   _sensorState() {
@@ -254,11 +257,23 @@ class VestaboardConfigurationCard extends HTMLElement {
   }
 
   _loadArtResult() {
-    const artFrame = this._sensorAttr("generated_art_frame", null);
-    if (artFrame && Array.isArray(artFrame) && artFrame.length === VBC_ROWS) {
+    const preview = this._parseJsonAttr("ai_art_preview", null);
+    const artFrame = preview?.characters;
+    if (preview && Array.isArray(artFrame) && artFrame.length === VBC_ROWS) {
+      this._artPreview = preview;
       this._artResultFrame = artFrame;
       this._artGenerating = false;
+    } else if (!preview && !this._artGenerating) {
+      this._artPreview = null;
+      this._artResultFrame = null;
     }
+  }
+
+  _clearArtPreview() {
+    this._artPreview = null;
+    this._artResultFrame = null;
+    this._artGenerating = false;
+    this._callRelay("clear_art_preview", {});
   }
 
   /* ── Relay ──────────────────────────────────────────────────────── */
@@ -410,33 +425,36 @@ class VestaboardConfigurationCard extends HTMLElement {
 
   _wrapText(text, maxLines, width) {
     if (!text) return [];
-    const words = text.split(" ");
     const lines = [];
     let current = "";
 
-    for (const word of words) {
-      if (lines.length >= maxLines) break;
-      if (!word) continue;
+    const tokens = text.match(/(\n| +|[^ \n]+)/g) || [];
 
-      if (word.length > width) {
-        if (current) {
-          lines.push(current);
-          current = "";
-          if (lines.length >= maxLines) break;
-        }
-        for (let i = 0; i < word.length; i += width) {
-          if (lines.length >= maxLines) break;
-          lines.push(word.slice(i, i + width));
-        }
+    for (let token of tokens) {
+      if (lines.length >= maxLines) break;
+
+      if (token === "\n") {
+        lines.push(current);
+        current = "";
         continue;
       }
 
-      const candidate = current ? `${current} ${word}` : word;
-      if (candidate.length <= width) {
-        current = candidate;
-      } else {
-        if (current) lines.push(current);
-        current = word;
+      while (token.length > 0 && lines.length < maxLines) {
+        const remaining = width - current.length;
+
+        if (token.length <= remaining) {
+          current += token;
+          token = "";
+          continue;
+        }
+
+        if (current.length === 0) {
+          lines.push(token.slice(0, width));
+          token = token.slice(width);
+        } else {
+          lines.push(current);
+          current = "";
+        }
       }
     }
 
@@ -502,13 +520,12 @@ class VestaboardConfigurationCard extends HTMLElement {
 
   _render() {
     // Focus guard: skip render while user is typing in a text field.
-    // Checkboxes are excluded so that toggling one immediately
-    // shows/hides dependent inputs without waiting for the next hass update.
+    // Checkboxes and selects are excluded so dependent UI updates show
+    // immediately while keeping text entry stable.
     const active = this.shadowRoot?.activeElement;
     if (active && (
       (active.tagName === "INPUT" && active.type !== "checkbox") ||
-      active.tagName === "TEXTAREA" ||
-      active.tagName === "SELECT"
+      active.tagName === "TEXTAREA"
     )) {
       return;
     }
@@ -597,8 +614,11 @@ class VestaboardConfigurationCard extends HTMLElement {
       modeContent = this._renderTextMode();
     }
 
-    const creatorOptions = (creators || [])
-      .map((c) => `<option value="${this._esc(c)}" ${c === this._editorCreator ? "selected" : ""}>${this._esc(c)}</option>`)
+    const creatorButtons = [...new Set((creators || []).map((c) => c === "Anonymous" ? "Guest" : c))]
+      .map((c) => {
+        const selected = c === this._editorCreator;
+        return `<button class="creator-chip ${selected ? "selected" : ""}" data-action="set-creator-btn" data-creator="${this._esc(c)}" type="button">${this._esc(c)}</button>`;
+      })
       .join("");
 
     const stars = Array.from({ length: 5 }, (_, i) => {
@@ -610,7 +630,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       <div class="editor-section">
         ${modeToggle}
 
-        <div class="editor-grid-wrap">
+        <div class="editor-grid-wrap ${this._editorMode === "text" ? "editor-grid-wrap-text" : "editor-grid-wrap-paint"}">
           ${this._renderGridHTML(displayGrid, cellSize, gap, radius, this._editorMode === "paint", "editor")}
         </div>
 
@@ -620,7 +640,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         <div class="save-section">
           <div class="save-row">
             <label class="field-label">Creator</label>
-            <select class="vbc-select" data-action="set-creator">${creatorOptions}</select>
+            <div class="creator-chip-list">${creatorButtons}</div>
           </div>
           <div class="save-row">
             <label class="field-label">Name</label>
@@ -652,39 +672,55 @@ class VestaboardConfigurationCard extends HTMLElement {
   }
 
   _renderPaintMode() {
-    const paletteCells = PALETTE_CODES.map((code) => {
+    const renderPaletteCell = (code, sizeClass) => {
       const isColor = COLOR_MAP[code];
-      const bg = isColor || "rgba(0,0,0,0.22)";
+      const isErase = code === 0;
+      const bg = isColor || (isErase ? "#000" : "rgba(0,0,0,0.22)");
       const ch = isColor ? "" : (CODE_TO_CHAR[code] || "");
       const selected = code === this._selectedPaletteCode;
-      const label = isColor ? COLOR_NAMES[code] : (ch === " " ? "Space" : ch);
-      return `<div class="palette-cell ${selected ? "selected" : ""}" data-action="select-palette" data-code="${code}" style="background:${bg};" title="${label}">${this._esc(ch)}</div>`;
-    }).join("");
+      const label = isColor ? COLOR_NAMES[code] : (isErase ? "Erase" : ch);
+      return `<div class="palette-cell ${sizeClass} ${selected ? "selected" : ""}" data-action="select-palette" data-code="${code}" style="background:${bg};" title="${label}">${isErase ? "" : this._esc(ch)}</div>`;
+    };
+
+    const colorCells = PALETTE_COLOR_CODES.map((code) => renderPaletteCell(code, "palette-cell-color")).join("");
+    const midpoint = Math.ceil(PALETTE_CHARACTER_CODES.length / 2);
+    const charRowOne = PALETTE_CHARACTER_CODES
+      .slice(0, midpoint)
+      .map((code) => renderPaletteCell(code, "palette-cell-char"))
+      .join("");
+    const charRowTwo = PALETTE_CHARACTER_CODES
+      .slice(midpoint)
+      .map((code) => renderPaletteCell(code, "palette-cell-char"))
+      .join("");
 
     return `
       <div class="palette-section">
-        <div class="palette-strip">${paletteCells}</div>
-        ${COLOR_MAP[this._selectedPaletteCode] ? `<button class="vbc-btn vbc-btn-secondary vbc-btn-sm" data-action="apply-border">Apply Border</button>` : ""}
+        <div class="palette-strip">
+          <div class="palette-colors">${colorCells}</div>
+          <div class="palette-chars">
+            <div class="palette-char-row">${charRowOne}</div>
+            <div class="palette-char-row">${charRowTwo}</div>
+          </div>
+        </div>
         <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="clear-grid">Clear Grid</button>
       </div>
     `;
   }
 
   _renderTextMode() {
-    const borderOptions = [
-      `<option value="" ${this._borderColor === null ? "selected" : ""}>None</option>`,
-      ...Object.entries(COLOR_NAMES).map(
-        ([code, name]) =>
-          `<option value="${code}" ${this._borderColor === Number(code) ? "selected" : ""}>${name}</option>`
-      ),
-    ].join("");
+    const borderTiles = PALETTE_COLOR_CODES.map((code) => {
+      const selected = (code === 0 && this._borderColor === null) || this._borderColor === code;
+      const bg = code === 0 ? "#000" : COLOR_MAP[code];
+      const label = code === 0 ? "No Border" : COLOR_NAMES[code];
+      return `<button class="border-tile ${selected ? "selected" : ""}" type="button" data-action="set-border-tile" data-code="${code}" style="background:${bg};" title="${label}"></button>`;
+    }).join("");
 
     return `
       <div class="text-mode-section">
         <textarea class="vbc-textarea" data-action="set-text" maxlength="80" placeholder="Type your message (max 80 chars)...">${this._esc(this._textInput)}</textarea>
         <div class="text-mode-row">
           <label class="field-label">Border</label>
-          <select class="vbc-select" data-action="set-border">${borderOptions}</select>
+          <div class="border-tile-list">${borderTiles}</div>
         </div>
         <div class="char-count">${this._textInput.length}/80</div>
       </div>
@@ -725,8 +761,8 @@ class VestaboardConfigurationCard extends HTMLElement {
       <div class="library-section">
         <!-- Sub-tabs for Messages / Art -->
         <div class="sub-tab-bar">
-          <button class="sub-tab-btn ${this._librarySubTab === "messages" ? "active" : ""}" data-action="lib-subtab" data-subtab="messages">Messages</button>
           <button class="sub-tab-btn ${this._librarySubTab === "art" ? "active" : ""}" data-action="lib-subtab" data-subtab="art">Art</button>
+          <button class="sub-tab-btn ${this._librarySubTab === "messages" ? "active" : ""}" data-action="lib-subtab" data-subtab="messages">Messages</button>
         </div>
 
         <div class="library-controls">
@@ -756,6 +792,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     const miniRadius = 1;
     const stars = "\u2605".repeat(frame.rating || 0) + "\u2606".repeat(5 - (frame.rating || 0));
     const isConfirming = this._confirmDeleteId === frame.frame_id;
+    const moveLabel = frame.category === "art" ? "Move to Messages" : "Move to Art";
+    const moveCategory = frame.category === "art" ? "message" : "art";
 
     return `
       <div class="lib-frame-card">
@@ -771,6 +809,7 @@ class VestaboardConfigurationCard extends HTMLElement {
           <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-view" data-frame-id="${this._esc(frame.frame_id)}" title="View">View</button>
           <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-edit" data-frame-id="${this._esc(frame.frame_id)}" title="Edit">Edit</button>
           <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-push" data-frame-id="${this._esc(frame.frame_id)}" title="Push">Push</button>
+          <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-move" data-frame-id="${this._esc(frame.frame_id)}" data-category="${moveCategory}" title="${moveLabel}">${moveLabel}</button>
           ${isConfirming
             ? `<button class="vbc-btn vbc-btn-danger vbc-btn-xs" data-action="lib-delete-confirm" data-frame-id="${this._esc(frame.frame_id)}">Confirm</button>
                <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-delete-cancel">Cancel</button>`
@@ -798,8 +837,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         <div class="ai-art-result-actions">
           <button class="vbc-btn vbc-btn-secondary vbc-btn-sm" data-action="art-push">Push to Board</button>
           <button class="vbc-btn vbc-btn-secondary vbc-btn-sm" data-action="art-edit">Edit in Editor</button>
-          <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="art-save-library">
-            <span class="star filled">\u2605</span> Save to Library
+          <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="art-quick-save">
+            Quick Save
           </button>
         </div>
       </div>
@@ -842,8 +881,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     const edits = this._automationEdits[auto.id] || {};
     const enabled = edits.enabled !== undefined ? edits.enabled : auto.enabled;
     const isExpanded = this._expandedAutoId === auto.id;
+    const hasDirtyConfig = Object.keys(edits).some((k) => k !== "enabled");
     const dotColor = enabled ? "var(--vbc-success, #4caf50)" : "var(--vbc-muted, #9e9e9e)";
-    const hasSavedFeedback = this._storeSavedFeedback[auto.id] && (Date.now() - this._storeSavedFeedback[auto.id] < 2000);
 
     // Preview grid
     const previewGrid = auto.preview_frame || null;
@@ -873,11 +912,10 @@ class VestaboardConfigurationCard extends HTMLElement {
               ${enabled ? "Installed" : "Install"}
             </button>
             <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="store-expand" data-auto-id="${this._esc(auto.id)}">
-              ${isExpanded ? "Hide Config" : "Configure"}
+              ${isExpanded ? (hasDirtyConfig ? "Discard & Close" : "Hide Config") : "Configure"}
             </button>
           </div>
           ${configHTML}
-          ${hasSavedFeedback ? '<div class="saved-flash">Saved!</div>' : ""}
         </div>
       </div>
     `;
@@ -935,11 +973,14 @@ class VestaboardConfigurationCard extends HTMLElement {
     }).join("");
 
     const dirty = Object.keys(edits).filter((k) => k !== "enabled").length > 0;
+    const hasSavedFeedback = this._storeSavedFeedback[auto.id] && (Date.now() - this._storeSavedFeedback[auto.id] < 2000);
 
     return `
       <div class="auto-config-section">
         ${fields}
-        ${dirty ? `<button class="vbc-btn vbc-btn-primary vbc-btn-sm" data-action="store-save-config" data-auto-id="${this._esc(auto.id)}">Save Config</button>` : ""}
+        <button class="vbc-btn vbc-btn-primary vbc-btn-sm" data-action="store-save-config" data-auto-id="${this._esc(auto.id)}" ${dirty ? "" : "disabled"}>
+          ${hasSavedFeedback ? "Saved!" : "Save Config"}
+        </button>
       </div>
     `;
   }
@@ -1139,8 +1180,8 @@ class VestaboardConfigurationCard extends HTMLElement {
 
     // Update cell visually without full re-render
     const isColor = COLOR_MAP[this._selectedPaletteCode];
-    const bg = isColor || "rgba(0,0,0,0.22)";
-    const ch = isColor ? "" : (CODE_TO_CHAR[this._selectedPaletteCode] || "");
+    const bg = isColor || (this._selectedPaletteCode === 0 ? "#000" : "rgba(0,0,0,0.22)");
+    const ch = (isColor || this._selectedPaletteCode === 0) ? "" : (CODE_TO_CHAR[this._selectedPaletteCode] || "");
     el.style.background = bg;
     el.textContent = ch;
   }
@@ -1150,6 +1191,9 @@ class VestaboardConfigurationCard extends HTMLElement {
 
     switch (action) {
       case "tab":
+        if (this._activeTab === "store" && el.dataset.tab !== "store" && this._artPreview) {
+          this._clearArtPreview();
+        }
         this._activeTab = el.dataset.tab;
         this._render();
         break;
@@ -1171,19 +1215,20 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._render();
         break;
 
-      case "apply-border": {
-        const code = this._selectedPaletteCode;
-        if (COLOR_MAP[code]) {
-          for (let c = 0; c < VBC_COLS; c++) {
-            this._editorGrid[0][c] = code;
-            this._editorGrid[5][c] = code;
-          }
-          for (let r = 0; r < VBC_ROWS; r++) {
-            this._editorGrid[r][0] = code;
-            this._editorGrid[r][21] = code;
-          }
-          this._render();
+      case "set-creator-btn": {
+        const creator = el.dataset.creator || "";
+        this._editorCreator = this._editorCreator === creator ? "" : creator;
+        this._render();
+        break;
+      }
+
+      case "set-border-tile": {
+        const code = parseInt(el.dataset.code, 10);
+        this._borderColor = code === 0 ? null : code;
+        if (this._editorMode === "text") {
+          this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
         }
+        this._render();
         break;
       }
 
@@ -1252,6 +1297,13 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._pushLibraryFrame(el.dataset.frameId);
         break;
 
+      case "lib-move":
+        this._callRelay("move_frame", {
+          frame_id: el.dataset.frameId,
+          category: el.dataset.category,
+        });
+        break;
+
       case "lib-delete":
         this._confirmDeleteId = el.dataset.frameId;
         this._render();
@@ -1292,7 +1344,21 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       case "store-expand": {
         const autoId = el.dataset.autoId;
-        this._expandedAutoId = this._expandedAutoId === autoId ? null : autoId;
+        if (this._expandedAutoId === autoId) {
+          const edits = this._automationEdits[autoId] || {};
+          const hasDirtyConfig = Object.keys(edits).some((k) => k !== "enabled");
+          if (hasDirtyConfig) {
+            const { enabled } = edits;
+            if (enabled !== undefined) {
+              this._automationEdits[autoId] = { enabled };
+            } else {
+              delete this._automationEdits[autoId];
+            }
+          }
+          this._expandedAutoId = null;
+        } else {
+          this._expandedAutoId = autoId;
+        }
         this._render();
         break;
       }
@@ -1304,6 +1370,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       case "generate-art":
         if (this._artSubject.trim()) {
           this._artGenerating = true;
+          this._artPreview = null;
           this._artResultFrame = null;
           this._callRelay("generate_art", { subject: this._artSubject.trim() });
           this._render();
@@ -1312,7 +1379,13 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       case "art-push":
         if (this._artResultFrame) {
-          this._callRelay("push_frame", { frame: this._artResultFrame });
+          this._callRelay("push_frame", {
+            frame: this._artResultFrame,
+            ttl_minutes: 30,
+            should_expire: true,
+          });
+          this._clearArtPreview();
+          this._render();
         }
         break;
 
@@ -1321,16 +1394,18 @@ class VestaboardConfigurationCard extends HTMLElement {
           this._editorGrid = vbcCloneGrid(this._artResultFrame);
           this._editorMode = "paint";
           this._activeTab = "editor";
+          this._clearArtPreview();
           this._render();
         }
         break;
 
-      case "art-save-library":
+      case "art-quick-save":
         if (this._artResultFrame) {
-          this._callRelay("save_art_to_library", {
+          this._callRelay("quick_save_art", {
             frame: this._artResultFrame,
-            name: this._artSubject || "AI Art",
           });
+          this._clearArtPreview();
+          this._render();
         }
         break;
 
@@ -1373,9 +1448,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         if (fieldType === "number") {
           this._automationEdits[autoId][field] = parseInt(el.value, 10) || 0;
         }
-        // Show save button if not already visible
-        const saveBtn = this.shadowRoot.querySelector(`[data-action="store-save-config"][data-auto-id="${autoId}"]`);
-        if (!saveBtn) this._render();
+        this._updateStoreSaveButton(autoId);
+        this._updateStoreExpandButton(autoId);
         break;
       }
 
@@ -1388,20 +1462,6 @@ class VestaboardConfigurationCard extends HTMLElement {
     const action = el.dataset.action;
 
     switch (action) {
-      case "set-creator":
-        this._editorCreator = el.value;
-        break;
-
-      case "set-border": {
-        const val = el.value;
-        this._borderColor = val ? parseInt(val, 10) : null;
-        if (this._editorMode === "text") {
-          this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
-          this._render();
-        }
-        break;
-      }
-
       case "toggle-should-expire":
         this._editorShouldExpire = el.checked;
         this._render();
@@ -1446,9 +1506,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         if (fieldType === "bool") {
           this._automationEdits[autoId][field] = el.checked;
         }
-        // Show save button
-        const saveBtn = this.shadowRoot.querySelector(`[data-action="store-save-config"][data-auto-id="${autoId}"]`);
-        if (!saveBtn) this._render();
+        this._updateStoreSaveButton(autoId);
+        this._updateStoreExpandButton(autoId);
         break;
       }
 
@@ -1466,10 +1525,26 @@ class VestaboardConfigurationCard extends HTMLElement {
         if (!el) continue;
         const code = grid[r][c] || 0;
         const isColor = COLOR_MAP[code];
-        el.style.background = isColor || "rgba(0,0,0,0.22)";
-        el.textContent = isColor ? "" : (CODE_TO_CHAR[code] || "");
+        el.style.background = isColor || (code === 0 ? "#000" : "rgba(0,0,0,0.22)");
+        el.textContent = (isColor || code === 0) ? "" : (CODE_TO_CHAR[code] || "");
       }
     }
+  }
+
+  _updateStoreSaveButton(autoId) {
+    const saveBtn = this.shadowRoot?.querySelector(`[data-action="store-save-config"][data-auto-id="${autoId}"]`);
+    if (!saveBtn) return;
+    const edits = this._automationEdits[autoId] || {};
+    const dirty = Object.keys(edits).some((k) => k !== "enabled");
+    saveBtn.disabled = !dirty;
+  }
+
+  _updateStoreExpandButton(autoId) {
+    const expandBtn = this.shadowRoot?.querySelector(`[data-action="store-expand"][data-auto-id="${autoId}"]`);
+    if (!expandBtn || this._expandedAutoId !== autoId) return;
+    const edits = this._automationEdits[autoId] || {};
+    const dirty = Object.keys(edits).some((k) => k !== "enabled");
+    expandBtn.textContent = dirty ? "Discard & Close" : "Hide Config";
   }
 
   /* ── Action methods ─────────────────────────────────────────────── */
@@ -1478,22 +1553,26 @@ class VestaboardConfigurationCard extends HTMLElement {
     const grid = this._editorMode === "text"
       ? this._textToGrid(this._textInput, this._borderColor)
       : this._editorGrid;
+    const creator = this._editorCreator || "Anonymous";
+    const category = this._editorMode === "paint" ? "art" : "message";
 
     if (this._editingFrameId) {
       this._callRelay("update_frame", {
         frame_id: this._editingFrameId,
         frame: grid,
         name: this._editorName,
-        creator: this._editorCreator,
+        creator,
         rating: this._editorRating,
+        category,
       });
       this._editingFrameId = null;
     } else {
       this._callRelay("save_frame", {
         frame: grid,
         name: this._editorName,
-        creator: this._editorCreator,
+        creator,
         rating: this._editorRating,
+        category,
       });
     }
   }
@@ -1834,11 +1913,30 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .palette-strip {
         display: flex;
-        flex-wrap: wrap;
-        gap: 3px;
+        align-items: stretch;
+        gap: 6px;
         padding: 4px;
         background: var(--vbc-surface-variant);
         border-radius: var(--vbc-radius-sm);
+        overflow-x: auto;
+      }
+
+      .palette-colors {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+      }
+
+      .palette-chars {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        min-width: max-content;
+      }
+
+      .palette-char-row {
+        display: flex;
+        gap: 3px;
       }
 
       .palette-cell {
@@ -1854,6 +1952,18 @@ class VestaboardConfigurationCard extends HTMLElement {
         cursor: pointer;
         user-select: none;
         transition: outline 100ms;
+        flex-shrink: 0;
+      }
+
+      .palette-cell-color {
+        width: 48px;
+        height: 51px;
+        border-radius: 6px;
+      }
+
+      .palette-cell-char {
+        width: 24px;
+        height: 24px;
       }
 
       .palette-cell.selected {
@@ -1907,6 +2017,59 @@ class VestaboardConfigurationCard extends HTMLElement {
         font-size: 12px;
         font-weight: 500;
         color: var(--vbc-on-surface-secondary);
+      }
+
+      .creator-chip-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        flex: 1;
+      }
+
+      .creator-chip {
+        border: 1px solid var(--vbc-border);
+        background: var(--vbc-surface);
+        color: var(--vbc-on-surface);
+        border-radius: 999px;
+        padding: 8px 12px;
+        min-height: 36px;
+        font-size: 12px;
+        font-weight: 500;
+        font-family: inherit;
+        cursor: pointer;
+        transition: all 150ms;
+      }
+
+      .creator-chip.selected {
+        background: var(--vbc-primary-light);
+        border-color: var(--vbc-primary);
+        color: var(--vbc-primary);
+      }
+
+      .creator-chip:hover {
+        border-color: var(--vbc-primary);
+      }
+
+      .border-tile-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        flex: 1;
+      }
+
+      .border-tile {
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        border: 1px solid rgba(255,255,255,0.14);
+        cursor: pointer;
+        padding: 0;
+        flex-shrink: 0;
+      }
+
+      .border-tile.selected {
+        outline: 2px solid var(--vbc-primary);
+        outline-offset: 1px;
       }
 
       .ttl-row {
@@ -2423,6 +2586,103 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .upcoming-countdown {
         color: var(--vbc-primary);
+      }
+
+      @media (orientation: landscape) and (min-width: 900px) {
+        .editor-grid-wrap-text .vb-grid-editor {
+          width: min(40vw, 620px);
+          margin: 0 auto;
+        }
+
+        .text-mode-section {
+          gap: 10px;
+        }
+
+        .text-mode-section .vbc-textarea {
+          min-height: 140px;
+          padding: 12px 14px;
+          font-size: 15px;
+        }
+      }
+
+      @media (orientation: landscape) and (min-width: 1100px) and (max-height: 1200px) {
+        .card-content {
+          gap: 10px;
+        }
+
+        .board-preview {
+          padding: 8px 10px;
+        }
+
+        .preview-info {
+          margin-top: 6px;
+          font-size: 11px;
+        }
+
+        .tab-btn, .mode-btn, .sub-tab-btn {
+          min-height: 40px;
+          padding-top: 8px;
+          padding-bottom: 8px;
+        }
+
+        .editor-section {
+          gap: 10px;
+        }
+
+        .editor-grid-wrap {
+          padding: 6px;
+        }
+
+        .editor-grid-wrap .vb-grid-editor {
+          width: min(62vw, 980px);
+          margin: 0 auto;
+        }
+
+        .palette-strip {
+          gap: 2px;
+          padding: 3px;
+        }
+
+        .palette-colors {
+          gap: 3px;
+        }
+
+        .palette-chars,
+        .palette-char-row {
+          gap: 2px;
+        }
+
+        .palette-cell-char {
+          width: 20px;
+          height: 20px;
+          font-size: 11px;
+        }
+
+        .palette-cell-color {
+          width: 40px;
+          height: 42px;
+        }
+
+        .save-section {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 8px 14px;
+          padding: 10px;
+        }
+
+        .save-row .field-label {
+          width: 52px;
+        }
+
+        .ttl-row,
+        .save-actions {
+          grid-column: 1 / -1;
+        }
+
+        .vbc-input, .vbc-select, .vbc-textarea,
+        .vbc-btn, .checkbox-label {
+          min-height: 40px;
+        }
       }
 
       /* Responsive: single column on small screens */
