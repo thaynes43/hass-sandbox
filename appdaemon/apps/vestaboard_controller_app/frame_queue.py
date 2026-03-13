@@ -282,20 +282,31 @@ class FrameQueue:
         #   through fallback every tick interval.
         # - ttl_s=<int> that expired means the frame actively wants to yield.
         #
-        # So for tick promotion we only proceed when:
-        #   (a) nothing is displayed, OR
-        #   (b) the displayed frame has an explicit TTL that has expired, OR
-        #   (c) there are pending frames (new content waiting to be shown)
+        # Promotion rules:
+        #   (a) nothing displayed → promote
+        #   (b) explicit TTL still active → block (pending frames must wait)
+        #   (c) explicit TTL expired → promote from pending or fallback
+        #   (d) no TTL + pending frames → promote (new content should show)
+        #   (e) no TTL + no pending → hold board (prevent fallback cycling)
         if self._displayed is not None:
             has_explicit_ttl = self._displayed.ttl_s is not None
             explicit_ttl_expired = has_explicit_ttl and _ttl_expired(self._displayed, now)
             has_pending = bool(self._pending)
 
-            if not explicit_ttl_expired and not has_pending:
+            # (b) Explicit TTL still active — block all promotion
+            if has_explicit_ttl and not explicit_ttl_expired:
                 return FrameQueueAction(
                     display_frame=None,
                     dropped_frames=dropped,
-                    reason="TTL still active" if has_explicit_ttl else "no TTL — holding board (tick)",
+                    reason="TTL still active",
+                )
+
+            # (e) No TTL, no pending — hold board to prevent fallback cycling
+            if not has_explicit_ttl and not has_pending:
+                return FrameQueueAction(
+                    display_frame=None,
+                    dropped_frames=dropped,
+                    reason="no TTL — holding board (tick)",
                 )
 
         next_frame = self._next_non_expired(now)

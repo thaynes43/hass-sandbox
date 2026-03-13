@@ -887,6 +887,32 @@ class TestNoneTTLSemantics:
         action = q.push(frame_b, now=1.0)
         assert action.display_frame is frame_b
 
+    def test_explicit_ttl_blocks_pending_during_tick(self):
+        """Pending frames must wait for an active explicit TTL — tick should
+        NOT promote from pending while TTL is active."""
+        q = make_queue()
+
+        # User pushes a frame with 30-minute TTL
+        user_frame = make_frame(source="user", ttl_s=1800, created_at=0.0)
+        q.push(user_frame, now=0.0)
+        assert q._displayed.source == "user"
+
+        # Calendar clock pushes — goes to pending (TTL blocks it)
+        clock_frame = make_frame(source="calendar_clock", ttl_s=None, created_at=15.0)
+        action = q.push(clock_frame, now=15.0)
+        assert action.display_frame is None
+        assert len(q._pending) == 1
+
+        # Tick at 30s — TTL still active (1800s), pending must wait
+        tick = q.tick(now=30.0)
+        assert tick.display_frame is None
+        assert q._displayed.source == "user"
+
+        # Tick at 1801s — TTL expired, now pending promotes
+        tick = q.tick(now=1801.0)
+        assert tick.display_frame is not None
+        assert tick.display_frame.source == "calendar_clock"
+
     def test_explicit_ttl_expired_promotes_from_fallback(self):
         """When a displayed frame has an explicit TTL that expires, tick should
         still promote from fallback normally."""
