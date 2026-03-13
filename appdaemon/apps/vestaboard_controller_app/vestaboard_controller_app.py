@@ -269,7 +269,14 @@ class VestaboardControllerApp(hass.Hass):
             self._handle_clear_board()
         elif command == "set_automation_config":
             automation_id = str(payload.get("automation_id", ""))
-            new_config = dict(payload.get("config") or {})
+            # Support both nested {"config": {...}} and flat top-level fields
+            new_config = payload.get("config")
+            if not isinstance(new_config, dict):
+                # Flat style: everything except automation_id is config
+                new_config = {
+                    k: v for k, v in payload.items()
+                    if k != "automation_id" and v is not None
+                }
             self._handle_set_automation_config(automation_id, new_config)
         elif command == "generate_random_message":
             self.create_task(self._handle_generate_random_message(payload))
