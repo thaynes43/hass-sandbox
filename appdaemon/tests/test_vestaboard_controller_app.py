@@ -273,9 +273,10 @@ class TestCommandRouting:
 
     def test_activate_automation_command(self):
         app = self._setup_app()
-        # Register a mock automation
+        # Register a mock automation with a real config dict (no triggers, no frequency)
         mock_auto = MagicMock()
         mock_auto.get_triggers = MagicMock(return_value=[])
+        mock_auto.config = {}
         app._automations["test_auto"] = mock_auto
 
         app._on_command(
@@ -358,6 +359,36 @@ class TestCommandRouting:
         mock_auto.generate_frame = AsyncMock(return_value=_blank_grid())
         app._automations["ai_art_generator"] = mock_auto
 
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "generate_ai_art", "payload": json.dumps({"subject": "cat"})},
+            {},
+        )
+        assert app.create_task.call_count >= 1
+
+    def test_generate_ai_art_not_generate_art(self):
+        """Regression: controller must recognise 'generate_ai_art', not 'generate_art'.
+        The config app forwards generate_art commands as generate_ai_art; the controller
+        must handle that exact string (Bug 7 regression guard)."""
+        app = self._setup_app()
+        mock_auto = MagicMock()
+        mock_auto.generate_frame = AsyncMock(return_value=_blank_grid())
+        app._automations["ai_art_generator"] = mock_auto
+        app.log.reset_mock()
+
+        # 'generate_art' (old, wrong name) must NOT be handled — it's an unknown command
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "generate_art", "payload": json.dumps({"subject": "cat"})},
+            {},
+        )
+        warning_calls = [c for c in app.log.call_args_list if "WARNING" in str(c)]
+        assert len(warning_calls) >= 1, "generate_art should log a warning (unrecognised command)"
+
+        app.log.reset_mock()
+        app.create_task.reset_mock()
+
+        # 'generate_ai_art' (correct name) must be handled without a warning
         app._on_command(
             "vestaboard_controller_command",
             {"command": "generate_ai_art", "payload": json.dumps({"subject": "cat"})},
@@ -569,6 +600,177 @@ class TestStatusPublishing:
         displayed_frame = attrs["displayed_frame"]
         assert displayed_frame is not None
         assert displayed_frame["characters"] == grid
+
+    def test_publish_status_pending_expires_at_with_expiration(self):
+        """Pending items with expiration_s should have an ISO expires_at string."""
+        app = self._setup_app()
+
+        now = 1710000000.0  # fixed timestamp for deterministic ISO output
+        # Display a frame with active TTL to keep pending items queued
+        displayed = BoardFrame(
+            frame_id="disp",
+            characters=_blank_grid(),
+            source="holder",
+            source_label="Holder",
+            ttl_s=9999,
+            expiration_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+        )
+        app._queue._displayed = displayed
+
+        pending = BoardFrame(
+            frame_id="pending-with-expiry",
+            characters=_blank_grid(),
+            source="event",
+            source_label="Event",
+            ttl_s=60,
+            expiration_s=300,
+            override_ttl=False,
+            created_at=now,
+        )
+        app._queue._pending.append(pending)
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        queue_pending = attrs["queue_state"]["pending"]
+        assert len(queue_pending) == 1
+        item = queue_pending[0]
+        assert item["expires_at"] is not None
+        # Should be an ISO string representing created_at + expiration_s
+        from datetime import datetime, timezone
+        expected_ts = now + 300
+        expected_iso = datetime.fromtimestamp(expected_ts, tz=timezone.utc).isoformat()
+        assert item["expires_at"] == expected_iso
+
+    def test_publish_status_pending_expires_at_null_without_expiration(self):
+        """Pending items without expiration_s should have expires_at=null."""
+        app = self._setup_app()
+
+        now = time.time()
+        displayed = BoardFrame(
+            frame_id="disp",
+            characters=_blank_grid(),
+            source="holder",
+            source_label="Holder",
+            ttl_s=9999,
+            expiration_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+        )
+        app._queue._displayed = displayed
+
+        pending = BoardFrame(
+            frame_id="pending-no-expiry",
+            characters=_blank_grid(),
+            source="clock",
+            source_label="Clock",
+            ttl_s=None,
+            expiration_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        app._queue._pending.append(pending)
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        queue_pending = attrs["queue_state"]["pending"]
+        assert len(queue_pending) == 1
+        assert queue_pending[0]["expires_at"] is None
+
+    def test_publish_status_includes_next_fire_time_when_set(self):
+        """Automations with next_fire_time set should expose it in all_automations."""
+        app = self._setup_app()
+
+        now = time.time()
+        next_fire = now + 600.0  # 10 minutes from now
+
+        mock_auto = MagicMock()
+        mock_auto.name = "MessagesFromLibrary"
+        mock_auto.next_fire_time = next_fire
+        mock_auto.get_preview_frame = MagicMock(return_value=_blank_grid())
+        app._automations["messages_from_library"] = mock_auto
+        app._automation_configs["messages_from_library"] = {"enabled": True}
+        app._active_automations = {"messages_from_library"}
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        entry = attrs["all_automations"][0]
+        assert "next_fire_time" in entry
+        assert entry["next_fire_time"] == next_fire
+
+    def test_publish_status_omits_next_fire_time_when_none(self):
+        """Automations without a scheduled next_fire_time should not include the key."""
+        app = self._setup_app()
+
+        mock_auto = MagicMock()
+        mock_auto.name = "CalendarClock"
+        mock_auto.next_fire_time = None
+        mock_auto.get_preview_frame = MagicMock(return_value=_blank_grid())
+        app._automations["calendar_clock"] = mock_auto
+        app._automation_configs["calendar_clock"] = {"enabled": True}
+        app._active_automations = {"calendar_clock"}
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        entry = attrs["all_automations"][0]
+        assert "next_fire_time" not in entry
+
+    def test_publish_status_includes_preview_frame(self):
+        """Each automation entry should include a preview_frame from get_preview_frame()."""
+        app = self._setup_app()
+
+        preview = [[1] * 22 for _ in range(6)]  # non-blank preview
+
+        mock_auto = MagicMock()
+        mock_auto.name = "ArtFromLibrary"
+        mock_auto.next_fire_time = None
+        mock_auto.get_preview_frame = MagicMock(return_value=preview)
+        app._automations["art_from_library"] = mock_auto
+        app._automation_configs["art_from_library"] = {"enabled": True}
+        app._active_automations = {"art_from_library"}
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        entry = attrs["all_automations"][0]
+        assert "preview_frame" in entry
+        assert entry["preview_frame"] == preview
+        mock_auto.get_preview_frame.assert_called_once()
+
+    def test_publish_status_preview_frame_error_does_not_crash(self):
+        """If get_preview_frame() raises, status publishing continues without preview."""
+        app = self._setup_app()
+
+        mock_auto = MagicMock()
+        mock_auto.name = "BrokenAuto"
+        mock_auto.next_fire_time = None
+        mock_auto.get_preview_frame = MagicMock(side_effect=RuntimeError("oops"))
+        app._automations["broken_auto"] = mock_auto
+        app._automation_configs["broken_auto"] = {"enabled": True}
+        app._active_automations = {"broken_auto"}
+
+        # Must not raise
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        entry = attrs["all_automations"][0]
+        # preview_frame should be absent (not added due to error)
+        assert "preview_frame" not in entry
+
+    def test_publish_status_no_preview_for_unknown_automation(self):
+        """Automations not in _automations dict (unknown type) have no preview_frame."""
+        app = self._setup_app()
+
+        # Config entry with no corresponding instantiated automation object
+        app._automation_configs["ghost_auto"] = {"enabled": False}
+        # Do NOT add to _automations
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        entry = attrs["all_automations"][0]
+        assert "preview_frame" not in entry
+        assert "next_fire_time" not in entry
 
 
 # ---------------------------------------------------------------------------
@@ -1078,3 +1280,307 @@ class TestRandomMessageAutomation:
         # Should log a warning about fallback
         warning_calls = [c for c in mock_app.log.call_args_list if "WARNING" in str(c)]
         assert len(warning_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Type-based automation lookup tests
+# ---------------------------------------------------------------------------
+
+class TestTypeBasedAutomationLookup:
+    """Tests for the type-based automation initialization (Enhancement 5)."""
+
+    def test_type_key_uses_type_for_class_lookup(self):
+        """When config has a 'type' key, class is looked up by type, not by id."""
+        app = _make_app({
+            "automations": {
+                "my_custom_calendar": {
+                    "type": "calendar_summary",
+                    "calendar_entity": "calendar.family",
+                    "enabled": False,  # don't activate (avoids trigger registration)
+                },
+            }
+        })
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._trigger_handles = {}
+        app._automations = {}
+        app._active_automations = set()
+        app._last_write_ok = None
+
+        app._init_automations()
+
+        # Should be instantiated under the custom ID
+        assert "my_custom_calendar" in app._automations
+        from vestaboard_controller_app.automations.calendar_summary import CalendarSummaryAutomation
+        assert isinstance(app._automations["my_custom_calendar"], CalendarSummaryAutomation)
+
+    def test_no_type_key_falls_back_to_id(self):
+        """When no 'type' key is present, automation_id is used for class lookup (backward compat)."""
+        app = _make_app({
+            "automations": {
+                "calendar_clock": {"enabled": False},
+            }
+        })
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._trigger_handles = {}
+        app._automations = {}
+        app._active_automations = set()
+        app._last_write_ok = None
+
+        app._init_automations()
+
+        assert "calendar_clock" in app._automations
+        from vestaboard_controller_app.automations.calendar_clock import CalendarClockAutomation
+        assert isinstance(app._automations["calendar_clock"], CalendarClockAutomation)
+
+    def test_two_calendar_summary_instances_different_ids(self):
+        """Two calendar_summary instances with different IDs and calendar entities."""
+        app = _make_app({
+            "automations": {
+                "calendar_summary_family": {
+                    "type": "calendar_summary",
+                    "calendar_entity": "calendar.family",
+                    "enabled": False,
+                },
+                "calendar_summary_hot_tub": {
+                    "type": "calendar_summary",
+                    "calendar_entity": "calendar.hot_tub_maintenance",
+                    "enabled": False,
+                },
+            }
+        })
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._trigger_handles = {}
+        app._automations = {}
+        app._active_automations = set()
+        app._last_write_ok = None
+
+        app._init_automations()
+
+        from vestaboard_controller_app.automations.calendar_summary import CalendarSummaryAutomation
+        assert "calendar_summary_family" in app._automations
+        assert "calendar_summary_hot_tub" in app._automations
+        assert isinstance(app._automations["calendar_summary_family"], CalendarSummaryAutomation)
+        assert isinstance(app._automations["calendar_summary_hot_tub"], CalendarSummaryAutomation)
+
+        # Each should have its own calendar entity
+        family_entity = app._automations["calendar_summary_family"].config.get("calendar_entity")
+        hot_tub_entity = app._automations["calendar_summary_hot_tub"].config.get("calendar_entity")
+        assert family_entity == "calendar.family"
+        assert hot_tub_entity == "calendar.hot_tub_maintenance"
+
+    def test_type_based_instance_gets_automation_id(self):
+        """Instances with type key should have set_automation_id called."""
+        app = _make_app({
+            "automations": {
+                "cal_work": {
+                    "type": "calendar_summary",
+                    "calendar_entity": "calendar.work",
+                    "enabled": False,
+                },
+            }
+        })
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._trigger_handles = {}
+        app._automations = {}
+        app._active_automations = set()
+        app._last_write_ok = None
+
+        app._init_automations()
+
+        instance = app._automations["cal_work"]
+        assert instance._automation_id == "cal_work"
+
+    def test_unknown_type_key_logs_warning(self):
+        """Unknown type key should log a warning and skip."""
+        app = _make_app({
+            "automations": {
+                "my_thing": {
+                    "type": "nonexistent_type",
+                    "enabled": True,
+                },
+            }
+        })
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._trigger_handles = {}
+        app._automations = {}
+        app._active_automations = set()
+        app._last_write_ok = None
+
+        app._init_automations()
+
+        assert "my_thing" not in app._automations
+        warning_calls = [c for c in app.log.call_args_list if "WARNING" in str(c)]
+        assert any("nonexistent_type" in str(c) for c in warning_calls)
+
+
+# ---------------------------------------------------------------------------
+# CalendarSummary automation tests
+# ---------------------------------------------------------------------------
+
+class TestCalendarSummaryAutomation:
+    def _make_auto(self, config: dict | None = None) -> "CalendarSummaryAutomation":
+        from vestaboard_controller_app.automations.calendar_summary import CalendarSummaryAutomation
+
+        mock_app = MagicMock()
+        mock_app.log = MagicMock()
+        mock_app.get_state = MagicMock(return_value=None)
+        mock_app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        mock_app._push_automation_frame = MagicMock()
+        auto = CalendarSummaryAutomation(app=mock_app, config=config or {})
+        return auto
+
+    def test_get_triggers_with_calendar_entity(self):
+        auto = self._make_auto({"calendar_entity": "calendar.family"})
+        triggers = auto.get_triggers()
+
+        # Should have 1 state trigger + 1 interval trigger
+        state_triggers = [t for t in triggers if t["type"] == "state"]
+        interval_triggers = [t for t in triggers if t["type"] == "time_interval"]
+        assert len(state_triggers) == 1
+        assert state_triggers[0]["entity_id"] == "calendar.family"
+        assert len(interval_triggers) == 1
+
+    def test_get_triggers_without_calendar_entity(self):
+        auto = self._make_auto({})
+        triggers = auto.get_triggers()
+
+        # Should only have interval trigger, no state trigger
+        state_triggers = [t for t in triggers if t["type"] == "state"]
+        interval_triggers = [t for t in triggers if t["type"] == "time_interval"]
+        assert len(state_triggers) == 0
+        assert len(interval_triggers) == 1
+
+    def test_fire_frame_no_entity_logs_warning(self):
+        auto = self._make_auto({})
+        _run(auto._fire_frame_if_event())
+
+        warning_calls = [c for c in auto.app.log.call_args_list if "WARNING" in str(c)]
+        assert any("calendar_entity" in str(c).lower() for c in warning_calls)
+
+    def test_fire_frame_uses_automation_id_as_source(self):
+        """The automation_id should be used as the source when pushing frames."""
+        from datetime import datetime, timezone, timedelta
+        auto = self._make_auto({"calendar_entity": "calendar.family"})
+        auto.set_automation_id("cal_family")
+
+        # Mock an active event
+        now = datetime.now(tz=timezone.utc)
+        end = now + timedelta(hours=1)
+        auto.app.get_state.return_value = {
+            "state": "on",
+            "attributes": {
+                "message": "Dinner",
+                "start_time": now.isoformat(),
+                "end_time": end.isoformat(),
+            },
+        }
+
+        _run(auto._fire_frame_if_event())
+
+        auto.app._push_automation_frame.assert_called_once()
+        call_kwargs = auto.app._push_automation_frame.call_args[1]
+        assert call_kwargs["automation_id"] == "cal_family"
+
+    def test_set_automation_id_updates_name(self):
+        auto = self._make_auto({})
+        auto.set_automation_id("cal_hot_tub")
+        assert "cal_hot_tub" in auto.name
+
+    def test_set_automation_id_default_keeps_name(self):
+        auto = self._make_auto({})
+        auto.set_automation_id("calendar_summary")
+        assert auto.name == "CalendarSummary"
+
+    def test_ttl_minutes_config_overrides_dynamic_ttl(self):
+        """When ttl_minutes is set in config, it overrides the dynamic TTL."""
+        from datetime import datetime, timezone, timedelta
+        auto = self._make_auto({
+            "calendar_entity": "calendar.test",
+            "ttl_minutes": 10,
+        })
+        auto.set_automation_id("test_cal")
+
+        now = datetime.now(tz=timezone.utc)
+        end = now + timedelta(hours=2)
+        auto.app.get_state.return_value = {
+            "state": "on",
+            "attributes": {
+                "message": "Meeting",
+                "start_time": now.isoformat(),
+                "end_time": end.isoformat(),
+            },
+        }
+
+        _run(auto._fire_frame_if_event())
+
+        call_kwargs = auto.app._push_automation_frame.call_args[1]
+        assert call_kwargs["ttl_s"] == 600  # 10 minutes * 60
+
+    def test_rotation_interval_throttles_repeat_push(self):
+        """rotation_interval_hours should prevent pushing the same event too quickly."""
+        from datetime import datetime, timezone, timedelta
+        import time as _time
+
+        auto = self._make_auto({
+            "calendar_entity": "calendar.test",
+            "rotation_interval_hours": 1,
+        })
+        auto.set_automation_id("test_cal")
+
+        now = datetime.now(tz=timezone.utc)
+        end = now + timedelta(hours=2)
+        auto.app.get_state.return_value = {
+            "state": "on",
+            "attributes": {
+                "message": "Meeting",
+                "start_time": now.isoformat(),
+                "end_time": end.isoformat(),
+            },
+        }
+
+        # First push should succeed
+        _run(auto._fire_frame_if_event())
+        assert auto.app._push_automation_frame.call_count == 1
+
+        # Second push should be throttled
+        _run(auto._fire_frame_if_event())
+        assert auto.app._push_automation_frame.call_count == 1  # still 1
+
+    def test_time_before_event_hours_overrides_reminder_minutes(self):
+        """time_before_event_hours should override reminder_minutes for the reminder window."""
+        from datetime import datetime, timezone, timedelta
+
+        # Event starts 2 hours from now — default 15min reminder would miss it,
+        # but time_before_event_hours=3 should catch it.
+        auto = self._make_auto({
+            "calendar_entity": "calendar.test",
+            "time_before_event_hours": 3,
+        })
+        auto.set_automation_id("test_cal")
+
+        now = datetime.now(tz=timezone.utc)
+        start = now + timedelta(hours=2)
+        end = start + timedelta(hours=1)
+        auto.app.get_state.return_value = {
+            "state": "off",
+            "attributes": {
+                "message": "Future Event",
+                "start_time": start.isoformat(),
+                "end_time": end.isoformat(),
+            },
+        }
+
+        _run(auto._fire_frame_if_event())
+        assert auto.app._push_automation_frame.call_count == 1
+
+    def test_generate_frame_returns_6x22(self):
+        auto = self._make_auto({"calendar_entity": "calendar.test"})
+        grid = _run(auto.generate_frame())
+        assert len(grid) == 6
+        for row in grid:
+            assert len(row) == 22

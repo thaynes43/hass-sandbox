@@ -530,24 +530,20 @@ vestaboard_controller:
   vestaboard_ip_env: VESTABOARD_IP
   vestaboard_api_key_env: VESTABOARD_API_KEY
   tick_interval_s: 15
+  frame_library_path: /media/vestaboard/frame-library.json
+  automation_config_path: /media/vestaboard/automation-config.yaml
   automations:
-    calendar_clock:
-      enabled: true
-    random_message:
-      enabled: false
+    calendar_clock: {}
+    messages_from_library:
       ai_provider_conf:
         simple_text: openai-default
-    random_art:
-      enabled: false
-    ai_art_generator:
-      enabled: false
+    art_from_library: {}
+    art_generated_by_ai:
       ai_provider_conf:
         simple_text: openai-default
-    calendar_summary:
-      enabled: false
-      calendar_entities:
-        - calendar.family
-      reminder_minutes: 15
+    calendar_summary_family:
+      type: calendar_summary
+      calendar_entity: calendar.family
 
 vestaboard_configuration:
   module: vestaboard_configuration_app.vestaboard_configuration_app

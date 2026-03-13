@@ -76,8 +76,83 @@ class CalendarClockAutomation(BoardAutomation):
     """
 
     name = "CalendarClock"
-    default_ttl_s = None       # hold indefinitely
+    default_ttl_s = None       # freely replaceable — no TTL protection
     default_expiration_s = None
+    default_should_expire = False
+
+    DEFAULT_UI_CONFIG = {
+        "enabled": True,
+        "ttl_minutes": None,
+        "should_expire": False,
+    }
+
+    @classmethod
+    def get_config_schema(cls) -> dict:
+        return {
+            "enabled": {"type": "bool", "label": "Enabled", "default": True},
+            "ttl_minutes": {"type": "int", "label": "TTL (minutes)", "min": 1, "max": 1440, "default": None},
+            "should_expire": {"type": "bool", "label": "Should Expire", "default": False},
+        }
+
+    def get_preview_frame(self) -> list[list[int]]:
+        """Return a representative calendar+clock preview frame.
+
+        Shows a March calendar (month 3: green/yellow colors) with Wednesday,
+        March 12 highlighted and a sample time on the right pane.
+        """
+        # March colors: tile_day=green(66), tile_today=yellow(65)
+        tile_day = COLOR_CODES["green"]    # 66
+        tile_today = COLOR_CODES["yellow"] # 65
+
+        # March 2025: first day is Saturday (weekday=5), sun_offset=(5+1)%7=6
+        # So week 0: days 1 positions 6 only; week 1: days 2-8; etc.
+        # For a clean preview use a representative 5-week layout.
+        # Build a simplified 5x7 calendar where day 12 is highlighted.
+        # March 1 = Saturday -> sun_offset = 6
+        sun_offset = 6
+        days_in_month = 31
+        today = 12
+
+        cal_rows: list[list[int]] = []
+        for week in range(5):
+            row_cells: list[int] = []
+            for dow in range(7):
+                cell = week * 7 + dow
+                daynum = cell - sun_offset + 1
+                if daynum < 1 or daynum > days_in_month:
+                    row_cells.append(_BLACK)
+                elif daynum == today:
+                    row_cells.append(tile_today)
+                else:
+                    row_cells.append(tile_day)
+            cal_rows.append(row_cells)
+
+        # Right pane (13 cols): DOW, MONTH+DATE, blank, TIME, blank
+        sep = [0] * _SEP_COLS
+        blank_right = [0] * _RIGHT_COLS
+
+        dow_str   = "WEDNESDAY    "[:_RIGHT_COLS]  # 13 chars
+        mon_str   = "MARCH 12     "[:_RIGHT_COLS]
+        time_str  = "10:30 AM     "[:_RIGHT_COLS]
+
+        right_pane = [
+            _encode_str_row(dow_str, _RIGHT_COLS),
+            _encode_str_row(mon_str, _RIGHT_COLS),
+            blank_right,
+            _encode_str_row(time_str, _RIGHT_COLS),
+            blank_right,
+        ]
+
+        # Row 0: SMTWTFS header + sep + blank right
+        header_codes = [CHAR_TO_CODE.get(ch, 0) for ch in _DOW_HEADER]
+        grid_row0 = header_codes + sep + blank_right
+
+        grid: list[list[int]] = [grid_row0]
+        for w in range(5):
+            row = cal_rows[w] + sep + right_pane[w]
+            grid.append(row)
+
+        return grid
 
     def get_triggers(self) -> list[dict[str, Any]]:
         return [

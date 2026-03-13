@@ -26,12 +26,18 @@ class BoardFrame:
         source: Machine-readable source identifier (e.g. "calendar_clock").
         source_label: Human-readable label for logging / UI.
         ttl_s: How long (seconds) to hold the board after display before
-            yielding to the next pending frame.  None = hold indefinitely.
+            yielding to the next pending frame.  None = no TTL protection,
+            meaning any frame from another source can freely replace this one.
         expiration_s: Maximum lifetime (seconds) measured from created_at.
             After this the frame is invalid and must be discarded.  None = no
             expiry.
         override_ttl: If True, immediately display this frame even if the
             currently displayed frame still has an active TTL.
+        should_expire: If True, when the TTL runs out the frame is dropped
+            entirely (not moved to the fallback stack).  Use this for
+            time-sensitive content that is no longer relevant after its TTL.
+            When False (default), the frame behaves normally: it moves to
+            fallback so it can be re-shown when pending is empty.
         created_at: Unix timestamp when the frame was created (time.time()).
         displayed_at: Unix timestamp when the frame was first displayed.
             None until the frame is actually shown on the board.
@@ -45,6 +51,7 @@ class BoardFrame:
     expiration_s: Optional[int]
     override_ttl: bool
     created_at: float
+    should_expire: bool = field(default=False)
     displayed_at: Optional[float] = field(default=None)
 
 
@@ -96,9 +103,15 @@ def _is_expired(frame: BoardFrame, now: float) -> bool:
 
 
 def _ttl_expired(frame: BoardFrame, now: float) -> bool:
-    """Return True if the frame's TTL has run out since it was displayed."""
+    """Return True if the frame's TTL has run out since it was displayed.
+
+    When ``ttl_s`` is None the frame has **no TTL protection**, meaning any
+    other source can freely replace it.  This returns ``True`` so that
+    incoming frames from different sources are not blocked.  If an automation
+    wants to *hold* the board it must set an explicit ``ttl_s`` value.
+    """
     if frame.ttl_s is None:
-        return False
+        return True
     if frame.displayed_at is None:
         return False
     return now >= frame.displayed_at + frame.ttl_s
@@ -166,13 +179,22 @@ class FrameQueue:
 
         if should_display_now:
             # Move old displayed to fallback (if it hasn't expired),
-            # but discard same-source frames (they're just stale updates)
-            if (self._displayed is not None
-                    and not _is_expired(self._displayed, now)
-                    and not same_source):
-                self._fallback.append(self._displayed)
-            elif same_source and self._displayed is not None:
+            # but discard same-source frames (they're just stale updates).
+            # Also drop (not fallback) if should_expire=True — the frame has
+            # served its purpose and should not be re-shown.
+            if self._displayed is not None and same_source:
                 dropped.append(self._displayed)
+            elif (self._displayed is not None
+                    and not _is_expired(self._displayed, now)):
+                if self._displayed.should_expire:
+                    self._log(
+                        f"[FrameQueue] push → displacing should_expire frame — "
+                        f"dropping frame={self._displayed.frame_id} "
+                        f"source={self._displayed.source!r} (not moving to fallback)"
+                    )
+                    dropped.append(self._displayed)
+                else:
+                    self._fallback.append(self._displayed)
 
             frame.displayed_at = now
             self._displayed = frame
@@ -276,9 +298,18 @@ class FrameQueue:
         else:
             self._fallback.remove(next_frame)
 
-        # Move old displayed to fallback before promoting
+        # Move old displayed to fallback before promoting, unless should_expire=True
+        # in which case the frame is dropped rather than preserved for fallback.
         if self._displayed is not None and not _is_expired(self._displayed, now):
-            self._fallback.append(self._displayed)
+            if self._displayed.should_expire:
+                self._log(
+                    f"[FrameQueue] tick → TTL expired, should_expire=True — "
+                    f"dropping frame={self._displayed.frame_id} "
+                    f"source={self._displayed.source!r} (not moving to fallback)"
+                )
+                dropped.append(self._displayed)
+            else:
+                self._fallback.append(self._displayed)
 
         next_frame.displayed_at = now
         self._displayed = next_frame

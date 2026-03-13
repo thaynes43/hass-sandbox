@@ -96,12 +96,22 @@ class VestaboardConfigurationApp(hass.Hass):
         self.listen_state(self._on_controller_status, self.CONTROLLER_STATUS_ENTITY, attribute="all")
         self.log("Listening for controller status changes on %s", self.CONTROLLER_STATUS_ENTITY)
 
+        # Immediate sync attempt — controller may already have state from a prior run
+        try:
+            ctrl_state = self.get_state(self.CONTROLLER_STATUS_ENTITY, attribute="all") or {}
+            new_attrs = dict(ctrl_state.get("attributes", {}))
+            if new_attrs:
+                self._controller_attrs = new_attrs
+                self.log("Immediate controller sync — loaded controller attrs", level="DEBUG")
+        except Exception as exc:
+            self.log("Immediate controller sync failed: %r", exc, level="WARNING")
+
         # Publish initial status so the card has data on first load
         self._publish_status()
         self.log("VestaboardConfigurationApp async startup complete")
 
-        # Schedule a delayed read of controller status to cover startup race
-        # (controller may not have published yet when we start)
+        # Schedule a delayed read of controller status as a safety net
+        # (in case controller hasn't published its state yet at this moment)
         self.run_in(self._deferred_controller_sync, 5)
 
     async def _provision_entities(self) -> None:
@@ -318,6 +328,7 @@ class VestaboardConfigurationApp(hass.Hass):
         ctrl_payload = {
             "frame": frame,
             "ttl_minutes": payload.get("ttl_minutes"),
+            "should_expire": payload.get("should_expire", False),
             "respect_ttl": False,
         }
         self._forward_to_controller("push_frame", ctrl_payload)
@@ -362,18 +373,35 @@ class VestaboardConfigurationApp(hass.Hass):
         self.log("toggle_automation automation_id=%r enabled=%r → %s", automation_id, enabled, command)
 
     def _cmd_set_automation_config(self, payload: dict) -> None:
-        """Update TTL/expiration configuration for a board automation."""
+        """Update configuration for a board automation.
+
+        Accepts arbitrary config fields from the store UI and forwards
+        them to the controller.  The ``automation_id`` key is required;
+        the ``config`` dict holds the actual field values to update.
+        Legacy ``ttl_minutes`` / ``expiration_minutes`` at the top level
+        are still supported for backward compatibility.
+        """
         automation_id = payload.get("automation_id")
         if automation_id is None:
             self.log("set_automation_config: missing 'automation_id' in payload", level="WARNING")
             return
-        ctrl_payload = {
-            "automation_id": automation_id,
-            "ttl_minutes": payload.get("ttl_minutes"),
-            "expiration_minutes": payload.get("expiration_minutes"),
-        }
+
+        # New-style: config dict with arbitrary fields
+        config = payload.get("config")
+        if config and isinstance(config, dict):
+            ctrl_payload = {
+                "automation_id": automation_id,
+                **config,
+            }
+        else:
+            # Legacy style: top-level ttl_minutes / expiration_minutes
+            ctrl_payload = {
+                "automation_id": automation_id,
+                "ttl_minutes": payload.get("ttl_minutes"),
+                "expiration_minutes": payload.get("expiration_minutes"),
+            }
         self._forward_to_controller("set_automation_config", ctrl_payload)
-        self.log("set_automation_config automation_id=%r", automation_id)
+        self.log("set_automation_config automation_id=%r config=%r", automation_id, ctrl_payload)
 
     # ------------------------------------------------------------------
     # Command handlers — misc
@@ -412,8 +440,8 @@ class VestaboardConfigurationApp(hass.Hass):
     def _cmd_generate_art(self, payload: dict) -> None:
         """Forward an art generation request to the controller."""
         subject = payload.get("subject", "")
-        self._forward_to_controller("generate_art", {"subject": subject})
-        self.log("generate_art subject=%r forwarded to controller", subject)
+        self._forward_to_controller("generate_ai_art", {"subject": subject})
+        self.log("generate_art subject=%r forwarded to controller as generate_ai_art", subject)
 
     def _cmd_save_art_to_library(self, payload: dict) -> None:
         """Save AI-generated art as a library frame."""
@@ -432,6 +460,7 @@ class VestaboardConfigurationApp(hass.Hass):
             created_at=time.time(),
             rating=0,
             name=name,
+            category="art",
         )
         self._frame_library.add_frame(lib_frame)
         self._publish_status()

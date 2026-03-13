@@ -2,7 +2,7 @@
  * Vestaboard Configuration Card
  *
  * Custom Lovelace card for managing Vestaboard display: frame editor,
- * library management, automation control, and queue status.
+ * library management (Messages & Art), Vestaboard+ store, and queue status.
  * Reads from sensor.vestaboard_configuration_status and calls the relay script.
  */
 
@@ -66,11 +66,18 @@ function vbcRelativeTime(isoStr) {
   return date.toLocaleString();
 }
 
-function vbcCountdown(isoStr) {
-  if (!isoStr) return null;
-  const date = new Date(isoStr);
-  if (isNaN(date.getTime())) return null;
-  const remaining = date.getTime() - Date.now();
+function vbcCountdown(isoOrTimestamp) {
+  if (!isoOrTimestamp) return null;
+  let targetMs;
+  if (typeof isoOrTimestamp === "number") {
+    // Unix timestamp in seconds
+    targetMs = isoOrTimestamp * 1000;
+  } else {
+    const date = new Date(isoOrTimestamp);
+    if (isNaN(date.getTime())) return null;
+    targetMs = date.getTime();
+  }
+  const remaining = targetMs - Date.now();
   if (remaining <= 0) return "expired";
   const s = Math.floor(remaining / 1000);
   const m = Math.floor(s / 60);
@@ -113,8 +120,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editorCreator = "";
     this._editorName = "";
     this._editorRating = 0;
-    this._editorTtlEnabled = false;
     this._editorTtlMinutes = 30;
+    this._editorShouldExpire = true;
     this._editingFrameId = null;
 
     // Library state
@@ -122,10 +129,13 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._librarySort = "newest";
     this._libraryFilterCreator = "All";
     this._libraryFilterRating = 0;
+    this._librarySubTab = "messages"; // "messages" or "art"
 
-    // Automation state (pending edits keyed by automation_id)
+    // Automation / Store state (pending edits keyed by automation_id)
     this._automationEdits = {};
     this._artSubject = "";
+    this._expandedAutoId = null; // which product card config is expanded
+    this._storeSavedFeedback = {}; // {autoId: timestamp} for "Saved!" flash
 
     // Queue
     this._queueExpanded = false;
@@ -163,6 +173,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     const snap = this._sensorSnapshot();
     if (snap === this._lastSnapshot) return;
     this._lastSnapshot = snap;
+    // Clear optimistic automation edits when backend data refreshes
+    this._automationEdits = {};
     this._loadArtResult();
     this._render();
   }
@@ -266,7 +278,16 @@ class VestaboardConfigurationCard extends HTMLElement {
     const queueItems = root.querySelectorAll("[data-queue-expiry]");
     queueItems.forEach((el) => {
       const expiry = el.getAttribute("data-queue-expiry");
-      el.textContent = vbcCountdown(expiry) || "expired";
+      el.textContent = expiry ? (vbcCountdown(expiry) || "expired") : "no expiry";
+    });
+
+    // Update upcoming automation countdowns
+    const upcomingItems = root.querySelectorAll("[data-upcoming-fire]");
+    upcomingItems.forEach((el) => {
+      const fireTime = parseFloat(el.getAttribute("data-upcoming-fire"));
+      if (!isNaN(fireTime)) {
+        el.textContent = vbcCountdown(fireTime) || "now";
+      }
     });
   }
 
@@ -284,25 +305,36 @@ class VestaboardConfigurationCard extends HTMLElement {
   _renderGridHTML(grid, cellSize, gap, radius, interactive, idPrefix) {
     if (!grid || !grid.length) return '<div class="grid-empty">No frame data</div>';
 
+    // Editor grid: full-width responsive (1fr columns, aspect-ratio cells)
+    // Preview/mini grids: fixed pixel cells, inline-grid for centering
+    const isEditor = interactive || idPrefix === "editor";
+
+    const colTemplate = isEditor
+      ? `repeat(${VBC_COLS},1fr)`
+      : `repeat(${VBC_COLS},${cellSize}px)`;
+    const cellSizeStyle = isEditor
+      ? ""
+      : `width:${cellSize}px;height:${cellSize}px;`;
+    const gridClass = isEditor ? "vb-grid vb-grid-editor" : "vb-grid";
+
     const cells = [];
     for (let r = 0; r < VBC_ROWS; r++) {
       for (let c = 0; c < VBC_COLS; c++) {
         const code = (grid[r] && grid[r][c]) || 0;
         const isColor = COLOR_MAP[code];
-        const bg = isColor || "rgba(0,0,0,0.22)";
-        const ch = isColor ? "" : (CODE_TO_CHAR[code] || "");
-        const fontSize = Math.max(Math.round(cellSize * 0.65), 6);
+        const bg = isColor || (code === 0 ? "#000" : "rgba(0,0,0,0.22)");
+        const ch = (isColor || code === 0) ? "" : (CODE_TO_CHAR[code] || "");
         const interactiveAttr = interactive
           ? ` data-action="grid-cell" data-row="${r}" data-col="${c}"`
           : "";
         const id = idPrefix ? ` id="${idPrefix}-${r}-${c}"` : "";
         cells.push(
-          `<div class="vb-cell"${id}${interactiveAttr} style="width:${cellSize}px;height:${cellSize}px;border-radius:${radius}px;background:${bg};font-size:${fontSize}px;">${this._esc(ch)}</div>`
+          `<div class="vb-cell"${id}${interactiveAttr} style="${cellSizeStyle}border-radius:${radius}px;background:${bg};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);">${this._esc(ch)}</div>`
         );
       }
     }
 
-    return `<div class="vb-grid" style="grid-template-columns:repeat(${VBC_COLS},${cellSize}px);gap:${gap}px;">${cells.join("")}</div>`;
+    return `<div class="${gridClass}" style="grid-template-columns:${colTemplate};gap:${gap}px;">${cells.join("")}</div>`;
   }
 
   /* ── Text mode helpers ──────────────────────────────────────────── */
@@ -323,7 +355,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       }
     }
 
-    // Wrap text into inner area (rows 1-4, cols 1-20)
+    // Wrap text into inner area
     const upper = text.toUpperCase();
     const innerWidth = hasBorder ? 20 : 22;
     const innerRows = hasBorder ? 4 : 6;
@@ -397,11 +429,16 @@ class VestaboardConfigurationCard extends HTMLElement {
 
   /* ── Library data helpers ───────────────────────────────────────── */
 
-  _getLibraryFrames() {
+  _getLibraryFrames(category) {
     const raw = this._parseJsonAttr("library", []);
     let frames = Array.isArray(raw) ? raw : [];
 
-    // Filter
+    // Filter by category (sub-tab)
+    if (category) {
+      frames = frames.filter((f) => (f.category || "message") === category);
+    }
+
+    // Filter by creator
     if (this._libraryFilterCreator !== "All") {
       frames = frames.filter((f) => f.creator === this._libraryFilterCreator);
     }
@@ -432,9 +469,15 @@ class VestaboardConfigurationCard extends HTMLElement {
   /* ── Full render ────────────────────────────────────────────────── */
 
   _render() {
-    // Focus guard: skip render while user is typing
+    // Focus guard: skip render while user is typing in a text field.
+    // Checkboxes are excluded so that toggling one immediately
+    // shows/hides dependent inputs without waiting for the next hass update.
     const active = this.shadowRoot?.activeElement;
-    if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT")) {
+    if (active && (
+      (active.tagName === "INPUT" && active.type !== "checkbox") ||
+      active.tagName === "TEXTAREA" ||
+      active.tagName === "SELECT"
+    )) {
       return;
     }
 
@@ -476,14 +519,14 @@ class VestaboardConfigurationCard extends HTMLElement {
           <div class="tab-bar">
             <button class="tab-btn ${this._activeTab === "editor" ? "active" : ""}" data-action="tab" data-tab="editor">Editor</button>
             <button class="tab-btn ${this._activeTab === "library" ? "active" : ""}" data-action="tab" data-tab="library">Library</button>
-            <button class="tab-btn ${this._activeTab === "automations" ? "active" : ""}" data-action="tab" data-tab="automations">Automations</button>
+            <button class="tab-btn ${this._activeTab === "store" ? "active" : ""}" data-action="tab" data-tab="store">Vestaboard+</button>
           </div>
 
           <!-- Tab content -->
           <div class="tab-content">
             ${this._activeTab === "editor" ? this._renderEditorTab(creators) : ""}
             ${this._activeTab === "library" ? this._renderLibraryTab(creators) : ""}
-            ${this._activeTab === "automations" ? this._renderAutomationsTab() : ""}
+            ${this._activeTab === "store" ? this._renderStorePage() : ""}
           </div>
 
           <!-- Queue Status -->
@@ -556,12 +599,15 @@ class VestaboardConfigurationCard extends HTMLElement {
             <div class="star-rating">${stars}</div>
           </div>
           <div class="save-row ttl-row">
+            <div class="ttl-field">
+              <label class="field-label">TTL</label>
+              <input type="number" class="vbc-input vbc-input-sm" data-action="set-ttl-minutes" value="${this._editorTtlMinutes}" min="1" max="1440">
+              <span class="ttl-unit">min</span>
+            </div>
             <label class="checkbox-label">
-              <input type="checkbox" data-action="toggle-ttl" ${this._editorTtlEnabled ? "checked" : ""}>
-              Auto-expire
+              <input type="checkbox" data-action="toggle-should-expire" ${this._editorShouldExpire ? "checked" : ""}>
+              Should Expire
             </label>
-            ${this._editorTtlEnabled ? `<input type="number" class="vbc-input vbc-input-sm" data-action="set-ttl-minutes" value="${this._editorTtlMinutes}" min="1" max="1440">` : ""}
-            <span class="ttl-unit">${this._editorTtlEnabled ? "min" : ""}</span>
           </div>
           <div class="save-actions">
             <button class="vbc-btn vbc-btn-secondary" data-action="save-to-library">${this._editingFrameId ? "Update in Library" : "Save to Library"}</button>
@@ -613,10 +659,11 @@ class VestaboardConfigurationCard extends HTMLElement {
     `;
   }
 
-  /* ── Library tab ────────────────────────────────────────────────── */
+  /* ── Library tab (Messages / Art sub-tabs) ────────────────────── */
 
   _renderLibraryTab(creators) {
-    const frames = this._getLibraryFrames();
+    const category = this._librarySubTab === "art" ? "art" : "message";
+    const frames = this._getLibraryFrames(category);
     const perPage = 12;
     const totalPages = Math.max(1, Math.ceil(frames.length / perPage));
     const page = Math.min(this._libraryPage, totalPages - 1);
@@ -644,6 +691,12 @@ class VestaboardConfigurationCard extends HTMLElement {
 
     return `
       <div class="library-section">
+        <!-- Sub-tabs for Messages / Art -->
+        <div class="sub-tab-bar">
+          <button class="sub-tab-btn ${this._librarySubTab === "messages" ? "active" : ""}" data-action="lib-subtab" data-subtab="messages">Messages</button>
+          <button class="sub-tab-btn ${this._librarySubTab === "art" ? "active" : ""}" data-action="lib-subtab" data-subtab="art">Art</button>
+        </div>
+
         <div class="library-controls">
           <select class="vbc-select vbc-select-sm" data-action="lib-sort">${sortOptions}</select>
           <select class="vbc-select vbc-select-sm" data-action="lib-filter-creator">${creatorOptions}</select>
@@ -651,7 +704,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         </div>
 
         <div class="library-grid">
-          ${frameCards || '<div class="library-empty">No frames in library</div>'}
+          ${frameCards || `<div class="library-empty">No ${category === "art" ? "art" : "messages"} in library</div>`}
         </div>
 
         ${totalPages > 1 ? `
@@ -696,45 +749,15 @@ class VestaboardConfigurationCard extends HTMLElement {
     `;
   }
 
-  /* ── Automations tab ────────────────────────────────────────────── */
+  /* ── Vestaboard+ Store tab ─────────────────────────────────────── */
 
-  _renderAutomationsTab() {
+  _renderStorePage() {
     const automations = this._sensorAttr("automations", []);
+    const autoList = Array.isArray(automations) ? automations : [];
 
-    const automationRows = (Array.isArray(automations) ? automations : []).map((auto) => {
-      const edits = this._automationEdits[auto.id] || {};
-      const enabled = edits.enabled !== undefined ? edits.enabled : auto.enabled;
-      const ttl = edits.ttl_minutes !== undefined ? edits.ttl_minutes : (auto.ttl_minutes || "");
-      const expiration = edits.expiration_minutes !== undefined ? edits.expiration_minutes : (auto.expiration_minutes || "");
-      const dirty = Object.keys(edits).length > 0;
-      const dotColor = enabled ? "var(--vbc-success, #4caf50)" : "var(--vbc-muted, #9e9e9e)";
+    const productCards = autoList.map((auto) => this._renderProductCard(auto)).join("");
 
-      return `
-        <div class="auto-row">
-          <div class="auto-header">
-            <span class="auto-dot" style="background:${dotColor};"></span>
-            <span class="auto-name">${this._esc(auto.name || auto.id)}</span>
-            <label class="toggle-label">
-              <input type="checkbox" data-action="auto-toggle" data-auto-id="${this._esc(auto.id)}" ${enabled ? "checked" : ""}>
-              <span class="toggle-text">${enabled ? "On" : "Off"}</span>
-            </label>
-          </div>
-          <div class="auto-fields">
-            <div class="auto-field">
-              <label>TTL (min)</label>
-              <input type="number" class="vbc-input vbc-input-sm" data-action="auto-ttl" data-auto-id="${this._esc(auto.id)}" value="${ttl}" min="0" max="1440" placeholder="TTL">
-            </div>
-            <div class="auto-field">
-              <label>Expiry (min)</label>
-              <input type="number" class="vbc-input vbc-input-sm" data-action="auto-expiry" data-auto-id="${this._esc(auto.id)}" value="${expiration}" min="0" max="10080" placeholder="Expiry">
-            </div>
-            ${dirty ? `<button class="vbc-btn vbc-btn-primary vbc-btn-sm" data-action="auto-save" data-auto-id="${this._esc(auto.id)}">Save</button>` : ""}
-          </div>
-          <div class="auto-meta">Last frame: ${vbcRelativeTime(auto.last_frame_at)}</div>
-        </div>
-      `;
-    }).join("");
-
+    // AI Art Generator section
     const artResultHTML = this._artResultFrame ? `
       <div class="ai-art-result">
         <div class="ai-art-preview">
@@ -755,9 +778,18 @@ class VestaboardConfigurationCard extends HTMLElement {
       : "";
 
     return `
-      <div class="automations-section">
-        ${automationRows || '<div class="auto-empty">No automations configured</div>'}
+      <div class="store-section">
+        <div class="store-header">
+          <ha-icon icon="mdi:store" style="--mdc-icon-size:22px;color:var(--vbc-primary);"></ha-icon>
+          <span class="store-title">Vestaboard+ Store</span>
+        </div>
+        <p class="store-subtitle">Install automations to keep your board fresh with content.</p>
 
+        <div class="store-grid">
+          ${productCards || '<div class="store-empty">No automations available</div>'}
+        </div>
+
+        <!-- AI Art Generator -->
         <div class="ai-art-section">
           <div class="section-header-inline">
             <ha-icon icon="mdi:palette" style="--mdc-icon-size:18px;color:var(--vbc-primary);"></ha-icon>
@@ -774,6 +806,112 @@ class VestaboardConfigurationCard extends HTMLElement {
     `;
   }
 
+  _renderProductCard(auto) {
+    const edits = this._automationEdits[auto.id] || {};
+    const enabled = edits.enabled !== undefined ? edits.enabled : auto.enabled;
+    const isExpanded = this._expandedAutoId === auto.id;
+    const dotColor = enabled ? "var(--vbc-success, #4caf50)" : "var(--vbc-muted, #9e9e9e)";
+    const hasSavedFeedback = this._storeSavedFeedback[auto.id] && (Date.now() - this._storeSavedFeedback[auto.id] < 2000);
+
+    // Preview grid
+    const previewGrid = auto.preview_frame || null;
+    const previewHTML = previewGrid
+      ? `<div class="product-preview">${this._renderGridHTML(previewGrid, 4, 1, 1, false, null)}</div>`
+      : `<div class="product-preview product-preview-empty"><ha-icon icon="mdi:image-off-outline" style="--mdc-icon-size:32px;color:var(--vbc-muted);"></ha-icon></div>`;
+
+    // Config section
+    let configHTML = "";
+    if (isExpanded) {
+      configHTML = this._renderAutoConfig(auto);
+    }
+
+    return `
+      <div class="product-card">
+        ${previewHTML}
+        <div class="product-body">
+          <div class="product-info">
+            <div class="product-name-row">
+              <span class="auto-dot" style="background:${dotColor};"></span>
+              <span class="product-name">${this._esc(auto.name || auto.id)}</span>
+            </div>
+            <span class="product-desc">${this._esc(this._autoDescription(auto.id))}</span>
+          </div>
+          <div class="product-actions">
+            <button class="vbc-btn ${enabled ? "vbc-btn-installed" : "vbc-btn-primary"} vbc-btn-sm" data-action="store-toggle" data-auto-id="${this._esc(auto.id)}">
+              ${enabled ? "Installed" : "Install"}
+            </button>
+            <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="store-expand" data-auto-id="${this._esc(auto.id)}">
+              ${isExpanded ? "Hide Config" : "Configure"}
+            </button>
+          </div>
+          ${configHTML}
+          ${hasSavedFeedback ? '<div class="saved-flash">Saved!</div>' : ""}
+        </div>
+      </div>
+    `;
+  }
+
+  _autoDescription(autoId) {
+    const descriptions = {
+      calendar_clock: "Shows date, time, and upcoming calendar events on your board.",
+      messages_from_library: "Randomly displays starred messages from your library.",
+      random_message: "Randomly displays starred messages from your library.",
+      art_from_library: "Randomly displays starred art from your library.",
+      random_art: "Randomly displays starred art from your library.",
+      art_generated_by_ai: "Uses AI to create unique pixel art for your board.",
+      ai_art_generator: "Uses AI to create unique pixel art for your board.",
+      calendar_summary: "Shows upcoming calendar events as a summary on your board.",
+    };
+    return descriptions[autoId] || "A Vestaboard automation.";
+  }
+
+  _renderAutoConfig(auto) {
+    const schema = auto.config_schema || {};
+    const config = auto.config || {};
+    const edits = this._automationEdits[auto.id] || {};
+    const schemaKeys = Object.keys(schema).filter((k) => k !== "enabled");
+
+    if (schemaKeys.length === 0) {
+      return '<div class="auto-config-section"><span class="auto-config-empty">No configurable options</span></div>';
+    }
+
+    const fields = schemaKeys.map((key) => {
+      const field = schema[key];
+      const currentValue = edits[key] !== undefined ? edits[key] : (config[key] !== undefined ? config[key] : field.default);
+      const label = field.label || key;
+
+      if (field.type === "bool") {
+        return `
+          <div class="config-field">
+            <label class="checkbox-label config-checkbox">
+              <input type="checkbox" data-action="store-config-field" data-auto-id="${this._esc(auto.id)}" data-field="${this._esc(key)}" data-field-type="bool" ${currentValue ? "checked" : ""}>
+              ${this._esc(label)}
+            </label>
+          </div>
+        `;
+      }
+
+      // number / int
+      const min = field.min !== undefined ? `min="${field.min}"` : "";
+      const max = field.max !== undefined ? `max="${field.max}"` : "";
+      return `
+        <div class="config-field">
+          <label class="config-label">${this._esc(label)}</label>
+          <input type="number" class="vbc-input vbc-input-sm" data-action="store-config-field" data-auto-id="${this._esc(auto.id)}" data-field="${this._esc(key)}" data-field-type="number" value="${currentValue !== null && currentValue !== undefined ? currentValue : ""}" ${min} ${max}>
+        </div>
+      `;
+    }).join("");
+
+    const dirty = Object.keys(edits).filter((k) => k !== "enabled").length > 0;
+
+    return `
+      <div class="auto-config-section">
+        ${fields}
+        ${dirty ? `<button class="vbc-btn vbc-btn-primary vbc-btn-sm" data-action="store-save-config" data-auto-id="${this._esc(auto.id)}">Save Config</button>` : ""}
+      </div>
+    `;
+  }
+
   /* ── Queue section ──────────────────────────────────────────────── */
 
   _renderQueueSection() {
@@ -784,12 +922,24 @@ class VestaboardConfigurationCard extends HTMLElement {
     const chevron = this._queueExpanded ? "mdi:chevron-up" : "mdi:chevron-down";
     const queueList = Array.isArray(queue) ? queue : [];
 
+    // Upcoming automations
+    const automations = this._sensorAttr("automations", []);
+    const upcomingAutos = (Array.isArray(automations) ? automations : [])
+      .filter((a) => a.enabled && a.next_fire_time && a.next_fire_time > (Date.now() / 1000));
+
     let content = "";
     if (this._queueExpanded) {
       const queueItems = queueList.map((item) => `
         <div class="queue-item">
           <span class="queue-source">${this._esc(item.source || "\u2014")}</span>
-          <span class="queue-countdown" data-queue-expiry="${this._esc(item.expiration || "")}">${vbcCountdown(item.expiration) || "\u2014"}</span>
+          <span class="queue-countdown" data-queue-expiry="${this._esc(item.expires_at || "")}">${item.expires_at ? (vbcCountdown(item.expires_at) || "expired") : "no expiry"}</span>
+        </div>
+      `).join("");
+
+      const upcomingItems = upcomingAutos.map((a) => `
+        <div class="queue-item upcoming-item">
+          <span class="queue-source">${this._esc(a.name || a.id)}</span>
+          <span class="queue-countdown upcoming-countdown" data-upcoming-fire="${a.next_fire_time}">${vbcCountdown(a.next_fire_time) || "now"}</span>
         </div>
       `).join("");
 
@@ -805,6 +955,11 @@ class VestaboardConfigurationCard extends HTMLElement {
             <span class="queue-label">Pending (${queueList.length}):</span>
             ${queueItems}
           </div>` : ""}
+          ${upcomingAutos.length > 0 ? `
+          <div class="queue-upcoming">
+            <span class="queue-label">Upcoming:</span>
+            ${upcomingItems}
+          </div>` : ""}
           <div class="queue-fallback">
             <span class="queue-label">Fallback:</span>
             <span class="queue-value">${this._esc(fallback || "none")}</span>
@@ -813,10 +968,12 @@ class VestaboardConfigurationCard extends HTMLElement {
       `;
     }
 
+    const totalCount = queueList.length + upcomingAutos.length;
+
     return `
       <div class="queue-section">
         <button class="queue-header" data-action="toggle-queue">
-          <span>Queue Status (${queueList.length})</span>
+          <span>Queue Status (${totalCount})</span>
           <ha-icon icon="${chevron}" style="--mdc-icon-size:18px;"></ha-icon>
         </button>
         ${content}
@@ -959,7 +1116,6 @@ class VestaboardConfigurationCard extends HTMLElement {
       case "set-mode":
         this._editorMode = el.dataset.mode;
         if (this._editorMode === "text") {
-          // Sync editor grid to text mode preview
           this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
         }
         this._render();
@@ -1018,6 +1174,13 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._render();
         break;
 
+      // Library sub-tabs
+      case "lib-subtab":
+        this._librarySubTab = el.dataset.subtab;
+        this._libraryPage = 0;
+        this._render();
+        break;
+
       case "lib-prev":
         if (this._libraryPage > 0) {
           this._libraryPage--;
@@ -1026,7 +1189,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         break;
 
       case "lib-next": {
-        const frames = this._getLibraryFrames();
+        const category = this._librarySubTab === "art" ? "art" : "message";
+        const frames = this._getLibraryFrames(category);
         const maxPage = Math.max(0, Math.ceil(frames.length / 12) - 1);
         if (this._libraryPage < maxPage) {
           this._libraryPage++;
@@ -1067,8 +1231,33 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._render();
         break;
 
-      case "auto-save":
-        this._saveAutomationConfig(el.dataset.autoId);
+      // Store actions
+      case "store-toggle": {
+        const autoId = el.dataset.autoId;
+        const automations = this._sensorAttr("automations", []);
+        const auto = (Array.isArray(automations) ? automations : []).find((a) => a.id === autoId);
+        const currentEnabled = auto ? auto.enabled : false;
+        const newEnabled = !currentEnabled;
+        // Optimistic local state
+        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
+        this._automationEdits[autoId].enabled = newEnabled;
+        this._callRelay("toggle_automation", {
+          automation_id: autoId,
+          enabled: newEnabled,
+        });
+        this._render();
+        break;
+      }
+
+      case "store-expand": {
+        const autoId = el.dataset.autoId;
+        this._expandedAutoId = this._expandedAutoId === autoId ? null : autoId;
+        this._render();
+        break;
+      }
+
+      case "store-save-config":
+        this._saveStoreConfig(el.dataset.autoId);
         break;
 
       case "generate-art":
@@ -1115,13 +1304,10 @@ class VestaboardConfigurationCard extends HTMLElement {
     switch (action) {
       case "set-text":
         this._textInput = el.value.slice(0, 80);
-        // Update grid preview in-place
         if (this._editorMode === "text") {
           this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
-          // Update char count
           const countEl = this.shadowRoot.querySelector(".char-count");
           if (countEl) countEl.textContent = `${this._textInput.length}/80`;
-          // Update grid cells without full re-render
           this._updateEditorGridVisual();
         }
         break;
@@ -1138,21 +1324,16 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._editorTtlMinutes = parseInt(el.value, 10) || 30;
         break;
 
-      case "auto-ttl": {
+      case "store-config-field": {
         const autoId = el.dataset.autoId;
+        const field = el.dataset.field;
+        const fieldType = el.dataset.fieldType;
         if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
-        this._automationEdits[autoId].ttl_minutes = parseInt(el.value, 10) || 0;
-        // Show save button
-        const saveBtn = this.shadowRoot.querySelector(`[data-action="auto-save"][data-auto-id="${autoId}"]`);
-        if (!saveBtn) this._render();
-        break;
-      }
-
-      case "auto-expiry": {
-        const autoId = el.dataset.autoId;
-        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
-        this._automationEdits[autoId].expiration_minutes = parseInt(el.value, 10) || 0;
-        const saveBtn = this.shadowRoot.querySelector(`[data-action="auto-save"][data-auto-id="${autoId}"]`);
+        if (fieldType === "number") {
+          this._automationEdits[autoId][field] = parseInt(el.value, 10) || 0;
+        }
+        // Show save button if not already visible
+        const saveBtn = this.shadowRoot.querySelector(`[data-action="store-save-config"][data-auto-id="${autoId}"]`);
         if (!saveBtn) this._render();
         break;
       }
@@ -1180,11 +1361,10 @@ class VestaboardConfigurationCard extends HTMLElement {
         break;
       }
 
-      case "toggle-ttl":
-        this._editorTtlEnabled = el.checked;
+      case "toggle-should-expire":
+        this._editorShouldExpire = el.checked;
         this._render();
         break;
-
 
       case "lib-sort":
         this._librarySort = el.value;
@@ -1206,10 +1386,28 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       case "auto-toggle": {
         const autoId = el.dataset.autoId;
+        // Bug 6 fix: optimistic local state update
+        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
+        this._automationEdits[autoId].enabled = el.checked;
         this._callRelay("toggle_automation", {
           automation_id: autoId,
           enabled: el.checked,
         });
+        this._render();
+        break;
+      }
+
+      case "store-config-field": {
+        const autoId = el.dataset.autoId;
+        const field = el.dataset.field;
+        const fieldType = el.dataset.fieldType;
+        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
+        if (fieldType === "bool") {
+          this._automationEdits[autoId][field] = el.checked;
+        }
+        // Show save button
+        const saveBtn = this.shadowRoot.querySelector(`[data-action="store-save-config"][data-auto-id="${autoId}"]`);
+        if (!saveBtn) this._render();
         break;
       }
 
@@ -1264,20 +1462,19 @@ class VestaboardConfigurationCard extends HTMLElement {
       ? this._textToGrid(this._textInput, this._borderColor)
       : this._editorGrid;
 
-    const data = { frame: grid };
-    if (this._editorTtlEnabled) {
-      data.ttl_minutes = this._editorTtlMinutes;
-    }
+    const data = {
+      frame: grid,
+      ttl_minutes: this._editorTtlMinutes,
+      should_expire: this._editorShouldExpire,
+    };
     this._callRelay("push_frame", data);
   }
 
   _viewLibraryFrame(frameId) {
-    // Find the frame and scroll to the board preview
     const frames = this._parseJsonAttr("library", []);
     const frame = (Array.isArray(frames) ? frames : []).find((f) => f.frame_id === frameId);
     if (!frame || !frame.characters) return;
 
-    // Load into editor grid for viewing in board preview
     this._editorGrid = vbcCloneGrid(frame.characters);
     this._editorMode = "paint";
     this._activeTab = "editor";
@@ -1300,25 +1497,40 @@ class VestaboardConfigurationCard extends HTMLElement {
   }
 
   _pushLibraryFrame(frameId) {
-    const data = { frame_id: frameId };
-    if (this._editorTtlEnabled) {
-      data.ttl_minutes = this._editorTtlMinutes;
-    }
+    const data = {
+      frame_id: frameId,
+      ttl_minutes: this._editorTtlMinutes,
+      should_expire: this._editorShouldExpire,
+    };
     this._callRelay("push_library_frame", data);
   }
 
-  _saveAutomationConfig(autoId) {
+  _saveStoreConfig(autoId) {
     const edits = this._automationEdits[autoId];
     if (!edits) return;
 
-    this._callRelay("set_automation_config", {
-      automation_id: autoId,
-      ttl_minutes: edits.ttl_minutes,
-      expiration_minutes: edits.expiration_minutes,
-    });
+    // Separate enabled from other config fields
+    const { enabled, ...configFields } = edits;
 
+    if (Object.keys(configFields).length > 0) {
+      this._callRelay("set_automation_config", {
+        automation_id: autoId,
+        config: configFields,
+      });
+    }
+
+    // Show saved feedback
+    this._storeSavedFeedback[autoId] = Date.now();
     delete this._automationEdits[autoId];
     this._render();
+
+    // Clear saved feedback after 2s
+    setTimeout(() => {
+      if (this._storeSavedFeedback[autoId]) {
+        delete this._storeSavedFeedback[autoId];
+        this._render();
+      }
+    }, 2000);
   }
 
   /* ── Styles ─────────────────────────────────────────────────────── */
@@ -1384,16 +1596,19 @@ class VestaboardConfigurationCard extends HTMLElement {
         background: var(--vbc-surface-variant);
         border-radius: var(--vbc-radius-sm);
         padding: 12px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 8px;
+        text-align: center;
+        overflow: hidden;
       }
 
       .vb-grid {
+        display: inline-grid;
+      }
+      .vb-grid.vb-grid-editor {
         display: grid;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
+        width: 100%;
+      }
+      .vb-grid-editor .vb-cell {
+        aspect-ratio: 1;
       }
 
       .vb-cell {
@@ -1402,6 +1617,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         justify-content: center;
         color: rgba(255,255,255,0.95);
         font-weight: 800;
+        font-size: clamp(6px, 1.8vw, 18px);
         line-height: 1;
         letter-spacing: 0.2px;
         user-select: none;
@@ -1420,6 +1636,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         justify-content: space-between;
         width: 100%;
+        margin-top: 8px;
         font-size: 12px;
         color: var(--vbc-on-surface-secondary);
       }
@@ -1440,6 +1657,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       .tab-btn {
         flex: 1;
         padding: 10px 8px;
+        min-height: 44px;
         border: none;
         background: var(--vbc-surface);
         color: var(--vbc-on-surface-secondary);
@@ -1463,6 +1681,37 @@ class VestaboardConfigurationCard extends HTMLElement {
         background: var(--vbc-surface-variant);
       }
 
+      /* Sub-tab bar (Library Messages/Art) */
+      .sub-tab-bar {
+        display: flex;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid var(--vbc-border);
+      }
+
+      .sub-tab-btn {
+        flex: 1;
+        padding: 8px;
+        min-height: 44px;
+        border: none;
+        background: var(--vbc-surface);
+        color: var(--vbc-on-surface-secondary);
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        font-family: inherit;
+        transition: all 150ms;
+      }
+
+      .sub-tab-btn + .sub-tab-btn {
+        border-left: 1px solid var(--vbc-border);
+      }
+
+      .sub-tab-btn.active {
+        background: var(--vbc-primary-light);
+        color: var(--vbc-primary);
+      }
+
       /* Editor section */
       .editor-section {
         display: flex;
@@ -1480,6 +1729,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       .mode-btn {
         flex: 1;
         padding: 8px;
+        min-height: 44px;
         border: none;
         background: var(--vbc-surface);
         color: var(--vbc-on-surface-secondary);
@@ -1603,6 +1853,13 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .ttl-row {
         flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .ttl-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
       .ttl-unit {
@@ -1643,6 +1900,13 @@ class VestaboardConfigurationCard extends HTMLElement {
         font-size: 13px;
         color: var(--vbc-on-surface);
         cursor: pointer;
+        min-height: 44px;
+      }
+
+      .checkbox-label input[type="checkbox"] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
       }
 
       /* Form controls */
@@ -1656,6 +1920,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         color: var(--vbc-on-surface);
         outline: none;
         transition: border-color 150ms;
+        min-height: 44px;
+        box-sizing: border-box;
       }
 
       .vbc-input:focus, .vbc-select:focus, .vbc-textarea:focus {
@@ -1663,10 +1929,10 @@ class VestaboardConfigurationCard extends HTMLElement {
       }
 
       .vbc-input { flex: 1; }
-      .vbc-input-sm { width: 70px; flex: none; }
+      .vbc-input-sm { width: 70px; flex: none; min-height: 36px; }
 
       .vbc-select { flex: 1; cursor: pointer; }
-      .vbc-select-sm { flex: none; font-size: 12px; padding: 6px 8px; }
+      .vbc-select-sm { flex: none; font-size: 12px; padding: 6px 8px; min-height: 36px; }
 
       .vbc-textarea {
         width: 100%;
@@ -1680,6 +1946,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         border: none;
         border-radius: 6px;
         padding: 8px 16px;
+        min-height: 44px;
         font-size: 13px;
         font-weight: 500;
         font-family: inherit;
@@ -1707,6 +1974,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         background: none;
         color: var(--vbc-primary);
         padding: 4px 8px;
+        min-height: 44px;
       }
       .vbc-btn-text:hover {
         background: var(--vbc-primary-light);
@@ -1718,8 +1986,14 @@ class VestaboardConfigurationCard extends HTMLElement {
       }
       .vbc-btn-danger:hover { opacity: 0.85; }
 
-      .vbc-btn-sm { padding: 6px 12px; font-size: 12px; }
-      .vbc-btn-xs { padding: 4px 8px; font-size: 11px; }
+      .vbc-btn-installed {
+        background: var(--vbc-success);
+        color: #fff;
+      }
+      .vbc-btn-installed:hover { opacity: 0.85; }
+
+      .vbc-btn-sm { padding: 6px 12px; font-size: 12px; min-height: 36px; }
+      .vbc-btn-xs { padding: 4px 8px; font-size: 11px; min-height: 32px; }
 
       .vbc-btn:disabled { opacity: 0.4; cursor: default; }
 
@@ -1809,23 +2083,80 @@ class VestaboardConfigurationCard extends HTMLElement {
         color: var(--vbc-on-surface-secondary);
       }
 
-      /* Automations */
-      .automations-section {
+      /* Store (Vestaboard+) */
+      .store-section {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 16px;
       }
 
-      .auto-row {
-        border: 1px solid var(--vbc-border);
-        border-radius: var(--vbc-radius-sm);
-        padding: 12px;
+      .store-header {
         display: flex;
-        flex-direction: column;
+        align-items: center;
         gap: 8px;
       }
 
-      .auto-header {
+      .store-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--vbc-on-surface);
+      }
+
+      .store-subtitle {
+        margin: 0;
+        font-size: 13px;
+        color: var(--vbc-on-surface-secondary);
+      }
+
+      .store-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 12px;
+      }
+
+      .store-empty {
+        grid-column: 1 / -1;
+        text-align: center;
+        color: var(--vbc-on-surface-secondary);
+        font-size: 13px;
+        padding: 24px;
+      }
+
+      .product-card {
+        border: 1px solid var(--vbc-border);
+        border-radius: var(--vbc-radius-sm);
+        overflow: hidden;
+        background: var(--vbc-surface);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .product-preview {
+        display: flex;
+        justify-content: center;
+        padding: 12px;
+        background: var(--vbc-surface-variant);
+        min-height: 40px;
+      }
+
+      .product-preview-empty {
+        align-items: center;
+      }
+
+      .product-body {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .product-info {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .product-name-row {
         display: flex;
         align-items: center;
         gap: 8px;
@@ -1838,50 +2169,69 @@ class VestaboardConfigurationCard extends HTMLElement {
         flex-shrink: 0;
       }
 
-      .auto-name {
-        flex: 1;
-        font-size: 13px;
-        font-weight: 500;
+      .product-name {
+        font-size: 14px;
+        font-weight: 600;
         color: var(--vbc-on-surface);
       }
 
-      .toggle-label {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        cursor: pointer;
+      .product-desc {
         font-size: 12px;
         color: var(--vbc-on-surface-secondary);
+        line-height: 1.4;
       }
 
-      .auto-fields {
+      .product-actions {
         display: flex;
         gap: 8px;
-        align-items: flex-end;
-        flex-wrap: wrap;
+        align-items: center;
       }
 
-      .auto-field {
+      /* Automation config in store */
+      .auto-config-section {
+        padding: 12px;
+        background: var(--vbc-surface-variant);
+        border-radius: 6px;
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 10px;
       }
 
-      .auto-field label {
-        font-size: 10px;
+      .auto-config-empty {
+        font-size: 12px;
         color: var(--vbc-on-surface-secondary);
+        font-style: italic;
       }
 
-      .auto-meta {
-        font-size: 11px;
-        color: var(--vbc-on-surface-secondary);
+      .config-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
       }
 
-      .auto-empty {
-        text-align: center;
+      .config-label {
+        font-size: 12px;
+        font-weight: 500;
         color: var(--vbc-on-surface-secondary);
-        font-size: 13px;
-        padding: 16px;
+        min-width: 120px;
+        flex-shrink: 0;
+      }
+
+      .config-checkbox {
+        min-height: 44px;
+      }
+
+      .saved-flash {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--vbc-success);
+        padding: 4px 0;
+        animation: fadeIn 200ms ease-in;
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
       }
 
       /* AI Art */
@@ -1950,6 +2300,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         justify-content: space-between;
         width: 100%;
         padding: 10px 12px;
+        min-height: 44px;
         border: none;
         background: var(--vbc-surface-variant);
         color: var(--vbc-on-surface);
@@ -1971,7 +2322,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         font-size: 12px;
       }
 
-      .queue-current, .queue-pending, .queue-fallback {
+      .queue-current, .queue-pending, .queue-fallback, .queue-upcoming {
         display: flex;
         flex-direction: column;
         gap: 4px;
@@ -1993,6 +2344,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         justify-content: space-between;
         padding: 4px 0;
+        min-height: 32px;
+        align-items: center;
         border-bottom: 1px solid var(--vbc-border);
       }
 
@@ -2003,6 +2356,22 @@ class VestaboardConfigurationCard extends HTMLElement {
       .queue-countdown {
         font-weight: 500;
         color: var(--vbc-warning);
+      }
+
+      .upcoming-item {
+        border-left: 3px solid var(--vbc-primary);
+        padding-left: 8px;
+      }
+
+      .upcoming-countdown {
+        color: var(--vbc-primary);
+      }
+
+      /* Responsive: single column on small screens */
+      @media (max-width: 640px) {
+        .store-grid {
+          grid-template-columns: 1fr;
+        }
       }
     `;
   }

@@ -92,15 +92,72 @@ def _build_bordered_grid(text: str) -> list[list[int]]:
     return grid
 
 
-class RandomMessageAutomation(BoardAutomation):
+class MessagesFromLibraryAutomation(BoardAutomation):
     """On-demand automation that generates a random or AI message.
 
     No automatic triggers — the frame is generated on user request via command.
     """
 
-    name = "RandomMessage"
+    name = "MessagesFromLibrary"
     default_ttl_s = None
     default_expiration_s = None
+    default_should_expire = True
+
+    DEFAULT_UI_CONFIG = {
+        "enabled": False,
+        "ttl_minutes": 5,
+        "should_expire": True,
+        "frequency_min_minutes": 30,
+        "frequency_max_minutes": 120,
+        "min_stars": 3,
+    }
+
+    @classmethod
+    def get_config_schema(cls) -> dict:
+        return {
+            "enabled": {"type": "bool", "label": "Enabled", "default": False},
+            "ttl_minutes": {"type": "int", "label": "TTL (minutes)", "min": 1, "max": 1440, "default": 5},
+            "should_expire": {"type": "bool", "label": "Should Expire", "default": True},
+            "frequency_min_minutes": {"type": "int", "label": "Min Frequency (minutes)", "min": 1, "max": 1440, "default": 30},
+            "frequency_max_minutes": {"type": "int", "label": "Max Frequency (minutes)", "min": 1, "max": 1440, "default": 120},
+            "min_stars": {"type": "int", "label": "Min Stars", "min": 0, "max": 5, "default": 3},
+        }
+
+    def get_preview_frame(self) -> list[list[int]]:
+        """Return a representative bordered message preview.
+
+        Shows "HELLO WORLD" centered inside a yellow border, illustrating
+        the bordered-grid layout used by this automation.
+        """
+        from providers.vestaboard.character_encoding import CHAR_TO_CODE
+
+        border = COLOR_CODES["yellow"]  # 65
+
+        # Encode "HELLO WORLD" centered in a 20-char interior (cols 1-20)
+        text = "HELLO WORLD"
+        padded = text.center(20)  # 20-char interior width
+        interior: list[int] = []
+        for ch in padded:
+            interior.append(CHAR_TO_CODE.get(ch.upper(), 0))
+
+        blank_interior = [0] * 20
+
+        # Row 0 & 5: full-width border
+        border_row = [border] * COLS
+
+        # Rows 1-4: border + interior + border
+        def _bordered(cells: list[int]) -> list[int]:
+            return [border] + cells + [border]
+
+        grid = [
+            border_row,
+            _bordered(blank_interior),
+            _bordered(interior),
+            _bordered(blank_interior),
+            _bordered(blank_interior),
+            border_row,
+        ]
+        return grid
 
     def get_triggers(self) -> list[dict[str, Any]]:
         """No automatic triggers — user-driven via push_frame command."""
@@ -207,3 +264,7 @@ class RandomMessageAutomation(BoardAutomation):
         message = random.choice(_FALLBACK_MESSAGES)
         self.log(f"Using fallback message: {message!r}", level="INFO")
         return _build_bordered_grid(message)
+
+
+# Backward-compatible alias
+RandomMessageAutomation = MessagesFromLibraryAutomation

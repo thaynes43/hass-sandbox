@@ -69,16 +69,69 @@ def _validate_grid(grid: Any) -> tuple[bool, str]:
     return True, ""
 
 
-class AIArtGeneratorAutomation(BoardAutomation):
+class ArtGeneratedByAIAutomation(BoardAutomation):
     """On-demand automation that generates pixel art via LLM for a given subject.
 
     No automatic triggers — called programmatically with a subject argument.
     Retries once on validation failure.
     """
 
-    name = "AIArtGenerator"
+    name = "ArtGeneratedByAI"
     default_ttl_s = None
     default_expiration_s = None
+    default_should_expire = True
+
+    DEFAULT_UI_CONFIG = {
+        "enabled": False,
+        "ttl_minutes": 10,
+        "should_expire": True,
+        "frequency_min_minutes": 120,
+        "frequency_max_minutes": 480,
+    }
+
+    @classmethod
+    def get_config_schema(cls) -> dict:
+        return {
+            "enabled": {"type": "bool", "label": "Enabled", "default": False},
+            "ttl_minutes": {"type": "int", "label": "TTL (minutes)", "min": 1, "max": 1440, "default": 10},
+            "should_expire": {"type": "bool", "label": "Should Expire", "default": True},
+            "frequency_min_minutes": {"type": "int", "label": "Min Frequency (minutes)", "min": 1, "max": 1440, "default": 120},
+            "frequency_max_minutes": {"type": "int", "label": "Max Frequency (minutes)", "min": 1, "max": 1440, "default": 480},
+        }
+
+    def get_preview_frame(self) -> list[list[int]]:
+        """Return a preview suggesting AI-generated digital/circuit art.
+
+        Uses violet and blue tones with white accents arranged in a geometric
+        checkerboard-like pattern to evoke the digital/AI aesthetic.
+        """
+        B = 67  # blue
+        V = 68  # violet
+        W = 69  # white
+
+        # 6x22 pattern: alternating violet/blue blocks with white accent column
+        # and white accent row at top and bottom edges.
+        # Col 11 (center column) is white to suggest a circuit spine.
+        grid: list[list[int]] = []
+        for r in range(6):
+            row: list[int] = []
+            for c in range(22):
+                if c == 11:
+                    # Center spine: white
+                    row.append(W)
+                elif r == 0 or r == 5:
+                    # Top/bottom accent row: alternating blue/violet every 2 cols
+                    row.append(B if (c // 2) % 2 == 0 else V)
+                else:
+                    # Interior: violet/blue checkerboard with blank gaps
+                    if (r + c) % 4 == 0:
+                        row.append(W)
+                    elif (r + c) % 2 == 0:
+                        row.append(V)
+                    else:
+                        row.append(B)
+            grid.append(row)
+        return grid
 
     def get_triggers(self) -> list[dict[str, Any]]:
         """No automatic triggers — user-driven via push_frame command."""
@@ -166,3 +219,7 @@ class AIArtGeneratorAutomation(BoardAutomation):
         # Ensure all elements are ints (AI sometimes returns floats)
         grid = [[int(code) for code in row] for row in raw_grid]
         return grid
+
+
+# Backward-compatible alias
+AIArtGeneratorAutomation = ArtGeneratedByAIAutomation

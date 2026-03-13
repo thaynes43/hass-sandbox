@@ -80,27 +80,79 @@ def _build_event_grid(
 
 
 class CalendarSummaryAutomation(BoardAutomation):
-    """Automation that watches calendar entities and shows upcoming events.
+    """Automation that watches a single calendar entity and shows upcoming events.
+
+    Each instance handles one calendar. To watch multiple calendars, configure
+    multiple instances with different IDs using the ``type: calendar_summary``
+    key in the automations config.
 
     Triggers on:
-    - State changes on configured calendar entities.
+    - State changes on the configured calendar entity.
     - Periodic interval to catch time-based transitions.
 
     Config keys:
-    - calendar_entities: list of HA calendar entity IDs to watch.
+    - calendar_entity: HA calendar entity ID to watch (single string).
     - reminder_minutes: minutes before event to show reminder (default 15).
     - check_interval_s: how often to re-check calendar state (default 300).
+    - ttl_minutes: TTL in minutes for pushed frames (default: dynamic from event end time).
+    - rotation_interval_hours: minimum hours between pushes for the same event (default: None — no throttle).
+    - time_before_event_hours: hours before event start to begin showing it (default: derived from reminder_minutes).
     """
 
     name = "CalendarSummary"
     default_ttl_s = None       # TTL set dynamically per event
     default_expiration_s = None  # Expiration set dynamically per event
+    default_should_expire = False
+
+    DEFAULT_UI_CONFIG = {
+        "enabled": False,
+        "ttl_minutes": 30,
+        "should_expire": False,
+        "time_before_event_hours": 240,
+        "rotation_interval_hours": 12,
+    }
+
+    @classmethod
+    def get_config_schema(cls) -> dict:
+        return {
+            "enabled": {"type": "bool", "label": "Enabled", "default": False},
+            "ttl_minutes": {"type": "int", "label": "TTL (minutes)", "min": 1, "max": 1440, "default": 30},
+            "should_expire": {"type": "bool", "label": "Should Expire", "default": False},
+            "time_before_event_hours": {"type": "int", "label": "Hours Before Event", "min": 1, "max": 720, "default": 240},
+            "rotation_interval_hours": {"type": "int", "label": "Rotation Interval (hours)", "min": 1, "max": 168, "default": 12},
+        }
+
+    def __init__(self, app: Any, config: dict[str, Any]) -> None:
+        super().__init__(app=app, config=config)
+        # Track last push time per event summary to support rotation_interval_hours
+        self._last_push_time: dict[str, float] = {}
+        # Store the automation_id so we can push frames with the correct source
+        self._automation_id: str = ""
+
+    def set_automation_id(self, automation_id: str) -> None:
+        """Set the automation ID used as the source when pushing frames."""
+        self._automation_id = automation_id
+        # Update the display name to include the ID for multi-instance clarity
+        if automation_id != "calendar_summary":
+            self.name = f"CalendarSummary({automation_id})"
+
+    def get_preview_frame(self) -> list[list[int]]:
+        """Return a representative calendar event preview frame.
+
+        Shows a sample upcoming meeting with a time and countdown, illustrating
+        the layout produced by this automation.
+        """
+        return _build_event_grid(
+            event_name="TEAM MEETING",
+            event_time="10:30 AM",
+            countdown="14 MIN",
+        )
 
     def get_triggers(self) -> list[dict[str, Any]]:
         triggers: list[dict[str, Any]] = []
 
-        entities: list[str] = list(self.config.get("calendar_entities") or [])
-        for entity_id in entities:
+        entity_id = str(self.config.get("calendar_entity", ""))
+        if entity_id:
             triggers.append(
                 {
                     "type": "state",
@@ -122,7 +174,7 @@ class CalendarSummaryAutomation(BoardAutomation):
         return triggers
 
     def _on_calendar_state_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: dict) -> None:
-        """Called when a calendar entity's state changes."""
+        """Called when the calendar entity's state changes."""
         self.log(f"Calendar state change on {entity}: {old!r} -> {new!r}", level="DEBUG")
         self.app.create_task(self._fire_frame_if_event())
 
@@ -136,42 +188,69 @@ class CalendarSummaryAutomation(BoardAutomation):
         return blank_grid()
 
     async def _fire_frame_if_event(self) -> None:
-        """Check calendar entities and push a frame if an event is upcoming."""
-        entities: list[str] = list(self.config.get("calendar_entities") or [])
-        reminder_minutes = int(self.config.get("reminder_minutes", _DEFAULT_REMINDER_MINUTES))
+        """Check the calendar entity and push a frame if an event is upcoming."""
+        entity_id = str(self.config.get("calendar_entity", ""))
+        if not entity_id:
+            self.log("No calendar_entity configured", level="WARNING")
+            return
+
+        # Determine reminder window: use time_before_event_hours if set,
+        # otherwise fall back to reminder_minutes.
+        time_before_hours = self.config.get("time_before_event_hours")
+        if time_before_hours is not None:
+            reminder_minutes = int(float(time_before_hours) * 60)
+        else:
+            reminder_minutes = int(self.config.get("reminder_minutes", _DEFAULT_REMINDER_MINUTES))
 
         now = datetime.now(tz=timezone.utc)
-        best_event: Optional[dict] = None
-        best_seconds_until: Optional[int] = None
+        event = self._get_current_or_upcoming_event(entity_id, now, reminder_minutes)
 
-        for entity_id in entities:
-            event = self._get_current_or_upcoming_event(entity_id, now, reminder_minutes)
-            if event is None:
-                continue
-            seconds_until = event.get("seconds_until", 9999999)
-            if best_event is None or seconds_until < best_seconds_until:
-                best_event = event
-                best_seconds_until = seconds_until
-
-        if best_event is None:
+        if event is None:
             self.log("No upcoming events within reminder window", level="DEBUG")
             return
 
-        grid, ttl_s, expiration_s = self._build_event_data(best_event, now)
+        # Check rotation interval throttle
+        rotation_hours = self.config.get("rotation_interval_hours")
+        if rotation_hours is not None:
+            import time as _time
+            event_key = event.get("summary", "")
+            last_push = self._last_push_time.get(event_key, 0.0)
+            min_interval_s = float(rotation_hours) * 3600
+            if (_time.time() - last_push) < min_interval_s:
+                self.log(
+                    f"Rotation throttle: skipping {event_key!r} "
+                    f"(last push {_time.time() - last_push:.0f}s ago, min={min_interval_s:.0f}s)",
+                    level="DEBUG",
+                )
+                return
+
+        grid, ttl_s, expiration_s = self._build_event_data(event, now)
+
+        # Override TTL from config if ttl_minutes is set
+        ttl_minutes_cfg = self.config.get("ttl_minutes")
+        if ttl_minutes_cfg is not None:
+            ttl_s = int(float(ttl_minutes_cfg) * 60)
+
+        automation_id = self._automation_id or "calendar_summary"
 
         self.log(
-            f"Pushing calendar event: {best_event.get('summary', '?')!r} "
-            f"ttl_s={ttl_s} expiration_s={expiration_s}",
+            f"Pushing calendar event: {event.get('summary', '?')!r} "
+            f"ttl_s={ttl_s} expiration_s={expiration_s} automation_id={automation_id!r}",
             level="INFO",
         )
 
         self.app._push_automation_frame(
-            automation_id="calendar_summary",
+            automation_id=automation_id,
             source_label=self.name,
             grid=grid,
             ttl_s=ttl_s,
             expiration_s=expiration_s,
         )
+
+        # Record push time for rotation throttle
+        if rotation_hours is not None:
+            import time as _time
+            self._last_push_time[event.get("summary", "")] = _time.time()
 
     def _get_current_or_upcoming_event(
         self, entity_id: str, now: datetime, reminder_minutes: int

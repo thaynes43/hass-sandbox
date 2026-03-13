@@ -45,6 +45,7 @@ def make_frame(
     ttl_s: int | None = None,
     expiration_s: int | None = None,
     override_ttl: bool = False,
+    should_expire: bool = False,
     created_at: float = 1000.0,
 ) -> BoardFrame:
     return BoardFrame(
@@ -55,6 +56,7 @@ def make_frame(
         ttl_s=ttl_s,
         expiration_s=expiration_s,
         override_ttl=override_ttl,
+        should_expire=should_expire,
         created_at=created_at,
         displayed_at=None,
     )
@@ -86,10 +88,11 @@ class TestPredicates:
         f = make_frame(expiration_s=60, created_at=1000.0)
         assert _is_expired(f, 2000.0)
 
-    def test_ttl_expired_no_ttl(self):
+    def test_ttl_expired_no_ttl_returns_true(self):
+        """None TTL means 'freely replaceable' — always returns True."""
         f = make_frame(ttl_s=None, created_at=1000.0)
         f.displayed_at = 1000.0
-        assert not _ttl_expired(f, 9999.0)
+        assert _ttl_expired(f, 9999.0)
 
     def test_ttl_expired_not_displayed(self):
         f = make_frame(ttl_s=30, created_at=1000.0)
@@ -121,15 +124,17 @@ class TestTTLExpirationMatrix:
     """Test behaviour for all four TTL/Expiration combinations."""
 
     def test_no_ttl_no_expiration(self):
-        """Frame without TTL or expiration holds indefinitely."""
+        """Frame without TTL or expiration is freely replaceable but stays
+        displayed when there is nothing else to promote."""
         q = make_queue()
         f = make_frame(ttl_s=None, expiration_s=None, created_at=1000.0)
         action = q.push(f, now=1000.0)
 
         assert action.display_frame is f
-        # Many ticks later — frame should still be displayed, nothing promoted
+        # Many ticks later — TTL is "expired" (None = freely replaceable) but
+        # nothing in pending/fallback so the frame stays displayed.
         tick = q.tick(now=99999.0)
-        assert tick.display_frame is None  # no change
+        assert tick.display_frame is None  # no change — nothing to promote
         state = q.get_state(now=99999.0)
         assert state.displayed is f
         assert state.displayed_ttl_remaining_s is None
@@ -152,12 +157,13 @@ class TestTTLExpirationMatrix:
         assert state.displayed is f
 
     def test_no_ttl_with_expiration(self):
-        """Frame with expiration but no TTL: stays until expiry."""
+        """Frame with expiration but no TTL: freely replaceable, stays until
+        expiry when nothing else to promote."""
         q = make_queue()
         f = make_frame(ttl_s=None, expiration_s=60, created_at=1000.0)
         q.push(f, now=1000.0)
 
-        # Before expiration
+        # Before expiration — TTL is "expired" (None) but nothing to promote
         tick = q.tick(now=1059.0)
         assert tick.display_frame is None
         assert q.get_state(now=1059.0).displayed is f
@@ -224,7 +230,7 @@ class TestLIFO:
         assert action.display_frame is fb  # B promoted (LIFO)
 
     def test_three_frames_lifo(self):
-        """push A, B, C → promotes C, then B, then A."""
+        """push A, B, C → promotes C, then B (since C has no TTL), then A."""
         q = make_queue()
         base = make_frame(source="base", ttl_s=10, created_at=0.0)
         q.push(base, now=0.0)
@@ -240,18 +246,13 @@ class TestLIFO:
         tick1 = q.tick(now=11.0)
         assert tick1.display_frame is fc
 
-        tick2 = q.tick(now=12.0)  # fc has no TTL, won't yield yet
-        assert tick2.display_frame is None
+        # fc has no TTL → freely replaceable → fb gets promoted immediately
+        tick2 = q.tick(now=12.0)
+        assert tick2.display_frame is fb
 
-        # fc has no TTL — push a new frame from non-overlapping source with override
-        fd = make_frame(source="d", override_ttl=True, created_at=12.0)
-        action = q.push(fd, now=12.0)
-        assert action.display_frame is fd
-
-        state = q.get_state(now=12.0)
-        # fc moved to fallback, fb and fa still in pending
-        assert len(state.pending) == 2
-        assert len(state.fallback_stack) >= 1
+        # fb also has no TTL → fa gets promoted
+        tick3 = q.tick(now=13.0)
+        assert tick3.display_frame is fa
 
 
 # ---------------------------------------------------------------------------
@@ -383,6 +384,8 @@ class TestFullScenario:
         assert action.display_frame is static
 
         # T=60: calendar event, TTL=1800s, expiry=3600s, no override
+        # With None-TTL semantics, static is freely replaceable so calendar
+        # displays immediately even without override_ttl.
         T_CAL = 60.0
         cal = make_frame(
             source="calendar",
@@ -392,41 +395,13 @@ class TestFullScenario:
             override_ttl=False,
             created_at=T_CAL,
         )
-        # static has no TTL → its "TTL" is never-ending; calendar must queue
         action_cal = q.push(cal, now=T_CAL)
-        # static has no TTL so TTL is NOT expired → queue
-        assert action_cal.display_frame is None
-
-        # Simulate: static frame has no TTL, so we must override to get calendar shown
-        # Let's instead use override_ttl=True for the calendar event as per requirements:
-        # "a user may want to receive calendar events" → let's say calendar uses override
-        # Re-do: replace cal with override version
-        q2 = make_queue()
-        q2._log = logs.append
-
-        static2 = make_frame(
-            source="static",
-            source_label="Static",
-            ttl_s=None,
-            expiration_s=None,
-            created_at=T0,
-        )
-        q2.push(static2, now=T0)
-
-        cal2 = make_frame(
-            source="calendar",
-            source_label="Calendar",
-            ttl_s=1800,
-            expiration_s=3600,
-            override_ttl=True,
-            created_at=T_CAL,
-        )
-        action_cal2 = q2.push(cal2, now=T_CAL)
-        assert action_cal2.display_frame is cal2
-        state1 = q2.get_state(now=T_CAL)
+        # static has None TTL → freely replaceable → calendar displays now
+        assert action_cal.display_frame is cal
+        state1 = q.get_state(now=T_CAL)
         # static goes to fallback
         fallback_ids = [f.frame_id for f in state1.fallback_stack]
-        assert static2.frame_id in fallback_ids
+        assert static.frame_id in fallback_ids
 
         # T=120: garage door opens (override, TTL=1200, expiry=1200)
         T_GARAGE1 = 120.0
@@ -438,12 +413,12 @@ class TestFullScenario:
             override_ttl=True,
             created_at=T_GARAGE1,
         )
-        action_g1 = q2.push(garage1, now=T_GARAGE1)
+        action_g1 = q.push(garage1, now=T_GARAGE1)
         assert action_g1.display_frame is garage1
-        state2 = q2.get_state(now=T_GARAGE1)
-        # cal2 should now be in fallback
+        state2 = q.get_state(now=T_GARAGE1)
+        # cal should now be in fallback
         fallback_ids2 = [f.frame_id for f in state2.fallback_stack]
-        assert cal2.frame_id in fallback_ids2
+        assert cal.frame_id in fallback_ids2
 
         # T=300: garage door opens again — new garage frame with fresh expiry
         T_GARAGE2 = 300.0
@@ -455,31 +430,27 @@ class TestFullScenario:
             override_ttl=True,
             created_at=T_GARAGE2,
         )
-        action_g2 = q2.push(garage2, now=T_GARAGE2)
+        action_g2 = q.push(garage2, now=T_GARAGE2)
         assert action_g2.display_frame is garage2
-        # garage1 has 5min left on expiry (T_GARAGE1 + 1200 = 1320 > 300)
-        # but since garage2 overrode, garage1 goes to fallback
 
         # T=1500: garage2 TTL expires (started at T=300, TTL=1200 → expires at 1500)
         T_G2_TTL_EXP = 1501.0
-        tick1 = q2.tick(now=T_G2_TTL_EXP)
+        tick1 = q.tick(now=T_G2_TTL_EXP)
         # garage2 TTL expired, no pending frames → promote from fallback
         # garage1 created at 120, expires at 120+1200=1320 < 1500 → EXPIRED
-        # cal2 created at 60, expires at 60+3600=3660 > 1500 → VALID
-        # So cal2 should be promoted from fallback
+        # cal created at 60, expires at 60+3600=3660 > 1500 → VALID
+        # So cal should be promoted from fallback
         assert tick1.display_frame is not None
         assert tick1.display_frame.source in ("calendar", "garage")
-        # cal2 expires at 3660, garage1 expired at 1320
-        # Expected: cal2 is promoted
         if tick1.display_frame.source == "calendar":
-            assert tick1.display_frame is cal2
+            assert tick1.display_frame is cal
 
-        # Advance past cal2 expiry (T=3660)
+        # Advance past cal expiry (T=3660)
         T_CAL_EXP = 3661.0
-        tick2 = q2.tick(now=T_CAL_EXP)
-        state_after_cal_exp = q2.get_state(now=T_CAL_EXP)
-        # cal2 should be gone, static2 (no expiry) in fallback
-        # After this tick, static2 should be promoted
+        tick2 = q.tick(now=T_CAL_EXP)
+        state_after_cal_exp = q.get_state(now=T_CAL_EXP)
+        # cal should be gone, static (no expiry) in fallback
+        # After this tick, static should be promoted
         if state_after_cal_exp.displayed is not None:
             assert state_after_cal_exp.displayed.source == "static"
 
@@ -806,3 +777,264 @@ class TestExpiryPruneDuringPush:
         pending_ids = [f.frame_id for f in state_after.pending]
         assert expiring.frame_id not in pending_ids
         assert fresh.frame_id in pending_ids
+
+
+# ---------------------------------------------------------------------------
+# None-TTL semantics regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestNoneTTLSemantics:
+    """Regression tests for ttl_s=None meaning 'freely replaceable'."""
+
+    def test_none_ttl_frame_replaceable_by_any_source(self):
+        """A displayed frame with ttl_s=None can be replaced by a push from
+        any other source without override_ttl."""
+        q = make_queue()
+        clock = make_frame(source="calendar_clock", ttl_s=None, created_at=0.0)
+        q.push(clock, now=0.0)
+        assert q.get_state(now=0.0).displayed is clock
+
+        # Push from a different source without override_ttl
+        event = make_frame(
+            source="garage_door",
+            ttl_s=60,
+            override_ttl=False,
+            created_at=5.0,
+        )
+        action = q.push(event, now=5.0)
+
+        # event should display immediately because clock has no TTL protection
+        assert action.display_frame is event
+        state = q.get_state(now=5.0)
+        assert state.displayed is event
+        # clock moves to fallback (not expired)
+        fallback_ids = [f.frame_id for f in state.fallback_stack]
+        assert clock.frame_id in fallback_ids
+
+    def test_explicit_ttl_blocks_cross_source_push(self):
+        """A displayed frame with an explicit TTL blocks pushes from other
+        sources (unless override_ttl=True) until the TTL expires."""
+        q = make_queue()
+        # Frame with explicit TTL holds the board
+        holding = make_frame(source="important", ttl_s=300, created_at=0.0)
+        q.push(holding, now=0.0)
+        assert q.get_state(now=0.0).displayed is holding
+
+        # Push from a different source without override — should be queued
+        newcomer = make_frame(
+            source="background",
+            ttl_s=None,
+            override_ttl=False,
+            created_at=5.0,
+        )
+        action = q.push(newcomer, now=5.0)
+
+        assert action.display_frame is None  # queued, not displayed
+        state = q.get_state(now=5.0)
+        assert state.displayed is holding
+        assert len(state.pending) == 1
+
+        # After TTL expires (t=300), tick promotes the newcomer
+        tick = q.tick(now=301.0)
+        assert tick.display_frame is newcomer
+
+    def test_none_ttl_stays_when_nothing_to_promote(self):
+        """A frame with ttl_s=None stays displayed when there are no pending
+        or fallback frames to promote."""
+        q = make_queue()
+        solo = make_frame(source="solo", ttl_s=None, created_at=0.0)
+        q.push(solo, now=0.0)
+
+        # Many ticks later, still displayed
+        for t in (10.0, 100.0, 1000.0, 99999.0):
+            tick = q.tick(now=t)
+            assert tick.display_frame is None
+            assert q.get_state(now=t).displayed is solo
+
+
+# ---------------------------------------------------------------------------
+# should_expire semantics
+# ---------------------------------------------------------------------------
+
+
+class TestShouldExpire:
+    """Tests for should_expire=True: frame is dropped on TTL expiry, not fallback-ed."""
+
+    def test_should_expire_true_frame_dropped_on_tick_promotion(self):
+        """When a should_expire=True frame's TTL runs out and a new frame is
+        promoted (from pending), the should_expire frame is dropped rather than
+        moved to fallback."""
+        q = make_queue()
+
+        # Display a should_expire frame with TTL=30
+        expiring = make_frame(
+            source="alert",
+            ttl_s=30,
+            should_expire=True,
+            created_at=0.0,
+        )
+        q.push(expiring, now=0.0)
+        assert q.get_state(now=0.0).displayed is expiring
+
+        # Queue a next frame while the alert TTL is active
+        next_f = make_frame(source="background", ttl_s=None, created_at=5.0)
+        action_q = q.push(next_f, now=5.0)
+        assert action_q.display_frame is None  # queued, not displayed yet
+
+        # TTL expires at t=30; tick promotes next_f
+        tick = q.tick(now=31.0)
+        assert tick.display_frame is next_f
+
+        # 'expiring' must NOT appear in fallback — it was dropped
+        state = q.get_state(now=31.0)
+        fallback_ids = {f.frame_id for f in state.fallback_stack}
+        assert expiring.frame_id not in fallback_ids
+
+        # 'expiring' should appear in dropped_frames
+        dropped_ids = {f.frame_id for f in tick.dropped_frames}
+        assert expiring.frame_id in dropped_ids
+
+    def test_should_expire_false_frame_moves_to_fallback_on_tick_promotion(self):
+        """Default behaviour (should_expire=False): when TTL expires and a new
+        frame is promoted, the old frame moves to fallback, not dropped."""
+        q = make_queue()
+
+        normal = make_frame(
+            source="calendar",
+            ttl_s=30,
+            should_expire=False,
+            created_at=0.0,
+        )
+        q.push(normal, now=0.0)
+
+        next_f = make_frame(source="background", ttl_s=None, created_at=5.0)
+        q.push(next_f, now=5.0)
+
+        tick = q.tick(now=31.0)
+        assert tick.display_frame is next_f
+
+        # 'normal' SHOULD appear in fallback
+        state = q.get_state(now=31.0)
+        fallback_ids = {f.frame_id for f in state.fallback_stack}
+        assert normal.frame_id in fallback_ids
+
+        # 'normal' should NOT appear in dropped_frames (unless it expired separately)
+        dropped_ids = {f.frame_id for f in tick.dropped_frames}
+        assert normal.frame_id not in dropped_ids
+
+    def test_should_expire_true_frame_dropped_when_displaced_by_push(self):
+        """When a push displaces a should_expire=True displayed frame
+        (via override_ttl or TTL expired), the displaced frame is dropped."""
+        q = make_queue()
+
+        expiring = make_frame(
+            source="alert",
+            ttl_s=60,
+            should_expire=True,
+            created_at=0.0,
+        )
+        q.push(expiring, now=0.0)
+
+        # override_ttl displaces expiring immediately
+        overrider = make_frame(
+            source="urgent",
+            override_ttl=True,
+            created_at=5.0,
+        )
+        action = q.push(overrider, now=5.0)
+        assert action.display_frame is overrider
+
+        # 'expiring' must not be in fallback — it had should_expire=True
+        state = q.get_state(now=5.0)
+        fallback_ids = {f.frame_id for f in state.fallback_stack}
+        assert expiring.frame_id not in fallback_ids
+
+        # It should appear in dropped_frames
+        dropped_ids = {f.frame_id for f in action.dropped_frames}
+        assert expiring.frame_id in dropped_ids
+
+    def test_should_expire_false_frame_moves_to_fallback_when_displaced_by_push(self):
+        """Default (should_expire=False): displaced frame goes to fallback."""
+        q = make_queue()
+
+        normal = make_frame(
+            source="calendar",
+            ttl_s=60,
+            should_expire=False,
+            expiration_s=120,
+            created_at=0.0,
+        )
+        q.push(normal, now=0.0)
+
+        overrider = make_frame(source="urgent", override_ttl=True, created_at=5.0)
+        action = q.push(overrider, now=5.0)
+        assert action.display_frame is overrider
+
+        state = q.get_state(now=5.0)
+        fallback_ids = {f.frame_id for f in state.fallback_stack}
+        assert normal.frame_id in fallback_ids
+
+    def test_should_expire_true_with_no_ttl_can_still_be_replaced(self):
+        """should_expire=True with ttl_s=None: the frame is freely replaceable
+        (None-TTL semantics still apply — any push replaces it).
+        When displaced the frame is dropped, not kept in fallback."""
+        q = make_queue()
+
+        expiring_no_ttl = make_frame(
+            source="clock",
+            ttl_s=None,
+            should_expire=True,
+            created_at=0.0,
+        )
+        q.push(expiring_no_ttl, now=0.0)
+        assert q.get_state(now=0.0).displayed is expiring_no_ttl
+
+        # Push from another source — None TTL means freely replaceable
+        replacement = make_frame(
+            source="event",
+            ttl_s=60,
+            override_ttl=False,
+            created_at=5.0,
+        )
+        action = q.push(replacement, now=5.0)
+
+        # Replacement displays immediately (None-TTL means freely replaceable)
+        assert action.display_frame is replacement
+
+        # expiring_no_ttl must NOT appear in fallback
+        state = q.get_state(now=5.0)
+        fallback_ids = {f.frame_id for f in state.fallback_stack}
+        assert expiring_no_ttl.frame_id not in fallback_ids
+
+        # It should appear in dropped_frames
+        dropped_ids = {f.frame_id for f in action.dropped_frames}
+        assert expiring_no_ttl.frame_id in dropped_ids
+
+    def test_should_expire_true_empty_queue_after_ttl(self):
+        """When a should_expire=True frame's TTL runs out and there is nothing
+        else to promote, the frame is still displaced and board becomes idle."""
+        q = make_queue()
+
+        expiring = make_frame(
+            source="alert",
+            ttl_s=30,
+            should_expire=True,
+            created_at=0.0,
+        )
+        q.push(expiring, now=0.0)
+        assert q.get_state(now=0.0).displayed is expiring
+
+        # TTL expires but pending and fallback are both empty
+        # The frame stays displayed (nothing to promote to) — should_expire only
+        # takes effect when something else is promoted into the slot.
+        tick = q.tick(now=31.0)
+        assert tick.display_frame is None  # nothing to promote
+        state = q.get_state(now=31.0)
+        # Frame still displayed (no replacement available)
+        assert state.displayed is expiring
+
+    def test_should_expire_default_is_false(self):
+        """BoardFrame.should_expire defaults to False."""
+        f = make_frame(source="test", created_at=0.0)
+        assert f.should_expire is False

@@ -32,6 +32,7 @@ class LibraryFrame:
         created_at: Unix timestamp when the frame was saved.
         rating: User rating 0–5.
         name: Short descriptive name chosen by the creator.
+        category: Frame category — "message" (default) or "art".
     """
 
     frame_id: str
@@ -40,6 +41,7 @@ class LibraryFrame:
     created_at: float
     rating: int
     name: str
+    category: str = "message"
 
 
 # ---------------------------------------------------------------------------
@@ -211,6 +213,7 @@ class FrameLibrary:
         min_rating: int = 0,
         sort_by: str = "created_at",
         ascending: bool = False,
+        category: Optional[str] = None,
     ) -> list[LibraryFrame]:
         """Return a filtered, sorted list of frames.
 
@@ -220,12 +223,15 @@ class FrameLibrary:
             sort_by: Field to sort by.  One of ``created_at``, ``rating``,
                 ``name``.
             ascending: If True, sort ascending; default is descending.
+            category: If provided, only return frames with this category.
+                Frames without a category field default to ``"message"``.
         """
         results = [
             f
             for f in self._frames
             if (creator is None or f.creator == creator)
             and f.rating >= min_rating
+            and (category is None or getattr(f, "category", "message") == category)
         ]
 
         valid_sort_fields = {"created_at", "rating", "name"}

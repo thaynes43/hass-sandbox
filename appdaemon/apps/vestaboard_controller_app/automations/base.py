@@ -32,6 +32,13 @@ class BoardAutomation(ABC):
     #: None = no expiration.
     default_expiration_s: Optional[int] = None
 
+    #: Whether frames from this automation should expire by default.
+    default_should_expire: bool = False
+
+    #: Default UI-editable configuration for this automation.
+    #: Subclasses should override with their specific config fields.
+    DEFAULT_UI_CONFIG: dict[str, Any] = {}
+
     def __init__(self, app: Any, config: dict[str, Any]) -> None:
         """Initialise the automation.
 
@@ -42,6 +49,32 @@ class BoardAutomation(ABC):
         """
         self.app = app
         self.config = config
+
+        #: Next scheduled fire time (unix timestamp), for status display.
+        self.next_fire_time: Optional[float] = None
+
+    # ------------------------------------------------------------------
+    # Config schema & preview
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def get_config_schema(cls) -> dict[str, Any]:
+        """Return UI-renderable config field definitions.
+
+        Each key is a config field name, value is a dict with at least
+        ``type`` (str, int, float, bool) and optionally ``label``,
+        ``min``, ``max``, ``default``.
+
+        Override in subclasses. Returns empty dict by default.
+        """
+        return {}
+
+    def get_preview_frame(self) -> list[list[int]]:
+        """Return a representative 6x22 frame for preview display.
+
+        Returns a blank frame by default. Subclasses may override.
+        """
+        return [[0] * 22 for _ in range(6)]
 
     # ------------------------------------------------------------------
     # Abstract interface

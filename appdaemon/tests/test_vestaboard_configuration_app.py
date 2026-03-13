@@ -219,6 +219,41 @@ class TestAsyncStartup:
         log_levels = [c[1].get("level", "INFO") for c in app.log.call_args_list]
         assert "WARNING" in log_levels
 
+    def test_async_startup_performs_immediate_controller_sync(self, tmp_path):
+        """_async_startup should immediately read controller state if it already exists."""
+        mock_prov = _make_mock_provisioner()
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+
+        # Simulate controller already having state (e.g. controller started first)
+        controller_attrs = {
+            "displayed_source": "calendar_clock",
+            "queue_state": {"pending": [], "fallback": []},
+            "all_automations": [],
+        }
+        app.get_state = MagicMock(return_value={"attributes": controller_attrs})
+
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
+            app.initialize()
+            _run(app._async_startup())
+
+        # Controller attrs should be loaded immediately (not waiting for 5s deferred sync)
+        assert app._controller_attrs.get("displayed_source") == "calendar_clock"
+
+    def test_async_startup_immediate_sync_tolerates_missing_controller(self, tmp_path):
+        """_async_startup immediate sync should not crash when controller has no state yet."""
+        mock_prov = _make_mock_provisioner()
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+
+        # Controller returns None (not yet started)
+        app.get_state = MagicMock(return_value=None)
+
+        with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
+            app.initialize()
+            _run(app._async_startup())
+
+        # Should complete without error; controller attrs remain empty
+        assert app._controller_attrs == {}
+
 
 # ---------------------------------------------------------------------------
 # Command handling tests
@@ -604,7 +639,7 @@ class TestControllerStatusMirroring:
 
 class TestGenerateArt:
     def test_generate_art_forwards_to_controller(self, tmp_path):
-        """generate_art should fire the controller command event with subject."""
+        """generate_art should fire the controller command event with subject as generate_ai_art."""
         app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
         app.initialize()
 
@@ -613,7 +648,7 @@ class TestGenerateArt:
 
         app.fire_event.assert_called_once()
         fired_command = app.fire_event.call_args[1]["command"]
-        assert fired_command == "generate_art"
+        assert fired_command == "generate_ai_art"
         fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
         assert fired_payload["subject"] == "a rocket ship"
 
@@ -650,3 +685,99 @@ class TestInvalidPayload:
 
         levels = [c[1].get("level", "INFO") for c in app.log.call_args_list]
         assert "ERROR" in levels
+
+
+# ---------------------------------------------------------------------------
+# Status passthrough — next_fire_time and preview_frame
+# ---------------------------------------------------------------------------
+
+
+class TestStatusPassthrough:
+    """Verify that controller automation fields are passed through unchanged."""
+
+    def test_publish_status_passes_next_fire_time_through(self, tmp_path):
+        """next_fire_time from controller all_automations is passed to card unchanged."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        next_fire = time.time() + 600.0
+        app._controller_attrs = {
+            "displayed_frame": None,
+            "displayed_source": None,
+            "displayed_ttl_remaining_s": None,
+            "queue_state": {"pending": [], "fallback": []},
+            "all_automations": [
+                {
+                    "id": "messages_from_library",
+                    "name": "Messages From Library",
+                    "enabled": True,
+                    "next_fire_time": next_fire,
+                }
+            ],
+        }
+        app.set_state.reset_mock()
+
+        app._publish_status()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        automations = attrs["automations"]
+        assert len(automations) == 1
+        assert automations[0]["next_fire_time"] == next_fire
+
+    def test_publish_status_passes_preview_frame_through(self, tmp_path):
+        """preview_frame from controller all_automations is passed to card unchanged."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        preview = [[5] * 22 for _ in range(6)]
+        app._controller_attrs = {
+            "displayed_frame": None,
+            "displayed_source": None,
+            "displayed_ttl_remaining_s": None,
+            "queue_state": {"pending": [], "fallback": []},
+            "all_automations": [
+                {
+                    "id": "art_from_library",
+                    "name": "Art From Library",
+                    "enabled": True,
+                    "preview_frame": preview,
+                }
+            ],
+        }
+        app.set_state.reset_mock()
+
+        app._publish_status()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        automations = attrs["automations"]
+        assert len(automations) == 1
+        assert automations[0]["preview_frame"] == preview
+
+    def test_publish_status_passthrough_works_without_optional_fields(self, tmp_path):
+        """automations without next_fire_time or preview_frame pass through cleanly."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        app._controller_attrs = {
+            "displayed_frame": None,
+            "displayed_source": None,
+            "displayed_ttl_remaining_s": None,
+            "queue_state": {"pending": [], "fallback": []},
+            "all_automations": [
+                {
+                    "id": "calendar_clock",
+                    "name": "Calendar Clock",
+                    "enabled": True,
+                    # no next_fire_time, no preview_frame
+                }
+            ],
+        }
+        app.set_state.reset_mock()
+
+        app._publish_status()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        automations = attrs["automations"]
+        assert len(automations) == 1
+        assert "next_fire_time" not in automations[0]
+        assert "preview_frame" not in automations[0]
