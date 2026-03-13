@@ -238,6 +238,7 @@ class VestaboardConfigurationApp(hass.Hass):
             "refresh_status": self._cmd_refresh_status,
             "add_creator": self._cmd_add_creator,
             "generate_art": self._cmd_generate_art,
+            "generate_ai_message": self._cmd_generate_ai_message,
             "save_art_to_library": self._cmd_save_art_to_library,
         }
         handler = handlers.get(command)
@@ -353,6 +354,7 @@ class VestaboardConfigurationApp(hass.Hass):
             "frame": frame.characters,
             "ttl_minutes": payload.get("ttl_minutes"),
             "respect_ttl": payload.get("respect_ttl", False),
+            "should_expire": True,
         }
         self._forward_to_controller("push_frame", ctrl_payload)
         self.log("Forwarded library frame frame_id=%r to controller", frame_id)
@@ -442,6 +444,11 @@ class VestaboardConfigurationApp(hass.Hass):
         subject = payload.get("subject", "")
         self._forward_to_controller("generate_ai_art", {"subject": subject})
         self.log("generate_art subject=%r forwarded to controller as generate_ai_art", subject)
+
+    def _cmd_generate_ai_message(self, payload: dict) -> None:
+        """Forward an AI message generation request to the controller."""
+        self._forward_to_controller("generate_ai_message", {})
+        self.log("generate_ai_message forwarded to controller")
 
     def _cmd_save_art_to_library(self, payload: dict) -> None:
         """Save AI-generated art as a library frame."""

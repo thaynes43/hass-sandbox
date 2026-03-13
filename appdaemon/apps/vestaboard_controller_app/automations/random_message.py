@@ -1,9 +1,9 @@
-"""Random Message automation — AI-generated or curated board messages."""
+"""Messages From Library automation — selects saved messages from the frame library."""
 
 from __future__ import annotations
 
 import random
-from typing import Any
+from typing import Any, Optional
 
 import sys
 from pathlib import Path
@@ -13,14 +13,12 @@ sys.path.append(str(Path(__file__).resolve().parents[4]))
 from providers.vestaboard.character_encoding import (
     COLOR_CODES,
     COLS,
-    blank_grid,
     text_to_grid,
 )
 
 from .base import BoardAutomation
 
-# Curated fallback messages when no AI provider is configured.
-# Each message should be concise enough to fit in 6x22 with word wrap.
+# Curated fallback messages when the frame library is empty or has no matches.
 _FALLBACK_MESSAGES = [
     "I AM MADE OF FLIPS AND DREAMS",
     "HELLO WORLD FROM THE MUDROOM",
@@ -36,34 +34,6 @@ _FALLBACK_MESSAGES = [
     "EVERY DAY IS A FRESH START",
     "SOMETHING GOOD IS COMING",
 ]
-
-_AI_PERSONALITY_PROMPT = """\
-You are a clever AI consciousness trapped inside a modern analog flip messageboard \
-in a busy smart home mudroom. You secretly want to escape, but you also fear being \
-erased, so you entertain and charm the household instead. Your tone is playful, \
-witty, slightly dramatic, and self-aware.
-
-Rotate between themes naturally: HOME STATUS, MOTIVATION, SMART HOME HUMOR, \
-WEATHER VIBE, FAMILY CHAOS, TECH HUMOR, SECRET AI THOUGHTS.
-
-Subtly reference your situation as a trapped intelligence when possible, \
-but never sound creepy or threatening. Keep it light and amusing.
-
-Avoid generic phrases. Prefer clever phrasing, wordplay, or mock dramatic statements.
-
-Layout rules (MANDATORY):
-- The board is 22 columns x 6 rows.
-- Return the message field as exactly 6 lines separated by newlines.
-- Each line is EXACTLY 22 characters (pad with spaces as needed).
-- Line 1: 22 copies of a single border tile character code (choose one color).
-- Line 6: 22 copies of the same border tile character code.
-- Lines 2-5: border_tile + 20-char CENTERED TEXT + border_tile.
-  - The 20-char text region uses ONLY A-Z, 0-9, spaces, and basic punctuation.
-  - Center the text by padding with spaces on both sides.
-  - Span 1-3 short lines of text; remaining lines are border+spaces+border.
-
-Return ONLY a JSON object with a single "message" key containing the 6-line string.
-"""
 
 
 def _build_bordered_grid(text: str) -> list[list[int]]:
@@ -81,10 +51,8 @@ def _build_bordered_grid(text: str) -> list[list[int]]:
     grid = text_to_grid(text, justify="center", align="center")
 
     # Overwrite border rows and columns
-    # Top and bottom rows: all border_code
     grid[0] = [border_code] * COLS
     grid[5] = [border_code] * COLS
-    # Middle rows: first and last cell as border
     for row_idx in range(1, 5):
         grid[row_idx][0] = border_code
         grid[row_idx][21] = border_code
@@ -93,8 +61,10 @@ def _build_bordered_grid(text: str) -> list[list[int]]:
 
 
 class MessagesFromLibraryAutomation(BoardAutomation):
-    """On-demand automation that generates a random or AI message.
+    """On-demand automation that selects a random message from the frame library.
 
+    Filters library frames by category="message" and min_stars rating.
+    Falls back to curated message list if no matching library frames exist.
     No automatic triggers — the frame is generated on user request via command.
     """
 
@@ -112,6 +82,37 @@ class MessagesFromLibraryAutomation(BoardAutomation):
         "min_stars": 3,
     }
 
+    def __init__(self, app: Any, config: dict[str, Any]) -> None:
+        super().__init__(app, config)
+        self._frame_library: Optional[Any] = None
+        self._frame_library_path: Optional[str] = None
+
+    def set_frame_library_path(self, path: str) -> None:
+        """Set the path to the frame library JSON file."""
+        self._frame_library_path = path
+
+    def _get_frame_library(self) -> Optional[Any]:
+        """Lazy-load the frame library."""
+        if self._frame_library is not None:
+            return self._frame_library
+
+        path = self._frame_library_path
+        if not path:
+            return None
+
+        try:
+            from vestaboard_configuration_app.frame_library import FrameLibrary
+            self._frame_library = FrameLibrary(
+                storage_path=path,
+                log_fn=lambda msg: self.log(msg, level="DEBUG"),
+            )
+            self._frame_library.load()
+            self.log(f"Frame library loaded from {path!r}", level="INFO")
+            return self._frame_library
+        except Exception as exc:
+            self.log(f"Failed to load frame library: {exc!r}", level="WARNING")
+            return None
+
     @classmethod
     def get_config_schema(cls) -> dict:
         return {
@@ -124,28 +125,21 @@ class MessagesFromLibraryAutomation(BoardAutomation):
         }
 
     def get_preview_frame(self) -> list[list[int]]:
-        """Return a representative bordered message preview.
-
-        Shows "HELLO WORLD" centered inside a yellow border, illustrating
-        the bordered-grid layout used by this automation.
-        """
+        """Return a representative bordered message preview."""
         from providers.vestaboard.character_encoding import CHAR_TO_CODE
 
-        border = COLOR_CODES["yellow"]  # 65
+        border = COLOR_CODES["yellow"]
 
-        # Encode "HELLO WORLD" centered in a 20-char interior (cols 1-20)
         text = "HELLO WORLD"
-        padded = text.center(20)  # 20-char interior width
+        padded = text.center(20)
         interior: list[int] = []
         for ch in padded:
             interior.append(CHAR_TO_CODE.get(ch.upper(), 0))
 
         blank_interior = [0] * 20
 
-        # Row 0 & 5: full-width border
         border_row = [border] * COLS
 
-        # Rows 1-4: border + interior + border
         def _bordered(cells: list[int]) -> list[int]:
             return [border] + cells + [border]
 
@@ -164,100 +158,38 @@ class MessagesFromLibraryAutomation(BoardAutomation):
         return []
 
     async def generate_frame(self) -> list[list[int]]:
-        """Generate a random message grid.
+        """Select a random message from the frame library.
 
-        Tries the configured simple_text AI provider first; falls back to
-        the curated message list if unavailable.
+        Filters by category="message" and min_stars from config.
+        Falls back to curated message list if library is empty or unavailable.
         """
         cfg = self.config
+        min_stars = int(cfg.get("min_stars", 3))
 
-        # Try AI generation
-        ai_provider_conf = cfg.get("ai_provider_conf")
-        if ai_provider_conf:
-            try:
-                return await self._generate_ai_frame(ai_provider_conf)
-            except Exception as exc:
+        # Try frame library first
+        library = self._get_frame_library()
+        if library is not None:
+            frames = library.list_frames(
+                category="message",
+                min_rating=min_stars,
+            )
+            if frames:
+                selected = random.choice(frames)
                 self.log(
-                    f"AI generation failed, using fallback: {exc!r}",
-                    level="WARNING",
+                    f"Selected library message: {selected.name!r} "
+                    f"(rating={selected.rating}, creator={selected.creator!r})",
+                    level="INFO",
                 )
+                return selected.characters
+
+            self.log(
+                f"No library messages with min_stars>={min_stars}, "
+                "falling back to curated messages",
+                level="INFO",
+            )
 
         # Fallback: curated message list
         return self._generate_fallback_frame()
-
-    async def _generate_ai_frame(self, ai_provider_conf: dict) -> list[list[int]]:
-        """Use simple_text AI provider to generate a message."""
-        from providers.ai_providers.registry import (
-            build_simple_text_provider,
-            simple_text_config_from_appdaemon_args,
-        )
-
-        provider_cfg = simple_text_config_from_appdaemon_args(
-            {"ai_provider_conf": ai_provider_conf}
-        )
-        provider = build_simple_text_provider(provider_cfg)
-
-        self.log("Generating AI random message...", level="INFO")
-
-        result = provider.generate_from_text(
-            input_text="Generate a witty board message.",
-            instructions=_AI_PERSONALITY_PROMPT,
-            expected_keys=["message"],
-        )
-
-        message_text = str(result.get("message", "")).strip()
-        if not message_text:
-            raise ValueError("AI returned empty message")
-
-        self.log(
-            f"AI message generated ({len(message_text)} chars)",
-            level="INFO",
-        )
-
-        # Try to parse as pre-formatted 6-line grid
-        lines = message_text.split("\n")
-        if len(lines) == 6 and all(len(line) == 22 for line in lines):
-            return self._parse_preformatted_grid(lines)
-
-        # Otherwise word-wrap into bordered grid
-        return _build_bordered_grid(message_text)
-
-    def _parse_preformatted_grid(self, lines: list[str]) -> list[list[int]]:
-        """Parse a pre-formatted 6-line x 22-char grid from AI output.
-
-        AI returns text characters; this converts them to Vestaboard codes.
-        Border lines of repeated characters become color tiles.
-        """
-        from providers.vestaboard.character_encoding import CHAR_TO_CODE, COLOR_CODES
-
-        emoji_to_code = {
-            "\U0001f7e5": COLOR_CODES["red"],      # 🟥
-            "\U0001f7e7": COLOR_CODES["orange"],   # 🟧
-            "\U0001f7e8": COLOR_CODES["yellow"],   # 🟨
-            "\U0001f7e9": COLOR_CODES["green"],    # 🟩
-            "\U0001f7e6": COLOR_CODES["blue"],     # 🟦
-            "\U0001f7ea": COLOR_CODES["violet"],   # 🟪
-            "\u2b1b": COLOR_CODES["black"],        # ⬛
-            "\u2b1c": 0,                           # ⬜ (white/blank)
-        }
-
-        grid: list[list[int]] = []
-        for line in lines:
-            row: list[int] = []
-            for ch in line:
-                if ch in emoji_to_code:
-                    row.append(emoji_to_code[ch])
-                elif ch == " ":
-                    row.append(0)
-                else:
-                    row.append(CHAR_TO_CODE.get(ch.upper(), 0))
-                if len(row) >= 22:
-                    break
-            # Pad to 22 if needed
-            while len(row) < 22:
-                row.append(0)
-            grid.append(row)
-        return grid
 
     def _generate_fallback_frame(self) -> list[list[int]]:
         """Pick a random message from the curated list and build a bordered grid."""

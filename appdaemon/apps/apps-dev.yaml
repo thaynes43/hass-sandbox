@@ -13,11 +13,12 @@ vestaboard_controller_dev:
   automation_config_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/automation-config.yaml
   automations:
     calendar_clock: {}
-    messages_from_library:
-      ai_provider_conf:
-        simple_text: openai-default
+    messages_from_library: {}
     art_from_library: {}
     art_generated_by_ai:
+      ai_provider_conf:
+        simple_text: openai-default
+    message_generated_by_ai:
       ai_provider_conf:
         simple_text: openai-default
     calendar_summary_family:

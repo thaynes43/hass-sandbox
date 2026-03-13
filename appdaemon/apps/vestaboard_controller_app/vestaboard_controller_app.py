@@ -44,6 +44,9 @@ def _register_automations() -> None:
     from vestaboard_controller_app.automations.ai_art_generator import (
         ArtGeneratedByAIAutomation,
     )
+    from vestaboard_controller_app.automations.ai_message_generator import (
+        MessageGeneratedByAiAutomation,
+    )
     from vestaboard_controller_app.automations.calendar_summary import CalendarSummaryAutomation
 
     _AUTOMATION_CLASSES = {
@@ -52,6 +55,7 @@ def _register_automations() -> None:
         "messages_from_library": MessagesFromLibraryAutomation,
         "art_from_library": ArtFromLibraryAutomation,
         "art_generated_by_ai": ArtGeneratedByAIAutomation,
+        "message_generated_by_ai": MessageGeneratedByAiAutomation,
         "calendar_summary": CalendarSummaryAutomation,
         # Backward-compatible aliases (old names)
         "random_message": MessagesFromLibraryAutomation,
@@ -273,6 +277,8 @@ class VestaboardControllerApp(hass.Hass):
             self.create_task(self._handle_generate_random_art(payload))
         elif command == "generate_ai_art":
             self.create_task(self._handle_generate_ai_art(payload))
+        elif command == "generate_ai_message":
+            self.create_task(self._handle_generate_ai_message(payload))
         else:
             self.log(f"Unknown command: {command!r}", level="WARNING")
 
@@ -376,13 +382,20 @@ class VestaboardControllerApp(hass.Hass):
         try:
             grid = await automation.generate_frame()
             override_ttl = bool(payload.get("override_ttl", True))
+            cfg = automation.config
+            ttl_s = automation.default_ttl_s
+            ttl_minutes = cfg.get("ttl_minutes")
+            if ttl_minutes is not None:
+                ttl_s = int(float(ttl_minutes) * 60)
+            should_expire = bool(cfg.get("should_expire", automation.default_should_expire))
             self._push_automation_frame(
                 automation_id=auto_id,
                 source_label=automation.name,
                 grid=grid,
-                ttl_s=None,
+                ttl_s=ttl_s,
                 expiration_s=None,
                 override_ttl=override_ttl,
+                should_expire=should_expire,
             )
         except Exception as exc:
             self.log(f"generate_random_message failed: {exc!r}", level="ERROR")
@@ -401,13 +414,20 @@ class VestaboardControllerApp(hass.Hass):
         try:
             grid = await automation.generate_frame()
             override_ttl = bool(payload.get("override_ttl", True))
+            cfg = automation.config
+            ttl_s = automation.default_ttl_s
+            ttl_minutes = cfg.get("ttl_minutes")
+            if ttl_minutes is not None:
+                ttl_s = int(float(ttl_minutes) * 60)
+            should_expire = bool(cfg.get("should_expire", automation.default_should_expire))
             self._push_automation_frame(
                 automation_id=auto_id,
                 source_label=automation.name,
                 grid=grid,
-                ttl_s=None,
+                ttl_s=ttl_s,
                 expiration_s=None,
                 override_ttl=override_ttl,
+                should_expire=should_expire,
             )
         except Exception as exc:
             self.log(f"generate_random_art failed: {exc!r}", level="ERROR")
@@ -427,16 +447,55 @@ class VestaboardControllerApp(hass.Hass):
         override_ttl = bool(payload.get("override_ttl", True))
         try:
             grid = await automation.generate_frame(subject=subject)
+            cfg = automation.config
+            ttl_s = automation.default_ttl_s
+            ttl_minutes = cfg.get("ttl_minutes")
+            if ttl_minutes is not None:
+                ttl_s = int(float(ttl_minutes) * 60)
+            should_expire = bool(cfg.get("should_expire", automation.default_should_expire))
             self._push_automation_frame(
                 automation_id=auto_id,
                 source_label=automation.name,
                 grid=grid,
-                ttl_s=None,
+                ttl_s=ttl_s,
                 expiration_s=None,
                 override_ttl=override_ttl,
+                should_expire=should_expire,
             )
         except Exception as exc:
             self.log(f"generate_ai_art failed: {exc!r}", level="ERROR")
+
+    async def _handle_generate_ai_message(self, payload: dict) -> None:
+        """Generate and push an AI message from MessageGeneratedByAiAutomation."""
+        auto_id, automation = self._find_automation(
+            "message_generated_by_ai",
+        )
+        if automation is None:
+            self.log(
+                "generate_ai_message: message_generated_by_ai automation not active",
+                level="WARNING",
+            )
+            return
+        override_ttl = bool(payload.get("override_ttl", True))
+        try:
+            grid = await automation.generate_frame()
+            cfg = automation.config
+            ttl_s = automation.default_ttl_s
+            ttl_minutes = cfg.get("ttl_minutes")
+            if ttl_minutes is not None:
+                ttl_s = int(float(ttl_minutes) * 60)
+            should_expire = bool(cfg.get("should_expire", automation.default_should_expire))
+            self._push_automation_frame(
+                automation_id=auto_id,
+                source_label=automation.name,
+                grid=grid,
+                ttl_s=ttl_s,
+                expiration_s=None,
+                override_ttl=override_ttl,
+                should_expire=should_expire,
+            )
+        except Exception as exc:
+            self.log(f"generate_ai_message failed: {exc!r}", level="ERROR")
 
     # ------------------------------------------------------------------
     # Tick
@@ -542,8 +601,6 @@ class VestaboardControllerApp(hass.Hass):
             if not isinstance(auto_cfg, dict):
                 auto_cfg = {}
 
-            enabled = bool(auto_cfg.get("enabled", True))
-
             # Merge global AI conf into automation config (automation config takes priority)
             merged_cfg = {**auto_cfg}
             if global_ai_conf and "ai_provider_conf" not in merged_cfg:
@@ -554,6 +611,9 @@ class VestaboardControllerApp(hass.Hass):
                 store_cfg = self._config_store.get(automation_id)
                 if store_cfg:
                     merged_cfg.update(store_cfg)
+
+            # Read enabled AFTER store overlay so DEFAULT_UI_CONFIG is respected
+            enabled = bool(merged_cfg.get("enabled", True))
 
             # Look up automation class: use explicit "type" key if present,
             # otherwise fall back to using the automation_id as the type name.
@@ -572,6 +632,9 @@ class VestaboardControllerApp(hass.Hass):
                 # with the correct source (important for multi-instance types).
                 if hasattr(instance, "set_automation_id"):
                     instance.set_automation_id(automation_id)
+                # Provide frame library path to automations that need it
+                if hasattr(instance, "set_frame_library_path") and self._frame_library_path:
+                    instance.set_frame_library_path(self._frame_library_path)
                 self._automations[automation_id] = instance
                 self.log(
                     f"Automation {automation_id!r} ({cls.__name__}) instantiated"
@@ -651,12 +714,19 @@ class VestaboardControllerApp(hass.Hass):
         try:
             grid = await automation.generate_frame()
             if grid:
+                cfg = automation.config
+                ttl_s = automation.default_ttl_s
+                ttl_minutes = cfg.get("ttl_minutes")
+                if ttl_minutes is not None:
+                    ttl_s = int(float(ttl_minutes) * 60)
+                should_expire = bool(cfg.get("should_expire", automation.default_should_expire))
                 self._push_automation_frame(
                     automation_id=automation_id,
                     source_label=automation.name,
                     grid=grid,
-                    ttl_s=automation.default_ttl_s,
+                    ttl_s=ttl_s,
                     expiration_s=automation.default_expiration_s,
+                    should_expire=should_expire,
                 )
         except Exception as exc:
             self.log(
@@ -716,9 +786,24 @@ class VestaboardControllerApp(hass.Hass):
             return None
 
     async def _deactivate_async(self, automation_id: str) -> None:
-        """Async deactivation — cancel triggers, random intervals, and publish status."""
+        """Async deactivation — cancel triggers, random intervals, purge frames, and publish status."""
         await self._cancel_triggers(automation_id)
         self._cancel_random_interval(automation_id)
+
+        # Purge any frames from this automation still in the queue
+        action = self._queue.remove_source(automation_id)
+        if action.dropped_frames:
+            self.log(
+                f"Deactivation purged {len(action.dropped_frames)} frame(s) "
+                f"from {automation_id!r}",
+                level="INFO",
+            )
+            # If the displayed frame was purged, promote next available
+            if any(f.source == automation_id for f in action.dropped_frames):
+                tick_action = self._queue.tick(time.time())
+                if tick_action.display_frame:
+                    await self._write_to_board(tick_action.display_frame.characters)
+
         self.log(f"Automation {automation_id!r} deactivated", level="INFO")
         self._publish_status()
 
@@ -774,6 +859,9 @@ class VestaboardControllerApp(hass.Hass):
         handle = self._random_interval_handles.pop(automation_id, None)
         if handle is not None:
             try:
+                import asyncio
+                if isinstance(handle, asyncio.Task) and handle.done():
+                    handle = handle.result()
                 self.cancel_timer(handle)
             except Exception:
                 pass
@@ -809,6 +897,16 @@ class VestaboardControllerApp(hass.Hass):
     # Frame push helper (called by automations)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _is_blank_frame(grid: list[list[int]]) -> bool:
+        """Return True if grid is empty or contains only zeros (blank tiles)."""
+        if not grid:
+            return True
+        return all(
+            all(cell == 0 for cell in row) if row else True
+            for row in grid
+        )
+
     def _push_automation_frame(
         self,
         automation_id: str,
@@ -820,6 +918,12 @@ class VestaboardControllerApp(hass.Hass):
         should_expire: bool = False,
     ) -> None:
         """Push a frame generated by an automation to the queue."""
+        if self._is_blank_frame(grid):
+            self.log(
+                f"Automation {automation_id!r} produced blank frame — skipping push",
+                level="INFO",
+            )
+            return
         now = time.time()
         frame = BoardFrame(
             frame_id=uuid.uuid4().hex,
@@ -861,7 +965,7 @@ class VestaboardControllerApp(hass.Hass):
                 "frame_id": displayed.frame_id,
                 "source": displayed.source,
                 "source_label": displayed.source_label,
-                "characters": displayed.characters,
+                "characters": json.dumps(displayed.characters),
             }
 
         all_automations = []
@@ -880,7 +984,7 @@ class VestaboardControllerApp(hass.Hass):
             # Include preview frame so the card can show a representative sample
             if auto is not None and hasattr(auto, "get_preview_frame"):
                 try:
-                    entry["preview_frame"] = auto.get_preview_frame()
+                    entry["preview_frame"] = json.dumps(auto.get_preview_frame())
                 except Exception as exc:
                     self.log(
                         f"get_preview_frame failed for {automation_id!r}: {exc!r}",

@@ -274,9 +274,29 @@ class FrameQueue:
             self._displayed = None
 
         # Step 3: If nothing displayed or TTL expired, try to promote
-        need_promotion = self._displayed is None or _ttl_expired(self._displayed, now)
-        if not need_promotion:
-            return FrameQueueAction(display_frame=None, dropped_frames=dropped, reason="TTL still active")
+        #
+        # Key distinction for tick vs push:
+        # - ttl_s=None means "no TTL protection" — a *push* from another source
+        #   can freely replace this frame.  But during *tick* (no new frame
+        #   arrived), a None-TTL frame should hold the board rather than cycling
+        #   through fallback every tick interval.
+        # - ttl_s=<int> that expired means the frame actively wants to yield.
+        #
+        # So for tick promotion we only proceed when:
+        #   (a) nothing is displayed, OR
+        #   (b) the displayed frame has an explicit TTL that has expired, OR
+        #   (c) there are pending frames (new content waiting to be shown)
+        if self._displayed is not None:
+            has_explicit_ttl = self._displayed.ttl_s is not None
+            explicit_ttl_expired = has_explicit_ttl and _ttl_expired(self._displayed, now)
+            has_pending = bool(self._pending)
+
+            if not explicit_ttl_expired and not has_pending:
+                return FrameQueueAction(
+                    display_frame=None,
+                    dropped_frames=dropped,
+                    reason="TTL still active" if has_explicit_ttl else "no TTL — holding board (tick)",
+                )
 
         next_frame = self._next_non_expired(now)
         if next_frame is None:

@@ -73,6 +73,13 @@ def _blank_grid() -> list[list[int]]:
     return [[0] * 22 for _ in range(6)]
 
 
+def _test_grid() -> list[list[int]]:
+    """Return a non-blank 6x22 grid suitable for tests that go through push."""
+    grid = [[0] * 22 for _ in range(6)]
+    grid[0][0] = 1  # at least one non-zero cell
+    return grid
+
+
 def _make_frame(source: str = "test", ttl_s: int | None = None) -> BoardFrame:
     return BoardFrame(
         frame_id="test-frame-001",
@@ -599,7 +606,7 @@ class TestStatusPublishing:
         attrs = app.set_state.call_args[1]["attributes"]
         displayed_frame = attrs["displayed_frame"]
         assert displayed_frame is not None
-        assert displayed_frame["characters"] == grid
+        assert json.loads(displayed_frame["characters"]) == grid
 
     def test_publish_status_pending_expires_at_with_expiration(self):
         """Pending items with expiration_s should have an ISO expires_at string."""
@@ -736,7 +743,7 @@ class TestStatusPublishing:
         attrs = app.set_state.call_args[1]["attributes"]
         entry = attrs["all_automations"][0]
         assert "preview_frame" in entry
-        assert entry["preview_frame"] == preview
+        assert json.loads(entry["preview_frame"]) == preview
         mock_auto.get_preview_frame.assert_called_once()
 
     def test_publish_status_preview_frame_error_does_not_crash(self):
@@ -968,7 +975,7 @@ class TestFrameQueueIntegration:
         app.set_state = MagicMock()
         app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
 
-        grid = _blank_grid()
+        grid = _test_grid()
         app._push_automation_frame(
             automation_id="calendar_clock",
             source_label="CalendarClock",
@@ -1011,7 +1018,7 @@ class TestFrameQueueIntegration:
         app._push_automation_frame(
             automation_id="source2",
             source_label="Source2",
-            grid=_blank_grid(),
+            grid=_test_grid(),
             ttl_s=60,
             expiration_s=None,
             override_ttl=False,
@@ -1050,7 +1057,7 @@ class TestFrameQueueIntegration:
         app._push_automation_frame(
             automation_id="user",
             source_label="User",
-            grid=_blank_grid(),
+            grid=_test_grid(),
             ttl_s=30,
             expiration_s=None,
             override_ttl=True,
@@ -1086,11 +1093,42 @@ class TestFrameQueueIntegration:
         app._queue._displayed = first_frame
 
         # Push two frames from the same source without override_ttl
-        app._push_automation_frame("auto_x", "AutoX", _blank_grid(), 60, None)
-        app._push_automation_frame("auto_x", "AutoX", _blank_grid(), 60, None)
+        app._push_automation_frame("auto_x", "AutoX", _test_grid(), 60, None)
+        app._push_automation_frame("auto_x", "AutoX", _test_grid(), 60, None)
 
         # Second push should replace the first (dedup)
         assert len(app._queue._pending) == 1
+
+    def test_push_blank_frame_is_rejected(self):
+        """Blank frames (all zeros) should not be pushed to the queue."""
+        app = _make_app()
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._automations = {}
+        app._trigger_handles = {}
+        app._last_write_ok = None
+        app.set_state = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+
+        app._push_automation_frame(
+            automation_id="calendar_summary",
+            source_label="CalendarSummary",
+            grid=_blank_grid(),
+            ttl_s=60,
+            expiration_s=None,
+        )
+
+        # Blank frame should be rejected — nothing displayed or queued
+        assert app._queue._displayed is None
+        assert len(app._queue._pending) == 0
+
+    def test_is_blank_frame_static_method(self):
+        """Test the _is_blank_frame helper directly."""
+        from vestaboard_controller_app.vestaboard_controller_app import VestaboardControllerApp
+        assert VestaboardControllerApp._is_blank_frame([])
+        assert VestaboardControllerApp._is_blank_frame([[0] * 22 for _ in range(6)])
+        assert VestaboardControllerApp._is_blank_frame([[], [], [], [], [], []])
+        assert not VestaboardControllerApp._is_blank_frame([[1] + [0] * 21] + [[0] * 22 for _ in range(5)])
 
 
 # ---------------------------------------------------------------------------
@@ -1262,24 +1300,45 @@ class TestRandomMessageAutomation:
         grid = _run(auto.generate_frame())
         assert len(grid) == 6
 
-    def test_generate_frame_falls_back_on_ai_error(self):
+    def test_generate_frame_uses_library_when_available(self):
+        """When a frame library is available with matching frames, selects from it."""
         from vestaboard_controller_app.automations.random_message import RandomMessageAutomation
 
         mock_app = MagicMock()
         mock_app.log = MagicMock()
-        auto = RandomMessageAutomation(
-            app=mock_app,
-            config={"ai_provider_conf": {"simple_text": {"provider": "openai", "api_key": "test-key"}}},
-        )
+        auto = RandomMessageAutomation(app=mock_app, config={"min_stars": 0})
 
-        # Patch AI provider to raise
-        with patch.object(auto, "_generate_ai_frame", AsyncMock(side_effect=Exception("AI down"))):
-            grid = _run(auto.generate_frame())
+        # Mock the frame library
+        mock_frame = MagicMock()
+        mock_frame.characters = _blank_grid()
+        mock_frame.name = "Test Message"
+        mock_frame.rating = 3
+        mock_frame.creator = "Tom"
 
+        mock_library = MagicMock()
+        mock_library.list_frames = MagicMock(return_value=[mock_frame])
+        auto._frame_library = mock_library
+
+        grid = _run(auto.generate_frame())
+        assert grid == mock_frame.characters
+        mock_library.list_frames.assert_called_once_with(category="message", min_rating=0)
+
+    def test_generate_frame_falls_back_when_library_empty(self):
+        """When library has no matching frames, falls back to curated messages."""
+        from vestaboard_controller_app.automations.random_message import RandomMessageAutomation
+
+        mock_app = MagicMock()
+        mock_app.log = MagicMock()
+        auto = RandomMessageAutomation(app=mock_app, config={"min_stars": 5})
+
+        mock_library = MagicMock()
+        mock_library.list_frames = MagicMock(return_value=[])
+        auto._frame_library = mock_library
+
+        grid = _run(auto.generate_frame())
         assert len(grid) == 6
-        # Should log a warning about fallback
-        warning_calls = [c for c in mock_app.log.call_args_list if "WARNING" in str(c)]
-        assert len(warning_calls) >= 1
+        for row in grid:
+            assert len(row) == 22
 
 
 # ---------------------------------------------------------------------------
@@ -1584,3 +1643,249 @@ class TestCalendarSummaryAutomation:
         assert len(grid) == 6
         for row in grid:
             assert len(row) == 22
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: TTL from automation config tests
+# ---------------------------------------------------------------------------
+
+class TestFireAutomationFrameTTL:
+    """Verify _fire_automation_frame reads ttl_minutes from automation config."""
+
+    def _setup_app(self) -> VestaboardControllerApp:
+        app = _make_app()
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._automations = {}
+        app._trigger_handles = {}
+        app._last_write_ok = None
+        app.set_state = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        return app
+
+    def test_fire_automation_frame_reads_ttl_minutes(self):
+        """ttl_minutes in config should be converted to ttl_s."""
+        app = self._setup_app()
+        mock_auto = MagicMock()
+        mock_auto.name = "TestAuto"
+        mock_auto.default_ttl_s = None
+        mock_auto.default_expiration_s = None
+        mock_auto.default_should_expire = False
+        mock_auto.config = {"ttl_minutes": 5}
+        mock_auto.generate_frame = AsyncMock(return_value=_test_grid())
+        app._automations["test_auto"] = mock_auto
+
+        _run(app._fire_automation_frame("test_auto"))
+
+        # The frame should have ttl_s = 300 (5 * 60)
+        assert app._queue._displayed is not None
+        assert app._queue._displayed.ttl_s == 300
+
+    def test_fire_automation_frame_reads_should_expire(self):
+        """should_expire in config should override default_should_expire."""
+        app = self._setup_app()
+        mock_auto = MagicMock()
+        mock_auto.name = "TestAuto"
+        mock_auto.default_ttl_s = None
+        mock_auto.default_expiration_s = None
+        mock_auto.default_should_expire = False
+        mock_auto.config = {"ttl_minutes": 5, "should_expire": True}
+        mock_auto.generate_frame = AsyncMock(return_value=_test_grid())
+        app._automations["test_auto"] = mock_auto
+
+        _run(app._fire_automation_frame("test_auto"))
+
+        assert app._queue._displayed.should_expire is True
+
+    def test_fire_automation_frame_uses_defaults_without_config(self):
+        """Without ttl_minutes in config, default_ttl_s is used."""
+        app = self._setup_app()
+        mock_auto = MagicMock()
+        mock_auto.name = "TestAuto"
+        mock_auto.default_ttl_s = 120
+        mock_auto.default_expiration_s = None
+        mock_auto.default_should_expire = False
+        mock_auto.config = {}
+        mock_auto.generate_frame = AsyncMock(return_value=_test_grid())
+        app._automations["test_auto"] = mock_auto
+
+        _run(app._fire_automation_frame("test_auto"))
+
+        assert app._queue._displayed.ttl_s == 120
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: Deactivation purge tests
+# ---------------------------------------------------------------------------
+
+class TestDeactivationPurge:
+    """Verify deactivation removes frames from the queue."""
+
+    def test_deactivate_purges_automation_frames(self):
+        app = _make_app()
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._automations = {}
+        app._trigger_handles = {}
+        app._random_interval_handles = {}
+        app._last_write_ok = None
+        app.set_state = MagicMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+
+        mock_auto = MagicMock()
+        mock_auto.get_triggers = MagicMock(return_value=[])
+        mock_auto.config = {}
+        app._automations["my_auto"] = mock_auto
+
+        # Put a frame from this automation in fallback
+        now = time.time()
+        frame = BoardFrame(
+            frame_id="auto-frame",
+            characters=_blank_grid(),
+            source="my_auto",
+            source_label="MyAuto",
+            ttl_s=None,
+            expiration_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        app._queue._fallback.append(frame)
+
+        app._deactivate_automation("my_auto")
+
+        # Frame should be purged
+        assert len(app._queue._fallback) == 0
+
+
+# ---------------------------------------------------------------------------
+# Fix 6: JSON-serialized frame data tests
+# ---------------------------------------------------------------------------
+
+class TestJSONSerializedFrameData:
+    """Verify frame data is serialized as JSON strings in status."""
+
+    def _setup_app(self) -> VestaboardControllerApp:
+        app = _make_app()
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._automations = {}
+        app._trigger_handles = {}
+        app._last_write_ok = None
+        return app
+
+    def test_displayed_characters_is_json_string(self):
+        app = self._setup_app()
+
+        now = time.time()
+        grid = [[0] * 22 for _ in range(6)]  # grid with zeros
+        frame = BoardFrame(
+            frame_id="f1",
+            characters=grid,
+            source="test",
+            source_label="Test",
+            ttl_s=None,
+            expiration_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+        )
+        app._queue._displayed = frame
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        chars = attrs["displayed_frame"]["characters"]
+        # Should be a JSON string
+        assert isinstance(chars, str)
+        # Should round-trip back to original
+        assert json.loads(chars) == grid
+
+    def test_preview_frame_is_json_string(self):
+        app = self._setup_app()
+
+        preview = [[0] * 22 for _ in range(6)]
+        mock_auto = MagicMock()
+        mock_auto.name = "TestAuto"
+        mock_auto.next_fire_time = None
+        mock_auto.get_preview_frame = MagicMock(return_value=preview)
+        app._automations["test_auto"] = mock_auto
+        app._automation_configs["test_auto"] = {"enabled": True}
+        app._active_automations = {"test_auto"}
+
+        app._publish_status()
+        attrs = app.set_state.call_args[1]["attributes"]
+        entry = attrs["all_automations"][0]
+        assert isinstance(entry["preview_frame"], str)
+        assert json.loads(entry["preview_frame"]) == preview
+
+
+# ---------------------------------------------------------------------------
+# AI Message Generator automation tests
+# ---------------------------------------------------------------------------
+
+class TestAIMessageGeneratorAutomation:
+    def test_generate_fallback_returns_valid_grid(self):
+        from vestaboard_controller_app.automations.ai_message_generator import MessageGeneratedByAiAutomation
+
+        mock_app = MagicMock()
+        mock_app.log = MagicMock()
+        auto = MessageGeneratedByAiAutomation(app=mock_app, config={})
+
+        grid = auto._generate_fallback_frame()
+        assert len(grid) == 6
+        for row in grid:
+            assert len(row) == 22
+
+    def test_generate_frame_uses_fallback_without_ai(self):
+        from vestaboard_controller_app.automations.ai_message_generator import MessageGeneratedByAiAutomation
+
+        mock_app = MagicMock()
+        mock_app.log = MagicMock()
+        auto = MessageGeneratedByAiAutomation(app=mock_app, config={})
+
+        grid = _run(auto.generate_frame())
+        assert len(grid) == 6
+
+    def test_generate_frame_falls_back_on_ai_error(self):
+        from vestaboard_controller_app.automations.ai_message_generator import MessageGeneratedByAiAutomation
+
+        mock_app = MagicMock()
+        mock_app.log = MagicMock()
+        auto = MessageGeneratedByAiAutomation(
+            app=mock_app,
+            config={"ai_provider_conf": {"simple_text": {"provider": "openai", "api_key": "test-key"}}},
+        )
+
+        with patch.object(auto, "_generate_ai_frame", AsyncMock(side_effect=Exception("AI down"))):
+            grid = _run(auto.generate_frame())
+
+        assert len(grid) == 6
+        warning_calls = [c for c in mock_app.log.call_args_list if "WARNING" in str(c)]
+        assert len(warning_calls) >= 1
+
+    def test_registered_in_automation_classes(self):
+        from vestaboard_controller_app.vestaboard_controller_app import _register_automations, _AUTOMATION_CLASSES
+        _register_automations()
+        assert "message_generated_by_ai" in _AUTOMATION_CLASSES
+
+    def test_generate_ai_message_command_routed(self):
+        app = _make_app()
+        app.initialize()
+        app._queue = FrameQueue(log_fn=app.log)
+        app._automations = {}
+        app._trigger_handles = {}
+        app._last_write_ok = None
+
+        mock_auto = MagicMock()
+        mock_auto.generate_frame = AsyncMock(return_value=_blank_grid())
+        mock_auto.name = "MessageGeneratedByAI"
+        mock_auto.default_ttl_s = None
+        mock_auto.default_should_expire = True
+        mock_auto.config = {"ttl_minutes": 5, "should_expire": True}
+        app._automations["message_generated_by_ai"] = mock_auto
+
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "generate_ai_message", "payload": "{}"},
+            {},
+        )
+        assert app.create_task.call_count >= 1

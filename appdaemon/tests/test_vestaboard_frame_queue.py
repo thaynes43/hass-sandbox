@@ -852,6 +852,61 @@ class TestNoneTTLSemantics:
             assert tick.display_frame is None
             assert q.get_state(now=t).displayed is solo
 
+    def test_none_ttl_does_not_cycle_through_fallback(self):
+        """A displayed frame with ttl_s=None should NOT be replaced by fallback
+        frames during tick — this prevents thrashing between automations."""
+        q = make_queue()
+
+        # Push two frames: first goes to display, second also displays (replaces None-TTL)
+        frame_a = make_frame(source="clock", ttl_s=None, created_at=0.0)
+        frame_b = make_frame(source="summary", ttl_s=None, created_at=1.0)
+        q.push(frame_a, now=0.0)
+        q.push(frame_b, now=1.0)
+
+        # frame_a is in fallback, frame_b is displayed
+        assert q._displayed.source == "summary"
+        assert len(q._fallback) == 1
+
+        # Tick should NOT promote from fallback — frame_b holds the board
+        for t in (10.0, 25.0, 50.0, 100.0):
+            tick = q.tick(now=t)
+            assert tick.display_frame is None, f"tick at {t} should not promote"
+            assert q._displayed.source == "summary"
+
+    def test_none_ttl_yields_to_pending(self):
+        """A displayed frame with ttl_s=None should yield to a pending frame
+        during tick (new content waiting)."""
+        q = make_queue()
+
+        # Display a None-TTL frame, then push one with an explicit TTL
+        frame_a = make_frame(source="clock", ttl_s=None, created_at=0.0)
+        frame_b = make_frame(source="alert", ttl_s=60, created_at=1.0)
+        q.push(frame_a, now=0.0)
+
+        # frame_b will display immediately since frame_a has no TTL protection
+        action = q.push(frame_b, now=1.0)
+        assert action.display_frame is frame_b
+
+    def test_explicit_ttl_expired_promotes_from_fallback(self):
+        """When a displayed frame has an explicit TTL that expires, tick should
+        still promote from fallback normally."""
+        q = make_queue()
+
+        frame_a = make_frame(source="bg", ttl_s=None, created_at=0.0)
+        q.push(frame_a, now=0.0)
+
+        # Push a frame with explicit TTL that will display immediately
+        frame_b = make_frame(source="alert", ttl_s=10, created_at=1.0)
+        q.push(frame_b, now=1.0)
+
+        # frame_a is in fallback, frame_b displayed with TTL=10
+        assert q._displayed.source == "alert"
+
+        # After TTL expires, tick should promote frame_a from fallback
+        tick = q.tick(now=12.0)
+        assert tick.display_frame is not None
+        assert tick.display_frame.source == "bg"
+
 
 # ---------------------------------------------------------------------------
 # should_expire semantics

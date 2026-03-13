@@ -169,12 +169,19 @@ class CalendarClockAutomation(BoardAutomation):
 
     async def _fire_frame(self) -> None:
         grid = await self.generate_frame()
+        cfg = self.config
+        ttl_s = self.default_ttl_s
+        ttl_minutes = cfg.get("ttl_minutes")
+        if ttl_minutes is not None:
+            ttl_s = int(float(ttl_minutes) * 60)
+        should_expire = bool(cfg.get("should_expire", self.default_should_expire))
         self.app._push_automation_frame(
             automation_id="calendar_clock",
             source_label=self.name,
             grid=grid,
-            ttl_s=self.default_ttl_s,
+            ttl_s=ttl_s,
             expiration_s=self.default_expiration_s,
+            should_expire=should_expire,
         )
 
     async def generate_frame(self) -> list[list[int]]:

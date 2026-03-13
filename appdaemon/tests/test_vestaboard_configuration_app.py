@@ -426,6 +426,20 @@ class TestPushLibraryFrame:
         fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
         assert fired_payload["frame"] == expected_chars
 
+    def test_push_library_frame_includes_should_expire(self, tmp_path):
+        """push_library_frame should include should_expire=True in controller payload."""
+        app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
+        app.initialize()
+
+        frames = app._frame_library.list_frames()
+        frame_id = frames[0].frame_id
+
+        payload = json.dumps({"frame_id": frame_id})
+        app._on_command("vestaboard_configuration_command", {"command": "push_library_frame", "payload": payload}, {})
+
+        fired_payload = json.loads(app.fire_event.call_args[1]["payload"])
+        assert fired_payload["should_expire"] is True
+
     def test_push_library_frame_missing_frame_logs_warning(self, tmp_path):
         """push_library_frame with an unknown frame_id should log a warning."""
         app = _make_app(extra_args={"frame_library_path": str(tmp_path / "lib.json")})
