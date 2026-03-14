@@ -706,6 +706,8 @@ class VestaboardControllerApp(hass.Hass):
             return
 
         self._active_automations.add(automation_id)
+        if self._config_store is not None:
+            self._config_store.update(automation_id, {"enabled": True})
 
         triggers = automation.get_triggers()
         if not triggers:
@@ -787,6 +789,8 @@ class VestaboardControllerApp(hass.Hass):
             )
             return
         self._active_automations.discard(automation_id)
+        if self._config_store is not None:
+            self._config_store.update(automation_id, {"enabled": False})
         self.create_task(self._deactivate_async(automation_id))
 
     async def _register_trigger_async(

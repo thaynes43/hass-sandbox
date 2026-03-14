@@ -782,7 +782,7 @@ class VestaboardConfigurationCard extends HTMLElement {
           <div class="save-actions">
             <button class="${saveButtonClass}" data-action="save-to-library" ${canSubmitToLibrary ? "" : "disabled"}>${editingActive ? "Update in Library" : "Save to Library"}</button>
             <button class="vbc-btn vbc-btn-primary" data-action="push-to-board">Push to Board</button>
-            <button class="vbc-btn vbc-btn-secondary" data-action="clear-grid">Clear Grid</button>
+            <button class="vbc-btn vbc-btn-secondary" data-action="new-frame">New Frame</button>
             ${editingActive ? `<button class="vbc-btn vbc-btn-secondary" data-action="finish-editing">Finish Editing</button>` : ""}
           </div>
           <div class="save-validation-message" aria-live="polite">
@@ -1370,13 +1370,11 @@ class VestaboardConfigurationCard extends HTMLElement {
         break;
       }
 
-      case "clear-grid":
-        if (!window.confirm("Clear the editor grid? This will remove your current work.")) {
+      case "new-frame":
+        if (!window.confirm("Start a new frame? This will clear the current frame and reset its settings.")) {
           break;
         }
-        this._editorGrid = vbcEmptyGrid();
-        this._textInput = "";
-        this._borderColor = null;
+        this._resetEditorState();
         this._updateEditorSaveValidation();
         this._render();
         break;
@@ -1679,12 +1677,25 @@ class VestaboardConfigurationCard extends HTMLElement {
       case "set-art-subject":
       case "set-ttl-minutes":
         e.preventDefault();
+        e.stopPropagation();
+        this._moveFocusToCard();
         el.blur();
         break;
 
       default:
         break;
     }
+  }
+
+  _moveFocusToCard() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const cardContent = root.querySelector(".card-content");
+    if (!(cardContent instanceof HTMLElement)) return;
+    if (!cardContent.hasAttribute("tabindex")) {
+      cardContent.setAttribute("tabindex", "-1");
+    }
+    cardContent.focus({ preventScroll: true });
   }
 
   _updateEditorGridVisual() {
@@ -1725,6 +1736,19 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editingFrameCategory = null;
     this._editingOriginalName = "";
     this._editingBaseline = null;
+  }
+
+  _resetEditorState() {
+    this._editorGrid = vbcEmptyGrid();
+    this._textInput = "";
+    this._borderColor = null;
+    this._editorCreator = "";
+    this._editorName = "";
+    this._editorRating = 0;
+    this._editorTtlMinutes = 30;
+    this._editorShouldExpire = true;
+    this._clearEditorEditState();
+    this._pendingSavedFrame = null;
   }
 
   _editorGridSignature(grid) {
