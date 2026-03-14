@@ -15,6 +15,10 @@ const PFV_DEFAULTS = {
   min_interval: 1,
   max_interval: 120,
   step_interval: 1,
+  min_auto_resume: 1,
+  max_auto_resume: 86400,
+  step_auto_resume: 1,
+  default_auto_resume: 600,
 };
 
 class PhotoFrameViewerCard extends HTMLElement {
@@ -26,6 +30,7 @@ class PhotoFrameViewerCard extends HTMLElement {
     this._lastSnapshot = null;
     this._delegatedBound = false;
     this._intervalDebounce = null;
+    this._autoResumeDebounce = null;
   }
 
   setConfig(config) {
@@ -116,6 +121,13 @@ class PhotoFrameViewerCard extends HTMLElement {
     const minInterval = this._config.min_interval;
     const maxInterval = this._config.max_interval;
     const stepInterval = this._config.step_interval;
+    const autoResumeRaw =
+      parseFloat(this._sensorAttr("pause_auto_resume_s")) ||
+      0;
+    const autoResumeEnabled = autoResumeRaw > 0;
+    const autoResumeSeconds = autoResumeEnabled
+      ? autoResumeRaw
+      : this._config.default_auto_resume;
 
     const statusIcon = paused ? "mdi:pause-circle" : "mdi:play-circle";
     const statusLabel = paused ? "Paused" : "Playing";
@@ -175,6 +187,27 @@ class PhotoFrameViewerCard extends HTMLElement {
                   value="${interval}"
                   data-action="set-interval" />
               </div>
+              <div class="field-group checkbox-group">
+                <label class="checkbox-label">
+                  <input
+                    type="checkbox"
+                    ${autoResumeEnabled ? "checked" : ""}
+                    data-action="toggle-auto-resume" />
+                  <span>Enable auto unpause</span>
+                </label>
+              </div>
+              ${autoResumeEnabled ? `
+                <div class="field-group">
+                  <label>Auto unpause after seconds</label>
+                  <input
+                    type="number"
+                    min="${this._config.min_auto_resume}"
+                    max="${this._config.max_auto_resume}"
+                    step="${this._config.step_auto_resume}"
+                    value="${autoResumeSeconds}"
+                    data-action="set-auto-resume" />
+                </div>
+              ` : ""}
             </div>
           </div>
 
@@ -223,6 +256,9 @@ class PhotoFrameViewerCard extends HTMLElement {
             cycle: true,
           });
         }
+      } else if (action === "toggle-auto-resume") {
+        const seconds = el.checked ? this._currentAutoResumeSeconds() : 0;
+        this._callRelay("set_pause_auto_resume", { seconds });
       }
     };
 
@@ -278,6 +314,14 @@ class PhotoFrameViewerCard extends HTMLElement {
         clearTimeout(this._intervalDebounce);
         this._intervalDebounce = setTimeout(() => {
           this._callRelay("set_interval", { seconds: val });
+        }, 400);
+      } else if (el?.dataset?.action === "set-auto-resume") {
+        const val = parseFloat(el.value);
+        if (isNaN(val) || val < this._config.min_auto_resume) return;
+
+        clearTimeout(this._autoResumeDebounce);
+        this._autoResumeDebounce = setTimeout(() => {
+          this._callRelay("set_pause_auto_resume", { seconds: val });
         }, 400);
       }
     });
@@ -464,9 +508,38 @@ class PhotoFrameViewerCard extends HTMLElement {
         color: var(--pfv-on-surface-secondary);
       }
 
+      .checkbox-group {
+        gap: 0;
+      }
+
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--pfv-on-surface);
+        font-size: 14px;
+      }
+
+      .checkbox-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--pfv-primary);
+      }
+
       input[type="range"] {
         width: 100%;
         accent-color: var(--pfv-primary);
+      }
+
+      input[type="number"] {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        border: 1px solid var(--pfv-border);
+        border-radius: var(--pfv-radius-sm);
+        background: var(--pfv-surface);
+        color: var(--pfv-on-surface);
+        font: inherit;
       }
 
       /* Icon buttons */
@@ -497,6 +570,15 @@ class PhotoFrameViewerCard extends HTMLElement {
     const div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  _currentAutoResumeSeconds() {
+    const input = this.shadowRoot?.querySelector('[data-action="set-auto-resume"]');
+    const val = parseFloat(input?.value);
+    if (!isNaN(val) && val >= this._config.min_auto_resume) return val;
+    const current = parseFloat(this._sensorAttr("pause_auto_resume_s"));
+    if (!isNaN(current) && current >= this._config.min_auto_resume) return current;
+    return this._config.default_auto_resume;
   }
 
   // ── HA Card Boilerplate ───────────────────────────────────────────

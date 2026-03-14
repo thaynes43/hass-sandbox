@@ -1,13 +1,13 @@
 # Dashboard Notify
 
-AI-generated notification carousel for wall displays. Shows scheduled notifications with AI-generated images, detection summary events, and an idle placeholder — all in an auto-advancing carousel.
+AI-generated notification carousel for wall displays. Shows scheduled notifications with AI-generated images, detection summary events, and an idle placeholder — all in an auto-advancing carousel with pause auto-resume managed by AppDaemon.
 
 ## How It Works
 
 1. **Scheduled notifications** — YAML config defines notifications with time windows, text, and prompt hints. When a schedule is active, the app generates an AI image and adds it to the carousel.
 2. **Detection summary hook** — Listens for `detection_summary/run_published` events and adds detection images as notifications.
 3. **Placeholder** — When no notifications are active, generates a calming AI placeholder image.
-4. **Carousel** — Auto-advances through active notifications. Card supports swipe, pause, dismiss.
+4. **Carousel** — Auto-advances through active notifications. Card supports swipe, pause, dismiss, and backend-managed pause auto-resume.
 
 ## Architecture
 
@@ -18,7 +18,7 @@ prompt_builder.py            # Prompt construction with style variants
 dashboard-notify-card.js     # Custom Lovelace carousel card
 ```
 
-State is published to `sensor.dashboard_notify_status`. The card reads from this sensor and sends commands via `script.dashboard_notify_relay`.
+State is published to `sensor.dashboard_notify_status`. The card reads from this sensor and sends commands via `script.dashboard_notify_relay`. The backend now also publishes `pause_auto_resume_s` and the active resume deadline so clients can reflect the current pause behavior.
 
 ## Dependencies
 
@@ -36,6 +36,12 @@ State is published to `sensor.dashboard_notify_status`. The card reads from this
 ## Self-Provisioned Entities
 
 - `script.dashboard_notify_relay` — Card-to-AppDaemon relay script
+
+## Runtime Behavior Notes
+
+- `pause_auto_resume_s` is enforced in AppDaemon even though this PR did not add a separate settings UI for `dashboard-notify-card.js`.
+- The current dashboard notify frontend still exposes pause, dismiss, and navigation controls only.
+- Frontend configuration work for dashboard-managed carousel settings is tracked separately in [#31](https://github.com/thaynes43/hass-sandbox/issues/31) and should be coordinated with [#18](https://github.com/thaynes43/hass-sandbox/issues/18).
 
 ## Manual Setup Required
 
@@ -92,6 +98,7 @@ See `apps-prod.yaml` for full config. Key settings:
 
 - `media_fs_root` or `media_fs_root_env` — Local filesystem root mapping to HA's `/media` (default: `/media`; override in dev to e.g. `/mnt/cephfs-hdd/misc/hass-media`)
 - `carousel_interval_s` — Auto-advance interval (default: 10s)
+- `pause_auto_resume_s` — Automatically resume after this many paused seconds (default: 600; `0` disables it)
 - `default_ttl_s` — Default notification TTL (default: 1hr)
 - `no_notification_refresh_s` — Placeholder refresh interval (default: 1hr)
 - `notifications` — List of scheduled notification configs

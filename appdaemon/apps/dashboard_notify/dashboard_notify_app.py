@@ -42,6 +42,13 @@ def _as_bool(value: Any, default: bool = False) -> bool:
     return bool(value)
 
 
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def _next_boundary_seconds(hour: int, minute: int, now: float) -> float:
     """Return seconds from now until the next occurrence of HH:MM (today or tomorrow)."""
     dt_now = datetime.fromtimestamp(now)
@@ -101,6 +108,9 @@ class DashboardNotify(hass.Hass):
         self._no_notification_refresh_s: int = int(
             cfg.get("no_notification_refresh_s", 3600)
         )
+        self._pause_auto_resume_s: float = max(
+            0.0, _safe_float(cfg.get("pause_auto_resume_s"), 600.0)
+        )
 
         # HA credentials for provisioning
         self._ha_url: str = str(resolve_arg_secret(cfg, "ha_url", default=""))
@@ -120,6 +130,8 @@ class DashboardNotify(hass.Hass):
         self._manager = NotificationManager()
         self._current_index: int = 0
         self._paused: bool = False
+        self._pause_auto_resume_handle: Optional[Any] = None
+        self._pause_auto_resume_deadline: Optional[float] = None
         self._placeholder_generated_at: float = 0.0
         self._placeholder_url: str = ""
         self._placeholder_path: str = ""
@@ -936,7 +948,7 @@ class DashboardNotify(hass.Hass):
             if count > 0:
                 self._current_index = (self._current_index - 1) % count
         elif command == "toggle_pause":
-            self._paused = not self._paused
+            self._set_paused(not self._paused, reason="toggle_pause")
         elif command == "dismiss":
             if count > 0 and 0 <= self._current_index < count:
                 nid = notifications[self._current_index].id
@@ -950,6 +962,48 @@ class DashboardNotify(hass.Hass):
             self.log("Unknown command: %s", command, level="WARNING")
             return
 
+        self._publish_state()
+
+    def _set_paused(self, paused: bool, *, reason: str) -> None:
+        self._paused = paused
+        if paused:
+            self._schedule_pause_auto_resume(reason=reason)
+        else:
+            self._cancel_pause_auto_resume()
+
+    def _cancel_pause_auto_resume(self) -> None:
+        handle = self._pause_auto_resume_handle
+        self._pause_auto_resume_handle = None
+        self._pause_auto_resume_deadline = None
+        if handle is None:
+            return
+        try:
+            if self.timer_running(handle):
+                self.cancel_timer(handle)
+        except Exception:
+            pass
+
+    def _schedule_pause_auto_resume(self, *, reason: str) -> None:
+        self._cancel_pause_auto_resume()
+        if self._pause_auto_resume_s <= 0:
+            return
+        self._pause_auto_resume_deadline = time.time() + self._pause_auto_resume_s
+        self._pause_auto_resume_handle = self.run_in(
+            self._handle_pause_auto_resume,
+            self._pause_auto_resume_s,
+        )
+        self.log(
+            "DashboardNotify auto-resume scheduled in %.1fs reason=%s",
+            self._pause_auto_resume_s,
+            reason,
+        )
+
+    def _handle_pause_auto_resume(self, kwargs: Any) -> None:
+        self._pause_auto_resume_handle = None
+        self._pause_auto_resume_deadline = None
+        if not self._paused:
+            return
+        self._set_paused(False, reason="auto_resume")
         self._publish_state()
 
     # ------------------------------------------------------------------
@@ -991,6 +1045,8 @@ class DashboardNotify(hass.Hass):
             "active_index": self._current_index,
             "paused": self._paused,
             "carousel_interval_s": self._carousel_interval_s,
+            "pause_auto_resume_s": self._pause_auto_resume_s,
+            "pause_resume_at": self._pause_auto_resume_deadline,
         }
 
         # Add placeholder info when no notifications
