@@ -261,7 +261,7 @@ class VestaboardConfigurationApp(hass.Hass):
         Defaults to "message" for backward compatibility.
         """
         frame_data = payload.get("frame")
-        name = str(payload.get("name", "Untitled"))
+        name = str(payload.get("name", "")).strip()
         creator = str(payload.get("creator", "Anonymous"))
         rating = int(payload.get("rating", 0))
         category = str(payload.get("category", "message"))
@@ -269,9 +269,25 @@ class VestaboardConfigurationApp(hass.Hass):
         if not frame_data:
             self.log("save_frame: missing 'frame' in payload", level="WARNING")
             return
+        if not name:
+            self.log("save_frame: missing or empty 'name' in payload", level="WARNING")
+            return
 
         # Deduplicate: if a frame with identical characters exists, update it
         existing = self._frame_library.find_by_characters(frame_data)
+        duplicate_name = self._frame_library.find_by_name(
+            name,
+            exclude_frame_id=existing.frame_id if existing else None,
+        )
+        if duplicate_name is not None:
+            self.log(
+                "save_frame: duplicate 'name' %r conflicts with frame_id=%r",
+                name,
+                duplicate_name.frame_id,
+                level="WARNING",
+            )
+            return
+
         if existing is not None:
             self._frame_library.update_frame(
                 existing.frame_id, name=name, creator=creator, rating=rating,
@@ -321,6 +337,25 @@ class VestaboardConfigurationApp(hass.Hass):
             if k not in ("frame_id",)
         }
         update_fields.pop("frame_id", None)
+
+        if "name" in update_fields:
+            name = str(update_fields["name"]).strip()
+            if not name:
+                self.log("update_frame: empty 'name' in payload", level="WARNING")
+                return
+            duplicate_name = self._frame_library.find_by_name(
+                name,
+                exclude_frame_id=frame_id,
+            )
+            if duplicate_name is not None:
+                self.log(
+                    "update_frame: duplicate 'name' %r conflicts with frame_id=%r",
+                    name,
+                    duplicate_name.frame_id,
+                    level="WARNING",
+                )
+                return
+            update_fields["name"] = name
 
         # The card sends "frame" but the dataclass field is "characters"
         if "frame" in update_fields:
@@ -659,7 +694,7 @@ class VestaboardConfigurationApp(hass.Hass):
             "library": self._frame_library.to_json(),
             "creators": self._creators,
             "automations": ca.get("all_automations", []),
-            "ai_art_preview": ca.get("ai_art_preview"),
+            "ai_art_preview": json.dumps(ca["ai_art_preview"]) if ca.get("ai_art_preview") else None,
             "status": "ok",
         }
         try:

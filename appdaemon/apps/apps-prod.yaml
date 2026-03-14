@@ -538,7 +538,7 @@ vestaboard_controller:
     art_from_library: {}
     art_generated_by_ai:
       ai_provider_conf:
-        simple_text: openai-default
+        simple_text: openai-pixel-art
     message_generated_by_ai:
       ai_provider_conf:
         simple_text: openai-default

@@ -17,14 +17,14 @@ vestaboard_controller_dev:
     art_from_library: {}
     art_generated_by_ai:
       ai_provider_conf:
-        simple_text: openai-default
+        simple_text: openai-pixel-art
     message_generated_by_ai:
       ai_provider_conf:
         simple_text: openai-default
     calendar_summary_family:
       type: calendar_summary
       calendar_entity: calendar.hayneshome01886_gmail_com
-    calendar_summary_hot_tub:
+    calendar_summary_hot_tub_maintenance:
       type: calendar_summary
       calendar_entity: calendar.hot_tub_maintenance
     calendar_summary_holidays:

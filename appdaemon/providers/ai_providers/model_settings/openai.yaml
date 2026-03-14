@@ -19,6 +19,13 @@ bundles:
     simple_text_model: gpt-5.2
     image_model: gpt-image-1.5
 
+  openai-pixel-art:
+    multimodal_model: gpt-5.2
+    multimodal_image_detail: auto
+    simple_text_model: gpt-5.2
+    simple_text_max_output_tokens: 1200
+    image_model: gpt-image-1.5
+
   openai-budget:
     multimodal_model: gpt-5.2
     multimodal_image_detail: auto

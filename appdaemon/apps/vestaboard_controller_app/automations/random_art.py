@@ -21,6 +21,7 @@ class ArtFromLibraryAutomation(BoardAutomation):
     """
 
     name = "ArtFromLibrary"
+    description = "Randomly displays starred art from your library."
     default_ttl_s = None
     default_expiration_s = None
     default_should_expire = True

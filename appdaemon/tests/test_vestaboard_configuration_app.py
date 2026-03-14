@@ -705,7 +705,7 @@ class TestAiArtPreviewPassthrough:
         app._publish_status()
 
         attrs = app.set_state.call_args[1]["attributes"]
-        assert attrs["ai_art_preview"] == preview_data
+        assert json.loads(attrs["ai_art_preview"]) == preview_data
 
     def test_ai_art_preview_none_when_no_preview(self, tmp_path):
         """ai_art_preview should be None when controller has no preview."""

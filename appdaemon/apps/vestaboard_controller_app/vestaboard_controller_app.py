@@ -498,7 +498,7 @@ class VestaboardControllerApp(hass.Hass):
         try:
             grid = await automation.generate_frame(subject=subject)
             self._ai_art_preview = {
-                "characters": grid,
+                "characters": json.dumps(grid),
                 "subject": subject,
                 "generated_at": time.time(),
             }
@@ -1018,6 +1018,7 @@ class VestaboardControllerApp(hass.Hass):
             entry: dict[str, Any] = {
                 "id": automation_id,
                 "name": auto.name if auto else automation_id.replace("_", " ").title(),
+                "description": auto.description if auto else "A Vestaboard automation.",
                 "enabled": automation_id in self._active_automations,
             }
 

@@ -79,6 +79,7 @@ class MessageGeneratedByAiAutomation(BoardAutomation):
     """
 
     name = "MessageGeneratedByAI"
+    description = "Uses AI to generate inspirational messages for your board."
     default_ttl_s = None
     default_expiration_s = None
     default_should_expire = True

@@ -76,6 +76,7 @@ class CalendarClockAutomation(BoardAutomation):
     """
 
     name = "CalendarClock"
+    description = "Shows the current time and date on your board."
     default_ttl_s = None       # freely replaceable — no TTL protection
     default_expiration_s = None
     default_should_expire = False

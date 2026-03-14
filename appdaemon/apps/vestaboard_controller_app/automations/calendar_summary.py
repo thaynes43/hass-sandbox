@@ -100,6 +100,7 @@ class CalendarSummaryAutomation(BoardAutomation):
     """
 
     name = "CalendarSummary"
+    description = "Displays upcoming events from a calendar on your board."
     default_ttl_s = None       # TTL set dynamically per event
     default_expiration_s = None  # Expiration set dynamically per event
     default_should_expire = False
@@ -132,9 +133,13 @@ class CalendarSummaryAutomation(BoardAutomation):
     def set_automation_id(self, automation_id: str) -> None:
         """Set the automation ID used as the source when pushing frames."""
         self._automation_id = automation_id
-        # Update the display name to include the ID for multi-instance clarity
-        if automation_id != "calendar_summary":
-            self.name = f"CalendarSummary({automation_id})"
+        # Build a friendly display name from the automation ID
+        # e.g. "calendar_summary_family" → "Calendar: Family"
+        #      "calendar_summary_hot_tub" → "Calendar: Hot Tub"
+        suffix = automation_id.replace("calendar_summary_", "").replace("calendar_summary", "")
+        if suffix:
+            friendly = suffix.replace("_", " ").title()
+            self.name = f"Calendar: {friendly}"
 
     def get_preview_frame(self) -> list[list[int]]:
         """Return a representative calendar event preview frame.

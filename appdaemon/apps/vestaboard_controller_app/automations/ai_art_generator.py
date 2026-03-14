@@ -17,35 +17,49 @@ from .base import BoardAutomation
 _VALID_CODES = set(range(0, 61)) | {63, 64, 65, 66, 67, 68, 69, 70}
 
 _ART_PROMPT_TEMPLATE = """\
-You are a pixel artist for a 22-column x 6-row display board.
+You are a pixel artist creating art for a physical display board with 6 rows \
+and 22 columns. The art must fill the ENTIRE canvas — use ALL 6 rows and \
+spread the design across ALL 22 columns.
 
-Create pixel art of: {subject}
+Subject: {subject}
 
-Return ONLY a JSON object with a single key "grid" containing a 6x22 nested list \
-of integer Vestaboard character codes.
+## Color codes
+0=blank, 63=red, 64=orange, 65=yellow, 66=green, 67=blue, 68=violet, 69=white, 70=black
 
-Valid codes:
-- 0: blank/black background
-- 63: red tile
-- 64: orange tile
-- 65: yellow tile
-- 66: green tile
-- 67: blue tile
-- 68: violet/purple tile
-- 69: white tile
-- 70: black filled tile
+## Critical rules
+1. Output EXACTLY 6 rows, each with EXACTLY 22 integer codes.
+2. The design MUST span the full width. Columns 0-21 should all be used. \
+Do NOT leave columns 11-21 blank — that wastes half the display.
+3. The design MUST use all 6 rows. Do not leave rows empty.
+4. Use at least 3 colors for visual interest.
+5. Center the design: equal blank padding on left and right sides.
 
-Rules:
-- The grid must be EXACTLY 6 rows.
-- Each row must have EXACTLY 22 elements.
-- Use only the valid codes listed above.
-- Create a recognizable, colorful pixel art image.
-- Use at least 3 different colors for visual interest.
-- Center the subject within the 22x6 canvas.
+## Output format
+Return ONLY: {{"grid": [[row0], [row1], [row2], [row3], [row4], [row5]]}}
 
-Return ONLY the JSON object, no other text.
-Example format:
-{{"grid": [[0,0,...], [0,63,...], ...]}}
+## Examples of GOOD centered art (uses full canvas)
+
+Star:
+{{"grid": [\
+[0,0,0,0,0,0,0,0,0,0,65,65,0,0,0,0,0,0,0,0,0,0],\
+[0,0,0,0,0,0,0,0,65,65,65,65,65,65,0,0,0,0,0,0,0,0],\
+[0,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,0],\
+[0,0,0,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,65,0,0,0],\
+[0,0,0,0,0,65,65,65,65,65,0,0,65,65,65,65,65,0,0,0,0,0],\
+[0,0,0,0,65,65,65,0,0,0,0,0,0,0,0,65,65,65,0,0,0,0]\
+]}}
+
+Heart:
+{{"grid": [\
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],\
+[0,0,0,63,63,63,0,0,0,0,0,0,0,0,0,0,63,63,63,0,0,0],\
+[0,0,63,63,63,63,63,63,63,0,0,0,0,63,63,63,63,63,63,63,0,0],\
+[0,0,0,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,0,0,0],\
+[0,0,0,0,0,63,63,63,63,63,63,63,63,63,63,63,63,0,0,0,0,0],\
+[0,0,0,0,0,0,0,0,63,63,63,63,63,63,0,0,0,0,0,0,0,0]\
+]}}
+
+Now create pixel art of: {subject}
 """
 
 
@@ -77,6 +91,7 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
     """
 
     name = "ArtGeneratedByAI"
+    description = "Uses AI to create unique pixel art for your board."
     default_ttl_s = None
     default_expiration_s = None
     default_should_expire = True
@@ -208,6 +223,21 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
             expected_keys=["grid"],
         )
 
+        # Log provider metadata for debugging token limits
+        meta = result.get("_meta", {})
+        req_meta = meta.get("request", {})
+        resp_meta = meta.get("response", {})
+        self.log(
+            f"AI art response — model={meta.get('model')!r} "
+            f"max_tokens={req_meta.get('max_completion_tokens')} "
+            f"usage={resp_meta.get('usage')}",
+            level="INFO",
+        )
+        self.log(
+            f"AI art raw content: {resp_meta.get('content_preview')}",
+            level="INFO",
+        )
+
         raw_grid = result.get("grid")
         if raw_grid is None:
             raise ValueError("AI response missing 'grid' key")
@@ -218,6 +248,20 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
 
         # Ensure all elements are ints (AI sometimes returns floats)
         grid = [[int(code) for code in row] for row in raw_grid]
+
+        # Log the full grid for debugging centering/layout issues
+        for i, row in enumerate(grid):
+            nonzero = [j for j, v in enumerate(row) if v != 0]
+            if nonzero:
+                self.log(
+                    f"  row {i}: cols {nonzero[0]}-{nonzero[-1]} "
+                    f"left_pad={nonzero[0]} right_pad={21 - nonzero[-1]} "
+                    f"filled={len(nonzero)} → {row}",
+                    level="INFO",
+                )
+            else:
+                self.log(f"  row {i}: empty → {row}", level="INFO")
+
         return grid
 
 

@@ -144,6 +144,24 @@ class FrameLibrary:
                 return frame
         return None
 
+    def find_by_name(
+        self,
+        name: str,
+        *,
+        exclude_frame_id: Optional[str] = None,
+    ) -> Optional[LibraryFrame]:
+        """Return the first frame with a matching normalized name, or None."""
+        normalized = str(name).strip().casefold()
+        if not normalized:
+            return None
+
+        for frame in self._frames:
+            if exclude_frame_id and frame.frame_id == exclude_frame_id:
+                continue
+            if str(frame.name).strip().casefold() == normalized:
+                return frame
+        return None
+
     def add_frame(self, frame: LibraryFrame) -> None:
         """Add a frame to the library and persist."""
         self._frames.append(frame)

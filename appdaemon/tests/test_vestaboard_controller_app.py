@@ -1547,8 +1547,8 @@ class TestCalendarSummaryAutomation:
 
     def test_set_automation_id_updates_name(self):
         auto = self._make_auto({})
-        auto.set_automation_id("cal_hot_tub")
-        assert "cal_hot_tub" in auto.name
+        auto.set_automation_id("calendar_summary_hot_tub")
+        assert auto.name == "Calendar: Hot Tub"
 
     def test_set_automation_id_default_keeps_name(self):
         auto = self._make_auto({})

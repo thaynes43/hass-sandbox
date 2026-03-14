@@ -149,6 +149,11 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editorTtlMinutes = 30;
     this._editorShouldExpire = true;
     this._editingFrameId = null;
+    this._editingFrameCategory = null;
+    this._editingOriginalName = "";
+    this._editingBaseline = null;
+    this._editorSaveError = "";
+    this._pendingSavedFrame = null;
 
     // Library state
     this._libraryPage = 0;
@@ -203,6 +208,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     // Clear optimistic automation edits when backend data refreshes
     this._automationEdits = {};
     this._loadArtResult();
+    this._syncPendingSavedFrame();
     this._render();
   }
 
@@ -224,7 +230,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const s = this._hass?.states?.[this._config.status_entity];
     if (!s) return null;
     const a = s.attributes || {};
-    const preview = a.ai_art_preview;
+    const preview = this._parseJsonAttr("ai_art_preview", null);
     const previewStamp = preview && typeof preview === "object"
       ? `${preview.generated_at || ""}|${preview.subject || ""}`
       : "";
@@ -258,9 +264,9 @@ class VestaboardConfigurationCard extends HTMLElement {
 
   _loadArtResult() {
     const preview = this._parseJsonAttr("ai_art_preview", null);
-    const artFrame = preview?.characters;
+    const artFrame = vbcNormalizeGrid(vbcParseGrid(preview?.characters));
     if (preview && Array.isArray(artFrame) && artFrame.length === VBC_ROWS) {
-      this._artPreview = preview;
+      this._artPreview = { ...preview, characters: artFrame };
       this._artResultFrame = artFrame;
       this._artGenerating = false;
     } else if (!preview && !this._artGenerating) {
@@ -362,21 +368,22 @@ class VestaboardConfigurationCard extends HTMLElement {
     const cellSizeStyle = isEditor
       ? ""
       : `width:${cellSize}px;height:${cellSize}px;`;
-    const gridClass = isEditor ? "vb-grid vb-grid-editor" : "vb-grid";
+    const gridClass = isEditor ? "vb-grid vb-grid-editor" : "vb-grid vb-grid-preview";
 
     const cells = [];
     for (let r = 0; r < VBC_ROWS; r++) {
       for (let c = 0; c < VBC_COLS; c++) {
         const code = normalizedGrid[r][c] || 0;
         const isColor = COLOR_MAP[code];
-        const bg = isColor || (code === 0 ? "#000" : "rgba(0,0,0,0.22)");
+        const blankBg = isEditor ? "#000" : "#1a2230";
+        const bg = isColor || (code === 0 ? blankBg : "rgba(0,0,0,0.22)");
         const ch = (isColor || code === 0) ? "" : (CODE_TO_CHAR[code] || "");
         const interactiveAttr = interactive
           ? ` data-action="grid-cell" data-row="${r}" data-col="${c}"`
           : "";
         const id = idPrefix ? ` id="${idPrefix}-${r}-${c}"` : "";
         cells.push(
-          `<div class="vb-cell"${id}${interactiveAttr} style="${cellSizeStyle}border-radius:${radius}px;background:${bg};box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);">${this._esc(ch)}</div>`
+          `<div class="vb-cell"${id}${interactiveAttr} style="${cellSizeStyle}border-radius:${radius}px;background:${bg};box-shadow:inset 0 0 0 1px ${isEditor ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.12)"};">${this._esc(ch)}</div>`
         );
       }
     }
@@ -477,6 +484,58 @@ class VestaboardConfigurationCard extends HTMLElement {
     });
   }
 
+  _gridToTextState(grid) {
+    const normalized = vbcNormalizeGrid(grid);
+    let borderColor = null;
+    let startRow = 0;
+    let endRow = VBC_ROWS;
+    let startCol = 0;
+    let endCol = VBC_COLS;
+
+    const topLeft = normalized[0]?.[0] ?? 0;
+    if (topLeft >= 63 && topLeft <= 70) {
+      const hasFullBorder =
+        normalized[0].every((code) => code === topLeft)
+        && normalized[VBC_ROWS - 1].every((code) => code === topLeft)
+        && normalized.every((row) => row[0] === topLeft && row[VBC_COLS - 1] === topLeft);
+      if (hasFullBorder) {
+        borderColor = topLeft;
+        startRow = 1;
+        endRow = VBC_ROWS - 1;
+        startCol = 1;
+        endCol = VBC_COLS - 1;
+      }
+    }
+
+    const lines = [];
+    for (let r = startRow; r < endRow; r++) {
+      let line = "";
+      for (let c = startCol; c < endCol; c++) {
+        const code = normalized[r][c];
+        if (code >= 63 && code <= 70) {
+          line += " ";
+        } else {
+          line += CODE_TO_CHAR[code] || " ";
+        }
+      }
+      lines.push(line.trim());
+    }
+
+    while (lines.length && !lines[0]) lines.shift();
+    while (lines.length && !lines[lines.length - 1]) lines.pop();
+
+    return {
+      borderColor,
+      text: lines.join("\n"),
+    };
+  }
+
+  _currentEditorFrame() {
+    return this._editorMode === "text"
+      ? this._textToGrid(this._textInput, this._borderColor)
+      : this._editorGrid;
+  }
+
   /* ── Library data helpers ───────────────────────────────────────── */
 
   _getLibraryFrames(category) {
@@ -514,6 +573,33 @@ class VestaboardConfigurationCard extends HTMLElement {
     }
 
     return frames;
+  }
+
+  _findLibraryNameConflict(name, excludeFrameId = null) {
+    const normalized = (name || "").trim().toLowerCase();
+    if (!normalized) return null;
+    const frames = this._parseJsonAttr("library", []);
+    return (Array.isArray(frames) ? frames : []).find((frame) => {
+      if (excludeFrameId && frame.frame_id === excludeFrameId) return false;
+      return String(frame.name || "").trim().toLowerCase() === normalized;
+    }) || null;
+  }
+
+  _syncPendingSavedFrame() {
+    if (!this._pendingSavedFrame) return;
+    const frames = this._parseJsonAttr("library", []);
+    const pending = this._pendingSavedFrame;
+    const match = (Array.isArray(frames) ? frames : []).find((frame) =>
+      (frame.category || "message") === pending.category
+      && String(frame.name || "") === pending.name
+    );
+    if (!match) return;
+
+    this._editingFrameId = match.frame_id;
+    this._editingFrameCategory = match.category || pending.category;
+    this._editingOriginalName = match.name || pending.name;
+    this._editingBaseline = this._buildEditingBaseline();
+    this._pendingSavedFrame = null;
   }
 
   /* ── Full render ────────────────────────────────────────────────── */
@@ -602,8 +688,8 @@ class VestaboardConfigurationCard extends HTMLElement {
 
     const modeToggle = `
       <div class="mode-toggle">
-        <button class="mode-btn ${this._editorMode === "paint" ? "active" : ""}" data-action="set-mode" data-mode="paint">Paint</button>
-        <button class="mode-btn ${this._editorMode === "text" ? "active" : ""}" data-action="set-mode" data-mode="text">Text</button>
+        <button class="mode-btn ${this._editorMode === "paint" ? "active" : ""}" data-action="set-mode" data-mode="paint">Art</button>
+        <button class="mode-btn ${this._editorMode === "text" ? "active" : ""}" data-action="set-mode" data-mode="text">Message</button>
       </div>
     `;
 
@@ -625,6 +711,38 @@ class VestaboardConfigurationCard extends HTMLElement {
       const filled = i < this._editorRating;
       return `<span class="star ${filled ? "filled" : ""}" data-action="set-rating" data-rating="${i + 1}">${filled ? "\u2605" : "\u2606"}</span>`;
     }).join("");
+    const canSaveToLibrary = this._editorName.trim().length > 0;
+    const editingActive = this._isEditingActiveInCurrentMode();
+    const duplicateNameFrame = this._findLibraryNameConflict(this._editorName, editingActive ? this._editingFrameId : null);
+    const hasDuplicateName = Boolean(duplicateNameFrame);
+    const isEditingDirty = this._isEditingFrameDirty();
+    const canSubmitToLibrary = editingActive
+      ? (canSaveToLibrary && !hasDuplicateName && isEditingDirty)
+      : (canSaveToLibrary && !hasDuplicateName);
+    const nameLabelClass = (canSaveToLibrary && !hasDuplicateName)
+      ? "field-label field-label-name-required"
+      : "field-label field-label-name-required field-label-required";
+    const saveButtonClass = canSubmitToLibrary ? "vbc-btn vbc-btn-primary" : "vbc-btn vbc-btn-secondary";
+    const editingLibraryLabel = this._editingFrameCategory === "art" ? "Art Library" : "Message Library";
+    const editingRenameTarget = this._editorName.trim();
+    const isRenamingFrame = Boolean(
+      editingActive
+      && editingRenameTarget
+      && editingRenameTarget !== (this._editingOriginalName || "")
+    );
+    const editingNotice = editingActive ? `
+      <div class="edit-frame-notice" aria-live="polite">
+        <div class="edit-frame-title">Editing existing frame in ${editingLibraryLabel}</div>
+        <div class="edit-frame-meta">Current library name: ${this._esc(this._editingOriginalName || "Untitled")}</div>
+        <div class="edit-frame-meta">${isRenamingFrame ? `Saving will rename it to ${this._esc(editingRenameTarget)}.` : "Saving will update this existing library item."}</div>
+      </div>
+    ` : `
+      <div class="edit-frame-notice edit-frame-notice-new" aria-live="polite">
+        <div class="edit-frame-title">Creating a new ${this._editorMode === "paint" ? "art" : "message"} frame</div>
+        <div class="edit-frame-meta">This editor is not linked to an existing library item yet.</div>
+        <div class="edit-frame-meta">Use Save to Library to create a new library entry.</div>
+      </div>
+    `;
 
     return `
       <div class="editor-section">
@@ -638,19 +756,19 @@ class VestaboardConfigurationCard extends HTMLElement {
 
         <!-- Save section -->
         <div class="save-section">
-          <div class="save-row">
+          <div class="save-row save-row-name">
+            <label class="${nameLabelClass}">Name${canSaveToLibrary ? "" : ' <span class="required-indicator" aria-hidden="true">*</span>'}</label>
+            <input type="text" class="vbc-input" data-action="set-name" value="${this._esc(this._editorName)}" placeholder="Frame name" maxlength="100" aria-invalid="${canSaveToLibrary ? "false" : "true"}">
+          </div>
+          <div class="save-row save-row-creator">
             <label class="field-label">Creator</label>
             <div class="creator-chip-list">${creatorButtons}</div>
           </div>
-          <div class="save-row">
-            <label class="field-label">Name</label>
-            <input type="text" class="vbc-input" data-action="set-name" value="${this._esc(this._editorName)}" placeholder="Frame name" maxlength="100">
-          </div>
-          <div class="save-row">
-            <label class="field-label">Rating</label>
-            <div class="star-rating">${stars}</div>
-          </div>
           <div class="save-row ttl-row">
+            <div class="ttl-field ttl-field-rating">
+              <label class="field-label">Rating</label>
+              <div class="star-rating">${stars}</div>
+            </div>
             <div class="ttl-field">
               <label class="field-label">TTL</label>
               <input type="number" class="vbc-input vbc-input-sm" data-action="set-ttl-minutes" value="${this._editorTtlMinutes}" min="1" max="1440">
@@ -662,10 +780,21 @@ class VestaboardConfigurationCard extends HTMLElement {
             </label>
           </div>
           <div class="save-actions">
-            <button class="vbc-btn vbc-btn-secondary" data-action="save-to-library">${this._editingFrameId ? "Update in Library" : "Save to Library"}</button>
+            <button class="${saveButtonClass}" data-action="save-to-library" ${canSubmitToLibrary ? "" : "disabled"}>${editingActive ? "Update in Library" : "Save to Library"}</button>
             <button class="vbc-btn vbc-btn-primary" data-action="push-to-board">Push to Board</button>
+            <button class="vbc-btn vbc-btn-secondary" data-action="clear-grid">Clear Grid</button>
+            ${editingActive ? `<button class="vbc-btn vbc-btn-secondary" data-action="finish-editing">Finish Editing</button>` : ""}
           </div>
-          ${this._editingFrameId ? `<button class="vbc-btn vbc-btn-text" data-action="clear-edit">Cancel Edit</button>` : ""}
+          <div class="save-validation-message" aria-live="polite">
+            ${hasDuplicateName
+              ? "That name is already used in your library. Choose a different name."
+              : !canSaveToLibrary
+              ? "Name is required before saving to your library."
+              : (editingActive && !isEditingDirty
+                ? "Make a change before updating this library frame."
+                : "&nbsp;")}
+          </div>
+          ${editingNotice}
         </div>
       </div>
     `;
@@ -702,7 +831,6 @@ class VestaboardConfigurationCard extends HTMLElement {
             <div class="palette-char-row">${charRowTwo}</div>
           </div>
         </div>
-        <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="clear-grid">Clear Grid</button>
       </div>
     `;
   }
@@ -792,7 +920,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const miniRadius = 1;
     const stars = "\u2605".repeat(frame.rating || 0) + "\u2606".repeat(5 - (frame.rating || 0));
     const isConfirming = this._confirmDeleteId === frame.frame_id;
-    const moveLabel = frame.category === "art" ? "Move to Messages" : "Move to Art";
+    const moveLabel = "Move";
     const moveCategory = frame.category === "art" ? "message" : "art";
 
     return `
@@ -806,15 +934,22 @@ class VestaboardConfigurationCard extends HTMLElement {
           <span class="lib-frame-stars">${stars}</span>
         </div>
         <div class="lib-frame-actions">
-          <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-view" data-frame-id="${this._esc(frame.frame_id)}" title="View">View</button>
-          <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-edit" data-frame-id="${this._esc(frame.frame_id)}" title="Edit">Edit</button>
-          <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-push" data-frame-id="${this._esc(frame.frame_id)}" title="Push">Push</button>
-          <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-move" data-frame-id="${this._esc(frame.frame_id)}" data-category="${moveCategory}" title="${moveLabel}">${moveLabel}</button>
-          ${isConfirming
-            ? `<button class="vbc-btn vbc-btn-danger vbc-btn-xs" data-action="lib-delete-confirm" data-frame-id="${this._esc(frame.frame_id)}">Confirm</button>
-               <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-delete-cancel">Cancel</button>`
-            : `<button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-delete" data-frame-id="${this._esc(frame.frame_id)}" title="Delete">Delete</button>`
-          }
+          <div class="lib-frame-action-row">
+            <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-edit" data-frame-id="${this._esc(frame.frame_id)}" title="Edit">Edit</button>
+            <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-clone" data-frame-id="${this._esc(frame.frame_id)}" title="Clone">Clone</button>
+            ${isConfirming
+              ? `<button class="vbc-btn vbc-btn-danger vbc-btn-xs" data-action="lib-delete-confirm" data-frame-id="${this._esc(frame.frame_id)}">Confirm</button>`
+              : `<button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-delete" data-frame-id="${this._esc(frame.frame_id)}" title="Delete">Delete</button>`
+            }
+          </div>
+          <div class="lib-frame-action-row">
+            ${isConfirming
+              ? `<button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-delete-cancel">Cancel</button>
+                 <span class="lib-frame-action-spacer"></span>`
+              : `<button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-move" data-frame-id="${this._esc(frame.frame_id)}" data-category="${moveCategory}" title="${moveLabel}">${moveLabel}</button>
+                 <button class="vbc-btn vbc-btn-text vbc-btn-xs" data-action="lib-push" data-frame-id="${this._esc(frame.frame_id)}" title="Push">Push</button>`
+            }
+          </div>
         </div>
       </div>
     `;
@@ -837,7 +972,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         <div class="ai-art-result-actions">
           <button class="vbc-btn vbc-btn-secondary vbc-btn-sm" data-action="art-push">Push to Board</button>
           <button class="vbc-btn vbc-btn-secondary vbc-btn-sm" data-action="art-edit">Edit in Editor</button>
-          <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="art-quick-save">
+          <button class="vbc-btn vbc-btn-secondary vbc-btn-sm" data-action="art-quick-save">
             Quick Save
           </button>
         </div>
@@ -905,7 +1040,7 @@ class VestaboardConfigurationCard extends HTMLElement {
               <span class="auto-dot" style="background:${dotColor};"></span>
               <span class="product-name">${this._esc(auto.name || auto.id)}</span>
             </div>
-            <span class="product-desc">${this._esc(this._autoDescription(auto.id))}</span>
+            <span class="product-desc">${this._esc(auto.description || this._autoDescription(auto.id))}</span>
           </div>
           <div class="product-actions">
             <button class="vbc-btn ${enabled ? "vbc-btn-installed" : "vbc-btn-primary"} vbc-btn-sm" data-action="store-toggle" data-auto-id="${this._esc(auto.id)}">
@@ -1163,6 +1298,12 @@ class VestaboardConfigurationCard extends HTMLElement {
       this._handleInput(el);
     });
 
+    root.addEventListener("keydown", (e) => {
+      const el = e.target;
+      if (!el || !el.dataset?.action) return;
+      this._handleKeydown(el, e);
+    });
+
     // Change events for selects and checkboxes
     root.addEventListener("change", (e) => {
       const el = e.target;
@@ -1184,6 +1325,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const ch = (isColor || this._selectedPaletteCode === 0) ? "" : (CODE_TO_CHAR[this._selectedPaletteCode] || "");
     el.style.background = bg;
     el.textContent = ch;
+    this._updateEditorSaveValidation();
   }
 
   _dispatchAction(el) {
@@ -1200,9 +1342,6 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       case "set-mode":
         this._editorMode = el.dataset.mode;
-        if (this._editorMode === "text") {
-          this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
-        }
         this._render();
         break;
 
@@ -1218,6 +1357,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       case "set-creator-btn": {
         const creator = el.dataset.creator || "";
         this._editorCreator = this._editorCreator === creator ? "" : creator;
+        this._updateEditorSaveValidation();
         this._render();
         break;
       }
@@ -1225,38 +1365,53 @@ class VestaboardConfigurationCard extends HTMLElement {
       case "set-border-tile": {
         const code = parseInt(el.dataset.code, 10);
         this._borderColor = code === 0 ? null : code;
-        if (this._editorMode === "text") {
-          this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
-        }
+        if (this._editorMode === "text") this._updateEditorGridVisual();
         this._render();
         break;
       }
 
       case "clear-grid":
+        if (!window.confirm("Clear the editor grid? This will remove your current work.")) {
+          break;
+        }
         this._editorGrid = vbcEmptyGrid();
+        this._textInput = "";
+        this._borderColor = null;
+        this._updateEditorSaveValidation();
         this._render();
         break;
 
       case "set-rating": {
         const rating = parseInt(el.dataset.rating, 10);
         this._editorRating = this._editorRating === rating ? 0 : rating;
+        this._updateEditorSaveValidation();
         this._render();
         break;
       }
 
       case "save-to-library":
-        this._saveToLibrary();
+        if (!this._isEditingActiveInCurrentMode() && this._editorName.trim() && !this._findLibraryNameConflict(this._editorName)) {
+          this._saveToLibrary();
+        } else if (this._isEditingActiveInCurrentMode()
+          && this._editorName.trim()
+          && !this._findLibraryNameConflict(this._editorName, this._editingFrameId)
+          && this._isEditingFrameDirty()) {
+          this._saveToLibrary();
+        }
         break;
 
       case "push-to-board":
         this._pushToBoard();
         break;
 
+      case "finish-editing":
       case "clear-edit":
-        this._editingFrameId = null;
-        this._editorGrid = vbcEmptyGrid();
-        this._editorName = "";
-        this._editorRating = 0;
+        if (this._editingFrameId && this._isEditingFrameDirty()) {
+          const confirmed = window.confirm("Discard your unsaved changes to this library frame?");
+          if (!confirmed) break;
+          this._restoreEditingBaseline();
+        }
+        this._clearEditorEditState();
         this._render();
         break;
 
@@ -1285,8 +1440,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         break;
       }
 
-      case "lib-view":
-        this._viewLibraryFrame(el.dataset.frameId);
+      case "lib-clone":
+        this._cloneLibraryFrame(el.dataset.frameId);
         break;
 
       case "lib-edit":
@@ -1421,7 +1576,6 @@ class VestaboardConfigurationCard extends HTMLElement {
       case "set-text":
         this._textInput = el.value.slice(0, 80);
         if (this._editorMode === "text") {
-          this._editorGrid = this._textToGrid(this._textInput, this._borderColor);
           const countEl = this.shadowRoot.querySelector(".char-count");
           if (countEl) countEl.textContent = `${this._textInput.length}/80`;
           this._updateEditorGridVisual();
@@ -1430,6 +1584,7 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       case "set-name":
         this._editorName = el.value;
+        this._updateEditorSaveValidation();
         break;
 
       case "set-art-subject":
@@ -1516,8 +1671,26 @@ class VestaboardConfigurationCard extends HTMLElement {
     }
   }
 
+  _handleKeydown(el, e) {
+    if (e.key !== "Enter" || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return;
+
+    switch (el.dataset.action) {
+      case "set-name":
+      case "set-art-subject":
+      case "set-ttl-minutes":
+        e.preventDefault();
+        el.blur();
+        break;
+
+      default:
+        break;
+    }
+  }
+
   _updateEditorGridVisual() {
-    const grid = this._editorGrid;
+    const grid = this._editorMode === "text"
+      ? this._textToGrid(this._textInput, this._borderColor)
+      : this._editorGrid;
     const root = this.shadowRoot;
     for (let r = 0; r < VBC_ROWS; r++) {
       for (let c = 0; c < VBC_COLS; c++) {
@@ -1547,16 +1720,134 @@ class VestaboardConfigurationCard extends HTMLElement {
     expandBtn.textContent = dirty ? "Discard & Close" : "Hide Config";
   }
 
+  _clearEditorEditState() {
+    this._editingFrameId = null;
+    this._editingFrameCategory = null;
+    this._editingOriginalName = "";
+    this._editingBaseline = null;
+  }
+
+  _editorGridSignature(grid) {
+    return JSON.stringify(vbcNormalizeGrid(grid));
+  }
+
+  _buildEditingBaseline() {
+    const currentFrame = this._currentEditorFrame();
+    return {
+      name: this._editorName,
+      creator: this._editorCreator,
+      rating: this._editorRating,
+      mode: this._editorMode,
+      textInput: this._textInput,
+      borderColor: this._borderColor,
+      grid: vbcCloneGrid(currentFrame),
+      gridSignature: this._editorGridSignature(currentFrame),
+    };
+  }
+
+  _editingModeForCurrentFrame() {
+    return this._editingFrameCategory === "art" ? "paint" : "text";
+  }
+
+  _isEditingActiveInCurrentMode() {
+    return Boolean(this._editingFrameId) && this._editorMode === this._editingModeForCurrentFrame();
+  }
+
+  _isEditingFrameDirty() {
+    if (!this._isEditingActiveInCurrentMode() || !this._editingBaseline) return false;
+    return (
+      this._editorName !== this._editingBaseline.name
+      || this._editorCreator !== this._editingBaseline.creator
+      || this._editorRating !== this._editingBaseline.rating
+      || this._editorMode !== this._editingBaseline.mode
+      || this._textInput !== this._editingBaseline.textInput
+      || this._borderColor !== this._editingBaseline.borderColor
+      || this._editorGridSignature(this._currentEditorFrame()) !== this._editingBaseline.gridSignature
+    );
+  }
+
+  _restoreEditingBaseline() {
+    if (!this._editingBaseline) return;
+    this._editorName = this._editingBaseline.name;
+    this._editorCreator = this._editingBaseline.creator;
+    this._editorRating = this._editingBaseline.rating;
+    this._editorMode = this._editingBaseline.mode;
+    this._textInput = this._editingBaseline.textInput;
+    this._borderColor = this._editingBaseline.borderColor;
+    this._editorGrid = vbcCloneGrid(this._editingBaseline.grid);
+  }
+
+  _updateEditorSaveValidation() {
+    const canSaveToLibrary = this._editorName.trim().length > 0;
+    const duplicateNameFrame = this._findLibraryNameConflict(this._editorName, this._editingFrameId);
+    const hasDuplicateName = Boolean(duplicateNameFrame);
+    const isEditingDirty = this._isEditingFrameDirty();
+    const canSubmitToLibrary = this._editingFrameId
+      ? (canSaveToLibrary && !hasDuplicateName && isEditingDirty)
+      : (canSaveToLibrary && !hasDuplicateName);
+    const root = this.shadowRoot;
+    if (!root) return;
+
+    const nameLabel = root.querySelector(".save-row-name .field-label");
+    if (nameLabel) {
+      nameLabel.classList.toggle("field-label-required", !canSaveToLibrary || hasDuplicateName);
+      nameLabel.innerHTML = (!canSaveToLibrary || hasDuplicateName)
+        ? 'Name <span class="required-indicator" aria-hidden="true">*</span>'
+        : "Name";
+    }
+
+    const nameInput = root.querySelector('.save-row-name [data-action="set-name"]');
+    if (nameInput) {
+      nameInput.setAttribute("aria-invalid", canSaveToLibrary ? "false" : "true");
+    }
+
+    const saveBtn = root.querySelector('[data-action="save-to-library"]');
+    if (saveBtn) {
+      saveBtn.disabled = !canSubmitToLibrary;
+      saveBtn.classList.toggle("vbc-btn-primary", canSubmitToLibrary);
+      saveBtn.classList.toggle("vbc-btn-secondary", !canSubmitToLibrary);
+    }
+
+    const validationMessage = root.querySelector(".save-validation-message");
+    if (validationMessage) {
+      validationMessage.innerHTML = hasDuplicateName
+        ? "That name is already used in your library. Choose a different name."
+        : !canSaveToLibrary
+        ? "Name is required before saving to your library."
+        : (this._editingFrameId && !isEditingDirty
+          ? "Make a change before updating this library frame."
+          : "&nbsp;");
+    }
+
+    const editNotice = root.querySelector(".edit-frame-notice");
+    if (editNotice) {
+      const editingActive = this._isEditingActiveInCurrentMode();
+      const editingLibraryLabel = this._editingFrameCategory === "art" ? "Art Library" : "Message Library";
+      const nextName = this._editorName.trim();
+      const isRenamingFrame = Boolean(nextName && nextName !== (this._editingOriginalName || ""));
+      editNotice.classList.toggle("edit-frame-notice-new", !editingActive);
+      editNotice.innerHTML = editingActive
+        ? `
+          <div class="edit-frame-title">Editing existing frame in ${editingLibraryLabel}</div>
+          <div class="edit-frame-meta">Current library name: ${this._esc(this._editingOriginalName || "Untitled")}</div>
+          <div class="edit-frame-meta">${isRenamingFrame ? `Saving will rename it to ${this._esc(nextName)}.` : "Saving will update this existing library item."}</div>
+        `
+        : `
+          <div class="edit-frame-title">Creating a new ${this._editorMode === "paint" ? "art" : "message"} frame</div>
+          <div class="edit-frame-meta">This editor is not linked to an existing library item yet.</div>
+          <div class="edit-frame-meta">Use Save to Library to create a new library entry.</div>
+        `;
+    }
+  }
+
   /* ── Action methods ─────────────────────────────────────────────── */
 
   _saveToLibrary() {
-    const grid = this._editorMode === "text"
-      ? this._textToGrid(this._textInput, this._borderColor)
-      : this._editorGrid;
+    const grid = this._currentEditorFrame();
     const creator = this._editorCreator || "Anonymous";
     const category = this._editorMode === "paint" ? "art" : "message";
 
-    if (this._editingFrameId) {
+    if (this._isEditingActiveInCurrentMode()) {
       this._callRelay("update_frame", {
         frame_id: this._editingFrameId,
         frame: grid,
@@ -1565,8 +1856,16 @@ class VestaboardConfigurationCard extends HTMLElement {
         rating: this._editorRating,
         category,
       });
-      this._editingFrameId = null;
+      this._editingOriginalName = this._editorName;
+      this._editingFrameCategory = category;
+      this._editingBaseline = this._buildEditingBaseline();
+      this._render();
     } else {
+      this._pendingSavedFrame = {
+        name: this._editorName,
+        category,
+        gridSignature: this._editorGridSignature(grid),
+      };
       this._callRelay("save_frame", {
         frame: grid,
         name: this._editorName,
@@ -1578,9 +1877,7 @@ class VestaboardConfigurationCard extends HTMLElement {
   }
 
   _pushToBoard() {
-    const grid = this._editorMode === "text"
-      ? this._textToGrid(this._textInput, this._borderColor)
-      : this._editorGrid;
+    const grid = this._currentEditorFrame();
 
     const data = {
       frame: grid,
@@ -1590,13 +1887,27 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._callRelay("push_frame", data);
   }
 
-  _viewLibraryFrame(frameId) {
+  _cloneLibraryFrame(frameId) {
     const frames = this._parseJsonAttr("library", []);
     const frame = (Array.isArray(frames) ? frames : []).find((f) => f.frame_id === frameId);
     if (!frame || !frame.characters) return;
 
-    this._editorGrid = vbcCloneGrid(frame.characters);
-    this._editorMode = "paint";
+    if ((frame.category || "message") === "message") {
+      const textState = this._gridToTextState(frame.characters);
+      this._editorMode = "text";
+      this._textInput = textState.text;
+      this._borderColor = textState.borderColor;
+      this._editorGrid = vbcEmptyGrid();
+    } else {
+      this._editorGrid = vbcCloneGrid(frame.characters);
+      this._editorMode = "paint";
+      this._textInput = "";
+      this._borderColor = null;
+    }
+    this._clearEditorEditState();
+    this._editorName = "";
+    this._editorCreator = frame.creator || "";
+    this._editorRating = frame.rating || 0;
     this._activeTab = "editor";
     this._render();
   }
@@ -1607,11 +1918,24 @@ class VestaboardConfigurationCard extends HTMLElement {
     if (!frame) return;
 
     this._editingFrameId = frameId;
-    this._editorGrid = vbcCloneGrid(frame.characters);
-    this._editorMode = "paint";
+    this._editingFrameCategory = frame.category || "message";
+    this._editingOriginalName = frame.name || "";
     this._editorName = frame.name || "";
     this._editorCreator = frame.creator || "";
     this._editorRating = frame.rating || 0;
+    if ((frame.category || "message") === "message") {
+      const textState = this._gridToTextState(frame.characters);
+      this._editorMode = "text";
+      this._textInput = textState.text;
+      this._borderColor = textState.borderColor;
+      this._editorGrid = vbcEmptyGrid();
+    } else {
+      this._editorGrid = vbcCloneGrid(frame.characters);
+      this._editorMode = "paint";
+      this._textInput = "";
+      this._borderColor = null;
+    }
+    this._editingBaseline = this._buildEditingBaseline();
     this._activeTab = "editor";
     this._render();
   }
@@ -1735,6 +2059,14 @@ class VestaboardConfigurationCard extends HTMLElement {
         align-content: start;
         grid-auto-flow: row;
       }
+
+      .vb-grid-preview {
+        padding: 6px;
+        background: #111722;
+        border-radius: 8px;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      }
+
       .vb-grid.vb-grid-editor {
         display: grid;
         width: 100%;
@@ -2005,6 +2337,32 @@ class VestaboardConfigurationCard extends HTMLElement {
         border-radius: var(--vbc-radius-sm);
       }
 
+      .edit-frame-notice {
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--vbc-warning) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--vbc-warning) 28%, var(--vbc-border));
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+      }
+
+      .edit-frame-notice.edit-frame-notice-new {
+        background: color-mix(in srgb, var(--vbc-success) 12%, transparent);
+        border-color: color-mix(in srgb, var(--vbc-success) 28%, var(--vbc-border));
+      }
+
+      .edit-frame-title {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--vbc-on-surface);
+      }
+
+      .edit-frame-meta {
+        font-size: 12px;
+        color: var(--vbc-on-surface-secondary);
+      }
+
       .save-row {
         display: flex;
         align-items: center;
@@ -2017,6 +2375,15 @@ class VestaboardConfigurationCard extends HTMLElement {
         font-size: 12px;
         font-weight: 500;
         color: var(--vbc-on-surface-secondary);
+      }
+
+      .field-label-name-required .required-indicator {
+        color: color-mix(in srgb, var(--vbc-error) 78%, white);
+        font-weight: 700;
+      }
+
+      .field-label-required {
+        color: var(--vbc-error);
       }
 
       .creator-chip-list {
@@ -2074,6 +2441,7 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .ttl-row {
         flex-wrap: wrap;
+        align-items: center;
         gap: 12px;
       }
 
@@ -2081,6 +2449,10 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         align-items: center;
         gap: 8px;
+      }
+
+      .ttl-field-rating {
+        display: flex;
       }
 
       .ttl-unit {
@@ -2091,6 +2463,13 @@ class VestaboardConfigurationCard extends HTMLElement {
       .save-actions {
         display: flex;
         gap: 8px;
+      }
+
+      .save-validation-message {
+        min-height: 18px;
+        font-size: 12px;
+        color: var(--vbc-error);
+        font-style: italic;
       }
 
       .star-rating {
@@ -2250,6 +2629,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         border-radius: var(--vbc-radius-sm);
         overflow: hidden;
         background: var(--vbc-surface);
+        display: flex;
+        flex-direction: column;
       }
 
       .lib-frame-preview {
@@ -2264,6 +2645,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: 2px;
+        flex: 1;
+        min-height: 74px;
       }
 
       .lib-frame-name {
@@ -2287,9 +2670,26 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .lib-frame-actions {
         display: flex;
+        flex-direction: column;
         gap: 2px;
         padding: 4px 8px 8px;
-        flex-wrap: wrap;
+        margin-top: auto;
+      }
+
+      .lib-frame-action-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 2px;
+        align-items: center;
+      }
+
+      .lib-frame-action-row .vbc-btn {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .lib-frame-action-spacer {
+        display: block;
       }
 
       .pagination {
@@ -2369,12 +2769,15 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: 10px;
+        flex: 1;
       }
 
       .product-info {
         display: flex;
         flex-direction: column;
         gap: 4px;
+        flex: 1;
+        min-height: 84px;
       }
 
       .product-name-row {
@@ -2406,6 +2809,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         gap: 8px;
         align-items: center;
+        margin-top: auto;
+        flex-wrap: wrap;
       }
 
       /* Automation config in store */
@@ -2674,8 +3079,12 @@ class VestaboardConfigurationCard extends HTMLElement {
           width: 52px;
         }
 
+        .edit-frame-notice,
+        .save-row-name,
+        .save-row-creator,
         .ttl-row,
-        .save-actions {
+        .save-actions,
+        .save-validation-message {
           grid-column: 1 / -1;
         }
 
