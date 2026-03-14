@@ -148,6 +148,13 @@ class VestaboardControllerApp(hass.Hass):
         # Cached board state read from the physical Vestaboard (for when queue is empty)
         self._external_board_frame: Optional[list[list[int]]] = None
 
+        # Sleep window — suppress board writes during configured time range
+        sleep_cfg = cfg.get("sleep_window") or {}
+        self._sleep_enabled: bool = bool(sleep_cfg.get("enabled", True))
+        self._sleep_start: str = str(sleep_cfg.get("start", "01:00:00"))
+        self._sleep_end: str = str(sleep_cfg.get("end", "07:00:00"))
+        self._was_sleeping: bool = False
+
         self.log(
             f"VestaboardControllerApp initializing — ip={self._vb_ip!r} "
             f"tick_interval_s={self._tick_interval_s}",
@@ -557,6 +564,24 @@ class VestaboardControllerApp(hass.Hass):
 
     async def _tick(self) -> None:
         now = time.time()
+        sleeping = self._is_sleeping()
+        sleep_changed = sleeping != self._was_sleeping
+
+        # Detect sleep→wake transition and reconcile the board
+        if self._was_sleeping and not sleeping:
+            self.log("Sleep window ended — waking up", level="INFO")
+            state = self._queue.get_state(now)
+            if state.displayed is not None:
+                self.log(
+                    f"Reconciling board on wake: source={state.displayed.source!r}",
+                    level="INFO",
+                )
+                await self._write_to_board(state.displayed.characters)
+        elif not self._was_sleeping and sleeping:
+            self.log("Sleep window started — suppressing board writes", level="INFO")
+
+        self._was_sleeping = sleeping
+
         action = self._queue.tick(now)
         if action.display_frame:
             self.log(
@@ -576,12 +601,44 @@ class VestaboardControllerApp(hass.Hass):
             if self._external_board_frame is not None:
                 self._publish_status()
 
+        # Republish status if sleep state changed (so card shows sleep indicator)
+        if sleep_changed:
+            self._publish_status()
+
     # ------------------------------------------------------------------
     # Board writes
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _parse_time(time_str: str) -> tuple[int, int, int]:
+        """Parse 'HH:MM:SS' or 'HH:MM' into (hour, minute, second)."""
+        parts = str(time_str).split(":")
+        h = int(parts[0]) if len(parts) > 0 else 0
+        m = int(parts[1]) if len(parts) > 1 else 0
+        s = int(parts[2]) if len(parts) > 2 else 0
+        return h, m, s
+
+    def _is_sleeping(self) -> bool:
+        """Check if the current time is within the sleep window."""
+        if not self._sleep_enabled:
+            return False
+        from datetime import datetime as dt, time as dtime
+        now = dt.now().time()
+        sh, sm, ss = self._parse_time(self._sleep_start)
+        eh, em, es = self._parse_time(self._sleep_end)
+        start = dtime(sh, sm, ss)
+        end = dtime(eh, em, es)
+        if start < end:
+            return start <= now < end
+        else:
+            # Wraps midnight: e.g. 23:00:00 - 06:45:00
+            return now >= start or now < end
+
     async def _write_to_board(self, characters: list[list[int]]) -> None:
         """Write a frame to the physical Vestaboard."""
+        if self._is_sleeping():
+            self.log("Board write suppressed — sleep window active", level="DEBUG")
+            return
         if not self._vb_ip or not self._vb_api_key:
             self.log(
                 "Vestaboard IP/API key not configured — skipping board write",
@@ -1112,6 +1169,8 @@ class VestaboardControllerApp(hass.Hass):
             "fallback_count": len(state.fallback_stack),
             "all_automations": all_automations,
             "last_write_ok": self._last_write_ok,
+            "sleeping": self._is_sleeping(),
+            "sleep_end": self._sleep_end if self._sleep_enabled else None,
             "ai_art_preview": self._ai_art_preview,
             "queue_state": {
                 "pending": [

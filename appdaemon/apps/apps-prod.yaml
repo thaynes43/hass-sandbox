@@ -532,6 +532,10 @@ vestaboard_controller:
   tick_interval_s: 15
   frame_library_path: /media/vestaboard/frame-library.json
   automation_config_path: /media/vestaboard/automation-config.yaml
+  sleep_window:
+    enabled: true
+    start: "01:00:00"
+    end: "06:45:00"
   automations:
     calendar_clock: {}
     messages_from_library: {}

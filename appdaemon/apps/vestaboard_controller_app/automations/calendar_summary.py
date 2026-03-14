@@ -199,6 +199,13 @@ class CalendarSummaryAutomation(BoardAutomation):
             self.log("No calendar_entity configured", level="WARNING")
             return
 
+        self.log(
+            f"Checking calendar: entity={entity_id!r} "
+            f"time_before_hours={self.config.get('time_before_event_hours')} "
+            f"reminder_min={self.config.get('reminder_minutes')}",
+            level="INFO",
+        )
+
         # Determine reminder window: use time_before_event_hours if set,
         # otherwise fall back to reminder_minutes.
         time_before_hours = self.config.get("time_before_event_hours")
@@ -208,10 +215,14 @@ class CalendarSummaryAutomation(BoardAutomation):
             reminder_minutes = int(self.config.get("reminder_minutes", _DEFAULT_REMINDER_MINUTES))
 
         now = datetime.now(tz=timezone.utc)
-        event = self._get_current_or_upcoming_event(entity_id, now, reminder_minutes)
+        event = await self._get_current_or_upcoming_event(entity_id, now, reminder_minutes)
 
         if event is None:
-            self.log("No upcoming events within reminder window", level="DEBUG")
+            self.log(
+                f"No upcoming events within reminder window "
+                f"(entity={entity_id!r} reminder_minutes={reminder_minutes})",
+                level="INFO",
+            )
             return
 
         # Check rotation interval throttle
@@ -257,12 +268,14 @@ class CalendarSummaryAutomation(BoardAutomation):
             import time as _time
             self._last_push_time[event.get("summary", "")] = _time.time()
 
-    def _get_current_or_upcoming_event(
+    async def _get_current_or_upcoming_event(
         self, entity_id: str, now: datetime, reminder_minutes: int
     ) -> Optional[dict]:
         """Read a calendar entity and return event info if within reminder window."""
         try:
             state = self.app.get_state(entity_id, attribute="all")
+            if hasattr(state, "__await__"):
+                state = await state
             if state is None:
                 return None
 
@@ -294,12 +307,25 @@ class CalendarSummaryAutomation(BoardAutomation):
             try:
                 next_start = datetime.fromisoformat(next_start_str.replace("Z", "+00:00"))
                 if not next_start.tzinfo:
-                    next_start = next_start.replace(tzinfo=timezone.utc)
+                    # HA returns local time without timezone — localize it
+                    from datetime import timezone as _tz
+                    try:
+                        import zoneinfo
+                        local_tz = zoneinfo.ZoneInfo(self.app.get_timezone())
+                    except Exception:
+                        local_tz = _tz.utc
+                    next_start = next_start.replace(tzinfo=local_tz)
             except ValueError:
                 return None
 
             seconds_until = int((next_start - now).total_seconds())
             reminder_seconds = reminder_minutes * 60
+
+            self.log(
+                f"Calendar check: {next_event_summary!r} starts={next_start.isoformat()} "
+                f"seconds_until={seconds_until} reminder_window={reminder_seconds}s",
+                level="INFO",
+            )
 
             if 0 <= seconds_until <= reminder_seconds:
                 return {

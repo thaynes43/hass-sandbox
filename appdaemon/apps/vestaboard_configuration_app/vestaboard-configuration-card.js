@@ -85,6 +85,20 @@ function vbcCountdown(isoOrTimestamp) {
   return `${s}s`;
 }
 
+function vbcFormatTime(timeString) {
+  if (typeof timeString !== "string") return null;
+  const match = timeString.match(/^(\d{2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return null;
+  }
+  const suffix = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 || 12;
+  return minute === 0 ? `${hour12}:00 ${suffix}` : `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+}
+
 function vbcEmptyGrid() {
   return Array.from({ length: VBC_ROWS }, () => Array(VBC_COLS).fill(0));
 }
@@ -241,7 +255,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const previewStamp = preview && typeof preview === "object"
       ? `${preview.generated_at || ""}|${preview.subject || ""}`
       : "";
-    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${previewStamp}|${automationsStamp}`;
+    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${a.sleeping}|${a.sleep_end}|${previewStamp}|${automationsStamp}`;
   }
 
   _sensorState() {
@@ -1134,6 +1148,9 @@ class VestaboardConfigurationCard extends HTMLElement {
     const fallback = this._sensorAttr("fallback_source", null);
     const currentSource = this._sensorAttr("current_source", "\u2014");
     const currentTtlExpires = this._sensorAttr("current_ttl_expires", null);
+    const sleeping = this._sensorAttr("sleeping", false) === true;
+    const sleepEnd = this._sensorAttr("sleep_end", null);
+    const sleepEndLabel = vbcFormatTime(sleepEnd);
     const chevron = this._queueExpanded ? "mdi:chevron-up" : "mdi:chevron-down";
     const queueList = Array.isArray(queue) ? queue : [];
 
@@ -1163,8 +1180,13 @@ class VestaboardConfigurationCard extends HTMLElement {
           <div class="queue-current">
             <span class="queue-label">Current:</span>
             <span class="queue-value">${this._esc(currentSource)}</span>
-            ${currentTtlExpires ? `<span class="queue-countdown ttl-countdown">TTL: ${vbcCountdown(currentTtlExpires) || "expired"}</span>` : ""}
+            ${currentTtlExpires ? `<span class="queue-countdown ttl-countdown ${sleeping ? "ttl-countdown-sleeping" : ""}">TTL: ${vbcCountdown(currentTtlExpires) || "expired"}</span>` : ""}
           </div>
+          ${sleeping ? `
+          <div class="queue-sleep-indicator">
+            <span class="queue-sleep-icon" aria-hidden="true">zzz</span>
+            <span class="queue-sleep-text">Board sleeping${sleepEndLabel ? ` until ${this._esc(sleepEndLabel)}` : ""}</span>
+          </div>` : ""}
           ${queueList.length > 0 ? `
           <div class="queue-pending">
             <span class="queue-label">Pending (${queueList.length}):</span>
@@ -1188,7 +1210,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     return `
       <div class="queue-section">
         <button class="queue-header" data-action="toggle-queue">
-          <span>Queue Status (${totalCount})</span>
+          <span class="queue-header-label">Queue Status (${totalCount})</span>
+          ${sleeping ? `<span class="queue-header-sleep">Sleeping${sleepEndLabel ? ` until ${this._esc(sleepEndLabel)}` : ""}</span>` : ""}
           <ha-icon icon="${chevron}" style="--mdc-icon-size:18px;"></ha-icon>
         </button>
         ${content}
@@ -3082,6 +3105,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 8px;
         width: 100%;
         padding: 10px 12px;
         min-height: 44px;
@@ -3092,6 +3116,19 @@ class VestaboardConfigurationCard extends HTMLElement {
         font-size: 13px;
         font-weight: 500;
         font-family: inherit;
+      }
+
+      .queue-header-label {
+        flex: 1;
+        min-width: 0;
+        text-align: left;
+      }
+
+      .queue-header-sleep {
+        color: var(--vbc-on-surface-secondary);
+        font-size: 11px;
+        font-weight: 500;
+        white-space: nowrap;
       }
 
       .queue-header:hover {
@@ -3110,6 +3147,29 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: 4px;
+      }
+
+      .queue-sleep-indicator {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: rgba(52, 73, 94, 0.14);
+        color: var(--vbc-on-surface);
+      }
+
+      .queue-sleep-icon {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        color: var(--vbc-on-surface-secondary);
+      }
+
+      .queue-sleep-text {
+        font-size: 12px;
+        font-weight: 500;
       }
 
       .queue-label {
@@ -3140,6 +3200,11 @@ class VestaboardConfigurationCard extends HTMLElement {
       .queue-countdown {
         font-weight: 500;
         color: var(--vbc-warning);
+      }
+
+      .ttl-countdown-sleeping {
+        color: var(--vbc-on-surface-secondary);
+        font-size: 11px;
       }
 
       .upcoming-item {

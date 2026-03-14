@@ -98,7 +98,11 @@ class VestaboardConfigurationApp(hass.Hass):
 
         # Immediate sync attempt — controller may already have state from a prior run
         try:
-            ctrl_state = self.get_state(self.CONTROLLER_STATUS_ENTITY, attribute="all") or {}
+            ctrl_state = self.get_state(self.CONTROLLER_STATUS_ENTITY, attribute="all")
+            # In async context, get_state may return a coroutine
+            if hasattr(ctrl_state, "__await__"):
+                ctrl_state = await ctrl_state
+            ctrl_state = ctrl_state or {}
             new_attrs = dict(ctrl_state.get("attributes", {}))
             if new_attrs:
                 self._controller_attrs = new_attrs
