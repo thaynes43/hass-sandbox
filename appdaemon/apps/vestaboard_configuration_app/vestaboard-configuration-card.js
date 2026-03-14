@@ -164,6 +164,7 @@ class VestaboardConfigurationCard extends HTMLElement {
 
     // Automation / Store state (pending edits keyed by automation_id)
     this._automationEdits = {};
+    this._automationConfigOverrides = {};
     this._artSubject = "";
     this._expandedAutoId = null; // which product card config is expanded
     this._storeSavedFeedback = {}; // {autoId: timestamp} for "Saved!" flash
@@ -205,8 +206,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const snap = this._sensorSnapshot();
     if (snap === this._lastSnapshot) return;
     this._lastSnapshot = snap;
-    // Clear optimistic automation edits when backend data refreshes
-    this._automationEdits = {};
+    this._syncAutomationEditsWithSensor();
     this._loadArtResult();
     this._syncPendingSavedFrame();
     this._render();
@@ -231,10 +231,17 @@ class VestaboardConfigurationCard extends HTMLElement {
     if (!s) return null;
     const a = s.attributes || {};
     const preview = this._parseJsonAttr("ai_art_preview", null);
+    const automationsStamp = (() => {
+      try {
+        return JSON.stringify(a.automations || []);
+      } catch (_) {
+        return "";
+      }
+    })();
     const previewStamp = preview && typeof preview === "object"
       ? `${preview.generated_at || ""}|${preview.subject || ""}`
       : "";
-    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${previewStamp}`;
+    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${previewStamp}|${automationsStamp}`;
   }
 
   _sensorState() {
@@ -1032,7 +1039,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     }
 
     return `
-      <div class="product-card">
+      <div class="product-card ${isExpanded ? "product-card-expanded" : ""}">
         ${previewHTML}
         <div class="product-body">
           <div class="product-info">
@@ -1072,7 +1079,6 @@ class VestaboardConfigurationCard extends HTMLElement {
 
   _renderAutoConfig(auto) {
     const schema = auto.config_schema || {};
-    const config = auto.config || {};
     const edits = this._automationEdits[auto.id] || {};
     const schemaKeys = Object.keys(schema).filter((k) => k !== "enabled");
 
@@ -1082,7 +1088,9 @@ class VestaboardConfigurationCard extends HTMLElement {
 
     const fields = schemaKeys.map((key) => {
       const field = schema[key];
-      const currentValue = edits[key] !== undefined ? edits[key] : (config[key] !== undefined ? config[key] : field.default);
+      const currentValue = edits[key] !== undefined
+        ? this._normalizeStoreFieldValue(field, edits[key])
+        : this._getStoreBaseConfigValue(auto.id, key, field, auto);
       const label = field.label || key;
 
       if (field.type === "bool") {
@@ -1107,14 +1115,13 @@ class VestaboardConfigurationCard extends HTMLElement {
       `;
     }).join("");
 
-    const dirty = Object.keys(edits).filter((k) => k !== "enabled").length > 0;
-    const hasSavedFeedback = this._storeSavedFeedback[auto.id] && (Date.now() - this._storeSavedFeedback[auto.id] < 2000);
+    const dirty = this._isStoreConfigDirty(auto.id, auto);
 
     return `
       <div class="auto-config-section">
         ${fields}
         <button class="vbc-btn vbc-btn-primary vbc-btn-sm" data-action="store-save-config" data-auto-id="${this._esc(auto.id)}" ${dirty ? "" : "disabled"}>
-          ${hasSavedFeedback ? "Saved!" : "Save Config"}
+          Save Config
         </button>
       </div>
     `;
@@ -1718,17 +1725,111 @@ class VestaboardConfigurationCard extends HTMLElement {
   _updateStoreSaveButton(autoId) {
     const saveBtn = this.shadowRoot?.querySelector(`[data-action="store-save-config"][data-auto-id="${autoId}"]`);
     if (!saveBtn) return;
-    const edits = this._automationEdits[autoId] || {};
-    const dirty = Object.keys(edits).some((k) => k !== "enabled");
-    saveBtn.disabled = !dirty;
+    saveBtn.disabled = !this._isStoreConfigDirty(autoId);
   }
 
   _updateStoreExpandButton(autoId) {
     const expandBtn = this.shadowRoot?.querySelector(`[data-action="store-expand"][data-auto-id="${autoId}"]`);
     if (!expandBtn || this._expandedAutoId !== autoId) return;
-    const edits = this._automationEdits[autoId] || {};
-    const dirty = Object.keys(edits).some((k) => k !== "enabled");
+    const dirty = this._isStoreConfigDirty(autoId);
     expandBtn.textContent = dirty ? "Discard & Close" : "Hide Config";
+  }
+
+  _getStoreBaseConfigValue(autoId, key, field, autoOverride = null) {
+    const auto = autoOverride || ((Array.isArray(this._sensorAttr("automations", []))
+      ? this._sensorAttr("automations", [])
+      : []).find((item) => item.id === autoId));
+    const config = auto?.config || {};
+    const overrides = this._automationConfigOverrides[autoId] || {};
+    const rawValue = overrides[key] !== undefined
+      ? overrides[key]
+      : (config[key] !== undefined ? config[key] : field?.default);
+    return this._normalizeStoreFieldValue(field, rawValue);
+  }
+
+  _normalizeStoreFieldValue(field, value) {
+    if (value === undefined) return undefined;
+
+    if (field?.type === "bool") {
+      if (typeof value === "string") {
+        const normalized = value.trim().toLowerCase();
+        if (normalized === "true" || normalized === "1" || normalized === "on") return true;
+        if (normalized === "false" || normalized === "0" || normalized === "off" || normalized === "") return false;
+      }
+      return Boolean(value);
+    }
+
+    if (field?.type === "int" || field?.type === "number") {
+      if (value === null || value === "") return undefined;
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    return value;
+  }
+
+  _syncAutomationEditsWithSensor() {
+    const automations = this._sensorAttr("automations", []);
+    const autoList = Array.isArray(automations) ? automations : [];
+
+    for (const autoId of Object.keys(this._automationConfigOverrides)) {
+      const auto = autoList.find((item) => item.id === autoId);
+      const overrides = this._automationConfigOverrides[autoId];
+      if (!auto || !overrides) continue;
+
+      const schema = auto.config_schema || {};
+      for (const key of Object.keys(overrides)) {
+        const field = schema[key] || {};
+        const sensorValue = this._normalizeStoreFieldValue(field, auto.config?.[key] !== undefined ? auto.config[key] : field.default);
+        const overrideValue = this._normalizeStoreFieldValue(field, overrides[key]);
+        if (sensorValue === overrideValue) {
+          delete overrides[key];
+        }
+      }
+
+      if (Object.keys(overrides).length === 0) {
+        delete this._automationConfigOverrides[autoId];
+      }
+    }
+
+    for (const autoId of Object.keys(this._automationEdits)) {
+      const edits = this._automationEdits[autoId];
+      const auto = autoList.find((item) => item.id === autoId);
+      if (!edits || !auto) continue;
+
+      const schema = auto.config_schema || {};
+      const config = auto.config || {};
+
+      for (const key of Object.keys(edits)) {
+        if (key === "enabled" || !(key in schema)) continue;
+        const field = schema[key] || {};
+        const sensorValue = this._getStoreBaseConfigValue(autoId, key, field, auto);
+        const editValue = this._normalizeStoreFieldValue(field, edits[key]);
+        if (sensorValue === editValue) {
+          delete edits[key];
+        }
+      }
+
+      if (Object.keys(edits).length === 0) {
+        delete this._automationEdits[autoId];
+      }
+    }
+  }
+
+  _isStoreConfigDirty(autoId, autoOverride = null) {
+    const edits = this._automationEdits[autoId] || {};
+    const auto = autoOverride || ((Array.isArray(this._sensorAttr("automations", []))
+      ? this._sensorAttr("automations", [])
+      : []).find((item) => item.id === autoId));
+    const schema = auto?.config_schema || {};
+
+    return Object.keys(edits).some((key) => {
+      if (key === "enabled" || !(key in schema)) return false;
+      const field = schema[key] || {};
+      const baseValue = this._getStoreBaseConfigValue(autoId, key, field, auto);
+      const editValue = this._normalizeStoreFieldValue(field, edits[key]);
+      return editValue !== baseValue;
+    });
   }
 
   _clearEditorEditState() {
@@ -1985,20 +2086,23 @@ class VestaboardConfigurationCard extends HTMLElement {
         automation_id: autoId,
         config: configFields,
       });
-    }
 
-    // Show saved feedback
-    this._storeSavedFeedback[autoId] = Date.now();
-    delete this._automationEdits[autoId];
-    this._render();
-
-    // Clear saved feedback after 2s
-    setTimeout(() => {
-      if (this._storeSavedFeedback[autoId]) {
-        delete this._storeSavedFeedback[autoId];
-        this._render();
+      if (!this._automationConfigOverrides[autoId]) {
+        this._automationConfigOverrides[autoId] = {};
       }
-    }, 2000);
+      Object.assign(this._automationConfigOverrides[autoId], configFields);
+
+      const remainingEdits = { ...(this._automationEdits[autoId] || {}) };
+      for (const key of Object.keys(configFields)) {
+        delete remainingEdits[key];
+      }
+      if (Object.keys(remainingEdits).length > 0) {
+        this._automationEdits[autoId] = remainingEdits;
+      } else {
+        delete this._automationEdits[autoId];
+      }
+    }
+    this._render();
   }
 
   /* ── Styles ─────────────────────────────────────────────────────── */
@@ -2759,6 +2863,10 @@ class VestaboardConfigurationCard extends HTMLElement {
         gap: 12px;
       }
 
+      .store-grid > * {
+        min-width: 0;
+      }
+
       .store-empty {
         grid-column: 1 / -1;
         text-align: center;
@@ -2774,6 +2882,13 @@ class VestaboardConfigurationCard extends HTMLElement {
         background: var(--vbc-surface);
         display: flex;
         flex-direction: column;
+        min-width: 0;
+        width: 100%;
+        box-sizing: border-box;
+      }
+
+      .product-card.product-card-expanded {
+        max-height: 520px;
       }
 
       .product-preview {
@@ -2794,6 +2909,11 @@ class VestaboardConfigurationCard extends HTMLElement {
         flex-direction: column;
         gap: 10px;
         flex: 1;
+        min-width: 0;
+      }
+
+      .product-card.product-card-expanded .product-body {
+        overflow-y: auto;
       }
 
       .product-info {
@@ -2801,7 +2921,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         flex-direction: column;
         gap: 4px;
         flex: 1;
-        min-height: 84px;
+        min-height: 56px;
+        min-width: 0;
       }
 
       .product-name-row {
@@ -2845,6 +2966,9 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         flex-direction: column;
         gap: 10px;
+        min-width: 0;
+        box-sizing: border-box;
+        align-items: flex-start;
       }
 
       .auto-config-empty {
@@ -2857,6 +2981,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         display: flex;
         align-items: center;
         gap: 8px;
+        min-width: 0;
+        flex-wrap: wrap;
       }
 
       .config-label {
@@ -2869,6 +2995,14 @@ class VestaboardConfigurationCard extends HTMLElement {
 
       .config-checkbox {
         min-height: 44px;
+        min-width: 0;
+        width: 100%;
+      }
+
+      .auto-config-section > .vbc-btn {
+        width: auto;
+        min-width: 132px;
+        align-self: flex-start;
       }
 
       .saved-flash {

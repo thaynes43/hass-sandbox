@@ -117,6 +117,26 @@ Example:
 - `/local/vestaboard/vestaboard-configuration-card.js`
 - `/config/www/vestaboard/vestaboard-configuration-card.js`
 
+### Read-only inspection workflow
+
+Use this when you only need to confirm what file is currently running in Home Assistant.
+
+1. Identify the `home-assistant` pod in the `home-automation` namespace.
+2. Verify the target file exists in `/config/www/...`.
+3. Read or grep the deployed file to compare it with the local workspace copy.
+
+Example:
+
+```bash
+kubectl -n home-automation get pods
+kubectl -n home-automation exec <home-assistant-pod> -- \
+  sh -lc 'ls -l /config/www/vestaboard/vestaboard-configuration-card.js'
+kubectl -n home-automation exec <home-assistant-pod> -- \
+  sh -lc 'grep -n "getCardSize" /config/www/vestaboard/vestaboard-configuration-card.js'
+```
+
+This is safe to do without deployment and is often the fastest way to confirm whether a `?v=` bump is pointing at the expected file contents.
+
 ### Safe deployment sequence
 
 1. Confirm the user explicitly wants the agent to update the pod file.

@@ -117,7 +117,7 @@ class VestaboardClient:
                 if resp.status >= 300:
                     logger.warning("read_current non-2xx: %d", resp.status)
                     return None
-                data = await resp.json()
+                data = await resp.json(content_type=None)
                 return data
         except Exception as exc:  # noqa: BLE001
             logger.error("read_current failed: %s", exc)

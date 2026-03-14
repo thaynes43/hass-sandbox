@@ -145,6 +145,9 @@ class VestaboardControllerApp(hass.Hass):
         # AI art preview (generate-only, not pushed to board)
         self._ai_art_preview: Optional[dict[str, Any]] = None
 
+        # Cached board state read from the physical Vestaboard (for when queue is empty)
+        self._external_board_frame: Optional[list[list[int]]] = None
+
         self.log(
             f"VestaboardControllerApp initializing — ip={self._vb_ip!r} "
             f"tick_interval_s={self._tick_interval_s}",
@@ -175,6 +178,9 @@ class VestaboardControllerApp(hass.Hass):
 
         # Initialise automations from config
         self._init_automations()
+
+        # Read current board state so we show something even if queue is empty
+        await self._read_board_state()
 
         # Publish initial status
         self._publish_status()
@@ -561,8 +567,14 @@ class VestaboardControllerApp(hass.Hass):
             await self._write_to_board(action.display_frame.characters)
             self._publish_status()
         elif action.dropped_frames:
-            # Frames expired — update status even without a display change
+            # Frames expired — read board state and update status
+            await self._read_board_state()
             self._publish_status()
+        elif self._queue.get_state(now).displayed is None and self._external_board_frame is None:
+            # Queue is empty and we haven't read the board yet — try now
+            await self._read_board_state()
+            if self._external_board_frame is not None:
+                self._publish_status()
 
     # ------------------------------------------------------------------
     # Board writes
@@ -589,6 +601,29 @@ class VestaboardControllerApp(hass.Hass):
         except Exception as exc:
             self._last_write_ok = False
             self.log(f"Board write failed: {exc!r}", level="ERROR")
+
+    async def _read_board_state(self) -> None:
+        """Read the current frame from the physical Vestaboard and cache it."""
+        if not self._vb_ip or not self._vb_api_key:
+            self.log("No Vestaboard IP/API key — skipping board read", level="DEBUG")
+            return
+        try:
+            async with VestaboardClient(
+                ip=self._vb_ip, api_key=self._vb_api_key
+            ) as client:
+                grid = await client.read_current()
+            # API may return a bare list or a dict with the grid inside
+            if isinstance(grid, dict):
+                self.log(f"Board read returned dict with keys: {list(grid.keys())}", level="DEBUG")
+                # Try common keys
+                grid = grid.get("message") or grid.get("currentMessage") or grid.get("characters")
+            if grid and isinstance(grid, list) and len(grid) == 6:
+                self._external_board_frame = grid
+                self.log("Read current board state from Vestaboard", level="INFO")
+            else:
+                self.log(f"Board read returned unexpected data: {type(grid)}", level="WARNING")
+        except Exception as exc:
+            self.log(f"Failed to read board state: {exc!r}", level="WARNING")
 
     # ------------------------------------------------------------------
     # Automation config store
@@ -1015,6 +1050,14 @@ class VestaboardControllerApp(hass.Hass):
                 "source_label": displayed.source_label,
                 "characters": json.dumps(displayed.characters),
             }
+        elif self._external_board_frame is not None:
+            # Queue is empty but we know what's on the physical board
+            displayed_frame_info = {
+                "frame_id": "external",
+                "source": "external",
+                "source_label": "External / Other App",
+                "characters": json.dumps(self._external_board_frame),
+            }
 
         all_automations = []
         for automation_id in self._automation_configs:
@@ -1062,8 +1105,8 @@ class VestaboardControllerApp(hass.Hass):
 
         attributes: dict[str, Any] = {
             "displayed_frame": displayed_frame_info,
-            "displayed_source": displayed.source if displayed else None,
-            "displayed_source_label": displayed.source_label if displayed else None,
+            "displayed_source": displayed.source if displayed else ("external" if displayed_frame_info else None),
+            "displayed_source_label": displayed.source_label if displayed else ("External / Other App" if displayed_frame_info else None),
             "displayed_ttl_remaining_s": state.displayed_ttl_remaining_s,
             "pending_count": len(state.pending),
             "fallback_count": len(state.fallback_stack),
