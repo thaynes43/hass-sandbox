@@ -203,7 +203,7 @@ class CalendarSummaryAutomation(BoardAutomation):
             f"Checking calendar: entity={entity_id!r} "
             f"time_before_hours={self.config.get('time_before_event_hours')} "
             f"reminder_min={self.config.get('reminder_minutes')}",
-            level="INFO",
+            level="DEBUG",
         )
 
         # Determine reminder window: use time_before_event_hours if set,
@@ -221,7 +221,7 @@ class CalendarSummaryAutomation(BoardAutomation):
             self.log(
                 f"No upcoming events within reminder window "
                 f"(entity={entity_id!r} reminder_minutes={reminder_minutes})",
-                level="INFO",
+                level="DEBUG",
             )
             return
 
@@ -242,8 +242,8 @@ class CalendarSummaryAutomation(BoardAutomation):
 
         grid, ttl_s, expiration_s = self._build_event_data(event, now)
 
-        # Override TTL from config if ttl_minutes is set
-        ttl_minutes_cfg = self.config.get("ttl_minutes")
+        # Override TTL from config (fall back to DEFAULT_UI_CONFIG if not in config store)
+        ttl_minutes_cfg = self.config.get("ttl_minutes", self.DEFAULT_UI_CONFIG.get("ttl_minutes"))
         if ttl_minutes_cfg is not None:
             ttl_s = int(float(ttl_minutes_cfg) * 60)
 
@@ -307,13 +307,8 @@ class CalendarSummaryAutomation(BoardAutomation):
             try:
                 next_start = datetime.fromisoformat(next_start_str.replace("Z", "+00:00"))
                 if not next_start.tzinfo:
-                    # HA returns local time without timezone — localize it
-                    from datetime import timezone as _tz
-                    try:
-                        import zoneinfo
-                        local_tz = zoneinfo.ZoneInfo(self.app.get_timezone())
-                    except Exception:
-                        local_tz = _tz.utc
+                    # HA returns local time without timezone — use system local tz
+                    local_tz = datetime.now().astimezone().tzinfo
                     next_start = next_start.replace(tzinfo=local_tz)
             except ValueError:
                 return None
@@ -324,7 +319,7 @@ class CalendarSummaryAutomation(BoardAutomation):
             self.log(
                 f"Calendar check: {next_event_summary!r} starts={next_start.isoformat()} "
                 f"seconds_until={seconds_until} reminder_window={reminder_seconds}s",
-                level="INFO",
+                level="DEBUG",
             )
 
             if 0 <= seconds_until <= reminder_seconds:
