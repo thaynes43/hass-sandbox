@@ -31,9 +31,9 @@ class BoardAutomation(ABC):
     #: None = hold indefinitely (until another frame overrides or TTL expires).
     default_ttl_s: Optional[int] = None
 
-    #: Default absolute expiration in seconds from frame creation time.
+    #: Default max age in seconds from frame creation time (dropped from queue if stale).
     #: None = no expiration.
-    default_expiration_s: Optional[int] = None
+    default_max_age_s: Optional[int] = None
 
     #: Whether frames from this automation should expire by default.
     default_should_expire: bool = False

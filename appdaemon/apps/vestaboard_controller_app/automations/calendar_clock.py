@@ -78,7 +78,7 @@ class CalendarClockAutomation(BoardAutomation):
     name = "CalendarClock"
     description = "Shows the current time and date on your board."
     default_ttl_s = None       # freely replaceable — no TTL protection
-    default_expiration_s = None
+    default_max_age_s = None
     default_should_expire = False
 
     DEFAULT_UI_CONFIG = {
@@ -181,7 +181,7 @@ class CalendarClockAutomation(BoardAutomation):
             source_label=self.name,
             grid=grid,
             ttl_s=ttl_s,
-            expiration_s=self.default_expiration_s,
+            max_age_s=self.default_max_age_s,
             should_expire=should_expire,
         )
 

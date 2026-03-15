@@ -41,7 +41,7 @@ FrameQueue.tick() (every N seconds) → VestaboardClient.write_frame()
 
 - **LIFO**: Most recently pushed frame from a given source takes priority in the pending queue.
 - **TTL**: A displayed frame holds the board for `ttl_s` seconds. After expiration, the next pending frame is promoted.
-- **Expiration**: A frame with `expiration_s` set is discarded if its absolute lifetime exceeds that window, even if it was never displayed.
+- **Expiration**: A frame with `max_age_s` set is discarded if its absolute lifetime exceeds that window, even if it was never displayed.
 - **Override TTL**: User-pushed frames default to `override_ttl=True` — they preempt the current frame immediately.
 - **Fallback**: Previously displayed frames (if non-expired) are kept as a fallback stack. When the pending queue is empty, the most recently displayed frame is reshown.
 
@@ -132,7 +132,7 @@ Call `script.vestaboard_controller_relay` with `command` and `payload` fields:
 
 | Command | Payload | Description |
 |---------|---------|-------------|
-| `push_frame` | `{characters, source, source_label, ttl_s, expiration_s, override_ttl}` | Push a pre-built 6×22 grid |
+| `push_frame` | `{characters, source, source_label, ttl_s, max_age_s, override_ttl}` | Push a pre-built 6×22 grid |
 | `activate_automation` | `{automation_id}` | Register triggers for an automation |
 | `deactivate_automation` | `{automation_id}` | Cancel triggers for an automation |
 | `clear_board` | `{}` | Clear queue and blank the board |

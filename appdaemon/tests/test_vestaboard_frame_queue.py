@@ -43,7 +43,7 @@ def make_frame(
     source: str = "test",
     source_label: str = "Test",
     ttl_s: int | None = None,
-    expiration_s: int | None = None,
+    max_age_s: int | None = None,
     override_ttl: bool = False,
     should_expire: bool = False,
     created_at: float = 1000.0,
@@ -54,7 +54,7 @@ def make_frame(
         source=source,
         source_label=source_label,
         ttl_s=ttl_s,
-        expiration_s=expiration_s,
+        max_age_s=max_age_s,
         override_ttl=override_ttl,
         should_expire=should_expire,
         created_at=created_at,
@@ -73,19 +73,19 @@ def make_queue() -> FrameQueue:
 
 class TestPredicates:
     def test_is_expired_no_expiration(self):
-        f = make_frame(expiration_s=None, created_at=1000.0)
+        f = make_frame(max_age_s=None, created_at=1000.0)
         assert not _is_expired(f, 9999.0)
 
     def test_is_expired_not_yet(self):
-        f = make_frame(expiration_s=60, created_at=1000.0)
+        f = make_frame(max_age_s=60, created_at=1000.0)
         assert not _is_expired(f, 1059.9)
 
     def test_is_expired_exact_boundary(self):
-        f = make_frame(expiration_s=60, created_at=1000.0)
+        f = make_frame(max_age_s=60, created_at=1000.0)
         assert _is_expired(f, 1060.0)
 
     def test_is_expired_past(self):
-        f = make_frame(expiration_s=60, created_at=1000.0)
+        f = make_frame(max_age_s=60, created_at=1000.0)
         assert _is_expired(f, 2000.0)
 
     def test_ttl_expired_no_ttl_returns_true(self):
@@ -127,7 +127,7 @@ class TestTTLExpirationMatrix:
         """Frame without TTL or expiration is freely replaceable but stays
         displayed when there is nothing else to promote."""
         q = make_queue()
-        f = make_frame(ttl_s=None, expiration_s=None, created_at=1000.0)
+        f = make_frame(ttl_s=None, max_age_s=None, created_at=1000.0)
         action = q.push(f, now=1000.0)
 
         assert action.display_frame is f
@@ -142,7 +142,7 @@ class TestTTLExpirationMatrix:
     def test_with_ttl_no_expiration(self):
         """Frame with TTL but no expiration: yields when TTL runs out."""
         q = make_queue()
-        f = make_frame(ttl_s=30, expiration_s=None, created_at=1000.0)
+        f = make_frame(ttl_s=30, max_age_s=None, created_at=1000.0)
         q.push(f, now=1000.0)
 
         # Before TTL expires
@@ -160,7 +160,7 @@ class TestTTLExpirationMatrix:
         """Frame with expiration but no TTL: freely replaceable, stays until
         expiry when nothing else to promote."""
         q = make_queue()
-        f = make_frame(ttl_s=None, expiration_s=60, created_at=1000.0)
+        f = make_frame(ttl_s=None, max_age_s=60, created_at=1000.0)
         q.push(f, now=1000.0)
 
         # Before expiration — TTL is "expired" (None) but nothing to promote
@@ -177,7 +177,7 @@ class TestTTLExpirationMatrix:
         """Frame with both TTL and expiration."""
         q = make_queue()
         # TTL=30, expiration=60
-        f = make_frame(ttl_s=30, expiration_s=60, created_at=1000.0)
+        f = make_frame(ttl_s=30, max_age_s=60, created_at=1000.0)
         q.push(f, now=1000.0)
 
         # At t=1025: both still active
@@ -185,7 +185,7 @@ class TestTTLExpirationMatrix:
         assert tick1.display_frame is None
 
         # Push a second frame (different source) after TTL (30s)
-        f2 = make_frame(source="other", ttl_s=None, expiration_s=None, created_at=1031.0)
+        f2 = make_frame(source="other", ttl_s=None, max_age_s=None, created_at=1031.0)
         # TTL expires at 1030 so push at 1031 should display immediately
         # because displayed f's TTL has expired
         action = q.push(f2, now=1031.0)
@@ -336,7 +336,7 @@ class TestOverrideTTL:
     def test_override_ttl_moves_displayed_to_fallback(self):
         """When override_ttl pre-empts, old frame goes to fallback (if not expired)."""
         q = make_queue()
-        base = make_frame(source="base", ttl_s=100, expiration_s=200, created_at=1000.0)
+        base = make_frame(source="base", ttl_s=100, max_age_s=200, created_at=1000.0)
         q.push(base, now=1000.0)
 
         urgent = make_frame(source="urgent", override_ttl=True, created_at=1001.0)
@@ -377,7 +377,7 @@ class TestFullScenario:
             source="static",
             source_label="Static",
             ttl_s=None,
-            expiration_s=None,
+            max_age_s=None,
             created_at=T0,
         )
         action = q.push(static, now=T0)
@@ -391,7 +391,7 @@ class TestFullScenario:
             source="calendar",
             source_label="Calendar",
             ttl_s=1800,
-            expiration_s=3600,
+            max_age_s=3600,
             override_ttl=False,
             created_at=T_CAL,
         )
@@ -409,7 +409,7 @@ class TestFullScenario:
             source="garage",
             source_label="Garage",
             ttl_s=1200,
-            expiration_s=1200,
+            max_age_s=1200,
             override_ttl=True,
             created_at=T_GARAGE1,
         )
@@ -426,7 +426,7 @@ class TestFullScenario:
             source="garage",
             source_label="Garage",
             ttl_s=1200,
-            expiration_s=1200,
+            max_age_s=1200,
             override_ttl=True,
             created_at=T_GARAGE2,
         )
@@ -457,7 +457,7 @@ class TestFullScenario:
     def test_full_scenario_no_pending_fallback(self):
         """When all pending expire and fallback is also exhausted, board is empty."""
         q = make_queue()
-        f = make_frame(source="event", ttl_s=10, expiration_s=20, created_at=0.0)
+        f = make_frame(source="event", ttl_s=10, max_age_s=20, created_at=0.0)
         q.push(f, now=0.0)
         # After expiry
         q.tick(now=21.0)
@@ -476,10 +476,10 @@ class TestFallback:
     def test_fallback_to_previous_frame(self):
         """When pending is empty and TTL expires, board falls back to last fallback."""
         q = make_queue()
-        static = make_frame(source="static", ttl_s=None, expiration_s=None, created_at=0.0)
+        static = make_frame(source="static", ttl_s=None, max_age_s=None, created_at=0.0)
         q.push(static, now=0.0)
 
-        event = make_frame(source="event", ttl_s=30, expiration_s=None, override_ttl=True, created_at=5.0)
+        event = make_frame(source="event", ttl_s=30, max_age_s=None, override_ttl=True, created_at=5.0)
         q.push(event, now=5.0)
 
         # TTL expires at t=35
@@ -492,13 +492,13 @@ class TestFallback:
         q = make_queue()
         # Both frames have expirations so queue can become truly empty
         expired_fallback = make_frame(
-            source="old_event", ttl_s=None, expiration_s=50, created_at=0.0
+            source="old_event", ttl_s=None, max_age_s=50, created_at=0.0
         )
         q.push(expired_fallback, now=0.0)
 
         # Override with a new frame that also expires
         new_frame = make_frame(
-            source="new_event", ttl_s=10, expiration_s=55, override_ttl=True, created_at=10.0
+            source="new_event", ttl_s=10, max_age_s=55, override_ttl=True, created_at=10.0
         )
         q.push(new_frame, now=10.0)
         # expired_fallback is now in fallback; it expires at t=50
@@ -759,7 +759,7 @@ class TestExpiryPruneDuringPush:
         base = make_frame(source="base", ttl_s=9999, created_at=0.0)
         q.push(base, now=0.0)
 
-        expiring = make_frame(source="short", expiration_s=10, created_at=0.0)
+        expiring = make_frame(source="short", max_age_s=10, created_at=0.0)
         q.push(expiring, now=0.0)
 
         state_before = q.get_state(now=5.0)
@@ -1043,7 +1043,7 @@ class TestShouldExpire:
             source="calendar",
             ttl_s=60,
             should_expire=False,
-            expiration_s=120,
+            max_age_s=120,
             created_at=0.0,
         )
         q.push(normal, now=0.0)

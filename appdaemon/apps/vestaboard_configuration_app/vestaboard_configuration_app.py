@@ -699,6 +699,8 @@ class VestaboardConfigurationApp(hass.Hass):
             "creators": self._creators,
             "automations": ca.get("all_automations", []),
             "ai_art_preview": json.dumps(ca["ai_art_preview"]) if ca.get("ai_art_preview") else None,
+            "sleeping": ca.get("sleeping", False),
+            "sleep_end": ca.get("sleep_end"),
             "status": "ok",
         }
         try:

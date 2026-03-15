@@ -71,7 +71,7 @@ class MessagesFromLibraryAutomation(BoardAutomation):
     name = "MessagesFromLibrary"
     description = "Randomly displays starred messages from your library."
     default_ttl_s = None
-    default_expiration_s = None
+    default_max_age_s = None
     default_should_expire = True
 
     DEFAULT_UI_CONFIG = {

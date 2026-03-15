@@ -1164,7 +1164,7 @@ class VestaboardConfigurationCard extends HTMLElement {
       const queueItems = queueList.map((item) => `
         <div class="queue-item">
           <span class="queue-source">${this._esc(item.source || "\u2014")}</span>
-          <span class="queue-countdown" data-queue-expiry="${this._esc(item.expires_at || "")}">${item.expires_at ? (vbcCountdown(item.expires_at) || "expired") : "no expiry"}</span>
+          <span class="queue-countdown" data-queue-expiry="${this._esc(item.expires_at || "")}">${item.expires_at ? `drops in ${vbcCountdown(item.expires_at) || "expired"}` : "no auto-drop"}</span>
         </div>
       `).join("");
 

@@ -313,16 +313,26 @@ class VestaboardControllerApp(hass.Hass):
 
     def _handle_push_frame(self, payload: dict) -> None:
         """Push a pre-built frame to the queue."""
-        characters = payload.get("characters")
+        # Accept both "characters" (internal) and "frame" (card/config app)
+        characters = payload.get("characters") or payload.get("frame")
         if not characters:
-            self.log("push_frame: missing 'characters' in payload", level="WARNING")
+            self.log("push_frame: missing 'characters'/'frame' in payload", level="WARNING")
             return
 
         source = str(payload.get("source", "user"))
         source_label = str(payload.get("source_label", "User"))
+
+        # Accept ttl_s directly or convert ttl_minutes from card
         ttl_s = payload.get("ttl_s")
-        expiration_s = payload.get("expiration_s")
-        override_ttl = bool(payload.get("override_ttl", True))
+        ttl_minutes = payload.get("ttl_minutes")
+        if ttl_s is None and ttl_minutes is not None:
+            ttl_s = int(ttl_minutes) * 60
+
+        max_age_s = payload.get("max_age_s")
+
+        # respect_ttl=True means DON'T override; default is to override
+        respect_ttl = payload.get("respect_ttl", False)
+        override_ttl = not respect_ttl if "respect_ttl" in payload else bool(payload.get("override_ttl", True))
 
         # should_expire=True means the frame is dropped (not moved to fallback)
         # when its TTL runs out or it is displaced by another frame.
@@ -330,8 +340,8 @@ class VestaboardControllerApp(hass.Hass):
 
         if ttl_s is not None:
             ttl_s = int(ttl_s)
-        if expiration_s is not None:
-            expiration_s = int(expiration_s)
+        if max_age_s is not None:
+            max_age_s = int(max_age_s)
 
         now = time.time()
         frame = BoardFrame(
@@ -340,7 +350,7 @@ class VestaboardControllerApp(hass.Hass):
             source=source,
             source_label=source_label,
             ttl_s=ttl_s,
-            expiration_s=expiration_s,
+            max_age_s=max_age_s,
             override_ttl=override_ttl,
             should_expire=should_expire,
             created_at=now,
@@ -348,7 +358,7 @@ class VestaboardControllerApp(hass.Hass):
 
         self.log(
             f"push_frame: source={source!r} override_ttl={override_ttl} "
-            f"ttl_s={ttl_s} expiration_s={expiration_s} should_expire={should_expire}",
+            f"ttl_s={ttl_s} max_age_s={max_age_s} should_expire={should_expire}",
             level="INFO",
         )
 
@@ -424,7 +434,7 @@ class VestaboardControllerApp(hass.Hass):
                 source_label=automation.name,
                 grid=grid,
                 ttl_s=ttl_s,
-                expiration_s=None,
+                max_age_s=None,
                 override_ttl=override_ttl,
                 should_expire=should_expire,
             )
@@ -456,7 +466,7 @@ class VestaboardControllerApp(hass.Hass):
                 source_label=automation.name,
                 grid=grid,
                 ttl_s=ttl_s,
-                expiration_s=None,
+                max_age_s=None,
                 override_ttl=override_ttl,
                 should_expire=should_expire,
             )
@@ -489,7 +499,7 @@ class VestaboardControllerApp(hass.Hass):
                 source_label=automation.name,
                 grid=grid,
                 ttl_s=ttl_s,
-                expiration_s=None,
+                max_age_s=None,
                 override_ttl=override_ttl,
                 should_expire=should_expire,
             )
@@ -547,7 +557,7 @@ class VestaboardControllerApp(hass.Hass):
                 source_label=automation.name,
                 grid=grid,
                 ttl_s=ttl_s,
-                expiration_s=None,
+                max_age_s=None,
                 override_ttl=override_ttl,
                 should_expire=should_expire,
             )
@@ -863,7 +873,7 @@ class VestaboardControllerApp(hass.Hass):
                     source_label=automation.name,
                     grid=grid,
                     ttl_s=ttl_s,
-                    expiration_s=automation.default_expiration_s,
+                    max_age_s=automation.default_max_age_s,
                     should_expire=should_expire,
                 )
         except Exception as exc:
@@ -1053,7 +1063,7 @@ class VestaboardControllerApp(hass.Hass):
         source_label: str,
         grid: list[list[int]],
         ttl_s: Optional[int],
-        expiration_s: Optional[int],
+        max_age_s: Optional[int],
         override_ttl: bool = False,
         should_expire: bool = False,
     ) -> None:
@@ -1071,7 +1081,7 @@ class VestaboardControllerApp(hass.Hass):
             source=automation_id,
             source_label=source_label,
             ttl_s=ttl_s,
-            expiration_s=expiration_s,
+            max_age_s=max_age_s,
             override_ttl=override_ttl,
             should_expire=should_expire,
             created_at=now,
@@ -1079,7 +1089,7 @@ class VestaboardControllerApp(hass.Hass):
 
         self.log(
             f"Automation {automation_id!r} pushing frame | "
-            f"ttl_s={ttl_s} expiration_s={expiration_s} "
+            f"ttl_s={ttl_s} max_age_s={max_age_s} "
             f"override_ttl={override_ttl} should_expire={should_expire}",
             level="INFO",
         )
@@ -1179,12 +1189,12 @@ class VestaboardControllerApp(hass.Hass):
                         "source": f.source,
                         "source_label": f.source_label,
                         "ttl_s": f.ttl_s,
-                        "expiration_s": f.expiration_s,
+                        "max_age_s": f.max_age_s,
                         "expires_at": (
                             datetime.fromtimestamp(
-                                f.created_at + f.expiration_s, tz=timezone.utc
+                                f.created_at + f.max_age_s, tz=timezone.utc
                             ).isoformat()
-                            if f.expiration_s is not None
+                            if f.max_age_s is not None
                             else None
                         ),
                     }

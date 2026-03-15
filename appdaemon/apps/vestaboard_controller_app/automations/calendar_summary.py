@@ -102,7 +102,7 @@ class CalendarSummaryAutomation(BoardAutomation):
     name = "CalendarSummary"
     description = "Displays upcoming events from a calendar on your board."
     default_ttl_s = None       # TTL set dynamically per event
-    default_expiration_s = None  # Expiration set dynamically per event
+    default_max_age_s = None  # Expiration set dynamically per event
     default_should_expire = False
 
     DEFAULT_UI_CONFIG = {
@@ -240,7 +240,7 @@ class CalendarSummaryAutomation(BoardAutomation):
                 )
                 return
 
-        grid, ttl_s, expiration_s = self._build_event_data(event, now)
+        grid, ttl_s, max_age_s = self._build_event_data(event, now)
 
         # Override TTL from config (fall back to DEFAULT_UI_CONFIG if not in config store)
         ttl_minutes_cfg = self.config.get("ttl_minutes", self.DEFAULT_UI_CONFIG.get("ttl_minutes"))
@@ -251,7 +251,7 @@ class CalendarSummaryAutomation(BoardAutomation):
 
         self.log(
             f"Pushing calendar event: {event.get('summary', '?')!r} "
-            f"ttl_s={ttl_s} expiration_s={expiration_s} automation_id={automation_id!r}",
+            f"ttl_s={ttl_s} max_age_s={max_age_s} automation_id={automation_id!r}",
             level="INFO",
         )
 
@@ -260,7 +260,7 @@ class CalendarSummaryAutomation(BoardAutomation):
             source_label=self.name,
             grid=grid,
             ttl_s=ttl_s,
-            expiration_s=expiration_s,
+            max_age_s=max_age_s,
         )
 
         # Record push time for rotation throttle
@@ -344,7 +344,7 @@ class CalendarSummaryAutomation(BoardAutomation):
     ) -> tuple[list[list[int]], Optional[int], Optional[int]]:
         """Build grid and timing data for an event.
 
-        Returns (grid, ttl_s, expiration_s).
+        Returns (grid, ttl_s, max_age_s).
         """
         summary = event.get("summary", "Event")
         seconds_until = event.get("seconds_until", 0)
@@ -364,7 +364,7 @@ class CalendarSummaryAutomation(BoardAutomation):
         # TTL: hold through the event duration
         # For upcoming events: reminder time + estimated event duration
         ttl_s: Optional[int] = None
-        expiration_s: Optional[int] = None
+        max_age_s: Optional[int] = None
 
         if end_time_str and start_time_str:
             try:
@@ -384,8 +384,8 @@ class CalendarSummaryAutomation(BoardAutomation):
                 if seconds_until_end > 0:
                     ttl_s = seconds_until_end
                     # Expiration: 30 minutes after event ends
-                    expiration_s = seconds_until_end + 1800
+                    max_age_s = seconds_until_end + 1800
             except (ValueError, AttributeError):
                 pass
 
-        return grid, ttl_s, expiration_s
+        return grid, ttl_s, max_age_s

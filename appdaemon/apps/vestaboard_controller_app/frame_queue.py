@@ -28,9 +28,10 @@ class BoardFrame:
         ttl_s: How long (seconds) to hold the board after display before
             yielding to the next pending frame.  None = no TTL protection,
             meaning any frame from another source can freely replace this one.
-        expiration_s: Maximum lifetime (seconds) measured from created_at.
-            After this the frame is invalid and must be discarded.  None = no
-            expiry.
+        max_age_s: Maximum age (seconds) measured from created_at.  After
+            this the frame is stale and will be dropped from the queue even
+            if it was never displayed.  None = no age limit (stays in queue
+            indefinitely until displayed or replaced).
         override_ttl: If True, immediately display this frame even if the
             currently displayed frame still has an active TTL.
         should_expire: If True, when the TTL runs out the frame is dropped
@@ -48,7 +49,7 @@ class BoardFrame:
     source: str
     source_label: str
     ttl_s: Optional[int]
-    expiration_s: Optional[int]
+    max_age_s: Optional[int]
     override_ttl: bool
     created_at: float
     should_expire: bool = field(default=False)
@@ -97,9 +98,9 @@ class FrameQueueState:
 
 def _is_expired(frame: BoardFrame, now: float) -> bool:
     """Return True if the frame's absolute expiration has passed."""
-    if frame.expiration_s is None:
+    if frame.max_age_s is None:
         return False
-    return now >= frame.created_at + frame.expiration_s
+    return now >= frame.created_at + frame.max_age_s
 
 
 def _ttl_expired(frame: BoardFrame, now: float) -> bool:

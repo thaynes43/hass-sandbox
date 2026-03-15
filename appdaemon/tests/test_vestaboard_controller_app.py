@@ -87,7 +87,7 @@ def _make_frame(source: str = "test", ttl_s: int | None = None) -> BoardFrame:
         source=source,
         source_label=source.title(),
         ttl_s=ttl_s,
-        expiration_s=None,
+        max_age_s=None,
         override_ttl=False,
         created_at=time.time(),
     )
@@ -444,7 +444,7 @@ class TestTick:
             source="auto1",
             source_label="Auto1",
             ttl_s=1,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now - 10,
             displayed_at=now - 10,  # displayed 10s ago, TTL=1 → expired
@@ -458,7 +458,7 @@ class TestTick:
             source="auto2",
             source_label="Auto2",
             ttl_s=60,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
         )
@@ -515,7 +515,7 @@ class TestStatusPublishing:
             source="calendar_clock",
             source_label="CalendarClock",
             ttl_s=None,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -540,7 +540,7 @@ class TestStatusPublishing:
                 source=f"source{i}",
                 source_label=f"Source{i}",
                 ttl_s=60,
-                expiration_s=None,
+                max_age_s=None,
                 override_ttl=False,
                 created_at=now,
             )
@@ -553,7 +553,7 @@ class TestStatusPublishing:
             source="disp_source",
             source_label="Disp",
             ttl_s=300,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -595,7 +595,7 @@ class TestStatusPublishing:
             source="test",
             source_label="Test",
             ttl_s=None,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -609,7 +609,7 @@ class TestStatusPublishing:
         assert json.loads(displayed_frame["characters"]) == grid
 
     def test_publish_status_pending_expires_at_with_expiration(self):
-        """Pending items with expiration_s should have an ISO expires_at string."""
+        """Pending items with max_age_s should have an ISO expires_at string."""
         app = self._setup_app()
 
         now = 1710000000.0  # fixed timestamp for deterministic ISO output
@@ -620,7 +620,7 @@ class TestStatusPublishing:
             source="holder",
             source_label="Holder",
             ttl_s=9999,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -633,7 +633,7 @@ class TestStatusPublishing:
             source="event",
             source_label="Event",
             ttl_s=60,
-            expiration_s=300,
+            max_age_s=300,
             override_ttl=False,
             created_at=now,
         )
@@ -645,14 +645,14 @@ class TestStatusPublishing:
         assert len(queue_pending) == 1
         item = queue_pending[0]
         assert item["expires_at"] is not None
-        # Should be an ISO string representing created_at + expiration_s
+        # Should be an ISO string representing created_at + max_age_s
         from datetime import datetime, timezone
         expected_ts = now + 300
         expected_iso = datetime.fromtimestamp(expected_ts, tz=timezone.utc).isoformat()
         assert item["expires_at"] == expected_iso
 
     def test_publish_status_pending_expires_at_null_without_expiration(self):
-        """Pending items without expiration_s should have expires_at=null."""
+        """Pending items without max_age_s should have expires_at=null."""
         app = self._setup_app()
 
         now = time.time()
@@ -662,7 +662,7 @@ class TestStatusPublishing:
             source="holder",
             source_label="Holder",
             ttl_s=9999,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -675,7 +675,7 @@ class TestStatusPublishing:
             source="clock",
             source_label="Clock",
             ttl_s=None,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
         )
@@ -911,6 +911,7 @@ class TestBoardWrite:
     def test_write_skipped_when_ip_not_configured(self):
         app = _make_app({"vestaboard_ip": "", "vestaboard_api_key": ""})
         app.initialize()
+        app._sleep_enabled = False
         app._vb_ip = ""
         app._vb_api_key = ""
 
@@ -923,6 +924,7 @@ class TestBoardWrite:
     def test_write_calls_client(self):
         app = _make_app()
         app.initialize()
+        app._sleep_enabled = False
         app._vb_ip = "192.168.1.50"
         app._vb_api_key = "test-api-key-fake"
 
@@ -943,6 +945,7 @@ class TestBoardWrite:
     def test_write_sets_last_write_ok_false_on_failure(self):
         app = _make_app()
         app.initialize()
+        app._sleep_enabled = False
         app._vb_ip = "192.168.1.50"
         app._vb_api_key = "test-api-key-fake"
 
@@ -981,7 +984,7 @@ class TestFrameQueueIntegration:
             source_label="CalendarClock",
             grid=grid,
             ttl_s=60,
-            expiration_s=None,
+            max_age_s=None,
         )
 
         # Frame should be displayed immediately (queue was empty)
@@ -1007,7 +1010,7 @@ class TestFrameQueueIntegration:
             source="source1",
             source_label="Source1",
             ttl_s=300,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -1020,7 +1023,7 @@ class TestFrameQueueIntegration:
             source_label="Source2",
             grid=_test_grid(),
             ttl_s=60,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
         )
 
@@ -1046,7 +1049,7 @@ class TestFrameQueueIntegration:
             source="source1",
             source_label="Source1",
             ttl_s=300,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -1059,7 +1062,7 @@ class TestFrameQueueIntegration:
             source_label="User",
             grid=_test_grid(),
             ttl_s=30,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=True,
         )
 
@@ -1085,7 +1088,7 @@ class TestFrameQueueIntegration:
             source="other_source",
             source_label="Other",
             ttl_s=300,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
@@ -1115,7 +1118,7 @@ class TestFrameQueueIntegration:
             source_label="CalendarSummary",
             grid=_blank_grid(),
             ttl_s=60,
-            expiration_s=None,
+            max_age_s=None,
         )
 
         # Blank frame should be rejected — nothing displayed or queued
@@ -1669,7 +1672,7 @@ class TestFireAutomationFrameTTL:
         mock_auto = MagicMock()
         mock_auto.name = "TestAuto"
         mock_auto.default_ttl_s = None
-        mock_auto.default_expiration_s = None
+        mock_auto.default_max_age_s = None
         mock_auto.default_should_expire = False
         mock_auto.config = {"ttl_minutes": 5}
         mock_auto.generate_frame = AsyncMock(return_value=_test_grid())
@@ -1687,7 +1690,7 @@ class TestFireAutomationFrameTTL:
         mock_auto = MagicMock()
         mock_auto.name = "TestAuto"
         mock_auto.default_ttl_s = None
-        mock_auto.default_expiration_s = None
+        mock_auto.default_max_age_s = None
         mock_auto.default_should_expire = False
         mock_auto.config = {"ttl_minutes": 5, "should_expire": True}
         mock_auto.generate_frame = AsyncMock(return_value=_test_grid())
@@ -1703,7 +1706,7 @@ class TestFireAutomationFrameTTL:
         mock_auto = MagicMock()
         mock_auto.name = "TestAuto"
         mock_auto.default_ttl_s = 120
-        mock_auto.default_expiration_s = None
+        mock_auto.default_max_age_s = None
         mock_auto.default_should_expire = False
         mock_auto.config = {}
         mock_auto.generate_frame = AsyncMock(return_value=_test_grid())
@@ -1745,7 +1748,7 @@ class TestDeactivationPurge:
             source="my_auto",
             source_label="MyAuto",
             ttl_s=None,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
         )
@@ -1784,7 +1787,7 @@ class TestJSONSerializedFrameData:
             source="test",
             source_label="Test",
             ttl_s=None,
-            expiration_s=None,
+            max_age_s=None,
             override_ttl=False,
             created_at=now,
             displayed_at=now,
