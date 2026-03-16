@@ -1,0 +1,4 @@
+type: custom:school-lunch-card
+status_entity: sensor.school_lunch_menu
+selection_entity: input_text.school_lunch_selected_schools
+navigation_path: "#school-lunch-popup"
