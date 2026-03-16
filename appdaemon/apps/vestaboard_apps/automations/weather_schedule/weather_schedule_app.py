@@ -152,6 +152,10 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
         if "time_list" in config:
+            self.log(
+                f"time_list updated: {config['time_list']} — rescheduling daily timers",
+                level="INFO",
+            )
             self._cancel_daily_timers()
             self._register_daily_timers()
 

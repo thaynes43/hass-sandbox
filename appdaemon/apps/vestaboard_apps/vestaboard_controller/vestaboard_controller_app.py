@@ -422,9 +422,17 @@ class VestaboardControllerApp(hass.Hass):
         # Persist to config store
         if self._config_store is not None:
             self._config_store.update(automation_id, new_config)
+            self.log(
+                f"Config persisted for {automation_id!r}",
+                level="INFO",
+            )
 
         # Push config to automation
         automation.on_config_updated(new_config)
+        self.log(
+            f"Config pushed to automation {automation_id!r}",
+            level="INFO",
+        )
         self._publish_status()
 
     def _handle_activate_automation(self, automation_id: str) -> None:
@@ -438,6 +446,7 @@ class VestaboardControllerApp(hass.Hass):
             return
         if self._config_store is not None:
             self._config_store.update(automation_id, {"enabled": True})
+            self.log(f"Persisted enabled=True for {automation_id!r}", level="INFO")
         automation.set_enabled(True)
         self.log(f"Automation {automation_id!r} activated", level="INFO")
         self._publish_status()
@@ -453,6 +462,7 @@ class VestaboardControllerApp(hass.Hass):
             return
         if self._config_store is not None:
             self._config_store.update(automation_id, {"enabled": False})
+            self.log(f"Persisted enabled=False for {automation_id!r}", level="INFO")
         automation.set_enabled(False)
 
         # Purge frames from this automation

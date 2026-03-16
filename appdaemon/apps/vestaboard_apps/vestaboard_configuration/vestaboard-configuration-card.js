@@ -1122,7 +1122,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         const times = Array.isArray(currentValue) ? currentValue : (field.default || []);
         const chips = times.map((t, i) => `
           <span class="time-chip">
-            ${this._esc(t)}
+            ${this._esc(vbcFormatTime(t) || t)}
             <span class="time-chip-remove" data-action="store-time-remove" data-auto-id="${this._esc(auto.id)}" data-field="${this._esc(key)}" data-index="${i}">&times;</span>
           </span>
         `).join("");
@@ -1572,6 +1572,36 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._saveStoreConfig(el.dataset.autoId);
         break;
 
+      case "store-time-add": {
+        const autoId = el.dataset.autoId;
+        const field = el.dataset.field;
+        const input = this.shadowRoot.querySelector(`input[data-role="time-add-input"][data-auto-id="${autoId}"][data-field="${field}"]`);
+        if (!input || !input.value) break;
+        const timeVal = input.value.includes(":") && input.value.split(":").length === 2 ? input.value + ":00" : input.value;
+        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
+        const currentAdd = Array.isArray(this._automationEdits[autoId][field]) ? [...this._automationEdits[autoId][field]] : [...(this._getTimeListCurrent(autoId, field) || [])];
+        if (!currentAdd.includes(timeVal)) {
+          currentAdd.push(timeVal);
+          currentAdd.sort();
+        }
+        this._automationEdits[autoId][field] = currentAdd;
+        input.value = "";
+        this._render();
+        break;
+      }
+
+      case "store-time-remove": {
+        const rmAutoId = el.dataset.autoId;
+        const rmField = el.dataset.field;
+        const rmIndex = parseInt(el.dataset.index, 10);
+        if (!this._automationEdits[rmAutoId]) this._automationEdits[rmAutoId] = {};
+        const currentRm = Array.isArray(this._automationEdits[rmAutoId][rmField]) ? [...this._automationEdits[rmAutoId][rmField]] : [...(this._getTimeListCurrent(rmAutoId, rmField) || [])];
+        currentRm.splice(rmIndex, 1);
+        this._automationEdits[rmAutoId][rmField] = currentRm;
+        this._render();
+        break;
+      }
+
       case "generate-art":
         if (this._artSubject.trim()) {
           this._artGenerating = true;
@@ -1655,36 +1685,6 @@ class VestaboardConfigurationCard extends HTMLElement {
         }
         this._updateStoreSaveButton(autoId);
         this._updateStoreExpandButton(autoId);
-        break;
-      }
-
-      case "store-time-add": {
-        const autoId = el.dataset.autoId;
-        const field = el.dataset.field;
-        const input = this.shadowRoot.querySelector(`input[data-role="time-add-input"][data-auto-id="${autoId}"][data-field="${field}"]`);
-        if (!input || !input.value) break;
-        const timeVal = input.value.includes(":") && input.value.split(":").length === 2 ? input.value + ":00" : input.value;
-        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
-        const current = Array.isArray(this._automationEdits[autoId][field]) ? [...this._automationEdits[autoId][field]] : [...(this._getTimeListCurrent(autoId, field) || [])];
-        if (!current.includes(timeVal)) {
-          current.push(timeVal);
-          current.sort();
-        }
-        this._automationEdits[autoId][field] = current;
-        input.value = "";
-        this._render();
-        break;
-      }
-
-      case "store-time-remove": {
-        const autoId = el.dataset.autoId;
-        const field = el.dataset.field;
-        const index = parseInt(el.dataset.index, 10);
-        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
-        const current = Array.isArray(this._automationEdits[autoId][field]) ? [...this._automationEdits[autoId][field]] : [...(this._getTimeListCurrent(autoId, field) || [])];
-        current.splice(index, 1);
-        this._automationEdits[autoId][field] = current;
-        this._render();
         break;
       }
 
@@ -1875,7 +1875,10 @@ class VestaboardConfigurationCard extends HTMLElement {
         const field = schema[key] || {};
         const sensorValue = this._normalizeStoreFieldValue(field, auto.config?.[key] !== undefined ? auto.config[key] : field.default);
         const overrideValue = this._normalizeStoreFieldValue(field, overrides[key]);
-        if (sensorValue === overrideValue) {
+        const equal = (Array.isArray(sensorValue) || Array.isArray(overrideValue))
+          ? JSON.stringify(sensorValue) === JSON.stringify(overrideValue)
+          : sensorValue === overrideValue;
+        if (equal) {
           delete overrides[key];
         }
       }
@@ -1898,7 +1901,10 @@ class VestaboardConfigurationCard extends HTMLElement {
         const field = schema[key] || {};
         const sensorValue = this._getStoreBaseConfigValue(autoId, key, field, auto);
         const editValue = this._normalizeStoreFieldValue(field, edits[key]);
-        if (sensorValue === editValue) {
+        const equal = (Array.isArray(sensorValue) || Array.isArray(editValue))
+          ? JSON.stringify(sensorValue) === JSON.stringify(editValue)
+          : sensorValue === editValue;
+        if (equal) {
           delete edits[key];
         }
       }
@@ -1921,6 +1927,9 @@ class VestaboardConfigurationCard extends HTMLElement {
       const field = schema[key] || {};
       const baseValue = this._getStoreBaseConfigValue(autoId, key, field, auto);
       const editValue = this._normalizeStoreFieldValue(field, edits[key]);
+      if (Array.isArray(editValue) || Array.isArray(baseValue)) {
+        return JSON.stringify(editValue) !== JSON.stringify(baseValue);
+      }
       return editValue !== baseValue;
     });
   }

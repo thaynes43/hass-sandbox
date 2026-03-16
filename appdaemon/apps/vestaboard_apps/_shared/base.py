@@ -269,6 +269,11 @@ class VestaboardAutomation:
             level="DEBUG",
         )
 
+    def _clear_random_interval_handle(self) -> None:
+        """Clear the handle without cancelling (use when the timer already fired)."""
+        self._random_interval_handle = None
+        self._next_fire_time = None
+
     def _cancel_random_interval(self) -> None:
         """Cancel any pending random interval timer."""
         if self._random_interval_handle is not None:

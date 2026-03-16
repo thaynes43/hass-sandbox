@@ -154,6 +154,7 @@ class MessagesFromLibraryApp(hass.Hass, VestaboardAutomation):
         )
 
     def _on_random_fire(self, kwargs: dict) -> None:
+        self._clear_random_interval_handle()  # handle already fired
         self.create_task(self._generate_and_push())
         self._start_random_interval()
 
