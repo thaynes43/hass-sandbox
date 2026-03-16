@@ -82,15 +82,16 @@ function getTargetDay() {
 /**
  * Filter a day's items to entrees only.
  * Entrees: category contains "entree" (case-insensitive) AND is_ancillary is falsy.
+ * Excludes common filler items that appear every day (Chilled Fruit, Milk Choice).
  */
+const FILLER_ITEMS = ["chilled fruit", "milk choice", "milk"];
 function filterEntrees(items) {
   if (!Array.isArray(items)) return [];
-  return items.filter(
-    (it) =>
-      typeof it.category === "string" &&
-      it.category.toLowerCase().includes("entree") &&
-      !it.is_ancillary
-  );
+  return items.filter((it) => {
+    const cat = typeof it.category === "string" ? it.category.toLowerCase() : "";
+    const name = typeof it.name === "string" ? it.name.toLowerCase().trim() : "";
+    return cat.includes("entree") && !it.is_ancillary && !FILLER_ITEMS.includes(name);
+  });
 }
 
 /**

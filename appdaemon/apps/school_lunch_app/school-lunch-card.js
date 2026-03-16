@@ -155,9 +155,11 @@ class SchoolLunchCard extends HTMLElement {
     const dayData = (school.days || []).find((d) => d.day === targetDay);
     if (!dayData) return null;
 
+    const FILLER = ["chilled fruit", "milk choice", "milk"];
     const entrees = (dayData.items || []).filter((item) => {
       const cat = String(item.category || "").toLowerCase();
-      return cat.includes("entree") && !item.is_ancillary;
+      const name = String(item.name || "").toLowerCase().trim();
+      return cat.includes("entree") && !item.is_ancillary && !FILLER.includes(name);
     });
 
     return { entrees, notice: dayData.notice || "" };
