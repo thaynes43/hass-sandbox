@@ -23,17 +23,20 @@
                                      │  ├─ photo_frame_*  │
                                      │  ├─ dashboard_notify│
                                      │  ├─ calendar_from_*│
-                                     │  └─ immich_fetcher │
+                                     │  ├─ immich_fetcher │
+                                     │  └─ school_lunch_* │
                                      │                    │
                                      │  providers/        │
                                      │  ├─ ai_providers   │
                                      │  ├─ ha_provisioner │
-                                     │  └─ photo_providers│
+                                     │  ├─ photo_providers│
+                                     │  └─ school_menu    │
                                      └───────────────────-┘
                                               │
                                      External APIs
                                      (OpenAI, Gemini, Ollama,
-                                      ComfyUI, Immich)
+                                      ComfyUI, Immich,
+                                      School Nutrition and Fitness)
 ```
 
 ## Data flow paths
