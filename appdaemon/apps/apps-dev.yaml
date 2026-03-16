@@ -29,4 +29,4 @@ school_lunch_app_dev:
   default_selected:
     - "Elementary"
     - "Middle School"
-  show_tomorrow_after: "15:00:00"
+  show_tomorrow_after: "12:00:00"
