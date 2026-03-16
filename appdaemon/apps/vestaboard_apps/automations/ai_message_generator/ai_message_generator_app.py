@@ -1,4 +1,4 @@
-"""AI Message Generator automation — uses LLM to generate witty board messages."""
+"""AI Message Generator automation app — uses LLM to generate witty board messages."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from typing import Any
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[4]))
+sys.path.append(str(Path(__file__).resolve().parents[4]))  # adds appdaemon/
+
+import hassapi as hass
 
 from providers.vestaboard.character_encoding import (
     CHAR_TO_CODE,
@@ -17,7 +19,7 @@ from providers.vestaboard.character_encoding import (
     text_to_grid,
 )
 
-from .base import BoardAutomation
+from vestaboard_apps._shared.base import VestaboardAutomation
 
 _AI_PERSONALITY_PROMPT = """\
 You are a clever AI consciousness trapped inside a modern analog flip messageboard \
@@ -49,7 +51,6 @@ Return ONLY a JSON object with a single "message" key containing the 6-line stri
 
 
 def _build_bordered_grid(text: str) -> list[list[int]]:
-    """Build a 6x22 grid with a randomly colored border and centered text."""
     color_options = [
         COLOR_CODES["red"],
         COLOR_CODES["orange"],
@@ -71,15 +72,15 @@ def _build_bordered_grid(text: str) -> list[list[int]]:
     return grid
 
 
-class MessageGeneratedByAiAutomation(BoardAutomation):
+class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
     """On-demand automation that generates witty messages via LLM.
 
-    No automatic triggers — called programmatically or on a random interval.
-    Falls back to curated messages when AI provider is unavailable.
+    Supports random interval scheduling when enabled with frequency config.
     """
 
-    name = "MessageGeneratedByAI"
-    description = "Uses AI to generate inspirational messages for your board."
+    automation_type = "ai_message_generator"
+    display_name = "AI Message Generator"
+    display_description = "Uses AI to generate inspirational messages for your board."
     default_ttl_s = None
     default_max_age_s = None
     default_should_expire = True
@@ -119,12 +120,7 @@ class MessageGeneratedByAiAutomation(BoardAutomation):
         }
 
     def get_preview_frame(self) -> list[list[int]]:
-        """Return a preview suggesting AI-generated messages.
-
-        Uses violet border with "AI MESSAGE" text to distinguish from library messages.
-        """
         border = COLOR_CODES["violet"]
-
         text = "AI MESSAGE"
         padded = text.center(20)
         interior: list[int] = []
@@ -137,7 +133,7 @@ class MessageGeneratedByAiAutomation(BoardAutomation):
         def _bordered(cells: list[int]) -> list[int]:
             return [border] + cells + [border]
 
-        grid = [
+        return [
             border_row,
             _bordered(blank_interior),
             _bordered(interior),
@@ -145,35 +141,56 @@ class MessageGeneratedByAiAutomation(BoardAutomation):
             _bordered(blank_interior),
             border_row,
         ]
-        return grid
 
-    def get_triggers(self) -> list[dict[str, Any]]:
-        """No automatic triggers — user-driven via command or random interval."""
-        return []
+    def initialize(self) -> None:
+        self.register_with_controller()
 
-    async def generate_frame(self) -> list[list[int]]:
-        """Generate a message grid via AI.
+        cfg = self.args or {}
+        if cfg.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", False)):
+            self._start_random_interval()
 
-        Tries the configured simple_text AI provider first; falls back to
-        the curated message list if unavailable.
-        """
-        cfg = self.config
+    def terminate(self) -> None:
+        self._cancel_random_interval()
+        self.deregister_from_controller()
 
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled:
+            self._start_random_interval()
+        else:
+            self._cancel_random_interval()
+
+    def on_config_updated(self, config: dict[str, Any]) -> None:
+        super().on_config_updated(config)
+        if "frequency_min_minutes" in config or "frequency_max_minutes" in config:
+            if config.get("enabled", True):
+                self._start_random_interval()
+
+    def _start_random_interval(self) -> None:
+        cfg = self.args or {}
+        freq_min = cfg.get("frequency_min_minutes", 60)
+        freq_max = cfg.get("frequency_max_minutes", 240)
+        self._schedule_random_interval(
+            self._on_random_fire,
+            min_minutes=float(freq_min),
+            max_minutes=float(freq_max),
+        )
+
+    def _on_random_fire(self, kwargs: dict) -> None:
+        self.create_task(self._generate_and_push())
+        self._start_random_interval()
+
+    async def generate_frame(self, **kwargs) -> list[list[int]]:
+        cfg = self.args or {}
         ai_provider_conf = cfg.get("ai_provider_conf")
         if ai_provider_conf:
             try:
                 return await self._generate_ai_frame(ai_provider_conf)
             except Exception as exc:
-                self.log(
-                    f"AI generation failed, using fallback: {exc!r}",
-                    level="WARNING",
-                )
+                self.log(f"AI generation failed, using fallback: {exc!r}", level="WARNING")
 
-        # Fallback: curated message list
         return self._generate_fallback_frame()
 
     async def _generate_ai_frame(self, ai_provider_conf: dict) -> list[list[int]]:
-        """Use simple_text AI provider to generate a message."""
         from providers.ai_providers.registry import (
             build_simple_text_provider,
             simple_text_config_from_appdaemon_args,
@@ -196,21 +213,15 @@ class MessageGeneratedByAiAutomation(BoardAutomation):
         if not message_text:
             raise ValueError("AI returned empty message")
 
-        self.log(
-            f"AI message generated ({len(message_text)} chars)",
-            level="INFO",
-        )
+        self.log(f"AI message generated ({len(message_text)} chars)", level="INFO")
 
-        # Try to parse as pre-formatted 6-line grid
         lines = message_text.split("\n")
         if len(lines) == 6 and all(len(line) == 22 for line in lines):
             return self._parse_preformatted_grid(lines)
 
-        # Otherwise word-wrap into bordered grid
         return _build_bordered_grid(message_text)
 
     def _parse_preformatted_grid(self, lines: list[str]) -> list[list[int]]:
-        """Parse a pre-formatted 6-line x 22-char grid from AI output."""
         emoji_to_code = {
             "\U0001f7e5": COLOR_CODES["red"],
             "\U0001f7e7": COLOR_CODES["orange"],
@@ -240,7 +251,6 @@ class MessageGeneratedByAiAutomation(BoardAutomation):
         return grid
 
     def _generate_fallback_frame(self) -> list[list[int]]:
-        """Pick a random message from the curated list and build a bordered grid."""
         message = random.choice(self._FALLBACK_MESSAGES)
         self.log(f"Using fallback message: {message!r}", level="INFO")
         return _build_bordered_grid(message)

@@ -1,6 +1,6 @@
 You are a Front End Implementation agent working on the Vestaboard custom Lovelace card at:
 
-- `appdaemon/apps/vestaboard_configuration_app/vestaboard-configuration-card.js`
+- `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card.js`
 
 This card is unusually coupled to Home Assistant sensor behavior and AppDaemon relay/controller behavior. Do not treat it like a normal standalone web component. Small frontend changes can surface as HA state-shape bugs, dashboard layout bugs, or kiosk-device touch/input bugs.
 
@@ -10,21 +10,25 @@ This card is unusually coupled to Home Assistant sensor behavior and AppDaemon r
    - `.cursor/rules/custom-card-guidelines.mdc`
 2. Generic cache-busting / HA pod inspection playbook:
    - `.agents/playbooks/cache-busting-playbook.md`
-3. App-level README:
-   - `appdaemon/apps/vestaboard_configuration_app/README.md`
+3. App-level READMEs:
+   - `appdaemon/apps/vestaboard_apps/vestaboard_configuration/README.md`
+   - `appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md`
 
 ## Files and ownership
 
 Primary frontend file:
 
-- `appdaemon/apps/vestaboard_configuration_app/vestaboard-configuration-card.js`
+- `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card.js`
 
 Related backend/config files that matter for debugging frontend issues:
 
-- `appdaemon/apps/vestaboard_configuration_app/vestaboard_configuration_app.py`
-- `appdaemon/apps/vestaboard_configuration_app/frame_library.py`
-- `appdaemon/apps/vestaboard_controller_app/vestaboard_controller_app.py`
-- `appdaemon/apps/vestaboard_controller_app/automations/*.py`
+- `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard_configuration_app.py`
+- `appdaemon/apps/vestaboard_apps/vestaboard_configuration/frame_library.py`
+- `appdaemon/apps/vestaboard_apps/vestaboard_controller/vestaboard_controller_app.py`
+- `appdaemon/apps/vestaboard_apps/_shared/base.py` (VestaboardAutomation mixin)
+- `appdaemon/apps/vestaboard_apps/_shared/frame_queue.py`
+- `appdaemon/apps/vestaboard_apps/_shared/config_store.py`
+- `appdaemon/apps/vestaboard_apps/automations/*/` (individual automation apps)
 
 The frontend resource is served by the Home Assistant pod, not the AppDaemon pod.
 
@@ -58,6 +62,29 @@ Important:
 - A `?v=` bump does not deploy the new file into the HA pod.
 - It only tells clients to refetch whatever file is currently present at `/config/www/vestaboard/vestaboard-configuration-card.js`.
 - If the pod still has old JS, the frontend will appear unchanged even after a resource bump.
+
+## Refactored backend architecture (important context)
+
+The Vestaboard system was refactored from a monolithic controller that owned automations internally to a dynamic registration architecture:
+
+- **Controller** (`vestaboard_controller/`) — manages the frame queue and board writes. No longer owns automation lifecycle.
+- **Automations** (`automations/*/`) — each automation is its own AppDaemon app that registers with the controller via `get_app()` and the `VestaboardAutomation` mixin.
+- **Configuration app** (`vestaboard_configuration/`) — bridge between the card and controller. Unchanged role: manages frame library, forwards commands, mirrors controller status.
+
+The card's data source is still `sensor.vestaboard_configuration_status`. The `automations` attribute now lists dynamically registered automations instead of statically configured ones. The automation config schema and preview frames come from the automation apps themselves.
+
+### New config field types
+
+The refactor added a new UI config field type used by automation apps:
+
+- **`time_list`** — an array of `"HH:MM:SS"` strings. Rendered as removable chips with an "Add" button + `<input type="time">`. Used by the weather_schedule automation for daily display times.
+
+Implementation in the card:
+- `_renderAutoConfig()` — renders `time_list` fields as chips with `data-action="store-time-remove"` and an add row with `data-action="store-time-add"`
+- `_normalizeStoreFieldValue()` — handles `time_list` type (array passthrough or JSON string parse)
+- Click handler — `store-time-add` reads from `input[data-role="time-add-input"]`, appends to array, sorts, re-renders
+- Click handler — `store-time-remove` splices by index, re-renders
+- `_getTimeListCurrent()` — reads current time list from sensor for the given automation+field
 
 ## Card architecture summary
 
@@ -189,6 +216,14 @@ Current mitigations:
 
 Do not casually reintroduce generic touch-cancel patterns or full-card touch interception.
 
+### 6. Array-type config fields (time_list) need special dirty-check handling
+
+The `time_list` field type stores arrays of strings. Dirty-check comparison between arrays requires deep equality, not reference equality. When comparing sensor values vs local edits for `time_list` fields:
+
+- Both values should be normalized to arrays first (via `_normalizeStoreFieldValue`)
+- Compare with `JSON.stringify()` or element-by-element, not `===`
+- The `_syncAutomationEditsWithSensor()` method handles this for standard types but may need attention if array-type dirty state doesn't clear properly
+
 ## Editor tab rules
 
 ### Art vs Message
@@ -221,8 +256,8 @@ UI rules currently expected:
 - `Save to Library` for new frames
 - `Update in Library` for existing library items
 - visible status block showing whether the user is creating new or editing existing
-- Message-library items should only behave as “editing existing” in Message mode
-- Art-library items should only behave as “editing existing” in Art mode
+- Message-library items should only behave as "editing existing" in Message mode
+- Art-library items should only behave as "editing existing" in Art mode
 
 If this symmetry breaks, users can accidentally move/overwrite items across categories.
 
@@ -287,10 +322,26 @@ If `Save Config` stays active, re-check:
 - sensor values may be strings
 - overrides may not be getting cleared when backend catches up
 
-If saved checkbox values “snap back”, check:
+If saved checkbox values "snap back", check:
 
 - whether HA sensor state for `automations` actually updated
 - whether the frontend is comparing typed values or raw strings
+
+### Config field types supported
+
+The card currently supports these field types in `config_schema`:
+
+| Type | Rendered as | Handler |
+|------|-------------|---------|
+| `bool` | Checkbox | `_handleChange` (`store-config-field`, `fieldType="bool"`) |
+| `int` / `number` | Number input | `_handleInput` (`store-config-field`, `fieldType="number"`) |
+| `time_list` | Removable chips + time input + Add button | `_handleClick` (`store-time-add`, `store-time-remove`) |
+
+When adding new field types, follow the existing pattern:
+1. Add rendering in `_renderAutoConfig()`
+2. Add normalization in `_normalizeStoreFieldValue()`
+3. Add event handling in the appropriate handler (`_handleClick`, `_handleInput`, or `_handleChange`)
+4. Ensure dirty-check works in `_isStoreConfigDirty()` and `_syncAutomationEditsWithSensor()`
 
 ### Store layout behavior
 
@@ -306,7 +357,7 @@ Do not revert to globally fixed-height store cards unless explicitly asked.
 
 ## Debugging checklist
 
-When a bug appears to be frontend but feels “impossible”, check these in order:
+When a bug appears to be frontend but feels "impossible", check these in order:
 
 1. Is the local JS actually deployed to the HA pod?
 2. Was the Lovelace resource `?v=` bumped after the last JS change?
@@ -326,7 +377,7 @@ Useful live checks:
 After code changes:
 
 1. Run:
-   - `node --check appdaemon/apps/vestaboard_configuration_app/vestaboard-configuration-card.js`
+   - `node --check appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card.js`
 2. Bump the Lovelace resource version using:
    - `.agents/playbooks/cache-busting-playbook.md`
 3. If the user asked for deployment, verify/copy the file into the HA pod and then bump `?v=`

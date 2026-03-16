@@ -1,1 +1,0 @@
-# Vestaboard board automation classes

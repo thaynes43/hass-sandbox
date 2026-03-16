@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps"))
 
 import uuid
 import pytest
-from vestaboard_controller_app.frame_queue import (
+from vestaboard_apps._shared.frame_queue import (
     BoardFrame,
     FrameQueue,
     FrameQueueAction,

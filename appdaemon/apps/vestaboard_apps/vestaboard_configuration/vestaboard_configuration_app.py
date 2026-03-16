@@ -22,12 +22,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))  # adds appdaemon/
+sys.path.append(str(Path(__file__).resolve().parents[3]))  # adds appdaemon/
 
 import hassapi as hass
 
 from providers.secrets import resolve_arg_secret
-from vestaboard_configuration_app.frame_library import FrameLibrary, LibraryFrame
+from vestaboard_apps.vestaboard_configuration.frame_library import FrameLibrary, LibraryFrame
 
 
 class VestaboardConfigurationApp(hass.Hass):

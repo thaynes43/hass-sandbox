@@ -67,8 +67,15 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
 | `dashboard_notify` | `appdaemon/apps/dashboard_notify/README.md` | AI-generated notification carousel for wall displays |
 | `school_lunch_app` | `appdaemon/apps/school_lunch_app/README.md` | Fetch daily school lunch menus and publish to HA sensor |
-| `vestaboard_controller_app` | `appdaemon/apps/vestaboard_controller_app/README.md` | Vestaboard board controller with frame queue and automations |
-| `vestaboard_configuration_app` | `appdaemon/apps/vestaboard_configuration_app/README.md` | Vestaboard configuration bridge for card ↔ controller communication |
+| `vestaboard_controller` | `appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md` | Vestaboard board controller with LIFO frame queue and dynamic automation registration |
+| `vestaboard_configuration` | `appdaemon/apps/vestaboard_apps/vestaboard_configuration/README.md` | Vestaboard configuration bridge: frame library CRUD, card ↔ controller communication |
+| `calendar_clock` | `appdaemon/apps/vestaboard_apps/automations/calendar_clock/README.md` | Calendar grid + clock display, updated every 60 seconds |
+| `calendar_summary` | `appdaemon/apps/vestaboard_apps/automations/calendar_summary/README.md` | Upcoming HA calendar events with countdown (multi-instance) |
+| `messages_from_library` | `appdaemon/apps/vestaboard_apps/automations/messages_from_library/README.md` | Random messages from frame library with curated fallback |
+| `art_from_library` | `appdaemon/apps/vestaboard_apps/automations/art_from_library/README.md` | Random pixel art from bundled art_library.json |
+| `ai_art_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_art_generator/README.md` | LLM-generated pixel art with grid validation and retry |
+| `ai_message_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_message_generator/README.md` | LLM-generated witty messages with curated fallback |
+| `weather_schedule` | `appdaemon/apps/vestaboard_apps/automations/weather_schedule/README.md` | Weather summary displayed on a daily schedule |
 
 ### Providers
 
@@ -119,9 +126,17 @@ calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 
 school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
 
-vestaboard_controller_app
+vestaboard_controller (vestaboard_apps/vestaboard_controller)
   └─ controls physical Vestaboard via provider
-       └─ vestaboard_configuration_app (forwards user commands)
+  └─ automation apps register dynamically at startup
+       ├─ calendar_clock
+       ├─ calendar_summary (one instance per calendar entity)
+       ├─ messages_from_library
+       ├─ art_from_library
+       ├─ ai_art_generator
+       ├─ ai_message_generator
+       └─ weather_schedule
+  └─ vestaboard_configuration (reads status sensor, forwards card commands)
 ```
 
 ## When creating a new app or provider

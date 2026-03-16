@@ -25,7 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps"))
 
 import pytest
-from vestaboard_configuration_app.frame_library import FrameLibrary, LibraryFrame
+from vestaboard_apps.vestaboard_configuration.frame_library import FrameLibrary, LibraryFrame
 
 # ---------------------------------------------------------------------------
 # Helpers

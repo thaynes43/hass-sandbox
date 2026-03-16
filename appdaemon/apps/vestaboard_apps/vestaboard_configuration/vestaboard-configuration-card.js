@@ -1118,6 +1118,28 @@ class VestaboardConfigurationCard extends HTMLElement {
         `;
       }
 
+      if (field.type === "time_list") {
+        const times = Array.isArray(currentValue) ? currentValue : (field.default || []);
+        const chips = times.map((t, i) => `
+          <span class="time-chip">
+            ${this._esc(t)}
+            <span class="time-chip-remove" data-action="store-time-remove" data-auto-id="${this._esc(auto.id)}" data-field="${this._esc(key)}" data-index="${i}">&times;</span>
+          </span>
+        `).join("");
+        const desc = field.description ? `<div class="config-description">${this._esc(field.description)}</div>` : "";
+        return `
+          <div class="config-field">
+            <label class="config-label">${this._esc(label)}</label>
+            ${desc}
+            <div class="time-chips">${chips}</div>
+            <div class="time-add-row">
+              <input type="time" step="1" class="vbc-input vbc-input-sm" data-role="time-add-input" data-auto-id="${this._esc(auto.id)}" data-field="${this._esc(key)}">
+              <button class="vbc-btn vbc-btn-sm" data-action="store-time-add" data-auto-id="${this._esc(auto.id)}" data-field="${this._esc(key)}">Add</button>
+            </div>
+          </div>
+        `;
+      }
+
       // number / int
       const min = field.min !== undefined ? `min="${field.min}"` : "";
       const max = field.max !== undefined ? `max="${field.max}"` : "";
@@ -1636,9 +1658,49 @@ class VestaboardConfigurationCard extends HTMLElement {
         break;
       }
 
+      case "store-time-add": {
+        const autoId = el.dataset.autoId;
+        const field = el.dataset.field;
+        const input = this.shadowRoot.querySelector(`input[data-role="time-add-input"][data-auto-id="${autoId}"][data-field="${field}"]`);
+        if (!input || !input.value) break;
+        const timeVal = input.value.includes(":") && input.value.split(":").length === 2 ? input.value + ":00" : input.value;
+        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
+        const current = Array.isArray(this._automationEdits[autoId][field]) ? [...this._automationEdits[autoId][field]] : [...(this._getTimeListCurrent(autoId, field) || [])];
+        if (!current.includes(timeVal)) {
+          current.push(timeVal);
+          current.sort();
+        }
+        this._automationEdits[autoId][field] = current;
+        input.value = "";
+        this._render();
+        break;
+      }
+
+      case "store-time-remove": {
+        const autoId = el.dataset.autoId;
+        const field = el.dataset.field;
+        const index = parseInt(el.dataset.index, 10);
+        if (!this._automationEdits[autoId]) this._automationEdits[autoId] = {};
+        const current = Array.isArray(this._automationEdits[autoId][field]) ? [...this._automationEdits[autoId][field]] : [...(this._getTimeListCurrent(autoId, field) || [])];
+        current.splice(index, 1);
+        this._automationEdits[autoId][field] = current;
+        this._render();
+        break;
+      }
+
       default:
         break;
     }
+  }
+
+  _getTimeListCurrent(autoId, field) {
+    const automations = this._sensorAttr("automations", []);
+    const auto = (Array.isArray(automations) ? automations : []).find((a) => a.id === autoId);
+    if (!auto) return [];
+    const schema = auto.config_schema || {};
+    const fieldDef = schema[field] || {};
+    const raw = auto.config?.[field] !== undefined ? auto.config[field] : fieldDef.default;
+    return Array.isArray(raw) ? raw : [];
   }
 
   _handleChange(el) {
@@ -1786,6 +1848,14 @@ class VestaboardConfigurationCard extends HTMLElement {
       if (value === null || value === "") return undefined;
       const parsed = Number(value);
       return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    if (field?.type === "time_list") {
+      if (Array.isArray(value)) return value;
+      if (typeof value === "string") {
+        try { return JSON.parse(value); } catch { return []; }
+      }
+      return [];
     }
 
     return value;
@@ -3026,6 +3096,56 @@ class VestaboardConfigurationCard extends HTMLElement {
         width: auto;
         min-width: 132px;
         align-self: flex-start;
+      }
+
+      .config-description {
+        font-size: 11px;
+        color: var(--vbc-on-surface-secondary);
+        width: 100%;
+        margin-bottom: 4px;
+      }
+
+      .time-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        width: 100%;
+        margin-bottom: 4px;
+      }
+
+      .time-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 12px;
+        background: var(--vbc-surface-card, #2a2a2a);
+        font-size: 12px;
+        color: var(--vbc-on-surface-primary, #eee);
+      }
+
+      .time-chip-remove {
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        color: var(--vbc-on-surface-secondary, #999);
+        padding: 0 2px;
+        min-width: 44px;
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .time-add-row {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        width: 100%;
+      }
+
+      .time-add-row input[type="time"] {
+        flex: 1;
       }
 
       .saved-flash {

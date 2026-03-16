@@ -522,7 +522,7 @@ dashboard_notify:
     bundle_keys: [garage, bulkhead, front_door, package, back_deck_pets, back_yard_pets, shed]
 
 vestaboard_controller:
-  module: vestaboard_controller_app.vestaboard_controller_app
+  module: vestaboard_apps.vestaboard_controller.vestaboard_controller_app
   class: VestaboardControllerApp
   disable: true
   ha_url_env: HA_URL
@@ -536,24 +536,13 @@ vestaboard_controller:
     enabled: true
     start: "01:00:00"
     end: "06:45:00"
-  automations:
-    calendar_clock: {}
-    messages_from_library: {}
-    art_from_library: {}
-    art_generated_by_ai:
-      ai_provider_conf:
-        simple_text: openai-pixel-art
-    message_generated_by_ai:
-      ai_provider_conf:
-        simple_text: openai-default
-    calendar_summary_family:
-      type: calendar_summary
-      calendar_entity: calendar.family
 
 vestaboard_configuration:
-  module: vestaboard_configuration_app.vestaboard_configuration_app
+  module: vestaboard_apps.vestaboard_configuration.vestaboard_configuration_app
   class: VestaboardConfigurationApp
   disable: true
+  dependencies:
+    - vestaboard_controller
   ha_url_env: HA_URL
   ha_token_env: TOKEN
   frame_library_path: /media/vestaboard/frame-library.json
@@ -563,6 +552,65 @@ vestaboard_configuration:
     - Jackson
     - Penelope
     - Anonymous
+
+calendar_clock:
+  module: vestaboard_apps.automations.calendar_clock.calendar_clock_app
+  class: CalendarClockApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+
+messages_from_library:
+  module: vestaboard_apps.automations.messages_from_library.messages_from_library_app
+  class: MessagesFromLibraryApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+  frame_library_path: /media/vestaboard/frame-library.json
+
+art_from_library:
+  module: vestaboard_apps.automations.art_from_library.art_from_library_app
+  class: ArtFromLibraryApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+
+art_generated_by_ai:
+  module: vestaboard_apps.automations.ai_art_generator.ai_art_generator_app
+  class: AiArtGeneratorApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+  ai_provider_conf:
+    simple_text: openai-pixel-art
+
+message_generated_by_ai:
+  module: vestaboard_apps.automations.ai_message_generator.ai_message_generator_app
+  class: AiMessageGeneratorApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+  ai_provider_conf:
+    simple_text: openai-default
+
+calendar_summary_family:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+  calendar_entity: calendar.family
+
+weather_schedule:
+  module: vestaboard_apps.automations.weather_schedule.weather_schedule_app
+  class: WeatherScheduleApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+  weather_entity: weather.first_floor_ecobee
+  time_list:
+    - "07:30:00"
+    - "15:00:00"
 
 calendar_hot_tub_maintenance:
   module: calendar_from_schedule_app.calendar_schedule_app

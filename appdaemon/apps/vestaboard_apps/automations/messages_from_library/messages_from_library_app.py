@@ -1,4 +1,4 @@
-"""Messages From Library automation — selects saved messages from the frame library."""
+"""Messages From Library automation app — selects saved messages from the frame library."""
 
 from __future__ import annotations
 
@@ -8,17 +8,19 @@ from typing import Any, Optional
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[4]))
+sys.path.append(str(Path(__file__).resolve().parents[4]))  # adds appdaemon/
+
+import hassapi as hass
 
 from providers.vestaboard.character_encoding import (
+    CHAR_TO_CODE,
     COLOR_CODES,
     COLS,
     text_to_grid,
 )
 
-from .base import BoardAutomation
+from vestaboard_apps._shared.base import VestaboardAutomation
 
-# Curated fallback messages when the frame library is empty or has no matches.
 _FALLBACK_MESSAGES = [
     "I AM MADE OF FLIPS AND DREAMS",
     "HELLO WORLD FROM THE MUDROOM",
@@ -37,7 +39,6 @@ _FALLBACK_MESSAGES = [
 
 
 def _build_bordered_grid(text: str) -> list[list[int]]:
-    """Build a 6x22 grid with a randomly colored border and centered text."""
     color_options = [
         COLOR_CODES["red"],
         COLOR_CODES["orange"],
@@ -50,7 +51,6 @@ def _build_bordered_grid(text: str) -> list[list[int]]:
 
     grid = text_to_grid(text, justify="center", align="center")
 
-    # Overwrite border rows and columns
     grid[0] = [border_code] * COLS
     grid[5] = [border_code] * COLS
     for row_idx in range(1, 5):
@@ -60,16 +60,15 @@ def _build_bordered_grid(text: str) -> list[list[int]]:
     return grid
 
 
-class MessagesFromLibraryAutomation(BoardAutomation):
+class MessagesFromLibraryApp(hass.Hass, VestaboardAutomation):
     """On-demand automation that selects a random message from the frame library.
 
-    Filters library frames by category="message" and min_stars rating.
-    Falls back to curated message list if no matching library frames exist.
-    No automatic triggers — the frame is generated on user request via command.
+    Supports random interval scheduling when enabled with frequency config.
     """
 
-    name = "MessagesFromLibrary"
-    description = "Randomly displays starred messages from your library."
+    automation_type = "messages_from_library"
+    display_name = "Messages From Library"
+    display_description = "Randomly displays starred messages from your library."
     default_ttl_s = None
     default_max_age_s = None
     default_should_expire = True
@@ -83,37 +82,6 @@ class MessagesFromLibraryAutomation(BoardAutomation):
         "min_stars": 3,
     }
 
-    def __init__(self, app: Any, config: dict[str, Any]) -> None:
-        super().__init__(app, config)
-        self._frame_library: Optional[Any] = None
-        self._frame_library_path: Optional[str] = None
-
-    def set_frame_library_path(self, path: str) -> None:
-        """Set the path to the frame library JSON file."""
-        self._frame_library_path = path
-
-    def _get_frame_library(self) -> Optional[Any]:
-        """Lazy-load the frame library."""
-        if self._frame_library is not None:
-            return self._frame_library
-
-        path = self._frame_library_path
-        if not path:
-            return None
-
-        try:
-            from vestaboard_configuration_app.frame_library import FrameLibrary
-            self._frame_library = FrameLibrary(
-                storage_path=path,
-                log_fn=lambda msg: self.log(msg, level="DEBUG"),
-            )
-            self._frame_library.load()
-            self.log(f"Frame library loaded from {path!r}", level="INFO")
-            return self._frame_library
-        except Exception as exc:
-            self.log(f"Failed to load frame library: {exc!r}", level="WARNING")
-            return None
-
     @classmethod
     def get_config_schema(cls) -> dict:
         return {
@@ -126,11 +94,7 @@ class MessagesFromLibraryAutomation(BoardAutomation):
         }
 
     def get_preview_frame(self) -> list[list[int]]:
-        """Return a representative bordered message preview."""
-        from providers.vestaboard.character_encoding import CHAR_TO_CODE
-
         border = COLOR_CODES["yellow"]
-
         text = "HELLO WORLD"
         padded = text.center(20)
         interior: list[int] = []
@@ -138,13 +102,12 @@ class MessagesFromLibraryAutomation(BoardAutomation):
             interior.append(CHAR_TO_CODE.get(ch.upper(), 0))
 
         blank_interior = [0] * 20
-
         border_row = [border] * COLS
 
         def _bordered(cells: list[int]) -> list[int]:
             return [border] + cells + [border]
 
-        grid = [
+        return [
             border_row,
             _bordered(blank_interior),
             _bordered(interior),
@@ -152,22 +115,73 @@ class MessagesFromLibraryAutomation(BoardAutomation):
             _bordered(blank_interior),
             border_row,
         ]
-        return grid
 
-    def get_triggers(self) -> list[dict[str, Any]]:
-        """No automatic triggers — user-driven via push_frame command."""
-        return []
+    def initialize(self) -> None:
+        self._frame_library: Optional[Any] = None
+        self._frame_library_path: Optional[str] = (self.args or {}).get("frame_library_path")
 
-    async def generate_frame(self) -> list[list[int]]:
-        """Select a random message from the frame library.
+        self.register_with_controller()
 
-        Filters by category="message" and min_stars from config.
-        Falls back to curated message list if library is empty or unavailable.
-        """
-        cfg = self.config
+        # Start random interval if enabled
+        cfg = self.args or {}
+        if cfg.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", False)):
+            self._start_random_interval()
+
+    def terminate(self) -> None:
+        self._cancel_random_interval()
+        self.deregister_from_controller()
+
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled:
+            self._start_random_interval()
+        else:
+            self._cancel_random_interval()
+
+    def on_config_updated(self, config: dict[str, Any]) -> None:
+        super().on_config_updated(config)
+        if "frequency_min_minutes" in config or "frequency_max_minutes" in config:
+            if config.get("enabled", True):
+                self._start_random_interval()
+
+    def _start_random_interval(self) -> None:
+        cfg = self.args or {}
+        freq_min = cfg.get("frequency_min_minutes", 30)
+        freq_max = cfg.get("frequency_max_minutes", 120)
+        self._schedule_random_interval(
+            self._on_random_fire,
+            min_minutes=float(freq_min),
+            max_minutes=float(freq_max),
+        )
+
+    def _on_random_fire(self, kwargs: dict) -> None:
+        self.create_task(self._generate_and_push())
+        self._start_random_interval()
+
+    def _get_frame_library(self) -> Optional[Any]:
+        if self._frame_library is not None:
+            return self._frame_library
+
+        path = self._frame_library_path
+        if not path:
+            return None
+
+        try:
+            from vestaboard_apps.vestaboard_configuration.frame_library import FrameLibrary
+            self._frame_library = FrameLibrary(
+                storage_path=path,
+                log_fn=lambda msg: self.log(msg, level="DEBUG"),
+            )
+            self._frame_library.load()
+            self.log(f"Frame library loaded from {path!r}", level="INFO")
+            return self._frame_library
+        except Exception as exc:
+            self.log(f"Failed to load frame library: {exc!r}", level="WARNING")
+            return None
+
+    async def generate_frame(self, **kwargs) -> list[list[int]]:
+        cfg = self.args or {}
         min_stars = int(cfg.get("min_stars", 3))
 
-        # Try frame library first
         library = self._get_frame_library()
         if library is not None:
             frames = library.list_frames(
@@ -189,15 +203,9 @@ class MessagesFromLibraryAutomation(BoardAutomation):
                 level="INFO",
             )
 
-        # Fallback: curated message list
         return self._generate_fallback_frame()
 
     def _generate_fallback_frame(self) -> list[list[int]]:
-        """Pick a random message from the curated list and build a bordered grid."""
         message = random.choice(_FALLBACK_MESSAGES)
         self.log(f"Using fallback message: {message!r}", level="INFO")
         return _build_bordered_grid(message)
-
-
-# Backward-compatible alias
-RandomMessageAutomation = MessagesFromLibraryAutomation

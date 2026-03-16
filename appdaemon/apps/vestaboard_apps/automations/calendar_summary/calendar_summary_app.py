@@ -1,4 +1,4 @@
-"""Calendar Summary automation — shows upcoming HA calendar events."""
+"""Calendar Summary automation app — shows upcoming HA calendar events."""
 
 from __future__ import annotations
 
@@ -8,7 +8,9 @@ from typing import Any, Optional
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[4]))
+sys.path.append(str(Path(__file__).resolve().parents[4]))  # adds appdaemon/
+
+import hassapi as hass
 
 from providers.vestaboard.character_encoding import (
     CHAR_TO_CODE,
@@ -18,14 +20,12 @@ from providers.vestaboard.character_encoding import (
     text_to_grid,
 )
 
-from .base import BoardAutomation
+from vestaboard_apps._shared.base import VestaboardAutomation
 
-# Default reminder: show event 15 minutes before it starts.
 _DEFAULT_REMINDER_MINUTES = 15
 
 
 def _encode_text_row(text: str, width: int = COLS) -> list[int]:
-    """Encode *text* into a list of *width* Vestaboard codes (0 = blank/space)."""
     row: list[int] = []
     for i in range(width):
         if i < len(text):
@@ -37,13 +37,11 @@ def _encode_text_row(text: str, width: int = COLS) -> list[int]:
 
 
 def _center_text_row(text: str, width: int = COLS) -> list[int]:
-    """Center *text* within *width* columns."""
     padded = text[:width].center(width)
     return _encode_text_row(padded, width)
 
 
 def _format_countdown(total_seconds: int) -> str:
-    """Return a human-readable countdown string like '14 MIN' or '2 HRS'."""
     if total_seconds < 0:
         return "NOW"
     if total_seconds < 3600:
@@ -56,16 +54,6 @@ def _format_countdown(total_seconds: int) -> str:
 def _build_event_grid(
     event_name: str, event_time: str, countdown: str
 ) -> list[list[int]]:
-    """Build a 6x22 grid displaying event info.
-
-    Row 0: blank
-    Row 1: event name (centered, up to 22 chars)
-    Row 2: event name continued if needed
-    Row 3: blank
-    Row 4: event time (centered)
-    Row 5: countdown (centered)
-    """
-    # Truncate/wrap event name across rows 1-2
     name_upper = event_name.upper()
     name_line1 = name_upper[:COLS]
     name_line2 = name_upper[COLS : COLS * 2]
@@ -79,30 +67,18 @@ def _build_event_grid(
     return grid
 
 
-class CalendarSummaryAutomation(BoardAutomation):
+class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
     """Automation that watches a single calendar entity and shows upcoming events.
 
-    Each instance handles one calendar. To watch multiple calendars, configure
-    multiple instances with different IDs using the ``type: calendar_summary``
-    key in the automations config.
-
-    Triggers on:
-    - State changes on the configured calendar entity.
-    - Periodic interval to catch time-based transitions.
-
-    Config keys:
-    - calendar_entity: HA calendar entity ID to watch (single string).
-    - reminder_minutes: minutes before event to show reminder (default 15).
-    - check_interval_s: how often to re-check calendar state (default 300).
-    - ttl_minutes: TTL in minutes for pushed frames (default: dynamic from event end time).
-    - rotation_interval_hours: minimum hours between pushes for the same event (default: None — no throttle).
-    - time_before_event_hours: hours before event start to begin showing it (default: derived from reminder_minutes).
+    Each instance handles one calendar. Configure multiple YAML entries with
+    different calendar_entity values for multiple calendars.
     """
 
-    name = "CalendarSummary"
-    description = "Displays upcoming events from a calendar on your board."
-    default_ttl_s = None       # TTL set dynamically per event
-    default_max_age_s = None  # Expiration set dynamically per event
+    automation_type = "calendar_summary"
+    display_name = "Calendar Summary"
+    display_description = "Displays upcoming events from a calendar on your board."
+    default_ttl_s = None
+    default_max_age_s = None
     default_should_expire = False
 
     DEFAULT_UI_CONFIG = {
@@ -112,6 +88,9 @@ class CalendarSummaryAutomation(BoardAutomation):
         "time_before_event_hours": 240,
         "rotation_interval_hours": 12,
     }
+
+    _interval_handle = None
+    _state_handle = None
 
     @classmethod
     def get_config_schema(cls) -> dict:
@@ -123,96 +102,95 @@ class CalendarSummaryAutomation(BoardAutomation):
             "rotation_interval_hours": {"type": "int", "label": "Rotation Interval (hours)", "min": 1, "max": 168, "default": 12},
         }
 
-    def __init__(self, app: Any, config: dict[str, Any]) -> None:
-        super().__init__(app=app, config=config)
-        # Track last push time per event summary to support rotation_interval_hours
-        self._last_push_time: dict[str, float] = {}
-        # Store the automation_id so we can push frames with the correct source
-        self._automation_id: str = ""
-
-    def set_automation_id(self, automation_id: str) -> None:
-        """Set the automation ID used as the source when pushing frames."""
-        self._automation_id = automation_id
-        # Build a friendly display name from the automation ID
-        # e.g. "calendar_summary_family" → "Calendar: Family"
-        #      "calendar_summary_hot_tub" → "Calendar: Hot Tub"
-        suffix = automation_id.replace("calendar_summary_", "").replace("calendar_summary", "")
-        if suffix:
-            friendly = suffix.replace("_", " ").title()
-            self.name = f"Calendar: {friendly}"
-
     def get_preview_frame(self) -> list[list[int]]:
-        """Return a representative calendar event preview frame.
-
-        Shows a sample upcoming meeting with a time and countdown, illustrating
-        the layout produced by this automation.
-        """
         return _build_event_grid(
             event_name="TEAM MEETING",
             event_time="10:30 AM",
             countdown="14 MIN",
         )
 
-    def get_triggers(self) -> list[dict[str, Any]]:
-        triggers: list[dict[str, Any]] = []
+    def initialize(self) -> None:
+        self._last_push_time: dict[str, float] = {}
 
-        entity_id = str(self.config.get("calendar_entity", ""))
+        # Build a friendly display_name from the app key
+        suffix = self.name.replace("calendar_summary_", "").replace("calendar_summary", "")
+        if suffix:
+            friendly = suffix.replace("_", " ").title()
+            self.display_name = f"Calendar: {friendly}"
+
+        self.register_with_controller()
+        self._start_listeners()
+
+    def terminate(self) -> None:
+        self._stop_listeners()
+        self.deregister_from_controller()
+
+    def _start_listeners(self) -> None:
+        cfg = self.args or {}
+        entity_id = str(cfg.get("calendar_entity", ""))
         if entity_id:
-            triggers.append(
-                {
-                    "type": "state",
-                    "entity_id": entity_id,
-                    "callback": self._on_calendar_state_change,
-                }
+            self._state_handle = self.listen_state(
+                self._on_calendar_state_change, entity_id
             )
 
-        # Also check on interval so we catch time-based transitions
-        interval_s = int(self.config.get("check_interval_s", 300))
-        triggers.append(
-            {
-                "type": "time_interval",
-                "interval_s": interval_s,
-                "callback": self._on_interval,
-            }
-        )
+        interval_s = int(cfg.get("check_interval_s", 300))
+        from datetime import datetime as dt
+        self._interval_handle = self.run_every(self._on_interval, dt.now(), interval_s)
 
-        return triggers
+    def _stop_listeners(self) -> None:
+        if self._state_handle is not None:
+            try:
+                self.cancel_listen_state(self._state_handle)
+            except Exception:
+                pass
+            self._state_handle = None
+        if self._interval_handle is not None:
+            try:
+                self.cancel_timer(self._interval_handle)
+            except Exception:
+                pass
+            self._interval_handle = None
+
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled:
+            self._start_listeners()
+            self.create_task(self._fire_frame_if_event())
+        else:
+            self._stop_listeners()
+
+    def on_config_updated(self, config: dict[str, Any]) -> None:
+        super().on_config_updated(config)
 
     def _on_calendar_state_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: dict) -> None:
-        """Called when the calendar entity's state changes."""
         self.log(f"Calendar state change on {entity}: {old!r} -> {new!r}", level="DEBUG")
-        self.app.create_task(self._fire_frame_if_event())
+        self.create_task(self._fire_frame_if_event())
 
-    def _on_interval(self, kwargs: dict[str, Any]) -> None:
-        """Called on interval to check for upcoming events."""
-        self.app.create_task(self._fire_frame_if_event())
+    def _on_interval(self, kwargs: dict) -> None:
+        self.create_task(self._fire_frame_if_event())
 
-    async def generate_frame(self) -> list[list[int]]:
-        """Generate a frame for the nearest upcoming event, or blank grid."""
+    async def generate_frame(self, **kwargs) -> list[list[int]]:
         await self._fire_frame_if_event()
         return blank_grid()
 
     async def _fire_frame_if_event(self) -> None:
-        """Check the calendar entity and push a frame if an event is upcoming."""
-        entity_id = str(self.config.get("calendar_entity", ""))
+        cfg = self.args or {}
+        entity_id = str(cfg.get("calendar_entity", ""))
         if not entity_id:
             self.log("No calendar_entity configured", level="WARNING")
             return
 
         self.log(
             f"Checking calendar: entity={entity_id!r} "
-            f"time_before_hours={self.config.get('time_before_event_hours')} "
-            f"reminder_min={self.config.get('reminder_minutes')}",
+            f"time_before_hours={cfg.get('time_before_event_hours')} "
+            f"reminder_min={cfg.get('reminder_minutes')}",
             level="DEBUG",
         )
 
-        # Determine reminder window: use time_before_event_hours if set,
-        # otherwise fall back to reminder_minutes.
-        time_before_hours = self.config.get("time_before_event_hours")
+        time_before_hours = cfg.get("time_before_event_hours")
         if time_before_hours is not None:
             reminder_minutes = int(float(time_before_hours) * 60)
         else:
-            reminder_minutes = int(self.config.get("reminder_minutes", _DEFAULT_REMINDER_MINUTES))
+            reminder_minutes = int(cfg.get("reminder_minutes", _DEFAULT_REMINDER_MINUTES))
 
         now = datetime.now(tz=timezone.utc)
         event = await self._get_current_or_upcoming_event(entity_id, now, reminder_minutes)
@@ -225,8 +203,7 @@ class CalendarSummaryAutomation(BoardAutomation):
             )
             return
 
-        # Check rotation interval throttle
-        rotation_hours = self.config.get("rotation_interval_hours")
+        rotation_hours = cfg.get("rotation_interval_hours")
         if rotation_hours is not None:
             import time as _time
             event_key = event.get("summary", "")
@@ -242,28 +219,22 @@ class CalendarSummaryAutomation(BoardAutomation):
 
         grid, ttl_s, max_age_s = self._build_event_data(event, now)
 
-        # Override TTL from config (fall back to DEFAULT_UI_CONFIG if not in config store)
-        ttl_minutes_cfg = self.config.get("ttl_minutes", self.DEFAULT_UI_CONFIG.get("ttl_minutes"))
+        ttl_minutes_cfg = cfg.get("ttl_minutes", self.DEFAULT_UI_CONFIG.get("ttl_minutes"))
         if ttl_minutes_cfg is not None:
             ttl_s = int(float(ttl_minutes_cfg) * 60)
 
-        automation_id = self._automation_id or "calendar_summary"
-
         self.log(
             f"Pushing calendar event: {event.get('summary', '?')!r} "
-            f"ttl_s={ttl_s} max_age_s={max_age_s} automation_id={automation_id!r}",
+            f"ttl_s={ttl_s} max_age_s={max_age_s}",
             level="INFO",
         )
 
-        self.app._push_automation_frame(
-            automation_id=automation_id,
-            source_label=self.name,
-            grid=grid,
+        self.push_frame(
+            grid,
             ttl_s=ttl_s,
             max_age_s=max_age_s,
         )
 
-        # Record push time for rotation throttle
         if rotation_hours is not None:
             import time as _time
             self._last_push_time[event.get("summary", "")] = _time.time()
@@ -271,9 +242,8 @@ class CalendarSummaryAutomation(BoardAutomation):
     async def _get_current_or_upcoming_event(
         self, entity_id: str, now: datetime, reminder_minutes: int
     ) -> Optional[dict]:
-        """Read a calendar entity and return event info if within reminder window."""
         try:
-            state = self.app.get_state(entity_id, attribute="all")
+            state = self.get_state(entity_id, attribute="all")
             if hasattr(state, "__await__"):
                 state = await state
             if state is None:
@@ -282,9 +252,7 @@ class CalendarSummaryAutomation(BoardAutomation):
             attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
             entity_state = state.get("state", "off") if isinstance(state, dict) else state
 
-            # Calendar entity is "on" when an event is active
             if entity_state == "on":
-                # Currently active event
                 summary = attrs.get("message", attrs.get("summary", "Event"))
                 start_time_str = attrs.get("start_time", "")
                 end_time_str = attrs.get("end_time", "")
@@ -296,7 +264,6 @@ class CalendarSummaryAutomation(BoardAutomation):
                     "is_active": True,
                 }
 
-            # Check if upcoming within reminder window
             next_event_summary = attrs.get("message", "")
             next_start_str = attrs.get("start_time", "")
             next_end_str = attrs.get("end_time", "")
@@ -307,7 +274,6 @@ class CalendarSummaryAutomation(BoardAutomation):
             try:
                 next_start = datetime.fromisoformat(next_start_str.replace("Z", "+00:00"))
                 if not next_start.tzinfo:
-                    # HA returns local time without timezone — use system local tz
                     local_tz = datetime.now().astimezone().tzinfo
                     next_start = next_start.replace(tzinfo=local_tz)
             except ValueError:
@@ -342,16 +308,11 @@ class CalendarSummaryAutomation(BoardAutomation):
     def _build_event_data(
         self, event: dict, now: datetime
     ) -> tuple[list[list[int]], Optional[int], Optional[int]]:
-        """Build grid and timing data for an event.
-
-        Returns (grid, ttl_s, max_age_s).
-        """
         summary = event.get("summary", "Event")
         seconds_until = event.get("seconds_until", 0)
         start_time_str = event.get("start_time_str", "")
         end_time_str = event.get("end_time_str", "")
 
-        # Format event time for display
         try:
             start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
             event_time_display = start_dt.astimezone().strftime("%I:%M %p").lstrip("0")
@@ -361,29 +322,21 @@ class CalendarSummaryAutomation(BoardAutomation):
         countdown_str = _format_countdown(seconds_until)
         grid = _build_event_grid(summary, event_time_display, countdown_str)
 
-        # TTL: hold through the event duration
-        # For upcoming events: reminder time + estimated event duration
         ttl_s: Optional[int] = None
         max_age_s: Optional[int] = None
 
         if end_time_str and start_time_str:
             try:
-                start_dt = datetime.fromisoformat(
-                    start_time_str.replace("Z", "+00:00")
-                )
-                end_dt = datetime.fromisoformat(
-                    end_time_str.replace("Z", "+00:00")
-                )
+                start_dt = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                end_dt = datetime.fromisoformat(end_time_str.replace("Z", "+00:00"))
                 if not start_dt.tzinfo:
                     start_dt = start_dt.replace(tzinfo=timezone.utc)
                 if not end_dt.tzinfo:
                     end_dt = end_dt.replace(tzinfo=timezone.utc)
 
-                # TTL: seconds until event end
                 seconds_until_end = int((end_dt - now).total_seconds())
                 if seconds_until_end > 0:
                     ttl_s = seconds_until_end
-                    # Expiration: 30 minutes after event ends
                     max_age_s = seconds_until_end + 1800
             except (ValueError, AttributeError):
                 pass

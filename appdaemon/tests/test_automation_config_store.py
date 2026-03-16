@@ -10,7 +10,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
-from vestaboard_controller_app.automation_config_store import AutomationConfigStore
+from vestaboard_apps._shared.config_store import AutomationConfigStore
 
 
 # ---------------------------------------------------------------------------

@@ -21,10 +21,10 @@ sys.modules["hassapi"] = mock_hass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
-from vestaboard_configuration_app.vestaboard_configuration_app import (
+from vestaboard_apps.vestaboard_configuration.vestaboard_configuration_app import (
     VestaboardConfigurationApp,
 )
-from vestaboard_configuration_app.frame_library import FrameLibrary, LibraryFrame
+from vestaboard_apps.vestaboard_configuration.frame_library import FrameLibrary, LibraryFrame
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""AI Art Generator automation — uses LLM to generate pixel art on request."""
+"""AI Art Generator automation app — uses LLM to generate pixel art on request."""
 
 from __future__ import annotations
 
@@ -8,12 +8,14 @@ from typing import Any
 import sys
 from pathlib import Path
 
-sys.path.append(str(Path(__file__).resolve().parents[4]))
+sys.path.append(str(Path(__file__).resolve().parents[4]))  # adds appdaemon/
 
-from .base import BoardAutomation
+import hassapi as hass
 
-# Valid Vestaboard character codes: 0-36 (blank/chars), 37-60 (punctuation),
-# 63-70 (color tiles). Codes 0 and 63-70 are most useful for pixel art.
+from providers.vestaboard.character_encoding import blank_grid
+
+from vestaboard_apps._shared.base import VestaboardAutomation
+
 _VALID_CODES = set(range(0, 61)) | {63, 64, 65, 66, 67, 68, 69, 70}
 
 _ART_PROMPT_TEMPLATE = """\
@@ -64,7 +66,6 @@ Now create pixel art of: {subject}
 
 
 def _validate_grid(grid: Any) -> tuple[bool, str]:
-    """Validate that grid is 6x22 with valid codes. Returns (ok, error_msg)."""
     if not isinstance(grid, list):
         return False, f"grid is not a list: {type(grid)}"
     if len(grid) != 6:
@@ -83,15 +84,15 @@ def _validate_grid(grid: Any) -> tuple[bool, str]:
     return True, ""
 
 
-class ArtGeneratedByAIAutomation(BoardAutomation):
-    """On-demand automation that generates pixel art via LLM for a given subject.
+class AiArtGeneratorApp(hass.Hass, VestaboardAutomation):
+    """On-demand automation that generates pixel art via LLM.
 
-    No automatic triggers — called programmatically with a subject argument.
-    Retries once on validation failure.
+    Supports random interval scheduling when enabled with frequency config.
     """
 
-    name = "ArtGeneratedByAI"
-    description = "Uses AI to create unique pixel art for your board."
+    automation_type = "ai_art_generator"
+    display_name = "AI Art Generator"
+    display_description = "Uses AI to create unique pixel art for your board."
     default_ttl_s = None
     default_max_age_s = None
     default_should_expire = True
@@ -115,30 +116,18 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
         }
 
     def get_preview_frame(self) -> list[list[int]]:
-        """Return a preview suggesting AI-generated digital/circuit art.
+        from providers.vestaboard.character_encoding import COLOR_CODES
+        B = 67; V = 68; W = 69
 
-        Uses violet and blue tones with white accents arranged in a geometric
-        checkerboard-like pattern to evoke the digital/AI aesthetic.
-        """
-        B = 67  # blue
-        V = 68  # violet
-        W = 69  # white
-
-        # 6x22 pattern: alternating violet/blue blocks with white accent column
-        # and white accent row at top and bottom edges.
-        # Col 11 (center column) is white to suggest a circuit spine.
         grid: list[list[int]] = []
         for r in range(6):
             row: list[int] = []
             for c in range(22):
                 if c == 11:
-                    # Center spine: white
                     row.append(W)
                 elif r == 0 or r == 5:
-                    # Top/bottom accent row: alternating blue/violet every 2 cols
                     row.append(B if (c // 2) % 2 == 0 else V)
                 else:
-                    # Interior: violet/blue checkerboard with blank gaps
                     if (r + c) % 4 == 0:
                         row.append(W)
                     elif (r + c) % 2 == 0:
@@ -148,28 +137,49 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
             grid.append(row)
         return grid
 
-    def get_triggers(self) -> list[dict[str, Any]]:
-        """No automatic triggers — user-driven via push_frame command."""
-        return []
+    def initialize(self) -> None:
+        self.register_with_controller()
 
-    async def generate_frame(self, subject: str = "abstract art") -> list[list[int]]:
-        """Generate pixel art for *subject* using the configured AI provider.
+        cfg = self.args or {}
+        if cfg.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", False)):
+            self._start_random_interval()
 
-        Args:
-            subject: The subject/theme for the pixel art (e.g. "cat", "rocket").
+    def terminate(self) -> None:
+        self._cancel_random_interval()
+        self.deregister_from_controller()
 
-        Returns:
-            A valid 6x22 Vestaboard character grid.
-        """
-        cfg = self.config
+    def set_enabled(self, enabled: bool) -> None:
+        if enabled:
+            self._start_random_interval()
+        else:
+            self._cancel_random_interval()
+
+    def on_config_updated(self, config: dict[str, Any]) -> None:
+        super().on_config_updated(config)
+        if "frequency_min_minutes" in config or "frequency_max_minutes" in config:
+            if config.get("enabled", True):
+                self._start_random_interval()
+
+    def _start_random_interval(self) -> None:
+        cfg = self.args or {}
+        freq_min = cfg.get("frequency_min_minutes", 120)
+        freq_max = cfg.get("frequency_max_minutes", 480)
+        self._schedule_random_interval(
+            self._on_random_fire,
+            min_minutes=float(freq_min),
+            max_minutes=float(freq_max),
+        )
+
+    def _on_random_fire(self, kwargs: dict) -> None:
+        self.create_task(self._generate_and_push(subject="abstract art"))
+        self._start_random_interval()
+
+    async def generate_frame(self, subject: str = "abstract art", **kwargs) -> list[list[int]]:
+        cfg = self.args or {}
         ai_provider_conf = cfg.get("ai_provider_conf")
 
         if not ai_provider_conf:
-            self.log(
-                "No ai_provider_conf configured — returning blank grid",
-                level="WARNING",
-            )
-            from providers.vestaboard.character_encoding import blank_grid
+            self.log("No ai_provider_conf configured — returning blank grid", level="WARNING")
             return blank_grid()
 
         self.log(f"Generating AI pixel art for subject: {subject!r}", level="INFO")
@@ -179,32 +189,16 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
                 grid = await self._call_ai(ai_provider_conf, subject)
                 ok, err = _validate_grid(grid)
                 if ok:
-                    self.log(
-                        f"AI pixel art generated successfully (attempt {attempt})",
-                        level="INFO",
-                    )
+                    self.log(f"AI pixel art generated successfully (attempt {attempt})", level="INFO")
                     return grid
-                self.log(
-                    f"Attempt {attempt} grid validation failed: {err}",
-                    level="WARNING",
-                )
+                self.log(f"Attempt {attempt} grid validation failed: {err}", level="WARNING")
             except Exception as exc:
-                self.log(
-                    f"Attempt {attempt} AI call failed: {exc!r}",
-                    level="WARNING",
-                )
+                self.log(f"Attempt {attempt} AI call failed: {exc!r}", level="WARNING")
 
-        self.log(
-            "All AI art generation attempts failed — returning blank grid",
-            level="ERROR",
-        )
-        from providers.vestaboard.character_encoding import blank_grid
+        self.log("All AI art generation attempts failed — returning blank grid", level="ERROR")
         return blank_grid()
 
-    async def _call_ai(
-        self, ai_provider_conf: dict[str, Any], subject: str
-    ) -> list[list[int]]:
-        """Call the simple_text provider and parse the grid from the response."""
+    async def _call_ai(self, ai_provider_conf: dict[str, Any], subject: str) -> list[list[int]]:
         from providers.ai_providers.registry import (
             build_simple_text_provider,
             simple_text_config_from_appdaemon_args,
@@ -223,7 +217,6 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
             expected_keys=["grid"],
         )
 
-        # Log provider metadata for debugging token limits
         meta = result.get("_meta", {})
         req_meta = meta.get("request", {})
         resp_meta = meta.get("response", {})
@@ -233,23 +226,17 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
             f"usage={resp_meta.get('usage')}",
             level="INFO",
         )
-        self.log(
-            f"AI art raw content: {resp_meta.get('content_preview')}",
-            level="INFO",
-        )
+        self.log(f"AI art raw content: {resp_meta.get('content_preview')}", level="INFO")
 
         raw_grid = result.get("grid")
         if raw_grid is None:
             raise ValueError("AI response missing 'grid' key")
 
-        # If the provider returned a string (JSON-encoded), parse it
         if isinstance(raw_grid, str):
             raw_grid = json.loads(raw_grid)
 
-        # Ensure all elements are ints (AI sometimes returns floats)
         grid = [[int(code) for code in row] for row in raw_grid]
 
-        # Log the full grid for debugging centering/layout issues
         for i, row in enumerate(grid):
             nonzero = [j for j, v in enumerate(row) if v != 0]
             if nonzero:
@@ -263,7 +250,3 @@ class ArtGeneratedByAIAutomation(BoardAutomation):
                 self.log(f"  row {i}: empty → {row}", level="INFO")
 
         return grid
-
-
-# Backward-compatible alias
-AIArtGeneratorAutomation = ArtGeneratedByAIAutomation
