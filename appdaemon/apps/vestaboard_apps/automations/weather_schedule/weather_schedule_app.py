@@ -136,7 +136,8 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
     def initialize(self) -> None:
         self._daily_handles = []
         self.register_with_controller()
-        self._register_daily_timers()
+        if self.args.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", True)):
+            self._register_daily_timers()
 
     def terminate(self) -> None:
         self._cancel_daily_timers()

@@ -140,7 +140,9 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
 
     def initialize(self) -> None:
         self.register_with_controller()
-        self._start_timer()
+        # Only start timer if enabled (config store pushes enabled state during registration)
+        if self.args.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", True)):
+            self._start_timer()
 
     def terminate(self) -> None:
         self._stop_timer()

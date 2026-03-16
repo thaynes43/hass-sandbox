@@ -119,7 +119,8 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self.display_name = f"Calendar: {friendly}"
 
         self.register_with_controller()
-        self._start_listeners()
+        if self.args.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", False)):
+            self._start_listeners()
 
     def terminate(self) -> None:
         self._stop_listeners()
