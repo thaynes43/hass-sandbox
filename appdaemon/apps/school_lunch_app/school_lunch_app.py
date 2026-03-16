@@ -347,7 +347,21 @@ class SchoolLunchApp(hass.Hass):
         self.create_task(self._do_daily_fetch())
 
     async def _do_daily_fetch(self) -> None:
-        """Fetch all menus, update sensor; keep stale data on partial failure."""
+        """Re-resolve IDs then fetch all menus.
+
+        The download ID redirect always points to the currently active month,
+        so re-resolving picks up a new month when the school publishes it
+        (e.g. April's menu appearing on April 1st).
+        """
+        try:
+            await self._resolve_menu_ids()
+        except Exception as exc:
+            self.log(
+                f"Daily ID re-resolution failed: {exc!r} — "
+                f"using previously resolved IDs",
+                level="WARNING",
+            )
+
         try:
             new_data = await self._fetch_all_menus()
         except Exception as exc:
