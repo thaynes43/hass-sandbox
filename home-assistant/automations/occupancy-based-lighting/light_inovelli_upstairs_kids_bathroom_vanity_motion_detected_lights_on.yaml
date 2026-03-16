@@ -1,0 +1,17 @@
+alias: "[Light] [Inovelli] : [Upstairs Kids Bathroom Vanity] : [Motion Detected] : [Lights On]"
+description: ""
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.upstairs_kids_bathroom_vanity_inovelli_presence_occupancy
+      - binary_sensor.upstairs_kids_bathroom_night_light_occupancy
+    from: null
+    to: "on"
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    target:
+      entity_id: light.upstairs_kids_bathroom_vanity_inovelli_presence
+    data: {}
+mode: single

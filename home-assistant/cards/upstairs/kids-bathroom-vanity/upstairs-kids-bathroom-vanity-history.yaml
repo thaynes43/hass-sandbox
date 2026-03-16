@@ -44,6 +44,15 @@ cards:
               content_layout: icon-top
               custom_height: 60
               show_icon: true
+            - entity: binary_sensor.upstairs_kids_bathroom_night_light_occupancy
+              name: Night Light
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
         - name: Lights
           buttons_layout: inline
           group:
@@ -61,8 +70,18 @@ cards:
           group:
             - entity: input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode
               sub_button_type: select
-              name: mmWave Mode
-              icon: mdi:motion-sensor
+              name: MmWave Control Mode
+              icon: mdi:format-list-bulleted
+              show_name: true
+              show_state: true
+              show_attribute: false
+              scrolling_effect: false
+              content_layout: icon-left
+              custom_height: 60
+            - entity: input_select.upstairs_kids_bathroom_vanity_occupancy_off_delay
+              sub_button_type: select
+              name: Zone Off Delay
+              icon: mdi:timer-outline
               show_name: true
               show_state: true
               show_attribute: false
@@ -79,6 +98,8 @@ cards:
     entities:
       - entity: binary_sensor.upstairs_kids_bathroom_vanity_inovelli_presence_occupancy
         name: mmWave
+      - entity: binary_sensor.upstairs_kids_bathroom_night_light_occupancy
+        name: Night Light
       - entity: light.upstairs_kids_bathroom_vanity_inovelli_presence
         name: Vanity
     hours_to_show: 1
@@ -105,10 +126,56 @@ cards:
         {% set off_vals.out = off_vals.out ~ ('， ' if i > 1 else '') ~ v %}
       {% endfor %}
 
-      Manual/Auto Hold: {{ hold_label }}
-      mmWave Mode: {{ mmwave_mode }}
-      LED ON Colors (1–7): {{ on_vals.out }}
-      LED OFF Colors (1–7): {{ off_vals.out }}
+      <ha-icon icon="mdi:lock-check"></ha-icon> **Manual/Auto Hold:** {{ hold_label }}
+
+      <ha-icon icon="mdi:motion-sensor"></ha-icon> **mmWave Mode:** {{ mmwave_mode }}
+
+      <ha-icon icon="mdi:palette"></ha-icon> **LED ON Colors (1–7):** {{ on_vals.out }}
+
+      <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):** {{ off_vals.out }}
+
+      {% set auto_delay_raw = states('input_select.upstairs_kids_bathroom_vanity_occupancy_off_delay') %}
+      {% set auto_delay_td = as_timedelta(auto_delay_raw) if auto_delay_raw not in ['unknown','unavailable',''] else none %}
+      {% set auto_delay_s = (auto_delay_td.total_seconds() | float(0)) if auto_delay_td is not none else none %}
+
+      {% set hold_time_s = states('number.upstairs_kids_bathroom_vanity_inovelli_presence_mmwaveholdtime') | float(0) %}
+      {% set stay_life_raw = states('number.upstairs_kids_bathroom_vanity_inovelli_presence_mmwavestaylife') | float(0) %}
+      {% set stay_life_s = stay_life_raw / 20 %}
+      {% set mmwave_delay_s = hold_time_s + stay_life_s %}
+
+      {% set total_s = (mmwave_delay_s + auto_delay_s) if auto_delay_s is not none else none %}
+
+      <ha-icon icon="mdi:timer-outline"></ha-icon> **Automation Delay:** {{ auto_delay_raw if auto_delay_raw not in ['unknown','unavailable',''] else '—' }}{% if auto_delay_s is not none %} (≈{{ auto_delay_s | round(1) }}s){% endif %}
+
+      <ha-icon icon="mdi:timer-sand"></ha-icon> **Switch Clear Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
+
+      <ha-icon icon="mdi:progress-clock"></ha-icon> **Total Off Delay:** ≈ {{ mmwave_delay_s | round(1) }}s + {{ (auto_delay_s | round(1)) if auto_delay_s is not none else '—' }}s{% if total_s is not none %} = {{ total_s | round(1) }}s{% endif %}
+
+      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the occupancy sensor won’t report **off** until the switch’s mmWave clear delay elapses. The automation delay then starts *after* that.
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Automations
+          buttons_layout: inline
+          group:
+            - entity: automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_detected_lights_on
+              name: Motion Turns On Lights
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_cleared_lights_off
+              name: No Motion Turns Off Lights
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              custom_height: 60
+      bottom_layout: rows
+    bottom_layout: rows
+    rows: "1.2"
 
   - type: custom:mod-card
     card:
@@ -143,6 +210,9 @@ cards:
                   normal_mode_input_select: input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode
                   hold_color: input_text.inovelli_manual_hold
                   prev_led_color_helper: input_text.upstairs_kids_vanity_led_color
+                  automation_entity_ids:
+                    - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_detected_lights_on
+                    - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_cleared_lights_off
               entity: script.inovelli_toggle_mmwave_hold_led_indicator
               show_state: false
               show_name: true
@@ -163,6 +233,9 @@ cards:
                   switch_name: upstairs_kids_bathroom_vanity_inovelli_presence
                   hold_color: input_text.inovelli_auto_hold
                   prev_led_color_helper: input_text.upstairs_kids_vanity_led_color
+                  automation_entity_ids:
+                    - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_detected_lights_on
+                    - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
@@ -182,6 +255,9 @@ cards:
                   normal_mode_input_select: input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode
                   hold_color: input_text.inovelli_auto_hold
                   prev_led_color_helper: input_text.upstairs_kids_vanity_led_color
+                  automation_entity_ids:
+                    - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_detected_lights_on
+                    - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
             - entity: script.inovelli_set_led_1_7_color_from_input_text

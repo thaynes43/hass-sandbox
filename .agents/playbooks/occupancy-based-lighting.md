@@ -20,6 +20,8 @@ normal_mode: Occupancy (default)
 
 This applies everywhere: cards, switch-button automations, and entity-defined hold/clear scripts. The input_select form reads from the zone's dropdown helper at runtime, so changing the helper propagates everywhere. Hardcoded `normal_mode` breaks hold restore behavior.
 
+If a fallback `normal_mode` is unavoidable for legacy reasons, it must exactly match that zone's helper value. For automation-owned zones this means `Disabled`, not `Occupancy (default)`.
+
 ---
 
 ### Workflow: add a new occupancy-based lighting zone (7 steps)

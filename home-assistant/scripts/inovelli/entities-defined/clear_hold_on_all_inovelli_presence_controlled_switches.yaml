@@ -4,7 +4,6 @@ description: >
   restores LED indicators.
 sequence:
   - variables:
-      default_normal_mode: Occupancy (default)
       hold_color: input_text.inovelli_auto_hold
       switches:
         - switch_name: basement_server_inovelli_presence
@@ -71,6 +70,9 @@ sequence:
         - switch_name: upstairs_kids_bathroom_vanity_inovelli_presence
           helper: input_text.upstairs_kids_vanity_led_color
           normal_mode_input_select: input_select.upstairs_kids_bathroom_vanity_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_detected_lights_on
+            - automation.light_inovelli_upstairs_kids_bathroom_vanity_motion_cleared_lights_off
         - switch_name: upstairs_laundry_inovlli_presence
           helper: input_text.upstairs_laundry_led_color
           normal_mode_input_select: input_select.upstairs_laundry_mmwave_normal_mode
@@ -104,28 +106,13 @@ sequence:
   - repeat:
       for_each: "{{ switches }}"
       sequence:
-        - choose:
-            - conditions:
-                - condition: template
-                  value_template: >-
-                    {% set e = repeat.item.normal_mode_input_select | default('') | string %}
-                    {{ e.startswith('input_select.') }}
-              sequence:
-                - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
-                  data:
-                    switch_name: "{{ repeat.item.switch_name }}"
-                    normal_mode_input_select: "{{ repeat.item.normal_mode_input_select }}"
-                    hold_color: "{{ hold_color }}"
-                    prev_led_color_helper: "{{ repeat.item.helper }}"
-                    automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
-          default:
-            - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
-              data:
-                switch_name: "{{ repeat.item.switch_name }}"
-                normal_mode: "{{ repeat.item.normal_mode | default(default_normal_mode) }}"
-                hold_color: "{{ hold_color }}"
-                prev_led_color_helper: "{{ repeat.item.helper }}"
-                automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
+        - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
+          data:
+            switch_name: "{{ repeat.item.switch_name }}"
+            normal_mode_input_select: "{{ repeat.item.normal_mode_input_select }}"
+            hold_color: "{{ hold_color }}"
+            prev_led_color_helper: "{{ repeat.item.helper }}"
+            automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
         - delay:
             seconds: 2
 mode: single

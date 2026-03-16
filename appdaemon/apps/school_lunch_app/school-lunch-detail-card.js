@@ -49,33 +49,41 @@ function isWeekend(date) {
 }
 
 /**
- * Determine the "target day" for the at-a-glance and "This Week" views.
- * Rules:
- *   - Friday after 15:00, Saturday, or Sunday → return next Monday
- *   - Otherwise → return tomorrow
+ * Determine the "target day" for the "This Week" highlight.
+ *
+ * ``cutoffStr`` is ``"HH:MM:SS"`` from sensor attribute ``show_tomorrow_after``.
+ * Before cutoff → show today (or Monday on weekends).
+ * After cutoff  → show tomorrow (or Monday on Fri evening / weekends).
+ *
  * Returns a Date (time set to midnight local).
  */
-function getTargetDay() {
+function getTargetDay(cutoffStr) {
   const now = new Date();
   const day = now.getDay(); // 0=Sun,1=Mon,...,6=Sat
-  const hour = now.getHours();
+
+  const [cutH, cutM, cutS] = String(cutoffStr || "15:00:00").split(":").map(Number);
+  const cutoff = new Date(now);
+  cutoff.setHours(cutH || 15, cutM || 0, cutS || 0, 0);
+  const pastCutoff = now >= cutoff;
 
   let target = new Date(now);
   target.setHours(0, 0, 0, 0);
 
+  // Weekend → Monday
   if (day === 0) {
-    // Sunday → Monday
     target.setDate(target.getDate() + 1);
-  } else if (day === 6) {
-    // Saturday → Monday
-    target.setDate(target.getDate() + 2);
-  } else if (day === 5 && hour >= 15) {
-    // Friday after 3 PM → Monday
-    target.setDate(target.getDate() + 3);
-  } else {
-    // Normal weekday → tomorrow
-    target.setDate(target.getDate() + 1);
+    return target;
   }
+  if (day === 6) {
+    target.setDate(target.getDate() + 2);
+    return target;
+  }
+
+  if (pastCutoff) {
+    // After cutoff: tomorrow (or Monday if Friday)
+    target.setDate(target.getDate() + (day === 5 ? 3 : 1));
+  }
+  // Before cutoff: today (target already set to today at midnight)
   return target;
 }
 
@@ -195,8 +203,8 @@ function currentWeekMonday() {
  * Get the Mon-Fri dates of the current (or next) business week.
  * If today is a weekend, return next week's Mon-Fri.
  */
-function getWeekDates() {
-  const target = getTargetDay();
+function getWeekDates(cutoffStr) {
+  const target = getTargetDay(cutoffStr);
   // target is always a weekday (Mon-Fri)
   // Find Monday of target's week
   const dow = target.getDay(); // 1=Mon,...,5=Fri
@@ -334,6 +342,8 @@ class SchoolLunchDetailCard extends HTMLElement {
 
     const schools = this._schools();
     const selectedSchools = this._selectedSchools();
+    const statusState = this._hass?.states?.[this._config.status_entity];
+    const cutoffStr = statusState?.attributes?.show_tomorrow_after || "15:00:00";
 
     // Build tab bar
     const tabs = [
@@ -361,7 +371,7 @@ class SchoolLunchDetailCard extends HTMLElement {
 
     let contentHtml = "";
     if (this._activeTab === "week") {
-      contentHtml = this._renderWeekTab(schools, selectedSchools);
+      contentHtml = this._renderWeekTab(schools, selectedSchools, cutoffStr);
     } else if (this._activeTab === "settings") {
       contentHtml = this._renderSettingsTab(schools, selectedSchools);
     } else {
@@ -395,9 +405,9 @@ class SchoolLunchDetailCard extends HTMLElement {
 
   // ── Tab: This Week ─────────────────────────────────────────────────
 
-  _renderWeekTab(schools, selectedSchools) {
-    const weekDates = getWeekDates();
-    const targetDay = getTargetDay();
+  _renderWeekTab(schools, selectedSchools, cutoffStr) {
+    const weekDates = getWeekDates(cutoffStr);
+    const targetDay = getTargetDay(cutoffStr);
     const targetDayNum = targetDay.getDate();
     const targetMonth = targetDay.getMonth(); // 0-indexed
     const targetYear = targetDay.getFullYear();

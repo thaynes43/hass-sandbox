@@ -130,43 +130,67 @@ class SchoolLunchCard extends HTMLElement {
    *   - Friday after 15:00, Saturday, Sunday → show Monday (next week)
    *   - Otherwise → show tomorrow
    *
+   * The sensor attribute ``show_tomorrow_after`` (HH:MM:SS) controls when
+   * we flip from showing today's lunch to tomorrow's. Before that time we
+   * show today (or Monday on weekends). After that time we show tomorrow
+   * (or Monday on Fri evening / weekends).
+   *
    * Returns { targetDay, targetMonth, targetYear, headerLabel }
    */
   _targetDate() {
     const now = new Date();
     const dow = now.getDay(); // 0=Sun, 1=Mon, … 6=Sat
-    const hour = now.getHours();
 
-    // Advance to next calendar day first (our "tomorrow")
-    const tomorrow = new Date(now);
-    tomorrow.setDate(now.getDate() + 1);
+    // Parse show_tomorrow_after from sensor (default 15:00:00)
+    const cutoffStr = String(
+      this._sensorAttr(this._config.status_entity, "show_tomorrow_after", "15:00:00") || "15:00:00"
+    );
+    const [cutH, cutM, cutS] = cutoffStr.split(":").map(Number);
+    const cutoff = new Date(now);
+    cutoff.setHours(cutH || 15, cutM || 0, cutS || 0, 0);
+    const pastCutoff = now >= cutoff;
 
-    // Cases that need Monday instead of tomorrow:
-    // - current day is Sunday (0)
-    // - current day is Saturday (6)
-    // - current day is Friday (5) and hour >= 15
-    const showMonday =
-      dow === 0 || dow === 6 || (dow === 5 && hour >= 15);
-
-    let target;
-    let headerLabel;
-
-    if (showMonday) {
-      // Find the coming Monday
-      const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
-      target = new Date(now);
-      target.setDate(now.getDate() + daysUntilMonday);
-      headerLabel = "Monday's Lunch";
-    } else {
-      target = tomorrow;
-      headerLabel = "Tomorrow's Lunch";
+    // Weekend → always show Monday
+    if (dow === 0 || dow === 6) {
+      const daysUntilMonday = dow === 0 ? 1 : 2;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() + daysUntilMonday);
+      return {
+        targetDay: monday.getDate(),
+        targetMonth: monday.getMonth() + 1,
+        targetYear: monday.getFullYear(),
+        headerLabel: "Monday's Lunch",
+      };
     }
 
+    if (pastCutoff) {
+      // After cutoff: show tomorrow (or Monday if Friday)
+      if (dow === 5) {
+        const monday = new Date(now);
+        monday.setDate(now.getDate() + 3);
+        return {
+          targetDay: monday.getDate(),
+          targetMonth: monday.getMonth() + 1,
+          targetYear: monday.getFullYear(),
+          headerLabel: "Monday's Lunch",
+        };
+      }
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      return {
+        targetDay: tomorrow.getDate(),
+        targetMonth: tomorrow.getMonth() + 1,
+        targetYear: tomorrow.getFullYear(),
+        headerLabel: "Tomorrow's Lunch",
+      };
+    }
+
+    // Before cutoff: show today
     return {
-      targetDay: target.getDate(),
-      targetMonth: target.getMonth() + 1, // 1-indexed to match sensor
-      targetYear: target.getFullYear(),
-      headerLabel,
+      targetDay: now.getDate(),
+      targetMonth: now.getMonth() + 1,
+      targetYear: now.getFullYear(),
+      headerLabel: "Today's Lunch",
     };
   }
 
