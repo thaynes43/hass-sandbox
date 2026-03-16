@@ -11,6 +11,7 @@
 | **dashboard_notify** | AI-generated notification carousel for wall displays |
 | **calendar_from_schedule_app** | Sync YAML maintenance schedules to HA local calendar |
 | **immich_fetcher** | Periodic photo fetching from Immich photo library |
+| **school_lunch_app** | Fetch daily school lunch menus and publish to HA sensor |
 
 ## Shared providers
 
@@ -19,6 +20,7 @@
 | **ai_providers** | LLM and image generation adapters (OpenAI, Gemini, Ollama, ComfyUI) |
 | **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers) |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
+| **school_menu** | Async client for the School Nutrition and Fitness API |
 
 ## App dependency graph
 
@@ -35,6 +37,8 @@ detection_summary_app
        └─ dashboard_notify (listens for events, copies generated images)
 
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
+
+school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
 ```
 
 !!! note "Per-app documentation"

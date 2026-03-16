@@ -46,6 +46,7 @@ nav:
       - Occupancy-Based Lighting: features/occupancy-lighting.md
       - Immich Photo Frame: features/photo-frame.md
       - Dashboard Notify: features/dashboard-notify.md
+      - School Lunch Menu: features/school-lunch.md
   - Architecture:
       - Overview: architecture/overview.md
       - AppDaemon Apps: apps/index.md
