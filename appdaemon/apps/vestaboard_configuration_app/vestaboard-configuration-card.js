@@ -348,7 +348,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const queueItems = root.querySelectorAll("[data-queue-expiry]");
     queueItems.forEach((el) => {
       const expiry = el.getAttribute("data-queue-expiry");
-      el.textContent = expiry ? (vbcCountdown(expiry) || "expired") : "no expiry";
+      el.textContent = expiry ? `drops in ${vbcCountdown(expiry) || "expired"}` : "no auto-drop";
     });
 
     // Update upcoming automation countdowns
