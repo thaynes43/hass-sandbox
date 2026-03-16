@@ -46,6 +46,7 @@ class SchoolLunchApp(hass.Hass):
         self._sid: str = args.get("sid", "")
         self._menus: List[Dict[str, str]] = args.get("menus", [])
         self._default_selected: List[str] = args.get("default_selected", [])
+        self._show_tomorrow_after: str = args.get("show_tomorrow_after", "15:00:00")
 
         # State: resolved menus {name: {download_id, mongo_id, site_code}}
         self._resolved_menus: Dict[str, Dict[str, str]] = {}
@@ -325,6 +326,7 @@ class SchoolLunchApp(hass.Hass):
         """Publish (or update) sensor.school_lunch_menu."""
         attrs = {
             "schools": schools,
+            "show_tomorrow_after": self._show_tomorrow_after,
             "last_updated": datetime.datetime.now().isoformat(timespec="seconds"),
             "friendly_name": "School Lunch Menu",
             "icon": "mdi:silverware-fork-knife",
