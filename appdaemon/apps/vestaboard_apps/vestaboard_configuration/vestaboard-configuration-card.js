@@ -1170,7 +1170,8 @@ class VestaboardConfigurationCard extends HTMLElement {
     const fallback = this._sensorAttr("fallback_source", null);
     const currentSource = this._sensorAttr("current_source", "\u2014");
     const currentTtlExpires = this._sensorAttr("current_ttl_expires", null);
-    const sleeping = this._sensorAttr("sleeping", false) === true;
+    const sleepingRaw = this._sensorAttr("sleeping", false);
+    const sleeping = sleepingRaw === true || sleepingRaw === "true" || sleepingRaw === "True";
     const sleepEnd = this._sensorAttr("sleep_end", null);
     const sleepEndLabel = vbcFormatTime(sleepEnd);
     const chevron = this._queueExpanded ? "mdi:chevron-up" : "mdi:chevron-down";

@@ -103,7 +103,9 @@ class VestaboardControllerApp(hass.Hass):
 
         self.log(
             f"VestaboardControllerApp initializing — ip={self._vb_ip!r} "
-            f"tick_interval_s={self._tick_interval_s}",
+            f"tick_interval_s={self._tick_interval_s} "
+            f"sleep_enabled={self._sleep_enabled} "
+            f"sleep_window={self._sleep_start}-{self._sleep_end}",
             level="INFO",
         )
 
