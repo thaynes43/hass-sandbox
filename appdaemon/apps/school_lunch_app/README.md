@@ -38,6 +38,7 @@ Fetches daily lunch menus from the School Nutrition and Fitness API for multiple
 | `sid` | Yes | — | Site ID for the School Nutrition and Fitness API (numeric string) |
 | `menus` | Yes | — | List of school menu configs: `name` (display name) and `download_id` (numeric string from the site URL) |
 | `default_selected` | No | `[]` | List of school names selected by default when the helper is first created |
+| `show_tomorrow_after` | No | `"15:00:00"` | `HH:MM:SS` time after which cards flip from "Today's Lunch" to "Tomorrow's Lunch" (or Monday on Fri evenings/weekends) |
 
 ### Example config
 
@@ -59,6 +60,7 @@ school_lunch_app:
   default_selected:
     - "Elementary"
     - "Middle School"
+  show_tomorrow_after: "12:00:00"
 ```
 
 ## Relay commands
@@ -104,8 +106,10 @@ Fetch a specific month for a given school (used for prev/next month navigation i
         {
           "day": 3,
           "items": [
-            {"name": "Chicken Nuggets", "category": "Entrees", "is_ancillary": false},
-            {"name": "Milk Choice", "category": "Milk", "is_ancillary": true}
+            {"name": "Chicken Nuggets, Sweet Potato Fries, Garden Salad Cups", "role": "option"},
+            {"name": "Grilled Cheese Sandwich", "role": "option"},
+            {"name": "Chilled Fruit", "role": "includes"},
+            {"name": "Milk Choice", "role": "includes"}
           ]
         }
       ],
@@ -113,6 +117,7 @@ Fetch a specific month for a given school (used for prev/next month navigation i
       "next_month_id": "def456"
     }
   ],
+  "show_tomorrow_after": "12:00:00",
   "last_updated": "2026-03-15T10:00:00"
 }
 ```
@@ -120,7 +125,9 @@ Fetch a specific month for a given school (used for prev/next month navigation i
 Notes:
 - `month` is **1-indexed** (1 = January, 12 = December) — ready for display.
 - `days` only includes school days that have menu data (weekends and holidays are absent).
-- `is_ancillary` marks secondary items (milk, condiments). Cards should typically filter these out for the at-a-glance view.
+- Items have a `role` field: `"option"` for menu choices, `"includes"` for items appearing daily (auto-classified by the app based on 75%+ day frequency).
+- Items starting with "OR " have the prefix stripped; all options are presented without it.
+- `show_tomorrow_after` is the configured cutoff time. Cards read this to determine whether to show today's or tomorrow's lunch.
 - `prev_month_id` / `next_month_id` are MongoDB ObjectIds or `null` if no adjacent month is published.
 
 ## Manual setup required

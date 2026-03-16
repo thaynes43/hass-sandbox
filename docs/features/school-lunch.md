@@ -35,7 +35,18 @@ School Nutrition and Fitness API
 
 ### At-a-glance card (`custom:school-lunch-card`)
 
-A compact card showing tomorrow's non-ancillary entrees for all selected schools. School selection persists in `input_text.school_lunch_selected_schools` so the choice survives reloads and is shared across all dashboard instances.
+A compact card showing the next relevant lunch menu for all selected schools. The display depends on the configurable `show_tomorrow_after` cutoff time:
+
+| Time of day | Weekday | Header shown |
+|-------------|---------|-------------|
+| Before cutoff | Mon–Fri | **Today's Lunch** |
+| After cutoff | Mon–Thu | **Tomorrow's Lunch** |
+| After cutoff | Friday | **Monday's Lunch** |
+| Any time | Sat/Sun | **Monday's Lunch** |
+
+Menu items are split into numbered **options** (main entree choices) and an **Includes** line for daily items like fruit and milk (auto-classified by the app based on which items appear on 75%+ of days).
+
+School selection persists in `input_text.school_lunch_selected_schools` so the choice survives reloads and is shared across all dashboard instances.
 
 ```yaml
 type: custom:school-lunch-card
@@ -78,6 +89,7 @@ The app is configured in `apps-prod.yaml`. Key fields:
 | `sid` | Site ID from the school district's URL (numeric string) |
 | `menus` | List of `{name, download_id}` — one entry per school |
 | `default_selected` | School names pre-selected in the at-a-glance card |
+| `show_tomorrow_after` | `HH:MM:SS` cutoff time — before this, cards show today's lunch; after, tomorrow's (default `"15:00:00"`) |
 
 See `appdaemon/apps/school_lunch_app/README.md` for the full configuration reference, sensor attribute schema, relay command payload format, and manual setup steps (Lovelace resource registration).
 
