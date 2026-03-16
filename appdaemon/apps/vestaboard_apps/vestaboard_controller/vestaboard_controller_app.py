@@ -97,6 +97,10 @@ class VestaboardControllerApp(hass.Hass):
         self._sleep_end: str = str(sleep_cfg.get("end", "07:00:00"))
         self._was_sleeping: bool = False
 
+        # Load config store synchronously so it's available when automations
+        # register during their initialize() (which runs before _async_startup)
+        self._init_config_store()
+
         self.log(
             f"VestaboardControllerApp initializing — ip={self._vb_ip!r} "
             f"tick_interval_s={self._tick_interval_s}",
@@ -110,7 +114,7 @@ class VestaboardControllerApp(hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
-        """Provision HA entities, register listeners, init config store."""
+        """Provision HA entities, register listeners."""
         await self._provision_entities()
 
         # Register command event listener
@@ -122,8 +126,7 @@ class VestaboardControllerApp(hass.Hass):
         await self.run_every(self._tick_wrapper, dt.now(), self._tick_interval_s)
         self.log(f"Tick timer registered every {self._tick_interval_s}s", level="INFO")
 
-        # Load persistent automation config store
-        self._init_config_store()
+        # Config store already loaded in initialize() (synchronous, before automations register)
 
         # Read current board state so we show something even if queue is empty
         await self._read_board_state()
