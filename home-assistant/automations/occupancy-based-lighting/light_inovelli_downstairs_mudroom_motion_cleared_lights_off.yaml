@@ -6,6 +6,7 @@ triggers:
       {{
         is_state('binary_sensor.downstairs_mudroom_inovelli_presence_occupancy', 'off')
         and is_state('binary_sensor.downstairs_mudroom_night_light_occupancy', 'off')
+        and is_state('binary_sensor.ecobee_mudroom_sensor_occupancy', 'off')
         and is_state('binary_sensor.downstairs_bathroom_vanity_inovelli_presence_occupancy', 'off')
         and is_state('binary_sensor.downstairs_bathroom_night_light_occupancy', 'off')
       }}
@@ -28,6 +29,7 @@ actions:
       {{
         is_state('binary_sensor.downstairs_mudroom_inovelli_presence_occupancy', 'off')
         and is_state('binary_sensor.downstairs_mudroom_night_light_occupancy', 'off')
+        and is_state('binary_sensor.ecobee_mudroom_sensor_occupancy', 'off')
         and is_state('binary_sensor.downstairs_bathroom_vanity_inovelli_presence_occupancy', 'off')
         and is_state('binary_sensor.downstairs_bathroom_night_light_occupancy', 'off')
       }}
@@ -45,4 +47,3 @@ actions:
       entity_id: light.downstairs_mudroom_lights
     data: {}
 mode: restart
-

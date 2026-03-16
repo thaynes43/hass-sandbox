@@ -4,7 +4,7 @@ description: >
   restores LED indicators.
 sequence:
   - variables:
-      default_normal_mode: Occupancy (default)
+      default_normal_mode: Disabled
       hold_color: input_text.inovelli_auto_hold
       switches:
         - switch_name: basement_server_inovelli_presence

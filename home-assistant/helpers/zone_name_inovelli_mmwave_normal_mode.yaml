@@ -1,6 +1,8 @@
 # <ZONE NAME> mmWave Normal Mode
 # NOTE we are using the UI to manage these helpers which does not all us to use YAML
 # This is still useful for copy pasting into the UI
+# Set `initial` to match the zone's intended normal mode.
+# For occupancy-lighting zones where automations own the load, use `Disabled`.
 input_select:
   zone_name_inovelli_mmwave_normal_mode:
     name: <ZONE NAME> mmWave Normal Mode
@@ -12,4 +14,5 @@ input_select:
       - Mirrored Occupancy
       - Mirrored Vacancy
       - Mirrored Wasteful Occupancy
+    initial: Disabled
     icon: mdi:motion-sensor
