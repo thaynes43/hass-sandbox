@@ -404,7 +404,7 @@ class SchoolLunchDetailCard extends HTMLElement {
 
     // Header row: Mon-Fri with date
     const headerCols = weekDates
-      .map((d, i) => {
+      .map((d) => {
         const isTarget =
           d.getDate() === targetDayNum &&
           d.getMonth() === targetMonth &&
@@ -430,7 +430,7 @@ class SchoolLunchDetailCard extends HTMLElement {
         const schoolYear = school.year;
 
         const cells = weekDates
-          .map((d, i) => {
+          .map((d) => {
             const isTarget =
               d.getDate() === targetDayNum &&
               d.getMonth() === targetMonth &&

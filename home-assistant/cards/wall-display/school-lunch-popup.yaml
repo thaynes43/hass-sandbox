@@ -8,7 +8,7 @@ cards:
     show_header: true
     name: School Lunch Menu
     show_icon: true
-    icon: mdi:silverware-fork-knife
+    icon: mdi:calendar
     show_name: true
     margin: 7px
     scrolling_effect: false

@@ -48,6 +48,7 @@ class SchoolLunchCard extends HTMLElement {
     this._config = { ...SLC_DEFAULTS };
     this._hass = null;
     this._lastSnapshot = null;
+    this._domBuilt = false;
     this._touchActive = false;
   }
 
@@ -74,7 +75,13 @@ class SchoolLunchCard extends HTMLElement {
       return;
     }
 
-    this._render();
+    if (!this._domBuilt) {
+      this._buildDom();
+      this._update();
+      return;
+    }
+
+    this._update();
   }
 
   getCardSize() {
@@ -230,13 +237,44 @@ class SchoolLunchCard extends HTMLElement {
   }
 
   // ---------------------------------------------------------------------------
-  // Render
+  // Build DOM once, then do targeted updates
   // ---------------------------------------------------------------------------
 
-  _render() {
+  _buildDom() {
+    this.shadowRoot.innerHTML = `
+      <style>${this._styles()}</style>
+      <ha-card data-action="open">
+        <div class="card-shell">
+          <div class="card-header">
+            <div class="header-copy">
+              <div class="header-kicker">School Lunch</div>
+              <div class="header-title"></div>
+            </div>
+            <ha-icon class="header-icon" icon="mdi:silverware-fork-knife"></ha-icon>
+          </div>
+          <div class="content-stage"></div>
+        </div>
+      </ha-card>
+    `;
+
+    const root = this.shadowRoot;
+    this._els = {
+      headerTitle: root.querySelector(".header-title"),
+      contentStage: root.querySelector(".content-stage"),
+    };
+
+    this._bindEvents();
+    this._domBuilt = true;
+  }
+
+  _update() {
+    if (!this._els) return;
+
     const schools = this._sensorAttr(this._config.status_entity, "schools", []);
     const selectedNames = this._selectedSchools();
     const { targetDay, targetMonth, targetYear, headerLabel } = this._targetDate();
+
+    this._els.headerTitle.textContent = headerLabel;
 
     // Filter to only selected schools (preserve order from sensor)
     const selectedSchools = (schools || []).filter((s) =>
@@ -288,37 +326,14 @@ class SchoolLunchCard extends HTMLElement {
         ? schoolBlocks.join("")
         : `<div class="no-menu">No schools selected</div>`;
 
-    this.shadowRoot.innerHTML = `
-      <style>${this._styles()}</style>
-      <ha-card data-action="open">
-        <div class="card-shell">
-          <div class="card-header">
-            <div class="header-copy">
-              <div class="header-kicker">School Lunch</div>
-              <div class="header-title">${this._escapeHtml(headerLabel)}</div>
-            </div>
-            <ha-icon class="header-icon" icon="mdi:silverware-fork-knife"></ha-icon>
-          </div>
-          <div class="content-stage">
-            ${bodyHtml}
-          </div>
-        </div>
-      </ha-card>
-    `;
-
-    this._ensureDelegatedListeners();
+    this._els.contentStage.innerHTML = bodyHtml;
   }
 
   // ---------------------------------------------------------------------------
-  // Touch / click deduplication (delegated, single listener)
+  // Touch / click deduplication (delegated, single listener, bound once)
   // ---------------------------------------------------------------------------
 
-  _ensureDelegatedListeners() {
-    // Guard: only bind once per shadowRoot lifetime. Since we replace innerHTML
-    // on each render, we track the binding on the instance, not the DOM node.
-    if (this._delegatedBound) return;
-    this._delegatedBound = true;
-
+  _bindEvents() {
     const root = this.shadowRoot;
 
     const findActionEl = (evt) => {
