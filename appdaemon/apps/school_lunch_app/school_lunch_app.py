@@ -252,17 +252,53 @@ class SchoolLunchApp(hass.Hass):
 
     @staticmethod
     def _build_school_dict(name: str, menu_month: MenuMonth) -> Dict[str, Any]:
-        """Build a school dict for the sensor attributes from a MenuMonth."""
+        """Build a school dict for the sensor attributes from a MenuMonth.
+
+        Each item gets a ``role`` of ``"option"`` or ``"includes"``:
+
+        - Items whose lowercased name appears on >= 75% of menu days
+          are tagged ``"includes"`` (e.g. "Chilled Fruit", "Milk Choice").
+        - Items starting with "OR " / "or " get the prefix stripped and
+          are tagged ``"option"``.
+        - Everything else is ``"option"``.
+        """
+        # 1. Count how many days each item name appears on
+        days_with_items = [d for d in menu_month.days if d.items]
+        total_days = len(days_with_items)
+
+        name_day_count: Dict[str, int] = {}
+        for menu_day in days_with_items:
+            seen: set = set()
+            for item in menu_day.items:
+                low = item.name.strip().lower()
+                if low and low not in seen:
+                    name_day_count[low] = name_day_count.get(low, 0) + 1
+                    seen.add(low)
+
+        # 2. Items on >= 75% of days → includes
+        threshold = max(1, int(total_days * 0.75))
+        includes_names = {
+            n for n, count in name_day_count.items() if count >= threshold
+        }
+
+        # 3. Build days with classified items
+        import re
+        or_prefix_re = re.compile(r"^or\s+", re.IGNORECASE)
+
         days = []
         for menu_day in menu_month.days:
-            items = [
-                {
-                    "name": item.name,
-                    "category": item.category,
-                    "is_ancillary": item.is_ancillary,
-                }
-                for item in menu_day.items
-            ]
+            items = []
+            for item in menu_day.items:
+                raw_name = item.name.strip()
+                low = raw_name.lower()
+
+                if low in includes_names:
+                    items.append({"name": raw_name, "role": "includes"})
+                else:
+                    # Strip "OR " prefix for cleaner display
+                    cleaned = or_prefix_re.sub("", raw_name)
+                    items.append({"name": cleaned, "role": "option"})
+
             day_dict: Dict[str, Any] = {"day": menu_day.day, "items": items}
             if menu_day.notice:
                 day_dict["notice"] = menu_day.notice

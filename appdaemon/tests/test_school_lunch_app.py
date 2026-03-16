@@ -419,7 +419,7 @@ class TestSensorState:
             )
 
     def test_sensor_day_items_structure(self):
-        """Each day's items have name, category, and is_ancillary fields."""
+        """Each day's items have name and role fields."""
         app = _make_app()
         mock_prov = _make_mock_provisioner()
         mock_client = _make_mock_client()
@@ -436,8 +436,8 @@ class TestSensorState:
         assert "items" in first_day
         for item in first_day["items"]:
             assert "name" in item
-            assert "category" in item
-            assert "is_ancillary" in item
+            assert "role" in item
+            assert item["role"] in ("option", "includes")
 
 
 class TestCommandHandling:

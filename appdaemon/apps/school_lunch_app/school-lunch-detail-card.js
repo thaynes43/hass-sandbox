@@ -80,14 +80,12 @@ function getTargetDay() {
 }
 
 /**
- * Parse a day's items into numbered options and an includes line.
+ * Split a day's items into options and includes using the ``role`` field
+ * set by the AppDaemon app. The app classifies items automatically:
+ * items appearing on 75%+ of menu days → "includes", everything else → "option".
  *
- * - Items whose name matches INCLUDES_ITEMS → includes list
- * - Remaining: first item = Option 1, items prefixed with "OR " become
- *   subsequent options (prefix stripped)
- * - Returns { options: string[], includes: string[] }
+ * Returns { options: string[], includes: string[] }
  */
-const INCLUDES_ITEMS = ["chilled fruit", "milk choice", "milk"];
 function parseLunchItems(items) {
   if (!Array.isArray(items)) return { options: [], includes: [] };
   const options = [];
@@ -95,12 +93,11 @@ function parseLunchItems(items) {
   for (const it of items) {
     const name = String(it.name || "").trim();
     if (!name) continue;
-    if (INCLUDES_ITEMS.includes(name.toLowerCase())) {
+    if (it.role === "includes") {
       includes.push(name);
-      continue;
+    } else {
+      options.push(name);
     }
-    const orMatch = name.match(/^or\s+/i);
-    options.push(orMatch ? name.slice(orMatch[0].length) : name);
   }
   return { options, includes };
 }

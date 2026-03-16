@@ -19,40 +19,25 @@ const SLC_DEFAULTS = {
   navigation_path: "#school-lunch-popup",
 };
 
-// Items that appear every day — shown as "Includes:" rather than options
-const SLC_INCLUDES = ["chilled fruit", "milk choice", "milk"];
-
 /**
- * Parse a day's items into numbered options and an includes line.
+ * Split a day's items into options and includes using the ``role`` field
+ * set by the AppDaemon app. The app classifies items automatically:
+ * items appearing on 75%+ of menu days → "includes", everything else → "option".
  *
- * - Items whose name (lowercased) matches SLC_INCLUDES → includes list
- * - Remaining items: first item = Option 1, items starting with "OR "
- *   (case-insensitive) get the prefix stripped and become subsequent options
- * - Returns { options: string[], includes: string[] }
+ * Returns { options: string[], includes: string[] }
  */
 function parseLunchItems(items) {
   const options = [];
   const includes = [];
-
   for (const item of items) {
     const name = String(item.name || "").trim();
     if (!name) continue;
-    const lower = name.toLowerCase();
-
-    if (SLC_INCLUDES.includes(lower)) {
+    if (item.role === "includes") {
       includes.push(name);
-      continue;
-    }
-
-    // Strip leading "OR " / "or " prefix
-    const orMatch = name.match(/^or\s+/i);
-    if (orMatch) {
-      options.push(name.slice(orMatch[0].length));
     } else {
       options.push(name);
     }
   }
-
   return { options, includes };
 }
 
