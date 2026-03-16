@@ -19,6 +19,43 @@ const SLC_DEFAULTS = {
   navigation_path: "#school-lunch-popup",
 };
 
+// Items that appear every day — shown as "Includes:" rather than options
+const SLC_INCLUDES = ["chilled fruit", "milk choice", "milk"];
+
+/**
+ * Parse a day's items into numbered options and an includes line.
+ *
+ * - Items whose name (lowercased) matches SLC_INCLUDES → includes list
+ * - Remaining items: first item = Option 1, items starting with "OR "
+ *   (case-insensitive) get the prefix stripped and become subsequent options
+ * - Returns { options: string[], includes: string[] }
+ */
+function parseLunchItems(items) {
+  const options = [];
+  const includes = [];
+
+  for (const item of items) {
+    const name = String(item.name || "").trim();
+    if (!name) continue;
+    const lower = name.toLowerCase();
+
+    if (SLC_INCLUDES.includes(lower)) {
+      includes.push(name);
+      continue;
+    }
+
+    // Strip leading "OR " / "or " prefix
+    const orMatch = name.match(/^or\s+/i);
+    if (orMatch) {
+      options.push(name.slice(orMatch[0].length));
+    } else {
+      options.push(name);
+    }
+  }
+
+  return { options, includes };
+}
+
 class SchoolLunchCard extends HTMLElement {
   constructor() {
     super();
@@ -155,14 +192,26 @@ class SchoolLunchCard extends HTMLElement {
     const dayData = (school.days || []).find((d) => d.day === targetDay);
     if (!dayData) return null;
 
-    const FILLER = ["chilled fruit", "milk choice", "milk"];
-    const entrees = (dayData.items || []).filter((item) => {
-      const cat = String(item.category || "").toLowerCase();
-      const name = String(item.name || "").toLowerCase().trim();
-      return cat.includes("entree") && !item.is_ancillary && !FILLER.includes(name);
-    });
+    return {
+      ...parseLunchItems(dayData.items || []),
+      notice: dayData.notice || "",
+    };
+  }
 
-    return { entrees, notice: dayData.notice || "" };
+  /** Render numbered options + includes line. */
+  _renderOptions(options, includes) {
+    let html = `<div class="options-list">`;
+    options.forEach((opt, i) => {
+      html += `<div class="option-row">
+        <span class="option-num">Option ${i + 1}:</span>
+        <span class="option-text">${this._escapeHtml(opt)}</span>
+      </div>`;
+    });
+    html += `</div>`;
+    if (includes.length > 0) {
+      html += `<div class="includes-line">Includes: ${this._escapeHtml(includes.join(" & "))}</div>`;
+    }
+    return html;
   }
 
   /** Parse the selected-schools JSON from input_text. Returns an array of names. */
@@ -223,33 +272,29 @@ class SchoolLunchCard extends HTMLElement {
 
       // Notice day (e.g. "EARLY RELEASE GRAB AND GO..." or "NO SCHOOL...")
       if (dayInfo.notice) {
-        let noticeHtml = `<div class="day-notice">${this._escapeHtml(dayInfo.notice)}</div>`;
-        if (dayInfo.entrees.length > 0) {
-          noticeHtml += `<ul class="entree-list">${dayInfo.entrees.map((item) => `<li class="entree-item">${this._escapeHtml(item.name)}</li>`).join("")}</ul>`;
+        let bodyHtml = `<div class="day-notice">${this._escapeHtml(dayInfo.notice)}</div>`;
+        if (dayInfo.options.length > 0) {
+          bodyHtml += this._renderOptions(dayInfo.options, dayInfo.includes);
         }
         return `
           <div class="school-block">
             <div class="school-name">${this._escapeHtml(school.name)}</div>
-            ${noticeHtml}
+            ${bodyHtml}
           </div>`;
       }
 
-      if (dayInfo.entrees.length === 0) {
+      if (dayInfo.options.length === 0) {
         return `
           <div class="school-block">
             <div class="school-name">${this._escapeHtml(school.name)}</div>
-            <div class="no-menu">No entrees listed</div>
+            <div class="no-menu">No menu listed</div>
           </div>`;
       }
-
-      const itemsHtml = dayInfo.entrees
-        .map((item) => `<li class="entree-item">${this._escapeHtml(item.name)}</li>`)
-        .join("");
 
       return `
         <div class="school-block">
           <div class="school-name">${this._escapeHtml(school.name)}</div>
-          <ul class="entree-list">${itemsHtml}</ul>
+          ${this._renderOptions(dayInfo.options, dayInfo.includes)}
         </div>`;
     });
 
@@ -456,20 +501,29 @@ class SchoolLunchCard extends HTMLElement {
         text-transform: uppercase;
       }
 
-      .entree-list {
-        margin: 0;
-        padding: 0 0 0 16px;
-        list-style: disc;
+      .options-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
       }
 
-      .entree-item {
+      .option-row {
         font-size: 13px;
         color: var(--slc-text);
-        line-height: 1.5;
+        line-height: 1.4;
       }
 
-      .entree-item::marker {
+      .option-num {
+        font-weight: 600;
         color: var(--slc-accent);
+        margin-right: 4px;
+      }
+
+      .includes-line {
+        margin-top: 4px;
+        font-size: 11px;
+        font-style: italic;
+        color: var(--slc-muted);
       }
 
       .no-menu {
@@ -482,6 +536,7 @@ class SchoolLunchCard extends HTMLElement {
         font-size: 12px;
         font-weight: 600;
         color: var(--warning-color, #ff9800);
+        margin-bottom: 4px;
       }
 
       /* Subtle divider between schools when more than one */

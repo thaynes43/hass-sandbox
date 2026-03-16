@@ -80,18 +80,53 @@ function getTargetDay() {
 }
 
 /**
- * Filter a day's items to entrees only.
- * Entrees: category contains "entree" (case-insensitive) AND is_ancillary is falsy.
- * Excludes common filler items that appear every day (Chilled Fruit, Milk Choice).
+ * Parse a day's items into numbered options and an includes line.
+ *
+ * - Items whose name matches INCLUDES_ITEMS → includes list
+ * - Remaining: first item = Option 1, items prefixed with "OR " become
+ *   subsequent options (prefix stripped)
+ * - Returns { options: string[], includes: string[] }
  */
-const FILLER_ITEMS = ["chilled fruit", "milk choice", "milk"];
-function filterEntrees(items) {
-  if (!Array.isArray(items)) return [];
-  return items.filter((it) => {
-    const cat = typeof it.category === "string" ? it.category.toLowerCase() : "";
-    const name = typeof it.name === "string" ? it.name.toLowerCase().trim() : "";
-    return cat.includes("entree") && !it.is_ancillary && !FILLER_ITEMS.includes(name);
-  });
+const INCLUDES_ITEMS = ["chilled fruit", "milk choice", "milk"];
+function parseLunchItems(items) {
+  if (!Array.isArray(items)) return { options: [], includes: [] };
+  const options = [];
+  const includes = [];
+  for (const it of items) {
+    const name = String(it.name || "").trim();
+    if (!name) continue;
+    if (INCLUDES_ITEMS.includes(name.toLowerCase())) {
+      includes.push(name);
+      continue;
+    }
+    const orMatch = name.match(/^or\s+/i);
+    options.push(orMatch ? name.slice(orMatch[0].length) : name);
+  }
+  return { options, includes };
+}
+
+/**
+ * Render parsed lunch items as HTML with numbered options + includes.
+ * cssPrefix controls class names (e.g. "menu" for weekly, "cal" for monthly).
+ */
+function renderLunchHtml(parsed, cssPrefix = "menu") {
+  const { options, includes } = parsed;
+  if (options.length === 0 && includes.length === 0) {
+    return `<span class="${cssPrefix}-no-menu">No menu</span>`;
+  }
+  let html = "";
+  if (options.length > 0) {
+    html += options
+      .map(
+        (opt, i) =>
+          `<div class="${cssPrefix}-option"><span class="${cssPrefix}-option-num">Option ${i + 1}:</span> ${sldEscapeHtml(opt)}</div>`
+      )
+      .join("");
+  }
+  if (includes.length > 0) {
+    html += `<div class="${cssPrefix}-includes">Includes: ${sldEscapeHtml(includes.join(" & "))}</div>`;
+  }
+  return html;
 }
 
 /**
@@ -413,18 +448,13 @@ class SchoolLunchDetailCard extends HTMLElement {
               const dayData = school.days?.find((day) => day.day === d.getDate());
               if (dayData) {
                 if (dayData.notice) {
-                  const entrees = filterEntrees(dayData.items);
                   cellContent = `<span class="day-notice">${sldEscapeHtml(dayData.notice)}</span>`;
-                  if (entrees.length > 0) {
-                    cellContent += `<ul class="menu-list">${entrees.map((it) => `<li>${sldEscapeHtml(it.name)}</li>`).join("")}</ul>`;
+                  const parsed = parseLunchItems(dayData.items);
+                  if (parsed.options.length > 0) {
+                    cellContent += renderLunchHtml(parsed, "menu");
                   }
                 } else {
-                  const entrees = filterEntrees(dayData.items);
-                  if (entrees.length > 0) {
-                    cellContent = `<ul class="menu-list">${entrees.map((it) => `<li>${sldEscapeHtml(it.name)}</li>`).join("")}</ul>`;
-                  } else {
-                    cellContent = `<span class="no-menu">No entrees</span>`;
-                  }
+                  cellContent = renderLunchHtml(parseLunchItems(dayData.items), "menu");
                 }
               } else {
                 cellContent = `<span class="no-menu">No menu</span>`;
@@ -514,21 +544,13 @@ class SchoolLunchDetailCard extends HTMLElement {
             let itemsHtml = "";
             if (dayData) {
               if (dayData.notice) {
-                const entrees = filterEntrees(dayData.items);
                 itemsHtml = `<span class="cal-notice">${sldEscapeHtml(dayData.notice)}</span>`;
-                if (entrees.length > 0) {
-                  itemsHtml += `<ul class="cal-menu-list">${entrees.map((it) => `<li>${sldEscapeHtml(it.name)}</li>`).join("")}</ul>`;
+                const parsed = parseLunchItems(dayData.items);
+                if (parsed.options.length > 0) {
+                  itemsHtml += renderLunchHtml(parsed, "cal");
                 }
               } else {
-                const entrees = filterEntrees(dayData.items);
-                if (entrees.length > 0) {
-                  itemsHtml = entrees
-                    .map((it) => `<li>${sldEscapeHtml(it.name)}</li>`)
-                    .join("");
-                  itemsHtml = `<ul class="cal-menu-list">${itemsHtml}</ul>`;
-                } else {
-                  itemsHtml = `<span class="cal-no-menu">No entrees</span>`;
-                }
+                itemsHtml = renderLunchHtml(parseLunchItems(dayData.items), "cal");
               }
             }
 
@@ -906,15 +928,28 @@ class SchoolLunchDetailCard extends HTMLElement {
         background: var(--sld-highlight);
       }
 
-      .menu-list {
-        margin: 0;
-        padding: 0 0 0 14px;
-        list-style: disc;
+      .menu-option {
+        font-size: 13px;
+        line-height: 1.3;
+        margin: 2px 0;
       }
 
-      .menu-list li {
-        margin: 1px 0;
-        line-height: 1.3;
+      .menu-option-num {
+        font-weight: 600;
+        color: var(--sld-primary);
+      }
+
+      .menu-includes {
+        font-size: 11px;
+        font-style: italic;
+        color: var(--sld-on-surface-secondary);
+        margin-top: 3px;
+      }
+
+      .menu-no-menu {
+        font-size: 12px;
+        color: var(--sld-on-surface-secondary);
+        font-style: italic;
       }
 
       .no-menu {
@@ -1015,16 +1050,22 @@ class SchoolLunchDetailCard extends HTMLElement {
         color: var(--sld-primary);
       }
 
-      .cal-menu-list {
-        margin: 0;
-        padding: 0 0 0 12px;
-        list-style: disc;
+      .cal-option {
+        font-size: 11px;
+        line-height: 1.3;
+        margin: 1px 0;
       }
 
-      .cal-menu-list li {
-        margin: 1px 0;
-        line-height: 1.3;
-        font-size: 11px;
+      .cal-option-num {
+        font-weight: 600;
+        color: var(--sld-primary);
+      }
+
+      .cal-includes {
+        font-size: 10px;
+        font-style: italic;
+        color: var(--sld-on-surface-secondary);
+        margin-top: 2px;
       }
 
       .cal-no-menu {
