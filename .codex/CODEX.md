@@ -26,6 +26,7 @@ Read these first when working in the matching area:
 - `appdaemon/`:
   - `.codex/rules/appdaemon.md`
   - `.codex/rules/security.md`
+  - `.cursor/rules/git-workflow.mdc`
 - `home-assistant/`:
   - `.codex/rules/ha-yaml.md`
 - custom Lovelace cards or frontend JS:
