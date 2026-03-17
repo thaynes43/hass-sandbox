@@ -8,7 +8,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -17,7 +17,7 @@ sub_button:
       icon: mdi:post-lamp
       show_name: true
       fill_width: false
-      width: 8.3
+      width: 8.33
       custom_height: 72
       content_layout: icon-top
       tap_action:
@@ -27,7 +27,7 @@ sub_button:
       icon: mdi:grass
       show_name: true
       fill_width: false
-      width: 8.3
+      width: 8.34
       custom_height: 72
       content_layout: icon-top
       tap_action:
@@ -38,7 +38,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -48,7 +48,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -58,7 +58,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.34
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -68,7 +68,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -78,7 +78,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -88,7 +88,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.34
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -98,7 +98,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -108,7 +108,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.33
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -118,7 +118,7 @@ sub_button:
       show_name: true
       fill_width: false
       custom_height: 72
-      width: 8.3
+      width: 8.34
       content_layout: icon-top
       tap_action:
         action: navigate
