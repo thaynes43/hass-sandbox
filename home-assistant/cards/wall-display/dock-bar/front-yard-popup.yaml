@@ -119,6 +119,90 @@ cards:
               transform: translate(-50%, -50%) scale(1.45)
       - type: conditional
         conditions:
+          - entity: light.outdoor_front_porch_lights
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.outdoor_front_porch_lights
+            icon: mdi:light-recessed
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 25%
+              left: 3%
+              color: "#fff3bf"
+              background: rgba(25, 36, 22, 0.58)
+              border: 2px solid rgba(233, 245, 226, 0.8)
+              border-radius: 999px
+              padding: 10px
+              transform: translate(-50%, -50%) scale(1.45)
+      - type: conditional
+        conditions:
+          - entity: light.outdoor_front_porch_lights
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.outdoor_front_porch_lights
+            icon: mdi:light-recessed
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 25%
+              left: 3%
+              color: "#f5f1d8"
+              background: rgba(25, 36, 22, 0.58)
+              border: 2px solid rgba(233, 245, 226, 0.8)
+              border-radius: 999px
+              padding: 10px
+              transform: translate(-50%, -50%) scale(1.45)
+      - type: conditional
+        conditions:
+          - entity: light.downstairs_front_door_inovelli_on_off
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.downstairs_front_door_inovelli_on_off
+            icon: mdi:coach-lamp
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 35%
+              left: 3%
+              color: "#fff3bf"
+              background: rgba(25, 36, 22, 0.58)
+              border: 2px solid rgba(233, 245, 226, 0.8)
+              border-radius: 999px
+              padding: 10px
+              transform: translate(-50%, -50%) scale(1.45)
+      - type: conditional
+        conditions:
+          - entity: light.downstairs_front_door_inovelli_on_off
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.downstairs_front_door_inovelli_on_off
+            icon: mdi:coach-lamp
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 35%
+              left: 3%
+              color: "#f5f1d8"
+              background: rgba(25, 36, 22, 0.58)
+              border: 2px solid rgba(233, 245, 226, 0.8)
+              border-radius: 999px
+              padding: 10px
+              transform: translate(-50%, -50%) scale(1.45)
+      - type: conditional
+        conditions:
           - entity: light.front_yard_lamp_post_hue_edison
             state: "on"
         elements:
@@ -153,142 +237,6 @@ cards:
               transform: translate(-50%, -50%) scale(3.2)
       - type: conditional
         conditions:
-          - entity: light.front_yard_left_hue_calla_01
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_01
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 39%
-              color: "#e255b6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_01
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_01
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 39%
-              color: "#ffd9f1"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_02
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_02
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 54%
-              left: 39%
-              color: "#e255b6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_02
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_02
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 54%
-              left: 39%
-              color: "#ffd9f1"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_03
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_03
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 31%
-              left: 39%
-              color: "#e255b6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_03
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_03
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 31%
-              left: 39%
-              color: "#ffd9f1"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_04
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_04
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 7%
-              left: 39%
-              color: "#e255b6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_calla_04
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_calla_04
-            icon: mdi:flower-poppy
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 7%
-              left: 39%
-              color: "#ffd9f1"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
           - entity: light.front_yard_right_hue_calla_01
             state: "on"
         elements:
@@ -301,7 +249,7 @@ cards:
               action: more-info
             style:
               top: 77%
-              left: 61%
+              left: 39%
               color: "#e255b6"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -318,7 +266,7 @@ cards:
               action: more-info
             style:
               top: 77%
-              left: 61%
+              left: 39%
               color: "#ffd9f1"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -335,7 +283,7 @@ cards:
               action: more-info
             style:
               top: 54%
-              left: 61%
+              left: 39%
               color: "#e255b6"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -352,7 +300,7 @@ cards:
               action: more-info
             style:
               top: 54%
-              left: 61%
+              left: 39%
               color: "#ffd9f1"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -369,7 +317,7 @@ cards:
               action: more-info
             style:
               top: 31%
-              left: 61%
+              left: 39%
               color: "#e255b6"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -386,16 +334,152 @@ cards:
               action: more-info
             style:
               top: 31%
+              left: 39%
+              color: "#ffd9f1"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_right_hue_calla_04
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_right_hue_calla_04
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 7%
+              left: 39%
+              color: "#e255b6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_right_hue_calla_04
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_right_hue_calla_04
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 7%
+              left: 39%
+              color: "#ffd9f1"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_calla_01
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_calla_01
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 61%
+              color: "#e255b6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_calla_01
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_calla_01
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
               left: 61%
               color: "#ffd9f1"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
         conditions:
-          - entity: light.front_yard_right_hue_calla_03
+          - entity: light.front_yard_left_hue_calla_02
             state: "on"
         elements:
           - type: icon
-            entity: light.front_yard_right_hue_calla_03
+            entity: light.front_yard_left_hue_calla_02
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 54%
+              left: 61%
+              color: "#e255b6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_calla_02
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_calla_02
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 54%
+              left: 61%
+              color: "#ffd9f1"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_calla_03
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_calla_03
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 31%
+              left: 61%
+              color: "#e255b6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_calla_03
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_calla_03
+            icon: mdi:flower-poppy
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 31%
+              left: 61%
+              color: "#ffd9f1"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_calla_04
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_calla_04
             icon: mdi:flower-poppy
             tap_action:
               action: toggle
@@ -408,11 +492,11 @@ cards:
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
         conditions:
-          - entity: light.front_yard_right_hue_calla_03
+          - entity: light.front_yard_left_hue_calla_04
             state_not: "on"
         elements:
           - type: icon
-            entity: light.front_yard_right_hue_calla_03
+            entity: light.front_yard_left_hue_calla_04
             icon: mdi:flower-poppy
             tap_action:
               action: toggle
@@ -425,108 +509,6 @@ cards:
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
         conditions:
-          - entity: light.front_yard_left_hue_lily_01
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_lily_01
-            icon: mdi:flower-tulip-outline
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 30%
-              color: "#8b5cf6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_lily_01
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_lily_01
-            icon: mdi:flower-tulip-outline
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 30%
-              color: "#e9ddff"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_lily_02
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_lily_02
-            icon: mdi:flower-tulip-outline
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 18%
-              color: "#8b5cf6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_lily_02
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_lily_02
-            icon: mdi:flower-tulip-outline
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 18%
-              color: "#e9ddff"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_lily_03
-            state: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_lily_03
-            icon: mdi:flower-tulip-outline
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 5%
-              color: "#8b5cf6"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
-          - entity: light.front_yard_left_hue_lily_03
-            state_not: "on"
-        elements:
-          - type: icon
-            entity: light.front_yard_left_hue_lily_03
-            icon: mdi:flower-tulip-outline
-            tap_action:
-              action: toggle
-            hold_action:
-              action: more-info
-            style:
-              top: 77%
-              left: 5%
-              color: "#e9ddff"
-              transform: translate(-50%, -50%) scale(2.15)
-      - type: conditional
-        conditions:
           - entity: light.front_yard_right_hue_lily_01
             state: "on"
         elements:
@@ -539,7 +521,7 @@ cards:
               action: more-info
             style:
               top: 77%
-              left: 70%
+              left: 30%
               color: "#8b5cf6"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -556,7 +538,7 @@ cards:
               action: more-info
             style:
               top: 77%
-              left: 70%
+              left: 30%
               color: "#e9ddff"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -573,7 +555,7 @@ cards:
               action: more-info
             style:
               top: 77%
-              left: 82%
+              left: 18%
               color: "#8b5cf6"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -590,7 +572,7 @@ cards:
               action: more-info
             style:
               top: 77%
-              left: 82%
+              left: 18%
               color: "#e9ddff"
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
@@ -600,6 +582,108 @@ cards:
         elements:
           - type: icon
             entity: light.front_yard_right_hue_lily_03
+            icon: mdi:flower-tulip-outline
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 5%
+              color: "#8b5cf6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_right_hue_lily_03
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_right_hue_lily_03
+            icon: mdi:flower-tulip-outline
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 5%
+              color: "#e9ddff"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_lily_01
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_lily_01
+            icon: mdi:flower-tulip-outline
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 70%
+              color: "#8b5cf6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_lily_01
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_lily_01
+            icon: mdi:flower-tulip-outline
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 70%
+              color: "#e9ddff"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_lily_02
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_lily_02
+            icon: mdi:flower-tulip-outline
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 82%
+              color: "#8b5cf6"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_lily_02
+            state_not: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_lily_02
+            icon: mdi:flower-tulip-outline
+            tap_action:
+              action: toggle
+            hold_action:
+              action: more-info
+            style:
+              top: 77%
+              left: 82%
+              color: "#e9ddff"
+              transform: translate(-50%, -50%) scale(2.15)
+      - type: conditional
+        conditions:
+          - entity: light.front_yard_left_hue_lily_03
+            state: "on"
+        elements:
+          - type: icon
+            entity: light.front_yard_left_hue_lily_03
             icon: mdi:flower-tulip-outline
             tap_action:
               action: toggle
@@ -612,11 +696,11 @@ cards:
               transform: translate(-50%, -50%) scale(2.15)
       - type: conditional
         conditions:
-          - entity: light.front_yard_right_hue_lily_03
+          - entity: light.front_yard_left_hue_lily_03
             state_not: "on"
         elements:
           - type: icon
-            entity: light.front_yard_right_hue_lily_03
+            entity: light.front_yard_left_hue_lily_03
             icon: mdi:flower-tulip-outline
             tap_action:
               action: toggle
