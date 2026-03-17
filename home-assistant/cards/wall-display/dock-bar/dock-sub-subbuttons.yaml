@@ -1,0 +1,252 @@
+type: custom:bubble-card
+card_type: sub-buttons
+sub_button:
+  main: []
+  bottom:
+    - name: Shed
+      icon: mdi:greenhouse
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#shed-popup"
+    - name: Front Yard
+      icon: mdi:post-lamp
+      show_name: true
+      fill_width: false
+      width: 8.3
+      custom_height: 72
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#front-yard-popup"
+    - name: Back Yard
+      icon: mdi:grass
+      show_name: true
+      fill_width: false
+      width: 8.3
+      custom_height: 72
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#back-yard-popup"
+    - name: Driveway & Garage
+      icon: mdi:road-variant
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#driveway-popup"
+    - name: Entrance
+      icon: mdi:coat-rack
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#entrance-popup"
+    - name: Kitchen & Dining
+      icon: mdi:countertop-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#kitchen-popup"
+    - name: Living Room
+      icon: mdi:sofa-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#test3-popup"
+    - name: Study
+      icon: mdi:globe-model
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#test4-popup"
+    - name: Foyer
+      icon: mdi:chandelier
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#foyer-popup"
+    - name: Primary
+      icon: mdi:bed-king-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#primary-popup"
+    - name: Kids Bedrooms
+      icon: mdi:bunk-bed-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#kids-popup"
+    - name: Bed, Bath, & Beyond
+      icon: mdi:sleep
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.3
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#bbb-popup"
+rows: 1.5
+card_layout: large
+styles: |
+  .bubble-button-card-container {
+    background: rgba(28, 29, 33, 0.32) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-radius: 28px !important;
+    box-shadow:
+      0 14px 40px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+    backdrop-filter: blur(14px) saturate(1.2) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+    padding: 10px 14px 12px !important;
+  }
+
+  .card-content {
+    width: 100%;
+    margin: 0 !important;
+  }
+
+  .bubble-sub-button-container {
+    display: flex !important;
+    width: 100%;
+    align-items: stretch;
+    justify-content: space-between !important;
+    gap: 12px;
+    padding: 0 2px;
+  }
+
+  .bubble-sub-button {
+    min-width: unset !important;
+    border-radius: 22px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 8px 20px rgba(0, 0, 0, 0.16) !important;
+    transition:
+      transform 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease !important;
+  }
+
+  .bubble-sub-button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 10px 24px rgba(0, 0, 0, 0.22) !important;
+  }
+
+  .bubble-sub-button-icon {
+    --mdc-icon-size: 32px !important;
+    margin-bottom: 6px;
+  }
+
+  .bubble-name {
+    color: rgba(240, 243, 255, 0.9) !important;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .bubble-sub-button-1 {
+    background: linear-gradient(180deg, rgba(76, 119, 98, 0.38), rgba(34, 45, 40, 0.56)) !important;
+  }
+
+  .bubble-sub-button-2 {
+    background: linear-gradient(180deg, rgba(123, 105, 72, 0.34), rgba(50, 42, 30, 0.56)) !important;
+  }
+
+  .bubble-sub-button-3 {
+    background: linear-gradient(180deg, rgba(72, 108, 96, 0.34), rgba(30, 43, 39, 0.56)) !important;
+  }
+
+  .bubble-sub-button-4 {
+    background: linear-gradient(180deg, rgba(88, 101, 138, 0.34), rgba(34, 40, 58, 0.56)) !important;
+  }
+
+  .bubble-sub-button-5 {
+    background: linear-gradient(180deg, rgba(120, 95, 82, 0.34), rgba(50, 39, 35, 0.56)) !important;
+  }
+
+  .bubble-sub-button-6 {
+    background: linear-gradient(180deg, rgba(119, 108, 78, 0.34), rgba(49, 43, 31, 0.56)) !important;
+  }
+
+  .bubble-sub-button-7 {
+    background: linear-gradient(180deg, rgba(92, 98, 133, 0.34), rgba(36, 40, 58, 0.56)) !important;
+  }
+
+  .bubble-sub-button-8 {
+    background: linear-gradient(180deg, rgba(78, 102, 119, 0.34), rgba(31, 42, 49, 0.56)) !important;
+  }
+
+  .bubble-sub-button-9 {
+    background: linear-gradient(180deg, rgba(112, 90, 116, 0.34), rgba(47, 36, 49, 0.56)) !important;
+  }
+
+  .bubble-sub-button-10 {
+    background: linear-gradient(180deg, rgba(110, 99, 134, 0.34), rgba(44, 40, 59, 0.56)) !important;
+  }
+
+  .bubble-sub-button-11 {
+    background: linear-gradient(180deg, rgba(83, 100, 127, 0.34), rgba(34, 40, 56, 0.56)) !important;
+  }
+
+  .bubble-sub-button-12 {
+    background: linear-gradient(180deg, rgba(92, 100, 108, 0.34), rgba(37, 42, 45, 0.56)) !important;
+  }
+
+  .bubble-sub-button-1 .bubble-sub-button-icon,
+  .bubble-sub-button-2 .bubble-sub-button-icon,
+  .bubble-sub-button-3 .bubble-sub-button-icon,
+  .bubble-sub-button-4 .bubble-sub-button-icon,
+  .bubble-sub-button-5 .bubble-sub-button-icon,
+  .bubble-sub-button-6 .bubble-sub-button-icon,
+  .bubble-sub-button-7 .bubble-sub-button-icon,
+  .bubble-sub-button-8 .bubble-sub-button-icon,
+  .bubble-sub-button-9 .bubble-sub-button-icon,
+  .bubble-sub-button-10 .bubble-sub-button-icon,
+  .bubble-sub-button-11 .bubble-sub-button-icon,
+  .bubble-sub-button-12 .bubble-sub-button-icon {
+    color: rgba(245, 247, 255, 0.92) !important;
+  }
+grid_options:
+  columns: full
