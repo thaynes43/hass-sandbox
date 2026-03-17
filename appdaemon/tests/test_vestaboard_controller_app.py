@@ -1,8 +1,8 @@
 """Tests for VestaboardControllerApp — init, provisioning, commands, tick, status.
 
-Covers the refactored controller where automations register dynamically via
-register_automation() / deregister_automation() rather than being owned
-internally.
+Covers the event-based architecture where automations register dynamically via
+HA events (register_automation command / deregister_automation command) rather
+than direct get_app() references.
 """
 
 from __future__ import annotations
@@ -21,7 +21,10 @@ sys.modules["hassapi"] = mock_hass
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
-from vestaboard_apps.vestaboard_controller.vestaboard_controller_app import VestaboardControllerApp
+from vestaboard_apps.vestaboard_controller.vestaboard_controller_app import (
+    RemoteAutomationProxy,
+    VestaboardControllerApp,
+)
 from vestaboard_apps._shared.frame_queue import BoardFrame, FrameQueue
 
 
@@ -59,6 +62,7 @@ def _make_app(extra_args: dict | None = None) -> VestaboardControllerApp:
     app.datetime = MagicMock()
     app.log = MagicMock()
     app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+    app.fire_event = MagicMock()
     app.name = "vestaboard_controller"
 
     return app
@@ -97,6 +101,40 @@ def _make_frame(source: str = "test", ttl_s: int | None = None) -> BoardFrame:
     )
 
 
+def _make_registration_payload(
+    auto_id: str = "test_auto",
+    automation_type: str = "test_type",
+    display_name: str = "Test Auto",
+    display_description: str = "A test automation.",
+    default_ttl_s: int | None = 60,
+    default_max_age_s: int | None = None,
+    default_should_expire: bool = False,
+    enabled: bool = True,
+) -> dict:
+    """Return a registration payload dict (as the mixin would fire it)."""
+    return {
+        "automation_id": auto_id,
+        "automation_type": automation_type,
+        "display_name": display_name,
+        "display_description": display_description,
+        "default_ttl_s": default_ttl_s,
+        "default_max_age_s": default_max_age_s,
+        "default_should_expire": default_should_expire,
+        "DEFAULT_UI_CONFIG": {"enabled": enabled},
+        "config_schema": {},
+        "preview_frame": json.dumps(_blank_grid()),
+    }
+
+
+def _simulate_register(app: VestaboardControllerApp, payload: dict) -> None:
+    """Simulate an automation firing a register_automation command event."""
+    app._on_command(
+        "vestaboard_controller_command",
+        {"command": "register_automation", "payload": json.dumps(payload)},
+        {},
+    )
+
+
 def _make_mock_automation(
     auto_id: str = "test_auto",
     automation_type: str = "test_type",
@@ -107,7 +145,8 @@ def _make_mock_automation(
     default_should_expire: bool = False,
     enabled: bool = True,
 ) -> MagicMock:
-    """Create a mock automation object suitable for register_automation() tests."""
+    """Create a mock automation object (for tests that directly manipulate the
+    registered_automations dict without going through events)."""
     auto = MagicMock()
     auto.name = auto_id
     auto.automation_type = automation_type
@@ -138,7 +177,82 @@ def _setup_app_with_queue() -> VestaboardControllerApp:
     app._write_to_board = AsyncMock()
     app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
     app.set_state = MagicMock()
+    app.fire_event = MagicMock()
     return app
+
+
+# ---------------------------------------------------------------------------
+# RemoteAutomationProxy tests
+# ---------------------------------------------------------------------------
+
+class TestRemoteAutomationProxy:
+    def test_basic_attributes(self):
+        data = _make_registration_payload(
+            auto_id="my_auto",
+            automation_type="calendar_clock",
+            display_name="Calendar Clock",
+            default_ttl_s=120,
+            default_should_expire=True,
+        )
+        proxy = RemoteAutomationProxy(data)
+
+        assert proxy.name == "my_auto"
+        assert proxy.automation_type == "calendar_clock"
+        assert proxy.display_name == "Calendar Clock"
+        assert proxy.default_ttl_s == 120
+        assert proxy.default_should_expire is True
+
+    def test_preview_frame_decoded_from_json_string(self):
+        grid = [[1] * 22 for _ in range(6)]
+        data = _make_registration_payload()
+        data["preview_frame"] = json.dumps(grid)
+        proxy = RemoteAutomationProxy(data)
+        assert proxy.get_preview_frame() == grid
+
+    def test_preview_frame_fallback_on_bad_json(self):
+        data = _make_registration_payload()
+        data["preview_frame"] = "not valid json {{{"
+        proxy = RemoteAutomationProxy(data)
+        assert proxy.get_preview_frame() == [[0] * 22 for _ in range(6)]
+
+    def test_get_config_schema(self):
+        schema = {"enabled": {"type": "bool"}}
+        data = _make_registration_payload()
+        data["config_schema"] = schema
+        proxy = RemoteAutomationProxy(data)
+        assert proxy.get_config_schema() == schema
+
+    def test_get_effective_config_returns_copy(self):
+        data = _make_registration_payload()
+        proxy = RemoteAutomationProxy(data)
+        cfg = proxy.get_effective_config()
+        cfg["extra"] = "should not affect proxy"
+        assert "extra" not in proxy.get_effective_config()
+
+    def test_get_resolved_ttl_s_from_effective_config(self):
+        data = _make_registration_payload(default_ttl_s=60)
+        proxy = RemoteAutomationProxy(data)
+        proxy.update_config({"ttl_minutes": 5})
+        assert proxy.get_resolved_ttl_s() == 300  # 5 * 60
+
+    def test_get_resolved_ttl_s_fallback_to_default(self):
+        data = _make_registration_payload(default_ttl_s=120)
+        proxy = RemoteAutomationProxy(data)
+        assert proxy.get_resolved_ttl_s() == 120
+
+    def test_get_resolved_should_expire_from_effective_config(self):
+        data = _make_registration_payload(default_should_expire=False)
+        proxy = RemoteAutomationProxy(data)
+        proxy.update_config({"should_expire": True})
+        assert proxy.get_resolved_should_expire() is True
+
+    def test_update_config_merges(self):
+        data = _make_registration_payload()
+        proxy = RemoteAutomationProxy(data)
+        proxy.update_config({"ttl_minutes": 10, "enabled": False})
+        cfg = proxy.get_effective_config()
+        assert cfg["ttl_minutes"] == 10
+        assert cfg["enabled"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +369,16 @@ class TestAsyncStartup:
         call_args = app.set_state.call_args
         assert "sensor.vestaboard_controller_status" in call_args[0]
 
+    def test_async_startup_fires_ready_event(self):
+        app = _make_app()
+        app.initialize()
+        self._run_startup(app)
+
+        app.fire_event.assert_called()
+        fire_calls = [c for c in app.fire_event.call_args_list
+                      if c[0] and c[0][0] == "vestaboard_controller_ready"]
+        assert len(fire_calls) >= 1
+
     def test_async_startup_skips_provisioning_without_ha_url(self):
         app = _make_app({"ha_url": "", "ha_token_env": ""})
         app.initialize()
@@ -272,85 +396,124 @@ class TestAsyncStartup:
 
 
 # ---------------------------------------------------------------------------
-# Dynamic automation registration tests
+# Event-based automation registration tests
 # ---------------------------------------------------------------------------
 
 class TestAutomationRegistration:
-    def test_register_automation_adds_to_registered_dict(self):
+    def test_register_automation_adds_proxy_to_dict(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
+        payload = _make_registration_payload("my_auto")
 
-        app.register_automation(auto)
+        _simulate_register(app, payload)
 
         assert "my_auto" in app._registered_automations
-        assert app._registered_automations["my_auto"] is auto
+        assert isinstance(app._registered_automations["my_auto"], RemoteAutomationProxy)
+
+    def test_register_automation_proxy_has_correct_metadata(self):
+        app = _setup_app_with_queue()
+        payload = _make_registration_payload(
+            "my_auto",
+            automation_type="calendar_clock",
+            display_name="Calendar Clock",
+        )
+
+        _simulate_register(app, payload)
+
+        proxy = app._registered_automations["my_auto"]
+        assert proxy.automation_type == "calendar_clock"
+        assert proxy.display_name == "Calendar Clock"
 
     def test_register_automation_seeds_config_store_defaults(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        auto.DEFAULT_UI_CONFIG = {"enabled": True, "ttl_minutes": 5}
+        payload = _make_registration_payload("my_auto")
+        payload["DEFAULT_UI_CONFIG"] = {"enabled": True, "ttl_minutes": 5}
 
         mock_store = MagicMock()
-        mock_store.seed = MagicMock(return_value=True)  # seeded fresh
+        mock_store.seed = MagicMock(return_value=True)
         mock_store.get = MagicMock(return_value={})
         app._config_store = mock_store
 
-        app.register_automation(auto)
+        _simulate_register(app, payload)
 
         mock_store.seed.assert_called_once_with("my_auto", {"enabled": True, "ttl_minutes": 5})
         mock_store.save.assert_called_once()
 
-    def test_register_automation_pushes_stored_config_back(self):
+    def test_register_automation_fires_config_back_when_stored(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
+        payload = _make_registration_payload("my_auto")
 
         stored_config = {"enabled": False, "ttl_minutes": 10}
         mock_store = MagicMock()
-        mock_store.seed = MagicMock(return_value=False)  # already seeded
+        mock_store.seed = MagicMock(return_value=False)
         mock_store.get = MagicMock(return_value=stored_config)
         app._config_store = mock_store
 
-        app.register_automation(auto)
+        _simulate_register(app, payload)
 
-        auto.on_config_updated.assert_called_once_with(stored_config)
+        # Controller fires a config event back to the automation
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_config"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["config"] == stored_config
 
-    def test_register_automation_skips_config_push_when_store_empty(self):
+    def test_register_automation_skips_config_fire_when_store_empty(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
+        payload = _make_registration_payload("my_auto")
 
         mock_store = MagicMock()
         mock_store.seed = MagicMock(return_value=False)
-        mock_store.get = MagicMock(return_value={})  # empty stored config
+        mock_store.get = MagicMock(return_value={})
         app._config_store = mock_store
 
-        app.register_automation(auto)
+        _simulate_register(app, payload)
 
-        auto.on_config_updated.assert_not_called()
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_config"
+        ]
+        assert len(fire_calls) == 0
 
     def test_register_automation_publishes_status(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
+        payload = _make_registration_payload("my_auto")
 
         initial_count = app.set_state.call_count
-        app.register_automation(auto)
+        _simulate_register(app, payload)
 
         assert app.set_state.call_count > initial_count
 
-    def test_deregister_automation_removes_from_dict(self):
+    def test_register_missing_automation_id_logs_warning(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
 
-        app.deregister_automation("my_auto")
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "register_automation", "payload": json.dumps({})},
+            {},
+        )
+
+        warning_calls = [c for c in app.log.call_args_list if "WARNING" in str(c)]
+        assert any("automation_id" in str(c) or "missing" in str(c).lower() for c in warning_calls)
+
+    def test_deregister_automation_removes_proxy(self):
+        app = _setup_app_with_queue()
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
+
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "deregister_automation", "payload": json.dumps({"automation_id": "my_auto"})},
+            {},
+        )
 
         assert "my_auto" not in app._registered_automations
 
     def test_deregister_automation_removes_frames_from_queue(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
-        # Push a frame from the automation so there's something to remove
         from vestaboard_apps._shared.frame_queue import FrameQueueAction
         mock_queue = MagicMock()
         mock_queue.remove_source = MagicMock(return_value=FrameQueueAction(
@@ -364,28 +527,40 @@ class TestAutomationRegistration:
         ))
         app._queue = mock_queue
 
-        app.deregister_automation("my_auto")
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "deregister_automation", "payload": json.dumps({"automation_id": "my_auto"})},
+            {},
+        )
 
         mock_queue.remove_source.assert_called_once_with("my_auto")
 
     def test_deregister_unknown_automation_is_safe(self):
         app = _setup_app_with_queue()
         # Should not raise
-        app.deregister_automation("ghost_auto")
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "deregister_automation", "payload": json.dumps({"automation_id": "ghost"})},
+            {},
+        )
 
     def test_deregister_automation_publishes_status(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         initial_count = app.set_state.call_count
-        app.deregister_automation("my_auto")
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "deregister_automation", "payload": json.dumps({"automation_id": "my_auto"})},
+            {},
+        )
 
         assert app.set_state.call_count > initial_count
 
 
 # ---------------------------------------------------------------------------
-# push_automation_frame tests
+# push_automation_frame (via event) tests
 # ---------------------------------------------------------------------------
 
 class TestPushAutomationFrame:
@@ -525,25 +700,88 @@ class TestPushAutomationFrame:
         assert len(app._queue._pending) == 1
         assert app._queue._displayed is first_frame
 
+    def test_push_automation_frame_event_decodes_json_characters(self):
+        """push_automation_frame command decodes JSON-stringified characters."""
+        app = _setup_app_with_queue()
+        grid = _test_grid()
+
+        payload = {
+            "automation_id": "my_auto",
+            "source_label": "MyAuto",
+            "characters": json.dumps(grid),
+            "ttl_s": 60,
+            "override_ttl": False,
+        }
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "push_automation_frame", "payload": json.dumps(payload)},
+            {},
+        )
+
+        assert app._queue._displayed is not None
+        assert app._queue._displayed.source == "my_auto"
+
+    def test_push_automation_frame_event_missing_characters_logs_warning(self):
+        app = _setup_app_with_queue()
+
+        payload = {"automation_id": "my_auto", "source_label": "MyAuto"}
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "push_automation_frame", "payload": json.dumps(payload)},
+            {},
+        )
+
+        warning_calls = [c for c in app.log.call_args_list if "WARNING" in str(c)]
+        assert any("characters" in str(c) or "missing" in str(c).lower() for c in warning_calls)
+
+    def test_push_automation_frame_event_updates_proxy_next_fire_time(self):
+        app = _setup_app_with_queue()
+        payload_reg = _make_registration_payload("my_auto")
+        _simulate_register(app, payload_reg)
+
+        next_fire = time.time() + 600.0
+        payload = {
+            "automation_id": "my_auto",
+            "source_label": "MyAuto",
+            "characters": json.dumps(_test_grid()),
+            "ttl_s": 60,
+            "override_ttl": False,
+            "next_fire_time": next_fire,
+        }
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "push_automation_frame", "payload": json.dumps(payload)},
+            {},
+        )
+
+        proxy = app._registered_automations["my_auto"]
+        assert proxy._next_fire_time == next_fire
+
 
 # ---------------------------------------------------------------------------
 # Activate / deactivate automation command handlers
 # ---------------------------------------------------------------------------
 
 class TestActivateDeactivateHandlers:
-    def test_handle_activate_calls_set_enabled_true(self):
+    def test_handle_activate_fires_enabled_event(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
+        app.fire_event.reset_mock()
 
         app._handle_activate_automation("my_auto")
 
-        auto.set_enabled.assert_called_once_with(True)
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_enabled"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["enabled"] is True
 
     def test_handle_activate_updates_config_store(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         mock_store = MagicMock()
         app._config_store = mock_store
@@ -560,19 +798,25 @@ class TestActivateDeactivateHandlers:
         warning_calls = [c for c in app.log.call_args_list if "WARNING" in str(c)]
         assert any("ghost_auto" in str(c) or "not registered" in str(c) for c in warning_calls)
 
-    def test_handle_deactivate_calls_set_enabled_false(self):
+    def test_handle_deactivate_fires_enabled_event(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
+        app.fire_event.reset_mock()
 
         app._handle_deactivate_automation("my_auto")
 
-        auto.set_enabled.assert_called_once_with(False)
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_enabled"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["enabled"] is False
 
     def test_handle_deactivate_updates_config_store(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         mock_store = MagicMock()
         app._config_store = mock_store
@@ -583,8 +827,8 @@ class TestActivateDeactivateHandlers:
 
     def test_handle_deactivate_purges_frames(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         # Put a frame from this automation in fallback
         now = time.time()
@@ -614,13 +858,51 @@ class TestActivateDeactivateHandlers:
 
     def test_handle_deactivate_publishes_status(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         initial_count = app.set_state.call_count
         app._handle_deactivate_automation("my_auto")
 
         assert app.set_state.call_count > initial_count
+
+    def test_activate_command_routing(self):
+        app = _setup_app_with_queue()
+        payload = _make_registration_payload("test_auto")
+        _simulate_register(app, payload)
+        app.fire_event.reset_mock()
+
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "activate_automation", "payload": json.dumps({"automation_id": "test_auto"})},
+            {},
+        )
+
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_enabled"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["enabled"] is True
+
+    def test_deactivate_command_routing(self):
+        app = _setup_app_with_queue()
+        payload = _make_registration_payload("test_auto")
+        _simulate_register(app, payload)
+        app.fire_event.reset_mock()
+
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "deactivate_automation", "payload": json.dumps({"automation_id": "test_auto"})},
+            {},
+        )
+
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_enabled"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["enabled"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -630,8 +912,8 @@ class TestActivateDeactivateHandlers:
 class TestSetAutomationConfigHandler:
     def test_handle_set_config_persists_to_store(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         mock_store = MagicMock()
         app._config_store = mock_store
@@ -641,15 +923,32 @@ class TestSetAutomationConfigHandler:
 
         mock_store.update.assert_called_once_with("my_auto", new_config)
 
-    def test_handle_set_config_calls_on_config_updated(self):
+    def test_handle_set_config_fires_config_event(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
+        app.fire_event.reset_mock()
 
         new_config = {"ttl_minutes": 10}
         app._handle_set_automation_config("my_auto", new_config)
 
-        auto.on_config_updated.assert_called_once_with(new_config)
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_config"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["config"] == new_config
+
+    def test_handle_set_config_updates_proxy(self):
+        app = _setup_app_with_queue()
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
+
+        new_config = {"ttl_minutes": 15}
+        app._handle_set_automation_config("my_auto", new_config)
+
+        proxy = app._registered_automations["my_auto"]
+        assert proxy.get_effective_config()["ttl_minutes"] == 15
 
     def test_handle_set_config_unknown_automation_logs_warning(self):
         app = _setup_app_with_queue()
@@ -661,8 +960,8 @@ class TestSetAutomationConfigHandler:
 
     def test_handle_set_config_publishes_status(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload = _make_registration_payload("my_auto")
+        _simulate_register(app, payload)
 
         initial_count = app.set_state.call_count
         app._handle_set_automation_config("my_auto", {"ttl_minutes": 5})
@@ -734,30 +1033,6 @@ class TestCommandRouting:
         )
         mock_queue.clear.assert_called_once()
 
-    def test_activate_automation_command_calls_set_enabled(self):
-        app = self._setup_app()
-        auto = _make_mock_automation("test_auto")
-        app._registered_automations["test_auto"] = auto
-
-        app._on_command(
-            "vestaboard_controller_command",
-            {"command": "activate_automation", "payload": json.dumps({"automation_id": "test_auto"})},
-            {},
-        )
-        auto.set_enabled.assert_called_once_with(True)
-
-    def test_deactivate_automation_command_calls_set_enabled(self):
-        app = self._setup_app()
-        auto = _make_mock_automation("test_auto")
-        app._registered_automations["test_auto"] = auto
-
-        app._on_command(
-            "vestaboard_controller_command",
-            {"command": "deactivate_automation", "payload": json.dumps({"automation_id": "test_auto"})},
-            {},
-        )
-        auto.set_enabled.assert_called_once_with(False)
-
     def test_payload_as_dict(self):
         """Payload can be passed as a pre-parsed dict (not a string)."""
         app = self._setup_app()
@@ -784,9 +1059,9 @@ class TestCommandRouting:
 
     def test_generate_random_message_fires_create_task(self):
         app = self._setup_app()
-        auto = _make_mock_automation("msg_lib", automation_type="messages_from_library")
-        auto.generate_frame = AsyncMock(return_value=_blank_grid())
-        app._registered_automations["msg_lib"] = auto
+        payload_reg = _make_registration_payload("msg_lib", automation_type="messages_from_library")
+        _simulate_register(app, payload_reg)
+        app.create_task.reset_mock()
 
         app._on_command(
             "vestaboard_controller_command",
@@ -797,9 +1072,9 @@ class TestCommandRouting:
 
     def test_generate_random_art_fires_create_task(self):
         app = self._setup_app()
-        auto = _make_mock_automation("art_lib", automation_type="art_from_library")
-        auto.generate_frame = AsyncMock(return_value=_blank_grid())
-        app._registered_automations["art_lib"] = auto
+        payload_reg = _make_registration_payload("art_lib", automation_type="art_from_library")
+        _simulate_register(app, payload_reg)
+        app.create_task.reset_mock()
 
         app._on_command(
             "vestaboard_controller_command",
@@ -810,9 +1085,9 @@ class TestCommandRouting:
 
     def test_generate_ai_art_fires_create_task(self):
         app = self._setup_app()
-        auto = _make_mock_automation("ai_art", automation_type="art_generated_by_ai")
-        auto.generate_frame = AsyncMock(return_value=_blank_grid())
-        app._registered_automations["ai_art"] = auto
+        payload_reg = _make_registration_payload("ai_art", automation_type="art_generated_by_ai")
+        _simulate_register(app, payload_reg)
+        app.create_task.reset_mock()
 
         app._on_command(
             "vestaboard_controller_command",
@@ -822,13 +1097,10 @@ class TestCommandRouting:
         assert app.create_task.call_count >= 1
 
     def test_generate_ai_art_not_generate_art(self):
-        """Regression: controller must recognise 'generate_ai_art', not 'generate_art'.
-        The config app forwards generate_art commands as generate_ai_art; the controller
-        must handle that exact string (Bug 7 regression guard)."""
+        """Regression: controller must recognise 'generate_ai_art', not 'generate_art'."""
         app = self._setup_app()
-        auto = _make_mock_automation("ai_art", automation_type="art_generated_by_ai")
-        auto.generate_frame = AsyncMock(return_value=_blank_grid())
-        app._registered_automations["ai_art"] = auto
+        payload_reg = _make_registration_payload("ai_art", automation_type="art_generated_by_ai")
+        _simulate_register(app, payload_reg)
         app.log.reset_mock()
 
         # 'generate_art' (old, wrong name) must NOT be handled — it's an unknown command
@@ -853,8 +1125,9 @@ class TestCommandRouting:
 
     def test_set_automation_config_command_routing(self):
         app = self._setup_app()
-        auto = _make_mock_automation("my_auto")
-        app._registered_automations["my_auto"] = auto
+        payload_reg = _make_registration_payload("my_auto")
+        _simulate_register(app, payload_reg)
+        app.fire_event.reset_mock()
 
         app._on_command(
             "vestaboard_controller_command",
@@ -867,7 +1140,93 @@ class TestCommandRouting:
             },
             {},
         )
-        auto.on_config_updated.assert_called_once()
+
+        # Config event should be fired
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_config"
+        ]
+        assert len(fire_calls) == 1
+
+
+# ---------------------------------------------------------------------------
+# Generate event dispatch tests
+# ---------------------------------------------------------------------------
+
+class TestGenerateEventDispatch:
+    def test_generate_random_message_fires_generate_event(self):
+        app = _setup_app_with_queue()
+        payload_reg = _make_registration_payload("msg_lib", automation_type="messages_from_library")
+        _simulate_register(app, payload_reg)
+        app.fire_event.reset_mock()
+
+        _run(app._handle_generate_by_type({}, "messages_from_library", "generate_random_message"))
+
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_generate"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["preview_only"] is False
+
+    def test_generate_random_message_missing_automation_logs_warning(self):
+        app = _setup_app_with_queue()
+
+        _run(app._handle_generate_by_type({}, "messages_from_library", "generate_random_message"))
+
+        warning_calls = [c for c in app.log.call_args_list if "WARNING" in str(c)]
+        assert any("not registered" in str(c) or "messages_from_library" in str(c) for c in warning_calls)
+
+    def test_generate_ai_art_fires_generate_event_with_subject(self):
+        app = _setup_app_with_queue()
+        payload_reg = _make_registration_payload("ai_art", automation_type="art_generated_by_ai")
+        _simulate_register(app, payload_reg)
+        app.fire_event.reset_mock()
+
+        _run(app._handle_generate_ai_art({"subject": "rainbow", "override_ttl": True}))
+
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_generate"
+        ]
+        assert len(fire_calls) == 1
+        kwargs_sent = fire_calls[0][1]["generate_kwargs"]
+        assert kwargs_sent["subject"] == "rainbow"
+        assert fire_calls[0][1]["preview_only"] is False
+
+    def test_generate_ai_art_preview_fires_generate_event_with_preview_only(self):
+        app = _setup_app_with_queue()
+        payload_reg = _make_registration_payload("ai_art", automation_type="art_generated_by_ai")
+        _simulate_register(app, payload_reg)
+        app.fire_event.reset_mock()
+
+        _run(app._handle_generate_ai_art_preview({"subject": "sunset"}))
+
+        fire_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[0] and c[0][0] == "vb_auto_generate"
+        ]
+        assert len(fire_calls) == 1
+        assert fire_calls[0][1]["preview_only"] is True
+        assert fire_calls[0][1]["generate_kwargs"]["subject"] == "sunset"
+
+    def test_push_ai_art_preview_result_stores_preview(self):
+        app = _setup_app_with_queue()
+        grid = _test_grid()
+
+        payload = {
+            "characters": json.dumps(grid),
+            "subject": "ocean waves",
+        }
+        app._on_command(
+            "vestaboard_controller_command",
+            {"command": "push_ai_art_preview_result", "payload": json.dumps(payload)},
+            {},
+        )
+
+        assert app._ai_art_preview is not None
+        assert app._ai_art_preview["subject"] == "ocean waves"
+        assert json.loads(app._ai_art_preview["characters"]) == grid
 
 
 # ---------------------------------------------------------------------------
@@ -877,13 +1236,13 @@ class TestCommandRouting:
 class TestFindAutomationByType:
     def test_find_by_type_returns_matching_automation(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("msg_lib", automation_type="messages_from_library")
-        app._registered_automations["msg_lib"] = auto
+        payload = _make_registration_payload("msg_lib", automation_type="messages_from_library")
+        _simulate_register(app, payload)
 
         found_id, found = app._find_automation_by_type("messages_from_library")
 
         assert found_id == "msg_lib"
-        assert found is auto
+        assert found is not None
 
     def test_find_by_type_returns_none_when_not_registered(self):
         app = _setup_app_with_queue()
@@ -895,24 +1254,24 @@ class TestFindAutomationByType:
 
     def test_find_automation_by_id_first(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("my_specific_id", automation_type="messages_from_library")
-        app._registered_automations["my_specific_id"] = auto
+        payload = _make_registration_payload("my_specific_id", automation_type="messages_from_library")
+        _simulate_register(app, payload)
 
         found_id, found = app._find_automation("my_specific_id")
 
         assert found_id == "my_specific_id"
-        assert found is auto
+        assert found is not None
 
     def test_find_automation_falls_back_to_type(self):
         app = _setup_app_with_queue()
-        auto = _make_mock_automation("msg_lib_actual", automation_type="messages_from_library")
-        app._registered_automations["msg_lib_actual"] = auto
+        payload = _make_registration_payload("msg_lib_actual", automation_type="messages_from_library")
+        _simulate_register(app, payload)
 
         # Pass automation_type as candidate id — should find by type
         found_id, found = app._find_automation("messages_from_library")
 
         assert found_id == "msg_lib_actual"
-        assert found is auto
+        assert found is not None
 
     def test_find_automation_returns_none_when_nothing_matches(self):
         app = _setup_app_with_queue()
@@ -938,6 +1297,7 @@ class TestTick:
         app._read_board_state = AsyncMock()
         app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
         app.set_state = MagicMock()
+        app.fire_event = MagicMock()
         return app
 
     def test_tick_no_action_when_queue_empty(self):
@@ -1073,12 +1433,8 @@ class TestStatusPublishing:
     def test_publish_status_includes_all_automations(self):
         app = self._setup_app()
 
-        auto = _make_mock_automation(
-            "calendar_clock",
-            display_name="CalendarClock",
-            enabled=True,
-        )
-        app._registered_automations["calendar_clock"] = auto
+        payload = _make_registration_payload("calendar_clock", display_name="CalendarClock", enabled=True)
+        _simulate_register(app, payload)
 
         mock_store = MagicMock()
         mock_store.get = MagicMock(return_value={"enabled": True})
@@ -1201,9 +1557,10 @@ class TestStatusPublishing:
         now = time.time()
         next_fire = now + 600.0  # 10 minutes from now
 
-        auto = _make_mock_automation("messages_from_library", display_name="MessagesFromLibrary")
-        auto._next_fire_time = next_fire
-        app._registered_automations["messages_from_library"] = auto
+        payload = _make_registration_payload("messages_from_library", display_name="MessagesFromLibrary")
+        _simulate_register(app, payload)
+        proxy = app._registered_automations["messages_from_library"]
+        proxy._next_fire_time = next_fire
 
         app._publish_status()
         attrs = app.set_state.call_args[1]["attributes"]
@@ -1215,9 +1572,8 @@ class TestStatusPublishing:
         """Automations without a scheduled next_fire_time should not include the key."""
         app = self._setup_app()
 
-        auto = _make_mock_automation("calendar_clock", display_name="CalendarClock")
-        auto._next_fire_time = None
-        app._registered_automations["calendar_clock"] = auto
+        payload = _make_registration_payload("calendar_clock", display_name="CalendarClock")
+        _simulate_register(app, payload)
 
         app._publish_status()
         attrs = app.set_state.call_args[1]["attributes"]
@@ -1229,21 +1585,22 @@ class TestStatusPublishing:
         app = self._setup_app()
 
         preview = [[1] * 22 for _ in range(6)]  # non-blank preview
-        auto = _make_mock_automation("art_from_library", display_name="ArtFromLibrary")
-        auto.get_preview_frame = MagicMock(return_value=preview)
-        app._registered_automations["art_from_library"] = auto
+        payload = _make_registration_payload("art_from_library", display_name="ArtFromLibrary")
+        payload["preview_frame"] = json.dumps(preview)
+        _simulate_register(app, payload)
 
         app._publish_status()
         attrs = app.set_state.call_args[1]["attributes"]
         entry = attrs["all_automations"][0]
         assert "preview_frame" in entry
         assert json.loads(entry["preview_frame"]) == preview
-        auto.get_preview_frame.assert_called_once()
 
     def test_publish_status_preview_frame_error_does_not_crash(self):
         """If get_preview_frame() raises, status publishing continues without preview."""
         app = self._setup_app()
 
+        # Use a mock automation with a broken get_preview_frame to verify
+        # the controller doesn't crash even if the proxy raises
         auto = _make_mock_automation("broken_auto", display_name="BrokenAuto")
         auto.get_preview_frame = MagicMock(side_effect=RuntimeError("oops"))
         app._registered_automations["broken_auto"] = auto
@@ -1482,9 +1839,9 @@ class TestJSONSerializedFrameData:
         app = self._setup_app()
 
         preview = [[0] * 22 for _ in range(6)]
-        auto = _make_mock_automation("test_auto", display_name="TestAuto")
-        auto.get_preview_frame = MagicMock(return_value=preview)
-        app._registered_automations["test_auto"] = auto
+        payload = _make_registration_payload("test_auto", display_name="TestAuto")
+        payload["preview_frame"] = json.dumps(preview)
+        _simulate_register(app, payload)
 
         app._publish_status()
         attrs = app.set_state.call_args[1]["attributes"]
@@ -1590,6 +1947,7 @@ class TestSleepWindow:
         app._read_board_state = AsyncMock()
         app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
         app.set_state = MagicMock()
+        app.fire_event = MagicMock()
 
         app._was_sleeping = False  # start awake
 
@@ -1608,6 +1966,7 @@ class TestSleepWindow:
         app._read_board_state = AsyncMock()
         app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
         app.set_state = MagicMock()
+        app.fire_event = MagicMock()
 
         app._was_sleeping = True  # start sleeping
 

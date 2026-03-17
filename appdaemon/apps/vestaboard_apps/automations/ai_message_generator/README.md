@@ -4,30 +4,34 @@ Vestaboard automation that uses an LLM to generate witty, personality-driven bor
 
 ## How it works
 
-1. On `initialize()`, registers with the controller via `VestaboardAutomation.register_with_controller()`.
-2. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
-3. When the timer fires, calls `generate_frame()`:
+1. On `initialize()`, registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
+2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
+3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
+4. When the timer fires, calls `generate_frame()`:
    - Calls `build_simple_text_provider()` from the AI provider registry using `ai_provider_conf.simple_text`.
    - Sends a structured prompt with an AI personality: a clever AI consciousness "trapped inside a flip messageboard." Themes rotate through home status, motivation, smart home humor, weather vibe, family chaos, tech humor, and secret AI thoughts.
    - The prompt instructs the LLM to return a JSON `{"message": "..."}` where the message is a 6-line × 22-character string with a colored tile border on rows 1 and 6.
    - If the returned message is already a properly formatted 6×22 pre-formatted grid, it is decoded directly (supports emoji color tile characters).
    - Otherwise, the raw message text is rendered through `text_to_grid` with a randomly colored border applied.
-4. If the AI call fails, falls back to a random message from the built-in fallback list, rendered with a random border color.
-5. The frame is pushed to the controller with the configured TTL and `should_expire` value, then the next random interval is scheduled.
-6. The automation can also be triggered on-demand via the controller's `generate_ai_message` command (forwarded by `vestaboard_configuration`).
+5. If the AI call fails, falls back to a random message from the built-in fallback list, rendered with a random border color.
+6. The frame is pushed to the controller by firing a `vestaboard_controller_command` event with `command="push_automation_frame"`, then the next random interval is scheduled.
+7. On-demand generation via the controller's `generate_ai_message` command fires a `vb_auto_generate (with automation_id in data)` event back to this app.
 
 ## Architecture
 
 ```
 AiMessageGeneratorApp
-  → VestaboardAutomation.register_with_controller()
-  → run_in(random delay) → generate_frame() → push_frame()
-  → VestaboardControllerApp.push_automation_frame()
+  → fire_event("vestaboard_controller_command", command="register_automation")
+  → run_in(random delay) → generate_frame()
+  → fire_event("vestaboard_controller_command", command="update_next_fire_time")
+  → fire_event("vestaboard_controller_command", command="push_automation_frame")
+  → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
 
 On-demand:
   vestaboard_controller_command: generate_ai_message
   → VestaboardControllerApp._handle_generate_by_type()
-  → AiMessageGeneratorApp.generate_frame()
+  → fires vb_auto_generate (with automation_id in data)
+  → AiMessageGeneratorApp._on_generate_event() → generate_frame() → push_frame()
 ```
 
 ## Dependencies
@@ -48,9 +52,7 @@ None. The controller provisions all shared entities.
 |-----|----------|---------|-------------|
 | `module` | Yes | — | `vestaboard_apps.automations.ai_message_generator.ai_message_generator_app` |
 | `class` | Yes | — | `AiMessageGeneratorApp` |
-| `dependencies` | Yes | — | Must include `vestaboard_controller` |
 | `ai_provider_conf` | No | — | AI provider capability bundle config. Must include a `simple_text` bundle name. If omitted, the app always uses the fallback message list |
-| `controller_app` | No | `vestaboard_controller` | AppDaemon app key of the controller instance |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 
@@ -69,8 +71,6 @@ message_generated_by_ai:
   module: vestaboard_apps.automations.ai_message_generator.ai_message_generator_app
   class: AiMessageGeneratorApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   ai_provider_conf:
     simple_text: openai-default
 ```
@@ -83,5 +83,5 @@ message_generated_by_ai:
 
 ## Upstream/downstream dependencies
 
-- **Upstream**: `vestaboard_controller` — must be running and registered before this app starts.
+- **Upstream**: `vestaboard_controller` — must be running and listening for events before this app starts. Registration happens via HA events; no AppDaemon `dependencies:` entry is needed. The app also listens for `vestaboard_controller_ready` and re-registers automatically if the controller restarts.
 - **Downstream**: None.

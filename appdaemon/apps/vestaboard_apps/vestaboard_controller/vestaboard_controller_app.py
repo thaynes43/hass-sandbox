@@ -1,7 +1,7 @@
 """Vestaboard Controller App — drives the board and manages the frame queue.
 
-Automation apps register dynamically via register_automation() / deregister_automation().
-The controller no longer owns automation lifecycle — each automation is its own AppDaemon app.
+Automation apps register via HA events (register_automation command).
+No direct get_app() references between controller and automations.
 """
 
 from __future__ import annotations
@@ -25,13 +25,70 @@ from providers.vestaboard.vestaboard_client import VestaboardClient
 from vestaboard_apps._shared.frame_queue import BoardFrame, FrameQueue
 
 
+class RemoteAutomationProxy:
+    """Stores metadata from event-based automation registration.
+
+    Created when the controller receives a ``register_automation`` event from
+    an automation app.  Provides the same interface that the controller uses
+    when communicating back to automation apps (config, preview, etc.) without
+    requiring a direct Python object reference.
+    """
+
+    def __init__(self, data: dict) -> None:
+        self.name = data["automation_id"]
+        self.automation_type = data.get("automation_type", "")
+        self.display_name = data.get("display_name", "Automation")
+        self.display_description = data.get("display_description", "")
+        self.default_ttl_s = data.get("default_ttl_s")
+        self.default_max_age_s = data.get("default_max_age_s")
+        self.default_should_expire = data.get("default_should_expire", False)
+        self.DEFAULT_UI_CONFIG = data.get("DEFAULT_UI_CONFIG", {})
+        self._config_schema = data.get("config_schema", {})
+
+        # preview_frame arrives as a JSON string to avoid HA zero-stripping
+        raw_preview = data.get("preview_frame", "")
+        if isinstance(raw_preview, str) and raw_preview:
+            try:
+                self._preview_frame = json.loads(raw_preview)
+            except Exception:
+                self._preview_frame = [[0] * 22 for _ in range(6)]
+        elif isinstance(raw_preview, list):
+            self._preview_frame = raw_preview
+        else:
+            self._preview_frame = [[0] * 22 for _ in range(6)]
+
+        self._effective_config: dict[str, Any] = dict(self.DEFAULT_UI_CONFIG)
+        self._next_fire_time: Optional[float] = None
+
+    def get_config_schema(self) -> dict:
+        return self._config_schema
+
+    def get_preview_frame(self) -> list[list[int]]:
+        return self._preview_frame
+
+    def get_effective_config(self) -> dict[str, Any]:
+        return dict(self._effective_config)
+
+    def get_resolved_ttl_s(self) -> Optional[int]:
+        ttl_min = self._effective_config.get("ttl_minutes")
+        if ttl_min is not None:
+            return int(float(ttl_min) * 60)
+        return self.default_ttl_s
+
+    def get_resolved_should_expire(self) -> bool:
+        return bool(self._effective_config.get("should_expire", self.default_should_expire))
+
+    def update_config(self, config: dict) -> None:
+        self._effective_config.update(config)
+
+
 class VestaboardControllerApp(hass.Hass):
     """AppDaemon app that drives the Vestaboard.
 
     Manages:
     - VestaboardClient for writing frames to the physical board.
     - FrameQueue for LIFO TTL/expiration/fallback semantics.
-    - Dynamic automation registration via register_automation/deregister_automation.
+    - Event-based automation registration via ``register_automation`` command.
     - Command event listener for card/automation-driven requests.
     - Periodic tick to advance queue state.
     """
@@ -78,7 +135,7 @@ class VestaboardControllerApp(hass.Hass):
         # Build FrameQueue
         self._queue = FrameQueue(log_fn=self.log)
 
-        # Registered automation instances: automation_id -> automation app ref
+        # Registered automation proxies: automation_id -> RemoteAutomationProxy
         self._registered_automations: dict[str, Any] = {}
 
         # Last known board state for status publishing
@@ -97,8 +154,8 @@ class VestaboardControllerApp(hass.Hass):
         self._sleep_end: str = str(sleep_cfg.get("end", "07:00:00"))
         self._was_sleeping: bool = False
 
-        # Load config store synchronously so it's available when automations
-        # register during their initialize() (which runs before _async_startup)
+        # Load config store synchronously so defaults are available when
+        # automations register via events shortly after startup
         self._init_config_store()
 
         self.log(
@@ -116,7 +173,7 @@ class VestaboardControllerApp(hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
-        """Provision HA entities, register listeners."""
+        """Provision HA entities, register listeners, fire ready event."""
         await self._provision_entities()
 
         # Register command event listener
@@ -128,14 +185,14 @@ class VestaboardControllerApp(hass.Hass):
         await self.run_every(self._tick_wrapper, dt.now(), self._tick_interval_s)
         self.log(f"Tick timer registered every {self._tick_interval_s}s", level="INFO")
 
-        # Config store already loaded in initialize() (synchronous, before automations register)
-
         # Read current board state so we show something even if queue is empty
         await self._read_board_state()
 
         # Publish initial status
         self._publish_status()
 
+        # Announce readiness so automations can re-register if needed
+        self.fire_event("vestaboard_controller_ready")
         self.log("VestaboardControllerApp startup complete", level="INFO")
 
     # ------------------------------------------------------------------
@@ -195,50 +252,149 @@ class VestaboardControllerApp(hass.Hass):
             self.log(f"Failed to provision relay script: {exc!r}", level="ERROR")
 
     # ------------------------------------------------------------------
-    # Dynamic automation registration API
+    # Event-based automation registration
     # ------------------------------------------------------------------
 
-    def register_automation(self, automation: Any) -> None:
-        """Register an automation app with this controller.
+    def _handle_register_automation_event(self, payload: dict) -> None:
+        """Handle a ``register_automation`` command from an automation app.
 
-        Called by automation apps from their initialize() via the mixin's
-        register_with_controller().
+        Creates (or replaces) a ``RemoteAutomationProxy`` for the automation,
+        seeds config defaults, and fires the persisted config back.
         """
-        auto_id = automation.name  # AppDaemon app key
+        auto_id = str(payload.get("automation_id", "")).strip()
+        if not auto_id:
+            self.log("register_automation: missing automation_id in payload", level="WARNING")
+            return
 
-        self._registered_automations[auto_id] = automation
+        proxy = RemoteAutomationProxy(payload)
+        self._registered_automations[auto_id] = proxy
+
         self.log(
             f"Automation registered: {auto_id!r} "
-            f"(type={getattr(automation, 'automation_type', '?')})",
+            f"(type={proxy.automation_type!r})",
             level="INFO",
         )
 
         # Seed config store defaults
         if self._config_store:
-            defaults = getattr(automation, "DEFAULT_UI_CONFIG", {})
+            defaults = proxy.DEFAULT_UI_CONFIG
             if defaults and self._config_store.seed(auto_id, defaults):
                 self._config_store.save()
                 self.log(f"Seeded config defaults for {auto_id!r}", level="INFO")
 
-        # Push persisted config back to automation
+        # Fire persisted config back to the automation
         if self._config_store:
             stored = self._config_store.get(auto_id)
             if stored:
-                automation.on_config_updated(stored)
+                proxy.update_config(stored)
+                self.fire_event(
+                    "vb_auto_config",
+                    automation_id=auto_id,
+                    config=stored,
+                )
+                self.log(f"Config pushed back to automation {auto_id!r}", level="INFO")
 
         self._publish_status()
 
-    def deregister_automation(self, auto_id: str) -> None:
-        """Deregister an automation from this controller.
-
-        Called by automation apps from their terminate() via the mixin's
-        deregister_from_controller().
-        """
+    def _handle_deregister_automation_event(self, payload: dict) -> None:
+        """Handle a ``deregister_automation`` command from an automation app."""
+        auto_id = str(payload.get("automation_id", "")).strip()
         removed = self._registered_automations.pop(auto_id, None)
         if removed is not None:
             self._queue.remove_source(auto_id)
             self.log(f"Automation deregistered: {auto_id!r}", level="INFO")
+        else:
+            self.log(
+                f"deregister_automation: {auto_id!r} was not registered",
+                level="DEBUG",
+            )
         self._publish_status()
+
+    def _handle_push_automation_frame_event(self, payload: dict) -> None:
+        """Handle a ``push_automation_frame`` command from an automation app."""
+        auto_id = str(payload.get("automation_id", "")).strip()
+        source_label = str(payload.get("source_label", auto_id))
+
+        raw_chars = payload.get("characters")
+        if raw_chars is None:
+            self.log(
+                f"push_automation_frame: missing 'characters' from {auto_id!r}",
+                level="WARNING",
+            )
+            return
+
+        # characters arrives as a JSON string to prevent HA zero-stripping
+        if isinstance(raw_chars, str):
+            try:
+                grid = json.loads(raw_chars)
+            except Exception as exc:
+                self.log(
+                    f"push_automation_frame: failed to parse characters JSON: {exc!r}",
+                    level="WARNING",
+                )
+                return
+        else:
+            grid = raw_chars
+
+        ttl_s = payload.get("ttl_s")
+        max_age_s = payload.get("max_age_s")
+        override_ttl = bool(payload.get("override_ttl", False))
+        should_expire = bool(payload.get("should_expire", False))
+
+        if ttl_s is not None:
+            ttl_s = int(ttl_s)
+        if max_age_s is not None:
+            max_age_s = int(max_age_s)
+
+        # Update next_fire_time on the proxy if provided
+        next_fire_time = payload.get("next_fire_time")
+        proxy = self._registered_automations.get(auto_id)
+        if proxy is not None and next_fire_time is not None:
+            proxy._next_fire_time = float(next_fire_time)
+
+        self.push_automation_frame(
+            automation_id=auto_id,
+            source_label=source_label,
+            grid=grid,
+            ttl_s=ttl_s,
+            max_age_s=max_age_s,
+            override_ttl=override_ttl,
+            should_expire=should_expire,
+        )
+
+    def _handle_push_ai_art_preview_result(self, payload: dict) -> None:
+        """Handle the result of an AI art preview generate request."""
+        raw_chars = payload.get("characters")
+        subject = str(payload.get("subject", "abstract art"))
+
+        if raw_chars is None:
+            self.log("push_ai_art_preview_result: missing 'characters'", level="WARNING")
+            return
+
+        # Store as JSON string (already serialized by the automation)
+        if not isinstance(raw_chars, str):
+            raw_chars = json.dumps(raw_chars)
+
+        self._ai_art_preview = {
+            "characters": raw_chars,
+            "subject": subject,
+            "generated_at": time.time(),
+        }
+        self._publish_status()
+        self.log(f"AI art preview ready for subject={subject!r}", level="INFO")
+
+    def _handle_update_next_fire_time(self, payload: dict) -> None:
+        """Update a proxy's next_fire_time so the card shows upcoming automations."""
+        auto_id = str(payload.get("automation_id", ""))
+        next_fire = payload.get("next_fire_time")
+        proxy = self._registered_automations.get(auto_id)
+        if proxy is not None and next_fire is not None:
+            proxy._next_fire_time = float(next_fire)
+            self._publish_status()
+
+    # ------------------------------------------------------------------
+    # push_automation_frame — public API (called internally)
+    # ------------------------------------------------------------------
 
     def push_automation_frame(
         self,
@@ -250,10 +406,7 @@ class VestaboardControllerApp(hass.Hass):
         override_ttl: bool = False,
         should_expire: bool = False,
     ) -> None:
-        """Push a frame generated by an automation to the queue.
-
-        Public API called by automation apps via the mixin's push_frame().
-        """
+        """Push a frame generated by an automation to the queue."""
         if self._is_blank_frame(grid):
             self.log(
                 f"Automation {automation_id!r} produced blank frame — skipping push",
@@ -294,8 +447,6 @@ class VestaboardControllerApp(hass.Hass):
         command = str(data.get("command", "")).strip()
         raw_payload = data.get("payload", "{}")
 
-        self.log(f"Command received: {command!r}", level="INFO")
-
         try:
             if isinstance(raw_payload, dict):
                 payload = raw_payload
@@ -305,8 +456,28 @@ class VestaboardControllerApp(hass.Hass):
             self.log(f"Failed to parse payload: {exc!r} raw={raw_payload!r}", level="WARNING")
             payload = {}
 
+        # Log command with sender and payload summary
+        sender = payload.get("automation_id") or payload.get("source") or "unknown"
+        # Build compact payload summary (skip large fields like characters/preview_frame)
+        summary_keys = {k: v for k, v in payload.items()
+                        if k not in ("characters", "preview_frame", "DEFAULT_UI_CONFIG", "config_schema")}
+        self.log(
+            f"Command received: {command!r} from={sender!r} payload={summary_keys}",
+            level="INFO",
+        )
+
         if command == "push_frame":
             self._handle_push_frame(payload)
+        elif command == "register_automation":
+            self._handle_register_automation_event(payload)
+        elif command == "deregister_automation":
+            self._handle_deregister_automation_event(payload)
+        elif command == "push_automation_frame":
+            self._handle_push_automation_frame_event(payload)
+        elif command == "push_ai_art_preview_result":
+            self._handle_push_ai_art_preview_result(payload)
+        elif command == "update_next_fire_time":
+            self._handle_update_next_fire_time(payload)
         elif command == "activate_automation":
             automation_id = str(payload.get("automation_id", ""))
             self._handle_activate_automation(automation_id)
@@ -339,7 +510,7 @@ class VestaboardControllerApp(hass.Hass):
         elif command == "clear_ai_art_preview":
             self._ai_art_preview = None
             self._publish_status()
-            self.log("AI art preview cleared")
+            self.log("AI art preview cleared", level="INFO")
         elif command == "generate_ai_message":
             self.create_task(self._handle_generate_by_type(
                 payload, "message_generated_by_ai", "generate_ai_message"
@@ -429,10 +600,18 @@ class VestaboardControllerApp(hass.Hass):
                 level="INFO",
             )
 
-        # Push config to automation
-        automation.on_config_updated(new_config)
+        # Update proxy's effective config
+        if isinstance(automation, RemoteAutomationProxy):
+            automation.update_config(new_config)
+
+        # Fire config event to automation app
+        self.fire_event(
+            "vb_auto_config",
+            automation_id=automation_id,
+            config=new_config,
+        )
         self.log(
-            f"Config pushed to automation {automation_id!r}",
+            f"Config event fired to automation {automation_id!r}",
             level="INFO",
         )
         self._publish_status()
@@ -449,7 +628,12 @@ class VestaboardControllerApp(hass.Hass):
         if self._config_store is not None:
             self._config_store.update(automation_id, {"enabled": True})
             self.log(f"Persisted enabled=True for {automation_id!r}", level="INFO")
-        automation.set_enabled(True)
+        # Fire enabled event to automation app
+        self.fire_event(
+            "vb_auto_enabled",
+            automation_id=automation_id,
+            enabled=True,
+        )
         self.log(f"Automation {automation_id!r} activated", level="INFO")
         self._publish_status()
 
@@ -465,7 +649,12 @@ class VestaboardControllerApp(hass.Hass):
         if self._config_store is not None:
             self._config_store.update(automation_id, {"enabled": False})
             self.log(f"Persisted enabled=False for {automation_id!r}", level="INFO")
-        automation.set_enabled(False)
+        # Fire enabled event to automation app
+        self.fire_event(
+            "vb_auto_enabled",
+            automation_id=automation_id,
+            enabled=False,
+        )
 
         # Purge frames from this automation
         action = self._queue.remove_source(automation_id)
@@ -483,7 +672,7 @@ class VestaboardControllerApp(hass.Hass):
         self._publish_status()
 
     # ------------------------------------------------------------------
-    # Generate commands — find automation by type
+    # Generate commands — find automation by type, fire generate event
     # ------------------------------------------------------------------
 
     def _find_automation_by_type(self, automation_type: str) -> tuple[Optional[str], Optional[Any]]:
@@ -509,7 +698,7 @@ class VestaboardControllerApp(hass.Hass):
     async def _handle_generate_by_type(
         self, payload: dict, automation_type: str, command_name: str
     ) -> None:
-        """Generate and push a frame from an automation found by type."""
+        """Fire a generate event to an automation found by type."""
         auto_id, automation = self._find_automation(automation_type)
         if automation is None:
             self.log(
@@ -517,25 +706,20 @@ class VestaboardControllerApp(hass.Hass):
                 level="WARNING",
             )
             return
-        try:
-            grid = await automation.generate_frame()
-            override_ttl = bool(payload.get("override_ttl", True))
-            ttl_s = automation.get_resolved_ttl_s() if hasattr(automation, 'get_resolved_ttl_s') else automation.default_ttl_s
-            should_expire = automation.get_resolved_should_expire() if hasattr(automation, 'get_resolved_should_expire') else automation.default_should_expire
-            self.push_automation_frame(
-                automation_id=auto_id,
-                source_label=automation.display_name,
-                grid=grid,
-                ttl_s=ttl_s,
-                max_age_s=None,
-                override_ttl=override_ttl,
-                should_expire=should_expire,
-            )
-        except Exception as exc:
-            self.log(f"{command_name} failed: {exc!r}", level="ERROR")
+        override_ttl = bool(payload.get("override_ttl", True))
+        self.fire_event(
+            "vb_auto_generate",
+            automation_id=auto_id,
+            generate_kwargs={"override_ttl": override_ttl},
+            preview_only=False,
+        )
+        self.log(
+            f"{command_name}: generate event fired to {auto_id!r}",
+            level="INFO",
+        )
 
     async def _handle_generate_ai_art(self, payload: dict) -> None:
-        """Generate and push AI pixel art."""
+        """Fire a generate event to the AI art automation."""
         auto_id, automation = self._find_automation("art_generated_by_ai", "ai_art_generator")
         if automation is None:
             self.log(
@@ -545,24 +729,19 @@ class VestaboardControllerApp(hass.Hass):
             return
         subject = str(payload.get("subject", "abstract art"))
         override_ttl = bool(payload.get("override_ttl", True))
-        try:
-            grid = await automation.generate_frame(subject=subject)
-            ttl_s = automation.get_resolved_ttl_s() if hasattr(automation, 'get_resolved_ttl_s') else automation.default_ttl_s
-            should_expire = automation.get_resolved_should_expire() if hasattr(automation, 'get_resolved_should_expire') else automation.default_should_expire
-            self.push_automation_frame(
-                automation_id=auto_id,
-                source_label=automation.display_name,
-                grid=grid,
-                ttl_s=ttl_s,
-                max_age_s=None,
-                override_ttl=override_ttl,
-                should_expire=should_expire,
-            )
-        except Exception as exc:
-            self.log(f"generate_ai_art failed: {exc!r}", level="ERROR")
+        self.fire_event(
+            "vb_auto_generate",
+            automation_id=auto_id,
+            generate_kwargs={"subject": subject, "override_ttl": override_ttl},
+            preview_only=False,
+        )
+        self.log(
+            f"generate_ai_art: generate event fired to {auto_id!r} subject={subject!r}",
+            level="INFO",
+        )
 
     async def _handle_generate_ai_art_preview(self, payload: dict) -> None:
-        """Generate AI pixel art and store as preview — does NOT push to board."""
+        """Fire a preview generate event to the AI art automation."""
         auto_id, automation = self._find_automation("art_generated_by_ai", "ai_art_generator")
         if automation is None:
             self.log(
@@ -571,17 +750,16 @@ class VestaboardControllerApp(hass.Hass):
             )
             return
         subject = str(payload.get("subject", "abstract art"))
-        try:
-            grid = await automation.generate_frame(subject=subject)
-            self._ai_art_preview = {
-                "characters": json.dumps(grid),
-                "subject": subject,
-                "generated_at": time.time(),
-            }
-            self._publish_status()
-            self.log(f"AI art preview ready for subject={subject!r}")
-        except Exception as exc:
-            self.log(f"generate_ai_art_preview failed: {exc!r}", level="ERROR")
+        self.fire_event(
+            "vb_auto_generate",
+            automation_id=auto_id,
+            generate_kwargs={"subject": subject},
+            preview_only=True,
+        )
+        self.log(
+            f"generate_ai_art_preview: generate event fired to {auto_id!r} subject={subject!r}",
+            level="INFO",
+        )
 
     # ------------------------------------------------------------------
     # Tick
@@ -638,10 +816,8 @@ class VestaboardControllerApp(hass.Hass):
         """Thread-safe board write scheduling.
 
         Uses run_in(0) to ensure _write_to_board runs on the controller's
-        own AppDaemon thread, not the calling automation's thread. This is
-        necessary because push_automation_frame() is called cross-app.
+        own AppDaemon thread, not the calling automation's thread.
         """
-        # Capture characters in closure for the run_in callback
         self.run_in(self._board_write_callback, 0, characters=characters)
 
     def _board_write_callback(self, kwargs: dict) -> None:
@@ -692,7 +868,11 @@ class VestaboardControllerApp(hass.Hass):
                 ok = await client.write_frame(characters)
             self._last_write_ok = ok
             if ok:
-                self.log("Board write successful", level="DEBUG")
+                from providers.vestaboard.character_encoding import decode_grid
+                self.log(
+                    f"Board write successful:\n{decode_grid(characters)}",
+                    level="INFO",
+                )
             else:
                 self.log("Board write returned non-2xx response", level="WARNING")
         except Exception as exc:

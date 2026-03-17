@@ -38,9 +38,20 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - metadata template: `_Detection: {{ states('input_text.{bk}_detection_summary_timing') }}_\n\n_Cooldown: ...cooldown..._\n\n_Selection updated: {{ states.input_text.{bk}_detection_summary_selected.last_updated }}_`
 
 ### Test suite
-- 624 unit tests + 6 integration-skipped tests as of dashboard_notify threading refactor
+- 1126 unit tests + 6 integration-skipped tests as of vestaboard event-based refactor
 - Run: `source .venv/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short`
 - WSL path: `wsl bash -c "cd /mnt/d/labspace/hass-sandbox && source .venv-wsl/bin/activate && cd appdaemon && python -m pytest tests/ -v --tb=short"`
+
+### Vestaboard event-based communication pattern (confirmed)
+- Automations never use `get_app()` to reach the controller — all comms via `fire_event`
+- Mixin fires `vestaboard_controller_command` with `command=register_automation` and JSON payload on startup
+- Controller creates `RemoteAutomationProxy` (stores metadata) — no live Python reference to the automation app
+- Controller fires per-automation events back: `vestaboard_automation_config_{id}`, `vestaboard_automation_enabled_{id}`, `vestaboard_automation_generate_{id}`
+- Grid data (characters, preview_frame) MUST be JSON-stringified in event payloads to avoid HA zero-stripping
+- `_handle_generate_by_type/ai_art/ai_art_preview` fire generate events; result returns async via `push_automation_frame` or `push_ai_art_preview_result` command
+- `apps-dev.yaml` and `apps-prod.yaml`: NO `dependencies:` or `controller_app:` on automation entries
+- `RemoteAutomationProxy` lives in vestaboard_controller_app.py (before the main class)
+- Controller fires `vestaboard_controller_ready` at end of `_async_startup()` so automations can re-register after restart
 
 ### dashboard_notify threading model (confirmed pattern)
 - Two-phase generation: `_request_*_generation()` on AD thread → `_generate_*_background()` on worker thread → `_complete_*_generation()` back on AD thread via `self.run_in(callback, 0, result=result)`

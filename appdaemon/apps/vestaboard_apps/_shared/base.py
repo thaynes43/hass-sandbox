@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import time
 import uuid
@@ -27,6 +28,10 @@ class VestaboardAutomation:
 
     Subclasses must call ``register_with_controller()`` from ``initialize()``
     and ``deregister_from_controller()`` from ``terminate()``.
+
+    Communication with the controller is entirely event-based — no direct
+    ``get_app()`` references.  The mixin fires ``vestaboard_controller_command``
+    events and listens for per-automation events fired back by the controller.
     """
 
     # ------------------------------------------------------------------
@@ -58,80 +63,199 @@ class VestaboardAutomation:
     # Registration with controller
     # ------------------------------------------------------------------
 
-    _controller: Any = None
-    _registration_retries: int = 0
-    _max_registration_retries: int = 10
+    # Listener handles for controller events
+    _event_handles: list = []
 
     def register_with_controller(self) -> None:
-        """Find the controller app via get_app() and register this automation.
+        """Register with the controller via HA event system.
 
-        Retries with exponential backoff if the controller isn't ready yet.
+        Fires a ``vestaboard_controller_command`` event with command
+        ``register_automation``.  The controller responds by firing back a
+        config event.  Also sets up listeners for config/enabled/generate
+        events scoped to this automation, and a listener for the
+        ``vestaboard_controller_ready`` event so re-registration happens
+        automatically after a controller restart.
+
         Call this from ``initialize()``.
         """
-        controller_name = self.args.get("controller_app", "vestaboard_controller")
-        controller = self.get_app(controller_name)
+        self._event_handles = []
 
-        if controller is None:
-            self._registration_retries += 1
-            if self._registration_retries > self._max_registration_retries:
-                self.log(
-                    f"Failed to find controller {controller_name!r} after "
-                    f"{self._max_registration_retries} retries — giving up",
-                    level="ERROR",
-                )
-                return
-            delay = min(2 ** self._registration_retries, 30)
-            self.log(
-                f"Controller {controller_name!r} not ready — "
-                f"retry {self._registration_retries}/{self._max_registration_retries} "
-                f"in {delay}s",
-                level="WARNING",
-            )
-            self.run_in(self._retry_registration, delay)
-            return
+        # Listen for controller→automation events (shared event names, filter by automation_id)
+        handle = self.listen_event(self._on_config_event, "vb_auto_config")
+        self._event_handles.append(handle)
 
-        self._controller = controller
-        self._registration_retries = 0
+        handle = self.listen_event(self._on_enabled_event, "vb_auto_enabled")
+        self._event_handles.append(handle)
 
-        # The automation_id is the AppDaemon app key (self.name)
-        controller.register_automation(self)
+        handle = self.listen_event(self._on_generate_event, "vb_auto_generate")
+        self._event_handles.append(handle)
+
+        # Re-register if controller restarts
+        handle = self.listen_event(
+            self._on_controller_ready,
+            "vestaboard_controller_ready",
+        )
+        self._event_handles.append(handle)
+
+        # Fire registration event to controller
+        self._fire_register_event()
+
         self.log(
-            f"Registered with controller {controller_name!r} as {self.name!r}",
+            f"Registered with controller via events as {self.name!r}",
             level="INFO",
         )
 
-        # Apply any persisted config the controller pushed back during registration
-        self._apply_initial_config()
-
-    def _retry_registration(self, kwargs: dict) -> None:
-        """Retry callback for register_with_controller."""
-        self.register_with_controller()
-
-    def _apply_initial_config(self) -> None:
-        """Apply config values that the controller may have pushed during registration.
-
-        Subclasses can override for custom config handling.
-        """
-        pass
+    def _fire_register_event(self) -> None:
+        """Fire the register_automation command to the controller."""
+        payload = {
+            "automation_id": self.name,
+            "automation_type": self.automation_type,
+            "display_name": self.display_name,
+            "display_description": self.display_description,
+            "default_ttl_s": self.default_ttl_s,
+            "default_max_age_s": self.default_max_age_s,
+            "default_should_expire": self.default_should_expire,
+            "DEFAULT_UI_CONFIG": self.DEFAULT_UI_CONFIG,
+            "config_schema": self.get_config_schema(),
+            "preview_frame": json.dumps(self.get_preview_frame()),
+        }
+        self.fire_event(
+            "vestaboard_controller_command",
+            command="register_automation",
+            payload=json.dumps(payload),
+        )
 
     def deregister_from_controller(self) -> None:
         """Deregister this automation from the controller.
 
+        Fires a ``vestaboard_controller_command`` event with command
+        ``deregister_automation`` and cancels all event listeners.
+
         Call this from ``terminate()``.
         """
-        if self._controller is not None:
+        try:
+            self.fire_event(
+                "vestaboard_controller_command",
+                command="deregister_automation",
+                payload=json.dumps({"automation_id": self.name}),
+            )
+            self.log(
+                f"Deregistered from controller as {self.name!r}",
+                level="INFO",
+            )
+        except Exception as exc:
+            self.log(
+                f"Failed to fire deregister event: {exc!r}",
+                level="WARNING",
+            )
+
+        # Cancel all controller event listeners
+        for handle in self._event_handles:
             try:
-                self._controller.deregister_automation(self.name)
-                self.log(
-                    f"Deregistered from controller as {self.name!r}",
-                    level="INFO",
+                self.cancel_listen_event(handle)
+            except Exception:
+                pass
+        self._event_handles = []
+
+    # ------------------------------------------------------------------
+    # Controller event handlers
+    # ------------------------------------------------------------------
+
+    def _on_config_event(self, event_name: str, data: dict, kwargs: dict) -> None:
+        """Handle a config update event from the controller."""
+        target = data.get("automation_id")
+        if target != self.name:
+            return
+        config = data.get("config", {})
+        if not isinstance(config, dict):
+            try:
+                config = json.loads(config)
+            except Exception:
+                config = {}
+        self.log(
+            f"Config event received: enabled={config.get('enabled')} keys={list(config.keys())}",
+            level="INFO",
+        )
+        self.on_config_updated(config)
+
+    def _on_enabled_event(self, event_name: str, data: dict, kwargs: dict) -> None:
+        """Handle an enabled/disabled event from the controller."""
+        if data.get("automation_id") != self.name:
+            return
+        enabled = bool(data.get("enabled", True))
+        self.log(
+            f"Enabled event received: enabled={enabled}",
+            level="INFO",
+        )
+        self.set_enabled(enabled)
+
+    def _on_generate_event(self, event_name: str, data: dict, kwargs: dict) -> None:
+        """Handle a generate request from the controller."""
+        if data.get("automation_id") != self.name:
+            return
+        generate_kwargs = data.get("generate_kwargs", {})
+        if not isinstance(generate_kwargs, dict):
+            try:
+                generate_kwargs = json.loads(generate_kwargs)
+            except Exception:
+                generate_kwargs = {}
+        preview_only = bool(data.get("preview_only", False))
+        self.create_task(self._handle_generate_request(generate_kwargs, preview_only))
+
+    def _on_controller_ready(self, event_name: str, data: dict, kwargs: dict) -> None:
+        """Re-register when the controller announces it has restarted."""
+        self.log(
+            f"Controller ready event — re-registering {self.name!r}",
+            level="INFO",
+        )
+        # Re-fire the registration event (listeners already set up)
+        self._fire_register_event()
+
+    # ------------------------------------------------------------------
+    # Generate request handler (called by _on_generate_event)
+    # ------------------------------------------------------------------
+
+    async def _handle_generate_request(
+        self, generate_kwargs: dict, preview_only: bool
+    ) -> None:
+        """Generate a frame and either push it or return it as a preview.
+
+        Args:
+            generate_kwargs: Keyword arguments passed to ``generate_frame()``.
+            preview_only: If True, fire a ``push_ai_art_preview_result`` event
+                instead of pushing to the queue.
+        """
+        try:
+            grid = await self.generate_frame(**generate_kwargs)
+        except Exception as exc:
+            self.log(f"generate_frame failed: {exc!r}", level="ERROR")
+            return
+
+        if preview_only:
+            subject = generate_kwargs.get("subject", "abstract art")
+            self.fire_event(
+                "vestaboard_controller_command",
+                command="push_ai_art_preview_result",
+                payload=json.dumps({
+                    "characters": json.dumps(grid),
+                    "subject": subject,
+                }),
+            )
+        else:
+            override_ttl = bool(generate_kwargs.get("override_ttl", True))
+            if grid and any(any(cell != 0 for cell in row) for row in grid):
+                self.push_frame(
+                    grid,
+                    ttl_s=self.get_resolved_ttl_s(),
+                    max_age_s=self.default_max_age_s,
+                    override_ttl=override_ttl,
+                    should_expire=self.get_resolved_should_expire(),
                 )
-            except Exception as exc:
+            else:
                 self.log(
-                    f"Failed to deregister from controller: {exc!r}",
-                    level="WARNING",
+                    "generate_frame returned blank grid — skipping push",
+                    level="DEBUG",
                 )
-            self._controller = None
 
     # ------------------------------------------------------------------
     # Frame pushing
@@ -145,7 +269,7 @@ class VestaboardAutomation:
         override_ttl: bool = False,
         should_expire: bool = False,
     ) -> None:
-        """Push a frame to the controller's queue.
+        """Push a frame to the controller's queue via event.
 
         Args:
             grid: 6x22 character grid.
@@ -154,21 +278,28 @@ class VestaboardAutomation:
             override_ttl: Immediately display, bypassing active TTL.
             should_expire: Drop frame after TTL instead of moving to fallback.
         """
-        if self._controller is None:
-            self.log(
-                "Cannot push frame — not registered with controller",
-                level="WARNING",
-            )
-            return
+        payload: dict[str, Any] = {
+            "automation_id": self.name,
+            "source_label": self.display_name,
+            "characters": json.dumps(grid),
+            "ttl_s": ttl_s,
+            "max_age_s": max_age_s,
+            "override_ttl": override_ttl,
+            "should_expire": should_expire,
+        }
+        if self._next_fire_time is not None:
+            payload["next_fire_time"] = self._next_fire_time
 
-        self._controller.push_automation_frame(
-            automation_id=self.name,
-            source_label=self.display_name,
-            grid=grid,
-            ttl_s=ttl_s,
-            max_age_s=max_age_s,
-            override_ttl=override_ttl,
-            should_expire=should_expire,
+        self.fire_event(
+            "vestaboard_controller_command",
+            command="push_automation_frame",
+            payload=json.dumps(payload),
+        )
+        self.log(
+            f"push_frame fired for {self.name!r} | "
+            f"ttl_s={ttl_s} max_age_s={max_age_s} "
+            f"override_ttl={override_ttl} should_expire={should_expire}",
+            level="INFO",
         )
 
     # ------------------------------------------------------------------
@@ -266,8 +397,25 @@ class VestaboardAutomation:
 
         self.log(
             f"Random interval scheduled: next fire in {delay_s / 60:.1f} min",
-            level="DEBUG",
+            level="INFO",
         )
+
+        # Notify controller of updated next_fire_time so card shows "Upcoming"
+        self._notify_next_fire_time()
+
+    def _notify_next_fire_time(self) -> None:
+        """Send next_fire_time to controller so the card shows upcoming automations."""
+        try:
+            self.fire_event(
+                "vestaboard_controller_command",
+                command="update_next_fire_time",
+                payload=json.dumps({
+                    "automation_id": self.name,
+                    "next_fire_time": self._next_fire_time,
+                }),
+            )
+        except Exception:
+            pass
 
     def _clear_random_interval_handle(self) -> None:
         """Clear the handle without cancelling (use when the timer already fired)."""

@@ -4,35 +4,41 @@ Vestaboard automation that uses an LLM to generate pixel art for a given subject
 
 ## How it works
 
-1. On `initialize()`, registers with the controller via `VestaboardAutomation.register_with_controller()`.
-2. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. When the timer fires, it generates art for the subject `"abstract art"`.
-3. `generate_frame(subject=...)` is the public entry point:
+1. On `initialize()`, registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
+2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
+3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. When the timer fires, it generates art for the subject `"abstract art"`.
+4. `generate_frame(subject=...)` is the public entry point:
    - Builds a structured prompt instructing the LLM to output a JSON `{"grid": [[...], ...]}` with exactly 6 rows × 22 columns using valid Vestaboard codes (0–60, 63–70).
    - Calls `build_simple_text_provider()` from the AI provider registry using `ai_provider_conf.simple_text`.
    - Parses and validates the returned grid. Invalid codes are codes outside `0–60` and `63–70`.
    - Retries once if the first attempt produces an invalid grid.
    - Returns a blank grid if both attempts fail.
-4. The frame is pushed to the controller with the configured TTL and `should_expire` value.
-5. The automation can also be triggered on-demand via the controller's `generate_ai_art` command (which passes a user-specified subject).
-6. A preview mode is available via `generate_ai_art_preview` — generates art but stores it in the controller status without pushing to the board, so the card can show it for review before saving or pushing.
+5. The frame is pushed to the controller by firing a `vestaboard_controller_command` event with `command="push_automation_frame"`.
+6. On-demand generation via the controller's `generate_ai_art` command fires a `vb_auto_generate (with automation_id in data)` event with a user-specified subject.
+7. Preview mode via the controller's `generate_ai_art_preview` command fires a `vb_auto_generate (with automation_id in data)` event with `preview_only=True`. The automation generates the art and fires back a `vestaboard_controller_command` event with `command="push_ai_art_preview_result"` — the result is stored in the controller status without being pushed to the board, so the card can show it for review before saving or pushing.
 
 ## Architecture
 
 ```
 AiArtGeneratorApp
-  → VestaboardAutomation.register_with_controller()
-  → run_in(random delay) → generate_frame(subject="abstract art") → push_frame()
-  → VestaboardControllerApp.push_automation_frame()
+  → fire_event("vestaboard_controller_command", command="register_automation")
+  → run_in(random delay) → generate_frame(subject="abstract art")
+  → fire_event("vestaboard_controller_command", command="update_next_fire_time")
+  → fire_event("vestaboard_controller_command", command="push_automation_frame")
+  → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
 
 On-demand:
   vestaboard_controller_command: generate_ai_art { subject }
   → VestaboardControllerApp._handle_generate_ai_art()
-  → AiArtGeneratorApp.generate_frame(subject=subject)
+  → fires vb_auto_generate (with automation_id in data) (preview_only=False)
+  → AiArtGeneratorApp._on_generate_event() → generate_frame(subject=subject) → push_frame()
 
 Preview mode:
   vestaboard_controller_command: generate_ai_art_preview { subject }
   → VestaboardControllerApp._handle_generate_ai_art_preview()
-  → AiArtGeneratorApp.generate_frame(subject=subject)
+  → fires vb_auto_generate (with automation_id in data) (preview_only=True)
+  → AiArtGeneratorApp._on_generate_event() → generate_frame(subject=subject)
+  → fire_event("vestaboard_controller_command", command="push_ai_art_preview_result")
   → stored in sensor.vestaboard_controller_status.ai_art_preview
 ```
 
@@ -54,9 +60,7 @@ None. The controller provisions all shared entities.
 |-----|----------|---------|-------------|
 | `module` | Yes | — | `vestaboard_apps.automations.ai_art_generator.ai_art_generator_app` |
 | `class` | Yes | — | `AiArtGeneratorApp` |
-| `dependencies` | Yes | — | Must include `vestaboard_controller` |
 | `ai_provider_conf` | Yes | — | AI provider capability bundle config. Must include a `simple_text` bundle name |
-| `controller_app` | No | `vestaboard_controller` | AppDaemon app key of the controller instance |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 
@@ -75,8 +79,6 @@ art_generated_by_ai:
   module: vestaboard_apps.automations.ai_art_generator.ai_art_generator_app
   class: AiArtGeneratorApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   ai_provider_conf:
     simple_text: openai-pixel-art
 ```
@@ -107,5 +109,5 @@ Codes `61–62` are not valid and will cause validation failure.
 
 ## Upstream/downstream dependencies
 
-- **Upstream**: `vestaboard_controller` — must be running and registered before this app starts.
+- **Upstream**: `vestaboard_controller` — must be running and listening for events before this app starts. Registration happens via HA events; no AppDaemon `dependencies:` entry is needed. The app also listens for `vestaboard_controller_ready` and re-registers automatically if the controller restarts.
 - **Downstream**: None.

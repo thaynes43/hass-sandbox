@@ -37,73 +37,46 @@ vestaboard_configuration_dev:
 calendar_clock_dev:
   module: vestaboard_apps.automations.calendar_clock.calendar_clock_app
   class: CalendarClockApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
 
 messages_from_library_dev:
   module: vestaboard_apps.automations.messages_from_library.messages_from_library_app
   class: MessagesFromLibraryApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   frame_library_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/frame-library.json
 
 art_from_library_dev:
   module: vestaboard_apps.automations.art_from_library.art_from_library_app
   class: ArtFromLibraryApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
 
 art_generated_by_ai_dev:
   module: vestaboard_apps.automations.ai_art_generator.ai_art_generator_app
   class: AiArtGeneratorApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   ai_provider_conf:
     simple_text: openai-pixel-art
 
 message_generated_by_ai_dev:
   module: vestaboard_apps.automations.ai_message_generator.ai_message_generator_app
   class: AiMessageGeneratorApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   ai_provider_conf:
     simple_text: openai-default
 
 calendar_summary_family_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   calendar_entity: calendar.hayneshome01886_gmail_com
 
 calendar_summary_hot_tub_maintenance_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   calendar_entity: calendar.hot_tub_maintenance
 
 calendar_summary_holidays_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   calendar_entity: calendar.holidays_for_united_states_ma
 
 weather_schedule_dev:
   module: vestaboard_apps.automations.weather_schedule.weather_schedule_app
   class: WeatherScheduleApp
-  dependencies:
-    - vestaboard_controller_dev
-  controller_app: vestaboard_controller_dev
   weather_entity: weather.first_floor_ecobee
   time_list:
     - "07:30:00"

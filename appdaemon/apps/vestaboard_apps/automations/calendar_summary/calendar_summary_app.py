@@ -119,8 +119,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self.display_name = f"Calendar: {friendly}"
 
         self.register_with_controller()
-        if self.args.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", False)):
-            self._start_listeners()
+        # Do NOT start listeners here — wait for config event from controller
 
     def terminate(self) -> None:
         self._stop_listeners()
@@ -161,6 +160,13 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
+        if "enabled" in config:
+            enabled_val = config["enabled"]
+            self.log(f"on_config_updated: enabled={enabled_val!r} type={type(enabled_val).__name__}", level="INFO")
+            if enabled_val:
+                self._start_listeners()
+            else:
+                self._stop_listeners()
 
     def _on_calendar_state_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: dict) -> None:
         self.log(f"Calendar state change on {entity}: {old!r} -> {new!r}", level="DEBUG")

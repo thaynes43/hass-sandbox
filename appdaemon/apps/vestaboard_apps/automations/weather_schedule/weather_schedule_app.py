@@ -136,8 +136,7 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
     def initialize(self) -> None:
         self._daily_handles = []
         self.register_with_controller()
-        if self.args.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", True)):
-            self._register_daily_timers()
+        # Do NOT start timers here — wait for config event from controller
 
     def terminate(self) -> None:
         self._cancel_daily_timers()
@@ -151,13 +150,19 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
+        if "enabled" in config:
+            if config["enabled"]:
+                self._register_daily_timers()
+            else:
+                self._cancel_daily_timers()
         if "time_list" in config:
             self.log(
                 f"time_list updated: {config['time_list']} — rescheduling daily timers",
                 level="INFO",
             )
-            self._cancel_daily_timers()
-            self._register_daily_timers()
+            if self.args.get("enabled", False):
+                self._cancel_daily_timers()
+                self._register_daily_timers()
 
     def _register_daily_timers(self) -> None:
         """Register run_daily timers for each time in time_list."""

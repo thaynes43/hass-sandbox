@@ -85,8 +85,6 @@ vestaboard_configuration:
   module: vestaboard_apps.vestaboard_configuration.vestaboard_configuration_app
   class: VestaboardConfigurationApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   ha_url_env: HA_URL
   ha_token_env: TOKEN
   frame_library_path: /media/vestaboard/frame-library.json
@@ -106,5 +104,5 @@ vestaboard_configuration:
 
 ## Upstream/downstream dependencies
 
-- **Upstream**: `vestaboard_controller` — this app reads from and forwards commands to the controller. Declare `dependencies: [vestaboard_controller]`.
+- **Upstream**: `vestaboard_controller` — this app reads `sensor.vestaboard_controller_status` and forwards push/automation commands to the controller via `fire_event("vestaboard_controller_command")`. No AppDaemon `dependencies:` entry is needed; communication is purely event-based.
 - **Downstream**: None — this app is the leaf node for the user-facing configuration UI.

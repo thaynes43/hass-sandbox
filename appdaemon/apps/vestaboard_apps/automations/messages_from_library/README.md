@@ -4,28 +4,32 @@ Vestaboard automation that randomly selects a saved message from the frame libra
 
 ## How it works
 
-1. On `initialize()`, reads `frame_library_path` from YAML args and registers with the controller.
-2. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
-3. When the timer fires, calls `generate_frame()`:
+1. On `initialize()`, reads `frame_library_path` from YAML args and registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
+2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
+3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
+4. When the timer fires, calls `generate_frame()`:
    - Loads the `FrameLibrary` from disk (lazy — loaded once on first use).
    - Filters for frames with `category="message"` and `rating >= min_stars`.
    - Picks one at random and returns its stored `characters` grid.
    - If no qualifying library frames exist, picks from the built-in fallback message list and renders it with a randomly colored border.
-4. The frame is pushed to the controller with the configured TTL and `should_expire` value, then the next random interval is scheduled.
-5. The automation can also be triggered on-demand via the controller's `generate_random_message` command.
+5. The frame is pushed to the controller by firing a `vestaboard_controller_command` event with `command="push_automation_frame"`, then the next random interval is scheduled.
+6. The automation can also be triggered on-demand via the controller's `generate_random_message` command, which fires a `vb_auto_generate (with automation_id in data)` event back to this app.
 
 ## Architecture
 
 ```
 MessagesFromLibraryApp
-  → VestaboardAutomation.register_with_controller()
-  → run_in(random delay) → generate_frame() → push_frame()
-  → VestaboardControllerApp.push_automation_frame()
+  → fire_event("vestaboard_controller_command", command="register_automation")
+  → run_in(random delay) → generate_frame()
+  → fire_event("vestaboard_controller_command", command="update_next_fire_time")
+  → fire_event("vestaboard_controller_command", command="push_automation_frame")
+  → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
 
 On-demand:
   vestaboard_controller_command: generate_random_message
   → VestaboardControllerApp._handle_generate_by_type()
-  → MessagesFromLibraryApp.generate_frame()
+  → fires vb_auto_generate (with automation_id in data)
+  → MessagesFromLibraryApp._on_generate_event() → generate_frame() → push_frame()
 ```
 
 ## Dependencies
@@ -46,9 +50,7 @@ None. The controller provisions all shared entities.
 |-----|----------|---------|-------------|
 | `module` | Yes | — | `vestaboard_apps.automations.messages_from_library.messages_from_library_app` |
 | `class` | Yes | — | `MessagesFromLibraryApp` |
-| `dependencies` | Yes | — | Must include `vestaboard_controller` |
 | `frame_library_path` | Yes | — | Filesystem path to the frame library JSON (must match the path used by `vestaboard_configuration`) |
-| `controller_app` | No | `vestaboard_controller` | AppDaemon app key of the controller instance |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 
@@ -68,8 +70,6 @@ messages_from_library:
   module: vestaboard_apps.automations.messages_from_library.messages_from_library_app
   class: MessagesFromLibraryApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   frame_library_path: /media/vestaboard/frame-library.json
 ```
 
@@ -80,5 +80,5 @@ messages_from_library:
 
 ## Upstream/downstream dependencies
 
-- **Upstream**: `vestaboard_controller` — must be running and registered before this app starts.
+- **Upstream**: `vestaboard_controller` — must be running and listening for events before this app starts. Registration happens via HA events; no AppDaemon `dependencies:` entry is needed. The app also listens for `vestaboard_controller_ready` and re-registers automatically if the controller restarts.
 - **Downstream**: None.

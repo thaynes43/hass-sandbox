@@ -6,25 +6,27 @@ Supports multiple instances: configure one YAML entry per calendar. The display 
 
 ## How it works
 
-1. On `initialize()`, registers with the controller via `VestaboardAutomation.register_with_controller()`.
-2. Starts a periodic interval check (default 300 s) and optionally a state listener on the configured `calendar_entity`.
-3. Each check calls `_fire_frame_if_event()`:
+1. On `initialize()`, registers with the controller via `VestaboardAutomation.register_with_controller()`. Registration fires a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
+2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
+3. Starts a periodic interval check (default 300 s) and optionally a state listener on the configured `calendar_entity`.
+4. Each check calls `_fire_frame_if_event()`:
    - Reads the calendar entity state from HA.
    - If the entity is active (`state == "on"`), the event is currently happening.
    - If inactive, checks the next upcoming event's start time against the `time_before_event_hours` window.
    - If within the window, builds a 6×22 grid with the event name (rows 1–2), start time (row 4), and countdown (row 5), all center-aligned.
-4. A **rotation throttle** prevents the same event from being pushed again until `rotation_interval_hours` have passed.
-5. TTL is derived from event duration (time until end of event + 30-minute buffer). If `ttl_minutes` is configured in the UI, that overrides the dynamic TTL.
-6. `max_age_s` is also derived from event end time to prevent stale frames from lingering.
+5. A **rotation throttle** prevents the same event from being pushed again until `rotation_interval_hours` have passed.
+6. TTL is derived from event duration (time until end of event + 30-minute buffer). If `ttl_minutes` is configured in the UI, that overrides the dynamic TTL.
+7. `max_age_s` is also derived from event end time to prevent stale frames from lingering.
 
 ## Architecture
 
 ```
 CalendarSummaryApp
-  → VestaboardAutomation.register_with_controller()
+  → fire_event("vestaboard_controller_command", command="register_automation")
   → listen_state(calendar_entity) + run_every(check_interval_s)
   → _fire_frame_if_event()
-  → push_frame() → VestaboardControllerApp.push_automation_frame()
+  → fire_event("vestaboard_controller_command", command="push_automation_frame")
+  → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
 ```
 
 ## Dependencies
@@ -44,10 +46,8 @@ None. The controller provisions all shared entities.
 |-----|----------|---------|-------------|
 | `module` | Yes | — | `vestaboard_apps.automations.calendar_summary.calendar_summary_app` |
 | `class` | Yes | — | `CalendarSummaryApp` |
-| `dependencies` | Yes | — | Must include `vestaboard_controller` |
 | `calendar_entity` | Yes | — | HA entity ID of the calendar to watch (e.g. `calendar.family`) |
 | `check_interval_s` | No | `300` | How often (seconds) to poll the calendar entity regardless of state changes |
-| `controller_app` | No | `vestaboard_controller` | AppDaemon app key of the controller instance |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 
@@ -66,8 +66,6 @@ calendar_summary_family:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   calendar_entity: calendar.family
 ```
 
@@ -78,16 +76,12 @@ calendar_summary_family:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   calendar_entity: calendar.family
 
 calendar_summary_work:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
   disable: true
-  dependencies:
-    - vestaboard_controller
   calendar_entity: calendar.work
 ```
 
@@ -99,5 +93,5 @@ Each instance registers with the controller under its own app key and appears se
 
 ## Upstream/downstream dependencies
 
-- **Upstream**: `vestaboard_controller` — must be running and registered before this app starts.
+- **Upstream**: `vestaboard_controller` — must be running and listening for events before this app starts. Registration happens via HA events; no AppDaemon `dependencies:` entry is needed. The app also listens for `vestaboard_controller_ready` and re-registers automatically if the controller restarts.
 - **Downstream**: None.

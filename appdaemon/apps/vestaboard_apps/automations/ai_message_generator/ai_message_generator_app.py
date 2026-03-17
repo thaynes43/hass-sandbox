@@ -144,10 +144,7 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
 
     def initialize(self) -> None:
         self.register_with_controller()
-
-        cfg = self.args or {}
-        if cfg.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", False)):
-            self._start_random_interval()
+        # Do NOT start interval here — wait for config event from controller
 
     def terminate(self) -> None:
         self._cancel_random_interval()
@@ -161,8 +158,13 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
-        if "frequency_min_minutes" in config or "frequency_max_minutes" in config:
-            if config.get("enabled", True):
+        if "enabled" in config:
+            if config["enabled"]:
+                self._start_random_interval()
+            else:
+                self._cancel_random_interval()
+        elif "frequency_min_minutes" in config or "frequency_max_minutes" in config:
+            if self.args.get("enabled", False):
                 self._start_random_interval()
 
     def _start_random_interval(self) -> None:

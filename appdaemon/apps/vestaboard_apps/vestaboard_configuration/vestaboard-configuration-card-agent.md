@@ -65,13 +65,18 @@ Important:
 
 ## Refactored backend architecture (important context)
 
-The Vestaboard system was refactored from a monolithic controller that owned automations internally to a dynamic registration architecture:
+The Vestaboard system was refactored from a monolithic controller that owned automations internally to a dynamic, event-based registration architecture:
 
-- **Controller** (`vestaboard_controller/`) — manages the frame queue and board writes. No longer owns automation lifecycle.
-- **Automations** (`automations/*/`) — each automation is its own AppDaemon app that registers with the controller via `get_app()` and the `VestaboardAutomation` mixin.
+- **Controller** (`vestaboard_controller/`) — manages the frame queue and board writes. No longer owns automation lifecycle. Listens for `vestaboard_controller_command` events.
+- **Automations** (`automations/*/`) — each automation is its own AppDaemon app. On startup it fires a `vestaboard_controller_command` event with `command="register_automation"`. No `get_app()` references or AppDaemon `dependencies:` entries are used. Automations can run in a **different AppDaemon instance** than the controller — communication is purely event-based via Home Assistant.
 - **Configuration app** (`vestaboard_configuration/`) — bridge between the card and controller. Unchanged role: manages frame library, forwards commands, mirrors controller status.
 
-The card's data source is still `sensor.vestaboard_configuration_status`. The `automations` attribute now lists dynamically registered automations instead of statically configured ones. The automation config schema and preview frames come from the automation apps themselves.
+Key event flows:
+- Automation → Controller: `fire_event("vestaboard_controller_command", command="register_automation" | "push_automation_frame" | "deregister_automation" | "push_ai_art_preview_result" | "update_next_fire_time")`
+- Controller → Automation: `fire_event("vb_auto_config")` / `vb_auto_enabled` / `vb_auto_generate`
+- Controller startup: fires `vestaboard_controller_ready` so automations re-register automatically after a controller restart
+
+The card's data source is still `sensor.vestaboard_configuration_status`. The `automations` attribute now lists dynamically registered automations instead of statically configured ones. The automation config schema and preview frames come from the automation apps themselves via the registration event payload.
 
 ### New config field types
 

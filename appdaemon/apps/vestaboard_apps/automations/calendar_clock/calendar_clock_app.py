@@ -140,9 +140,8 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
 
     def initialize(self) -> None:
         self.register_with_controller()
-        # Only start timer if enabled (config store pushes enabled state during registration)
-        if self.args.get("enabled", self.DEFAULT_UI_CONFIG.get("enabled", True)):
-            self._start_timer()
+        # Do NOT start timer here — wait for config event from controller
+        # (event-based registration is async; enabled state arrives later)
 
     def terminate(self) -> None:
         self._stop_timer()
@@ -169,6 +168,12 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
+        # Start or stop timer based on enabled state from config
+        if "enabled" in config:
+            if config["enabled"]:
+                self._start_timer()
+            else:
+                self._stop_timer()
 
     def _on_tick(self, kwargs: dict) -> None:
         self.create_task(self._generate_and_push())

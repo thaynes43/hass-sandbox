@@ -1,6 +1,6 @@
 # Vestaboard Controller
 
-Drives the physical Vestaboard flip-tile display. Manages a LIFO priority queue of frames, dispatches them to the board on a periodic tick, and exposes a dynamic automation registration API so each automation app independently publishes frames.
+Drives the physical Vestaboard flip-tile display. Manages a LIFO priority queue of frames, dispatches them to the board on a periodic tick, and exposes an event-based automation registration API so each automation app independently publishes frames.
 
 ## How it works
 
@@ -8,9 +8,10 @@ Drives the physical Vestaboard flip-tile display. Manages a LIFO priority queue 
 2. Reads the current frame from the physical board so the queue has a starting state.
 3. Loads the persistent `AutomationConfigStore` from `automation_config_path` to restore previously saved UI settings.
 4. Registers a periodic tick (default 15 s) that advances the `FrameQueue` — promoting pending frames when TTLs expire and publishing the updated status sensor.
-5. Automation apps call `register_automation(self)` from their `initialize()` and receive their persisted config back immediately.
-6. When an automation generates a frame it calls `push_automation_frame()`, which pushes it into the LIFO queue and may immediately display it.
-7. Commands from the Lovelace card arrive via `script.vestaboard_controller_relay` → `vestaboard_controller_command` event → `_on_command()`.
+5. Fires `vestaboard_controller_ready` event so automation apps can (re-)register after a controller restart.
+6. Automation apps register by firing a `vestaboard_controller_command` event with `command="register_automation"`. The controller creates a `RemoteAutomationProxy` and fires persisted config back.
+7. When an automation generates a frame it fires a `vestaboard_controller_command` event with `command="push_automation_frame"`. The controller pushes it into the LIFO queue and may immediately display it.
+8. Commands from the Lovelace card arrive via `script.vestaboard_controller_relay` → `vestaboard_controller_command` event → `_on_command()`.
 
 ### Frame queue semantics
 
@@ -30,24 +31,54 @@ During the configured sleep window, board writes are suppressed. On wake the cur
 
 ## Architecture
 
+### Card → Controller
+
 ```
 Lovelace card
   → hass.callService("script", "vestaboard_controller_relay", {command, payload})
   → vestaboard_controller_command event
   → VestaboardControllerApp._on_command()
+```
 
-Automation apps (CalendarClockApp, AiArtGeneratorApp, ...)
-  → VestaboardAutomation.push_frame()
-  → VestaboardControllerApp.push_automation_frame()
+### Automation → Controller (event-based)
+
+```
+Automation app (e.g. CalendarClockApp)
+  → fire_event("vestaboard_controller_command", command="register_automation", payload=...)
+  → VestaboardControllerApp._handle_register_automation_event()
+  → creates RemoteAutomationProxy
+  → fires vb_auto_config (with automation_id in data) back to automation
+
+Automation app generates a frame
+  → fire_event("vestaboard_controller_command", command="push_automation_frame", payload=...)
+  → VestaboardControllerApp._handle_push_automation_frame_event()
   → FrameQueue.push()
   → VestaboardClient.write_frame()  [if frame is immediately displayed]
+```
 
-Periodic tick (every tick_interval_s)
+### Controller → Automation (event-based)
+
+```
+VestaboardControllerApp
+  → fires vb_auto_config (with automation_id in data)    (config updates)
+  → fires vb_auto_enabled (with automation_id in data)   (enable/disable)
+  → fires vb_auto_generate (with automation_id in data)  (on-demand generate requests)
+  → fires vestaboard_controller_ready                     (startup/restart announcement)
+```
+
+### Periodic tick
+
+```
+run_every(tick_interval_s)
   → FrameQueue.tick()
   → VestaboardClient.write_frame()  [if a frame is promoted]
   → VestaboardControllerApp._publish_status()
   → sensor.vestaboard_controller_status
 ```
+
+## RemoteAutomationProxy
+
+When an automation registers, the controller creates a `RemoteAutomationProxy` object to store its metadata. This proxy holds the same interface fields the controller uses when communicating back (config schema, preview frame, display name, etc.) without requiring a direct Python object reference to the automation app. This design allows automation apps and the controller to run in **different AppDaemon instances** — useful for cross-instance dev testing and isolated deployments.
 
 ## Dependencies
 
@@ -65,20 +96,17 @@ Periodic tick (every tick_interval_s)
 | `script.vestaboard_controller_relay` | Script | Relay for card/automation commands; fires `vestaboard_controller_command` event |
 | `sensor.vestaboard_controller_status` | Sensor (via `set_state`) | Publishes queue state, automation list, displayed frame, and AI art preview |
 
-## Public API (called by automation apps)
-
-| Method | Signature | Description |
-|--------|-----------|-------------|
-| `register_automation` | `(automation: Any) -> None` | Register an automation app instance with the controller |
-| `deregister_automation` | `(auto_id: str) -> None` | Deregister and purge all frames from an automation |
-| `push_automation_frame` | `(automation_id, source_label, grid, ttl_s, max_age_s, override_ttl, should_expire) -> None` | Push a 6×22 frame to the queue |
-
-## Supported commands (via relay script)
+## Supported commands (via relay script or direct event)
 
 | Command | Payload fields | Description |
 |---------|---------------|-------------|
 | `push_frame` | `characters`, `ttl_s`/`ttl_minutes`, `max_age_s`, `override_ttl`, `should_expire` | Push a pre-built frame |
-| `activate_automation` | `automation_id` | Enable an automation and push an immediate frame |
+| `register_automation` | `automation_id`, `automation_type`, `display_name`, `display_description`, `default_ttl_s`, `default_max_age_s`, `default_should_expire`, `DEFAULT_UI_CONFIG`, `config_schema`, `preview_frame` | Register an automation app (fired by automation apps on startup) |
+| `deregister_automation` | `automation_id` | Deregister an automation and purge its frames (fired by automation apps on terminate) |
+| `push_automation_frame` | `automation_id`, `source_label`, `characters`, `ttl_s`, `max_age_s`, `override_ttl`, `should_expire` | Push a frame generated by an automation |
+| `push_ai_art_preview_result` | `characters`, `subject` | Store an AI art preview result without pushing to board (fired by ai_art_generator) |
+| `update_next_fire_time` | `automation_id`, `next_fire_time` | Automation notifies controller of its next scheduled fire time (for display in the status sensor) |
+| `activate_automation` | `automation_id` | Enable an automation |
 | `deactivate_automation` | `automation_id` | Disable an automation and purge its frames |
 | `clear_board` | — | Clear all frames and blank the board |
 | `set_automation_config` | `automation_id`, `config` (dict) | Update persisted config for an automation |
@@ -88,6 +116,19 @@ Periodic tick (every tick_interval_s)
 | `generate_ai_art_preview` | `subject` | Generate AI art and store as preview without pushing to board |
 | `clear_ai_art_preview` | — | Clear the AI art preview from status |
 | `generate_ai_message` | `override_ttl` | On-demand AI-generated message |
+
+## Events fired by the controller
+
+| Event | Data | Description |
+|-------|------|-------------|
+| `vestaboard_controller_ready` | — | Fired on startup; automations listen for this to re-register after a controller restart |
+| `vb_auto_config (with automation_id in data)` | `config` (dict) | Config update pushed to a specific automation |
+| `vb_auto_enabled (with automation_id in data)` | `enabled` (bool) | Enable/disable signal pushed to a specific automation |
+| `vb_auto_generate (with automation_id in data)` | `generate_kwargs` (dict), `preview_only` (bool) | On-demand generate request to a specific automation |
+
+## Grid data encoding
+
+All 6×22 character grids are JSON-stringified before being placed in event payloads to prevent Home Assistant from stripping leading/trailing zero cells. The controller and automation mixin both handle the JSON-string round-trip transparently.
 
 ## Config reference
 
@@ -133,5 +174,5 @@ vestaboard_controller:
 ## Upstream/downstream dependencies
 
 - **Upstream**: None — this is the root of the Vestaboard system.
-- **Downstream**: All automation apps (`calendar_clock`, `messages_from_library`, `art_from_library`, `ai_art_generator`, `ai_message_generator`, `calendar_summary`, `weather_schedule`) depend on this app via `dependencies: [vestaboard_controller]`.
+- **Downstream**: All automation apps (`calendar_clock`, `messages_from_library`, `art_from_library`, `ai_art_generator`, `ai_message_generator`, `calendar_summary`, `weather_schedule`) register with this app via HA events at startup. No `dependencies:` YAML entry is needed.
 - `vestaboard_configuration` reads `sensor.vestaboard_controller_status` and forwards commands to this app's event.

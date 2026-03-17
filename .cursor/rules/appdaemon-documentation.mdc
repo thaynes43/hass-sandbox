@@ -128,15 +128,18 @@ school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
 
 vestaboard_controller (vestaboard_apps/vestaboard_controller)
   └─ controls physical Vestaboard via provider
-  └─ automation apps register dynamically at startup
-       ├─ calendar_clock
-       ├─ calendar_summary (one instance per calendar entity)
-       ├─ messages_from_library
-       ├─ art_from_library
-       ├─ ai_art_generator
-       ├─ ai_message_generator
-       └─ weather_schedule
-  └─ vestaboard_configuration (reads status sensor, forwards card commands)
+  └─ automation apps register via HA events (vestaboard_controller_command)
+  |    — no AppDaemon dependencies: entries needed
+  |    — automations can run in a different AppDaemon instance
+       ├─ calendar_clock            fires register_automation + push_automation_frame
+       ├─ calendar_summary          fires register_automation + push_automation_frame (one instance per calendar entity)
+       ├─ messages_from_library     fires register_automation + push_automation_frame + update_next_fire_time
+       ├─ art_from_library          fires register_automation + push_automation_frame + update_next_fire_time
+       ├─ ai_art_generator          fires register_automation + push_automation_frame + push_ai_art_preview_result + update_next_fire_time
+       ├─ ai_message_generator      fires register_automation + push_automation_frame + update_next_fire_time
+       └─ weather_schedule          fires register_automation + push_automation_frame
+  └─ fires vestaboard_controller_ready on startup (automations re-register automatically)
+  └─ vestaboard_configuration (reads status sensor, forwards card commands via vestaboard_controller_command event)
 ```
 
 ## When creating a new app or provider

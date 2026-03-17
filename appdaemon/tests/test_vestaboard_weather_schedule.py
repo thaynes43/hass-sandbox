@@ -180,6 +180,7 @@ class TestDailyScheduling:
 
     def test_on_config_updated_reschedules_timers(self):
         app = _make_app()
+        app.args["enabled"] = True  # must be enabled for reschedule
         app._daily_handles = ["h1"]
         app._register_daily_timers = MagicMock()
         app._cancel_daily_timers = MagicMock()
