@@ -2,7 +2,9 @@
 
 Welcome to the documentation for the HaynesOps smart home — a Home Assistant + AppDaemon automation platform running on Kubernetes.
 
-<!-- TODO: Add hero screenshot of wall display dashboard once ready -->
+![Wall display dashboard](img/wall-control-nearly-done.png)
+
+*An AppDaemon-powered dashboard, driven by the code in this repo.*
 
 ## Highlights
 
