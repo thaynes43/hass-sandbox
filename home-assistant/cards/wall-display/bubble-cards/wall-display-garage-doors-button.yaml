@@ -29,7 +29,7 @@ sub_button:
         navigation_path: "#wall-display-garage-doors"
   bottom: []
   bottom_layout: rows
-rows: 0.96
+rows: 1.04
 slider_fill_orientation: left
 slider_value_position: right
 styles: |-
