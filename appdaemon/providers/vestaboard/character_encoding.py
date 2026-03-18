@@ -100,11 +100,25 @@ def encode_text(text: str) -> list[list[int]]:
     return grid
 
 
+# Reverse lookup for color codes → short labels for logging
+_COLOR_CODE_LABELS: dict[int, str] = {
+    63: "R",  # red
+    64: "O",  # orange
+    65: "Y",  # yellow
+    66: "G",  # green
+    67: "B",  # blue
+    68: "V",  # violet
+    69: "W",  # white
+    70: "K",  # black
+}
+
+
 def decode_grid(grid: list[list[int]]) -> str:
     """Convert a 6x22 grid back to a human-readable 6-line string.
 
-    Code 0 is rendered as a space.  Unknown codes (color tiles, etc.) are
-    rendered as the placeholder character (filled square).
+    Code 0 is rendered as a space.  Color tile codes (63-70) are rendered
+    as single-letter labels: R=red, O=orange, Y=yellow, G=green, B=blue,
+    V=violet, W=white, K=black.  Unknown codes are rendered as ``?``.
     """
     lines: list[str] = []
     for row in grid:
@@ -112,8 +126,10 @@ def decode_grid(grid: list[list[int]]) -> str:
         for code in row:
             if code == 0:
                 chars.append(" ")
+            elif code in _COLOR_CODE_LABELS:
+                chars.append(_COLOR_CODE_LABELS[code])
             else:
-                chars.append(CODE_TO_CHAR.get(code, "\u25a0"))
+                chars.append(CODE_TO_CHAR.get(code, "?"))
         lines.append("".join(chars))
     return "\n".join(lines)
 

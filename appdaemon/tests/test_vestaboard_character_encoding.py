@@ -218,12 +218,23 @@ class TestDecodeGrid:
         assert first_line.startswith("HELLO")
         assert first_line[5:] == " " * 17
 
-    def test_unknown_code_renders_as_placeholder(self):
+    def test_color_code_renders_as_label(self):
         grid = blank_grid()
-        grid[0][0] = 63  # red color tile — not in CODE_TO_CHAR
+        grid[0][0] = 63  # red color tile
+        grid[0][1] = 67  # blue color tile
+        grid[0][2] = 70  # black color tile
         decoded = decode_grid(grid)
         first_line = decoded.split("\n")[0]
-        assert first_line[0] == "\u25a0"
+        assert first_line[0] == "R"
+        assert first_line[1] == "B"
+        assert first_line[2] == "K"
+
+    def test_unknown_code_renders_as_question_mark(self):
+        grid = blank_grid()
+        grid[0][0] = 61  # not a valid code
+        decoded = decode_grid(grid)
+        first_line = decoded.split("\n")[0]
+        assert first_line[0] == "?"
 
     def test_returns_six_lines(self):
         decoded = decode_grid(blank_grid())
