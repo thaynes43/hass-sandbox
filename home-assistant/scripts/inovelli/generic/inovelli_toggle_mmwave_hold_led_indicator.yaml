@@ -1,9 +1,10 @@
 alias: Inovelli Toggle mmWave Hold + LED Indicator
 description: >
   Toggles MmwaveControlWiredDevice between Disabled (hold) and normal mode. When
-  enabling hold, caches current LED color (LED1 WhenOn) into an input_text
-  (optional), then sets LED 1-7 (on+off) to hold_color. When disabling hold,
-  restores cached LED color (fallback 255) and sets mmWave back to normal_mode.
+  enabling hold, refreshes the cached current LED color (LED1 WhenOn) in an
+  input_text (optional), then sets LED 1-7 (on+off) to hold_color. When
+  disabling hold, restores cached LED color (fallback 255) and sets mmWave back
+  to normal_mode.
 fields:
   switch_name:
     description: >
@@ -110,9 +111,6 @@ sequence:
         {% endfor %}
         {{ ns.any_off }}
       helper_provided: "{{ (prev_led_color_helper | default('') | string | length) > 0 }}"
-      helper_needs_cache: >-
-        {{ helper_provided and states(prev_led_color_helper) in
-        ['unknown','unavailable','none','None',''] }}
       hold_color_value: |-
         {% set v = hold_color | default(85) %}
         {% if v is string and v.startswith('input_') %}
@@ -153,7 +151,7 @@ sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ helper_needs_cache }}"
+                    value_template: "{{ helper_provided }}"
                 sequence:
                   - action: input_text.set_value
                     target:
