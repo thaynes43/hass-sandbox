@@ -356,7 +356,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
     async def _run_cycle(self) -> None:
         """Main entry point: fetch events, decide what to display, start rotation."""
-        self.log("_run_cycle starting", level="INFO")
+        self.log("_run_cycle starting", level="DEBUG")
         cfg = self.args or {}
         entity_id = str(cfg.get("calendar_entity", ""))
         if not entity_id:
@@ -520,9 +520,12 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         # Schedule rotation to next event
         if total_slots > 1:
-            self._rotation_handle = self.run_in(
+            handle = self.run_in(
                 self._on_rotation_timer, self._display_time_s
             )
+            if hasattr(handle, "__await__"):
+                handle = await handle
+            self._rotation_handle = handle
             self.log(
                 f"Rotation timer set: next event in {self._display_time_s}s "
                 f"({self._display_time_s // 60} min)",
@@ -530,9 +533,9 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             )
 
         # Schedule countdown update for the current event
-        self._schedule_countdown_update()
+        await self._schedule_countdown_update()
 
-    def _schedule_countdown_update(self) -> None:
+    async def _schedule_countdown_update(self) -> None:
         """Schedule the next countdown update for the currently displayed event."""
         self._cancel_countdown_timer()
 
@@ -560,7 +563,10 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             )
             return
 
-        self._countdown_handle = self.run_in(self._on_countdown_timer, update_in)
+        handle = self.run_in(self._on_countdown_timer, update_in)
+        if hasattr(handle, "__await__"):
+            handle = await handle
+        self._countdown_handle = handle
         self.log(
             f"Countdown update scheduled in {update_in}s for "
             f"{event['summary']!r} (seconds_until={seconds_until})",
@@ -600,7 +606,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         )
 
         # Schedule the next countdown update
-        self._schedule_countdown_update()
+        await self._schedule_countdown_update()
 
     # ------------------------------------------------------------------
     # Event fetching
