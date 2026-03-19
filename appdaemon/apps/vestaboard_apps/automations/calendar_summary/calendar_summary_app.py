@@ -48,12 +48,45 @@ def _center_text_row(text: str, width: int = COLS) -> list[int]:
     return _encode_text_row(padded, width)
 
 
+def _word_wrap(text: str, width: int) -> list[str]:
+    """Wrap text at word boundaries to fit within *width* characters.
+
+    Returns at most 2 lines.  If a single word exceeds *width* it is
+    truncated rather than split across lines.
+    """
+    words = text.split()
+    if not words:
+        return [""]
+
+    lines: list[str] = []
+    current = words[0][:width]
+
+    for word in words[1:]:
+        if len(lines) >= 1:
+            # Already on second line — just keep appending
+            if len(current) + 1 + len(word) <= width:
+                current += " " + word
+            else:
+                current = current[:width]
+                break
+        elif len(current) + 1 + len(word) <= width:
+            current += " " + word
+        else:
+            # Start second line
+            lines.append(current)
+            current = word[:width]
+
+    lines.append(current)
+    return lines[:2]
+
+
 def _build_event_grid(
     event_name: str, event_time: str, countdown: str
 ) -> list[list[int]]:
     name_upper = event_name.upper()
-    name_line1 = name_upper[:COLS]
-    name_line2 = name_upper[COLS : COLS * 2]
+    lines = _word_wrap(name_upper, COLS)
+    name_line1 = lines[0] if lines else ""
+    name_line2 = lines[1] if len(lines) > 1 else ""
 
     grid = blank_grid()
     grid[1] = _center_text_row(name_line1)
