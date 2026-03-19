@@ -286,7 +286,11 @@ class SchoolLunchDetailCard extends HTMLElement {
       ? `${ss.state}|${JSON.stringify(ss.attributes)}`
       : "?";
     const selPart = sel ? sel.state : "?";
-    return `${statusPart}~${selPart}~${this._activeTab}`;
+    // Include the target date so the card re-renders on day and cutoff transitions
+    const cutoff = ss?.attributes?.show_tomorrow_after || "15:00:00";
+    const target = getTargetDay(cutoff);
+    const datePart = `${target.getFullYear()}-${target.getMonth() + 1}-${target.getDate()}`;
+    return `${statusPart}~${selPart}~${this._activeTab}~${datePart}`;
   }
 
   _schools() {

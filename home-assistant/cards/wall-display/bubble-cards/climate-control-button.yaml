@@ -1,0 +1,185 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Climate Control
+icon: mdi:thermostat
+entity: climate.first_floor_ecobee
+show_state: true
+card_layout: large-2-rows
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#thermostat-popup"
+sub_button:
+  main:
+    - entity: sensor.first_floor_ecobee_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:home-floor-1
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+    - entity: sensor.first_floor_ecobee_target_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:target
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+    - entity: sensor.second_floor_ecobee_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:home-floor-2
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+    - entity: sensor.second_floor_ecobee_target_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:target
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+  bottom: []
+slider_fill_orientation: left
+slider_value_position: right
+styles: |-
+  ha-card {
+    --bubble-border-radius: 28px !important;
+    --bubble-box-shadow:
+      0 14px 40px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+    --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+    --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
+    --bubble-sub-button-border-radius: 20px !important;
+    --bubble-sub-button-background-color: rgba(255, 255, 255, 0.05) !important;
+    backdrop-filter: blur(14px) saturate(1.2) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+  }
+
+  .bubble-button-card-container {
+    background: rgba(28, 29, 33, 0.32) !important;
+    border: 1px solid rgba(255, 255, 255, 0.14) !important;
+    border-radius: 28px !important;
+    box-shadow:
+      0 14px 40px rgba(0, 0, 0, 0.28),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+    backdrop-filter: blur(14px) saturate(1.2) !important;
+    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+    overflow: hidden;
+  }
+
+  .bubble-name,
+  .bubble-state,
+  .bubble-attribute {
+    color: rgba(240, 243, 255, 0.92) !important;
+    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+  }
+
+  .bubble-name {
+    font-weight: 600 !important;
+    letter-spacing: 0.01em;
+    font-size: 0.96rem !important;
+  }
+
+  .bubble-state {
+    color: rgba(203, 214, 234, 0.8) !important;
+    text-transform: capitalize;
+    font-size: 0.79rem !important;
+    line-height: 1.1 !important;
+  }
+
+  .bubble-attribute {
+    color: rgba(203, 214, 234, 0.78) !important;
+    font-size: 0.83rem !important;
+  }
+
+  .bubble-icon,
+  .bubble-sub-button-icon {
+    color: rgba(245, 247, 255, 0.94) !important;
+  }
+
+  .bubble-icon-container {
+    background: rgba(255, 255, 255, 0.06) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 8px 20px rgba(0, 0, 0, 0.16) !important;
+  }
+
+  .bubble-sub-button {
+    border-radius: 20px !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.12),
+      0 8px 20px rgba(0, 0, 0, 0.16) !important;
+    transition:
+      transform 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      box-shadow 180ms ease !important;
+  }
+
+  .bubble-sub-button:hover {
+    transform: translateY(-1px);
+    border-color: rgba(255, 255, 255, 0.14) !important;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.16),
+      0 10px 24px rgba(0, 0, 0, 0.22) !important;
+  }
+
+  .bubble-sub-button-1 {
+    background: ${(() => {
+      const current = parseFloat(hass.states['sensor.first_floor_ecobee_temperature']?.state);
+      const target = parseFloat(hass.states['sensor.first_floor_ecobee_target_temperature']?.state);
+      if (!Number.isFinite(current) || !Number.isFinite(target)) {
+        return 'rgba(255, 255, 255, 0.05)';
+      }
+      if (current > target) {
+        return 'linear-gradient(180deg, rgba(146, 88, 76, 0.4), rgba(59, 35, 31, 0.58))';
+      }
+      if (current < target) {
+        return 'linear-gradient(180deg, rgba(83, 112, 154, 0.38), rgba(33, 42, 58, 0.58))';
+      }
+      return 'linear-gradient(180deg, rgba(76, 119, 98, 0.38), rgba(34, 45, 40, 0.56))';
+    })()} !important;
+  }
+
+  .bubble-sub-button-2 {
+    background: linear-gradient(180deg, rgba(92, 106, 142, 0.36), rgba(37, 43, 61, 0.56)) !important;
+  }
+
+  .bubble-sub-button-3 {
+    background: ${(() => {
+      const current = parseFloat(hass.states['sensor.second_floor_ecobee_temperature']?.state);
+      const target = parseFloat(hass.states['sensor.second_floor_ecobee_target_temperature']?.state);
+      if (!Number.isFinite(current) || !Number.isFinite(target)) {
+        return 'rgba(255, 255, 255, 0.05)';
+      }
+      if (current > target) {
+        return 'linear-gradient(180deg, rgba(146, 88, 76, 0.4), rgba(59, 35, 31, 0.58))';
+      }
+      if (current < target) {
+        return 'linear-gradient(180deg, rgba(83, 112, 154, 0.38), rgba(33, 42, 58, 0.58))';
+      }
+      return 'linear-gradient(180deg, rgba(76, 119, 98, 0.38), rgba(34, 45, 40, 0.56))';
+    })()} !important;
+  }
+
+  .bubble-sub-button-4 {
+    background: linear-gradient(180deg, rgba(104, 94, 140, 0.34), rgba(42, 38, 61, 0.56)) !important;
+  }

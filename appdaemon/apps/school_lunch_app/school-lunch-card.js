@@ -100,6 +100,8 @@ class SchoolLunchCard extends HTMLElement {
     if (!this._hass) return null;
     const status = this._hass.states[this._config.status_entity];
     const selection = this._hass.states[this._config.selection_entity];
+    // Include the target date so the card re-renders on date/cutoff transitions
+    const { targetDay, targetMonth, targetYear, headerLabel } = this._targetDate();
     return JSON.stringify({
       status: status
         ? {
@@ -109,6 +111,7 @@ class SchoolLunchCard extends HTMLElement {
           }
         : null,
       selection: selection ? { s: selection.state } : null,
+      target: { targetDay, targetMonth, targetYear, headerLabel },
     });
   }
 

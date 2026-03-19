@@ -1,0 +1,367 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#thermostat-popup"
+    button_type: name
+    width_desktop: 75vw
+    width_mobile: 90vw
+    show_header: true
+    name: Return To Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+    styles: |-
+      ha-card {
+        --bubble-border-radius: 28px !important;
+        --bubble-box-shadow:
+          0 14px 40px rgba(0, 0, 0, 0.28),
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+        --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
+        --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+        --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
+        backdrop-filter: blur(14px) saturate(1.2) !important;
+        -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+      }
+
+      .bubble-button-card-container {
+        background: rgba(28, 29, 33, 0.32) !important;
+        border: 1px solid rgba(255, 255, 255, 0.14) !important;
+        border-radius: 28px !important;
+        box-shadow:
+          0 14px 40px rgba(0, 0, 0, 0.28),
+          inset 0 1px 0 rgba(255, 255, 255, 0.18),
+          inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+        backdrop-filter: blur(14px) saturate(1.2) !important;
+        -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+        overflow: hidden;
+      }
+
+      .bubble-name,
+      .bubble-state,
+      .bubble-attribute {
+        color: rgba(240, 243, 255, 0.92) !important;
+        text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+      }
+
+      .bubble-name {
+        font-weight: 600 !important;
+        letter-spacing: 0.01em;
+      }
+
+      .bubble-attribute {
+        color: rgba(203, 214, 234, 0.78) !important;
+        font-size: 0.83rem !important;
+      }
+
+      .bubble-icon,
+      .bubble-sub-button-icon {
+        color: rgba(245, 247, 255, 0.94) !important;
+      }
+
+      .bubble-icon-container {
+        background: rgba(255, 255, 255, 0.06) !important;
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, 0.12),
+          0 8px 20px rgba(0, 0, 0, 0.16) !important;
+      }
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: thermostat
+            entity: climate.first_floor_ecobee
+            name: First Floor
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - "off"
+                  - heat
+                  - cool
+                  - auto
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 28px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                  padding: 8px;
+                }
+
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: tile
+                entity: sensor.first_floor_ecobee_temperature
+                name: Current Temp
+                icon: mdi:thermometer
+                card_mod:
+                  style: |
+                    ha-card {
+                      border-radius: 24px;
+                      background: rgba(28, 29, 33, 0.32);
+                      border: 1px solid rgba(255, 255, 255, 0.14);
+                      box-shadow:
+                        0 14px 40px rgba(0, 0, 0, 0.28),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                        inset 0 0 18px rgba(255, 255, 255, 0.04);
+                      backdrop-filter: blur(14px) saturate(1.2);
+                      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                    }
+              - type: tile
+                entity: sensor.first_floor_ecobee_humidity
+                name: Humidity
+                icon: mdi:water-percent
+                card_mod:
+                  style: |
+                    ha-card {
+                      border-radius: 24px;
+                      background: rgba(28, 29, 33, 0.32);
+                      border: 1px solid rgba(255, 255, 255, 0.14);
+                      box-shadow:
+                        0 14px 40px rgba(0, 0, 0, 0.28),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                        inset 0 0 18px rgba(255, 255, 255, 0.04);
+                      backdrop-filter: blur(14px) saturate(1.2);
+                      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                    }
+
+      - type: vertical-stack
+        cards:
+          - type: thermostat
+            entity: climate.second_floor_ecobee
+            name: Second Floor
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - "off"
+                  - heat
+                  - cool
+                  - auto
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 28px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                  padding: 8px;
+                }
+
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: tile
+                entity: sensor.second_floor_ecobee_temperature
+                name: Current Temp
+                icon: mdi:thermometer
+                card_mod:
+                  style: |
+                    ha-card {
+                      border-radius: 24px;
+                      background: rgba(28, 29, 33, 0.32);
+                      border: 1px solid rgba(255, 255, 255, 0.14);
+                      box-shadow:
+                        0 14px 40px rgba(0, 0, 0, 0.28),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                        inset 0 0 18px rgba(255, 255, 255, 0.04);
+                      backdrop-filter: blur(14px) saturate(1.2);
+                      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                    }
+              - type: tile
+                entity: sensor.second_floor_ecobee_humidity
+                name: Humidity
+                icon: mdi:water-percent
+                card_mod:
+                  style: |
+                    ha-card {
+                      border-radius: 24px;
+                      background: rgba(28, 29, 33, 0.32);
+                      border: 1px solid rgba(255, 255, 255, 0.14);
+                      box-shadow:
+                        0 14px 40px rgba(0, 0, 0, 0.28),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                        inset 0 0 18px rgba(255, 255, 255, 0.04);
+                      backdrop-filter: blur(14px) saturate(1.2);
+                      -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                    }
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: binary_sensor.first_floor_ecobee_occupancy
+            name: First Floor Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+          - type: tile
+            entity: binary_sensor.ecobee_mudroom_sensor_occupancy
+            name: Mudroom Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+          - type: tile
+            entity: binary_sensor.ecobee_dining_room_sensor_occupancy
+            name: Dining Room Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+          - type: tile
+            entity: binary_sensor.ecobee_study_sensor_occupancy
+            name: Study Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: binary_sensor.second_floor_ecobee_occupancy
+            name: Second Floor Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+          - type: tile
+            entity: binary_sensor.ecobee_pink_room_sensor_occupancy
+            name: Pink Room Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+          - type: tile
+            entity: binary_sensor.ecobee_white_room_sensor_occupancy
+            name: White Room Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
+          - type: tile
+            entity: binary_sensor.ecobee_blue_room_sensor_occupancy
+            name: Blue Room Motion
+            icon: mdi:motion-sensor
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 24px;
+                  background: rgba(28, 29, 33, 0.32);
+                  border: 1px solid rgba(255, 255, 255, 0.14);
+                  box-shadow:
+                    0 14px 40px rgba(0, 0, 0, 0.28),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                    inset 0 0 18px rgba(255, 255, 255, 0.04);
+                  backdrop-filter: blur(14px) saturate(1.2);
+                  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+                }
