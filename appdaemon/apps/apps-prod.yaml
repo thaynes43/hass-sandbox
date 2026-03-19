@@ -588,6 +588,8 @@ calendar_summary_family:
   class: CalendarSummaryApp
   disable: true
   calendar_entity: calendar.family
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
 
 weather_schedule:
   module: vestaboard_apps.automations.weather_schedule.weather_schedule_app

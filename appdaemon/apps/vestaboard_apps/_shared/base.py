@@ -192,8 +192,13 @@ class VestaboardAutomation:
 
     def _on_generate_event(self, event_name: str, data: dict, kwargs: dict) -> None:
         """Handle a generate request from the controller."""
-        if data.get("automation_id") != self.name:
+        target = data.get("automation_id")
+        if target != self.name:
             return
+        self.log(
+            f"Generate event received: automation_id={target!r} data_keys={list(data.keys())}",
+            level="INFO",
+        )
         generate_kwargs = data.get("generate_kwargs", {})
         if not isinstance(generate_kwargs, dict):
             try:

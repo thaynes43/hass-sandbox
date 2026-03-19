@@ -63,16 +63,22 @@ calendar_summary_family_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
   calendar_entity: calendar.hayneshome01886_gmail_com
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
 
 calendar_summary_hot_tub_maintenance_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
   calendar_entity: calendar.hot_tub_maintenance
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
 
 calendar_summary_holidays_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
   class: CalendarSummaryApp
   calendar_entity: calendar.holidays_for_united_states_ma
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
 
 weather_schedule_dev:
   module: vestaboard_apps.automations.weather_schedule.weather_schedule_app

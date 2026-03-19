@@ -65,10 +65,10 @@ class HaRestClient:
     # REST
     # ------------------------------------------------------------------
 
-    async def get(self, path: str) -> Any:
+    async def get(self, path: str, params: Optional[dict[str, str]] = None) -> Any:
         url = f"{self.base_url}{path}"
-        logger.debug("GET %s", path)
-        async with self.session.get(url, headers=self._headers()) as resp:
+        logger.debug("GET %s params=%s", path, params)
+        async with self.session.get(url, headers=self._headers(), params=params) as resp:
             data = await resp.json()
             logger.debug("GET %s -> %d", path, resp.status)
             resp.raise_for_status()
