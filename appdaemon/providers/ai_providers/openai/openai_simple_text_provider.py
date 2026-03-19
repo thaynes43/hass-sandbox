@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.error
 import urllib.request
@@ -13,6 +14,8 @@ from ..multimodal_text_provider import ExternalDataGenError
 from ..provider_settings import validate_simple_text_model
 from ..simple_text_provider import SimpleTextProvider, SimpleTextProviderName
 from ._chat_helpers import _safe_json, extract_assistant_json_text, parse_json_from_content
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,13 @@ class OpenAISimpleTextProvider(SimpleTextProvider):
             body["user"] = self._config.user
 
         started = time.time()
+        logger.info(
+            "OpenAI simple_text API call: model=%s input_len=%d instructions_len=%d url=%s",
+            self._config.model,
+            len(str(input_text or "")),
+            len(str(instructions or "")),
+            url,
+        )
         try:
             req = urllib.request.Request(
                 url=url,
@@ -121,14 +131,22 @@ class OpenAISimpleTextProvider(SimpleTextProvider):
             for k in expected_keys:
                 obj.setdefault(k, None)
 
+        elapsed = round(time.time() - started, 3)
         usage = payload.get("usage") if isinstance(payload, dict) else None
+        logger.info(
+            "OpenAI simple_text response: model=%s elapsed=%.3fs tokens=%s content_len=%d",
+            self._config.model,
+            elapsed,
+            usage,
+            len(str(content)),
+        )
         obj["_meta"] = {
             "backend": "external",
             "provider": "openai",
             "endpoint": url,
             "model": self._config.model,
             "created_at_epoch": time.time(),
-            "elapsed_s": round(time.time() - started, 3),
+            "elapsed_s": elapsed,
             "request": {
                 "max_completion_tokens": int(self._config.max_output_tokens),
                 "response_format": "json_object",

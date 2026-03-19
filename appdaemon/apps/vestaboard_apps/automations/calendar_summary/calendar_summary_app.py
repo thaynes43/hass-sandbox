@@ -501,6 +501,23 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             level="INFO",
         )
 
+        # Check if event set changed — skip re-push if unchanged and
+        # timers are already running (avoids duplicate board writes when
+        # both the interval timer and state listener fire close together).
+        new_event_key = tuple(e["summary"] for e in shown_events)
+        old_event_key = tuple(e["summary"] for e in self._current_events)
+        timers_active = (
+            self._rotation_handle is not None
+            or self._countdown_handle is not None
+        )
+        if (
+            new_event_key == old_event_key
+            and is_urgent == self._is_urgent
+            and timers_active
+        ):
+            self.log("Event set unchanged and timers active — skipping re-push", level="DEBUG")
+            return
+
         # Update state
         self._current_events = shown_events
         self._current_overflow = overflow
