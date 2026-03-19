@@ -683,14 +683,19 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
     # ------------------------------------------------------------------
 
     _SUMMARIZE_PROMPT = (
-        "You are writing text for a Vestaboard split-flap display. "
-        "The board is 22 characters wide. You have 2 lines (44 chars max). "
-        "Only uppercase letters A-Z, digits 0-9, and basic punctuation "
-        "(period, comma, exclamation, question mark, hyphen, apostrophe, colon) "
-        "are supported. No special symbols like >, <, @, #, etc.\n\n"
-        "Given a calendar event title and optional description, write a short, "
-        "clear summary that fits on the display. Prefer 1 line (22 chars) if "
-        "possible. Never exceed 44 characters total.\n\n"
+        "You are writing a short, human-readable title for a Vestaboard "
+        "split-flap display. The board is 22 characters wide. You have at "
+        "most 2 lines (44 chars total). Prefer 1 line (22 chars) when possible.\n\n"
+        "Rules:\n"
+        "- Only uppercase letters A-Z, digits 0-9, spaces, and basic punctuation "
+        "(period, comma, exclamation, question mark, hyphen, apostrophe, colon).\n"
+        "- Write a friendly, plain-English summary of WHAT the event is. "
+        "Think of it as what you'd write on a wall calendar.\n"
+        "- Ignore metadata like severity, priority, checklists, or instructions "
+        "from the description. Focus only on the core activity.\n"
+        "- Do NOT use abbreviations, acronyms, or shorthand unless the original "
+        "title uses them. Write it so anyone in the household can understand it.\n"
+        "- No newlines in your answer — just one continuous string.\n\n"
         "Return ONLY the summary text, nothing else."
     )
 
