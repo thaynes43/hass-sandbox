@@ -234,6 +234,24 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self._current_event_index: int = 0
         self._is_urgent: bool = False
 
+        # AI provider for summarizing long event names (optional)
+        self._ai_provider = None
+        self._summary_cache: dict[str, str] = {}
+        ai_conf = (self.args or {}).get("ai_provider_conf")
+        if ai_conf:
+            try:
+                from providers.ai_providers.registry import (
+                    build_simple_text_provider,
+                    simple_text_config_from_appdaemon_args,
+                )
+                provider_cfg = simple_text_config_from_appdaemon_args(
+                    {"ai_provider_conf": ai_conf}
+                )
+                self._ai_provider = build_simple_text_provider(provider_cfg)
+                self.log("AI provider initialized for event name summarization", level="INFO")
+            except Exception as exc:
+                self.log(f"Failed to initialize AI provider: {exc!r}", level="WARNING")
+
         # Build a friendly display_name from the app key
         suffix = self.name.replace("calendar_summary_", "").replace("calendar_summary", "")
         if suffix:
@@ -501,7 +519,8 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             seconds_until = int((start_dt - now).total_seconds()) if start_dt else event.get("seconds_until", 0)
             event_time = _format_event_time(start_dt)
             countdown = _format_countdown(seconds_until)
-            grid = _build_event_grid(event["summary"], event_time, countdown)
+            display_name = self._get_display_name(event)
+            grid = _build_event_grid(display_name, event_time, countdown)
             event_label = event["summary"]
 
         self.log(
@@ -589,7 +608,8 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         seconds_until = int((start_dt - now).total_seconds())
         event_time = _format_event_time(start_dt)
         countdown = _format_countdown(seconds_until)
-        grid = _build_event_grid(event["summary"], event_time, countdown)
+        display_name = self._get_display_name(event)
+        grid = _build_event_grid(display_name, event_time, countdown)
 
         self.log(
             f"Countdown update: {event['summary']!r} → {countdown!r} "
@@ -607,6 +627,79 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         # Schedule the next countdown update
         await self._schedule_countdown_update()
+
+    # ------------------------------------------------------------------
+    # AI event name summarization
+    # ------------------------------------------------------------------
+
+    _SUMMARIZE_PROMPT = (
+        "You are writing text for a Vestaboard split-flap display. "
+        "The board is 22 characters wide. You have 2 lines (44 chars max). "
+        "Only uppercase letters A-Z, digits 0-9, and basic punctuation "
+        "(period, comma, exclamation, question mark, hyphen, apostrophe, colon) "
+        "are supported. No special symbols like >, <, @, #, etc.\n\n"
+        "Given a calendar event title and optional description, write a short, "
+        "clear summary that fits on the display. Prefer 1 line (22 chars) if "
+        "possible. Never exceed 44 characters total.\n\n"
+        "Return ONLY the summary text, nothing else."
+    )
+
+    def _get_display_name(self, event: dict) -> str:
+        """Get a board-friendly display name for an event.
+
+        If an AI provider is configured and the event name is longer than
+        22 characters, uses the LLM to generate a concise summary.
+        Results are cached by event summary to avoid repeated LLM calls.
+        Falls back to the raw event name (which gets truncated by the grid).
+        """
+        raw_name = event.get("summary", "Event")
+
+        # Short names don't need summarization
+        if len(raw_name) <= COLS:
+            return raw_name
+
+        # Check cache
+        if raw_name in self._summary_cache:
+            return self._summary_cache[raw_name]
+
+        # No AI provider — use raw name
+        if self._ai_provider is None:
+            return raw_name
+
+        # Build input with title + description if available
+        description = event.get("description", "")
+        input_text = f"Event title: {raw_name}"
+        if description:
+            # Truncate very long descriptions to save tokens
+            input_text += f"\nDescription: {description[:300]}"
+
+        try:
+            result = self._ai_provider.generate_from_text(
+                input_text=input_text,
+                instructions=self._SUMMARIZE_PROMPT,
+                expected_keys=["summary"],
+            )
+            summary = result.get("summary", "")
+            if not summary:
+                # Provider might return the text directly without JSON wrapping
+                summary = str(result.get("_raw", raw_name))
+
+            # Clean and validate
+            summary = summary.strip().upper()[:COLS * 2]
+            if summary:
+                self._summary_cache[raw_name] = summary
+                self.log(
+                    f"AI summary: {raw_name!r} → {summary!r}",
+                    level="INFO",
+                )
+                return summary
+        except Exception as exc:
+            self.log(
+                f"AI summarization failed for {raw_name!r}: {exc!r}",
+                level="WARNING",
+            )
+
+        return raw_name
 
     # ------------------------------------------------------------------
     # Event fetching
@@ -697,6 +790,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         return {
             "summary": summary,
+            "description": ev.get("description", ""),
             "start_time_str": start_str,
             "end_time_str": end_str,
             "seconds_until": seconds_until,

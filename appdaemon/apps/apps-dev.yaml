@@ -72,6 +72,8 @@ calendar_summary_hot_tub_maintenance_dev:
   calendar_entity: calendar.hot_tub_maintenance
   ha_url_env: HA_URL
   ha_token_env: TOKEN
+  ai_provider_conf:
+    simple_text: openai-default
 
 calendar_summary_holidays_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
