@@ -101,7 +101,8 @@ def _build_overflow_grid(overflow_count: int) -> list[list[int]]:
     """Build a summary frame for overflow events."""
     grid = blank_grid()
     grid[2] = _center_text_row(f"+{overflow_count} MORE")
-    grid[3] = _center_text_row("EVENTS TODAY")
+    label = "EVENT" if overflow_count == 1 else "EVENTS"
+    grid[3] = _center_text_row(f"{label} UPCOMING")
     return grid
 
 
