@@ -79,6 +79,7 @@ class VestaboardAutomation:
         Call this from ``initialize()``.
         """
         self._event_handles = []
+        self._preview_overrides = None
 
         # Listen for controller→automation events (shared event names, filter by automation_id)
         handle = self.listen_event(self._on_config_event, "vb_auto_config")
@@ -225,11 +226,34 @@ class VestaboardAutomation:
             preview_only: If True, fire a ``push_ai_art_preview_result`` event
                 instead of pushing to the queue.
         """
+        # Set instance-level preview overrides so that automations which
+        # call push_frame() directly from generate_frame() (e.g. calendar_summary)
+        # also get the short TTL + override behaviour.
+        preview_short = bool(generate_kwargs.get("_preview_short_ttl", False))
+        override_ttl = bool(generate_kwargs.get("override_ttl", True))
+        if preview_short:
+            self._preview_overrides = {
+                "ttl_s": 30,
+                "override_ttl": True,
+                "should_expire": True,
+            }
+        elif override_ttl:
+            self._preview_overrides = {"override_ttl": True}
+        else:
+            self._preview_overrides = None
+
+        # Strip internal keys before passing to generate_frame()
+        frame_kwargs = {
+            k: v for k, v in generate_kwargs.items()
+            if k not in ("override_ttl", "_preview_short_ttl")
+        }
         try:
-            grid = await self.generate_frame(**generate_kwargs)
+            grid = await self.generate_frame(**frame_kwargs)
         except Exception as exc:
             self.log(f"generate_frame failed: {exc!r}", level="ERROR")
             return
+        finally:
+            self._preview_overrides = None
 
         if preview_only:
             subject = generate_kwargs.get("subject", "abstract art")
@@ -242,14 +266,13 @@ class VestaboardAutomation:
                 }),
             )
         else:
-            override_ttl = bool(generate_kwargs.get("override_ttl", True))
             if grid and any(any(cell != 0 for cell in row) for row in grid):
                 self.push_frame(
                     grid,
-                    ttl_s=self.get_resolved_ttl_s(),
+                    ttl_s=30 if preview_short else self.get_resolved_ttl_s(),
                     max_age_s=self.default_max_age_s,
                     override_ttl=override_ttl,
-                    should_expire=self.get_resolved_should_expire(),
+                    should_expire=True if preview_short else self.get_resolved_should_expire(),
                 )
             else:
                 self.log(
@@ -278,6 +301,13 @@ class VestaboardAutomation:
             override_ttl: Immediately display, bypassing active TTL.
             should_expire: Drop frame after TTL instead of moving to fallback.
         """
+        # Apply preview overrides if set by _handle_generate_request
+        overrides = getattr(self, "_preview_overrides", None) or {}
+        if overrides:
+            ttl_s = overrides.get("ttl_s", ttl_s)
+            override_ttl = overrides.get("override_ttl", override_ttl)
+            should_expire = overrides.get("should_expire", should_expire)
+
         payload: dict[str, Any] = {
             "automation_id": self.name,
             "source_label": self.display_name,

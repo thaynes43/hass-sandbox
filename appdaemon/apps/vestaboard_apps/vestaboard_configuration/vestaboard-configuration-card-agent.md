@@ -348,6 +348,14 @@ When adding new field types, follow the existing pattern:
 3. Add event handling in the appropriate handler (`_handleClick`, `_handleInput`, or `_handleChange`)
 4. Ensure dirty-check works in `_isStoreConfigDirty()` and `_syncAutomationEditsWithSensor()`
 
+### Store product-card action buttons
+
+Each automation product card has three action buttons in the `product-actions` div:
+
+1. **Install / Installed** — toggle automation enabled state (`store-toggle`)
+2. **Preview** — instantly generate and push a frame from this automation (`store-preview`). Fires `preview_automation` relay command with `automation_id`.
+3. **Configure / Hide Config / Discard & Close** — expand/collapse config panel (`store-expand`)
+
 ### Store layout behavior
 
 What users want:

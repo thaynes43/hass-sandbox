@@ -1067,6 +1067,9 @@ class VestaboardConfigurationCard extends HTMLElement {
             <button class="vbc-btn ${enabled ? "vbc-btn-installed" : "vbc-btn-primary"} vbc-btn-sm" data-action="store-toggle" data-auto-id="${this._esc(auto.id)}">
               ${enabled ? "Installed" : "Install"}
             </button>
+            <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="store-preview" data-auto-id="${this._esc(auto.id)}">
+              Preview
+            </button>
             <button class="vbc-btn vbc-btn-text vbc-btn-sm" data-action="store-expand" data-auto-id="${this._esc(auto.id)}">
               ${isExpanded ? (hasDirtyConfig ? "Discard & Close" : "Hide Config") : "Configure"}
             </button>
@@ -1545,6 +1548,13 @@ class VestaboardConfigurationCard extends HTMLElement {
           enabled: newEnabled,
         });
         this._render();
+        break;
+      }
+
+      case "store-preview": {
+        const autoId = el.dataset.autoId;
+        console.log("vestaboard-config-card: Preview pressed for automation", autoId);
+        this._callRelay("preview_automation", { automation_id: autoId });
         break;
       }
 

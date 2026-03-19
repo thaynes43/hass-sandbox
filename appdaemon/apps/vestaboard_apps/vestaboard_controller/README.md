@@ -116,6 +116,7 @@ When an automation registers, the controller creates a `RemoteAutomationProxy` o
 | `generate_ai_art_preview` | `subject` | Generate AI art and store as preview without pushing to board |
 | `clear_ai_art_preview` | — | Clear the AI art preview from status |
 | `generate_ai_message` | `override_ttl` | On-demand AI-generated message |
+| `preview_automation` | `automation_id` | Fire a generate event to any registered automation by ID for instant preview |
 
 ## Events fired by the controller
 

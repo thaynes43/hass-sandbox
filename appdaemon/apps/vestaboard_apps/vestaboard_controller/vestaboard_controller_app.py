@@ -515,6 +515,8 @@ class VestaboardControllerApp(hass.Hass):
             self.create_task(self._handle_generate_by_type(
                 payload, "message_generated_by_ai", "generate_ai_message"
             ))
+        elif command == "preview_automation":
+            self.create_task(self._handle_preview_automation(payload))
         else:
             self.log(f"Unknown command: {command!r}", level="WARNING")
 
@@ -758,6 +760,30 @@ class VestaboardControllerApp(hass.Hass):
         )
         self.log(
             f"generate_ai_art_preview: generate event fired to {auto_id!r} subject={subject!r}",
+            level="INFO",
+        )
+
+    async def _handle_preview_automation(self, payload: dict) -> None:
+        """Fire a generate event to a specific automation by ID for preview/testing."""
+        automation_id = str(payload.get("automation_id", ""))
+        auto = self._registered_automations.get(automation_id)
+        if auto is None:
+            self.log(
+                f"preview_automation: automation {automation_id!r} not registered",
+                level="WARNING",
+            )
+            return
+        self.fire_event(
+            "vb_auto_generate",
+            automation_id=automation_id,
+            generate_kwargs={
+                "override_ttl": True,
+                "_preview_short_ttl": True,
+            },
+            preview_only=False,
+        )
+        self.log(
+            f"preview_automation: generate event fired to {automation_id!r}",
             level="INFO",
         )
 

@@ -239,6 +239,7 @@ class VestaboardConfigurationApp(hass.Hass):
             "push_library_frame": self._cmd_push_library_frame,
             "toggle_automation": self._cmd_toggle_automation,
             "set_automation_config": self._cmd_set_automation_config,
+            "preview_automation": self._cmd_preview_automation,
             "refresh_status": self._cmd_refresh_status,
             "add_creator": self._cmd_add_creator,
             "move_frame": self._cmd_move_frame,
@@ -532,6 +533,15 @@ class VestaboardConfigurationApp(hass.Hass):
             }
         self._forward_to_controller("set_automation_config", ctrl_payload)
         self.log("set_automation_config automation_id=%r config=%r", automation_id, ctrl_payload)
+
+    def _cmd_preview_automation(self, payload: dict) -> None:
+        """Forward an automation preview request to the controller."""
+        automation_id = payload.get("automation_id")
+        if automation_id is None:
+            self.log("preview_automation: missing 'automation_id' in payload", level="WARNING")
+            return
+        self._forward_to_controller("preview_automation", {"automation_id": automation_id})
+        self.log("preview_automation automation_id=%r forwarded to controller", automation_id)
 
     # ------------------------------------------------------------------
     # Command handlers — misc

@@ -32,6 +32,10 @@ Automation apps (calendar_clock, ai_art_generator, ...)
   └─ fire vestaboard_controller_command: push_ai_art_preview_result  (ai_art_generator preview mode)
   └─ fire vestaboard_controller_command: update_next_fire_time     (notify controller of next scheduled fire)
        └─ vestaboard_controller_app handles push → board
+
+Card Preview button
+  └─ preview_automation command (with automation_id)
+       └─ vestaboard_controller_app fires vb_auto_generate → automation generates frame → board
 ```
 
 All card-to-AppDaemon communication uses the relay script pattern — the card calls a HA script that fires an event, which AppDaemon listens for. This works for non-admin users.
@@ -79,7 +83,7 @@ Displays all saved frames from the shared frame library (`frame_library_path`). 
 
 ### Vestaboard+ tab
 
-Lists all registered automations with toggle switches and per-automation config controls. Changes take effect immediately in the controller app via the relay event system.
+Lists all registered automations with toggle switches, a **Preview** button for instant on-demand generation, and per-automation config controls. Click Preview on any automation to immediately generate and display a frame on the board — useful for testing without waiting for the automation's natural schedule. Changes take effect immediately in the controller app via the relay event system.
 
 ## Configuration
 

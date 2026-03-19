@@ -21,7 +21,7 @@ Lovelace card
       │   → FrameLibrary (local JSON file)
       │   → _publish_status() → sensor.vestaboard_configuration_status
       └─ Forward commands (push_frame, push_library_frame, toggle_automation, set_automation_config,
-                           generate_art, generate_ai_message, clear_art_preview)
+                           preview_automation, generate_art, generate_ai_message, clear_art_preview)
           → fire_event(vestaboard_controller_command)
           → VestaboardControllerApp
 
@@ -66,6 +66,7 @@ sensor.vestaboard_controller_status (state changes)
 | `generate_art` | `subject` | Generate AI art preview without pushing to board (forwarded to controller as `generate_ai_art_preview`) |
 | `generate_ai_message` | — | Generate an AI message and push to board (forwarded to controller) |
 | `clear_art_preview` | — | Clear the AI art preview (forwarded to controller) |
+| `preview_automation` | `automation_id` | Instantly generate and push a frame from any automation (forwarded to controller) |
 | `add_creator` | `name` | Add a new name to the creators list and update `input_select.vestaboard_creator` |
 | `refresh_status` | — | Re-publish the configuration status sensor |
 
