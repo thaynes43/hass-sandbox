@@ -6,7 +6,9 @@ Vestaboard automation that uses an LLM to generate pixel art for a given subject
 
 1. On `initialize()`, registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
 2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
-3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. When the timer fires, it generates art for the subject `"abstract art"`.
+3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. When the timer fires:
+   - If `art_prompt_bundles_path` is configured and the file contains valid bundles, randomly picks one. If the bundle has `entities`, resolves their HA state values and includes them as context data in the subject.
+   - Otherwise, generates art for the default subject `"abstract art"`.
 4. `generate_frame(subject=...)` is the public entry point:
    - Builds a structured prompt instructing the LLM to output a JSON `{"grid": [[...], ...]}` with exactly 6 rows × 22 columns using valid Vestaboard codes (0–60, 63–70).
    - Calls `build_simple_text_provider()` from the AI provider registry using `ai_provider_conf.simple_text`.
@@ -22,7 +24,7 @@ Vestaboard automation that uses an LLM to generate pixel art for a given subject
 ```
 AiArtGeneratorApp
   → fire_event("vestaboard_controller_command", command="register_automation")
-  → run_in(random delay) → generate_frame(subject="abstract art")
+  → run_in(random delay) → _pick_art_bundle() → generate_frame(subject=...)
   → fire_event("vestaboard_controller_command", command="update_next_fire_time")
   → fire_event("vestaboard_controller_command", command="push_automation_frame")
   → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
@@ -47,6 +49,7 @@ Preview mode:
 - `providers.ai_providers.registry` — builds `SimpleTextProvider` from capability bundle config
 - `providers.vestaboard.character_encoding` — `blank_grid`
 - `vestaboard_apps._shared.base.VestaboardAutomation` — controller registration and frame push API
+- `vestaboard_apps._shared.template_resolver` — `resolve_entities()` for art bundle entity resolution
 
 ## Self-provisioned entities
 
@@ -61,6 +64,7 @@ None. The controller provisions all shared entities.
 | `module` | Yes | — | `vestaboard_apps.automations.ai_art_generator.ai_art_generator_app` |
 | `class` | Yes | — | `AiArtGeneratorApp` |
 | `ai_provider_conf` | Yes | — | AI provider capability bundle config. Must include a `simple_text` bundle name |
+| `art_prompt_bundles_path` | No | — | Absolute path to a YAML file containing art prompt bundles. The file is re-read on every fire (no caching). If omitted or the file is missing, falls back to `"abstract art"` as the default subject |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 
@@ -72,6 +76,39 @@ None. The controller provisions all shared entities.
 | `frequency_min_minutes` | int | `120` | Minimum minutes between random fires |
 | `frequency_max_minutes` | int | `480` | Maximum minutes between random fires |
 
+### Art prompt bundles file
+
+The bundles file is a YAML list. Each entry is a "bundle" that provides a subject for pixel art generation. On each random fire, the app picks one bundle at random.
+
+**File format:**
+
+```yaml
+# Simple subject-only bundles:
+- subject: "a sunset over the ocean"
+- subject: "a cat sleeping on a keyboard"
+
+# Bundle with HA entity context for data-driven art:
+- subject: "weather-inspired pixel art"
+  entities:
+    - entity_id: "weather.forecast_home"
+      description: "current weather condition and temperature"
+```
+
+**Hot-reload behavior:** The file is read fresh on every fire. You can edit it at any time — changes take effect on the next fire without restarting AppDaemon.
+
+**Error handling:**
+- If the file doesn't exist, a WARNING is logged once and the app falls back to `"abstract art"`.
+- If the file can't be parsed, a WARNING is logged and the app falls back.
+- Individual malformed entries (missing `subject` key, not a dict) are skipped with a WARNING; valid entries in the same file still work.
+
+**How entity context works:** When a bundle has `entities`, the app resolves their current HA state values and appends them as context data to the subject string. The LLM then uses this context to create more relevant art (e.g., sunny weather → warm colors, rainy → cool colors).
+
+**Paths:**
+- Dev: `/mnt/cephfs-hdd/misc/hass-media/vestaboard/art-prompt-bundles.yaml`
+- Prod: `/media/vestaboard/art-prompt-bundles.yaml`
+
+A seed file with examples is provided at `vestaboard_apps/seed-bundles/art-prompt-bundles.yaml`.
+
 ### YAML example
 
 ```yaml
@@ -81,6 +118,7 @@ art_generated_by_ai:
   disable: true
   ai_provider_conf:
     simple_text: openai-pixel-art
+  art_prompt_bundles_path: /media/vestaboard/art-prompt-bundles.yaml
 ```
 
 ## Valid Vestaboard codes
@@ -106,6 +144,7 @@ Codes `61–62` are not valid and will cause validation failure.
 
 - An AI provider must be configured in `providers/ai_providers/model_settings/` with a bundle name matching `ai_provider_conf.simple_text` (e.g. `openai-pixel-art`).
 - The corresponding API key env var (e.g. `OPENAI_API_KEY`) must be available in the runtime environment.
+- The art prompt bundles file must be placed at the configured `art_prompt_bundles_path`. If absent, the app gracefully falls back to generating abstract art.
 
 ## Upstream/downstream dependencies
 

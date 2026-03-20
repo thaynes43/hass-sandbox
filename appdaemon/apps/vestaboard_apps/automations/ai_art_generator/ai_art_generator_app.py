@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import random
 from typing import Any
 
 import sys
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[4]))  # adds appdaemon/
+
+import yaml
 
 import hassapi as hass
 
@@ -138,6 +141,8 @@ class AiArtGeneratorApp(hass.Hass, VestaboardAutomation):
         return grid
 
     def initialize(self) -> None:
+        self._art_bundles_path = (self.args or {}).get("art_prompt_bundles_path")
+        self._art_bundles_missing_warned = False
         self.register_with_controller()
         # Do NOT start interval here — wait for config event from controller
 
@@ -172,10 +177,112 @@ class AiArtGeneratorApp(hass.Hass, VestaboardAutomation):
             max_minutes=float(freq_max),
         )
 
+    def _load_art_bundles(self) -> list[dict]:
+        """Load art prompt bundles from the external YAML file.
+
+        Re-reads every call (no caching). Returns [] on missing file or parse error.
+        """
+        if not self._art_bundles_path:
+            return []
+
+        try:
+            with open(self._art_bundles_path, "r") as fh:
+                raw = yaml.safe_load(fh)
+        except FileNotFoundError:
+            if not self._art_bundles_missing_warned:
+                self.log(
+                    f"Art prompt bundles file not found: {self._art_bundles_path}",
+                    level="WARNING",
+                )
+                self._art_bundles_missing_warned = True
+            return []
+        except Exception as exc:
+            self.log(
+                f"Failed to read art prompt bundles file {self._art_bundles_path}: {exc!r}",
+                level="WARNING",
+            )
+            return []
+
+        if not isinstance(raw, list):
+            self.log(
+                f"Art prompt bundles file is not a YAML list: {type(raw).__name__}",
+                level="WARNING",
+            )
+            return []
+
+        valid: list[dict] = []
+        for i, entry in enumerate(raw):
+            if not isinstance(entry, dict) or "subject" not in entry:
+                self.log(
+                    f"Skipping malformed art bundle entry at index {i}: "
+                    f"must be a dict with a 'subject' key",
+                    level="WARNING",
+                )
+                continue
+            valid.append(entry)
+
+        self.log(
+            f"Loaded {len(valid)} art prompt bundle(s) from {self._art_bundles_path}",
+            level="INFO",
+        )
+        return valid
+
+    def _pick_art_bundle(self) -> dict | None:
+        """Randomly select an art prompt bundle, or return None if none available."""
+        bundles = self._load_art_bundles()
+        if not bundles:
+            return None
+        return random.choice(bundles)
+
+    async def _build_art_subject(self, bundle: dict) -> str:
+        """Build a subject string from an art bundle, optionally enriched with HA entity data."""
+        subject = bundle.get("subject", "abstract art")
+        entities = bundle.get("entities", [])
+
+        if not entities:
+            self.log(f"Art bundle selected: {subject!r} (no entities)", level="INFO")
+            return subject
+
+        from vestaboard_apps._shared.template_resolver import resolve_entities
+
+        state_cache: dict[str, str] = {}
+        for ent in entities:
+            eid = ent.get("entity_id", "")
+            if eid:
+                state = self.get_state(eid)
+                if hasattr(state, "__await__"):
+                    state = await state
+                state_cache[eid] = str(state) if state is not None else None
+
+        enriched = resolve_entities(entities, lambda eid: state_cache.get(eid))
+
+        data_lines = [
+            f"- {e.get('description', e.get('entity_id', ''))}: {e['current_value']}"
+            for e in enriched
+        ]
+
+        self.log(
+            f"Art bundle selected: {subject!r} | "
+            f"Resolved entities: {[{e.get('entity_id'): e['current_value']} for e in enriched]}",
+            level="INFO",
+        )
+
+        data_section = "\n".join(data_lines)
+        return f"{subject}\n\nContext data:\n{data_section}"
+
     def _on_random_fire(self, kwargs: dict) -> None:
         self._clear_random_interval_handle()  # handle already fired
-        self.create_task(self._generate_and_push(subject="abstract art"))
+        bundle = self._pick_art_bundle()
+        if bundle:
+            self.create_task(self._generate_and_push_from_bundle(bundle))
+        else:
+            self.create_task(self._generate_and_push(subject="abstract art"))
         self._start_random_interval()
+
+    async def _generate_and_push_from_bundle(self, bundle: dict) -> None:
+        """Generate art from a bundle and push the frame."""
+        subject = await self._build_art_subject(bundle)
+        await self._generate_and_push(subject=subject)
 
     async def generate_frame(self, subject: str = "abstract art", **kwargs) -> list[list[int]]:
         cfg = self.args or {}

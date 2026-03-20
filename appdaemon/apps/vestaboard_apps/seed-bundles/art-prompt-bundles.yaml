@@ -1,0 +1,31 @@
+# Art Prompt Bundles for the AI Art Generator
+#
+# Each entry is a "bundle" the LLM can use as a pixel art subject.
+# On each random fire, the app picks one bundle at random.
+#
+# Format:
+#   - subject: "What the AI should draw"
+#     entities:                          # optional — for data-driven art
+#       - entity_id: "sensor.xxx"
+#         description: "Human-readable label for the value"
+#
+# Simple subjects (no HA data):
+- subject: "a sunset over the ocean"
+- subject: "a cat sleeping on a keyboard"
+- subject: "a rocket launching into space"
+- subject: "a cozy cabin in snowy mountains"
+- subject: "a pixel art rainbow over a city skyline"
+- subject: "a friendly robot waving hello"
+- subject: "an underwater coral reef with fish"
+- subject: "a campfire under a starry sky"
+
+# Data-driven subjects (with HA entity context):
+- subject: "weather-inspired pixel art"
+  entities:
+    - entity_id: "weather.forecast_home"
+      description: "current weather condition and temperature"
+
+- subject: "time-of-day inspired abstract art"
+  entities:
+    - entity_id: "sensor.time"
+      description: "current time of day"

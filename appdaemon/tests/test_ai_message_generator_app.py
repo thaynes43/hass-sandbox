@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
 # Mock hassapi before any app imports
 mock_hass = MagicMock()
@@ -48,13 +48,101 @@ def _make_app(args: dict | None = None):
     app.run_in = MagicMock(return_value="timer-handle")
     app.get_state = MagicMock(return_value=None)
     app.create_task = MagicMock()
-    # Initialize bundle list the same way initialize() does
-    app._prompt_data_bundles = app.args.get("prompt_data_bundles", [])
+    # Initialize the same way initialize() does
+    app._bundles_path = app.args.get("prompt_data_bundles_path")
+    app._bundles_missing_warned = False
     # Stub the random-interval helpers used by the mixin
     app._schedule_random_interval = MagicMock()
     app._cancel_random_interval = MagicMock()
     app._clear_random_interval_handle = MagicMock()
     return app
+
+
+_SAMPLE_BUNDLES_YAML = """\
+- description: "Report on home UPS power status"
+  entities:
+    - entity_id: "sensor.ups_load"
+      description: "UPS load percentage"
+- description: "Report on water leak sensors"
+  entities:
+    - entity_id: "binary_sensor.water_leak"
+      description: "Water leak detection status"
+"""
+
+_MALFORMED_BUNDLES_YAML = """\
+- description: "Valid bundle"
+  entities: []
+- not_a_bundle: true
+- 42
+- description: "Another valid bundle"
+  entities: []
+"""
+
+
+# ---------------------------------------------------------------------------
+# _load_bundles
+# ---------------------------------------------------------------------------
+
+
+class TestLoadBundles:
+    def test_returns_empty_when_no_path_configured(self):
+        app = _make_app({})
+        assert app._load_bundles() == []
+
+    def test_loads_valid_yaml_file(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/bundles.yaml"})
+        with patch("builtins.open", mock_open(read_data=_SAMPLE_BUNDLES_YAML)):
+            bundles = app._load_bundles()
+        assert len(bundles) == 2
+        assert bundles[0]["description"] == "Report on home UPS power status"
+        assert bundles[1]["description"] == "Report on water leak sensors"
+
+    def test_returns_empty_on_missing_file(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/missing.yaml"})
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            bundles = app._load_bundles()
+        assert bundles == []
+        # Warning logged once
+        assert any("not found" in str(c) for c in app.log.call_args_list)
+
+    def test_missing_file_warns_only_once(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/missing.yaml"})
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            app._load_bundles()
+            app._load_bundles()
+        warning_calls = [c for c in app.log.call_args_list if "not found" in str(c)]
+        assert len(warning_calls) == 1
+
+    def test_returns_empty_on_invalid_yaml(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/bad.yaml"})
+        with patch("builtins.open", mock_open(read_data=": invalid: yaml: [")):
+            bundles = app._load_bundles()
+        assert bundles == []
+
+    def test_returns_empty_when_yaml_is_not_a_list(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/dict.yaml"})
+        with patch("builtins.open", mock_open(read_data="key: value\n")):
+            bundles = app._load_bundles()
+        assert bundles == []
+        assert any("not a YAML list" in str(c) for c in app.log.call_args_list)
+
+    def test_skips_malformed_entries_keeps_valid(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/mixed.yaml"})
+        with patch("builtins.open", mock_open(read_data=_MALFORMED_BUNDLES_YAML)):
+            bundles = app._load_bundles()
+        assert len(bundles) == 2
+        assert bundles[0]["description"] == "Valid bundle"
+        assert bundles[1]["description"] == "Another valid bundle"
+        # Warnings logged for malformed entries
+        warning_calls = [c for c in app.log.call_args_list if "malformed" in str(c).lower()]
+        assert len(warning_calls) == 2
+
+    def test_logs_bundle_count_at_info(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/bundles.yaml"})
+        with patch("builtins.open", mock_open(read_data=_SAMPLE_BUNDLES_YAML)):
+            app._load_bundles()
+        info_calls = [c for c in app.log.call_args_list if "INFO" in str(c)]
+        assert any("2" in str(c) and "bundle" in str(c).lower() for c in info_calls)
 
 
 # ---------------------------------------------------------------------------
@@ -63,31 +151,32 @@ def _make_app(args: dict | None = None):
 
 
 class TestPickBundle:
-    def test_returns_none_when_no_bundles(self):
+    def test_returns_none_when_no_path(self):
         app = _make_app({})
         assert app._pick_bundle() is None
 
-    def test_returns_none_when_bundles_empty_list(self):
-        app = _make_app({"prompt_data_bundles": []})
-        assert app._pick_bundle() is None
+    def test_returns_none_when_file_missing(self):
+        app = _make_app({"prompt_data_bundles_path": "/fake/missing.yaml"})
+        with patch("builtins.open", side_effect=FileNotFoundError):
+            assert app._pick_bundle() is None
 
     def test_returns_single_bundle_when_only_one(self):
-        bundle = {"description": "energy", "entities": []}
-        app = _make_app({"prompt_data_bundles": [bundle]})
-        result = app._pick_bundle()
-        assert result == bundle
+        yaml_data = '- description: "energy"\n  entities: []\n'
+        app = _make_app({"prompt_data_bundles_path": "/fake/bundles.yaml"})
+        with patch("builtins.open", mock_open(read_data=yaml_data)):
+            result = app._pick_bundle()
+        assert result["description"] == "energy"
 
     def test_returns_one_of_multiple_bundles(self):
-        bundles = [
-            {"description": "energy", "entities": []},
-            {"description": "security", "entities": []},
-            {"description": "weather", "entities": []},
-        ]
-        app = _make_app({"prompt_data_bundles": bundles})
-        # Run many times — always returns a member of the list
-        for _ in range(50):
-            result = app._pick_bundle()
-            assert result in bundles
+        app = _make_app({"prompt_data_bundles_path": "/fake/bundles.yaml"})
+        with patch("builtins.open", mock_open(read_data=_SAMPLE_BUNDLES_YAML)):
+            results = set()
+            for _ in range(50):
+                result = app._pick_bundle()
+                results.add(result["description"])
+            # Should pick from the available bundles
+            assert len(results) >= 1
+            assert all(d in ("Report on home UPS power status", "Report on water leak sensors") for d in results)
 
 
 # ---------------------------------------------------------------------------
@@ -208,8 +297,8 @@ class TestBuildBundlePromptSection:
 class TestGenerateFrameWithBundles:
     def test_no_ai_provider_conf_uses_fallback_regardless_of_bundles(self):
         """When no ai_provider_conf, always use fallback (no AI call)."""
-        bundle = {"description": "energy", "entities": []}
-        app = _make_app({"prompt_data_bundles": [bundle]})
+        app = _make_app({"prompt_data_bundles_path": "/fake/bundles.yaml"})
+        # No ai_provider_conf — should use fallback without loading bundles
         grid = _run(app.generate_frame())
         assert len(grid) == 6
         assert all(len(row) == 22 for row in grid)
@@ -225,7 +314,7 @@ class TestGenerateFrameWithBundles:
         app = _make_app(
             {
                 "ai_provider_conf": {"simple_text": "openai-budget"},
-                "prompt_data_bundles": [bundle],
+                "prompt_data_bundles_path": "/fake/bundles.yaml",
             }
         )
         app.get_state = MagicMock(return_value="80")
@@ -256,14 +345,15 @@ class TestGenerateFrameWithBundles:
         app = _make_app(
             {
                 "ai_provider_conf": {"simple_text": "openai-budget"},
-                "prompt_data_bundles": [bundle],
+                "prompt_data_bundles_path": "/fake/bundles.yaml",
             }
         )
 
         with patch.object(app, "_generate_ai_frame", new=AsyncMock(side_effect=RuntimeError("boom"))):
-            result = _run(app.generate_frame())
+            with patch.object(app, "_pick_bundle", return_value=bundle):
+                result = _run(app.generate_frame())
 
-        # Should return a 6×22 grid from fallback
+        # Should return a 6x22 grid from fallback
         assert len(result) == 6
         assert all(len(row) == 22 for row in result)
         # Warning logged

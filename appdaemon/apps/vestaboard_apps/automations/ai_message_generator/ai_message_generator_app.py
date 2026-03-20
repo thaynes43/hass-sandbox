@@ -10,6 +10,8 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parents[4]))  # adds appdaemon/
 
+import yaml
+
 import hassapi as hass
 
 from providers.vestaboard.character_encoding import (
@@ -143,7 +145,8 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         ]
 
     def initialize(self) -> None:
-        self._prompt_data_bundles = (self.args or {}).get("prompt_data_bundles", [])
+        self._bundles_path = (self.args or {}).get("prompt_data_bundles_path")
+        self._bundles_missing_warned = False
         self.register_with_controller()
         # Do NOT start interval here — wait for config event from controller
 
@@ -195,9 +198,59 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
 
         return self._generate_fallback_frame()
 
+    def _load_bundles(self) -> list[dict]:
+        """Load prompt data bundles from the external YAML file.
+
+        Re-reads every call (no caching). Returns [] on missing file or parse error.
+        """
+        if not self._bundles_path:
+            return []
+
+        try:
+            with open(self._bundles_path, "r") as fh:
+                raw = yaml.safe_load(fh)
+        except FileNotFoundError:
+            if not self._bundles_missing_warned:
+                self.log(
+                    f"Prompt data bundles file not found: {self._bundles_path}",
+                    level="WARNING",
+                )
+                self._bundles_missing_warned = True
+            return []
+        except Exception as exc:
+            self.log(
+                f"Failed to read prompt data bundles file {self._bundles_path}: {exc!r}",
+                level="WARNING",
+            )
+            return []
+
+        if not isinstance(raw, list):
+            self.log(
+                f"Prompt data bundles file is not a YAML list: {type(raw).__name__}",
+                level="WARNING",
+            )
+            return []
+
+        valid: list[dict] = []
+        for i, entry in enumerate(raw):
+            if not isinstance(entry, dict) or "description" not in entry:
+                self.log(
+                    f"Skipping malformed bundle entry at index {i}: "
+                    f"must be a dict with a 'description' key",
+                    level="WARNING",
+                )
+                continue
+            valid.append(entry)
+
+        self.log(
+            f"Loaded {len(valid)} prompt data bundle(s) from {self._bundles_path}",
+            level="INFO",
+        )
+        return valid
+
     def _pick_bundle(self) -> dict | None:
-        """Randomly select a prompt data bundle, or return None if none configured."""
-        bundles = getattr(self, "_prompt_data_bundles", [])
+        """Randomly select a prompt data bundle, or return None if none available."""
+        bundles = self._load_bundles()
         if not bundles:
             return None
         return random.choice(bundles)
