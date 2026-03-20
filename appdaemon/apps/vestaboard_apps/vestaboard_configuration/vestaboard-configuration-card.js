@@ -875,7 +875,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     const refreshInput = hasTemplate ? `
       <div class="config-field">
         <label class="config-label">Refresh Interval (minutes)</label>
-        <input type="number" class="vbc-input vbc-input-sm" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval" placeholder="No refresh">
+        <input type="number" class="vbc-input" style="width:80px" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval">
         <span class="config-description">How often to update entity values on the board</span>
       </div>
     ` : "";
