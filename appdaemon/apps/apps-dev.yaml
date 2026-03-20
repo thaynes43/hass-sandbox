@@ -85,7 +85,9 @@ calendar_summary_holidays_dev:
 weather_schedule_dev:
   module: vestaboard_apps.automations.weather_schedule.weather_schedule_app
   class: WeatherScheduleApp
-  weather_entity: weather.first_floor_ecobee
+  weather_entity: weather.forecast_home
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
   time_list:
     - "07:30:00"
     - "15:00:00"

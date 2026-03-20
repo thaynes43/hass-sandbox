@@ -1,4 +1,9 @@
-"""Weather Schedule automation app — displays weather at configured daily times."""
+"""Weather Schedule automation app — displays weather at configured daily times.
+
+Shows current conditions with color-coded temperature tiles, humidity,
+and a wind speed meter.  Re-fetches and re-pushes every 15 minutes
+during the TTL window so the board stays current.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +26,12 @@ from providers.vestaboard.character_encoding import (
 )
 
 from vestaboard_apps._shared.base import VestaboardAutomation
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+_UPDATE_INTERVAL_S = 15 * 60  # 15 minutes
 
 # Weather condition → color code mapping for the top accent bar.
 _CONDITION_COLORS: dict[str, int] = {
@@ -63,6 +74,10 @@ _CONDITION_LABELS: dict[str, str] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Grid helpers
+# ---------------------------------------------------------------------------
+
 def _encode_char(ch: str) -> int:
     if ch == " ":
         return 0
@@ -74,16 +89,133 @@ def _center_text_row(text: str, width: int = COLS) -> list[int]:
     return [_encode_char(ch) for ch in padded]
 
 
+def _temp_color(temp: int) -> int:
+    """Return a color tile code for a temperature value."""
+    if temp <= 40:
+        return COLOR_CODES["blue"]
+    if temp <= 60:
+        return COLOR_CODES["yellow"]
+    if temp <= 80:
+        return COLOR_CODES["orange"]
+    return COLOR_CODES["red"]
+
+
+def _wind_tiles(wind_speed: float) -> list[int]:
+    """Return 1-4 color-coded tiles representing wind speed.
+
+    0-7 mph  : 1 white tile   (calm)
+    8-15 mph : 2 yellow tiles (breeze)
+    16-25 mph: 3 orange tiles (moderate)
+    26+ mph  : 4 red tiles    (high wind)
+    """
+    if wind_speed <= 7:
+        return [COLOR_CODES["white"]]
+    if wind_speed <= 15:
+        return [COLOR_CODES["yellow"]] * 2
+    if wind_speed <= 25:
+        return [COLOR_CODES["orange"]] * 3
+    return [COLOR_CODES["red"]] * 4
+
+
+def _build_temp_row(high: Optional[int], low: Optional[int], current: Optional[int]) -> list[int]:
+    """Build row 2: HI[tile]## LO[tile]## [tile]##
+
+    Centered within 22 columns.
+    """
+    # Build segments as (codes) lists
+    segments: list[list[int]] = []
+
+    if high is not None:
+        hi_text = f"HI"
+        hi_codes = [_encode_char(c) for c in hi_text]
+        hi_codes.append(_temp_color(high))
+        hi_codes += [_encode_char(c) for c in str(high)]
+        segments.append(hi_codes)
+
+    if low is not None:
+        lo_text = f"LO"
+        lo_codes = [_encode_char(c) for c in lo_text]
+        lo_codes.append(_temp_color(low))
+        lo_codes += [_encode_char(c) for c in str(low)]
+        segments.append(lo_codes)
+
+    if current is not None:
+        cur_codes = [_temp_color(current)]
+        cur_codes += [_encode_char(c) for c in str(current)]
+        segments.append(cur_codes)
+
+    if not segments:
+        return [0] * COLS
+
+    # Join segments with 2-space gaps
+    row: list[int] = []
+    for i, seg in enumerate(segments):
+        if i > 0:
+            row += [0, 0]  # 2-space gap
+        row += seg
+
+    # Center within COLS
+    total = len(row)
+    if total < COLS:
+        left_pad = (COLS - total) // 2
+        right_pad = COLS - total - left_pad
+        row = [0] * left_pad + row + [0] * right_pad
+    else:
+        row = row[:COLS]
+
+    return row
+
+
+def _build_detail_row(humidity: Optional[int], wind_speed: Optional[float]) -> list[int]:
+    """Build row 3: RH ##%   WIND [tiles]
+
+    Centered within 22 columns.
+    """
+    segments: list[list[int]] = []
+
+    if humidity is not None:
+        rh_text = f"RH {humidity}%"
+        segments.append([_encode_char(c) for c in rh_text])
+
+    if wind_speed is not None:
+        wind_label = [_encode_char(c) for c in "WIND"]
+        wind_label.append(0)  # space before tiles
+        wind_label += _wind_tiles(wind_speed)
+        segments.append(wind_label)
+
+    if not segments:
+        return [0] * COLS
+
+    # Join with 3-space gap
+    row: list[int] = []
+    for i, seg in enumerate(segments):
+        if i > 0:
+            row += [0, 0, 0]
+        row += seg
+
+    # Center
+    total = len(row)
+    if total < COLS:
+        left_pad = (COLS - total) // 2
+        right_pad = COLS - total - left_pad
+        row = [0] * left_pad + row + [0] * right_pad
+    else:
+        row = row[:COLS]
+
+    return row
+
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
 class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
-    """Automation that displays weather information at configured daily times.
+    """Automation that displays weather at configured daily times.
 
-    Reads weather data from a Home Assistant weather entity and displays
-    temperature, condition, and humidity on the Vestaboard.
-
-    Config keys:
-    - weather_entity: HA weather entity ID (e.g. "weather.first_floor_ecobee").
-    - time_list: List of "HH:MM:SS" strings for daily display times.
-    - force_push: If True, override active TTL when pushing.
+    Reads current weather + daily forecast from a HA weather entity and
+    displays condition, temperatures (high/low/current with color tiles),
+    humidity, and a wind speed meter.  Re-fetches every 15 minutes during
+    the TTL window.
     """
 
     automation_type = "weather_schedule"
@@ -101,6 +233,7 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
     }
 
     _daily_handles: list = []
+    _update_handle = None
 
     @classmethod
     def get_config_schema(cls) -> dict:
@@ -123,23 +256,24 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
         }
 
     def get_preview_frame(self) -> list[list[int]]:
-        """Show a sample weather frame."""
-        color = COLOR_CODES["yellow"]
+        """Show a sample weather frame with the new layout."""
+        bar_color = COLOR_CODES["yellow"]
         grid = blank_grid()
-        grid[0] = [color] * COLS
+        grid[0] = [bar_color] * COLS
         grid[1] = _center_text_row("SUNNY")
-        grid[2] = _center_text_row("72 F")
-        grid[3] = _center_text_row("FEELS LIKE 75")
+        grid[2] = _build_temp_row(72, 55, 68)
+        grid[3] = _build_detail_row(45, 8)
         grid[5] = _center_text_row("7:30 AM")
         return grid
 
     def initialize(self) -> None:
         self._daily_handles = []
+        self._update_handle = None
         self.register_with_controller()
-        # Do NOT start timers here — wait for config event from controller
 
     def terminate(self) -> None:
         self._cancel_daily_timers()
+        self._cancel_update_timer()
         self.deregister_from_controller()
 
     def set_enabled(self, enabled: bool) -> None:
@@ -147,6 +281,7 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
             self._register_daily_timers()
         else:
             self._cancel_daily_timers()
+            self._cancel_update_timer()
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
@@ -155,6 +290,7 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
                 self._register_daily_timers()
             else:
                 self._cancel_daily_timers()
+                self._cancel_update_timer()
         if "time_list" in config:
             self.log(
                 f"time_list updated: {config['time_list']} — rescheduling daily timers",
@@ -164,10 +300,12 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
                 self._cancel_daily_timers()
                 self._register_daily_timers()
 
-    def _register_daily_timers(self) -> None:
-        """Register run_daily timers for each time in time_list."""
-        self._cancel_daily_timers()
+    # ------------------------------------------------------------------
+    # Daily schedule timers
+    # ------------------------------------------------------------------
 
+    def _register_daily_timers(self) -> None:
+        self._cancel_daily_timers()
         cfg = self.args or {}
         time_list = cfg.get("time_list", self.DEFAULT_UI_CONFIG.get("time_list", []))
         if not isinstance(time_list, list):
@@ -188,7 +326,6 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
                 self.log(f"Failed to schedule weather at {time_str!r}: {exc!r}", level="WARNING")
 
     def _cancel_daily_timers(self) -> None:
-        """Cancel all daily timers."""
         for handle in self._daily_handles:
             try:
                 self.cancel_timer(handle)
@@ -196,12 +333,62 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
                 pass
         self._daily_handles = []
 
+    # ------------------------------------------------------------------
+    # Periodic update timer (re-fetch every 15 min during TTL)
+    # ------------------------------------------------------------------
+
+    def _cancel_update_timer(self) -> None:
+        if self._update_handle is not None:
+            try:
+                self.cancel_timer(self._update_handle)
+            except Exception:
+                pass
+            self._update_handle = None
+
+    def _on_update_timer(self, kwargs: dict) -> None:
+        self._update_handle = None
+        self.create_task(self._update_weather())
+
+    async def _schedule_update_timer(self) -> None:
+        """Schedule the next 15-minute weather refresh."""
+        self._cancel_update_timer()
+        handle = self.run_in(self._on_update_timer, _UPDATE_INTERVAL_S)
+        if hasattr(handle, "__await__"):
+            handle = await handle
+        self._update_handle = handle
+        self.log(
+            f"Weather update scheduled in {_UPDATE_INTERVAL_S // 60} min",
+            level="DEBUG",
+        )
+
+    async def _update_weather(self) -> None:
+        """Re-fetch weather and push updated frame (same-source replaces displayed)."""
+        try:
+            grid = await self.generate_frame()
+            if grid and any(any(cell != 0 for cell in row) for row in grid):
+                self.push_frame(
+                    grid,
+                    ttl_s=self.get_resolved_ttl_s(),
+                    max_age_s=self.default_max_age_s,
+                    override_ttl=False,  # same-source push, no need to override
+                    should_expire=self.get_resolved_should_expire(),
+                )
+                self.log("Weather update pushed (periodic refresh)", level="INFO")
+        except Exception as exc:
+            self.log(f"Weather update failed: {exc!r}", level="ERROR")
+
+        # Schedule next update
+        await self._schedule_update_timer()
+
+    # ------------------------------------------------------------------
+    # Daily fire + initial push
+    # ------------------------------------------------------------------
+
     def _on_daily_fire(self, kwargs: dict) -> None:
-        """Daily timer callback — generate and push weather frame."""
         self.create_task(self._generate_and_push_weather())
 
     async def _generate_and_push_weather(self) -> None:
-        """Generate weather frame and push with force_push support."""
+        """Generate weather frame, push it, and start the update timer."""
         try:
             grid = await self.generate_frame()
             if grid and any(any(cell != 0 for cell in row) for row in grid):
@@ -219,14 +406,21 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
         except Exception as exc:
             self.log(f"Weather generate_and_push failed: {exc!r}", level="ERROR")
 
+        # Start periodic updates
+        await self._schedule_update_timer()
+
+    # ------------------------------------------------------------------
+    # Frame generation
+    # ------------------------------------------------------------------
+
     async def generate_frame(self, **kwargs) -> list[list[int]]:
         """Read weather entity and build a 6x22 grid.
 
         Layout:
         - Row 0: colored bar (weather-condition-based color)
-        - Row 1: condition (e.g., "SUNNY") centered
-        - Row 2: temperature (e.g., "72 F") centered
-        - Row 3: "FEELS LIKE 75" or humidity centered
+        - Row 1: condition label (e.g. "SUNNY") centered
+        - Row 2: HI[tile]## LO[tile]## [tile]## (high, low, current w/ color tiles)
+        - Row 3: RH ##%   WIND [tiles] (humidity + wind meter)
         - Row 4: blank
         - Row 5: time of reading
         """
@@ -236,6 +430,7 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
             self.log("No weather_entity configured", level="WARNING")
             return blank_grid()
 
+        # Read current state
         try:
             state = self.get_state(weather_entity, attribute="all")
             if hasattr(state, "__await__"):
@@ -251,27 +446,17 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
         attrs = state.get("attributes", {}) if isinstance(state, dict) else {}
         condition = state.get("state", "unknown") if isinstance(state, dict) else str(state)
 
-        temperature = attrs.get("temperature")
-        humidity = attrs.get("humidity")
-        apparent_temp = attrs.get("apparent_temperature")
-        temp_unit = attrs.get("temperature_unit", "F")
+        current_temp = _safe_int(attrs.get("temperature"))
+        humidity = _safe_int(attrs.get("humidity"))
+        wind_speed = _safe_float(attrs.get("wind_speed"))
+
+        # Fetch daily forecast for high/low
+        high_temp, low_temp = await self._fetch_daily_high_low(weather_entity)
 
         # Build condition label
-        condition_label = _CONDITION_LABELS.get(condition, condition.upper().replace("-", " ").replace("_", " "))
-
-        # Build temperature string
-        if temperature is not None:
-            temp_str = f"{int(round(float(temperature)))} {temp_unit.replace('°', '')}"
-        else:
-            temp_str = ""
-
-        # Build detail line
-        if apparent_temp is not None:
-            detail_str = f"FEELS LIKE {int(round(float(apparent_temp)))}"
-        elif humidity is not None:
-            detail_str = f"HUMIDITY {int(round(float(humidity)))}%"
-        else:
-            detail_str = ""
+        condition_label = _CONDITION_LABELS.get(
+            condition, condition.upper().replace("-", " ").replace("_", " ")
+        )
 
         # Time of reading
         now = datetime.now()
@@ -283,13 +468,75 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
         grid = blank_grid()
         grid[0] = [bar_color] * COLS
         grid[1] = _center_text_row(condition_label)
-        grid[2] = _center_text_row(temp_str)
-        grid[3] = _center_text_row(detail_str)
-        # Row 4: blank
+        grid[2] = _build_temp_row(high_temp, low_temp, current_temp)
+        grid[3] = _build_detail_row(humidity, wind_speed)
         grid[5] = _center_text_row(time_str)
 
         self.log(
-            f"Weather frame: {condition_label} {temp_str} {detail_str} at {time_str}",
+            f"Weather frame: {condition_label} hi={high_temp} lo={low_temp} "
+            f"cur={current_temp} rh={humidity}% wind={wind_speed}mph at {time_str}",
             level="INFO",
         )
         return grid
+
+    async def _fetch_daily_high_low(
+        self, weather_entity: str
+    ) -> tuple[Optional[int], Optional[int]]:
+        """Fetch today's high and low from the daily forecast via HA REST API.
+
+        AppDaemon's call_service doesn't support response data from HA
+        services, so we use the REST API directly via HaRestClient.
+        """
+        try:
+            from providers.ha_provisioner.ha_rest_client import HaRestClient
+            from providers.secrets import resolve_secret
+
+            ha_url = resolve_secret(self.args.get("ha_url_env", "HA_URL"))
+            ha_token = resolve_secret(self.args.get("ha_token_env", "TOKEN"))
+
+            async with HaRestClient(ha_url, ha_token) as client:
+                result = await client.post(
+                    "/api/services/weather/get_forecasts",
+                    json={
+                        "entity_id": weather_entity,
+                        "type": "daily",
+                    },
+                )
+
+            if isinstance(result, dict):
+                forecasts = result.get(weather_entity, {}).get("forecast", [])
+                if forecasts:
+                    today = forecasts[0]
+                    high = _safe_int(today.get("temperature"))
+                    low = _safe_int(today.get("templow"))
+                    self.log(
+                        f"Daily forecast: high={high} low={low}",
+                        level="DEBUG",
+                    )
+                    return high, low
+        except Exception as exc:
+            self.log(f"Failed to fetch daily forecast: {exc!r}", level="WARNING")
+
+        return None, None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _safe_int(value) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(round(float(value)))
+    except (ValueError, TypeError):
+        return None
+
+
+def _safe_float(value) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return None
