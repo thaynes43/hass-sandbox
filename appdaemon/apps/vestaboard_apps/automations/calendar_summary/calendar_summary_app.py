@@ -447,14 +447,45 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self._current_events = []
             return
 
+        # Filter out elapsed events — don't display events that started
+        # more than 60 minutes ago (they're done, not upcoming).
+        max_elapsed_s = 60 * 60  # 1 hour grace for in-progress events
+        active_events = [
+            ev for ev in all_events
+            if ev["seconds_until"] > -max_elapsed_s
+        ]
+        if len(active_events) < len(all_events):
+            dropped = len(all_events) - len(active_events)
+            self.log(
+                f"Filtered out {dropped} elapsed event(s) (started > {max_elapsed_s // 60} min ago)",
+                level="INFO",
+            )
+        all_events = active_events
+
+        if not all_events:
+            self.log(
+                f"No active events remaining after elapsed filter "
+                f"(entity={entity_id!r})",
+                level="INFO",
+            )
+            self._cancel_rotation_timer()
+            self._cancel_countdown_timer()
+            self._current_events = []
+            return
+
         # Partition into urgent vs upcoming
+        # Urgent = future events within the reminder threshold (not past events)
         reminder_seconds = int(reminder_threshold_min * 60)
         urgent_events = []
         upcoming_events = []
 
         for ev in all_events:
             seconds_until = ev["seconds_until"]
-            if seconds_until <= reminder_seconds:
+            if 0 <= seconds_until <= reminder_seconds:
+                # Future event within threshold — urgent
+                urgent_events.append(ev)
+            elif seconds_until < 0:
+                # Already started — treat as urgent (in-progress)
                 urgent_events.append(ev)
             else:
                 upcoming_events.append(ev)
