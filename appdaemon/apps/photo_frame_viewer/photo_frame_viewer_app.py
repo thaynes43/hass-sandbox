@@ -155,9 +155,14 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pending_path_to_label: dict[str, str] = {}
         self._pending_fingerprint: Optional[str] = None
 
-        # Timestamp of last programmatic picker change — absorbs async round-trip echoes.
-        self._last_programmatic_change: float = 0.0
-        self._PROGRAMMATIC_DEBOUNCE_S: float = 1.0
+        # Label we expect back from the next HA state-change echo after a
+        # programmatic picker update.  Cleared when the echo arrives so that
+        # we never confuse our own call_service round-trip with a real user
+        # navigation.  This replaces the old time-based debounce which was
+        # too fragile — HA can take >1 s to propagate state changes under
+        # load, causing the debounce window to expire and every auto-advance
+        # to be mis-classified as "manual nav".
+        self._programmatic_target: Optional[str] = None
 
         self.log(
             f"PhotoFrameViewerApp init "
@@ -839,8 +844,6 @@ class PhotoFrameViewerApp(hass.Hass):
         pending_labels = self._pending_labels[:]
         self._finalize_pending(reason=reason)
 
-        self._last_programmatic_change = time.time()
-
         existing_opts = self._picker_options()
         if existing_opts != pending_labels:
             self.log(
@@ -856,6 +859,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         if pending_labels:
             first_label = pending_labels[0]
+            self._programmatic_target = first_label
             self.call_service(
                 "input_select/select_option",
                 entity_id=self.picker_entity_id,
@@ -1009,13 +1013,15 @@ class PhotoFrameViewerApp(hass.Hass):
             return
 
         # Absorb async state-change events from our own programmatic calls.
-        if time.time() - self._last_programmatic_change < self._PROGRAMMATIC_DEBOUNCE_S:
+        if self._programmatic_target is not None and new_label == self._programmatic_target:
+            self._programmatic_target = None
             self.log(
                 f"PhotoFrameViewerApp: ignoring picker echo {new_label!r} "
-                f"(debounce)",
+                f"(programmatic)",
                 level="DEBUG",
             )
             return
+        self._programmatic_target = None
 
         # Manual navigation while a pending gen is queued.
         if self._pending_gen_id is not None:
@@ -1062,7 +1068,7 @@ class PhotoFrameViewerApp(hass.Hass):
             next_idx = min(idx + 1, len(opts) - 1)
         next_label = opts[next_idx]
 
-        self._last_programmatic_change = time.time()
+        self._programmatic_target = next_label
         self.call_service(
             "input_select/select_option",
             entity_id=self.picker_entity_id,
