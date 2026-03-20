@@ -340,6 +340,77 @@ class TestPendingSwap:
         app._on_stage_settled({})
         assert app._pending_gen_id == "6"
 
+    def test_tick_echo_absorbed_by_programmatic_target(self):
+        """Programmatic picker change from _on_tick must not be treated as manual nav.
+
+        Regression test for a bug where the time-based debounce window
+        (1 s) was too short for HA state-change round-trips, causing every
+        auto-advance to be mis-classified as manual navigation and the timer
+        to be rescheduled repeatedly.
+        """
+        app = self._init_with_gen("3")
+        opts = app._picker_options()
+        assert len(opts) >= 2, "Need at least 2 picker options"
+        first_label = opts[0]
+
+        # Point the picker at the first label so _on_tick advances to the second.
+        app.get_state = MagicMock(side_effect=lambda eid, attribute=None: (
+            first_label if eid == _PICKER_ENTITY_ID and attribute is None
+            else ({"state": first_label, "attributes": {"options": opts}}
+                  if eid == _PICKER_ENTITY_ID and attribute == "all"
+                  else None)
+        ))
+
+        app._on_tick({})
+
+        # _on_tick should have set a programmatic target.
+        expected_next = opts[1]
+        assert app._programmatic_target == expected_next
+
+        # Simulate HA echoing the state change back (this is _on_picker_change).
+        app.log.reset_mock()
+        app._on_picker_change(
+            _PICKER_ENTITY_ID, "state", first_label, expected_next, {},
+        )
+
+        # The echo should be absorbed — no "manual nav" log.
+        manual_nav_logs = [
+            c for c in app.log.call_args_list
+            if "manual nav" in str(c).lower()
+        ]
+        assert len(manual_nav_logs) == 0, (
+            f"Expected no 'manual nav' logs but got: {manual_nav_logs}"
+        )
+        # Target should be cleared after absorption.
+        assert app._programmatic_target is None
+
+    def test_real_manual_nav_not_absorbed(self):
+        """A genuine user navigation must not be absorbed by the programmatic target."""
+        app = self._init_with_gen("3")
+        # Consume any pending gen so _apply_pending_gen doesn't interfere.
+        app._pending_gen_id = None
+        opts = app._picker_options()
+        assert len(opts) >= 3, "Need at least 3 picker options"
+
+        # Simulate a tick that targets opts[1].
+        app._programmatic_target = opts[1]
+
+        # User navigates to opts[2] instead — different from the target.
+        app.log.reset_mock()
+        app._on_picker_change(
+            _PICKER_ENTITY_ID, "state", opts[0], opts[2], {},
+        )
+
+        manual_nav_logs = [
+            c for c in app.log.call_args_list
+            if "manual nav" in str(c).lower()
+        ]
+        assert len(manual_nav_logs) == 1, (
+            f"Expected 1 'manual nav' log but got: {manual_nav_logs}"
+        )
+        # Target should be cleared even on mismatch.
+        assert app._programmatic_target is None
+
     def test_batch_ready_event_triggers_poll(self):
         """The immich_fetcher_batch_ready event handler calls _poll_for_changes."""
         app = self._init_with_gen("3")
