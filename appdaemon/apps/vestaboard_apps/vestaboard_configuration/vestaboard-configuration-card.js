@@ -804,7 +804,6 @@ class VestaboardConfigurationCard extends HTMLElement {
             <button class="${saveButtonClass}" data-action="save-to-library" ${canSubmitToLibrary ? "" : "disabled"}>${editingActive ? "Update in Library" : "Save to Library"}</button>
             <button class="vbc-btn vbc-btn-primary" data-action="push-to-board">Push to Board</button>
             <button class="vbc-btn vbc-btn-secondary" data-action="new-frame">New Frame</button>
-            ${editingActive ? `<button class="vbc-btn vbc-btn-secondary" data-action="finish-editing">Finish Editing</button>` : ""}
           </div>
           <div class="save-validation-message" aria-live="polite">
             ${hasDuplicateName
