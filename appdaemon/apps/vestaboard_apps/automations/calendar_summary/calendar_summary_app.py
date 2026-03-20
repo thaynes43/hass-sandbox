@@ -236,12 +236,16 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         "reminder_threshold_minutes": 30,
         "force_push_at_reminder": True,
         "rotation_floor_minutes": 10,
+        "cooldown_min_minutes": 30,
+        "cooldown_max_minutes": 120,
     }
 
     _interval_handle = None
     _state_handle = None
     _rotation_handle = None
     _countdown_handle = None
+    _cooldown_handle = None
+    _in_cooldown: bool = False
 
     @classmethod
     def get_config_schema(cls) -> dict:
@@ -253,6 +257,8 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             "reminder_threshold_minutes": {"type": "int", "label": "Reminder Threshold (minutes)", "min": 1, "max": 1440, "default": 30},
             "force_push_at_reminder": {"type": "bool", "label": "Force Push at Reminder", "default": True},
             "rotation_floor_minutes": {"type": "int", "label": "Min Display Per Event (minutes)", "min": 1, "max": 60, "default": 10},
+            "cooldown_min_minutes": {"type": "int", "label": "Min Cooldown (minutes)", "min": 1, "max": 1440, "default": 30},
+            "cooldown_max_minutes": {"type": "int", "label": "Max Cooldown (minutes)", "min": 1, "max": 1440, "default": 120},
         }
 
     def get_preview_frame(self) -> list[list[int]]:
@@ -298,6 +304,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self._stop_listeners()
         self._cancel_rotation_timer()
         self._cancel_countdown_timer()
+        self._cancel_cooldown_timer()
         self.deregister_from_controller()
 
     # ------------------------------------------------------------------
@@ -346,6 +353,43 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
                 pass
             self._countdown_handle = None
 
+    def _cancel_cooldown_timer(self) -> None:
+        if self._cooldown_handle is not None:
+            try:
+                self.cancel_timer(self._cooldown_handle)
+            except Exception:
+                pass
+            self._cooldown_handle = None
+            self._in_cooldown = False
+
+    def _on_cooldown_timer(self, kwargs: dict) -> None:
+        self._cooldown_handle = None
+        self._in_cooldown = False
+        self.log("Cooldown expired — ready to push again", level="INFO")
+        self.create_task(self._run_cycle())
+
+    async def _start_cooldown(self) -> None:
+        """Start a random cooldown delay before the automation can push again."""
+        import random
+        self._cancel_cooldown_timer()
+        cfg = self.args or {}
+        min_min = float(cfg.get("cooldown_min_minutes",
+                                self.DEFAULT_UI_CONFIG["cooldown_min_minutes"]))
+        max_min = float(cfg.get("cooldown_max_minutes",
+                                self.DEFAULT_UI_CONFIG["cooldown_max_minutes"]))
+        min_min = min(min_min, max_min)
+        delay_s = random.uniform(min_min, max_min) * 60
+        self._in_cooldown = True
+        handle = self.run_in(self._on_cooldown_timer, int(delay_s))
+        if hasattr(handle, "__await__"):
+            handle = await handle
+        self._cooldown_handle = handle
+        self.log(
+            f"Cooldown started: {delay_s / 60:.1f} min "
+            f"(range {min_min}-{max_min} min)",
+            level="INFO",
+        )
+
     # ------------------------------------------------------------------
     # Enable / disable / config
     # ------------------------------------------------------------------
@@ -358,6 +402,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self._stop_listeners()
             self._cancel_rotation_timer()
             self._cancel_countdown_timer()
+            self._cancel_cooldown_timer()
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
@@ -474,15 +519,21 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             return
 
         # Partition into urgent vs upcoming
-        # Urgent = future events within the reminder threshold (not past events)
+        # Urgent = timed (non-all-day) events within the reminder threshold
+        # All-day events are excluded from urgent — they show at midnight
+        # and provide no value as force-push notifications.
         reminder_seconds = int(reminder_threshold_min * 60)
         urgent_events = []
         upcoming_events = []
 
         for ev in all_events:
             seconds_until = ev["seconds_until"]
-            if 0 <= seconds_until <= reminder_seconds:
-                # Future event within threshold — urgent
+            is_all_day = ev.get("is_all_day", False)
+            if is_all_day:
+                # All-day events are never urgent
+                upcoming_events.append(ev)
+            elif 0 <= seconds_until <= reminder_seconds:
+                # Timed event within threshold — urgent
                 urgent_events.append(ev)
             elif seconds_until < 0:
                 # Already started — treat as urgent (in-progress)
@@ -502,6 +553,14 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         else:
             display_events = all_events
             is_urgent = False
+
+            # Non-urgent: apply cooldown if we're in one
+            if self._in_cooldown:
+                self.log(
+                    "In cooldown — skipping non-urgent push",
+                    level="DEBUG",
+                )
+                return
             self.log(
                 f"Upcoming: {len(all_events)} event(s) within {time_before_hours}h window: "
                 f"{[e['summary'] for e in all_events]}",
@@ -566,6 +625,12 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         # Push the first event immediately
         await self._push_current_event()
+
+        # Start cooldown for non-urgent pushes so the automation doesn't
+        # immediately reclaim the board after its TTL expires.
+        # Urgent events skip cooldown — they need to hold the board.
+        if not is_urgent:
+            await self._start_cooldown()
 
     # ------------------------------------------------------------------
     # Rotation
@@ -875,6 +940,13 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         seconds_until = int((start_dt - now).total_seconds())
 
+        # Detect all-day events: start has "date" key but no "dateTime"
+        is_all_day = (
+            isinstance(raw_start, dict)
+            and "date" in raw_start
+            and "dateTime" not in raw_start
+        )
+
         return {
             "summary": summary,
             "description": ev.get("description", ""),
@@ -882,6 +954,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             "end_time_str": end_str,
             "seconds_until": seconds_until,
             "is_active": seconds_until <= 0,
+            "is_all_day": is_all_day,
         }
 
     @staticmethod
