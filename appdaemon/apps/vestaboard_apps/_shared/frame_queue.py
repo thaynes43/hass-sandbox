@@ -199,7 +199,14 @@ class FrameQueue:
                 else:
                     self._fallback.append(self._displayed)
 
-            frame.displayed_at = now
+            # For same-source updates, preserve the original displayed_at so
+            # TTL counts from when this source first claimed the board.
+            # This prevents automations with periodic updates (rotation,
+            # countdown, weather refresh) from holding the board forever.
+            if same_source and self._displayed.displayed_at is not None:
+                frame.displayed_at = self._displayed.displayed_at
+            else:
+                frame.displayed_at = now
             self._displayed = frame
 
             if frame.override_ttl:
