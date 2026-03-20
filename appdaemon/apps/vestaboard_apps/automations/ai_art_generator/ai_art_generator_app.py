@@ -292,6 +292,12 @@ class AiArtGeneratorApp(hass.Hass, VestaboardAutomation):
             self.log("No ai_provider_conf configured — returning blank grid", level="WARNING")
             return blank_grid()
 
+        # If no explicit subject was provided, try to pick from bundles
+        if subject == "abstract art":
+            bundle = self._pick_art_bundle()
+            if bundle:
+                subject = await self._build_art_subject(bundle)
+
         self.log(f"Generating AI pixel art for subject: {subject!r}", level="INFO")
 
         for attempt in range(1, 3):
