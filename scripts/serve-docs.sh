@@ -19,18 +19,21 @@ if ! command -v mkdocs &>/dev/null; then
     pip install -r "$REPO_ROOT/requirements-docs.txt"
 fi
 
-# Get the WSL IP reachable from Windows
-WSL_IP="$(hostname -I | awk '{print $1}')"
+# Get a reachable IP for display
+if command -v ip &>/dev/null; then
+    # Linux / WSL
+    HOST_IP="$(hostname -I | awk '{print $1}')"
+else
+    # macOS
+    HOST_IP="$(ipconfig getifaddr en0 2>/dev/null || echo '127.0.0.1')"
+fi
 
 echo ""
 echo "========================================="
 echo "  MkDocs serving on port $PORT"
 echo ""
-echo "  From Windows browser:"
-echo "    http://${WSL_IP}:${PORT}"
-echo ""
-echo "  From WSL:"
-echo "    http://127.0.0.1:${PORT}"
+echo "  http://${HOST_IP}:${PORT}"
+echo "  http://127.0.0.1:${PORT}"
 echo "========================================="
 echo ""
 
