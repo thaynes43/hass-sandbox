@@ -309,6 +309,14 @@ class VestaboardConfigurationApp(hass.Hass):
             )
             return
 
+        template = payload.get("template") or None
+        refresh_interval_minutes = payload.get("refresh_interval_minutes")
+        if refresh_interval_minutes is not None:
+            try:
+                refresh_interval_minutes = int(refresh_interval_minutes)
+            except (TypeError, ValueError):
+                refresh_interval_minutes = None
+
         frame = LibraryFrame(
             frame_id=uuid.uuid4().hex,
             characters=frame_data,
@@ -317,15 +325,19 @@ class VestaboardConfigurationApp(hass.Hass):
             rating=rating,
             name=name,
             category=category,
+            template=template,
+            refresh_interval_minutes=refresh_interval_minutes,
         )
         self._frame_library.add_frame(frame)
         self._publish_status()
         self.log(
-            "Saved frame frame_id=%r name=%r creator=%r category=%r",
+            "Saved frame frame_id=%r name=%r creator=%r category=%r template=%r refresh_interval_minutes=%r",
             frame.frame_id,
             name,
             creator,
             category,
+            template,
+            refresh_interval_minutes,
         )
 
     def _cmd_update_frame(self, payload: dict) -> None:
@@ -461,6 +473,12 @@ class VestaboardConfigurationApp(hass.Hass):
             "should_expire": payload.get("should_expire", False),
             "respect_ttl": False,
         }
+        template = payload.get("template") or None
+        if template is not None:
+            ctrl_payload["template"] = template
+        refresh_interval_minutes = payload.get("refresh_interval_minutes")
+        if refresh_interval_minutes is not None:
+            ctrl_payload["refresh_interval_minutes"] = refresh_interval_minutes
         self._forward_to_controller("push_frame", ctrl_payload)
 
     def _cmd_push_library_frame(self, payload: dict) -> None:
@@ -485,8 +503,17 @@ class VestaboardConfigurationApp(hass.Hass):
             "respect_ttl": payload.get("respect_ttl", False),
             "should_expire": True,
         }
+        if frame.template is not None:
+            ctrl_payload["template"] = frame.template
+        if frame.refresh_interval_minutes is not None:
+            ctrl_payload["refresh_interval_minutes"] = frame.refresh_interval_minutes
         self._forward_to_controller("push_frame", ctrl_payload)
-        self.log("Forwarded library frame frame_id=%r to controller", frame_id)
+        self.log(
+            "Forwarded library frame frame_id=%r to controller template=%r refresh_interval_minutes=%r",
+            frame_id,
+            frame.template,
+            frame.refresh_interval_minutes,
+        )
 
     # ------------------------------------------------------------------
     # Command handlers — automation management (forwarded to controller)

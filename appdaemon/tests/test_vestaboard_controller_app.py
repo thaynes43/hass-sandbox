@@ -1976,3 +1976,415 @@ class TestSleepWindow:
 
         info_calls = [c for c in app.log.call_args_list if "INFO" in str(c)]
         assert any("wake" in str(c).lower() or "sleep" in str(c).lower() for c in info_calls)
+
+
+# ---------------------------------------------------------------------------
+# Template resolution tests
+# ---------------------------------------------------------------------------
+
+class TestTemplateResolution:
+    """Tests for {entity_id} template resolution in push_frame and push_automation_frame."""
+
+    def _make_app(self) -> VestaboardControllerApp:
+        app = _setup_app_with_queue()
+        app._last_template_refresh = None
+        return app
+
+    # ------------------------------------------------------------------
+    # _handle_push_frame
+    # ------------------------------------------------------------------
+
+    def test_push_frame_resolves_template_into_grid(self):
+        """push_frame with a template field encodes the resolved text into characters."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="85")
+
+        # Build a payload with a template but no pre-encoded characters
+        payload = {
+            "template": "UPS: {sensor.ups_load}%",
+            "source": "user",
+            "source_label": "User",
+            "ttl_s": 60,
+        }
+        app._handle_push_frame(payload)
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.template == "UPS: {sensor.ups_load}%"
+        # The grid must be non-blank (text was encoded)
+        assert not app._is_blank_frame(displayed.characters)
+
+    def test_push_frame_template_logs_resolution(self):
+        """push_frame logs the template resolutions at INFO."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="42")
+
+        payload = {
+            "template": "LOAD: {sensor.load}%",
+            "source": "user",
+            "source_label": "User",
+        }
+        app._handle_push_frame(payload)
+
+        info_calls = [c for c in app.log.call_args_list if "INFO" in str(c)]
+        assert any("template resolved" in str(c).lower() for c in info_calls)
+
+    def test_push_frame_stores_template_on_board_frame(self):
+        """push_frame stores the original template string on the BoardFrame."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="75")
+
+        payload = {
+            "template": "TEMP: {sensor.temp}F",
+            "source": "user",
+            "source_label": "User",
+        }
+        app._handle_push_frame(payload)
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.template == "TEMP: {sensor.temp}F"
+
+    def test_push_frame_stores_refresh_interval_on_board_frame(self):
+        """push_frame stores refresh_interval_minutes on the BoardFrame."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="50")
+
+        payload = {
+            "template": "LOAD: {sensor.load}%",
+            "source": "user",
+            "source_label": "User",
+            "refresh_interval_minutes": 5,
+        }
+        app._handle_push_frame(payload)
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.refresh_interval_minutes == 5
+
+    def test_push_frame_without_template_uses_characters_directly(self):
+        """push_frame without template uses the characters payload as-is."""
+        app = self._make_app()
+        grid = _test_grid()
+
+        payload = {
+            "characters": grid,
+            "source": "user",
+            "source_label": "User",
+        }
+        app._handle_push_frame(payload)
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.template is None
+        assert displayed.characters == grid
+
+    def test_push_frame_template_sets_last_template_refresh(self):
+        """When a template frame is displayed, _last_template_refresh is set."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="99")
+
+        payload = {
+            "template": "VAL: {sensor.x}",
+            "source": "user",
+            "source_label": "User",
+        }
+        before = time.time()
+        app._handle_push_frame(payload)
+        after = time.time()
+
+        assert app._last_template_refresh is not None
+        assert before <= app._last_template_refresh <= after
+
+    def test_push_frame_no_template_does_not_set_last_template_refresh(self):
+        """When a non-template frame is displayed, _last_template_refresh is None."""
+        app = self._make_app()
+
+        payload = {
+            "characters": _test_grid(),
+            "source": "user",
+            "source_label": "User",
+        }
+        app._handle_push_frame(payload)
+
+        assert app._last_template_refresh is None
+
+    # ------------------------------------------------------------------
+    # push_automation_frame
+    # ------------------------------------------------------------------
+
+    def test_push_automation_frame_resolves_template(self):
+        """push_automation_frame resolves template placeholders and updates the grid."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="120")
+
+        raw_grid = _test_grid()  # non-blank placeholder
+        app.push_automation_frame(
+            automation_id="ups_status",
+            source_label="UPS Status",
+            grid=raw_grid,
+            ttl_s=60,
+            max_age_s=None,
+            template="UPS: {sensor.ups_load}W",
+            refresh_interval_minutes=2,
+        )
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.template == "UPS: {sensor.ups_load}W"
+        assert displayed.refresh_interval_minutes == 2
+        # Grid should differ from raw_grid (was re-encoded from template)
+        assert not app._is_blank_frame(displayed.characters)
+
+    def test_push_automation_frame_logs_template_resolution(self):
+        """push_automation_frame logs the resolution at INFO."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="55")
+
+        app.push_automation_frame(
+            automation_id="sensor_display",
+            source_label="Sensor Display",
+            grid=_test_grid(),
+            ttl_s=30,
+            max_age_s=None,
+            template="HUMIDITY: {sensor.humidity}%",
+        )
+
+        info_calls = [c for c in app.log.call_args_list if "INFO" in str(c)]
+        assert any("template resolved" in str(c).lower() for c in info_calls)
+
+    def test_push_automation_frame_without_template_unchanged(self):
+        """push_automation_frame without template keeps the original grid."""
+        app = self._make_app()
+        grid = _test_grid()
+
+        app.push_automation_frame(
+            automation_id="art_display",
+            source_label="Art",
+            grid=grid,
+            ttl_s=None,
+            max_age_s=None,
+        )
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.template is None
+        assert displayed.refresh_interval_minutes is None
+
+    def test_handle_push_automation_frame_event_passes_template(self):
+        """_handle_push_automation_frame_event extracts and forwards template fields."""
+        app = self._make_app()
+        app.get_state = MagicMock(return_value="30")
+
+        grid = _test_grid()
+        payload = {
+            "automation_id": "lib_auto",
+            "source_label": "Lib Auto",
+            "characters": json.dumps(grid),
+            "ttl_s": 60,
+            "template": "TEMP: {sensor.temp}F",
+            "refresh_interval_minutes": 3,
+        }
+
+        app._handle_push_automation_frame_event(payload)
+
+        displayed = app._queue._displayed
+        assert displayed is not None
+        assert displayed.template == "TEMP: {sensor.temp}F"
+        assert displayed.refresh_interval_minutes == 3
+
+    # ------------------------------------------------------------------
+    # Template refresh in _tick()
+    # ------------------------------------------------------------------
+
+    def test_tick_refreshes_template_frame_after_interval(self):
+        """_tick re-resolves a template frame once refresh_interval has elapsed."""
+        app = self._make_app()
+        app._sleep_enabled = False  # disable sleep window so time of day doesn't affect test
+        app._write_to_board = AsyncMock()
+        app._read_board_state = AsyncMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        app.set_state = MagicMock()
+        app.fire_event = MagicMock()
+
+        # Install a template frame as displayed
+        now = time.time()
+        initial_grid = [[0] * 22 for _ in range(6)]
+        initial_grid[0][0] = 1  # ensure non-blank
+        frame = BoardFrame(
+            frame_id="tpl-frame-001",
+            characters=initial_grid,
+            source="sensor_source",
+            source_label="Sensor Source",
+            ttl_s=None,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            template="VAL: {sensor.x}",
+            refresh_interval_minutes=1,
+        )
+        app._queue._displayed = frame
+        # Set _last_template_refresh far in the past (> 1 minute ago)
+        app._last_template_refresh = now - 120
+
+        # get_state returns a new value
+        app.get_state = MagicMock(return_value="999")
+
+        _run(app._tick())
+
+        # Board should have been written
+        app._write_to_board.assert_called_once()
+        # _last_template_refresh should be updated
+        assert app._last_template_refresh >= now
+
+    def test_tick_does_not_refresh_when_interval_not_elapsed(self):
+        """_tick skips template refresh when the interval has not elapsed."""
+        app = self._make_app()
+        app._sleep_enabled = False  # disable sleep window so time of day doesn't affect test
+        app._write_to_board = AsyncMock()
+        app._read_board_state = AsyncMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        app.set_state = MagicMock()
+        app.fire_event = MagicMock()
+
+        now = time.time()
+        frame = BoardFrame(
+            frame_id="tpl-frame-002",
+            characters=_test_grid(),
+            source="sensor_source",
+            source_label="Sensor Source",
+            ttl_s=None,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            template="VAL: {sensor.x}",
+            refresh_interval_minutes=5,  # 5 minute interval
+        )
+        app._queue._displayed = frame
+        # Just refreshed 1 second ago — should NOT refresh yet
+        app._last_template_refresh = now - 1
+
+        app.get_state = MagicMock(return_value="123")
+
+        _run(app._tick())
+
+        # No board write should have occurred
+        app._write_to_board.assert_not_called()
+
+    def test_tick_skips_write_when_grid_unchanged(self):
+        """_tick skips board write when resolved grid is identical to the current one."""
+        app = self._make_app()
+        app._sleep_enabled = False  # disable sleep window so time of day doesn't affect test
+        app._write_to_board = AsyncMock()
+        app._read_board_state = AsyncMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        app.set_state = MagicMock()
+        app.fire_event = MagicMock()
+
+        now = time.time()
+        # Encode a known template with a known value into the frame
+        from providers.vestaboard.character_encoding import text_to_grid as _ttg
+        current_grid = _ttg("VAL: 42", justify="center", align="center")
+
+        frame = BoardFrame(
+            frame_id="tpl-frame-003",
+            characters=current_grid,
+            source="sensor_source",
+            source_label="Sensor Source",
+            ttl_s=None,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            template="VAL: {sensor.x}",
+            refresh_interval_minutes=1,
+        )
+        app._queue._displayed = frame
+        # Interval has elapsed
+        app._last_template_refresh = now - 120
+
+        # get_state returns the same value → grid should not change
+        app.get_state = MagicMock(return_value="42")
+
+        _run(app._tick())
+
+        # No board write because the grid did not change
+        app._write_to_board.assert_not_called()
+        # But refresh timestamp should be updated
+        assert app._last_template_refresh >= now
+
+    def test_tick_does_not_refresh_during_sleep(self):
+        """_tick skips template refresh while in the sleep window."""
+        app = self._make_app()
+        app._write_to_board = AsyncMock()
+        app._read_board_state = AsyncMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        app.set_state = MagicMock()
+        app.fire_event = MagicMock()
+
+        now = time.time()
+        frame = BoardFrame(
+            frame_id="tpl-frame-004",
+            characters=_test_grid(),
+            source="sensor_source",
+            source_label="Sensor Source",
+            ttl_s=None,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            template="VAL: {sensor.x}",
+            refresh_interval_minutes=1,
+        )
+        app._queue._displayed = frame
+        app._last_template_refresh = now - 120  # interval elapsed
+
+        app.get_state = MagicMock(return_value="777")
+
+        # Simulate sleep window active
+        with patch.object(app, "_is_sleeping", return_value=True):
+            app._was_sleeping = True  # prevent sleep-change logic from interfering
+            _run(app._tick())
+
+        # No template refresh write during sleep
+        app._write_to_board.assert_not_called()
+
+    def test_tick_promotes_new_frame_and_resets_refresh_tracking(self):
+        """When tick promotes a new template frame, _last_template_refresh is reset."""
+        app = self._make_app()
+        app._sleep_enabled = False  # disable sleep window so time of day doesn't affect test
+        app._write_to_board = AsyncMock()
+        app._read_board_state = AsyncMock()
+        app.create_task = MagicMock(side_effect=lambda coro: _run(coro))
+        app.set_state = MagicMock()
+        app.fire_event = MagicMock()
+
+        now = time.time()
+        # Put a template frame in pending that will be promoted
+        pending_frame = BoardFrame(
+            frame_id="pending-tpl-001",
+            characters=_test_grid(),
+            source="source_pending",
+            source_label="Pending Source",
+            ttl_s=None,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            template="PENDING: {sensor.y}",
+            refresh_interval_minutes=3,
+        )
+        app._queue._pending.append(pending_frame)
+        # No currently displayed frame — queue will promote pending immediately
+        app._queue._displayed = None
+        app._last_template_refresh = None
+
+        app.get_state = MagicMock(return_value="5")
+
+        _run(app._tick())
+
+        # _write_to_board was called (frame promoted)
+        app._write_to_board.assert_called_once()
+        # Since promoted frame has a template, _last_template_refresh should be set
+        assert app._last_template_refresh is not None

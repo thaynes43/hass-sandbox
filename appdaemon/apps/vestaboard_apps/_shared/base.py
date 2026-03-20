@@ -296,6 +296,8 @@ class VestaboardAutomation:
         max_age_s: Optional[int] = None,
         override_ttl: bool = False,
         should_expire: bool = False,
+        template: Optional[str] = None,
+        refresh_interval_minutes: Optional[int] = None,
     ) -> None:
         """Push a frame to the controller's queue via event.
 
@@ -305,8 +307,13 @@ class VestaboardAutomation:
             max_age_s: Max age from creation (None = use default).
             override_ttl: Immediately display, bypassing active TTL.
             should_expire: Drop frame after TTL instead of moving to fallback.
+            template: Optional template identifier for dynamic frame regeneration.
+            refresh_interval_minutes: How often the controller should regenerate
+                this frame using the template (None = no auto-refresh).
         """
-        # Apply preview overrides if set by _handle_generate_request
+        # Apply preview overrides if set by _handle_generate_request.
+        # Preview overrides intentionally do not affect template/refresh fields —
+        # a preview is always a one-shot display, not a recurring template push.
         overrides = getattr(self, "_preview_overrides", None) or {}
         if overrides:
             ttl_s = overrides.get("ttl_s", ttl_s)
@@ -324,6 +331,10 @@ class VestaboardAutomation:
         }
         if self._next_fire_time is not None:
             payload["next_fire_time"] = self._next_fire_time
+        if template is not None:
+            payload["template"] = template
+        if refresh_interval_minutes is not None:
+            payload["refresh_interval_minutes"] = refresh_interval_minutes
 
         self.fire_event(
             "vestaboard_controller_command",
@@ -333,7 +344,9 @@ class VestaboardAutomation:
         self.log(
             f"push_frame fired for {self.name!r} | "
             f"ttl_s={ttl_s} max_age_s={max_age_s} "
-            f"override_ttl={override_ttl} should_expire={should_expire}",
+            f"override_ttl={override_ttl} should_expire={should_expire}"
+            + (f" template={template!r}" if template is not None else "")
+            + (f" refresh_interval_minutes={refresh_interval_minutes}" if refresh_interval_minutes is not None else ""),
             level="INFO",
         )
 
