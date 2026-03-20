@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "AppDaemon",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["scripts/serve-appdaemon.sh"],
+      "port": 5050
+    },
+    {
+      "name": "MkDocs",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["scripts/serve-docs.sh"],
+      "port": 8000
+    }
+  ]
+}
