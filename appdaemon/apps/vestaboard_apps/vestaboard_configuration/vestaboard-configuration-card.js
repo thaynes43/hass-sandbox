@@ -804,6 +804,8 @@ class VestaboardConfigurationCard extends HTMLElement {
               <input type="checkbox" data-action="toggle-should-expire" ${this._editorShouldExpire ? "checked" : ""}>
               Should Expire
             </label>
+            <span style="margin-left:16px">Refresh (min)</span>
+            <input type="number" class="vbc-input" style="width:60px;margin-left:4px" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval">
           </div>
           <div class="save-actions">
             <button class="${saveButtonClass}" data-action="save-to-library" ${canSubmitToLibrary ? "" : "disabled"}>${editingActive ? "Update in Library" : "Save to Library"}</button>
@@ -868,23 +870,9 @@ class VestaboardConfigurationCard extends HTMLElement {
       return `<button class="border-tile ${selected ? "selected" : ""}" type="button" data-action="set-border-tile" data-code="${code}" style="background:${bg};" title="${label}"></button>`;
     }).join("");
 
-    const hasTemplate = this._hasTemplatePattern(this._textInput);
-    const templateHint = hasTemplate
-      ? `<div class="config-description">Templates like {sensor.name} will show live HA data</div>`
-      : "";
-    const refreshInput = hasTemplate ? `
-      <div class="config-field">
-        <label class="config-label">Refresh Interval (minutes)</label>
-        <input type="number" class="vbc-input" style="width:80px" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval">
-        <span class="config-description">How often to update entity values on the board</span>
-      </div>
-    ` : "";
-
     return `
       <div class="text-mode-section">
         <textarea class="vbc-textarea" data-action="set-text" maxlength="80" placeholder="Type your message (max 80 chars)...">${this._esc(this._textInput)}</textarea>
-        ${templateHint}
-        ${refreshInput}
         <div class="text-mode-row">
           <label class="field-label">Border</label>
           <div class="border-tile-list">${borderTiles}</div>
@@ -2107,7 +2095,9 @@ class VestaboardConfigurationCard extends HTMLElement {
     const grid = this._currentEditorFrame();
     const creator = this._editorCreator || "Anonymous";
     const category = this._editorMode === "paint" ? "art" : "message";
-    const hasTemplate = this._editorMode === "text" && this._hasTemplatePattern(this._textInput);
+    // Include template text and refresh interval when in text mode
+    const isTextMode = this._editorMode === "text";
+    const templateText = isTextMode && this._textInput ? this._textInput : null;
 
     if (this._isEditingActiveInCurrentMode()) {
       const updatePayload = {
@@ -2118,12 +2108,8 @@ class VestaboardConfigurationCard extends HTMLElement {
         rating: this._editorRating,
         category,
       };
-      if (hasTemplate) {
-        updatePayload.template = this._textInput;
-        if (this._refreshIntervalMinutes) {
-          updatePayload.refresh_interval_minutes = this._refreshIntervalMinutes;
-        }
-      }
+      if (templateText) updatePayload.template = templateText;
+      if (this._refreshIntervalMinutes) updatePayload.refresh_interval_minutes = this._refreshIntervalMinutes;
       this._callRelay("update_frame", updatePayload);
       this._editingOriginalName = this._editorName;
       this._editingFrameCategory = category;
@@ -2142,31 +2128,22 @@ class VestaboardConfigurationCard extends HTMLElement {
         rating: this._editorRating,
         category,
       };
-      if (hasTemplate) {
-        savePayload.template = this._textInput;
-        if (this._refreshIntervalMinutes) {
-          savePayload.refresh_interval_minutes = this._refreshIntervalMinutes;
-        }
-      }
+      if (templateText) savePayload.template = templateText;
+      if (this._refreshIntervalMinutes) savePayload.refresh_interval_minutes = this._refreshIntervalMinutes;
       this._callRelay("save_frame", savePayload);
     }
   }
 
   _pushToBoard() {
     const grid = this._currentEditorFrame();
-    const hasTemplate = this._editorMode === "text" && this._hasTemplatePattern(this._textInput);
-
+    const isTextMode = this._editorMode === "text";
     const data = {
       frame: grid,
       ttl_minutes: this._editorTtlMinutes,
       should_expire: this._editorShouldExpire,
     };
-    if (hasTemplate) {
-      data.template = this._textInput;
-      if (this._refreshIntervalMinutes) {
-        data.refresh_interval_minutes = this._refreshIntervalMinutes;
-      }
-    }
+    if (isTextMode && this._textInput) data.template = this._textInput;
+    if (this._refreshIntervalMinutes) data.refresh_interval_minutes = this._refreshIntervalMinutes;
     this._callRelay("push_frame", data);
   }
 
