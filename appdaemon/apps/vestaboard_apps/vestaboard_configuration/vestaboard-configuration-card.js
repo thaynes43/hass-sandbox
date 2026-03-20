@@ -805,7 +805,7 @@ class VestaboardConfigurationCard extends HTMLElement {
               Should Expire
             </label>
             <span style="margin-left:16px">Refresh (min)</span>
-            <input type="number" class="vbc-input" style="width:60px;margin-left:4px" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval">
+            <input type="number" class="vbc-input vbc-input-sm" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval">
           </div>
           <div class="save-actions">
             <button class="${saveButtonClass}" data-action="save-to-library" ${canSubmitToLibrary ? "" : "disabled"}>${editingActive ? "Update in Library" : "Save to Library"}</button>
