@@ -582,6 +582,17 @@ message_generated_by_ai:
   disable: true
   ai_provider_conf:
     simple_text: openai-default
+  prompt_data_bundles:
+    - description: "Report on home UPS power status for both server and media racks"
+      entities:
+        - entity_id: "sensor.apc_2700w_load"
+          description: "Server rack UPS load — percentage of current wattage out of 2700W max capacity"
+        - entity_id: "sensor.apc_900w_01_load"
+          description: "Media rack UPS load — percentage of current wattage out of 900W max capacity"
+    - description: "Report on water leak sensors"
+      entities:
+        - entity_id: "binary_sensor.water_leak"
+          description: "Water leak detection status. Either Dry or Water Leak Detected. Leak detected is very bad, should always report dry."
 
 calendar_summary_family:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
@@ -591,11 +602,31 @@ calendar_summary_family:
   ha_url_env: HA_URL
   ha_token_env: TOKEN
 
+calendar_summary_hot_tub_maintenance:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  disable: true
+  calendar_entity: calendar.hot_tub_maintenance
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  ai_provider_conf:
+    simple_text: openai-default
+
+calendar_summary_holidays:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  disable: true
+  calendar_entity: calendar.holidays_for_united_states_ma
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+
 weather_schedule:
   module: vestaboard_apps.automations.weather_schedule.weather_schedule_app
   class: WeatherScheduleApp
   disable: true
-  weather_entity: weather.first_floor_ecobee
+  weather_entity: weather.forecast_home
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
   time_list:
     - "07:30:00"
     - "15:00:00"
