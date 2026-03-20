@@ -202,14 +202,24 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
             return None
         return random.choice(bundles)
 
-    def _build_bundle_prompt_section(self, bundle: dict) -> str:
+    async def _build_bundle_prompt_section(self, bundle: dict) -> str:
         """Resolve entity values in the bundle and return a formatted prompt section."""
         from vestaboard_apps._shared.template_resolver import resolve_entities
 
         description = bundle.get("description", "")
         entities = bundle.get("entities", [])
 
-        enriched = resolve_entities(entities, lambda eid: self.get_state(eid))
+        # Pre-resolve all entity states (get_state may return a coroutine in async context)
+        state_cache: dict[str, str] = {}
+        for ent in entities:
+            eid = ent.get("entity_id", "")
+            if eid:
+                state = self.get_state(eid)
+                if hasattr(state, "__await__"):
+                    state = await state
+                state_cache[eid] = str(state) if state is not None else None
+
+        enriched = resolve_entities(entities, lambda eid: state_cache.get(eid))
 
         data_lines = [
             f"- {e.get('description', e.get('entity_id', ''))}: {e['current_value']}"
@@ -242,7 +252,7 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         provider = build_simple_text_provider(provider_cfg)
 
         if bundle:
-            bundle_section = self._build_bundle_prompt_section(bundle)
+            bundle_section = await self._build_bundle_prompt_section(bundle)
             input_text = f"Generate a witty board message.\n\n{bundle_section}"
             self.log("Generating AI message with data bundle...", level="INFO")
         else:

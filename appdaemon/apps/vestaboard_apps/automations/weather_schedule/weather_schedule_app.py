@@ -234,6 +234,7 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
 
     _daily_handles: list = []
     _update_handle = None
+    _push_started_at: float = 0.0  # timestamp of initial push (for TTL window)
 
     @classmethod
     def get_config_schema(cls) -> dict:
@@ -362,18 +363,41 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
         )
 
     async def _update_weather(self) -> None:
-        """Re-fetch weather and push updated frame (same-source replaces displayed)."""
+        """Re-fetch weather and push updated frame (same-source replaces displayed).
+
+        Stops updating once the original TTL window has elapsed so the
+        weather frame can expire and pending frames can be promoted.
+        """
+        import time as _time
+
+        # Check if we're past the TTL window — stop updating
+        ttl_s = self.get_resolved_ttl_s() or 3600
+        elapsed = _time.time() - self._push_started_at
+        if elapsed >= ttl_s:
+            self.log(
+                f"Weather TTL expired ({elapsed:.0f}s >= {ttl_s}s) — "
+                f"stopping periodic updates",
+                level="INFO",
+            )
+            return  # Don't schedule another update
+
         try:
             grid = await self.generate_frame()
             if grid and any(any(cell != 0 for cell in row) for row in grid):
+                # Use remaining TTL, not full TTL, so the frame actually expires
+                remaining_ttl = max(60, int(ttl_s - elapsed))
                 self.push_frame(
                     grid,
-                    ttl_s=self.get_resolved_ttl_s(),
+                    ttl_s=remaining_ttl,
                     max_age_s=self.default_max_age_s,
-                    override_ttl=False,  # same-source push, no need to override
+                    override_ttl=False,
                     should_expire=self.get_resolved_should_expire(),
                 )
-                self.log("Weather update pushed (periodic refresh)", level="INFO")
+                self.log(
+                    f"Weather update pushed (periodic refresh, "
+                    f"remaining_ttl={remaining_ttl}s)",
+                    level="INFO",
+                )
         except Exception as exc:
             self.log(f"Weather update failed: {exc!r}", level="ERROR")
 
@@ -389,6 +413,8 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
 
     async def _generate_and_push_weather(self) -> None:
         """Generate weather frame, push it, and start the update timer."""
+        import time as _time
+        self._push_started_at = _time.time()
         try:
             grid = await self.generate_frame()
             if grid and any(any(cell != 0 for cell in row) for row in grid):

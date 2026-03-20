@@ -107,7 +107,7 @@ class TestBuildBundlePromptSection:
             ],
         }
 
-        section = app._build_bundle_prompt_section(bundle)
+        section = _run(app._build_bundle_prompt_section(bundle))
 
         assert "For this message, write about: home energy usage." in section
         assert "- UPS load percentage: 85" in section
@@ -127,7 +127,7 @@ class TestBuildBundlePromptSection:
             ],
         }
 
-        section = app._build_bundle_prompt_section(bundle)
+        section = _run(app._build_bundle_prompt_section(bundle))
 
         assert "home security" in section
         assert "- front door motion: on" in section
@@ -144,7 +144,7 @@ class TestBuildBundlePromptSection:
             ],
         }
 
-        section = app._build_bundle_prompt_section(bundle)
+        section = _run(app._build_bundle_prompt_section(bundle))
         assert "- broken sensor: N/A" in section
 
     def test_none_entity_state_shows_na(self):
@@ -158,7 +158,7 @@ class TestBuildBundlePromptSection:
             ],
         }
 
-        section = app._build_bundle_prompt_section(bundle)
+        section = _run(app._build_bundle_prompt_section(bundle))
         assert "- missing sensor: N/A" in section
 
     def test_falls_back_to_entity_id_when_no_description(self):
@@ -170,7 +170,7 @@ class TestBuildBundlePromptSection:
             "entities": [{"entity_id": "sensor.no_desc"}],
         }
 
-        section = app._build_bundle_prompt_section(bundle)
+        section = _run(app._build_bundle_prompt_section(bundle))
         assert "- sensor.no_desc: 42" in section
 
     def test_logs_bundle_selection_at_info(self):
@@ -182,7 +182,7 @@ class TestBuildBundlePromptSection:
             "entities": [{"entity_id": "sensor.temp", "description": "temperature"}],
         }
 
-        app._build_bundle_prompt_section(bundle)
+        _run(app._build_bundle_prompt_section(bundle))
 
         app.log.assert_called_once()
         call_args = app.log.call_args
@@ -194,7 +194,7 @@ class TestBuildBundlePromptSection:
     def test_empty_entities_list(self):
         app = _make_app()
         bundle = {"description": "nothing here", "entities": []}
-        section = app._build_bundle_prompt_section(bundle)
+        section = _run(app._build_bundle_prompt_section(bundle))
         assert "For this message, write about: nothing here." in section
         # No data lines
         assert "- " not in section
