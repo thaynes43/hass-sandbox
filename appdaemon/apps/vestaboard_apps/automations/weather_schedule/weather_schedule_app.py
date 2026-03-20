@@ -482,10 +482,11 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
     async def _fetch_daily_high_low(
         self, weather_entity: str
     ) -> tuple[Optional[int], Optional[int]]:
-        """Fetch today's high and low from the daily forecast via HA REST API.
+        """Fetch today's high and low from the daily forecast via HA WebSocket.
 
         AppDaemon's call_service doesn't support response data from HA
-        services, so we use the REST API directly via HaRestClient.
+        services that use ``return_response``, so we open a short-lived
+        WebSocket connection via HaRestClient to call ``get_forecasts``.
         """
         try:
             from providers.ha_provisioner.ha_rest_client import HaRestClient
@@ -495,16 +496,18 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
             ha_token = resolve_secret(self.args.get("ha_token_env", "TOKEN"))
 
             async with HaRestClient(ha_url, ha_token) as client:
-                result = await client.post(
-                    "/api/services/weather/get_forecasts",
-                    json={
-                        "entity_id": weather_entity,
-                        "type": "daily",
-                    },
-                )
+                ws_result = await client.send_ws_command({
+                    "type": "call_service",
+                    "domain": "weather",
+                    "service": "get_forecasts",
+                    "service_data": {"type": "daily"},
+                    "target": {"entity_id": weather_entity},
+                    "return_response": True,
+                })
 
-            if isinstance(result, dict):
-                forecasts = result.get(weather_entity, {}).get("forecast", [])
+            if ws_result.get("success"):
+                response = ws_result.get("result", {}).get("response", {})
+                forecasts = response.get(weather_entity, {}).get("forecast", [])
                 if forecasts:
                     today = forecasts[0]
                     high = _safe_int(today.get("temperature"))
@@ -514,6 +517,12 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
                         level="DEBUG",
                     )
                     return high, low
+            else:
+                error = ws_result.get("error", {})
+                self.log(
+                    f"WS get_forecasts failed: {error.get('message', ws_result)}",
+                    level="WARNING",
+                )
         except Exception as exc:
             self.log(f"Failed to fetch daily forecast: {exc!r}", level="WARNING")
 
