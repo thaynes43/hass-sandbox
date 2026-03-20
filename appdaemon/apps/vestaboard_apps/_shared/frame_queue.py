@@ -54,6 +54,8 @@ class BoardFrame:
     created_at: float
     should_expire: bool = field(default=False)
     displayed_at: Optional[float] = field(default=None)
+    template: Optional[str] = field(default=None)
+    refresh_interval_minutes: Optional[int] = field(default=None)
 
 
 @dataclass

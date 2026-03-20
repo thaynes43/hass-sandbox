@@ -50,6 +50,8 @@ class LibraryFrame:
     rating: int
     name: str
     category: str = "message"
+    template: Optional[str] = None
+    refresh_interval_minutes: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -268,8 +270,9 @@ class FrameLibrary:
         """Update fields on an existing frame.
 
         Returns True if the frame was found and updated, False otherwise.
-        Only ``rating``, ``name``, ``creator``, ``characters`` are
-        updateable; ``frame_id`` and ``created_at`` are immutable.
+        Only ``rating``, ``name``, ``creator``, ``characters``, ``category``,
+        ``template``, and ``refresh_interval_minutes`` are updateable;
+        ``frame_id`` and ``created_at`` are immutable.
         """
         for frame in self._frames:
             if frame.frame_id == frame_id:
