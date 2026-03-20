@@ -613,6 +613,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self._current_events = shown_events
         self._current_overflow = overflow
         self._current_event_index = 0
+        self._rotations_done = 0
         self._is_urgent = is_urgent
         self._display_time_s = display_time_s
         self._force_push = force_push and is_urgent
@@ -643,9 +644,11 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         total_slots = len(self._current_events) + (1 if self._current_overflow > 0 else 0)
         self._current_event_index = (self._current_event_index + 1) % total_slots
+        self._rotations_done = getattr(self, "_rotations_done", 0) + 1
 
         self.log(
-            f"Rotating to slot {self._current_event_index}/{total_slots - 1}",
+            f"Rotating to slot {self._current_event_index}/{total_slots - 1} "
+            f"(rotation {self._rotations_done}/{total_slots - 1})",
             level="DEBUG",
         )
 
@@ -679,13 +682,15 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         self.push_frame(
             grid,
-            ttl_s=self._display_time_s,
+            ttl_s=self._ttl_s,
             override_ttl=self._force_push,
             should_expire=self._should_expire,
         )
 
-        # Schedule rotation to next event
-        if total_slots > 1:
+        # Schedule rotation to next event (only if more events to show
+        # in this cycle — stop after one full rotation)
+        rotations_done = getattr(self, "_rotations_done", 0)
+        if total_slots > 1 and rotations_done < total_slots - 1:
             handle = self.run_in(
                 self._on_rotation_timer, self._display_time_s
             )
@@ -694,8 +699,14 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self._rotation_handle = handle
             self.log(
                 f"Rotation timer set: next event in {self._display_time_s}s "
-                f"({self._display_time_s // 60} min)",
+                f"({self._display_time_s // 60} min) | "
+                f"rotation {rotations_done + 1}/{total_slots - 1}",
                 level="DEBUG",
+            )
+        elif total_slots > 1:
+            self.log(
+                f"Rotation complete — all {total_slots} slots shown",
+                level="INFO",
             )
 
         # Schedule countdown update for the current event
@@ -767,7 +778,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         # Same-source push replaces the displayed frame without TTL override
         self.push_frame(
             grid,
-            ttl_s=self._display_time_s if hasattr(self, "_display_time_s") else None,
+            ttl_s=self._ttl_s if hasattr(self, "_ttl_s") else None,
             override_ttl=False,
             should_expire=self._should_expire if hasattr(self, "_should_expire") else False,
         )

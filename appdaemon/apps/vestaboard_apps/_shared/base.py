@@ -173,8 +173,9 @@ class VestaboardAutomation:
                 config = json.loads(config)
             except Exception:
                 config = {}
+        config_summary = " | ".join(f"{k}={v!r}" for k, v in config.items())
         self.log(
-            f"Config event received: enabled={config.get('enabled')} keys={list(config.keys())}",
+            f"Config event received: {config_summary}",
             level="INFO",
         )
         self.on_config_updated(config)
