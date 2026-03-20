@@ -21,7 +21,11 @@ import hassapi as hass
 
 from providers.secrets import resolve_arg_secret
 from providers.vestaboard.vestaboard_client import VestaboardClient
-from providers.vestaboard.character_encoding import text_to_grid
+from providers.vestaboard.character_encoding import (
+    apply_border,
+    detect_border_color,
+    text_to_grid,
+)
 
 from vestaboard_apps._shared.frame_queue import BoardFrame, FrameQueue
 from vestaboard_apps._shared.template_resolver import has_template, resolve_template
@@ -430,13 +434,17 @@ class VestaboardControllerApp(hass.Hass):
 
         # Resolve template placeholders if present
         if template and has_template(template):
+            border_color = detect_border_color(grid) if grid else None
             resolved_text, resolutions = resolve_template(
                 template, lambda eid: self.get_state(eid)
             )
             grid = text_to_grid(resolved_text, justify="center", align="center")
+            if border_color is not None:
+                apply_border(grid, border_color)
             self.log(
                 f"Automation {automation_id!r} template resolved: "
-                f"resolutions={resolutions} resolved_text={resolved_text!r}",
+                f"resolutions={resolutions} resolved_text={resolved_text!r} "
+                f"border={'yes' if border_color else 'no'}",
                 level="INFO",
             )
 
@@ -588,13 +596,17 @@ class VestaboardControllerApp(hass.Hass):
 
         # Resolve template placeholders if present
         if template and has_template(template):
+            border_color = detect_border_color(characters) if characters else None
             resolved_text, resolutions = resolve_template(
                 template, lambda eid: self.get_state(eid)
             )
             characters = text_to_grid(resolved_text, justify="center", align="center")
+            if border_color is not None:
+                apply_border(characters, border_color)
             self.log(
                 f"push_frame: template resolved for source={source!r}: "
-                f"resolutions={resolutions} resolved_text={resolved_text!r}",
+                f"resolutions={resolutions} resolved_text={resolved_text!r} "
+                f"border={'yes' if border_color else 'no'}",
                 level="INFO",
             )
 
@@ -903,10 +915,13 @@ class VestaboardControllerApp(hass.Hass):
             refresh_interval_s = displayed_frame.refresh_interval_minutes * 60
             last_refresh = self._last_template_refresh if self._last_template_refresh is not None else 0.0
             if now - last_refresh >= refresh_interval_s:
+                border_color = detect_border_color(displayed_frame.characters) if displayed_frame.characters else None
                 resolved_text, resolutions = resolve_template(
                     displayed_frame.template, lambda eid: self.get_state(eid)
                 )
                 new_grid = text_to_grid(resolved_text, justify="center", align="center")
+                if border_color is not None:
+                    apply_border(new_grid, border_color)
                 self.log(
                     f"Template refresh for source={displayed_frame.source!r}: "
                     f"resolutions={resolutions} resolved_text={resolved_text!r}",

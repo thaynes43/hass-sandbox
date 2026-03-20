@@ -76,6 +76,38 @@ def blank_grid() -> list[list[int]]:
     return [[0] * COLS for _ in range(ROWS)]
 
 
+_COLOR_CODE_SET = set(COLOR_CODES.values())
+
+
+def detect_border_color(grid: list[list[int]]) -> int | None:
+    """Detect if a grid has a solid color border (rows 0/5 + cols 0/21).
+
+    Returns the color code if a border is detected, None otherwise.
+    A border is detected when row 0 is entirely a single color tile.
+    """
+    if not grid or len(grid) < ROWS:
+        return None
+    row0 = grid[0]
+    if len(row0) != COLS:
+        return None
+    candidate = row0[0]
+    if candidate not in _COLOR_CODE_SET:
+        return None
+    if all(cell == candidate for cell in row0):
+        return candidate
+    return None
+
+
+def apply_border(grid: list[list[int]], color: int) -> list[list[int]]:
+    """Apply a solid color border to a grid (rows 0/5 filled, cols 0/21 on rows 1-4)."""
+    grid[0] = [color] * COLS
+    grid[ROWS - 1] = [color] * COLS
+    for r in range(1, ROWS - 1):
+        grid[r][0] = color
+        grid[r][COLS - 1] = color
+    return grid
+
+
 def encode_char(char: str) -> int:
     """Convert a single character to its Vestaboard code.
 
