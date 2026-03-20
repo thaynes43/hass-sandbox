@@ -58,6 +58,13 @@ message_generated_by_ai_dev:
   class: AiMessageGeneratorApp
   ai_provider_conf:
     simple_text: openai-default
+  prompt_data_bundles:
+    - description: "Report on home UPS power status for both server and media racks"
+      entities:
+        - entity_id: "sensor.apc_2700w_load"
+          description: "Server rack UPS load — percentage of current wattage out of 2700W max capacity"
+        - entity_id: "sensor.apc_900w_01_load"
+          description: "Media rack UPS load — percentage of current wattage out of 900W max capacity"
 
 calendar_summary_family_dev:
   module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
