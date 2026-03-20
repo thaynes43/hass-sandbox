@@ -5,11 +5,19 @@ Manages a persistent, file-backed library of static board frames that users
 have saved. Pure Python — no AppDaemon dependencies.
 
 Storage path: /media/vestaboard/frame-library.json
+
+Defensive protections:
+- Refuses to overwrite a non-empty library file with an empty frame list.
+- Creates a .bak backup before every save so data can be recovered.
+- On load failure, sets a poisoned flag that blocks all saves until a
+  successful load occurs, preventing an empty in-memory list from being
+  written to disk by the next mutation.
 """
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -58,6 +66,15 @@ class FrameLibrary:
     file is always up-to-date.  Reads are served from the in-memory list for
     speed.
 
+    Defensive behaviour:
+    - If ``load()`` fails to parse the file, a ``_save_poisoned`` flag is set
+      that blocks all ``save()`` calls.  This prevents an empty in-memory list
+      from being flushed to disk by the next card mutation.
+    - ``save()`` refuses to write an empty frame list if the existing file on
+      disk is non-empty (> 10 bytes).  This catches the scenario where a
+      transient filesystem issue caused ``load()`` to see an empty/missing file.
+    - Every ``save()`` creates a ``.bak`` copy of the existing file first.
+
     Args:
         storage_path: Absolute path to the JSON storage file.
         log_fn: Callable that accepts a single str message.
@@ -71,6 +88,7 @@ class FrameLibrary:
         self._path = storage_path
         self._log = log_fn or (lambda msg: None)
         self._frames: list[LibraryFrame] = []
+        self._save_poisoned = False  # True if load failed — blocks saves
 
     # ------------------------------------------------------------------
     # Persistence
@@ -79,41 +97,116 @@ class FrameLibrary:
     def load(self) -> None:
         """Load frames from the JSON file.
 
-        Creates an empty file (and parent directories) if the file does not
-        exist.
+        If the file does not exist and no backup exists, starts with an
+        empty library.  If loading fails, sets the save-poison flag to
+        prevent data loss from subsequent mutations.
         """
+        # Try loading the primary file
+        if os.path.exists(self._path):
+            if self._try_load_from(self._path):
+                self._save_poisoned = False
+                return
+
+        # Primary missing or failed — try the backup
+        bak_path = self._path + ".bak"
+        if os.path.exists(bak_path):
+            self._log(
+                f"[FrameLibrary] primary file missing/corrupt — "
+                f"trying backup at {bak_path!r}"
+            )
+            if self._try_load_from(bak_path):
+                self._save_poisoned = False
+                # Restore the backup as the primary
+                try:
+                    shutil.copy2(bak_path, self._path)
+                    self._log("[FrameLibrary] restored primary from backup")
+                except Exception as exc:
+                    self._log(
+                        f"[FrameLibrary] WARNING: failed to restore backup: {exc}"
+                    )
+                return
+
+        # Neither file exists — genuinely new installation
         if not os.path.exists(self._path):
             self._log(
-                f"[FrameLibrary] storage file not found at {self._path!r} — "
-                "starting with empty library"
+                f"[FrameLibrary] no storage file found at {self._path!r} — "
+                "starting with empty library (new installation)"
             )
             os.makedirs(os.path.dirname(self._path), exist_ok=True)
             self._frames = []
+            self._save_poisoned = False
             self.save()
             return
 
+        # File exists but failed to parse and no backup — poison saves
+        self._log(
+            f"[FrameLibrary] CRITICAL: failed to load {self._path!r} and "
+            f"no backup available — saves are BLOCKED to prevent data loss. "
+            f"Manually inspect the file."
+        )
+        self._frames = []
+        self._save_poisoned = True
+
+    def _try_load_from(self, path: str) -> bool:
+        """Attempt to load frames from a file. Returns True on success."""
         try:
-            with open(self._path, "r", encoding="utf-8") as fh:
+            with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
             self._frames = [LibraryFrame(**item) for item in data]
             self._log(
-                f"[FrameLibrary] loaded {len(self._frames)} frame(s) from {self._path!r}"
+                f"[FrameLibrary] loaded {len(self._frames)} frame(s) from {path!r}"
             )
-        except (json.JSONDecodeError, TypeError, KeyError) as exc:
+            return True
+        except (json.JSONDecodeError, TypeError, KeyError, OSError) as exc:
             self._log(
-                f"[FrameLibrary] ERROR loading {self._path!r}: {exc} — "
-                "starting with empty library"
+                f"[FrameLibrary] ERROR loading {path!r}: {exc}"
             )
-            self._frames = []
+            return False
 
     def save(self) -> None:
         """Atomically write the current frame list to disk.
 
         Uses a temporary file in the same directory followed by os.rename to
         avoid partial writes.
+
+        Safety checks:
+        - Refuses to save if the save-poison flag is set (load failed).
+        - Refuses to write an empty list if the existing file is non-empty.
+        - Creates a .bak backup of the existing file before overwriting.
         """
+        if self._save_poisoned:
+            self._log(
+                "[FrameLibrary] save BLOCKED — load failed earlier. "
+                "Refusing to overwrite file with potentially incomplete data."
+            )
+            return
+
+        # Guard: don't overwrite a non-empty file with an empty frame list
+        if not self._frames and os.path.exists(self._path):
+            try:
+                file_size = os.path.getsize(self._path)
+            except OSError:
+                file_size = 0
+            if file_size > 10:  # More than just "[]"
+                self._log(
+                    f"[FrameLibrary] save BLOCKED — refusing to overwrite "
+                    f"{file_size}-byte file with empty frame list. "
+                    f"This is likely a bug. File preserved at {self._path!r}"
+                )
+                return
+
         dir_path = os.path.dirname(self._path)
         os.makedirs(dir_path, exist_ok=True)
+
+        # Create backup before overwriting
+        if os.path.exists(self._path):
+            bak_path = self._path + ".bak"
+            try:
+                shutil.copy2(self._path, bak_path)
+            except Exception as exc:
+                self._log(
+                    f"[FrameLibrary] WARNING: failed to create backup: {exc}"
+                )
 
         data = [asdict(f) for f in self._frames]
         fd, tmp_path = tempfile.mkstemp(dir=dir_path, suffix=".tmp")
