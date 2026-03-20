@@ -168,6 +168,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editingBaseline = null;
     this._editorSaveError = "";
     this._pendingSavedFrame = null;
+    this._refreshIntervalMinutes = null;
 
     // Library state
     this._libraryPage = 0;
@@ -551,6 +552,10 @@ class VestaboardConfigurationCard extends HTMLElement {
     };
   }
 
+  _hasTemplatePattern(text) {
+    return /\{[a-z_]+\.[a-z0-9_]+\}/.test(text || "");
+  }
+
   _currentEditorFrame() {
     return this._editorMode === "text"
       ? this._textToGrid(this._textInput, this._borderColor)
@@ -863,9 +868,23 @@ class VestaboardConfigurationCard extends HTMLElement {
       return `<button class="border-tile ${selected ? "selected" : ""}" type="button" data-action="set-border-tile" data-code="${code}" style="background:${bg};" title="${label}"></button>`;
     }).join("");
 
+    const hasTemplate = this._hasTemplatePattern(this._textInput);
+    const templateHint = hasTemplate
+      ? `<div class="config-description">Templates like {sensor.name} will show live HA data</div>`
+      : "";
+    const refreshInput = hasTemplate ? `
+      <div class="config-field">
+        <label class="config-label">Refresh Interval (minutes)</label>
+        <input type="number" class="vbc-input vbc-input-sm" min="1" max="60" value="${this._refreshIntervalMinutes || ""}" data-action="set-refresh-interval" placeholder="No refresh">
+        <span class="config-description">How often to update entity values on the board</span>
+      </div>
+    ` : "";
+
     return `
       <div class="text-mode-section">
         <textarea class="vbc-textarea" data-action="set-text" maxlength="80" placeholder="Type your message (max 80 chars)...">${this._esc(this._textInput)}</textarea>
+        ${templateHint}
+        ${refreshInput}
         <div class="text-mode-row">
           <label class="field-label">Border</label>
           <div class="border-tile-list">${borderTiles}</div>
@@ -1685,6 +1704,10 @@ class VestaboardConfigurationCard extends HTMLElement {
         this._editorTtlMinutes = parseInt(el.value, 10) || 30;
         break;
 
+      case "set-refresh-interval":
+        this._refreshIntervalMinutes = parseInt(el.value, 10) || null;
+        break;
+
       case "store-config-field": {
         const autoId = el.dataset.autoId;
         const field = el.dataset.field;
@@ -1960,6 +1983,7 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editorRating = 0;
     this._editorTtlMinutes = 30;
     this._editorShouldExpire = true;
+    this._refreshIntervalMinutes = null;
     this._clearEditorEditState();
     this._pendingSavedFrame = null;
   }
@@ -2083,16 +2107,24 @@ class VestaboardConfigurationCard extends HTMLElement {
     const grid = this._currentEditorFrame();
     const creator = this._editorCreator || "Anonymous";
     const category = this._editorMode === "paint" ? "art" : "message";
+    const hasTemplate = this._editorMode === "text" && this._hasTemplatePattern(this._textInput);
 
     if (this._isEditingActiveInCurrentMode()) {
-      this._callRelay("update_frame", {
+      const updatePayload = {
         frame_id: this._editingFrameId,
         frame: grid,
         name: this._editorName,
         creator,
         rating: this._editorRating,
         category,
-      });
+      };
+      if (hasTemplate) {
+        updatePayload.template = this._textInput;
+        if (this._refreshIntervalMinutes) {
+          updatePayload.refresh_interval_minutes = this._refreshIntervalMinutes;
+        }
+      }
+      this._callRelay("update_frame", updatePayload);
       this._editingOriginalName = this._editorName;
       this._editingFrameCategory = category;
       this._editingBaseline = this._buildEditingBaseline();
@@ -2103,24 +2135,38 @@ class VestaboardConfigurationCard extends HTMLElement {
         category,
         gridSignature: this._editorGridSignature(grid),
       };
-      this._callRelay("save_frame", {
+      const savePayload = {
         frame: grid,
         name: this._editorName,
         creator,
         rating: this._editorRating,
         category,
-      });
+      };
+      if (hasTemplate) {
+        savePayload.template = this._textInput;
+        if (this._refreshIntervalMinutes) {
+          savePayload.refresh_interval_minutes = this._refreshIntervalMinutes;
+        }
+      }
+      this._callRelay("save_frame", savePayload);
     }
   }
 
   _pushToBoard() {
     const grid = this._currentEditorFrame();
+    const hasTemplate = this._editorMode === "text" && this._hasTemplatePattern(this._textInput);
 
     const data = {
       frame: grid,
       ttl_minutes: this._editorTtlMinutes,
       should_expire: this._editorShouldExpire,
     };
+    if (hasTemplate) {
+      data.template = this._textInput;
+      if (this._refreshIntervalMinutes) {
+        data.refresh_interval_minutes = this._refreshIntervalMinutes;
+      }
+    }
     this._callRelay("push_frame", data);
   }
 
@@ -2161,16 +2207,26 @@ class VestaboardConfigurationCard extends HTMLElement {
     this._editorCreator = frame.creator || "";
     this._editorRating = frame.rating || 0;
     if ((frame.category || "message") === "message") {
-      const textState = this._gridToTextState(frame.characters);
-      this._editorMode = "text";
-      this._textInput = textState.text;
-      this._borderColor = textState.borderColor;
-      this._editorGrid = vbcEmptyGrid();
+      const sourceText = frame.template || null;
+      if (sourceText) {
+        this._editorMode = "text";
+        this._textInput = sourceText;
+        this._borderColor = null;
+        this._editorGrid = vbcEmptyGrid();
+      } else {
+        const textState = this._gridToTextState(frame.characters);
+        this._editorMode = "text";
+        this._textInput = textState.text;
+        this._borderColor = textState.borderColor;
+        this._editorGrid = vbcEmptyGrid();
+      }
+      this._refreshIntervalMinutes = frame.refresh_interval_minutes || null;
     } else {
       this._editorGrid = vbcCloneGrid(frame.characters);
       this._editorMode = "paint";
       this._textInput = "";
       this._borderColor = null;
+      this._refreshIntervalMinutes = null;
     }
     this._editingBaseline = this._buildEditingBaseline();
     this._activeTab = "editor";

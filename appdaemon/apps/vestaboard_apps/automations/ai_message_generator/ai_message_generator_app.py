@@ -143,6 +143,7 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         ]
 
     def initialize(self) -> None:
+        self._prompt_data_bundles = (self.args or {}).get("prompt_data_bundles", [])
         self.register_with_controller()
         # Do NOT start interval here — wait for config event from controller
 
@@ -187,13 +188,49 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         ai_provider_conf = cfg.get("ai_provider_conf")
         if ai_provider_conf:
             try:
-                return await self._generate_ai_frame(ai_provider_conf)
+                bundle = self._pick_bundle()
+                return await self._generate_ai_frame(ai_provider_conf, bundle)
             except Exception as exc:
                 self.log(f"AI generation failed, using fallback: {exc!r}", level="WARNING")
 
         return self._generate_fallback_frame()
 
-    async def _generate_ai_frame(self, ai_provider_conf: dict) -> list[list[int]]:
+    def _pick_bundle(self) -> dict | None:
+        """Randomly select a prompt data bundle, or return None if none configured."""
+        bundles = getattr(self, "_prompt_data_bundles", [])
+        if not bundles:
+            return None
+        return random.choice(bundles)
+
+    def _build_bundle_prompt_section(self, bundle: dict) -> str:
+        """Resolve entity values in the bundle and return a formatted prompt section."""
+        from vestaboard_apps._shared.template_resolver import resolve_entities
+
+        description = bundle.get("description", "")
+        entities = bundle.get("entities", [])
+
+        enriched = resolve_entities(entities, lambda eid: self.get_state(eid))
+
+        data_lines = [
+            f"- {e.get('description', e.get('entity_id', ''))}: {e['current_value']}"
+            for e in enriched
+        ]
+
+        self.log(
+            f"Bundle selected: {description!r} | "
+            f"Resolved entities: {[{e.get('entity_id'): e['current_value']} for e in enriched]}",
+            level="INFO",
+        )
+
+        data_section = "\n".join(data_lines)
+        return (
+            f"For this message, write about: {description}. "
+            f"Here is the current data:\n{data_section}"
+        )
+
+    async def _generate_ai_frame(
+        self, ai_provider_conf: dict, bundle: dict | None = None
+    ) -> list[list[int]]:
         from providers.ai_providers.registry import (
             build_simple_text_provider,
             simple_text_config_from_appdaemon_args,
@@ -204,10 +241,16 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         )
         provider = build_simple_text_provider(provider_cfg)
 
-        self.log("Generating AI message...", level="INFO")
+        if bundle:
+            bundle_section = self._build_bundle_prompt_section(bundle)
+            input_text = f"Generate a witty board message.\n\n{bundle_section}"
+            self.log("Generating AI message with data bundle...", level="INFO")
+        else:
+            input_text = "Generate a witty board message."
+            self.log("Generating AI message...", level="INFO")
 
         result = provider.generate_from_text(
-            input_text="Generate a witty board message.",
+            input_text=input_text,
             instructions=_AI_PERSONALITY_PROMPT,
             expected_keys=["message"],
         )

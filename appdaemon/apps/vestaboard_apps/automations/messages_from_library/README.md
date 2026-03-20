@@ -11,6 +11,7 @@ Vestaboard automation that randomly selects a saved message from the frame libra
    - Loads the `FrameLibrary` from disk (lazy — loaded once on first use).
    - Filters for frames with `category="message"` and `rating >= min_stars`.
    - Picks one at random and returns its stored `characters` grid.
+   - If the selected frame has a `template` field (e.g. `"UPS LOAD: {sensor.apc_load}W"`), the template and `refresh_interval_minutes` are passed through to the controller, which resolves `{entity_id}` placeholders to live HA data before displaying.
    - If no qualifying library frames exist, picks from the built-in fallback message list and renders it with a randomly colored border.
 5. The frame is pushed to the controller by firing a `vestaboard_controller_command` event with `command="push_automation_frame"`, then the next random interval is scheduled.
 6. The automation can also be triggered on-demand via the controller's `generate_random_message` command, which fires a `vb_auto_generate (with automation_id in data)` event back to this app.

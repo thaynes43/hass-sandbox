@@ -53,13 +53,13 @@ sensor.vestaboard_controller_status (state changes)
 
 | Command | Payload fields | Description |
 |---------|---------------|-------------|
-| `save_frame` | `frame`, `name`, `creator`, `rating`, `category` | Save a new frame to the library |
+| `save_frame` | `frame`, `name`, `creator`, `rating`, `category`, `template`, `refresh_interval_minutes` | Save a new frame to the library (optionally with a template for live HA data) |
 | `update_frame` | `frame_id`, any mutable fields | Update metadata or characters of an existing frame |
 | `delete_frame` | `frame_id` | Remove a frame from the library |
 | `move_frame` | `frame_id`, `category` | Move a frame between categories (`message` / `art`) |
 | `quick_save_art` | `frame`, `name`, `creator` | Save AI-generated art with backend-generated defaults |
 | `save_art_to_library` | `frame`, `name`, `creator` | Save AI art as a named library frame |
-| `push_frame` | `frame`, `ttl_minutes`, `should_expire` | Push a frame directly to the board (forwarded to controller) |
+| `push_frame` | `frame`, `ttl_minutes`, `should_expire`, `template`, `refresh_interval_minutes` | Push a frame directly to the board (forwarded to controller, template resolved by controller) |
 | `push_library_frame` | `frame_id`, `ttl_minutes`, `respect_ttl` | Look up frame by ID and push it (forwarded to controller) |
 | `toggle_automation` | `automation_id`, `enabled` | Enable or disable a board automation (forwarded to controller) |
 | `set_automation_config` | `automation_id`, `config` | Update an automation's UI config (forwarded to controller) |
