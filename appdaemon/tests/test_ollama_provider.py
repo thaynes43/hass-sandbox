@@ -153,7 +153,7 @@ def test_ollama_simple_text_generate_success() -> None:
     response_body = json.dumps(
         {
             "model": "qwen3.5:9b",
-            "response": '{"summary": "A short summary.", "tone": "neutral"}',
+            "message": {"role": "assistant", "content": '{"summary": "A short summary.", "tone": "neutral"}'},
             "done": True,
             "load_duration": 0,
         }
