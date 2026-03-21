@@ -139,7 +139,7 @@ class TestLifecycle:
         app = _make_app()
         _startup(app)
         app.fire_event.assert_called_once_with(
-            "health_check_controller_ready", {}
+            "health_check_controller_ready"
         )
 
     def test_startup_publishes_initial_status(self):
@@ -419,7 +419,7 @@ class TestForceRecheck:
             "payload": "{}",
         }, {})
 
-        app.fire_event.assert_called_once_with("health_check_recheck", {})
+        app.fire_event.assert_called_once_with("health_check_recheck")
 
 
 # ---------------------------------------------------------------------------

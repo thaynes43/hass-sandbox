@@ -79,7 +79,7 @@ class HealthCheckController(hass.Hass):
         self._publish_status()
 
         # Signal to checkers that we are ready
-        self.fire_event("health_check_controller_ready", {})
+        self.fire_event("health_check_controller_ready")
 
         self.log("HealthCheckController started — ready event fired", level="INFO")
 
@@ -307,7 +307,7 @@ class HealthCheckController(hass.Hass):
     def _handle_force_recheck(self, payload: dict) -> None:
         """Forward a force-recheck request to all checkers."""
         self.log("Broadcasting force recheck to all checkers", level="INFO")
-        self.fire_event("health_check_recheck", {})
+        self.fire_event("health_check_recheck")
 
     # ------------------------------------------------------------------
     # Sensor publication

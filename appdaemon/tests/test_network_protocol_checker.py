@@ -40,7 +40,7 @@ DEFAULT_ARGS: Dict[str, Any] = {
     "checker_name": "Zigbee",
     "entity_id": "binary_sensor.zigbee2mqtt_bridge_connection_state",
     "entity_healthy_state": "on",
-    "entity_check_name": "Bridge Connection",
+    "entity_check_name": "Integration Status",
     "radio_host": "tubeszb-zigbee01.haynesnetwork",
     "radio_check_name": "Coordinator Ping",
     "web_ui_url": "https://zigbee.haynesops.com",
@@ -60,7 +60,7 @@ def _make_app(extra_args: dict | None = None) -> NetworkProtocolChecker:
         args.update(extra_args)
     app.args = args
 
-    app.get_state = MagicMock(return_value="on")
+    app.get_state = AsyncMock(return_value="on")
     app.set_state = MagicMock()
     app.call_service = MagicMock()
     app.listen_state = MagicMock()
@@ -177,7 +177,7 @@ class TestRegistration:
             and c[1].get("command") == "register_checker"
         ]
         payload = json.loads(register_calls[0][1]["payload"])
-        assert payload["check_names"] == ["Bridge Connection"]
+        assert payload["check_names"] == ["Integration Status"]
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ class TestCheckExecution:
         ]
         payload = json.loads(report_calls[0][1]["payload"])
         entity_result = next(
-            r for r in payload["results"] if r["name"] == "Bridge Connection"
+            r for r in payload["results"] if r["name"] == "Integration Status"
         )
         assert entity_result["status"] == "critical"
         assert "off" in entity_result["detail"]
@@ -268,7 +268,7 @@ class TestCheckExecution:
             and c[1].get("command") == "report_status"
         ][0][1]["payload"])
         entity_result = next(
-            r for r in payload["results"] if r["name"] == "Bridge Connection"
+            r for r in payload["results"] if r["name"] == "Integration Status"
         )
         assert entity_result["status"] == "critical"
         assert "not found" in entity_result["detail"].lower()
@@ -345,7 +345,7 @@ class TestCheckExecution:
             and c[1].get("command") == "report_status"
         ][0][1]["payload"])
         assert len(payload["results"]) == 1
-        assert payload["results"][0]["name"] == "Bridge Connection"
+        assert payload["results"][0]["name"] == "Integration Status"
 
     def test_force_recheck_runs_checks(self):
         """Recheck event should trigger check execution."""
@@ -369,7 +369,7 @@ class TestZWaveConfig:
         "checker_name": "Z-Wave",
         "entity_id": "sensor.800_series_long_range_gpio_module_status",
         "entity_healthy_state": "ready",
-        "entity_check_name": "Module Status",
+        "entity_check_name": "Integration Status",
         "radio_host": "tubeszb-zwave01.haynesnetwork",
         "radio_check_name": "Radio Ping",
         "web_ui_url": "https://zwave.haynesops.com",
@@ -390,7 +390,7 @@ class TestZWaveConfig:
         payload = json.loads(register_calls[0][1]["payload"])
         assert payload["checker_id"] == "zwave"
         assert payload["checker_name"] == "Z-Wave"
-        assert "Module Status" in payload["check_names"]
+        assert "Integration Status" in payload["check_names"]
         assert "Radio Ping" in payload["check_names"]
 
     def test_zwave_entity_check(self):
@@ -399,7 +399,7 @@ class TestZWaveConfig:
         _startup(app)
         app.get_state.return_value = "ready"
 
-        result = app._check_entity_state()
+        result = _run(app._check_entity_state())
         assert result["status"] == "ok"
         assert result["detail"] == "ready"
 
@@ -409,6 +409,43 @@ class TestZWaveConfig:
         _startup(app)
         app.get_state.return_value = "dead"
 
-        result = app._check_entity_state()
+        result = _run(app._check_entity_state())
         assert result["status"] == "critical"
         assert "dead" in result["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Tests — YAML boolean coercion
+# ---------------------------------------------------------------------------
+
+class TestYamlBooleanCoercion:
+    """PyYAML coerces 'on'/'off' to True/False — the app must handle this."""
+
+    def test_bool_true_becomes_on(self):
+        """YAML 'on' parsed as bool True should match HA state 'on'."""
+        app = _make_app({"entity_healthy_state": True})
+        _startup(app)
+        app.get_state.return_value = "on"
+
+        result = _run(app._check_entity_state())
+        assert result["status"] == "ok"
+        assert result["detail"] == "on"
+
+    def test_bool_false_becomes_off(self):
+        """YAML 'off' parsed as bool False should match HA state 'off'."""
+        app = _make_app({"entity_healthy_state": False})
+        _startup(app)
+        app.get_state.return_value = "off"
+
+        result = _run(app._check_entity_state())
+        assert result["status"] == "ok"
+        assert result["detail"] == "off"
+
+    def test_string_on_still_works(self):
+        """Quoted 'on' staying as string should still work."""
+        app = _make_app({"entity_healthy_state": "on"})
+        _startup(app)
+        app.get_state.return_value = "on"
+
+        result = _run(app._check_entity_state())
+        assert result["status"] == "ok"

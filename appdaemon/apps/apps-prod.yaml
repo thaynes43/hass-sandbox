@@ -654,7 +654,7 @@ zigbee_health_checker:
   checker_name: Zigbee
   entity_id: binary_sensor.zigbee2mqtt_bridge_connection_state
   entity_healthy_state: "on"
-  entity_check_name: Bridge Connection
+  entity_check_name: Integration Status
   radio_host: tubeszb-zigbee01.haynesnetwork
   radio_check_name: Coordinator Ping
   web_ui_url: https://zigbee.haynesops.com
@@ -669,7 +669,7 @@ zwave_health_checker:
   checker_name: Z-Wave
   entity_id: sensor.800_series_long_range_gpio_module_status
   entity_healthy_state: "ready"
-  entity_check_name: Module Status
+  entity_check_name: Integration Status
   radio_host: tubeszb-zwave01.haynesnetwork
   radio_check_name: Radio Ping
   web_ui_url: https://zwave.haynesops.com

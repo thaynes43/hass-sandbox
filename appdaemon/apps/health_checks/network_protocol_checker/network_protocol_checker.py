@@ -50,7 +50,12 @@ class NetworkProtocolChecker(hass.Hass):
 
         # Entity check
         self._entity_id: str = args.get("entity_id", "")
-        self._entity_healthy_state: str = str(args.get("entity_healthy_state", ""))
+        # YAML may coerce "on"/"off" to bool True/False — reverse it
+        raw_state = args.get("entity_healthy_state", "")
+        if isinstance(raw_state, bool):
+            self._entity_healthy_state = "on" if raw_state else "off"
+        else:
+            self._entity_healthy_state = str(raw_state)
         self._entity_check_name: str = args.get("entity_check_name", "Entity State")
 
         # Radio ping check
@@ -89,18 +94,21 @@ class NetworkProtocolChecker(hass.Hass):
         # Listen for force-recheck requests
         self.listen_event(self._on_recheck, "health_check_recheck")
 
-        # Start periodic checks — offset 10s to give controller time to start
-        self.run_in(self._start_timer, 10)
+        # Run first check after a short delay, then start periodic timer
+        self.run_in(self._first_check, 5)
 
         self.log(
             f"NetworkProtocolChecker '{self._checker_name}' started",
             level="INFO",
         )
 
-    def _start_timer(self, kwargs: Any) -> None:
-        """Start the periodic check timer and run the first check."""
+    def _first_check(self, kwargs: Any) -> None:
+        """Run the first check cycle immediately, then start periodic timer."""
+        self.create_task(self._run_checks())
         self.run_every(
-            self._check_tick, "now", self._check_interval_s
+            self._check_tick,
+            f"now+{self._check_interval_s}",
+            self._check_interval_s,
         )
 
     # ------------------------------------------------------------------
@@ -171,7 +179,7 @@ class NetworkProtocolChecker(hass.Hass):
 
         # 1. Entity state check
         if self._entity_id:
-            result = self._check_entity_state()
+            result = await self._check_entity_state()
             results.append(result)
 
         # 2. Radio ping check
@@ -202,10 +210,10 @@ class NetworkProtocolChecker(hass.Hass):
             level="INFO" if any_bad else "DEBUG",
         )
 
-    def _check_entity_state(self) -> Dict[str, str]:
+    async def _check_entity_state(self) -> Dict[str, str]:
         """Check whether the monitored HA entity is in its healthy state."""
         try:
-            state = self.get_state(self._entity_id)
+            state = await self.get_state(self._entity_id)
             if state is None:
                 return {
                     "name": self._entity_check_name,

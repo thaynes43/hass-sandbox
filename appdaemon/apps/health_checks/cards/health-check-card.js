@@ -134,12 +134,12 @@ class HealthCheckCard extends HTMLElement {
   }
 
   /** Compute the duration string since a check's last_changed timestamp. */
-  _sinceLastChanged(lastChanged) {
+  _sinceLastChanged(lastChanged, suppressShort = true) {
     if (!lastChanged) return "";
     const ts = new Date(lastChanged);
     if (isNaN(ts.getTime())) return "";
     const seconds = (Date.now() - ts.getTime()) / 1000;
-    if (seconds < 60) return "";
+    if (suppressShort && seconds < 60) return "";
     return this._formatDuration(seconds);
   }
 
@@ -161,13 +161,20 @@ class HealthCheckCard extends HTMLElement {
     const status = this._hass?.states?.[this._config.status_entity];
     const checkers = status?.attributes?.checkers || {};
     for (const [, checker] of Object.entries(checkers)) {
-      const worstCheck = (checker.checks || []).find(
-        (c) => c.status === "critical"
-      );
-      const duration =
-        checker.status !== "ok" && worstCheck?.last_changed
-          ? this._sinceLastChanged(worstCheck.last_changed)
-          : "";
+      let duration = "";
+      if (checker.status !== "ok") {
+        // Find the earliest last_changed among non-ok checks
+        const failingChecks = (checker.checks || []).filter(
+          (c) => c.status !== "ok" && c.last_changed
+        );
+        if (failingChecks.length > 0) {
+          // Use the earliest failure time for duration
+          const earliest = failingChecks.reduce((a, b) =>
+            new Date(a.last_changed) < new Date(b.last_changed) ? a : b
+          );
+          duration = this._sinceLastChanged(earliest.last_changed, false);
+        }
+      }
       items.push({
         name: checker.name || "Unknown",
         status: checker.status || "unknown",
