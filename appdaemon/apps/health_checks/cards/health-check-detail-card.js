@@ -159,14 +159,19 @@ class HealthCheckDetailCard extends HTMLElement {
   _statusIcon(status) {
     switch (status) {
       case "ok":
-        return "✅";
+        return { icon: "mdi:check-circle", color: "var(--success-color, #4caf50)" };
       case "degraded":
-        return "⚠️";
+        return { icon: "mdi:alert-circle", color: "var(--warning-color, #ff9800)" };
       case "critical":
-        return "❌";
+        return { icon: "mdi:alert-circle", color: "var(--error-color, #f44336)" };
       default:
-        return "❓";
+        return { icon: "mdi:help-circle", color: "var(--disabled-color, #9e9e9e)" };
     }
+  }
+
+  _statusIconHtml(status, size = 18) {
+    const { icon, color } = this._statusIcon(status);
+    return `<ha-icon icon="${icon}" style="color:${color};--mdc-icon-size:${size}px;"></ha-icon>`;
   }
 
   _statusLabel(status) {
@@ -207,7 +212,7 @@ class HealthCheckDetailCard extends HTMLElement {
         <div class="history-section"></div>
         <div class="actions-section">
           <button class="recheck-btn" data-action="recheck">
-            🔄 Force Re-check
+            <ha-icon icon="mdi:refresh" style="--mdc-icon-size:16px;"></ha-icon> Force Re-check
           </button>
         </div>
       </div>
@@ -235,7 +240,7 @@ class HealthCheckDetailCard extends HTMLElement {
     const threshold = this._config.stale_threshold_s;
     const online = staleness <= threshold;
     const status = online ? "ok" : "critical";
-    const icon = this._statusIcon(status);
+    const iconHtml = this._statusIconHtml(status, 18);
     const label = online ? "Online" : "Offline";
     const durationStr = isFinite(staleness)
       ? this._formatDuration(staleness)
@@ -246,7 +251,7 @@ class HealthCheckDetailCard extends HTMLElement {
 
     this._els.adSection.innerHTML = `
       <div class="section-header">
-        <span class="section-icon">${icon}</span>
+        <span class="section-icon">${iconHtml}</span>
         <span class="section-title">AppDaemon</span>
         <span class="section-badge badge-${status}">${label}</span>
       </div>
@@ -281,7 +286,7 @@ class HealthCheckDetailCard extends HTMLElement {
 
     let html = "";
     for (const [checkerId, checker] of Object.entries(checkers)) {
-      const icon = this._statusIcon(checker.status);
+      const iconHtml = this._statusIconHtml(checker.status, 18);
       const label = this._statusLabel(checker.status);
       const lastCheck = checker.last_check
         ? this._formatTimestamp(checker.last_check)
@@ -289,13 +294,13 @@ class HealthCheckDetailCard extends HTMLElement {
 
       let checksHtml = "";
       for (const check of checker.checks || []) {
-        const cIcon = this._statusIcon(check.status);
+        const cIconHtml = this._statusIconHtml(check.status, 14);
         const changedStr = check.last_changed
           ? this._formatTimestamp(check.last_changed)
           : "—";
         checksHtml += `
           <div class="check-row">
-            <span class="check-icon">${cIcon}</span>
+            <span class="check-icon">${cIconHtml}</span>
             <span class="check-name">${hcdEscapeHtml(check.name)}</span>
             <span class="check-detail">${hcdEscapeHtml(check.detail)}</span>
             <span class="check-changed">${hcdEscapeHtml(changedStr)}</span>
@@ -306,7 +311,7 @@ class HealthCheckDetailCard extends HTMLElement {
       html += `
         <div class="section checker-block">
           <div class="section-header">
-            <span class="section-icon">${icon}</span>
+            <span class="section-icon">${iconHtml}</span>
             <span class="section-title">${hcdEscapeHtml(checker.name || checkerId)}</span>
             <span class="section-badge badge-${checker.status}">${label}</span>
           </div>
@@ -355,7 +360,7 @@ class HealthCheckDetailCard extends HTMLElement {
       this._els.historySection.innerHTML = `
         <div class="section">
           <div class="section-header">
-            <span class="section-icon">📋</span>
+            <span class="section-icon"><ha-icon icon="mdi:clipboard-text-outline" style="--mdc-icon-size:16px;color:var(--disabled-color, #9e9e9e);"></ha-icon></span>
             <span class="section-title">Alert History</span>
           </div>
           <div class="section-body">
@@ -368,15 +373,10 @@ class HealthCheckDetailCard extends HTMLElement {
 
     let alertsHtml = "";
     for (const alert of allAlerts.slice(0, 20)) {
-      const icon =
-        alert.to_status === "critical"
-          ? "🔴"
-          : alert.to_status === "ok"
-            ? "🟢"
-            : "🟡";
+      const alertIconHtml = this._statusIconHtml(alert.to_status, 14);
       alertsHtml += `
         <div class="alert-row">
-          <span class="alert-icon">${icon}</span>
+          <span class="alert-icon">${alertIconHtml}</span>
           <span class="alert-time">${hcdEscapeHtml(this._formatTimestamp(alert.timestamp))}</span>
           <span class="alert-checker">${hcdEscapeHtml(alert.checker_name)}</span>
           <span class="alert-check">${hcdEscapeHtml(alert.check)}</span>
@@ -388,7 +388,7 @@ class HealthCheckDetailCard extends HTMLElement {
     this._els.historySection.innerHTML = `
       <div class="section">
         <div class="section-header">
-          <span class="section-icon">📋</span>
+          <span class="section-icon"><ha-icon icon="mdi:clipboard-text-outline" style="--mdc-icon-size:16px;color:var(--disabled-color, #9e9e9e);"></ha-icon></span>
           <span class="section-title">Alert History</span>
           <span class="section-count">${allAlerts.length}</span>
         </div>
@@ -511,8 +511,9 @@ class HealthCheckDetailCard extends HTMLElement {
       }
 
       .section-icon {
-        font-size: 16px;
-        line-height: 1;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
       }
 
       .section-title {
@@ -614,8 +615,10 @@ class HealthCheckDetailCard extends HTMLElement {
       }
 
       .check-icon {
-        font-size: 13px;
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
       }
 
       .check-name {
@@ -657,8 +660,9 @@ class HealthCheckDetailCard extends HTMLElement {
       }
 
       .alert-icon {
-        font-size: 10px;
-        text-align: center;
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
       }
 
       .alert-time {

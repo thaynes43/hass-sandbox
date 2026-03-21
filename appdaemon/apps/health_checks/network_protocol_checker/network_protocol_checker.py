@@ -207,7 +207,7 @@ class NetworkProtocolChecker(hass.Hass):
         self.log(
             f"Check cycle complete for '{self._checker_name}': "
             f"{', '.join(status_parts)}",
-            level="INFO" if any_bad else "DEBUG",
+            level="INFO",
         )
 
     async def _check_entity_state(self) -> Dict[str, str]:

@@ -143,24 +143,32 @@ class HealthCheckCard extends HTMLElement {
     return this._formatDuration(seconds);
   }
 
+  /** Check if the backend (AppDaemon) heartbeat is fresh. */
+  _isBackendOnline() {
+    const staleness = this._heartbeatStaleness();
+    return staleness <= this._config.stale_threshold_s;
+  }
+
   /** Build the status items array for rendering. */
   _buildStatusItems() {
-    const items = [];
-    const threshold = this._config.stale_threshold_s;
-
-    // AppDaemon heartbeat
-    const staleness = this._heartbeatStaleness();
-    const adOnline = staleness <= threshold;
-    items.push({
-      name: "AppDaemon",
-      status: adOnline ? "ok" : "critical",
-      duration: adOnline ? "" : this._formatDuration(staleness),
-    });
+    const backendOnline = this._isBackendOnline();
 
     // Registered checkers
     const status = this._hass?.states?.[this._config.status_entity];
     const checkers = status?.attributes?.checkers || {};
+    const items = [];
+
     for (const [, checker] of Object.entries(checkers)) {
+      // If backend is offline, override all checkers to unknown
+      if (!backendOnline) {
+        items.push({
+          name: checker.name || "Unknown",
+          status: "unknown",
+          duration: "",
+        });
+        continue;
+      }
+
       let duration = "";
       if (checker.status !== "ok") {
         // Find the earliest last_changed among non-ok checks
@@ -168,7 +176,6 @@ class HealthCheckCard extends HTMLElement {
           (c) => c.status !== "ok" && c.last_changed
         );
         if (failingChecks.length > 0) {
-          // Use the earliest failure time for duration
           const earliest = failingChecks.reduce((a, b) =>
             new Date(a.last_changed) < new Date(b.last_changed) ? a : b
           );
@@ -204,12 +211,17 @@ class HealthCheckCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
       <div class="hc-bar" data-action="open">
+        <div class="hc-header">
+          <ha-icon icon="mdi:heart-pulse" class="hc-backend-icon"></ha-icon>
+          <span class="hc-title">Health Checks</span>
+        </div>
         <div class="hc-items"></div>
       </div>
     `;
 
     this._els = {
       bar: this.shadowRoot.querySelector(".hc-bar"),
+      backendIcon: this.shadowRoot.querySelector(".hc-backend-icon"),
       items: this.shadowRoot.querySelector(".hc-items"),
     };
 
@@ -220,14 +232,18 @@ class HealthCheckCard extends HTMLElement {
   _update() {
     if (!this._els) return;
 
+    const backendOnline = this._isBackendOnline();
     const items = this._buildStatusItems();
 
+    // Update backend connectivity icon
+    this._els.backendIcon.style.color = backendOnline
+      ? "var(--success-color, #4caf50)"
+      : "var(--error-color, #f44336)";
+
     // Determine overall status for bar styling
-    const hasCritical = items.some((i) => i.status === "critical");
+    const hasCritical = !backendOnline || items.some((i) => i.status === "critical");
     const hasDegraded = items.some((i) => i.status === "degraded");
-    const hasUnknown = items.some(
-      (i) => i.status === "unknown" && i.name !== "AppDaemon"
-    );
+    const hasUnknown = items.some((i) => i.status === "unknown");
 
     this._els.bar.classList.toggle("bar-critical", hasCritical);
     this._els.bar.classList.toggle("bar-degraded", !hasCritical && hasDegraded);
@@ -236,25 +252,25 @@ class HealthCheckCard extends HTMLElement {
       !hasCritical && !hasDegraded && hasUnknown
     );
 
-    // Render items
+    // Render checker items
     let html = "";
     for (const item of items) {
-      const icon = this._statusIcon(item.status);
+      const { icon, color } = this._statusIcon(item.status);
       const durationHtml = item.duration
         ? `<span class="item-duration">(${item.duration})</span>`
         : "";
       html += `
         <div class="hc-item status-${item.status}">
-          <span class="item-icon">${icon}</span>
+          <ha-icon icon="${icon}" style="color:${color};--mdc-icon-size:16px;" class="item-icon"></ha-icon>
           <span class="item-name">${this._escapeHtml(item.name)}</span>
           ${durationHtml}
         </div>`;
     }
 
-    // If no items at all, show a loading state
+    // If no checkers registered yet, show loading
     if (items.length === 0) {
       html = `<div class="hc-item status-unknown">
-        <span class="item-icon">⏳</span>
+        <ha-icon icon="mdi:loading" style="color:var(--disabled-color, #9e9e9e);--mdc-icon-size:16px;" class="item-icon"></ha-icon>
         <span class="item-name">Loading...</span>
       </div>`;
     }
@@ -265,13 +281,13 @@ class HealthCheckCard extends HTMLElement {
   _statusIcon(status) {
     switch (status) {
       case "ok":
-        return "✅";
+        return { icon: "mdi:check-circle", color: "var(--success-color, #4caf50)" };
       case "degraded":
-        return "⚠️";
+        return { icon: "mdi:alert-circle", color: "var(--warning-color, #ff9800)" };
       case "critical":
-        return "❌";
+        return { icon: "mdi:alert-circle", color: "var(--error-color, #f44336)" };
       default:
-        return "❓";
+        return { icon: "mdi:help-circle", color: "var(--disabled-color, #9e9e9e)" };
     }
   }
 
@@ -365,10 +381,11 @@ class HealthCheckCard extends HTMLElement {
       .hc-bar {
         cursor: pointer;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 8px 16px;
-        border-radius: 28px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+        padding: 10px 16px;
+        border-radius: 20px;
         background: rgba(28, 29, 33, 0.32);
         border: 1px solid rgba(255, 255, 255, 0.14);
         box-shadow:
@@ -400,12 +417,30 @@ class HealthCheckCard extends HTMLElement {
         border-color: rgba(180, 180, 180, 0.25);
       }
 
+      .hc-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .hc-backend-icon {
+        --mdc-icon-size: 18px;
+        flex-shrink: 0;
+        transition: color 200ms ease;
+      }
+
+      .hc-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: rgba(240, 243, 255, 0.85);
+        letter-spacing: 0.03em;
+      }
+
       .hc-items {
         display: flex;
         align-items: center;
         gap: 16px;
         flex-wrap: wrap;
-        justify-content: center;
       }
 
       .hc-item {
@@ -437,8 +472,8 @@ class HealthCheckCard extends HTMLElement {
       }
 
       .item-icon {
-        font-size: 14px;
-        line-height: 1;
+        --mdc-icon-size: 16px;
+        flex-shrink: 0;
       }
 
       .item-name {

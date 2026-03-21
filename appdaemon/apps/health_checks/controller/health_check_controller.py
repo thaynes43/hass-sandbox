@@ -300,7 +300,7 @@ class HealthCheckController(hass.Hass):
         self.log(
             f"Status report from '{checker['name']}': {worst_status} "
             f"({len(results)} checks)",
-            level="INFO" if worst_status != "ok" else "DEBUG",
+            level="INFO",
         )
         self._publish_status()
 
