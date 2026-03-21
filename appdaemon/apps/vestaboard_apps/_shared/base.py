@@ -173,7 +173,10 @@ class VestaboardAutomation:
                 config = json.loads(config)
             except Exception:
                 config = {}
-        config_summary = " | ".join(f"{k}={v!r}" for k, v in config.items())
+        # Log effective config (defaults merged with stored) so all values
+        # are visible, even keys never explicitly stored in the config file.
+        effective = {**self.DEFAULT_UI_CONFIG, **config}
+        config_summary = " | ".join(f"{k}={v!r}" for k, v in effective.items())
         self.log(
             f"Config event received: {config_summary}",
             level="INFO",

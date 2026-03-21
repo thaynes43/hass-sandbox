@@ -134,6 +134,10 @@ App YAML passes env var **names** (e.g. `api_key_env: OPENAI_API_KEY`, `ha_token
 
 See `.claude/rules/` for domain-specific rules. Summary below.
 
+### Wait for user testing before commit (required)
+
+When changes cannot be fully validated by unit tests alone (AppDaemon runtime behavior, Lovelace card JS, HA MCP interactions, queue/TTL behavior), do **not** commit and push until the user confirms they have tested the changes and they work. Unit tests passing does not mean the feature works end-to-end. After making runtime changes, tell the user they are ready to test and wait for confirmation.
+
 ### When to use AppDaemon vs HA YAML
 
 - **HA YAML**: simple trigger→condition→action, helpers as state, occupancy lighting, switch mappings

@@ -418,6 +418,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self.log(f"on_config_updated: enabled={enabled_val!r} type={type(enabled_val).__name__}", level="INFO")
             if enabled_val:
                 self._start_listeners()
+                self.create_task(self._run_cycle())
             else:
                 self._stop_listeners()
                 self._cancel_rotation_timer()
@@ -497,6 +498,8 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self._cancel_rotation_timer()
             self._cancel_countdown_timer()
             self._current_events = []
+            self._next_fire_time = None
+            self._notify_next_fire_time()
             return
 
         # Filter out elapsed events — don't display events that started

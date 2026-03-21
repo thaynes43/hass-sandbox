@@ -275,12 +275,20 @@ class VestaboardControllerApp(hass.Hass):
             self.log("register_automation: missing automation_id in payload", level="WARNING")
             return
 
+        # Preserve next_fire_time from old proxy on re-registration
+        old_proxy = self._registered_automations.get(auto_id)
+        old_fire_time = getattr(old_proxy, "_next_fire_time", None) if old_proxy else None
+
         proxy = RemoteAutomationProxy(payload)
+        if old_fire_time is not None:
+            proxy._next_fire_time = old_fire_time
         self._registered_automations[auto_id] = proxy
 
+        reregistered = old_proxy is not None
         self.log(
-            f"Automation registered: {auto_id!r} "
-            f"(type={proxy.automation_type!r})",
+            f"Automation {'re-' if reregistered else ''}registered: {auto_id!r} "
+            f"(type={proxy.automation_type!r})"
+            f"{f' | preserved next_fire_time={old_fire_time}' if old_fire_time else ''}",
             level="INFO",
         )
 
@@ -405,6 +413,12 @@ class VestaboardControllerApp(hass.Hass):
         next_fire = payload.get("next_fire_time")
         proxy = self._registered_automations.get(auto_id)
         if proxy is not None and next_fire is not None:
+            import time as _t
+            delta = float(next_fire) - _t.time()
+            self.log(
+                f"Next fire time updated: {auto_id!r} → {delta / 60:.1f} min from now",
+                level="INFO",
+            )
             proxy._next_fire_time = float(next_fire)
             self._publish_status()
 
