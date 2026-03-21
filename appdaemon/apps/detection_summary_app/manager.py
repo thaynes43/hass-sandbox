@@ -740,7 +740,7 @@ class DetectionSummary(hass.Hass):
                 "face_score": face,
                 "frame_score": frame,
                 "pose": pose,
-                "summary_preview": summary[:160],
+                "summary": summary,
             }
             return i, res, ev
 
@@ -1090,7 +1090,7 @@ class DetectionSummary(hass.Hass):
                         generated_image["style_profile_description"] = prompt_result.style_profile_description
                         generated_image["environment_variant_id"] = prompt_result.environment_variant_id
                         generated_image["environment_variant_description"] = prompt_result.environment_variant_description
-                        generated_image["image_prompt_preview"] = prompt[:600]
+                        generated_image["image_prompt"] = prompt
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen done run_id={run_id} "
                         f"elapsed_s={(generated_image or {}).get('elapsed_s')} model={(generated_image or {}).get('model')} "
@@ -1109,7 +1109,7 @@ class DetectionSummary(hass.Hass):
                             "environment_variant_id": prompt_result.environment_variant_id,
                             "environment_variant_description": prompt_result.environment_variant_description,
                             "prompt_len": len(prompt),
-                            "prompt_preview": prompt[:400],
+                            "image_prompt": prompt,
                         }
                     )
                     # mirror to stable filename under zone dir

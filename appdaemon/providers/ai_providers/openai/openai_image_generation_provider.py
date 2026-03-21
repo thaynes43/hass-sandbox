@@ -171,5 +171,5 @@ class OpenAIImageGenerationProvider(ImageGenerationProvider):
             "input_paths": [str(p) for p in in_paths],
             "output_path": str(out_path),
             "revised_prompt": first.get("revised_prompt"),
-            "request": {"prompt_len": len(str(prompt)), "prompt_preview": prompt_preview},
+            "request": {"prompt_len": len(str(prompt)), "prompt": str(prompt)},
         }

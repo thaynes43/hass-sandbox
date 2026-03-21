@@ -147,9 +147,9 @@ class GeminiSimpleTextProvider(SimpleTextProvider):
                 "max_output_tokens": int(self._config.max_output_tokens),
                 "responseMimeType": "application/json",
                 "prompt_len": len(prompt),
-                "prompt_preview": prompt[:400],
-                "input_text_preview": str(input_text or "")[:400],
+                "prompt": prompt,
+                "input_text": str(input_text or ""),
             },
-            "response": {"content_preview": content[:400]},
+            "response": {"content": content},
         }
         return obj

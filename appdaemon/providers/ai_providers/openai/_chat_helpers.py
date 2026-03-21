@@ -85,7 +85,7 @@ def extract_assistant_json_text(choice0: dict[str, Any]) -> tuple[str, dict[str,
     debug: dict[str, Any] = {
         "message_keys": sorted([str(k) for k in msg.keys()])[:50],
         "content_raw_type": type(content_raw).__name__,
-        "content_raw_preview": repr(content_raw)[:400],
+        "content_raw": repr(content_raw),
     }
 
     if content:

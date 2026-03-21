@@ -172,8 +172,8 @@ class GeminiMultimodalTextProvider(MultimodalTextProvider):
                 "max_output_tokens": int(self._config.max_output_tokens),
                 "responseMimeType": "application/json",
                 "prompt_len": len(prompt),
-                "prompt_preview": prompt_preview,
+                "prompt": prompt,
             },
-            "response": {"content_preview": content[:400]},
+            "response": {"content": content},
         }
         return obj

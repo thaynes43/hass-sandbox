@@ -166,5 +166,5 @@ class GeminiImageGenerationProvider(ImageGenerationProvider):
             "elapsed_s": round(time.time() - started, 3),
             "input_paths": [str(p) for p in in_paths],
             "output_path": str(out_path),
-            "request": {"prompt_len": len(str(prompt)), "prompt_preview": prompt_preview},
+            "request": {"prompt_len": len(str(prompt)), "prompt": str(prompt)},
         }

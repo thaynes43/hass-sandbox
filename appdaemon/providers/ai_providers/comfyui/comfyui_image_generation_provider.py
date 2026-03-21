@@ -154,7 +154,7 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             "output_path": str(out_path),
             "prompt_id": prompt_id,
             "uploaded_input_name": uploaded_name,
-            "request": {"prompt_len": len(str(prompt)), "prompt_preview": str(prompt)[:400]},
+            "request": {"prompt_len": len(str(prompt)), "prompt": str(prompt)},
             "response": {"image_info": image_info},
         }
         if len(in_paths) > 1:

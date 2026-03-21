@@ -189,10 +189,10 @@ class OllamaMultimodalTextProvider(MultimodalTextProvider):
             "request": {
                 "max_output_tokens": self._config.max_output_tokens,
                 "prompt_len": len(prompt),
-                "prompt_preview": prompt_preview,
+                "prompt": prompt,
             },
-            "response": {"content_preview": response_text[:400]},
+            "response": {"content": response_text},
         }
         if thinking_text:
-            obj["_meta"]["response"]["thinking_preview"] = thinking_text[:400]
+            obj["_meta"]["response"]["thinking"] = thinking_text
         return obj
