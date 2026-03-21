@@ -198,10 +198,11 @@ class DashboardNotify(hass.Hass):
                  len(self._notification_configs))
 
     def _format_notification_text(self, text: Any) -> str:
-        """Normalize notification text to a fixed display width.
+        """Normalize notification text to a bounded display width.
 
-        This keeps the wall-display card height stable by ensuring each
-        notification body is exactly `notification_text_target_chars` long.
+        The card is responsible for reserving a stable three-line text area.
+        Backend formatting only normalizes whitespace and truncates to the
+        configured maximum length.
         """
         normalized = " ".join((str(text) if text is not None else "").split())
         target = self._notification_text_target_chars
@@ -212,7 +213,7 @@ class DashboardNotify(hass.Hass):
                 return suffix[:target]
             return normalized[: target - len(suffix)] + suffix
 
-        return normalized.ljust(target)
+        return normalized
 
     # ------------------------------------------------------------------
     # Async startup — provisioning

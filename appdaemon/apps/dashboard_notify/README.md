@@ -101,7 +101,7 @@ See `apps-prod.yaml` for full config. Key settings:
 - `pause_auto_resume_s` — Automatically resume after this many paused seconds (default: 600; `0` disables it)
 - `default_ttl_s` — Default notification TTL (default: 1hr)
 - `no_notification_refresh_s` — Placeholder refresh interval (default: 1hr)
-- `notification_text_target_chars` — Fixed notification body width used for truncate/pad behavior (default: 180)
+- `notification_text_target_chars` — Maximum notification body length before truncation (default: 180)
 - `notification_text_truncate_suffix` — Suffix appended when text is truncated to the fixed width (default: `...`)
 - `notifications` — List of scheduled notification configs
 - `detection_summary_hook` — Detection event integration settings
