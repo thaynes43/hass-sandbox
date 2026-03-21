@@ -570,3 +570,210 @@ class TestPayloadParsing:
 
         # Should not crash — checker_id will be empty, rejected
         assert len(app._checkers) == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests — Repair support
+# ---------------------------------------------------------------------------
+
+def _register_repair_checker(app: HealthCheckController, checker_id: str = "spa") -> None:
+    """Register a checker that supports repair."""
+    app._on_command("health_check_command", {
+        "command": "register_checker",
+        "payload": json.dumps({
+            "checker_id": checker_id,
+            "checker_name": "Spa",
+            "check_names": ["Ping", "Connection"],
+            "supports_repair": True,
+        }),
+    }, {})
+
+
+def _register_no_repair_checker(app: HealthCheckController, checker_id: str = "zigbee") -> None:
+    """Register a checker that does NOT support repair."""
+    app._on_command("health_check_command", {
+        "command": "register_checker",
+        "payload": json.dumps({
+            "checker_id": checker_id,
+            "checker_name": "Zigbee",
+            "check_names": ["Bridge"],
+        }),
+    }, {})
+
+
+class TestRepairRegistration:
+    def test_register_with_supports_repair(self):
+        """Registering with supports_repair=True should store it."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        assert app._checkers["spa"]["supports_repair"] is True
+        assert app._checkers["spa"]["repair_state"] is None
+
+    def test_register_without_supports_repair(self):
+        """Registering without supports_repair should default to False."""
+        app = _make_app()
+        _startup(app)
+        _register_no_repair_checker(app)
+
+        assert app._checkers["zigbee"]["supports_repair"] is False
+
+    def test_supports_repair_published_in_sensor(self):
+        """Published sensor attributes should include supports_repair."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        assert attrs["checkers"]["spa"]["supports_repair"] is True
+        assert attrs["checkers"]["spa"]["repair_state"] is None
+
+
+class TestRepairStateStorage:
+    def test_repair_state_stored_on_report(self):
+        """repair_state in report_status should be stored and published."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+        app.set_state.reset_mock()
+
+        repair_state = {"status": "pending", "detail": "Auto-repair in 5m"}
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "critical", "detail": "timeout"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": repair_state,
+            }),
+        }, {})
+
+        assert app._checkers["spa"]["repair_state"] == repair_state
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        assert attrs["checkers"]["spa"]["repair_state"] == repair_state
+
+    def test_repair_state_not_overwritten_without_key(self):
+        """report_status without repair_state should not clear existing state."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        # Set repair state via a report
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "ok", "detail": "2ms"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "success", "detail": "Recovered"},
+            }),
+        }, {})
+
+        # Report again without repair_state
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "ok", "detail": "2ms"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+            }),
+        }, {})
+
+        # repair_state should still be the previous value
+        assert app._checkers["spa"]["repair_state"]["status"] == "success"
+
+
+class TestRepairRouting:
+    def test_start_repair_fires_targeted_event(self):
+        """start_repair should fire health_check_repair_{checker_id}."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "start_repair",
+            "payload": json.dumps({"checker_id": "spa"}),
+        }, {})
+
+        app.fire_event.assert_called_once_with(
+            "health_check_repair_spa",
+            action="start_repair",
+        )
+
+    def test_start_repair_rejects_non_repair_checker(self):
+        """start_repair should reject checkers without supports_repair."""
+        app = _make_app()
+        _startup(app)
+        _register_no_repair_checker(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "start_repair",
+            "payload": json.dumps({"checker_id": "zigbee"}),
+        }, {})
+
+        app.fire_event.assert_not_called()
+
+    def test_start_repair_rejects_unknown_checker(self):
+        """start_repair for an unknown checker should be rejected."""
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "start_repair",
+            "payload": json.dumps({"checker_id": "nonexistent"}),
+        }, {})
+
+        app.fire_event.assert_not_called()
+
+    def test_update_repair_config_fires_targeted_event(self):
+        """update_repair_config should forward config to the checker."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "update_repair_config",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "auto_repair_enabled": True,
+                "auto_repair_delay_min": 10,
+            }),
+        }, {})
+
+        app.fire_event.assert_called_once_with(
+            "health_check_repair_spa",
+            action="update_repair_config",
+            auto_repair_enabled=True,
+            auto_repair_delay_min=10,
+        )
+
+    def test_update_repair_config_rejects_non_repair_checker(self):
+        """update_repair_config should reject checkers without supports_repair."""
+        app = _make_app()
+        _startup(app)
+        _register_no_repair_checker(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "update_repair_config",
+            "payload": json.dumps({
+                "checker_id": "zigbee",
+                "auto_repair_enabled": True,
+                "auto_repair_delay_min": 5,
+            }),
+        }, {})
+
+        app.fire_event.assert_not_called()

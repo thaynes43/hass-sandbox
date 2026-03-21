@@ -199,6 +199,10 @@ class HealthCheckController(hass.Hass):
             self._handle_report_status(payload)
         elif cmd == "force_recheck":
             self._handle_force_recheck(payload)
+        elif cmd == "start_repair":
+            self._handle_start_repair(payload)
+        elif cmd == "update_repair_config":
+            self._handle_update_repair_config(payload)
         else:
             self.log(f"Unknown health_check_command: {cmd!r}", level="WARNING")
 
@@ -224,6 +228,8 @@ class HealthCheckController(hass.Hass):
             "alert_history": self._checkers.get(checker_id, {}).get(
                 "alert_history", []
             ),
+            "supports_repair": bool(payload.get("supports_repair", False)),
+            "repair_state": None,
         }
 
         action = "Registered" if is_new else "Re-registered"
@@ -293,6 +299,11 @@ class HealthCheckController(hass.Hass):
             : self._alert_history_max
         ]
 
+        # Store repair state if reported by the checker
+        repair_state = payload.get("repair_state")
+        if repair_state is not None:
+            checker["repair_state"] = repair_state
+
         checker["checks"] = new_checks
         checker["status"] = worst_status
         checker["last_check"] = now_iso
@@ -308,6 +319,56 @@ class HealthCheckController(hass.Hass):
         """Forward a force-recheck request to all checkers."""
         self.log("Broadcasting force recheck to all checkers", level="INFO")
         self.fire_event("health_check_recheck")
+
+    def _handle_start_repair(self, payload: dict) -> None:
+        """Forward a manual repair request to the target checker."""
+        checker_id = payload.get("checker_id", "")
+        checker = self._checkers.get(checker_id)
+        if not checker:
+            self.log(
+                f"start_repair for unknown checker: {checker_id!r}",
+                level="WARNING",
+            )
+            return
+        if not checker.get("supports_repair"):
+            self.log(
+                f"start_repair rejected — checker '{checker_id}' does not support repair",
+                level="WARNING",
+            )
+            return
+        self.log(f"Forwarding start_repair to checker '{checker_id}'", level="INFO")
+        self.fire_event(
+            f"health_check_repair_{checker_id}",
+            action="start_repair",
+        )
+
+    def _handle_update_repair_config(self, payload: dict) -> None:
+        """Forward repair config updates to the target checker."""
+        checker_id = payload.get("checker_id", "")
+        checker = self._checkers.get(checker_id)
+        if not checker:
+            self.log(
+                f"update_repair_config for unknown checker: {checker_id!r}",
+                level="WARNING",
+            )
+            return
+        if not checker.get("supports_repair"):
+            self.log(
+                f"update_repair_config rejected — checker '{checker_id}' "
+                "does not support repair",
+                level="WARNING",
+            )
+            return
+        self.log(
+            f"Forwarding update_repair_config to checker '{checker_id}'",
+            level="INFO",
+        )
+        self.fire_event(
+            f"health_check_repair_{checker_id}",
+            action="update_repair_config",
+            auto_repair_enabled=payload.get("auto_repair_enabled"),
+            auto_repair_delay_min=payload.get("auto_repair_delay_min"),
+        )
 
     # ------------------------------------------------------------------
     # Sensor publication
@@ -337,6 +398,8 @@ class HealthCheckController(hass.Hass):
                     "last_check": c["last_check"],
                     "checks": c["checks"],
                     "alert_history": c["alert_history"],
+                    "supports_repair": c.get("supports_repair", False),
+                    "repair_state": c.get("repair_state"),
                 }
                 for cid, c in self._checkers.items()
             },

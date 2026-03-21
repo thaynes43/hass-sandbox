@@ -676,6 +676,26 @@ zwave_health_checker:
   web_ui_check_name: Web UI
   check_interval_s: 180
 
+spa_health_checker:
+  module: health_checks.spa_health_checker.spa_health_checker
+  class: SpaHealthChecker
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: spa
+  checker_name: Spa
+  gateway_host: "192.168.0.163"
+  connection_entities:
+    - binary_sensor.haynes_spa_overall_connection
+    - binary_sensor.haynes_spa_transport_connection
+  staleness_entity: climate.haynes_spa_thermostat_1
+  staleness_threshold_s: 300
+  repair_switch: switch.power_distribution_hi_density_hot_tub
+  repair_recovery_wait_s: 300
+  check_interval_s: 120
+  auto_repair_enabled_default: false
+  auto_repair_delay_min_default: 5
+
 school_lunch_app:
   module: school_lunch_app.school_lunch_app
   class: SchoolLunchApp

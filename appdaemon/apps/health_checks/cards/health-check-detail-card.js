@@ -44,6 +44,8 @@ class HealthCheckDetailCard extends HTMLElement {
     this._domBuilt = false;
     this._touchActive = false;
     this._refreshTimer = null;
+    this._expandedCheckers = new Set();
+    this._collapsedCheckers = new Set();
   }
 
   // ---------------------------------------------------------------------------
@@ -273,6 +275,9 @@ class HealthCheckDetailCard extends HTMLElement {
   }
 
   _updateCheckersSection() {
+    const staleness = this._heartbeatStaleness();
+    const backendOnline = staleness <= this._config.stale_threshold_s;
+
     const statusEntity =
       this._hass?.states?.[this._config.status_entity];
     const checkers = statusEntity?.attributes?.checkers || {};
@@ -286,15 +291,17 @@ class HealthCheckDetailCard extends HTMLElement {
 
     let html = "";
     for (const [checkerId, checker] of Object.entries(checkers)) {
-      const iconHtml = this._statusIconHtml(checker.status, 18);
-      const label = this._statusLabel(checker.status);
+      const effectiveStatus = backendOnline ? checker.status : "unknown";
+      const iconHtml = this._statusIconHtml(effectiveStatus, 18);
+      const label = this._statusLabel(effectiveStatus);
       const lastCheck = checker.last_check
         ? this._formatTimestamp(checker.last_check)
         : "never";
 
       let checksHtml = "";
       for (const check of checker.checks || []) {
-        const cIconHtml = this._statusIconHtml(check.status, 14);
+        const effectiveCheckStatus = backendOnline ? check.status : "unknown";
+        const cIconHtml = this._statusIconHtml(effectiveCheckStatus, 14);
         const changedStr = check.last_changed
           ? this._formatTimestamp(check.last_changed)
           : "—";
@@ -308,14 +315,46 @@ class HealthCheckDetailCard extends HTMLElement {
         `;
       }
 
+      // Repair section (only for checkers that support repair)
+      let repairHtml = "";
+      if (checker.supports_repair && backendOnline) {
+        repairHtml = this._buildRepairHtml(checkerId, checker);
+      }
+
+      // Build a compact summary for the header: count ok/failing checks
+      const checks = checker.checks || [];
+      const failCount = checks.filter(
+        (c) => (backendOnline ? c.status : "unknown") !== "ok"
+      ).length;
+      const summaryParts = [];
+      if (backendOnline && failCount === 0 && checks.length > 0) {
+        summaryParts.push(`${checks.length}/${checks.length} checks passing`);
+      } else if (backendOnline && failCount > 0) {
+        summaryParts.push(`${failCount}/${checks.length} failing`);
+      }
+      if (lastCheck !== "never") {
+        summaryParts.push(lastCheck);
+      }
+      const summaryText = summaryParts.join(" · ");
+
+      // Determine if this checker should be expanded
+      // Non-ok auto-expands unless user explicitly collapsed it
+      const wasExplicitlyExpanded = this._expandedCheckers.has(checkerId);
+      const wasExplicitlyCollapsed = this._collapsedCheckers.has(checkerId);
+      const autoExpand = effectiveStatus !== "ok" && !wasExplicitlyCollapsed;
+      const defaultExpand = autoExpand || wasExplicitlyExpanded;
+      const expandedClass = defaultExpand ? "expanded" : "";
+
       html += `
-        <div class="section checker-block">
-          <div class="section-header">
+        <div class="section checker-block ${expandedClass}" data-checker-id="${hcdEscapeHtml(checkerId)}">
+          <div class="section-header checker-toggle" data-action="toggle_checker" data-checker="${hcdEscapeHtml(checkerId)}">
             <span class="section-icon">${iconHtml}</span>
             <span class="section-title">${hcdEscapeHtml(checker.name || checkerId)}</span>
-            <span class="section-badge badge-${checker.status}">${label}</span>
+            <span class="header-summary">${hcdEscapeHtml(summaryText)}</span>
+            <span class="section-badge badge-${effectiveStatus}">${label}</span>
+            <span class="chevron"><ha-icon icon="mdi:chevron-down" style="--mdc-icon-size:18px;"></ha-icon></span>
           </div>
-          <div class="section-body">
+          <div class="section-body collapsible-body">
             <div class="detail-row">
               <span class="detail-label">Last check:</span>
               <span class="detail-value">${hcdEscapeHtml(lastCheck)}</span>
@@ -329,6 +368,7 @@ class HealthCheckDetailCard extends HTMLElement {
               </div>
               ${checksHtml}
             </div>
+            ${repairHtml}
           </div>
         </div>
       `;
@@ -400,6 +440,105 @@ class HealthCheckDetailCard extends HTMLElement {
   }
 
   // ---------------------------------------------------------------------------
+  // Repair UI builder
+  // ---------------------------------------------------------------------------
+
+  _buildRepairHtml(checkerId, checker) {
+    const rs = checker.repair_state || {};
+    const status = rs.status || "idle";
+    const detail = rs.detail || "";
+    const enabled = rs.auto_repair_enabled || false;
+    const delayMin = rs.auto_repair_delay_min || 15;
+    const deadline = rs.auto_repair_deadline;
+    const lastAttempt = rs.last_repair_attempt;
+
+    // Status indicator
+    let statusHtml = "";
+    if (status === "pending" && deadline) {
+      const remaining = Math.max(
+        0,
+        Math.floor((new Date(deadline).getTime() - Date.now()) / 1000)
+      );
+      const min = Math.floor(remaining / 60);
+      const sec = remaining % 60;
+      statusHtml = `
+        <div class="repair-status repair-pending">
+          <ha-icon icon="mdi:timer-sand" style="--mdc-icon-size:14px;color:var(--hcd-degraded);"></ha-icon>
+          <span>Auto-repair in ${min}:${String(sec).padStart(2, "0")}</span>
+        </div>
+      `;
+    } else if (status === "in_progress") {
+      statusHtml = `
+        <div class="repair-status repair-in-progress">
+          <ha-icon icon="mdi:progress-wrench" style="--mdc-icon-size:14px;color:var(--hcd-accent);"></ha-icon>
+          <span>${hcdEscapeHtml(detail) || "Repair in progress..."}</span>
+        </div>
+      `;
+    } else if (status === "success") {
+      statusHtml = `
+        <div class="repair-status repair-success">
+          <ha-icon icon="mdi:check-circle" style="--mdc-icon-size:14px;color:var(--hcd-ok);"></ha-icon>
+          <span>${hcdEscapeHtml(detail) || "Repair successful"}</span>
+        </div>
+      `;
+    } else if (status === "failed") {
+      statusHtml = `
+        <div class="repair-status repair-failed-status">
+          <ha-icon icon="mdi:alert-circle" style="--mdc-icon-size:14px;color:var(--hcd-critical);"></ha-icon>
+          <span>${hcdEscapeHtml(detail) || "Repair failed"}</span>
+        </div>
+      `;
+    }
+
+    // Last repair attempt
+    let lastAttemptHtml = "";
+    if (lastAttempt) {
+      lastAttemptHtml = `
+        <div class="detail-row">
+          <span class="detail-label">Last repair:</span>
+          <span class="detail-value">${hcdEscapeHtml(this._formatTimestamp(lastAttempt))}</span>
+        </div>
+      `;
+    }
+
+    // Repair button — show when idle, success, or failed; hide during in_progress/pending
+    const showBtn = status === "idle" || status === "success" || status === "failed";
+    const btnHtml = showBtn
+      ? `<button class="repair-btn" data-action="start_repair" data-checker="${hcdEscapeHtml(checkerId)}">
+           <ha-icon icon="mdi:wrench" style="--mdc-icon-size:14px;"></ha-icon> Repair
+         </button>`
+      : "";
+
+    // Auto-repair controls
+    const checkedAttr = enabled ? "checked" : "";
+    const controlsHtml = `
+      <div class="repair-controls">
+        ${btnHtml}
+        <label class="repair-auto-label">
+          <input type="checkbox" class="repair-auto-toggle"
+            data-action="toggle_auto_repair" data-checker="${hcdEscapeHtml(checkerId)}"
+            ${checkedAttr}>
+          Auto-repair
+        </label>
+        <label class="repair-delay-label">
+          <input type="number" class="repair-delay-input"
+            data-action="set_repair_delay" data-checker="${hcdEscapeHtml(checkerId)}"
+            value="${delayMin}" min="1" max="60" step="1">
+          min
+        </label>
+      </div>
+    `;
+
+    return `
+      <div class="repair-section">
+        ${statusHtml}
+        ${lastAttemptHtml}
+        ${controlsHtml}
+      </div>
+    `;
+  }
+
+  // ---------------------------------------------------------------------------
   // Touch / click deduplication
   // ---------------------------------------------------------------------------
 
@@ -417,6 +556,50 @@ class HealthCheckDetailCard extends HTMLElement {
       const action = el.dataset.action;
       if (action === "recheck") {
         this._callRelay("force_recheck", {});
+      } else if (action === "toggle_checker") {
+        const cid = el.dataset.checker;
+        const block = root.querySelector(
+          `.checker-block[data-checker-id="${cid}"]`
+        );
+        if (block) {
+          block.classList.toggle("expanded");
+          if (block.classList.contains("expanded")) {
+            this._expandedCheckers.add(cid);
+            this._collapsedCheckers.delete(cid);
+          } else {
+            this._expandedCheckers.delete(cid);
+            this._collapsedCheckers.add(cid);
+          }
+        }
+      } else if (action === "start_repair") {
+        this._callRelay("start_repair", { checker_id: el.dataset.checker });
+      } else if (action === "toggle_auto_repair") {
+        const checker_id = el.dataset.checker;
+        const auto_repair_enabled = el.checked;
+        const delayInput = root.querySelector(
+          `.repair-delay-input[data-checker="${checker_id}"]`
+        );
+        const auto_repair_delay_min = delayInput
+          ? parseInt(delayInput.value, 10)
+          : 15;
+        this._callRelay("update_repair_config", {
+          checker_id,
+          auto_repair_enabled,
+          auto_repair_delay_min,
+        });
+      } else if (action === "set_repair_delay") {
+        const checker_id = el.dataset.checker;
+        const auto_repair_delay_min = parseInt(el.value, 10);
+        if (isNaN(auto_repair_delay_min) || auto_repair_delay_min < 1) return;
+        const toggle = root.querySelector(
+          `.repair-auto-toggle[data-checker="${checker_id}"]`
+        );
+        const auto_repair_enabled = toggle ? toggle.checked : false;
+        this._callRelay("update_repair_config", {
+          checker_id,
+          auto_repair_enabled,
+          auto_repair_delay_min,
+        });
       }
     };
 
@@ -467,6 +650,14 @@ class HealthCheckDetailCard extends HTMLElement {
       if (this._touchActive) return;
       const el = findActionEl(e);
       if (el) dispatchAction(el);
+    });
+
+    // Change events for repair controls (checkbox and number input)
+    root.addEventListener("change", (e) => {
+      const el = e.target;
+      if (el.dataset?.action) {
+        dispatchAction(el);
+      }
     });
   }
 
@@ -699,6 +890,149 @@ class HealthCheckDetailCard extends HTMLElement {
 
       .checker-block {
         margin-bottom: 0;
+      }
+
+      /* Collapsible checker sections */
+      .checker-toggle {
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      .checker-toggle .section-title {
+        flex: 0 0 auto;
+      }
+
+      .header-summary {
+        flex: 1;
+        font-size: 11px;
+        color: var(--hcd-muted);
+        font-weight: 500;
+        text-align: right;
+        padding-right: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chevron {
+        display: flex;
+        align-items: center;
+        color: var(--hcd-muted);
+        transition: transform 200ms ease;
+        flex-shrink: 0;
+      }
+
+      .checker-block.expanded .chevron {
+        transform: rotate(180deg);
+      }
+
+      .collapsible-body {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 250ms ease, padding 250ms ease;
+        padding: 0 14px;
+      }
+
+      .checker-block.expanded .collapsible-body {
+        max-height: 800px;
+        padding: 4px 14px 14px;
+      }
+
+      .checker-block:not(.expanded) .header-summary {
+        display: block;
+      }
+
+      .checker-block.expanded .header-summary {
+        display: none;
+      }
+
+      /* Repair section */
+      .repair-section {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--hcd-border);
+      }
+
+      .repair-status {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 6px 0;
+      }
+
+      .repair-pending span { color: var(--hcd-degraded); }
+      .repair-in-progress span { color: var(--hcd-accent); }
+      .repair-success span { color: var(--hcd-ok); }
+      .repair-failed-status span { color: var(--hcd-critical); }
+
+      .repair-controls {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 6px 0;
+        flex-wrap: wrap;
+      }
+
+      .repair-btn {
+        all: unset;
+        cursor: pointer;
+        padding: 6px 14px;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--hcd-border);
+        color: var(--hcd-accent);
+        font-size: 12px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+
+      .repair-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .repair-btn:active {
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .repair-auto-label,
+      .repair-delay-label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: var(--hcd-muted);
+        font-weight: 500;
+        cursor: pointer;
+      }
+
+      .repair-auto-toggle {
+        width: 14px;
+        height: 14px;
+        cursor: pointer;
+      }
+
+      .repair-delay-input {
+        width: 42px;
+        padding: 3px 4px;
+        border-radius: 4px;
+        border: 1px solid var(--hcd-border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--hcd-text);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        text-align: center;
+      }
+
+      .repair-delay-input:focus {
+        outline: 1px solid var(--hcd-accent);
+        border-color: var(--hcd-accent);
       }
 
       .actions-section {
