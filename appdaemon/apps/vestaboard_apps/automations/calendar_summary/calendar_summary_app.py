@@ -361,6 +361,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
                 pass
             self._cooldown_handle = None
             self._in_cooldown = False
+            self._next_fire_time = None
 
     def _on_cooldown_timer(self, kwargs: dict) -> None:
         self._cooldown_handle = None
@@ -371,6 +372,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
     async def _start_cooldown(self) -> None:
         """Start a random cooldown delay before the automation can push again."""
         import random
+        import time as _t
         self._cancel_cooldown_timer()
         cfg = self.args or {}
         min_min = float(cfg.get("cooldown_min_minutes",
@@ -384,6 +386,11 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         if hasattr(handle, "__await__"):
             handle = await handle
         self._cooldown_handle = handle
+
+        # Notify controller so calendar appears in UPCOMING with countdown
+        self._next_fire_time = _t.time() + delay_s
+        self._notify_next_fire_time()
+
         self.log(
             f"Cooldown started: {delay_s / 60:.1f} min "
             f"(range {min_min}-{max_min} min)",

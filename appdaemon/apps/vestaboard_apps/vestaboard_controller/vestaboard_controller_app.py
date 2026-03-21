@@ -1179,6 +1179,7 @@ class VestaboardControllerApp(hass.Hass):
                         "frame_id": f.frame_id,
                         "source": f.source,
                         "source_label": f.source_label,
+                        "remaining_ttl_s": f.remaining_ttl_s,
                     }
                     for f in state.fallback_stack
                 ],

@@ -732,6 +732,7 @@ class VestaboardConfigurationApp(hass.Hass):
             "queue": queue_state.get("pending", []),
             "fallback_source": (queue_state.get("fallback", [{}])[0].get("source")
                                 if queue_state.get("fallback") else None),
+            "fallback_frames": queue_state.get("fallback", []),
             "library": self._frame_library.to_json(),
             "creators": self._creators,
             "automations": ca.get("all_automations", []),

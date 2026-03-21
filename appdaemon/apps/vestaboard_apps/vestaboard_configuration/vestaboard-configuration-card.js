@@ -99,6 +99,16 @@ function vbcFormatTime(timeString) {
   return minute === 0 ? `${hour12}:00 ${suffix}` : `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
 }
 
+function vbcFormatDuration(seconds) {
+  if (seconds == null || isNaN(seconds)) return "?";
+  const s = Math.round(seconds);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  if (h > 0) return `${h}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+
 function vbcEmptyGrid() {
   return Array.from({ length: VBC_ROWS }, () => Array(VBC_COLS).fill(0));
 }
@@ -256,7 +266,14 @@ class VestaboardConfigurationCard extends HTMLElement {
     const previewStamp = preview && typeof preview === "object"
       ? `${preview.generated_at || ""}|${preview.subject || ""}`
       : "";
-    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${a.sleeping}|${a.sleep_end}|${previewStamp}|${automationsStamp}`;
+    const fallbackStamp = (() => {
+      try {
+        return JSON.stringify(a.fallback_frames || []);
+      } catch (_) {
+        return "";
+      }
+    })();
+    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${a.sleeping}|${a.sleep_end}|${previewStamp}|${automationsStamp}|${fallbackStamp}`;
   }
 
   _sensorState() {
@@ -1176,7 +1193,7 @@ class VestaboardConfigurationCard extends HTMLElement {
 
   _renderQueueSection() {
     const queue = this._sensorAttr("queue", []);
-    const fallback = this._sensorAttr("fallback_source", null);
+    const fallbackFrames = this._sensorAttr("fallback_frames", []);
     const currentSource = this._sensorAttr("current_source", "\u2014");
     const currentTtlExpires = this._sensorAttr("current_ttl_expires", null);
     const sleepingRaw = this._sensorAttr("sleeping", false);
@@ -1230,8 +1247,13 @@ class VestaboardConfigurationCard extends HTMLElement {
             ${upcomingItems}
           </div>` : ""}
           <div class="queue-fallback">
-            <span class="queue-label">Fallback:</span>
-            <span class="queue-value">${this._esc(fallback || "none")}</span>
+            <span class="queue-label">Fallback (${Array.isArray(fallbackFrames) ? fallbackFrames.length : 0}):</span>
+            ${Array.isArray(fallbackFrames) && fallbackFrames.length > 0 ? fallbackFrames.map((f) => `
+              <div class="queue-item">
+                <span class="queue-source">${this._esc(f.source || "\u2014")}</span>
+                ${f.remaining_ttl_s != null ? `<span class="ttl-paused">TTL paused: ${vbcFormatDuration(f.remaining_ttl_s)}</span>` : ""}
+              </div>
+            `).join("") : `<span class="queue-value">none</span>`}
           </div>
         </div>
       `;
@@ -3377,6 +3399,11 @@ class VestaboardConfigurationCard extends HTMLElement {
       .ttl-countdown-sleeping {
         color: var(--vbc-on-surface-secondary);
         font-size: 11px;
+      }
+
+      .ttl-paused {
+        color: #ff9800;
+        font-size: 0.85em;
       }
 
       .upcoming-item {

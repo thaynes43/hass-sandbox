@@ -56,6 +56,7 @@ class BoardFrame:
     displayed_at: Optional[float] = field(default=None)
     template: Optional[str] = field(default=None)
     refresh_interval_minutes: Optional[int] = field(default=None)
+    remaining_ttl_s: Optional[float] = field(default=None)
 
 
 @dataclass
@@ -197,7 +198,17 @@ class FrameQueue:
                     )
                     dropped.append(self._displayed)
                 else:
-                    self._fallback.append(self._displayed)
+                    displaced = self._displayed
+                    if (displaced.ttl_s is not None
+                            and displaced.displayed_at is not None):
+                        elapsed = now - displaced.displayed_at
+                        displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
+                        self._log(
+                            f"[FrameQueue] push → displaced frame to fallback with "
+                            f"remaining_ttl_s={displaced.remaining_ttl_s:.1f} | "
+                            f"frame={displaced.frame_id} source={displaced.source!r}"
+                        )
+                    self._fallback.append(displaced)
 
             # For same-source updates, preserve the original displayed_at so
             # TTL counts from when this source first claimed the board.
@@ -350,9 +361,23 @@ class FrameQueue:
                 )
                 dropped.append(self._displayed)
             else:
-                self._fallback.append(self._displayed)
+                displaced = self._displayed
+                if (displaced.ttl_s is not None
+                        and displaced.displayed_at is not None):
+                    elapsed = now - displaced.displayed_at
+                    displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
+                self._fallback.append(displaced)
 
         next_frame.displayed_at = now
+        # If frame was displaced mid-TTL, use the remaining TTL instead of original
+        if next_frame.remaining_ttl_s is not None:
+            self._log(
+                f"[FrameQueue] tick → re-promoting with remaining_ttl_s="
+                f"{next_frame.remaining_ttl_s:.1f} (original ttl_s={next_frame.ttl_s}) | "
+                f"frame={next_frame.frame_id} source={next_frame.source!r}"
+            )
+            next_frame.ttl_s = int(next_frame.remaining_ttl_s)
+            next_frame.remaining_ttl_s = None  # consumed
         self._displayed = next_frame
 
         reason = (

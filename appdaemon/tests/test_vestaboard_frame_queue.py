@@ -1119,3 +1119,245 @@ class TestShouldExpire:
         """BoardFrame.should_expire defaults to False."""
         f = make_frame(source="test", created_at=0.0)
         assert f.should_expire is False
+
+
+# ---------------------------------------------------------------------------
+# remaining_ttl_s — new TTL preservation tests
+# ---------------------------------------------------------------------------
+
+
+class TestRemainingTTL:
+    """Tests for remaining_ttl_s: displaced frames preserve their remaining TTL."""
+
+    def test_displaced_frame_gets_remaining_ttl(self):
+        """Frame with ttl_s=60 displayed for 20s, displaced by override_ttl push.
+        remaining_ttl_s should be ~40."""
+        q = make_queue()
+
+        # Display a frame with ttl_s=60
+        cal = make_frame(source="calendar", ttl_s=60, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+        # cal is displayed with displayed_at=1000.0
+
+        # 20 seconds later, an override_ttl frame displaces it
+        urgent = make_frame(
+            source="preview",
+            ttl_s=10,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=1020.0,
+        )
+        q.push(urgent, now=1020.0)
+
+        # cal should be in fallback with remaining_ttl_s ~= 40
+        state = q.get_state(now=1020.0)
+        fallback_frames = state.fallback_stack
+        assert len(fallback_frames) == 1
+        assert fallback_frames[0].source == "calendar"
+        assert fallback_frames[0].remaining_ttl_s == pytest.approx(40.0)
+
+    def test_repromoted_frame_uses_remaining_ttl(self):
+        """Frame displaced with remaining_ttl_s=40, re-promoted from fallback.
+        Its effective TTL should be 40, not the original 60."""
+        q = make_queue()
+
+        # Display cal with 60s TTL, displace after 20s
+        cal = make_frame(source="calendar", ttl_s=60, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        urgent = make_frame(
+            source="preview", ttl_s=10, max_age_s=None, override_ttl=True, created_at=1020.0
+        )
+        q.push(urgent, now=1020.0)
+        # cal now in fallback with remaining_ttl_s=40
+
+        # preview TTL expires at 1030, tick promotes cal from fallback
+        tick = q.tick(now=1031.0)
+        assert tick.display_frame is not None
+        assert tick.display_frame.source == "calendar"
+
+        # cal's effective ttl_s should now be 40 (not 60), remaining_ttl_s consumed
+        promoted = tick.display_frame
+        assert promoted.ttl_s == 40
+        assert promoted.remaining_ttl_s is None
+
+    def test_remaining_ttl_cleared_after_promotion(self):
+        """After re-promotion, remaining_ttl_s is None (consumed)."""
+        q = make_queue()
+
+        cal = make_frame(source="calendar", ttl_s=60, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        urgent = make_frame(
+            source="preview", ttl_s=5, max_age_s=None, override_ttl=True, created_at=1010.0
+        )
+        q.push(urgent, now=1010.0)
+        # cal displaced at t=1010, remaining_ttl_s = 60-(1010-1000) = 50
+
+        # preview expires at 1015, tick promotes cal
+        tick = q.tick(now=1016.0)
+        assert tick.display_frame is not None
+        assert tick.display_frame.source == "calendar"
+
+        # remaining_ttl_s must be None after promotion (consumed)
+        assert tick.display_frame.remaining_ttl_s is None
+
+    def test_no_ttl_frame_no_remaining_ttl(self):
+        """Frame with ttl_s=None displaced to fallback. remaining_ttl_s stays None."""
+        q = make_queue()
+
+        clock = make_frame(source="clock", ttl_s=None, max_age_s=None, created_at=1000.0)
+        q.push(clock, now=1000.0)
+
+        # Push from another source — None TTL means freely replaceable
+        urgent = make_frame(
+            source="alert", ttl_s=30, max_age_s=None, override_ttl=False, created_at=1005.0
+        )
+        q.push(urgent, now=1005.0)
+
+        # clock should be in fallback with remaining_ttl_s=None (no TTL to preserve)
+        state = q.get_state(now=1005.0)
+        fallback_frames = state.fallback_stack
+        clock_fallback = next((f for f in fallback_frames if f.source == "clock"), None)
+        assert clock_fallback is not None
+        assert clock_fallback.remaining_ttl_s is None
+
+    def test_remaining_ttl_zero_floor(self):
+        """Frame whose TTL has already expired before displacement gets remaining_ttl_s=0.0."""
+        q = make_queue()
+
+        # Frame with ttl_s=30 displayed at t=1000
+        cal = make_frame(source="calendar", ttl_s=30, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        # Displaced at t=1050 (20s after TTL already expired at 1030)
+        urgent = make_frame(
+            source="preview", ttl_s=5, max_age_s=None, override_ttl=True, created_at=1050.0
+        )
+        q.push(urgent, now=1050.0)
+
+        state = q.get_state(now=1050.0)
+        fallback_frames = state.fallback_stack
+        cal_fallback = next((f for f in fallback_frames if f.source == "calendar"), None)
+        assert cal_fallback is not None
+        # remaining = max(0, 30 - 50) = 0.0
+        assert cal_fallback.remaining_ttl_s == 0.0
+
+    def test_tick_displacement_calculates_remaining_ttl(self):
+        """Frame displaced during tick() (not push()) also gets correct remaining_ttl_s."""
+        q = make_queue()
+
+        # Display cal with 60s TTL
+        cal = make_frame(source="calendar", ttl_s=60, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        # Queue a pending frame (will be promoted when cal TTL expires)
+        pending = make_frame(source="background", ttl_s=None, max_age_s=None, created_at=1001.0)
+        q.push(pending, now=1001.0)  # queued behind cal's TTL
+
+        # At t=1040 (40s elapsed), cal's TTL expires (at 1060) — still active, no promotion yet
+        tick_before = q.tick(now=1040.0)
+        assert tick_before.display_frame is None
+
+        # At t=1061 cal TTL expires; tick promotes pending, displaces cal to fallback
+        tick = q.tick(now=1061.0)
+        assert tick.display_frame is pending
+
+        # cal in fallback — but its TTL expired so remaining_ttl_s = 0
+        state = q.get_state(now=1061.0)
+        cal_fallback = next((f for f in state.fallback_stack if f.source == "calendar"), None)
+        assert cal_fallback is not None
+        # TTL expired (1060 < 1061) so remaining = max(0, 60 - (1061-1000)) = max(0, -1) = 0.0
+        assert cal_fallback.remaining_ttl_s == 0.0
+
+    def test_should_expire_frame_not_fallbacked(self):
+        """Regression: should_expire=True frame is dropped, not moved to fallback,
+        so it never gets remaining_ttl_s set on the fallback path."""
+        q = make_queue()
+
+        alert = make_frame(
+            source="alert",
+            ttl_s=30,
+            should_expire=True,
+            max_age_s=None,
+            created_at=1000.0,
+        )
+        q.push(alert, now=1000.0)
+
+        # Override displaces alert — should_expire=True means it's DROPPED not fallbacked
+        override = make_frame(
+            source="override", ttl_s=10, override_ttl=True, created_at=1010.0
+        )
+        q.push(override, now=1010.0)
+
+        state = q.get_state(now=1010.0)
+        # alert must NOT be in fallback
+        fallback_ids = {f.frame_id for f in state.fallback_stack}
+        assert alert.frame_id not in fallback_ids
+        # Only override is displayed
+        assert state.displayed is override
+
+    def test_get_state_includes_remaining_ttl(self):
+        """FrameQueueState.fallback_stack frames have remaining_ttl_s accessible."""
+        q = make_queue()
+
+        cal = make_frame(source="calendar", ttl_s=100, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        # Displace after 25s
+        urgent = make_frame(
+            source="urgent", ttl_s=5, max_age_s=None, override_ttl=True, created_at=1025.0
+        )
+        q.push(urgent, now=1025.0)
+
+        state = q.get_state(now=1025.0)
+        assert len(state.fallback_stack) == 1
+        fallback_frame = state.fallback_stack[0]
+        assert fallback_frame.source == "calendar"
+        # remaining = 100 - 25 = 75
+        assert fallback_frame.remaining_ttl_s == pytest.approx(75.0)
+
+    def test_remaining_ttl_default_is_none(self):
+        """BoardFrame.remaining_ttl_s defaults to None (backward compat)."""
+        f = make_frame(source="test", created_at=0.0)
+        assert f.remaining_ttl_s is None
+
+    def test_tick_displacement_mid_ttl_remaining(self):
+        """Frame displaced during tick() mid-TTL gets the correct positive remaining_ttl_s."""
+        q = make_queue()
+
+        # Frame with 100s TTL
+        cal = make_frame(source="calendar", ttl_s=100, max_age_s=None, created_at=0.0)
+        q.push(cal, now=0.0)
+
+        # Queue a pending frame (no TTL — freely replaceable once cal TTL done)
+        pending = make_frame(source="bg", ttl_s=None, max_age_s=None, created_at=1.0)
+        q.push(pending, now=1.0)  # queued behind cal
+
+        # Cal TTL expires at t=100; tick at 101 promotes pending, displaces cal
+        tick = q.tick(now=101.0)
+        assert tick.display_frame is pending
+
+        state = q.get_state(now=101.0)
+        cal_fallback = next((f for f in state.fallback_stack if f.source == "calendar"), None)
+        assert cal_fallback is not None
+        # TTL was 100s, elapsed was 101s -> remaining = max(0, 100-101) = 0
+        assert cal_fallback.remaining_ttl_s == 0.0
+
+    def test_push_displacement_mid_ttl_exact_remaining(self):
+        """push() displacement at exactly half-TTL gives remaining_ttl_s = ttl_s/2."""
+        q = make_queue()
+
+        cal = make_frame(source="calendar", ttl_s=120, max_age_s=None, created_at=0.0)
+        q.push(cal, now=0.0)
+
+        # Displaced exactly at 60s (half of 120s TTL)
+        urgent = make_frame(
+            source="urgent", ttl_s=10, max_age_s=None, override_ttl=True, created_at=60.0
+        )
+        q.push(urgent, now=60.0)
+
+        state = q.get_state(now=60.0)
+        cal_fallback = next((f for f in state.fallback_stack if f.source == "calendar"), None)
+        assert cal_fallback is not None
+        assert cal_fallback.remaining_ttl_s == pytest.approx(60.0)
