@@ -16,6 +16,7 @@ from detection_summary_app.prompting import (
     ScorePromptBuilder,
     ImagePromptBuilder,
     NarrativePromptBuilder,
+    ImagePromptResult,
     normalize_score_data,
     default_score_schema,
     ScoreSchemaSpec,
@@ -168,25 +169,31 @@ class TestScoreNormalizer:
 class TestImagePromptBuilder:
     def test_build_includes_base_and_constraints(self):
         builder = ImagePromptBuilder()
-        out = builder.build(
+        result = builder.build(
             base_instructions="Draw a cartoon",
             population_bounds={"max_male_count": 1, "max_female_count": 0, "max_animal_count": 1},
         )
+        assert isinstance(result, ImagePromptResult)
+        out = result.prompt
         assert "Draw a cartoon" in out
         assert "Reference frames" in out
         assert "Critical constraints" in out
         assert "phantom" in out.lower()
         assert "up to 1 male" in out
         assert "up to 1 animal" in out
+        # Style/env metadata should be populated
+        assert result.style_profile_id is not None
+        assert result.environment_variant_id is not None
 
     def test_build_includes_narrative_and_notes(self):
         builder = ImagePromptBuilder()
-        out = builder.build(
+        result = builder.build(
             base_instructions="Base",
             population_bounds={},
             narrative_text="Someone arrived.",
             frame_notes=["- frame_000.jpg: Person at door (m=1, f=0, animals=0)"],
         )
+        out = result.prompt
         assert "Narrative context" in out
         assert "Someone arrived" in out
         assert "Frame notes" in out
@@ -194,12 +201,12 @@ class TestImagePromptBuilder:
 
     def test_build_includes_bundle_augmentation(self):
         builder = ImagePromptBuilder()
-        out = builder.build(
+        result = builder.build(
             base_instructions="Base",
             population_bounds={},
             bundle_augmentation="Make it like a cartoon.",
         )
-        assert "Make it like a cartoon" in out
+        assert "Make it like a cartoon" in result.prompt
 
 
 class TestNarrativePromptBuilder:
@@ -273,12 +280,13 @@ class TestStyleVariants:
 
     def test_image_prompt_builder_applies_style_profile(self):
         builder = ImagePromptBuilder()
-        out = builder.build(
+        result = builder.build(
             base_instructions="Base",
             population_bounds={},
             style_profile_id="cartoon",
         )
-        assert "cartoon" in out.lower()
+        assert "cartoon" in result.prompt.lower()
+        assert result.style_profile_id == "cartoon"
 
     def test_image_prompt_builder_random_selection_when_no_id(self):
         """When no style/environment IDs are passed, builder randomly selects."""
@@ -286,10 +294,11 @@ class TestStyleVariants:
         # Run multiple times — at least one should get a non-default style or variant
         results = set()
         for _ in range(50):
-            out = builder.build(
+            result = builder.build(
                 base_instructions="Base",
                 population_bounds={},
             )
+            out = result.prompt
             # Check if any style suffix appears (non-default profiles have non-empty suffixes)
             has_style = any(
                 p.prompt_suffix and p.prompt_suffix in out

@@ -894,6 +894,12 @@ class DetectionSummary(hass.Hass):
                         f"len={len(str(run_narrative.get('run_summary') or ''))} conf={run_narrative.get('confidence')}",
                         level="INFO",
                     )
+                else:
+                    self.log(
+                        f"DetectionSummary[{self.bundle_key}]: run narrative returned None run_id={run_id} "
+                        f"frame_facts={len(facts)}",
+                        level="WARNING",
+                    )
         except Exception as e:
             self.log(f"DetectionSummary[{self.bundle_key}]: run narrative failed: {e!r}", level="WARNING")
 
@@ -1054,7 +1060,7 @@ class DetectionSummary(hass.Hass):
                         time_part = f" t={t_s:.1f}s" if isinstance(t_s, (int, float)) else ""
                         notes.append(f"- frame_{int(ii):03d}.jpg{time_part}: {summary or '(no summary)'} (m={m}, f={f}, animals={a})")
 
-                    prompt = self._image_prompt_builder.build(
+                    prompt_result = self._image_prompt_builder.build(
                         base_instructions=str(self.image_instructions),
                         population_bounds=population_bounds,
                         narrative_text=narrative_text,
@@ -1066,9 +1072,11 @@ class DetectionSummary(hass.Hass):
                         consensus_bounds=consensus_bounds,
                         profile=self._profile,
                     )
+                    prompt = prompt_result.prompt
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
-                        f"inputs={len(input_paths)} out={out_path} prompt_len={len(prompt)}",
+                        f"inputs={len(input_paths)} out={out_path} prompt_len={len(prompt)} "
+                        f"style={prompt_result.style_profile_id} env={prompt_result.environment_variant_id}",
                         level="INFO",
                     )
                     generated_image = img_provider.edit_image(
@@ -1076,6 +1084,13 @@ class DetectionSummary(hass.Hass):
                         prompt=prompt,
                         output_image_path=str(out_path),
                     )
+                    # Enrich generated_image dict with style/env metadata for bundle
+                    if isinstance(generated_image, dict):
+                        generated_image["style_profile_id"] = prompt_result.style_profile_id
+                        generated_image["style_profile_description"] = prompt_result.style_profile_description
+                        generated_image["environment_variant_id"] = prompt_result.environment_variant_id
+                        generated_image["environment_variant_description"] = prompt_result.environment_variant_description
+                        generated_image["image_prompt_preview"] = prompt[:600]
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen done run_id={run_id} "
                         f"elapsed_s={(generated_image or {}).get('elapsed_s')} model={(generated_image or {}).get('model')} "
@@ -1089,6 +1104,12 @@ class DetectionSummary(hass.Hass):
                             "output_path": str(out_path),
                             "elapsed_s": (generated_image or {}).get("elapsed_s"),
                             "model": (generated_image or {}).get("model"),
+                            "style_profile_id": prompt_result.style_profile_id,
+                            "style_profile_description": prompt_result.style_profile_description,
+                            "environment_variant_id": prompt_result.environment_variant_id,
+                            "environment_variant_description": prompt_result.environment_variant_description,
+                            "prompt_len": len(prompt),
+                            "prompt_preview": prompt[:400],
                         }
                     )
                     # mirror to stable filename under zone dir

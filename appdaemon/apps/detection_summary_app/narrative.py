@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -19,6 +20,8 @@ except Exception:  # pragma: no cover
     from providers.ai_providers.multimodal_text_provider import ExternalDataGenError  # type: ignore
 
 from .prompting.narrative_prompt_builder import NarrativePromptBuilder
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -80,13 +83,25 @@ def synthesize_run_narrative(
             instructions=inst,
             expected_keys=list(cfg.expected_keys),
         )
-    except ExternalDataGenError:
-        return None
-    except Exception:
-        return None
+    except ExternalDataGenError as e:
+        logger.warning(
+            "narrative LLM call failed (ExternalDataGenError): bundle_key=%s run_id=%s err=%s",
+            bundle_key, run_id, e,
+        )
+        raise
+    except Exception as e:
+        logger.warning(
+            "narrative LLM call failed (unexpected): bundle_key=%s run_id=%s err=%r",
+            bundle_key, run_id, e,
+        )
+        raise
 
     if not isinstance(out, dict):
-        return None
+        logger.warning(
+            "narrative LLM returned non-dict: bundle_key=%s run_id=%s type=%s preview=%s",
+            bundle_key, run_id, type(out).__name__, str(out)[:200],
+        )
+        raise ExternalDataGenError(f"narrative LLM returned {type(out).__name__}, expected dict")
 
     out.setdefault("run_summary", "")
     out.setdefault("people_min", 0)
