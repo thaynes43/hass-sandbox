@@ -509,20 +509,21 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self._notify_next_fire_time()
             return
 
-        # Filter out elapsed events — don't display events that started
-        # more than 60 minutes ago (they're done, not upcoming).
-        max_elapsed_s = 60 * 60  # 1 hour grace for in-progress events
-        active_events = [
+        # Filter out elapsed events — new pushes should never include
+        # events that have already started.  The "NOW" and "X MIN AGO"
+        # display is handled by _update_countdown on frames that were
+        # already on the board when the event was still upcoming.
+        future_events = [
             ev for ev in all_events
-            if ev["seconds_until"] > -max_elapsed_s
+            if ev["seconds_until"] >= 0
         ]
-        if len(active_events) < len(all_events):
-            dropped = len(all_events) - len(active_events)
+        if len(future_events) < len(all_events):
+            dropped = len(all_events) - len(future_events)
             self.log(
-                f"Filtered out {dropped} elapsed event(s) (started > {max_elapsed_s // 60} min ago)",
+                f"Filtered out {dropped} elapsed event(s) from new push",
                 level="INFO",
             )
-        all_events = active_events
+        all_events = future_events
 
         if not all_events:
             self.log(
@@ -551,9 +552,6 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
                 upcoming_events.append(ev)
             elif 0 <= seconds_until <= reminder_seconds:
                 # Timed event within threshold — urgent
-                urgent_events.append(ev)
-            elif seconds_until < 0:
-                # Already started — treat as urgent (in-progress)
                 urgent_events.append(ev)
             else:
                 upcoming_events.append(ev)
