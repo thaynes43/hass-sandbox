@@ -369,6 +369,13 @@ class VestaboardConfigurationCard extends HTMLElement {
       el.textContent = expiry ? `drops in ${vbcCountdown(expiry) || "expired"}` : "no auto-drop";
     });
 
+    // Update queue section TTL countdown
+    const queueTtlEl = root.querySelector("[data-queue-ttl-expires]");
+    if (queueTtlEl) {
+      const expires = queueTtlEl.getAttribute("data-queue-ttl-expires");
+      queueTtlEl.textContent = expires ? `TTL: ${vbcCountdown(expires) || "expired"}` : "";
+    }
+
     // Update upcoming automation countdowns
     const upcomingItems = root.querySelectorAll("[data-upcoming-fire]");
     upcomingItems.forEach((el) => {
@@ -1229,7 +1236,7 @@ class VestaboardConfigurationCard extends HTMLElement {
           <div class="queue-current">
             <span class="queue-label">Current:</span>
             <span class="queue-value">${this._esc(currentSource)}</span>
-            ${currentTtlExpires ? `<span class="queue-countdown ttl-countdown ${sleeping ? "ttl-countdown-sleeping" : ""}">TTL: ${vbcCountdown(currentTtlExpires) || "expired"}</span>` : ""}
+            ${currentTtlExpires ? `<span class="queue-countdown queue-ttl-countdown ${sleeping ? "ttl-countdown-sleeping" : ""}" data-queue-ttl-expires="${this._esc(currentTtlExpires)}">TTL: ${vbcCountdown(currentTtlExpires) || "expired"}</span>` : ""}
           </div>
           ${sleeping ? `
           <div class="queue-sleep-indicator">
