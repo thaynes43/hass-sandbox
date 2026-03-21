@@ -487,7 +487,7 @@ class VestaboardControllerApp(hass.Hass):
 
         action = self._queue.push(frame, now)
         if action.display_frame:
-            self._schedule_board_write(action.display_frame.characters)
+            self._schedule_board_write(action.display_frame.characters, source=automation_id)
             self._last_template_refresh = now if template else None
         self._publish_status()
 
@@ -648,7 +648,7 @@ class VestaboardControllerApp(hass.Hass):
 
         action = self._queue.push(frame, now)
         if action.display_frame:
-            self.create_task(self._write_to_board(action.display_frame.characters))
+            self.create_task(self._write_to_board(action.display_frame.characters, source=source))
             self._last_template_refresh = now if template else None
         self._publish_status()
 
@@ -659,7 +659,7 @@ class VestaboardControllerApp(hass.Hass):
 
         self._queue.clear()
         blank = blank_grid()
-        self.create_task(self._write_to_board(blank))
+        self.create_task(self._write_to_board(blank, source="clear_board"))
         self._publish_status()
 
     def _handle_set_automation_config(self, automation_id: str, new_config: dict) -> None:
@@ -750,7 +750,7 @@ class VestaboardControllerApp(hass.Hass):
             )
             tick_action = self._queue.tick(time.time())
             if tick_action.display_frame:
-                self.create_task(self._write_to_board(tick_action.display_frame.characters))
+                self.create_task(self._write_to_board(tick_action.display_frame.characters, source=tick_action.display_frame.source))
 
         self.log(f"Automation {automation_id!r} deactivated", level="INFO")
         self._publish_status()
@@ -890,7 +890,7 @@ class VestaboardControllerApp(hass.Hass):
                     f"Reconciling board on wake: source={state.displayed.source!r}",
                     level="INFO",
                 )
-                await self._write_to_board(state.displayed.characters)
+                await self._write_to_board(state.displayed.characters, source=state.displayed.source)
         elif not self._was_sleeping and sleeping:
             self.log("Sleep window started — suppressing board writes", level="INFO")
 
@@ -903,7 +903,7 @@ class VestaboardControllerApp(hass.Hass):
                 f"reason={action.reason!r}",
                 level="INFO",
             )
-            await self._write_to_board(action.display_frame.characters)
+            await self._write_to_board(action.display_frame.characters, source=action.display_frame.source)
             # Reset template refresh tracking when a new frame is promoted
             displayed = action.display_frame
             self._last_template_refresh = now if (displayed.template and has_template(displayed.template)) else None
@@ -943,7 +943,7 @@ class VestaboardControllerApp(hass.Hass):
                 )
                 if new_grid != displayed_frame.characters:
                     displayed_frame.characters = new_grid
-                    await self._write_to_board(new_grid)
+                    await self._write_to_board(new_grid, source=displayed_frame.source)
                     self._publish_status()
                 else:
                     self.log(
@@ -960,19 +960,20 @@ class VestaboardControllerApp(hass.Hass):
     # Board writes
     # ------------------------------------------------------------------
 
-    def _schedule_board_write(self, characters: list[list[int]]) -> None:
+    def _schedule_board_write(self, characters: list[list[int]], source: str = "unknown") -> None:
         """Thread-safe board write scheduling.
 
         Uses run_in(0) to ensure _write_to_board runs on the controller's
         own AppDaemon thread, not the calling automation's thread.
         """
-        self.run_in(self._board_write_callback, 0, characters=characters)
+        self.run_in(self._board_write_callback, 0, characters=characters, source=source)
 
     def _board_write_callback(self, kwargs: dict) -> None:
         """run_in callback that triggers the async board write."""
         characters = kwargs.get("characters")
+        source = kwargs.get("source", "unknown")
         if characters:
-            self.create_task(self._write_to_board(characters))
+            self.create_task(self._write_to_board(characters, source=source))
 
     @staticmethod
     def _parse_time(time_str: str) -> tuple[int, int, int]:
@@ -998,7 +999,7 @@ class VestaboardControllerApp(hass.Hass):
         else:
             return now >= start or now < end
 
-    async def _write_to_board(self, characters: list[list[int]]) -> None:
+    async def _write_to_board(self, characters: list[list[int]], source: str = "unknown") -> None:
         """Write a frame to the physical Vestaboard."""
         if self._is_sleeping():
             self.log("Board write suppressed — sleep window active", level="DEBUG")
@@ -1018,14 +1019,14 @@ class VestaboardControllerApp(hass.Hass):
             if ok:
                 from providers.vestaboard.character_encoding import decode_grid
                 self.log(
-                    f"Board write successful:\n{decode_grid(characters)}",
+                    f"Board write successful (source={source!r}):\n{decode_grid(characters)}",
                     level="INFO",
                 )
             else:
-                self.log("Board write returned non-2xx response", level="WARNING")
+                self.log(f"Board write returned non-2xx response (source={source!r})", level="WARNING")
         except Exception as exc:
             self._last_write_ok = False
-            self.log(f"Board write failed: {exc!r}", level="ERROR")
+            self.log(f"Board write failed (source={source!r}): {exc!r}", level="ERROR")
 
     async def _read_board_state(self) -> None:
         """Read the current frame from the physical Vestaboard and cache it."""

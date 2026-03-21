@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import calendar
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 
 import sys
@@ -80,6 +80,7 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
         "enabled": True,
         "ttl_minutes": None,
         "should_expire": False,
+        "update_interval_minutes": 1,
     }
 
     _timer_handle = None
@@ -90,6 +91,7 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
             "enabled": {"type": "bool", "label": "Enabled", "default": True},
             "ttl_minutes": {"type": "int", "label": "TTL (minutes)", "min": 1, "max": 1440, "default": None},
             "should_expire": {"type": "bool", "label": "Should Expire", "default": False},
+            "update_interval_minutes": {"type": "int", "label": "Update Interval (minutes)", "min": 1, "max": 60, "default": 1},
         }
 
     def get_preview_frame(self) -> list[list[int]]:
@@ -148,8 +150,29 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
         self.deregister_from_controller()
 
     def _start_timer(self) -> None:
-        from datetime import datetime as dt
-        self._timer_handle = self.run_every(self._on_tick, dt.now(), 60)
+        cfg = self.args or {}
+        interval_min = int(cfg.get("update_interval_minutes",
+                                    self.DEFAULT_UI_CONFIG["update_interval_minutes"]))
+        interval_s = interval_min * 60
+
+        # Align the first fire to the next clean minute boundary
+        # e.g. interval=5 at 5:23 → first fire at 5:25, then 5:30, 5:35…
+        now = datetime.now()
+        remainder = now.minute % interval_min
+        if remainder == 0 and now.second == 0:
+            start = now
+        else:
+            minutes_until = (interval_min - remainder) % interval_min
+            if minutes_until == 0:
+                minutes_until = interval_min
+            start = now.replace(second=0, microsecond=0) + timedelta(minutes=minutes_until)
+
+        self._timer_handle = self.run_every(self._on_tick, start, interval_s)
+        self.log(
+            f"Timer started: every {interval_min} min, "
+            f"first fire at {start.strftime('%H:%M:%S')}",
+            level="INFO",
+        )
 
     def _stop_timer(self) -> None:
         if self._timer_handle is not None:
@@ -168,12 +191,21 @@ class CalendarClockApp(hass.Hass, VestaboardAutomation):
 
     def on_config_updated(self, config: dict[str, Any]) -> None:
         super().on_config_updated(config)
-        # Start or stop timer based on enabled state from config
         if "enabled" in config:
             if config["enabled"]:
+                self._stop_timer()
                 self._start_timer()
+                self.create_task(self._generate_and_push())
             else:
                 self._stop_timer()
+        elif "update_interval_minutes" in config:
+            if self.args.get("enabled", False):
+                self._stop_timer()
+                self._start_timer()
+                self.log(
+                    f"Update interval changed to {config['update_interval_minutes']} min",
+                    level="INFO",
+                )
 
     def _on_tick(self, kwargs: dict) -> None:
         self.create_task(self._generate_and_push())
