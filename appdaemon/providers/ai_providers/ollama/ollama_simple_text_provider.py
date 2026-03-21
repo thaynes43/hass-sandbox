@@ -33,8 +33,9 @@ class OllamaSimpleTextConfig:
 
 class OllamaSimpleTextProvider(SimpleTextProvider):
     """
-    Ollama text-only structured output via /api/generate.
-    Targets qwen3.5:9b. Timeouts and logs account for cold-start/model download.
+    Ollama text-only structured output via /api/chat.
+    Uses think=false to prevent qwen-style models from burning tokens on
+    internal reasoning that gets stripped from the response.
     """
 
     name = SimpleTextProviderName.OLLAMA
@@ -67,13 +68,14 @@ class OllamaSimpleTextProvider(SimpleTextProvider):
 
         body: dict[str, Any] = {
             "model": self._config.model,
-            "prompt": prompt,
+            "messages": [{"role": "user", "content": prompt}],
             "stream": False,
             "format": "json",
+            "think": False,
             "options": {"num_predict": int(self._config.max_output_tokens)},
         }
 
-        url = f"{self._config.base_url.rstrip('/')}/api/generate"
+        url = f"{self._config.base_url.rstrip('/')}/api/chat"
         req = urllib.request.Request(
             url=url,
             method="POST",
@@ -121,7 +123,8 @@ class OllamaSimpleTextProvider(SimpleTextProvider):
             raise ExternalDataGenError(f"ollama request failed: {e!r}") from e
 
         elapsed_s = time.time() - started
-        response_text = (payload.get("response") or "").strip()
+        message = payload.get("message") or {}
+        response_text = (message.get("content") or "").strip()
         load_duration_ns = payload.get("load_duration")
         if load_duration_ns and load_duration_ns > 0:
             load_s = load_duration_ns / 1e9
