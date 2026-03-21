@@ -203,7 +203,7 @@ class DashboardNotify(hass.Hass):
         This keeps the wall-display card height stable by ensuring each
         notification body is exactly `notification_text_target_chars` long.
         """
-        normalized = " ".join(str(text or "").split())
+        normalized = " ".join((str(text) if text is not None else "").split())
         target = self._notification_text_target_chars
         suffix = self._notification_text_truncate_suffix
 
@@ -391,7 +391,7 @@ class DashboardNotify(hass.Hass):
                     summary_text = self._format_notification_text("Detection event")
                 self.log(
                     "Backfill: %s/%s — %s (expires in %ds)",
-                    bundle_key, run_id, summary_text, int(expires_at - now),
+                    bundle_key, run_id, summary_text.strip(), int(expires_at - now),
                 )
 
                 notification = Notification(

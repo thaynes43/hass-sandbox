@@ -178,6 +178,15 @@ class TestNotificationTextFormatting:
 
         assert app._format_notification_text("abcdefghijklm") == "abcdefg..."
 
+    def test_truncates_when_suffix_is_longer_than_target(self):
+        app = _make_app({
+            "notification_text_target_chars": 2,
+            "notification_text_truncate_suffix": "...",
+        })
+        app.initialize()
+
+        assert app._format_notification_text("abcdef") == ".."
+
     def test_normalizes_whitespace_before_padding(self):
         app = _make_app({"notification_text_target_chars": 12})
         app.initialize()
