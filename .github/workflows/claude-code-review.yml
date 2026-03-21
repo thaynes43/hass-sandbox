@@ -13,23 +13,61 @@ jobs:
       pull-requests: write
       issues: read
       id-token: write
+      actions: read
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Run Claude Code Review
-        id: claude-review
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
-          plugins: 'code-review@claude-code-plugins'
+          track_progress: true
+          use_sticky_comment: true
           prompt: |
-            CONTEXT: This workflow only triggers when a PR is marked "Ready for review" (ready_for_review event).
-            The PR was created as a draft and has now been marked ready — this is the expected SDLC flow.
-            Do NOT flag the PR as "not created as draft" — it was draft and is now intentionally ready for review.
+            You are an automated PR reviewer for a Home Assistant + AppDaemon repository.
+            The PR branch is already checked out. Review PR #${{ github.event.pull_request.number }}.
 
-            /code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            ## Step 1: Gather context
+            - Run `gh pr diff ${{ github.event.pull_request.number }}` to see all changes
+            - Run `gh pr view ${{ github.event.pull_request.number }}` to read the PR description
+            - Read any existing review comments with `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments` to avoid duplicating feedback
+            - Read .claude/CLAUDE.md for project conventions
+
+            ## Step 2: Review the diff for issues
+            Focus on real bugs and meaningful problems — NOT style nitpicks:
+
+            **CRITICAL (must fix):**
+            - Logic errors, race conditions, off-by-one, null/None mishandling
+            - Security: hardcoded credentials, secrets not using _env pattern, HTTP calls in apps/ instead of providers/
+            - Breaking changes: removed exports, changed function signatures without updating callers
+
+            **HIGH (should fix):**
+            - Error handling gaps: silently swallowed exceptions, missing logging on failure paths
+            - AppDaemon patterns: missing sys.path fix for provider imports, incorrect relay script usage
+            - Test gaps: changed logic without corresponding test updates
+
+            **MEDIUM (consider fixing):**
+            - JavaScript card issues: missing touch/click deduplication, no focus guard on re-render
+            - Defensive coding: unchecked dict access on external data, missing type coercion
+
+            **Ignore entirely:**
+            - Style preferences, formatting, naming conventions (unless they indicate a bug)
+            - Missing docstrings or comments on unchanged code
+            - Import ordering
+            - Suggestions to add features beyond what the PR intends
+
+            ## Step 3: Post findings
+            - For each issue found on a specific line, post an inline comment on that line
+            - After reviewing all files, post ONE summary comment on the PR with:
+              - Overall verdict: "Looks good" / "Needs changes" / "Has critical issues"
+              - Bulleted list of findings grouped by severity
+              - Brief positive callouts if the code does something well
+            - If no issues found, post a brief "LGTM — no issues found" summary
+
+          claude_args: "--max-turns 15"
+          additional_permissions: |
+            actions: read
