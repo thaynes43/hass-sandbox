@@ -626,6 +626,12 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
             self.log("Event set unchanged and timers active — skipping re-push", level="DEBUG")
             return
 
+        # Compute max_age_s so queued frames auto-expire when all events
+        # have passed.  Uses the latest event boundary + TTL as the deadline.
+        # - Timed events: latest start time + TTL
+        # - All-day events: end of event day (23:59:59) + TTL
+        max_age_s = self._compute_max_age_s(display_events, now, ttl_s)
+
         # Update state
         self._current_events = shown_events
         self._current_overflow = overflow
@@ -636,6 +642,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self._force_push = force_push and is_urgent
         self._should_expire = should_expire
         self._ttl_s = ttl_s
+        self._max_age_s = max_age_s
 
         # Cancel existing timers and start fresh
         self._cancel_rotation_timer()
@@ -671,6 +678,51 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
 
         await self._push_current_event()
 
+    def _compute_max_age_s(
+        self, events: list[dict], now: datetime, ttl_s: int
+    ) -> Optional[int]:
+        """Compute max_age_s so queued frames auto-drop when events have passed.
+
+        Finds the latest event boundary across all events:
+        - Timed events: start time
+        - All-day events: end of the event's day (23:59:59 local)
+
+        Returns (latest_boundary - now) + ttl_s, or None if no parseable events.
+        """
+        latest_boundary: Optional[datetime] = None
+
+        for ev in events:
+            start_dt = _parse_dt(ev.get("start_time_str", ""))
+            if start_dt is None:
+                continue
+
+            if ev.get("is_all_day", False):
+                # End of the event's day in local time
+                local_dt = start_dt.astimezone()
+                boundary = local_dt.replace(
+                    hour=23, minute=59, second=59, microsecond=0
+                )
+                # Convert back to UTC for comparison
+                boundary = boundary.astimezone(timezone.utc)
+            else:
+                boundary = start_dt
+
+            if latest_boundary is None or boundary > latest_boundary:
+                latest_boundary = boundary
+
+        if latest_boundary is None:
+            return None
+
+        seconds_until_boundary = int((latest_boundary - now).total_seconds())
+        max_age = max(ttl_s, seconds_until_boundary + ttl_s)
+        self.log(
+            f"Computed max_age_s={max_age} "
+            f"(latest_boundary={latest_boundary.isoformat()}, "
+            f"seconds_until={seconds_until_boundary}, ttl_s={ttl_s})",
+            level="INFO",
+        )
+        return max_age
+
     async def _push_current_event(self) -> None:
         """Push the current event (or overflow summary) to the board."""
         total_slots = len(self._current_events) + (1 if self._current_overflow > 0 else 0)
@@ -700,6 +752,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self.push_frame(
             grid,
             ttl_s=self._ttl_s,
+            max_age_s=self._max_age_s,
             override_ttl=self._force_push,
             should_expire=self._should_expire,
         )
@@ -796,6 +849,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self.push_frame(
             grid,
             ttl_s=self._ttl_s if hasattr(self, "_ttl_s") else None,
+            max_age_s=self._max_age_s if hasattr(self, "_max_age_s") else None,
             override_ttl=False,
             should_expire=self._should_expire if hasattr(self, "_should_expire") else False,
         )
