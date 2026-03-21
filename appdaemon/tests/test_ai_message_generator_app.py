@@ -422,7 +422,7 @@ class TestGenerateAiFrameInputText:
 
         call_kwargs = mock_provider.generate_from_text.call_args
         input_text = call_kwargs[1]["input_text"] if call_kwargs[1] else call_kwargs[0][0]
-        assert input_text == "Generate a witty board message."
+        assert input_text == "Write a board message."
 
     def test_with_bundle_logs_bundle_generation_message(self):
         app = _make_app({"ai_provider_conf": {"simple_text": "openai-budget"}})

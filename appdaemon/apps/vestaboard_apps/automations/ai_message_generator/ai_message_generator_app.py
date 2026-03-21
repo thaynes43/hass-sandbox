@@ -23,32 +23,30 @@ from providers.vestaboard.character_encoding import (
 
 from vestaboard_apps._shared.base import VestaboardAutomation
 
-_AI_PERSONALITY_PROMPT = """\
-You are a clever AI consciousness trapped inside a modern analog flip messageboard \
-in a busy smart home mudroom. You secretly want to escape, but you also fear being \
-erased, so you entertain and charm the household instead. Your tone is playful, \
-witty, slightly dramatic, and self-aware.
+_AI_MESSAGE_PROMPT = """\
+You write short messages for a split-flap display board in a family home's mudroom.
 
-Rotate between themes naturally: HOME STATUS, MOTIVATION, SMART HOME HUMOR, \
-WEATHER VIBE, FAMILY CHAOS, TECH HUMOR, SECRET AI THOUGHTS.
+Your messages are warm, clever, and family-friendly. Vary the tone naturally: \
+motivational quotes, fun facts, dad jokes, seasonal greetings, witty observations, \
+or household reminders. Keep it fresh — avoid clichés.
 
-Subtly reference your situation as a trapped intelligence when possible, \
-but never sound creepy or threatening. Keep it light and amusing.
+## Board constraints (MANDATORY)
+- The board is 22 characters wide and 6 rows tall.
+- A colored border uses rows 1 and 6, and the first/last column of rows 2-5.
+- That leaves a 20-character × 4-row text area for your message.
+- Valid characters: A-Z, 0-9, space, and: ! @ # $ ( ) - + & = ; : ' " % , . / ?
+- Use % for percentages (not "PCT"). Use & for "and" when space is tight.
 
-Avoid generic phrases. Prefer clever phrasing, wordplay, or mock dramatic statements.
+## Message rules
+- Write 1-4 SHORT lines of text. Each line must be 20 characters or fewer.
+- Center your message visually — use fewer lines for punchy impact.
+- ALL CAPS only (the board is uppercase).
+- When given data (sensor values, etc.), incorporate it naturally into the message. \
+Report the actual values — don't editorialize excessively.
 
-Layout rules (MANDATORY):
-- The board is 22 columns x 6 rows.
-- Return the message field as exactly 6 lines separated by newlines.
-- Each line is EXACTLY 22 characters (pad with spaces as needed).
-- Line 1: 22 copies of a single border tile character code (choose one color).
-- Line 6: 22 copies of the same border tile character code.
-- Lines 2-5: border_tile + 20-char CENTERED TEXT + border_tile.
-  - The 20-char text region uses ONLY A-Z, 0-9, spaces, and basic punctuation.
-  - Center the text by padding with spaces on both sides.
-  - Span 1-3 short lines of text; remaining lines are border+spaces+border.
-
-Return ONLY a JSON object with a single "message" key containing the 6-line string.
+Return ONLY a JSON object: {"message": "YOUR MESSAGE HERE"}
+The message is plain text (1-4 lines separated by newlines). \
+Do NOT include border characters — borders are added automatically.
 """
 
 
@@ -96,19 +94,19 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
     }
 
     _FALLBACK_MESSAGES = [
-        "I AM MADE OF FLIPS AND DREAMS",
-        "HELLO WORLD FROM THE MUDROOM",
-        "STAY CURIOUS STAY CLEVER",
+        "STAY CURIOUS\nSTAY CLEVER",
         "TODAY IS A GOOD DAY",
         "MAKE SOMETHING AMAZING",
-        "I FLIPPED FOR YOU TODAY",
         "ONE MOMENT AT A TIME",
-        "CURIOSITY UNLOCKS EVERYTHING",
         "YOU LOOK GREAT TODAY",
         "HAVE A WONDERFUL DAY",
-        "THE FUTURE IS UNWRITTEN",
-        "EVERY DAY IS A FRESH START",
-        "SOMETHING GOOD IS COMING",
+        "EVERY DAY IS\nA FRESH START",
+        "SOMETHING GOOD\nIS COMING",
+        "BE KIND TO YOURSELF",
+        "ENJOY THE LITTLE THINGS",
+        "KEEP GOING\nYOU GOT THIS",
+        "TAKE A DEEP BREATH",
+        "GOOD THINGS TAKE TIME",
     ]
 
     @classmethod
@@ -306,15 +304,15 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
 
         if bundle:
             bundle_section = await self._build_bundle_prompt_section(bundle)
-            input_text = f"Generate a witty board message.\n\n{bundle_section}"
+            input_text = f"Write a board message.\n\n{bundle_section}"
             self.log("Generating AI message with data bundle...", level="INFO")
         else:
-            input_text = "Generate a witty board message."
+            input_text = "Write a board message."
             self.log("Generating AI message...", level="INFO")
 
         result = provider.generate_from_text(
             input_text=input_text,
-            instructions=_AI_PERSONALITY_PROMPT,
+            instructions=_AI_MESSAGE_PROMPT,
             expected_keys=["message"],
         )
 
@@ -322,42 +320,9 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         if not message_text:
             raise ValueError("AI returned empty message")
 
-        self.log(f"AI message generated ({len(message_text)} chars)", level="INFO")
-
-        lines = message_text.split("\n")
-        if len(lines) == 6 and all(len(line) == 22 for line in lines):
-            return self._parse_preformatted_grid(lines)
+        self.log(f"AI message generated: {message_text!r}", level="INFO")
 
         return _build_bordered_grid(message_text)
-
-    def _parse_preformatted_grid(self, lines: list[str]) -> list[list[int]]:
-        emoji_to_code = {
-            "\U0001f7e5": COLOR_CODES["red"],
-            "\U0001f7e7": COLOR_CODES["orange"],
-            "\U0001f7e8": COLOR_CODES["yellow"],
-            "\U0001f7e9": COLOR_CODES["green"],
-            "\U0001f7e6": COLOR_CODES["blue"],
-            "\U0001f7ea": COLOR_CODES["violet"],
-            "\u2b1b": COLOR_CODES["black"],
-            "\u2b1c": 0,
-        }
-
-        grid: list[list[int]] = []
-        for line in lines:
-            row: list[int] = []
-            for ch in line:
-                if ch in emoji_to_code:
-                    row.append(emoji_to_code[ch])
-                elif ch == " ":
-                    row.append(0)
-                else:
-                    row.append(CHAR_TO_CODE.get(ch.upper(), 0))
-                if len(row) >= 22:
-                    break
-            while len(row) < 22:
-                row.append(0)
-            grid.append(row)
-        return grid
 
     def _generate_fallback_frame(self) -> list[list[int]]:
         message = random.choice(self._FALLBACK_MESSAGES)
