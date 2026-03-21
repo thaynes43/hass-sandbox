@@ -129,7 +129,7 @@ def _format_countdown(total_seconds: int) -> str:
     if total_seconds < 3600:
         mins = max(1, total_seconds // 60)
         return f"{mins} MIN"
-    hours = total_seconds // 3600
+    hours = round(total_seconds / 3600)
     return f"{hours} HR" if hours == 1 else f"{hours} HRS"
 
 
@@ -202,10 +202,17 @@ def _parse_dt(dt_str: str) -> Optional[datetime]:
 
 
 def _format_event_time(start_dt: Optional[datetime]) -> str:
-    """Format a start datetime for display (e.g. '10:30 AM')."""
+    """Format a start datetime for display (e.g. '10:30 AM SAT').
+
+    Includes the abbreviated day name so the user knows which day
+    the event is on when viewing the board in the evening.
+    """
     if start_dt is None:
         return ""
-    return start_dt.astimezone().strftime("%I:%M %p").lstrip("0")
+    local_dt = start_dt.astimezone()
+    time_str = local_dt.strftime("%I:%M %p").lstrip("0")
+    day_str = local_dt.strftime("%a").upper()  # MON, TUE, etc.
+    return f"{time_str} {day_str}"
 
 
 class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
