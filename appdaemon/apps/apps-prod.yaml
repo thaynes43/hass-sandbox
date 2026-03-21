@@ -647,7 +647,7 @@ health_check_controller:
   alert_history_max: 20
 
 zigbee_health_checker:
-  module: health_checks.network_protocol_checker.network_protocol_checker
+  module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
   class: NetworkProtocolChecker
   disable: true
   checker_id: zigbee
@@ -662,7 +662,7 @@ zigbee_health_checker:
   check_interval_s: 180
 
 zwave_health_checker:
-  module: health_checks.network_protocol_checker.network_protocol_checker
+  module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
   class: NetworkProtocolChecker
   disable: true
   checker_id: zwave
@@ -677,7 +677,7 @@ zwave_health_checker:
   check_interval_s: 180
 
 spa_health_checker:
-  module: health_checks.spa_health_checker.spa_health_checker
+  module: health_checks.checker_apps.spa_health_checker.spa_health_checker
   class: SpaHealthChecker
   disable: true
   ha_url: !secret ha_url
@@ -696,8 +696,25 @@ spa_health_checker:
   auto_repair_enabled_default: false
   auto_repair_delay_min_default: 5
 
+vestaboard_health_checker:
+  module: health_checks.checker_apps.basic_device_checker.basic_device_checker
+  class: BasicDeviceChecker
+  disable: true
+  checker_id: vestaboard
+  checker_name: Vestaboard
+  ping_host: "192.168.50.159"
+  ping_check_name: Ping
+  check_interval_s: 180
+  entities:
+    - entity_id: sensor.vestaboard_controller_status
+      healthy_state: active
+      name: Controller Status
+    - entity_id: sensor.vestaboard_configuration_status
+      healthy_state: ok
+      name: Configuration Status
+
 fan_health_checker:
-  module: health_checks.fan_health_checker.fan_health_checker
+  module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker
   disable: true
   ha_url: !secret ha_url

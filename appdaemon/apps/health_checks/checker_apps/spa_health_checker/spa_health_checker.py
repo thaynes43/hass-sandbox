@@ -26,12 +26,12 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Add health_checks package root so we can import shared utilities
-_health_checks_root = str(Path(__file__).resolve().parents[1])
+_health_checks_root = str(Path(__file__).resolve().parents[2])
 if _health_checks_root not in sys.path:
     sys.path.insert(0, _health_checks_root)
 
 # Add appdaemon root for providers
-_appdaemon_root = str(Path(__file__).resolve().parents[3])
+_appdaemon_root = str(Path(__file__).resolve().parents[4])
 if _appdaemon_root not in sys.path:
     sys.path.insert(0, _appdaemon_root)
 

@@ -46,7 +46,7 @@ The "Repair" button resets all `failed` fan states and repairs all currently-fai
 
 ```yaml
 fan_health_checker:
-  module: health_checks.fan_health_checker.fan_health_checker
+  module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker
   ha_url: !secret ha_url
   ha_token_env: TOKEN

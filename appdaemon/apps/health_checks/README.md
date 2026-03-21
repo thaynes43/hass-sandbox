@@ -64,6 +64,10 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `FanHealthChecker` monitors all Modern Forms ceiling fans as a single checker (2 checks per fan). Supports per-fan repair via `script.zen32_hard_reset`. See `fan_health_checker/README.md` for details.
 
+### Basic Device Checker
+
+`BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `basic_device_checker/README.md` for details.
+
 ### Repair Feature
 
 Checkers can declare `supports_repair: true` during registration. The controller routes repair commands to the specific checker without knowing how to repair — all repair logic lives in the checker app. The detail card shows repair controls (manual button, auto-repair toggle, delay config) for repair-capable checkers.
@@ -108,7 +112,7 @@ health_check_controller:
 
 ```yaml
 zigbee_health_checker:
-  module: health_checks.network_protocol_checker.network_protocol_checker
+  module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
   class: NetworkProtocolChecker
   checker_id: zigbee                                          # Unique ID
   checker_name: Zigbee                                        # Display name
@@ -185,17 +189,23 @@ health_checks/
 ├── controller/
 │   ├── __init__.py
 │   └── health_check_controller.py
-├── network_protocol_checker/
+├── checker_apps/
 │   ├── __init__.py
-│   └── network_protocol_checker.py
-├── spa_health_checker/
-│   ├── __init__.py
-│   ├── spa_health_checker.py
-│   └── README.md
-├── fan_health_checker/
-│   ├── __init__.py
-│   ├── fan_health_checker.py
-│   └── README.md
+│   ├── network_protocol_checker/
+│   │   ├── __init__.py
+│   │   └── network_protocol_checker.py
+│   ├── spa_health_checker/
+│   │   ├── __init__.py
+│   │   ├── spa_health_checker.py
+│   │   └── README.md
+│   ├── fan_health_checker/
+│   │   ├── __init__.py
+│   │   ├── fan_health_checker.py
+│   │   └── README.md
+│   └── basic_device_checker/
+│       ├── __init__.py
+│       ├── basic_device_checker.py
+│       └── README.md
 ├── shared/
 │   ├── __init__.py
 │   └── check_utils.py

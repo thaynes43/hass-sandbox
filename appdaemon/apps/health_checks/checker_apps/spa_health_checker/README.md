@@ -52,7 +52,7 @@ failed → (stays failed, no auto-retry — manual intervention required)
 
 ```yaml
 spa_health_checker:
-  module: health_checks.spa_health_checker.spa_health_checker
+  module: health_checks.checker_apps.spa_health_checker.spa_health_checker
   class: SpaHealthChecker
   ha_url: !secret ha_url
   ha_token_env: TOKEN

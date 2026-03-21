@@ -26,7 +26,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root))
 
-from health_checks.fan_health_checker.fan_health_checker import (
+from health_checks.checker_apps.fan_health_checker.fan_health_checker import (
     FanHealthChecker,
     REPAIR_FAILED,
     REPAIR_IDLE,
@@ -117,7 +117,7 @@ def _startup(app: FanHealthChecker, mock_prov: MagicMock | None = None) -> None:
         mock_prov = _make_mock_provisioner()
     app.initialize()
     with patch(
-        "health_checks.fan_health_checker.fan_health_checker.HAProvisioner",
+        "health_checks.checker_apps.fan_health_checker.fan_health_checker.HAProvisioner",
         return_value=mock_prov,
     ):
         _run(app._async_startup())
@@ -225,7 +225,7 @@ class TestChecks:
         app = _make_app()
         _init_only(app)
         with patch(
-            "health_checks.fan_health_checker.fan_health_checker.ping_check",
+            "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "3ms"},
         ):
@@ -237,7 +237,7 @@ class TestChecks:
         app = _make_app()
         _init_only(app)
         with patch(
-            "health_checks.fan_health_checker.fan_health_checker.ping_check",
+            "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "critical", "detail": "timeout"},
         ):

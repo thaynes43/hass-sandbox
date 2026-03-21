@@ -26,7 +26,7 @@ sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root / "apps" / "health_checks"))
 sys.path.insert(0, str(_repo_root))
 
-from health_checks.network_protocol_checker.network_protocol_checker import (
+from health_checks.checker_apps.network_protocol_checker.network_protocol_checker import (
     NetworkProtocolChecker,
 )
 
@@ -193,11 +193,11 @@ class TestCheckExecution:
         app.get_state.return_value = "on"
 
         with patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.ping_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "2ms"},
         ), patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.http_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.http_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "200 OK"},
         ):
@@ -222,11 +222,11 @@ class TestCheckExecution:
         app.get_state.return_value = "off"
 
         with patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.ping_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "2ms"},
         ), patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.http_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.http_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "200 OK"},
         ):
@@ -252,11 +252,11 @@ class TestCheckExecution:
         app.get_state.return_value = None
 
         with patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.ping_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "2ms"},
         ), patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.http_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.http_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "200 OK"},
         ):
@@ -281,11 +281,11 @@ class TestCheckExecution:
         app.get_state.return_value = "on"
 
         with patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.ping_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "critical", "detail": "timeout"},
         ), patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.http_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.http_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "200 OK"},
         ):
@@ -309,11 +309,11 @@ class TestCheckExecution:
         app.get_state.return_value = "on"
 
         with patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.ping_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "2ms"},
         ), patch(
-            "health_checks.network_protocol_checker.network_protocol_checker.http_check",
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.http_check",
             new_callable=AsyncMock,
             return_value={"status": "critical", "detail": "HTTP 503"},
         ):
