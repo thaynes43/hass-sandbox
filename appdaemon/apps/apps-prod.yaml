@@ -489,6 +489,8 @@ dashboard_notify:
   carousel_interval_s: 10
   default_ttl_s: 3600
   no_notification_refresh_s: 3600
+  notification_text_target_chars: 180
+  notification_text_truncate_suffix: "..."
   ai_provider_conf:
     image: gemini-default
   notifications:

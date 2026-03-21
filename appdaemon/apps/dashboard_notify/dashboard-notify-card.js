@@ -758,6 +758,7 @@ class DashboardNotifyCard extends HTMLElement {
         font-size: 1.05em;
         font-weight: 500;
         color: var(--primary-text-color);
+        white-space: pre-wrap;
       }
       .notif-meta {
         font-size: 0.8em;
