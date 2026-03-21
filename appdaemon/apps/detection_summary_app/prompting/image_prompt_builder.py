@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Optional, TYPE_CHECKING
 
 from ..population import augment_image_instructions, augment_image_instructions_with_consensus
@@ -14,6 +15,16 @@ from .style_variants import (
 
 if TYPE_CHECKING:
     from ..profiles import DetectionProfile
+
+
+@dataclass(frozen=True)
+class ImagePromptResult:
+    """Prompt text plus metadata about which style/env were applied."""
+    prompt: str
+    style_profile_id: Optional[str] = None
+    style_profile_description: Optional[str] = None
+    environment_variant_id: Optional[str] = None
+    environment_variant_description: Optional[str] = None
 
 
 class ImagePromptBuilder:
@@ -31,7 +42,7 @@ class ImagePromptBuilder:
         environment_variant_id: Optional[str] = None,
         consensus_bounds: Optional[dict[str, Any]] = None,
         profile: Optional[DetectionProfile] = None,
-    ) -> str:
+    ) -> ImagePromptResult:
         """Build full image prompt.
 
         Composes:
@@ -122,4 +133,10 @@ class ImagePromptBuilder:
                 f"{env.prompt_suffix}"
             ).strip()
 
-        return prompt
+        return ImagePromptResult(
+            prompt=prompt,
+            style_profile_id=getattr(style, "id", None) if style else None,
+            style_profile_description=getattr(style, "description", None) if style else None,
+            environment_variant_id=getattr(env, "id", None) if env else None,
+            environment_variant_description=getattr(env, "description", None) if env else None,
+        )

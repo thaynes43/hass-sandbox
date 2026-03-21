@@ -145,8 +145,8 @@ class OpenAIMultimodalTextProvider(MultimodalTextProvider):
                 "max_completion_tokens": int(self._config.max_output_tokens),
                 "response_format": "json_object",
                 "prompt_len": len(prompt),
-                "prompt_preview": prompt_preview,
+                "prompt": prompt,
             },
-            "response": {"content_preview": str(content)[:400], "usage": usage},
+            "response": {"content": str(content), "usage": usage},
         }
         return obj

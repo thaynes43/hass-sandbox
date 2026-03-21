@@ -133,9 +133,9 @@ class OpenAISimpleTextProvider(SimpleTextProvider):
                 "max_completion_tokens": int(self._config.max_output_tokens),
                 "response_format": "json_object",
                 "prompt_len": len(prompt),
-                "prompt_preview": prompt[:400],
-                "input_text_preview": str(input_text or "")[:400],
+                "prompt": prompt,
+                "input_text": str(input_text or ""),
             },
-            "response": {"content_preview": str(content)[:400], "usage": usage},
+            "response": {"content": str(content), "usage": usage},
         }
         return obj

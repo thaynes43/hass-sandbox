@@ -27,7 +27,7 @@ detection_summary_app/
     ├── score_normalizer.py     — Raw LLM output → ScoreResult (populates extra_signals)
     ├── image_prompt_builder.py — Image-generation prompt; profile-aware guardrails
     ├── narrative_prompt_builder.py — Run narrative instructions
-    └── style_variants.py       — Style/environment variant stubs (future)
+    └── style_variants.py       — Style profiles and environment variants applied to image-generation prompts
 ```
 
 ## Detection profiles
