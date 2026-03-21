@@ -50,6 +50,7 @@ from .profiles import (
 from .prompting import (
     ScorePromptBuilder,
     ImagePromptBuilder,
+    NarrativePromptBuilder,
     normalize_score_data,
     default_score_schema,
     schema_from_profile,
@@ -845,6 +846,7 @@ class DetectionSummary(hass.Hass):
 
         # --- Run-level narrative summary (text-only LLM over per-frame facts) ---
         run_narrative: Optional[dict[str, Any]] = None
+        facts: list[dict[str, Any]] = []
         try:
             if self.run_narrative_enabled:
                 # Gather a compact chronological list of scored frame facts with timestamps.
@@ -903,6 +905,21 @@ class DetectionSummary(hass.Hass):
                     )
         except Exception as e:
             self.log(f"DetectionSummary[{self.bundle_key}]: run narrative failed: {e!r}", level="WARNING")
+            # Capture the failed narrative attempt so the prompt/input are in the bundle for debugging.
+            narrative_cfg = NarrativeConfig(enabled=True, max_chars=int(self.run_narrative_max_chars))
+            narrative_inst = NarrativePromptBuilder().build(self.run_narrative_instructions, narrative_cfg.max_chars)
+            run_narrative = {
+                "run_summary": None,
+                "error": repr(e),
+                "_narrative_meta": {
+                    "bundle_key": self.bundle_key,
+                    "run_id": run_id,
+                    "frame_facts_count": len(facts),
+                    "failed": True,
+                    "instructions": narrative_inst,
+                    "frame_facts": facts,
+                },
+            }
 
         # Create best.jpg for this run
         best_src = frames_dir / f"frame_{best_idx:03d}.jpg"
