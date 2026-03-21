@@ -49,6 +49,13 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except Exception:
+        return default
+
+
 def _next_boundary_seconds(hour: int, minute: int, now: float) -> float:
     """Return seconds from now until the next occurrence of HH:MM (today or tomorrow)."""
     dt_now = datetime.fromtimestamp(now)
@@ -110,6 +117,12 @@ class DashboardNotify(hass.Hass):
         )
         self._pause_auto_resume_s: float = max(
             0.0, _safe_float(cfg.get("pause_auto_resume_s"), 600.0)
+        )
+        self._notification_text_target_chars: int = max(
+            1, _safe_int(cfg.get("notification_text_target_chars"), 180)
+        )
+        self._notification_text_truncate_suffix: str = str(
+            cfg.get("notification_text_truncate_suffix", "...")
         )
 
         # HA credentials for provisioning
@@ -183,6 +196,23 @@ class DashboardNotify(hass.Hass):
         self._publish_state()
         self.log("DashboardNotify initialized with %d notification configs",
                  len(self._notification_configs))
+
+    def _format_notification_text(self, text: Any) -> str:
+        """Normalize notification text to a fixed display width.
+
+        This keeps the wall-display card height stable by ensuring each
+        notification body is exactly `notification_text_target_chars` long.
+        """
+        normalized = " ".join((str(text) if text is not None else "").split())
+        target = self._notification_text_target_chars
+        suffix = self._notification_text_truncate_suffix
+
+        if len(normalized) > target:
+            if target <= len(suffix):
+                return suffix[:target]
+            return normalized[: target - len(suffix)] + suffix
+
+        return normalized.ljust(target)
 
     # ------------------------------------------------------------------
     # Async startup — provisioning
@@ -350,16 +380,18 @@ class DashboardNotify(hass.Hass):
                         summary_data = json.load(f)
                     summary_obj = summary_data.get("summary", {})
                     if isinstance(summary_obj, dict):
-                        summary_text = str(
-                            summary_obj.get("run_text") or summary_obj.get("text") or "Detection event"
-                        )[:200]
+                        summary_text = self._format_notification_text(
+                            summary_obj.get("run_text")
+                            or summary_obj.get("text")
+                            or "Detection event"
+                        )
                     else:
-                        summary_text = str(summary_obj)[:200]
+                        summary_text = self._format_notification_text(summary_obj)
                 except Exception:
-                    summary_text = "Detection event"
+                    summary_text = self._format_notification_text("Detection event")
                 self.log(
                     "Backfill: %s/%s — %s (expires in %ds)",
-                    bundle_key, run_id, summary_text, int(expires_at - now),
+                    bundle_key, run_id, summary_text.strip(), int(expires_at - now),
                 )
 
                 notification = Notification(
@@ -627,7 +659,7 @@ class DashboardNotify(hass.Hass):
         self._active_generations.add(nid)
 
         notification_class = config.get("class", "BasicTextImage")
-        text = config.get("text", "")
+        text = self._format_notification_text(config.get("text", ""))
         prompt_hint = config.get("prompt_hint", "")
         ttl_s = int(config.get("ttl_s", self._default_ttl_s))
         timestamp = int(now)
@@ -908,7 +940,7 @@ class DashboardNotify(hass.Hass):
         notification = Notification(
             id=nid,
             notification_class="PreexistingImage",
-            text=str(summary)[:200],
+            text=self._format_notification_text(summary),
             image_path=dest_path,
             local_url=local_url,
             created_at=now,

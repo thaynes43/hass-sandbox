@@ -151,6 +151,48 @@ class TestInitialization:
         assert app._media_fs_root == "/tmp/dashboard-media"
         assert app._ha_url == "http://ha:8123"
 
+    def test_initialize_reads_fixed_text_settings(self):
+        app = _make_app({
+            "notification_text_target_chars": 42,
+            "notification_text_truncate_suffix": "..",
+        })
+        app.initialize()
+
+        assert app._notification_text_target_chars == 42
+        assert app._notification_text_truncate_suffix == ".."
+
+
+class TestNotificationTextFormatting:
+    def test_pads_short_text_to_fixed_width(self):
+        app = _make_app({"notification_text_target_chars": 10})
+        app.initialize()
+
+        assert app._format_notification_text("Hello") == "Hello     "
+
+    def test_truncates_long_text_to_fixed_width_with_suffix(self):
+        app = _make_app({
+            "notification_text_target_chars": 10,
+            "notification_text_truncate_suffix": "...",
+        })
+        app.initialize()
+
+        assert app._format_notification_text("abcdefghijklm") == "abcdefg..."
+
+    def test_truncates_when_suffix_is_longer_than_target(self):
+        app = _make_app({
+            "notification_text_target_chars": 2,
+            "notification_text_truncate_suffix": "...",
+        })
+        app.initialize()
+
+        assert app._format_notification_text("abcdef") == ".."
+
+    def test_normalizes_whitespace_before_padding(self):
+        app = _make_app({"notification_text_target_chars": 12})
+        app.initialize()
+
+        assert app._format_notification_text("Hello\n\n   world") == "Hello world "
+
 
 class TestProvisioning:
     def test_provision_creates_relay_script(self):
@@ -354,6 +396,34 @@ class TestDetectionHook:
         n = app._manager.get("detection_garage_abc123")
         assert n.notification_class == "PreexistingImage"
         assert "Person detected" in n.text
+
+    def test_detection_event_formats_text_to_fixed_width(self):
+        app = _make_app({
+            "notification_text_target_chars": 12,
+            "detection_summary_hook": {
+                "enabled": True,
+                "ttl_s": 7200,
+                "bundle_keys": ["garage"],
+            }
+        })
+        app.initialize()
+
+        run_dir = os.path.join(
+            app._media_fs_root, "detection-summary", "garage", "runs", "fmt123"
+        )
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "generated.png"), "wb") as f:
+            f.write(b"fake image data")
+
+        app._handle_detection_published(
+            "detection_summary/run_published",
+            {"bundle_key": "garage", "run_id": "fmt123", "summary": "Hello"},
+            {},
+        )
+
+        n = app._manager.get("detection_garage_fmt123")
+        assert n is not None
+        assert n.text == "Hello       "
 
     def test_detection_event_sets_expiry_timer(self):
         """Detection notifications should schedule an expiry timer."""
@@ -659,6 +729,21 @@ class TestThreadedGeneration:
             app._request_notification_generation(config, time.time())
 
         mock_start.assert_not_called()
+
+    def test_request_notification_generation_formats_text_to_fixed_width(self):
+        app = _make_app({"notification_text_target_chars": 12})
+        app.initialize()
+
+        with patch.object(app, "_start_generation_thread") as mock_start:
+            config = {
+                "id": "school_bus",
+                "class": "BasicTextImage",
+                "text": "Test notification",
+            }
+            app._request_notification_generation(config, time.time())
+
+        job = mock_start.call_args[0][0]
+        assert job["text"] == "Test noti..."
 
     def test_complete_notification_generation_adds_notification(self):
         """_complete_notification_generation should add notification and publish state."""
@@ -1186,6 +1271,46 @@ class TestBackfillDetection:
         assert app._manager.has(nid), f"Expected {nid} to be backfilled"
         n = app._manager.get(nid)
         assert "Backfill person" in n.text
+
+    def test_backfill_formats_text_to_fixed_width(self):
+        app = _make_app({
+            "notification_text_target_chars": 12,
+            "detection_summary_hook": {
+                "enabled": True,
+                "ttl_s": 7200,
+                "bundle_keys": ["garage"],
+            }
+        })
+        app.initialize()
+
+        now = time.time()
+        created_at = now - 3600
+        run_id = "backfill_format"
+        run_dir = os.path.join(
+            app._media_fs_root, "detection-summary", "garage", "runs", run_id
+        )
+        os.makedirs(run_dir, exist_ok=True)
+        with open(os.path.join(run_dir, "generated.png"), "wb") as f:
+            f.write(b"fake image")
+        import json
+        with open(os.path.join(run_dir, "summary.json"), "w") as f:
+            json.dump(
+                {
+                    "summary": {
+                        "bundle_key": "garage",
+                        "run_id": run_id,
+                        "created_at_epoch": created_at,
+                        "run_text": "Hello",
+                    }
+                },
+                f,
+            )
+
+        app._backfill_detection_bundles(now)
+
+        n = app._manager.get(f"detection_garage_{run_id}")
+        assert n is not None
+        assert n.text == "Hello       "
 
     def test_backfill_skips_expired_bundle(self):
         """Backfill should skip bundles whose TTL has passed."""
