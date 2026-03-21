@@ -149,3 +149,53 @@ spa_health_checker_dev:
   check_interval_s: 120
   auto_repair_enabled_default: false
   auto_repair_delay_min_default: 5
+
+fan_health_checker_dev:
+  module: health_checks.fan_health_checker.fan_health_checker
+  class: FanHealthChecker
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: fans
+  checker_name: Fans
+  check_interval_s: 180
+  repair_recovery_wait_s: 300
+  auto_repair_enabled_default: false
+  auto_repair_delay_min_default: 5
+  repair_script: script.zen32_hard_reset
+  fans:
+    - name: Pink Room
+      entity_id: fan.pink_room_fan_fan
+      ip: "192.168.50.112"
+      power_switch: switch.upstairs_pink_room_scene_controller
+      relay_control: select.upstairs_pink_room_scene_controller_relay_control
+      scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
+    - name: Blue Room
+      entity_id: fan.blue_room_fan_fan
+      ip: "192.168.50.134"
+      power_switch: switch.upstairs_blue_room_scene_controller
+      relay_control: select.upstairs_blue_room_scene_controller_relay_control
+      scene_control: select.upstairs_blue_room_scene_controller_scene_control_relay
+    - name: White Room
+      entity_id: fan.white_room_fan_fan
+      ip: "192.168.50.187"
+      power_switch: switch.upstairs_white_room_scene_controller
+      relay_control: select.upstairs_white_room_scene_controller_relay_control
+      scene_control: select.upstairs_white_room_scene_controller_scene_control_relay
+    - name: Primary Bedroom
+      entity_id: fan.primary_bedroom_fan_fan
+      ip: "192.168.50.146"
+      power_switch: switch.upstairs_primary_bedroom_scene_controller
+      relay_control: select.upstairs_primary_bedroom_scene_controller_relay_control
+      scene_control: select.upstairs_primary_bedroom_scene_controller_scene_control_relay
+    - name: Living Room
+      entity_id: fan.livingroom_fan_fan
+      ip: "192.168.50.148"
+      power_switch: switch.downstairs_livingroom_scene_controller
+      relay_control: select.downstairs_livingroom_scene_controller_relay_control
+      scene_control: select.downstairs_livingroom_scene_controller_scene_control_relay
+    - name: Study
+      entity_id: fan.study_fan_fan
+      ip: "192.168.50.179"
+      power_switch: switch.downstairs_study_scene_controller
+      relay_control: select.downstairs_study_scene_controller_relay_control
+      scene_control: select.downstairs_study_scene_controller_scene_control_relay

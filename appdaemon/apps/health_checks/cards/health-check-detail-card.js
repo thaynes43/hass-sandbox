@@ -418,8 +418,7 @@ class HealthCheckDetailCard extends HTMLElement {
         <div class="alert-row">
           <span class="alert-icon">${alertIconHtml}</span>
           <span class="alert-time">${hcdEscapeHtml(this._formatTimestamp(alert.timestamp))}</span>
-          <span class="alert-checker">${hcdEscapeHtml(alert.checker_name)}</span>
-          <span class="alert-check">${hcdEscapeHtml(alert.check)}</span>
+          <span class="alert-source"><span class="alert-checker">${hcdEscapeHtml(alert.checker_name)}</span> <span class="alert-arrow">→</span> ${hcdEscapeHtml(alert.check)}</span>
           <span class="alert-transition">${hcdEscapeHtml(alert.from_status)} → ${hcdEscapeHtml(alert.to_status)}</span>
         </div>
       `;
@@ -490,6 +489,28 @@ class HealthCheckDetailCard extends HTMLElement {
       `;
     }
 
+    // Per-device repair rows (e.g. device_repairs for FanHealthChecker)
+    let deviceRepairsHtml = "";
+    const fanRepairs = rs.device_repairs || {};
+    const nonIdleRepairs = Object.entries(fanRepairs).filter(
+      ([, fr]) => fr.status !== "idle"
+    );
+    if (nonIdleRepairs.length > 0) {
+      let rowsHtml = "";
+      for (const [name, fr] of nonIdleRepairs) {
+        const frIcon = this._repairStatusIcon(fr.status);
+        const frDetail = fr.detail || fr.status;
+        rowsHtml += `
+          <div class="device-repair-row">
+            <span class="device-repair-icon">${frIcon}</span>
+            <span class="device-repair-name">${hcdEscapeHtml(name)}</span>
+            <span class="device-repair-detail">${hcdEscapeHtml(frDetail)}</span>
+          </div>
+        `;
+      }
+      deviceRepairsHtml = `<div class="device-repairs">${rowsHtml}</div>`;
+    }
+
     // Last repair attempt
     let lastAttemptHtml = "";
     if (lastAttempt) {
@@ -532,10 +553,26 @@ class HealthCheckDetailCard extends HTMLElement {
     return `
       <div class="repair-section">
         ${statusHtml}
+        ${deviceRepairsHtml}
         ${lastAttemptHtml}
         ${controlsHtml}
       </div>
     `;
+  }
+
+  _repairStatusIcon(status) {
+    switch (status) {
+      case "in_progress":
+        return `<ha-icon icon="mdi:progress-wrench" style="--mdc-icon-size:12px;color:var(--hcd-accent);"></ha-icon>`;
+      case "success":
+        return `<ha-icon icon="mdi:check-circle" style="--mdc-icon-size:12px;color:var(--hcd-ok);"></ha-icon>`;
+      case "failed":
+        return `<ha-icon icon="mdi:alert-circle" style="--mdc-icon-size:12px;color:var(--hcd-critical);"></ha-icon>`;
+      case "pending":
+        return `<ha-icon icon="mdi:timer-sand" style="--mdc-icon-size:12px;color:var(--hcd-degraded);"></ha-icon>`;
+      default:
+        return `<ha-icon icon="mdi:help-circle" style="--mdc-icon-size:12px;color:var(--hcd-unknown);"></ha-icon>`;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -839,7 +876,7 @@ class HealthCheckDetailCard extends HTMLElement {
 
       .alert-row {
         display: grid;
-        grid-template-columns: 20px auto 1fr 1fr auto;
+        grid-template-columns: 20px auto 1fr auto;
         gap: 6px;
         align-items: center;
         padding: 5px 0;
@@ -863,15 +900,22 @@ class HealthCheckDetailCard extends HTMLElement {
         white-space: nowrap;
       }
 
+      .alert-source {
+        color: var(--hcd-text);
+        font-size: 11px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
       .alert-checker {
         color: var(--hcd-accent);
         font-weight: 600;
-        font-size: 11px;
       }
 
-      .alert-check {
-        color: var(--hcd-text);
-        font-size: 11px;
+      .alert-arrow {
+        color: var(--hcd-muted);
+        font-size: 10px;
       }
 
       .alert-transition {
@@ -1033,6 +1077,43 @@ class HealthCheckDetailCard extends HTMLElement {
       .repair-delay-input:focus {
         outline: 1px solid var(--hcd-accent);
         border-color: var(--hcd-accent);
+      }
+
+      /* Per-device repair rows */
+      .device-repairs {
+        margin: 6px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .device-repair-row {
+        display: grid;
+        grid-template-columns: 18px auto 1fr;
+        gap: 6px;
+        align-items: center;
+        padding: 3px 0;
+        font-size: 11px;
+      }
+
+      .device-repair-icon {
+        display: flex;
+        align-items: center;
+        flex-shrink: 0;
+      }
+
+      .device-repair-name {
+        color: var(--hcd-text);
+        font-weight: 600;
+        white-space: nowrap;
+      }
+
+      .device-repair-detail {
+        color: var(--hcd-muted);
+        font-size: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .actions-section {

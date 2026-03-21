@@ -60,6 +60,10 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `SpaHealthChecker` monitors a Gecko-integrated hot tub with four checks and optional auto-repair via power cycling. See `spa_health_checker/README.md` for details.
 
+### Fan Health Checker
+
+`FanHealthChecker` monitors all Modern Forms ceiling fans as a single checker (2 checks per fan). Supports per-fan repair via `script.zen32_hard_reset`. See `fan_health_checker/README.md` for details.
+
 ### Repair Feature
 
 Checkers can declare `supports_repair: true` during registration. The controller routes repair commands to the specific checker without knowing how to repair — all repair logic lives in the checker app. The detail card shows repair controls (manual button, auto-repair toggle, delay config) for repair-capable checkers.
@@ -187,6 +191,10 @@ health_checks/
 ├── spa_health_checker/
 │   ├── __init__.py
 │   ├── spa_health_checker.py
+│   └── README.md
+├── fan_health_checker/
+│   ├── __init__.py
+│   ├── fan_health_checker.py
 │   └── README.md
 ├── shared/
 │   ├── __init__.py
