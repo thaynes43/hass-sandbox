@@ -895,10 +895,11 @@ class DetectionSummary(hass.Hass):
                         level="INFO",
                     )
                 else:
+                    lvl = "WARNING" if facts else "INFO"
                     self.log(
-                        f"DetectionSummary[{self.bundle_key}]: run narrative returned None run_id={run_id} "
+                        f"DetectionSummary[{self.bundle_key}]: run narrative skipped run_id={run_id} "
                         f"frame_facts={len(facts)}",
-                        level="WARNING",
+                        level=lvl,
                     )
         except Exception as e:
             self.log(f"DetectionSummary[{self.bundle_key}]: run narrative failed: {e!r}", level="WARNING")

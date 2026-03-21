@@ -84,20 +84,20 @@ def synthesize_run_narrative(
             expected_keys=list(cfg.expected_keys),
         )
     except ExternalDataGenError as e:
-        logger.warning(
+        logger.debug(
             "narrative LLM call failed (ExternalDataGenError): bundle_key=%s run_id=%s err=%s",
             bundle_key, run_id, e,
         )
         raise
     except Exception as e:
-        logger.warning(
+        logger.debug(
             "narrative LLM call failed (unexpected): bundle_key=%s run_id=%s err=%r",
             bundle_key, run_id, e,
         )
         raise
 
     if not isinstance(out, dict):
-        logger.warning(
+        logger.debug(
             "narrative LLM returned non-dict: bundle_key=%s run_id=%s type=%s preview=%s",
             bundle_key, run_id, type(out).__name__, str(out)[:200],
         )
