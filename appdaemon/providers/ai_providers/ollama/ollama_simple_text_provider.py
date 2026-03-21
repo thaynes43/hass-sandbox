@@ -28,7 +28,7 @@ class OllamaSimpleTextConfig:
     base_url: str
     model: str = OLLAMA_DEFAULT_MODEL
     timeout_s: float = OLLAMA_DEFAULT_TIMEOUT_S
-    max_output_tokens: int = 300
+    max_output_tokens: int = 1024
 
 
 class OllamaSimpleTextProvider(SimpleTextProvider):
