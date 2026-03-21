@@ -19,7 +19,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 # Add health_checks package root so we can import shared utilities
 _health_checks_root = str(Path(__file__).resolve().parents[2])
@@ -52,15 +52,20 @@ class BasicDeviceChecker(hass.Hass):
         self._ping_check_name: str = args.get("ping_check_name", "Ping")
 
         # Entity checks (list of dicts with entity_id, healthy_state, name)
+        # healthy_state can be:
+        #   - a specific value (e.g. "active", "ok") — exact match
+        #   - omitted or empty — any state except unavailable/unknown is ok
         raw_entities = args.get("entities", [])
         self._entities: List[Dict[str, str]] = []
         for e in raw_entities:
-            # YAML coerces "on"/"off" to bool — reverse it
-            healthy = e.get("healthy_state", "")
-            if isinstance(healthy, bool):
-                healthy = "on" if healthy else "off"
+            raw_healthy = e.get("healthy_state")
+            if raw_healthy is None or raw_healthy == "":
+                healthy = ""  # empty means "not unavailable/unknown"
+            elif isinstance(raw_healthy, bool):
+                # YAML coerces "on"/"off" to bool — reverse it
+                healthy = "on" if raw_healthy else "off"
             else:
-                healthy = str(healthy)
+                healthy = str(raw_healthy)
             self._entities.append({
                 "entity_id": e.get("entity_id", ""),
                 "healthy_state": healthy,
@@ -159,21 +164,13 @@ class BasicDeviceChecker(hass.Hass):
     # ------------------------------------------------------------------
 
     async def _run_checks(self) -> None:
-        results: List[Dict[str, str]] = []
+        results = await self._run_checks_only()
 
-        if self._ping_host:
-            results.append(await self._check_ping())
-
-        for entity_conf in self._entities:
-            results.append(await self._check_entity(entity_conf))
-
+        payload = self._build_report_payload(results)
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": results,
-            }),
+            payload=json.dumps(payload),
         )
 
         status_parts = [f"{r['name']}={r['status']}" for r in results]
@@ -182,6 +179,22 @@ class BasicDeviceChecker(hass.Hass):
             f"{', '.join(status_parts)}",
             level="INFO",
         )
+
+    async def _run_checks_only(self) -> List[Dict[str, str]]:
+        """Run all checks and return results without reporting."""
+        results: List[Dict[str, str]] = []
+        if self._ping_host:
+            results.append(await self._check_ping())
+        for entity_conf in self._entities:
+            results.append(await self._check_entity_state(entity_conf))
+        return results
+
+    def _build_report_payload(self, results: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Build the report_status payload. Subclasses can extend to add repair_state."""
+        return {
+            "checker_id": self._checker_id,
+            "results": results,
+        }
 
     async def _check_ping(self) -> Dict[str, str]:
         try:
@@ -199,19 +212,22 @@ class BasicDeviceChecker(hass.Hass):
                 "detail": f"Error: {exc}",
             }
 
-    async def _check_entity(self, entity_conf: dict) -> Dict[str, str]:
+    async def _check_entity_state(self, entity_conf: dict) -> Dict[str, str]:
         entity_id = entity_conf["entity_id"]
         healthy_state = entity_conf["healthy_state"]
         name = entity_conf["name"]
 
         try:
             state = await self.get_state(entity_id)
-            if state is None:
+            if state is None or str(state) in ("unavailable", "unknown"):
                 return {
                     "name": name,
                     "status": "critical",
-                    "detail": "Entity not found",
+                    "detail": f"State: {state}",
                 }
+            if not healthy_state:
+                # No specific state required — just not unavailable/unknown
+                return {"name": name, "status": "ok", "detail": str(state)}
             if str(state) == healthy_state:
                 return {"name": name, "status": "ok", "detail": str(state)}
             return {

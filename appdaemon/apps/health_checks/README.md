@@ -66,7 +66,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 ### Basic Device Checker
 
-`BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `basic_device_checker/README.md` for details.
+`BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `device_checker/README.md` for details.
 
 ### Repair Feature
 
@@ -202,9 +202,9 @@ health_checks/
 │   │   ├── __init__.py
 │   │   ├── fan_health_checker.py
 │   │   └── README.md
-│   └── basic_device_checker/
+│   └── device_checker/
 │       ├── __init__.py
-│       ├── basic_device_checker.py
+│       ├── device_checker.py
 │       └── README.md
 ├── shared/
 │   ├── __init__.py

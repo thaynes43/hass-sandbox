@@ -151,7 +151,7 @@ spa_health_checker_dev:
   auto_repair_delay_min_default: 5
 
 vestaboard_health_checker_dev:
-  module: health_checks.checker_apps.basic_device_checker.basic_device_checker
+  module: health_checks.checker_apps.device_checker.device_checker
   class: BasicDeviceChecker
   checker_id: vestaboard
   checker_name: Vestaboard
@@ -166,13 +166,32 @@ vestaboard_health_checker_dev:
       healthy_state: ok
       name: Configuration Status
 
+printer_health_checker_dev:
+  module: health_checks.checker_apps.device_checker.repairable_device_checker
+  class: RepairableDeviceChecker
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: printer
+  checker_name: Printer
+  ping_host: "192.168.0.211"
+  ping_check_name: Ping
+  check_interval_s: 180
+  repair_switch: switch.downstairs_study_printer_switch
+  repair_recovery_wait_s: 300
+  repair_off_duration_s: 10
+  auto_repair_enabled_default: false
+  auto_repair_delay_min_default: 5
+  entities:
+    - entity_id: sensor.brother_mfc_l3780cdw_series
+      name: Status
+
 fan_health_checker_dev:
   module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   checker_id: fans
-  checker_name: Fans
+  checker_name: Ceiling Fans
   check_interval_s: 180
   repair_recovery_wait_s: 300
   auto_repair_enabled_default: false

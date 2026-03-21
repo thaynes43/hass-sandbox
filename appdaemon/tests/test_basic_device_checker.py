@@ -19,7 +19,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root))
 
-from health_checks.checker_apps.basic_device_checker.basic_device_checker import (
+from health_checks.checker_apps.device_checker.device_checker import (
     BasicDeviceChecker,
 )
 
@@ -127,7 +127,7 @@ class TestEntityChecks:
         app = _make_app()
         _init_only(app)
         app.get_state = AsyncMock(return_value="active")
-        result = _run(app._check_entity(app._entities[0]))
+        result = _run(app._check_entity_state(app._entities[0]))
         assert result["status"] == "ok"
         assert result["name"] == "Controller Status"
 
@@ -135,7 +135,7 @@ class TestEntityChecks:
         app = _make_app()
         _init_only(app)
         app.get_state = AsyncMock(return_value="error")
-        result = _run(app._check_entity(app._entities[0]))
+        result = _run(app._check_entity_state(app._entities[0]))
         assert result["status"] == "critical"
         assert "Expected 'active'" in result["detail"]
 
@@ -143,9 +143,9 @@ class TestEntityChecks:
         app = _make_app()
         _init_only(app)
         app.get_state = AsyncMock(return_value=None)
-        result = _run(app._check_entity(app._entities[0]))
+        result = _run(app._check_entity_state(app._entities[0]))
         assert result["status"] == "critical"
-        assert "not found" in result["detail"]
+        assert "None" in result["detail"]
 
     def test_yaml_bool_coercion(self):
         """YAML coerces 'on' to True — should be reversed."""
@@ -163,7 +163,7 @@ class TestPingCheck:
         app = _make_app()
         _init_only(app)
         with patch(
-            "health_checks.checker_apps.basic_device_checker.basic_device_checker.ping_check",
+            "health_checks.checker_apps.device_checker.device_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "3ms"},
         ):
@@ -175,7 +175,7 @@ class TestPingCheck:
         app = _make_app()
         _init_only(app)
         with patch(
-            "health_checks.checker_apps.basic_device_checker.basic_device_checker.ping_check",
+            "health_checks.checker_apps.device_checker.device_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "critical", "detail": "timeout"},
         ):
@@ -190,7 +190,7 @@ class TestRunChecks:
         app.get_state = AsyncMock(side_effect=["active", "ok"])
 
         with patch(
-            "health_checks.checker_apps.basic_device_checker.basic_device_checker.ping_check",
+            "health_checks.checker_apps.device_checker.device_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "3ms"},
         ):
