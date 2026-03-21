@@ -163,11 +163,11 @@ class TestInitialization:
 
 
 class TestNotificationTextFormatting:
-    def test_pads_short_text_to_fixed_width(self):
+    def test_preserves_short_text_without_padding(self):
         app = _make_app({"notification_text_target_chars": 10})
         app.initialize()
 
-        assert app._format_notification_text("Hello") == "Hello     "
+        assert app._format_notification_text("Hello") == "Hello"
 
     def test_truncates_long_text_to_fixed_width_with_suffix(self):
         app = _make_app({
@@ -187,11 +187,11 @@ class TestNotificationTextFormatting:
 
         assert app._format_notification_text("abcdef") == ".."
 
-    def test_normalizes_whitespace_before_padding(self):
+    def test_normalizes_whitespace_without_padding(self):
         app = _make_app({"notification_text_target_chars": 12})
         app.initialize()
 
-        assert app._format_notification_text("Hello\n\n   world") == "Hello world "
+        assert app._format_notification_text("Hello\n\n   world") == "Hello world"
 
 
 class TestProvisioning:
@@ -423,7 +423,7 @@ class TestDetectionHook:
 
         n = app._manager.get("detection_garage_fmt123")
         assert n is not None
-        assert n.text == "Hello       "
+        assert n.text == "Hello"
 
     def test_detection_event_sets_expiry_timer(self):
         """Detection notifications should schedule an expiry timer."""
@@ -1310,7 +1310,7 @@ class TestBackfillDetection:
 
         n = app._manager.get(f"detection_garage_{run_id}")
         assert n is not None
-        assert n.text == "Hello       "
+        assert n.text == "Hello"
 
     def test_backfill_skips_expired_bundle(self):
         """Backfill should skip bundles whose TTL has passed."""
