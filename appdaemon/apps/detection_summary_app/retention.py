@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,10 @@ def prune_runs_to_max(*, runs_dir: Path, max_runs: int) -> int:
 
     Uses summary.json created_at_epoch ordering (newest-first), and deletes from the tail.
     Returns deleted count.
+
+    .. deprecated:: 0.5.9
+        Use :func:`archive_runs` instead — it moves old runs to monthly
+        archive folders rather than deleting them.
     """
     max_runs = int(max_runs)
     if max_runs <= 0:
@@ -87,6 +94,42 @@ def prune_runs_to_max(*, runs_dir: Path, max_runs: int) -> int:
         if delete_run_dir(r.run_dir):
             deleted += 1
     return int(deleted)
+
+
+def archive_runs(*, runs_dir: Path, keep: int) -> int:
+    """Move older published runs into ``runs_dir/archive/YYYY-MM/`` folders.
+
+    Keeps the *keep* most-recent published runs in *runs_dir* (so the
+    viewer frontend can read them unchanged).  Everything older is moved
+    into a monthly sub-folder under ``runs_dir/archive/``.
+
+    Returns the number of runs archived.
+    """
+    keep = max(1, int(keep))
+    runs = list_published_runs(runs_dir=runs_dir)
+    if len(runs) <= keep:
+        return 0
+
+    archive_base = runs_dir / "archive"
+    archived = 0
+    for r in runs[keep:]:
+        # Determine month folder from created_at_epoch.
+        month_str = time.strftime("%Y-%m", time.gmtime(r.created_at_epoch))
+        dest_dir = archive_base / month_str
+        dest = dest_dir / r.run_id
+        if dest.exists():
+            # Already archived (e.g. interrupted previous cycle).
+            # Remove the source copy still sitting in runs/.
+            delete_run_dir(r.run_dir)
+            archived += 1
+            continue
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(r.run_dir), str(dest))
+            archived += 1
+        except Exception as exc:
+            _log.warning("archive_runs: failed to move %s -> %s: %s", r.run_dir, dest, exc)
+    return archived
 
 
 def recent_published_run_ids(*, runs_dir: Path, max_options: int) -> list[str]:
