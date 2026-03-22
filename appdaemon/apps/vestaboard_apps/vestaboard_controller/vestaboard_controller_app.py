@@ -2,14 +2,19 @@
 
 Automation apps register via HA events (register_automation command).
 No direct get_app() references between controller and automations.
+
+This module is the orchestration layer.  Business logic lives in:
+- automation_registry.py — proxy management and config store
+- command_router.py — command dispatch and handlers
+- board_io.py — sleep window and write tracking
+- status_publisher.py — sensor attribute construction
 """
 
 from __future__ import annotations
 
 import json
 import time
-import uuid
-from datetime import datetime, timezone
+from datetime import datetime  # noqa: F401 — tests patch this at this module path
 from typing import Any, Optional
 
 import sys
@@ -27,76 +32,28 @@ from providers.vestaboard.character_encoding import (
     text_to_grid,
 )
 
-from vestaboard_apps._shared.frame_queue import BoardFrame, FrameQueue
+from vestaboard_apps._shared.frame_queue import FrameQueue
 from vestaboard_apps._shared.template_resolver import has_template, resolve_template
 
-
-class RemoteAutomationProxy:
-    """Stores metadata from event-based automation registration.
-
-    Created when the controller receives a ``register_automation`` event from
-    an automation app.  Provides the same interface that the controller uses
-    when communicating back to automation apps (config, preview, etc.) without
-    requiring a direct Python object reference.
-    """
-
-    def __init__(self, data: dict) -> None:
-        self.name = data["automation_id"]
-        self.automation_type = data.get("automation_type", "")
-        self.display_name = data.get("display_name", "Automation")
-        self.display_description = data.get("display_description", "")
-        self.default_ttl_s = data.get("default_ttl_s")
-        self.default_max_age_s = data.get("default_max_age_s")
-        self.default_should_expire = data.get("default_should_expire", False)
-        self.DEFAULT_UI_CONFIG = data.get("DEFAULT_UI_CONFIG", {})
-        self._config_schema = data.get("config_schema", {})
-
-        # preview_frame arrives as a JSON string to avoid HA zero-stripping
-        raw_preview = data.get("preview_frame", "")
-        if isinstance(raw_preview, str) and raw_preview:
-            try:
-                self._preview_frame = json.loads(raw_preview)
-            except Exception:
-                self._preview_frame = [[0] * 22 for _ in range(6)]
-        elif isinstance(raw_preview, list):
-            self._preview_frame = raw_preview
-        else:
-            self._preview_frame = [[0] * 22 for _ in range(6)]
-
-        self._effective_config: dict[str, Any] = dict(self.DEFAULT_UI_CONFIG)
-        self._next_fire_time: Optional[float] = None
-
-    def get_config_schema(self) -> dict:
-        return self._config_schema
-
-    def get_preview_frame(self) -> list[list[int]]:
-        return self._preview_frame
-
-    def get_effective_config(self) -> dict[str, Any]:
-        return dict(self._effective_config)
-
-    def get_resolved_ttl_s(self) -> Optional[int]:
-        ttl_min = self._effective_config.get("ttl_minutes")
-        if ttl_min is not None:
-            return int(float(ttl_min) * 60)
-        return self.default_ttl_s
-
-    def get_resolved_should_expire(self) -> bool:
-        return bool(self._effective_config.get("should_expire", self.default_should_expire))
-
-    def update_config(self, config: dict) -> None:
-        self._effective_config.update(config)
+# Re-export for backward compatibility (tests import from this module)
+from vestaboard_apps.vestaboard_controller.automation_registry import (
+    RemoteAutomationProxy,
+    AutomationRegistry,
+)
+from vestaboard_apps.vestaboard_controller.board_io import BoardIO
+from vestaboard_apps.vestaboard_controller.command_router import CommandRouter
+from vestaboard_apps.vestaboard_controller.status_publisher import StatusPublisher
 
 
 class VestaboardControllerApp(hass.Hass):
     """AppDaemon app that drives the Vestaboard.
 
-    Manages:
-    - VestaboardClient for writing frames to the physical board.
-    - FrameQueue for LIFO TTL/expiration/fallback semantics.
-    - Event-based automation registration via ``register_automation`` command.
-    - Command event listener for card/automation-driven requests.
-    - Periodic tick to advance queue state.
+    Orchestrates:
+    - FrameQueue for FIFO TTL/expiration/fallback semantics
+    - AutomationRegistry for event-based automation management
+    - CommandRouter for card/automation-driven requests
+    - BoardIO for sleep-window and write tracking
+    - StatusPublisher for sensor state construction
     """
 
     SENSOR_ENTITY = "sensor.vestaboard_controller_status"
@@ -125,58 +82,133 @@ class VestaboardControllerApp(hass.Hass):
         self._automation_config_path: str = str(
             cfg.get("automation_config_path", "")
         )
-        self._config_store: Optional[Any] = None
+        self.__config_store: Optional[Any] = None
 
         # Frame library path (for automations that need it)
         self._frame_library_path: str = str(
             cfg.get("frame_library_path", "")
         )
 
-        # Build VestaboardClient
-        self._client = VestaboardClient(
-            ip=self._vb_ip,
-            api_key=self._vb_api_key,
+        # Sleep window config
+        sleep_cfg = cfg.get("sleep_window") or {}
+        sleep_enabled: bool = bool(sleep_cfg.get("enabled", True))
+        sleep_start: str = str(sleep_cfg.get("start", "01:00:00"))
+        sleep_end: str = str(sleep_cfg.get("end", "07:00:00"))
+
+        # Build components
+        self._board_io = BoardIO(
+            sleep_enabled=sleep_enabled,
+            sleep_start=sleep_start,
+            sleep_end=sleep_end,
+            log_fn=self.log,
         )
 
-        # Build FrameQueue
         self._queue = FrameQueue(log_fn=self.log)
-
-        # Registered automation proxies: automation_id -> RemoteAutomationProxy
-        self._registered_automations: dict[str, Any] = {}
-
-        # Last known board state for status publishing
-        self._last_write_ok: Optional[bool] = None
-
-        # AI art preview (generate-only, not pushed to board)
-        self._ai_art_preview: Optional[dict[str, Any]] = None
-
-        # Cached board state read from the physical Vestaboard
-        self._external_board_frame: Optional[list[list[int]]] = None
-
-        # Last time a template-based frame was refreshed (Unix timestamp)
-        self._last_template_refresh: Optional[float] = None
-
-        # Sleep window
-        sleep_cfg = cfg.get("sleep_window") or {}
-        self._sleep_enabled: bool = bool(sleep_cfg.get("enabled", True))
-        self._sleep_start: str = str(sleep_cfg.get("start", "01:00:00"))
-        self._sleep_end: str = str(sleep_cfg.get("end", "07:00:00"))
-        self._was_sleeping: bool = False
 
         # Load config store synchronously so defaults are available when
         # automations register via events shortly after startup
         self._init_config_store()
 
+        self._registry = AutomationRegistry(
+            config_store=self.__config_store,
+            log_fn=self.log,
+        )
+
+        self._router = CommandRouter(
+            app=self,
+            registry=self._registry,
+        )
+
+        self._publisher = StatusPublisher()
+
+        # Instance state
+        self._ai_art_preview: Optional[dict[str, Any]] = None
+        self._external_board_frame: Optional[list[list[int]]] = None
+        self._last_template_refresh: Optional[float] = None
+        self._was_sleeping: bool = False
+
         self.log(
             f"VestaboardControllerApp initializing — ip={self._vb_ip!r} "
             f"tick_interval_s={self._tick_interval_s} "
-            f"sleep_enabled={self._sleep_enabled} "
-            f"sleep_window={self._sleep_start}-{self._sleep_end}",
+            f"sleep_enabled={sleep_enabled} "
+            f"sleep_window={sleep_start}-{sleep_end}",
             level="INFO",
         )
 
         # Defer async startup so AppDaemon event loop is running
         self.run_in(self._async_startup_wrapper, 0)
+
+    # ------------------------------------------------------------------
+    # Properties for test compatibility
+    # ------------------------------------------------------------------
+
+    @property
+    def _registered_automations(self) -> dict:
+        """Expose registry internals for backward compatibility with tests."""
+        return self._registry._automations
+
+    @_registered_automations.setter
+    def _registered_automations(self, value: dict) -> None:
+        self._registry._automations = value
+
+    @property
+    def _config_store(self) -> Any:
+        return self.__config_store
+
+    @_config_store.setter
+    def _config_store(self, value: Any) -> None:
+        self.__config_store = value
+        if hasattr(self, "_registry"):
+            self._registry._config_store = value
+
+    @property
+    def _last_write_ok(self) -> Optional[bool]:
+        return self._board_io.last_write_ok
+
+    @_last_write_ok.setter
+    def _last_write_ok(self, value: Optional[bool]) -> None:
+        self._board_io.last_write_ok = value
+
+    @property
+    def _sleep_enabled(self) -> bool:
+        return self._board_io._sleep_enabled
+
+    @_sleep_enabled.setter
+    def _sleep_enabled(self, value: bool) -> None:
+        self._board_io._sleep_enabled = value
+
+    @property
+    def _sleep_start(self) -> str:
+        return self._board_io._sleep_start
+
+    @_sleep_start.setter
+    def _sleep_start(self, value: str) -> None:
+        self._board_io._sleep_start = value
+
+    @property
+    def _sleep_end(self) -> str:
+        return self._board_io._sleep_end
+
+    @_sleep_end.setter
+    def _sleep_end(self, value: str) -> None:
+        self._board_io._sleep_end = value
+
+    def _is_sleeping(self) -> bool:
+        return self._board_io.is_sleeping()
+
+    @staticmethod
+    def _parse_time(time_str: str) -> tuple[int, int, int]:
+        return BoardIO.parse_time(time_str)
+
+    def _set_ai_art_preview(self, value: Optional[dict]) -> None:
+        self._ai_art_preview = value
+
+    def _set_last_template_refresh(self, value: Optional[float]) -> None:
+        self._last_template_refresh = value
+
+    # ------------------------------------------------------------------
+    # Async startup
+    # ------------------------------------------------------------------
 
     def _async_startup_wrapper(self, kwargs: dict) -> None:
         self.create_task(self._async_startup())
@@ -261,242 +293,11 @@ class VestaboardControllerApp(hass.Hass):
             self.log(f"Failed to provision relay script: {exc!r}", level="ERROR")
 
     # ------------------------------------------------------------------
-    # Event-based automation registration
-    # ------------------------------------------------------------------
-
-    def _handle_register_automation_event(self, payload: dict) -> None:
-        """Handle a ``register_automation`` command from an automation app.
-
-        Creates (or replaces) a ``RemoteAutomationProxy`` for the automation,
-        seeds config defaults, and fires the persisted config back.
-        """
-        auto_id = str(payload.get("automation_id", "")).strip()
-        if not auto_id:
-            self.log("register_automation: missing automation_id in payload", level="WARNING")
-            return
-
-        # Preserve next_fire_time from old proxy on re-registration
-        old_proxy = self._registered_automations.get(auto_id)
-        old_fire_time = getattr(old_proxy, "_next_fire_time", None) if old_proxy else None
-
-        proxy = RemoteAutomationProxy(payload)
-        if old_fire_time is not None:
-            proxy._next_fire_time = old_fire_time
-        self._registered_automations[auto_id] = proxy
-
-        reregistered = old_proxy is not None
-        self.log(
-            f"Automation {'re-' if reregistered else ''}registered: {auto_id!r} "
-            f"(type={proxy.automation_type!r})"
-            f"{f' | preserved next_fire_time={old_fire_time}' if old_fire_time else ''}",
-            level="INFO",
-        )
-
-        # Seed config store defaults
-        if self._config_store:
-            defaults = proxy.DEFAULT_UI_CONFIG
-            if defaults and self._config_store.seed(auto_id, defaults):
-                self._config_store.save()
-                self.log(f"Seeded config defaults for {auto_id!r}", level="INFO")
-
-        # Fire persisted config back to the automation
-        if self._config_store:
-            stored = self._config_store.get(auto_id)
-            if stored:
-                proxy.update_config(stored)
-                self.fire_event(
-                    "vb_auto_config",
-                    automation_id=auto_id,
-                    config=stored,
-                )
-                self.log(f"Config pushed back to automation {auto_id!r}", level="INFO")
-
-        self._publish_status()
-
-    def _handle_deregister_automation_event(self, payload: dict) -> None:
-        """Handle a ``deregister_automation`` command from an automation app."""
-        auto_id = str(payload.get("automation_id", "")).strip()
-        removed = self._registered_automations.pop(auto_id, None)
-        if removed is not None:
-            self._queue.remove_source(auto_id)
-            self.log(f"Automation deregistered: {auto_id!r}", level="INFO")
-        else:
-            self.log(
-                f"deregister_automation: {auto_id!r} was not registered",
-                level="DEBUG",
-            )
-        self._publish_status()
-
-    def _handle_push_automation_frame_event(self, payload: dict) -> None:
-        """Handle a ``push_automation_frame`` command from an automation app."""
-        auto_id = str(payload.get("automation_id", "")).strip()
-        source_label = str(payload.get("source_label", auto_id))
-
-        raw_chars = payload.get("characters")
-        if raw_chars is None:
-            self.log(
-                f"push_automation_frame: missing 'characters' from {auto_id!r}",
-                level="WARNING",
-            )
-            return
-
-        # characters arrives as a JSON string to prevent HA zero-stripping
-        if isinstance(raw_chars, str):
-            try:
-                grid = json.loads(raw_chars)
-            except Exception as exc:
-                self.log(
-                    f"push_automation_frame: failed to parse characters JSON: {exc!r}",
-                    level="WARNING",
-                )
-                return
-        else:
-            grid = raw_chars
-
-        ttl_s = payload.get("ttl_s")
-        max_age_s = payload.get("max_age_s")
-        override_ttl = bool(payload.get("override_ttl", False))
-        should_expire = bool(payload.get("should_expire", False))
-
-        if ttl_s is not None:
-            ttl_s = int(ttl_s)
-        if max_age_s is not None:
-            max_age_s = int(max_age_s)
-
-        # Update next_fire_time on the proxy if provided
-        next_fire_time = payload.get("next_fire_time")
-        proxy = self._registered_automations.get(auto_id)
-        if proxy is not None and next_fire_time is not None:
-            proxy._next_fire_time = float(next_fire_time)
-
-        template = payload.get("template") or None
-        refresh_interval_minutes = payload.get("refresh_interval_minutes")
-        if refresh_interval_minutes is not None:
-            refresh_interval_minutes = int(refresh_interval_minutes)
-
-        self.push_automation_frame(
-            automation_id=auto_id,
-            source_label=source_label,
-            grid=grid,
-            ttl_s=ttl_s,
-            max_age_s=max_age_s,
-            override_ttl=override_ttl,
-            should_expire=should_expire,
-            template=template,
-            refresh_interval_minutes=refresh_interval_minutes,
-        )
-
-    def _handle_push_ai_art_preview_result(self, payload: dict) -> None:
-        """Handle the result of an AI art preview generate request."""
-        raw_chars = payload.get("characters")
-        subject = str(payload.get("subject", "abstract art"))
-
-        if raw_chars is None:
-            self.log("push_ai_art_preview_result: missing 'characters'", level="WARNING")
-            return
-
-        # Store as JSON string (already serialized by the automation)
-        if not isinstance(raw_chars, str):
-            raw_chars = json.dumps(raw_chars)
-
-        self._ai_art_preview = {
-            "characters": raw_chars,
-            "subject": subject,
-            "generated_at": time.time(),
-        }
-        self._publish_status()
-        self.log(f"AI art preview ready for subject={subject!r}", level="INFO")
-
-    def _handle_update_next_fire_time(self, payload: dict) -> None:
-        """Update a proxy's next_fire_time so the card shows upcoming automations."""
-        auto_id = str(payload.get("automation_id", ""))
-        next_fire = payload.get("next_fire_time")
-        proxy = self._registered_automations.get(auto_id)
-        if proxy is not None and next_fire is not None:
-            import time as _t
-            delta = float(next_fire) - _t.time()
-            self.log(
-                f"Next fire time updated: {auto_id!r} → {delta / 60:.1f} min from now",
-                level="INFO",
-            )
-            proxy._next_fire_time = float(next_fire)
-            self._publish_status()
-
-    # ------------------------------------------------------------------
-    # push_automation_frame — public API (called internally)
-    # ------------------------------------------------------------------
-
-    def push_automation_frame(
-        self,
-        automation_id: str,
-        source_label: str,
-        grid: list[list[int]],
-        ttl_s: Optional[int],
-        max_age_s: Optional[int],
-        override_ttl: bool = False,
-        should_expire: bool = False,
-        template: Optional[str] = None,
-        refresh_interval_minutes: Optional[int] = None,
-    ) -> None:
-        """Push a frame generated by an automation to the queue."""
-        if self._is_blank_frame(grid):
-            self.log(
-                f"Automation {automation_id!r} produced blank frame — skipping push",
-                level="INFO",
-            )
-            return
-
-        # Resolve template placeholders if present
-        if template and has_template(template):
-            border_color = detect_border_color(grid) if grid else None
-            resolved_text, resolutions = resolve_template(
-                template, lambda eid: self.get_state(eid)
-            )
-            grid = text_to_grid(resolved_text, justify="center", align="center")
-            if border_color is not None:
-                apply_border(grid, border_color)
-            self.log(
-                f"Automation {automation_id!r} template resolved: "
-                f"resolutions={resolutions} resolved_text={resolved_text!r} "
-                f"border={'yes' if border_color else 'no'}",
-                level="INFO",
-            )
-
-        now = time.time()
-        frame = BoardFrame(
-            frame_id=uuid.uuid4().hex,
-            characters=grid,
-            source=automation_id,
-            source_label=source_label,
-            ttl_s=ttl_s,
-            max_age_s=max_age_s,
-            override_ttl=override_ttl,
-            should_expire=should_expire,
-            created_at=now,
-            template=template,
-            refresh_interval_minutes=refresh_interval_minutes,
-        )
-
-        self.log(
-            f"Automation {automation_id!r} pushing frame | "
-            f"ttl_s={ttl_s} max_age_s={max_age_s} "
-            f"override_ttl={override_ttl} should_expire={should_expire} "
-            f"has_template={bool(template and has_template(template))}",
-            level="INFO",
-        )
-
-        action = self._queue.push(frame, now)
-        if action.display_frame:
-            self._schedule_board_write(action.display_frame.characters, source=automation_id)
-            self._last_template_refresh = now if template else None
-        self._publish_status()
-
-    # ------------------------------------------------------------------
-    # Command handling
+    # Command handling (thin delegation)
     # ------------------------------------------------------------------
 
     def _on_command(self, event_name: str, data: dict, kwargs: dict) -> None:
-        """Route incoming commands to the appropriate handler."""
+        """Route incoming commands to the command router."""
         command = str(data.get("command", "")).strip()
         raw_payload = data.get("payload", "{}")
 
@@ -511,7 +312,6 @@ class VestaboardControllerApp(hass.Hass):
 
         # Log command with sender and payload summary
         sender = payload.get("automation_id") or payload.get("source") or "unknown"
-        # Build compact payload summary (skip large fields like characters/preview_frame)
         summary_keys = {k: v for k, v in payload.items()
                         if k not in ("characters", "preview_frame", "DEFAULT_UI_CONFIG", "config_schema")}
         self.log(
@@ -519,355 +319,66 @@ class VestaboardControllerApp(hass.Hass):
             level="INFO",
         )
 
-        if command == "push_frame":
-            self._handle_push_frame(payload)
-        elif command == "register_automation":
-            self._handle_register_automation_event(payload)
-        elif command == "deregister_automation":
-            self._handle_deregister_automation_event(payload)
-        elif command == "push_automation_frame":
-            self._handle_push_automation_frame_event(payload)
-        elif command == "push_ai_art_preview_result":
-            self._handle_push_ai_art_preview_result(payload)
-        elif command == "update_next_fire_time":
-            self._handle_update_next_fire_time(payload)
-        elif command == "activate_automation":
-            automation_id = str(payload.get("automation_id", ""))
-            self._handle_activate_automation(automation_id)
-        elif command == "deactivate_automation":
-            automation_id = str(payload.get("automation_id", ""))
-            self._handle_deactivate_automation(automation_id)
-        elif command == "clear_board":
-            self._handle_clear_board()
-        elif command == "set_automation_config":
-            automation_id = str(payload.get("automation_id", ""))
-            new_config = payload.get("config")
-            if not isinstance(new_config, dict):
-                new_config = {
-                    k: v for k, v in payload.items()
-                    if k != "automation_id" and v is not None
-                }
-            self._handle_set_automation_config(automation_id, new_config)
-        elif command == "generate_random_message":
-            self.create_task(self._handle_generate_by_type(
-                payload, "messages_from_library", "generate_random_message"
-            ))
-        elif command == "generate_random_art":
-            self.create_task(self._handle_generate_by_type(
-                payload, "art_from_library", "generate_random_art"
-            ))
-        elif command == "generate_ai_art":
-            self.create_task(self._handle_generate_ai_art(payload))
-        elif command == "generate_ai_art_preview":
-            self.create_task(self._handle_generate_ai_art_preview(payload))
-        elif command == "clear_ai_art_preview":
-            self._ai_art_preview = None
-            self._publish_status()
-            self.log("AI art preview cleared", level="INFO")
-        elif command == "generate_ai_message":
-            self.create_task(self._handle_generate_by_type(
-                payload, "message_generated_by_ai", "generate_ai_message"
-            ))
-        elif command == "preview_automation":
-            self.create_task(self._handle_preview_automation(payload))
-        else:
-            self.log(f"Unknown command: {command!r}", level="WARNING")
+        self._router.handle_command(command, payload)
+
+    # ------------------------------------------------------------------
+    # Delegation methods (test compatibility)
+    # ------------------------------------------------------------------
+
+    def push_automation_frame(self, *args, **kwargs) -> None:
+        self._router.push_automation_frame(*args, **kwargs)
+
+    def _handle_register_automation_event(self, payload: dict) -> None:
+        self._router._handle_register_automation_event(payload)
+
+    def _handle_deregister_automation_event(self, payload: dict) -> None:
+        self._router._handle_deregister_automation_event(payload)
+
+    def _handle_push_automation_frame_event(self, payload: dict) -> None:
+        self._router._handle_push_automation_frame_event(payload)
+
+    def _handle_push_ai_art_preview_result(self, payload: dict) -> None:
+        self._router._handle_push_ai_art_preview_result(payload)
+
+    def _handle_update_next_fire_time(self, payload: dict) -> None:
+        self._router._handle_update_next_fire_time(payload)
 
     def _handle_push_frame(self, payload: dict) -> None:
-        """Push a pre-built frame to the queue."""
-        characters = payload.get("characters") or payload.get("frame")
-        template = payload.get("template") or None
-        refresh_interval_minutes = payload.get("refresh_interval_minutes")
-        if refresh_interval_minutes is not None:
-            refresh_interval_minutes = int(refresh_interval_minutes)
-
-        # A template-only push (no pre-encoded grid) is valid — encode from template
-        if not characters and template:
-            characters = [[0] * 22 for _ in range(6)]  # placeholder; will be overwritten below
-
-        if not characters:
-            self.log("push_frame: missing 'characters'/'frame' in payload", level="WARNING")
-            return
-
-        source = str(payload.get("source", "user"))
-        source_label = str(payload.get("source_label", "User"))
-
-        ttl_s = payload.get("ttl_s")
-        ttl_minutes = payload.get("ttl_minutes")
-        if ttl_s is None and ttl_minutes is not None:
-            ttl_s = int(ttl_minutes) * 60
-
-        max_age_s = payload.get("max_age_s")
-
-        respect_ttl = payload.get("respect_ttl", False)
-        override_ttl = not respect_ttl if "respect_ttl" in payload else bool(payload.get("override_ttl", True))
-        should_expire = bool(payload.get("should_expire", False))
-
-        if ttl_s is not None:
-            ttl_s = int(ttl_s)
-        if max_age_s is not None:
-            max_age_s = int(max_age_s)
-
-        # Resolve template placeholders if present
-        if template and has_template(template):
-            border_color = detect_border_color(characters) if characters else None
-            resolved_text, resolutions = resolve_template(
-                template, lambda eid: self.get_state(eid)
-            )
-            characters = text_to_grid(resolved_text, justify="center", align="center")
-            if border_color is not None:
-                apply_border(characters, border_color)
-            self.log(
-                f"push_frame: template resolved for source={source!r}: "
-                f"resolutions={resolutions} resolved_text={resolved_text!r} "
-                f"border={'yes' if border_color else 'no'}",
-                level="INFO",
-            )
-
-        now = time.time()
-        frame = BoardFrame(
-            frame_id=uuid.uuid4().hex,
-            characters=characters,
-            source=source,
-            source_label=source_label,
-            ttl_s=ttl_s,
-            max_age_s=max_age_s,
-            override_ttl=override_ttl,
-            should_expire=should_expire,
-            created_at=now,
-            template=template,
-            refresh_interval_minutes=refresh_interval_minutes,
-        )
-
-        self.log(
-            f"push_frame: source={source!r} override_ttl={override_ttl} "
-            f"ttl_s={ttl_s} max_age_s={max_age_s} should_expire={should_expire} "
-            f"has_template={bool(template and has_template(template))}",
-            level="INFO",
-        )
-
-        action = self._queue.push(frame, now)
-        if action.display_frame:
-            self.create_task(self._write_to_board(action.display_frame.characters, source=source))
-            self._last_template_refresh = now if template else None
-        self._publish_status()
+        self._router._handle_push_frame(payload)
 
     def _handle_clear_board(self) -> None:
-        """Clear all frames from the queue and blank the board."""
-        self.log("clear_board command received", level="INFO")
-        from providers.vestaboard.character_encoding import blank_grid
-
-        self._queue.clear()
-        blank = blank_grid()
-        self.create_task(self._write_to_board(blank, source="clear_board"))
-        self._publish_status()
+        self._router._handle_clear_board()
 
     def _handle_set_automation_config(self, automation_id: str, new_config: dict) -> None:
-        """Update config for a registered automation and persist to config store."""
-        automation = self._registered_automations.get(automation_id)
-        if automation is None:
-            self.log(
-                f"set_automation_config: unknown automation {automation_id!r}",
-                level="WARNING",
-            )
-            return
-        self.log(
-            f"Updating config for automation {automation_id!r}: {new_config}",
-            level="INFO",
-        )
-
-        # Persist to config store
-        if self._config_store is not None:
-            self._config_store.update(automation_id, new_config)
-            self.log(
-                f"Config persisted for {automation_id!r}",
-                level="INFO",
-            )
-
-        # Update proxy's effective config
-        if isinstance(automation, RemoteAutomationProxy):
-            automation.update_config(new_config)
-
-        # Fire config event to automation app
-        self.fire_event(
-            "vb_auto_config",
-            automation_id=automation_id,
-            config=new_config,
-        )
-        self.log(
-            f"Config event fired to automation {automation_id!r}",
-            level="INFO",
-        )
-        self._publish_status()
+        self._router._handle_set_automation_config(automation_id, new_config)
 
     def _handle_activate_automation(self, automation_id: str) -> None:
-        """Activate a registered automation."""
-        automation = self._registered_automations.get(automation_id)
-        if automation is None:
-            self.log(
-                f"activate_automation: {automation_id!r} not registered",
-                level="WARNING",
-            )
-            return
-        if self._config_store is not None:
-            self._config_store.update(automation_id, {"enabled": True})
-            self.log(f"Persisted enabled=True for {automation_id!r}", level="INFO")
-        # Fire enabled event to automation app
-        self.fire_event(
-            "vb_auto_enabled",
-            automation_id=automation_id,
-            enabled=True,
-        )
-        self.log(f"Automation {automation_id!r} activated", level="INFO")
-        self._publish_status()
+        self._router._handle_activate_automation(automation_id)
 
     def _handle_deactivate_automation(self, automation_id: str) -> None:
-        """Deactivate a registered automation."""
-        automation = self._registered_automations.get(automation_id)
-        if automation is None:
-            self.log(
-                f"deactivate_automation: {automation_id!r} not registered",
-                level="WARNING",
-            )
-            return
-        if self._config_store is not None:
-            self._config_store.update(automation_id, {"enabled": False})
-            self.log(f"Persisted enabled=False for {automation_id!r}", level="INFO")
-        # Fire enabled event to automation app
-        self.fire_event(
-            "vb_auto_enabled",
-            automation_id=automation_id,
-            enabled=False,
-        )
+        self._router._handle_deactivate_automation(automation_id)
 
-        # Purge frames from this automation
-        action = self._queue.remove_source(automation_id)
-        if action.dropped_frames:
-            self.log(
-                f"Deactivation purged {len(action.dropped_frames)} frame(s) "
-                f"from {automation_id!r}",
-                level="INFO",
-            )
-            tick_action = self._queue.tick(time.time())
-            if tick_action.display_frame:
-                self.create_task(self._write_to_board(tick_action.display_frame.characters, source=tick_action.display_frame.source))
+    def _find_automation_by_type(self, automation_type: str):
+        return self._registry.find_by_type(automation_type)
 
-        self.log(f"Automation {automation_id!r} deactivated", level="INFO")
-        self._publish_status()
+    def _find_automation(self, *candidate_ids: str):
+        return self._registry.find(*candidate_ids)
 
-    # ------------------------------------------------------------------
-    # Generate commands — find automation by type, fire generate event
-    # ------------------------------------------------------------------
+    async def _handle_generate_by_type(self, payload, automation_type, command_name):
+        return await self._router._handle_generate_by_type(payload, automation_type, command_name)
 
-    def _find_automation_by_type(self, automation_type: str) -> tuple[Optional[str], Optional[Any]]:
-        """Find a registered automation by its automation_type."""
-        for auto_id, auto in self._registered_automations.items():
-            if getattr(auto, "automation_type", "") == automation_type:
-                return auto_id, auto
-        return None, None
+    async def _handle_generate_ai_art(self, payload):
+        return await self._router._handle_generate_ai_art(payload)
 
-    def _find_automation(self, *candidate_ids: str) -> tuple[Optional[str], Optional[Any]]:
-        """Find first matching automation by trying multiple IDs."""
-        for aid in candidate_ids:
-            auto = self._registered_automations.get(aid)
-            if auto is not None:
-                return aid, auto
-        # Also try by automation_type
-        for aid in candidate_ids:
-            found_id, found = self._find_automation_by_type(aid)
-            if found is not None:
-                return found_id, found
-        return None, None
+    async def _handle_generate_ai_art_preview(self, payload):
+        return await self._router._handle_generate_ai_art_preview(payload)
 
-    async def _handle_generate_by_type(
-        self, payload: dict, automation_type: str, command_name: str
-    ) -> None:
-        """Fire a generate event to an automation found by type."""
-        auto_id, automation = self._find_automation(automation_type)
-        if automation is None:
-            self.log(
-                f"{command_name}: {automation_type!r} automation not registered",
-                level="WARNING",
-            )
-            return
-        override_ttl = bool(payload.get("override_ttl", True))
-        self.fire_event(
-            "vb_auto_generate",
-            automation_id=auto_id,
-            generate_kwargs={"override_ttl": override_ttl},
-            preview_only=False,
-        )
-        self.log(
-            f"{command_name}: generate event fired to {auto_id!r}",
-            level="INFO",
-        )
+    async def _handle_preview_automation(self, payload):
+        return await self._router._handle_preview_automation(payload)
 
-    async def _handle_generate_ai_art(self, payload: dict) -> None:
-        """Fire a generate event to the AI art automation."""
-        auto_id, automation = self._find_automation("art_generated_by_ai", "ai_art_generator")
-        if automation is None:
-            self.log(
-                "generate_ai_art: ai art automation not registered",
-                level="WARNING",
-            )
-            return
-        subject = str(payload.get("subject", "abstract art"))
-        override_ttl = bool(payload.get("override_ttl", True))
-        self.fire_event(
-            "vb_auto_generate",
-            automation_id=auto_id,
-            generate_kwargs={"subject": subject, "override_ttl": override_ttl},
-            preview_only=False,
-        )
-        self.log(
-            f"generate_ai_art: generate event fired to {auto_id!r} subject={subject!r}",
-            level="INFO",
-        )
-
-    async def _handle_generate_ai_art_preview(self, payload: dict) -> None:
-        """Fire a preview generate event to the AI art automation."""
-        auto_id, automation = self._find_automation("art_generated_by_ai", "ai_art_generator")
-        if automation is None:
-            self.log(
-                "generate_ai_art_preview: ai art automation not registered",
-                level="WARNING",
-            )
-            return
-        subject = str(payload.get("subject", "abstract art"))
-        self.fire_event(
-            "vb_auto_generate",
-            automation_id=auto_id,
-            generate_kwargs={"subject": subject},
-            preview_only=True,
-        )
-        self.log(
-            f"generate_ai_art_preview: generate event fired to {auto_id!r} subject={subject!r}",
-            level="INFO",
-        )
-
-    async def _handle_preview_automation(self, payload: dict) -> None:
-        """Fire a generate event to a specific automation by ID for preview/testing."""
-        automation_id = str(payload.get("automation_id", ""))
-        auto = self._registered_automations.get(automation_id)
-        if auto is None:
-            self.log(
-                f"preview_automation: automation {automation_id!r} not registered",
-                level="WARNING",
-            )
-            return
-        self.fire_event(
-            "vb_auto_generate",
-            automation_id=automation_id,
-            generate_kwargs={
-                "override_ttl": True,
-                "_preview_short_ttl": True,
-            },
-            preview_only=False,
-        )
-        self.log(
-            f"preview_automation: generate event fired to {automation_id!r}",
-            level="INFO",
-        )
+    @staticmethod
+    def _is_blank_frame(grid: list[list[int]]) -> bool:
+        return CommandRouter._is_blank_frame(grid)
 
     # ------------------------------------------------------------------
     # Tick
@@ -904,7 +415,6 @@ class VestaboardControllerApp(hass.Hass):
                 level="INFO",
             )
             await self._write_to_board(action.display_frame.characters, source=action.display_frame.source)
-            # Reset template refresh tracking when a new frame is promoted
             displayed = action.display_frame
             self._last_template_refresh = now if (displayed.template and has_template(displayed.template)) else None
             self._publish_status()
@@ -916,8 +426,7 @@ class VestaboardControllerApp(hass.Hass):
             if self._external_board_frame is not None:
                 self._publish_status()
 
-        # Template refresh: if the displayed frame has a template and a refresh
-        # interval, re-resolve and re-write to the board if enough time has elapsed.
+        # Template refresh
         displayed_frame = self._queue._displayed
         if (
             displayed_frame is not None
@@ -957,51 +466,22 @@ class VestaboardControllerApp(hass.Hass):
             self._publish_status()
 
     # ------------------------------------------------------------------
-    # Board writes
+    # Board writes (kept here for VestaboardClient patch compatibility)
     # ------------------------------------------------------------------
 
     def _schedule_board_write(self, characters: list[list[int]], source: str = "unknown") -> None:
-        """Thread-safe board write scheduling.
-
-        Uses run_in(0) to ensure _write_to_board runs on the controller's
-        own AppDaemon thread, not the calling automation's thread.
-        """
+        """Thread-safe board write scheduling via run_in(0)."""
         self.run_in(self._board_write_callback, 0, characters=characters, source=source)
 
     def _board_write_callback(self, kwargs: dict) -> None:
-        """run_in callback that triggers the async board write."""
         characters = kwargs.get("characters")
         source = kwargs.get("source", "unknown")
         if characters:
             self.create_task(self._write_to_board(characters, source=source))
 
-    @staticmethod
-    def _parse_time(time_str: str) -> tuple[int, int, int]:
-        """Parse 'HH:MM:SS' or 'HH:MM' into (hour, minute, second)."""
-        parts = str(time_str).split(":")
-        h = int(parts[0]) if len(parts) > 0 else 0
-        m = int(parts[1]) if len(parts) > 1 else 0
-        s = int(parts[2]) if len(parts) > 2 else 0
-        return h, m, s
-
-    def _is_sleeping(self) -> bool:
-        """Check if the current time is within the sleep window."""
-        if not self._sleep_enabled:
-            return False
-        from datetime import datetime as dt, time as dtime
-        now = dt.now().time()
-        sh, sm, ss = self._parse_time(self._sleep_start)
-        eh, em, es = self._parse_time(self._sleep_end)
-        start = dtime(sh, sm, ss)
-        end = dtime(eh, em, es)
-        if start < end:
-            return start <= now < end
-        else:
-            return now >= start or now < end
-
     async def _write_to_board(self, characters: list[list[int]], source: str = "unknown") -> None:
         """Write a frame to the physical Vestaboard."""
-        if self._is_sleeping():
+        if self._board_io.is_sleeping():
             self.log("Board write suppressed — sleep window active", level="DEBUG")
             return
         if not self._vb_ip or not self._vb_api_key:
@@ -1015,7 +495,7 @@ class VestaboardControllerApp(hass.Hass):
                 ip=self._vb_ip, api_key=self._vb_api_key
             ) as client:
                 ok = await client.write_frame(characters)
-            self._last_write_ok = ok
+            self._board_io.last_write_ok = ok
             if ok:
                 from providers.vestaboard.character_encoding import decode_grid
                 self.log(
@@ -1025,7 +505,7 @@ class VestaboardControllerApp(hass.Hass):
             else:
                 self.log(f"Board write returned non-2xx response (source={source!r})", level="WARNING")
         except Exception as exc:
-            self._last_write_ok = False
+            self._board_io.last_write_ok = False
             self.log(f"Board write failed (source={source!r}): {exc!r}", level="ERROR")
 
     async def _read_board_state(self) -> None:
@@ -1064,26 +544,12 @@ class VestaboardControllerApp(hass.Hass):
 
         from vestaboard_apps._shared.config_store import AutomationConfigStore
 
-        self._config_store = AutomationConfigStore(self._automation_config_path)
-        self._config_store.load()
+        self.__config_store = AutomationConfigStore(self._automation_config_path)
+        self.__config_store.load()
 
         self.log(
             f"AutomationConfigStore loaded from {self._automation_config_path!r}",
             level="INFO",
-        )
-
-    # ------------------------------------------------------------------
-    # Helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _is_blank_frame(grid: list[list[int]]) -> bool:
-        """Return True if grid is empty or contains only zeros."""
-        if not grid:
-            return True
-        return all(
-            all(cell == 0 for cell in row) if row else True
-            for row in grid
         )
 
     # ------------------------------------------------------------------
@@ -1095,113 +561,14 @@ class VestaboardControllerApp(hass.Hass):
         now = time.time()
         state = self._queue.get_state(now)
 
-        displayed = state.displayed
-        displayed_frame_info = None
-        if displayed is not None:
-            displayed_frame_info = {
-                "frame_id": displayed.frame_id,
-                "source": displayed.source,
-                "source_label": displayed.source_label,
-                "characters": json.dumps(displayed.characters),
-            }
-        elif self._external_board_frame is not None:
-            displayed_frame_info = {
-                "frame_id": "external",
-                "source": "external",
-                "source_label": "External / Other App",
-                "characters": json.dumps(self._external_board_frame),
-            }
-
-        all_automations = []
-        for automation_id, auto in self._registered_automations.items():
-            entry: dict[str, Any] = {
-                "id": automation_id,
-                "name": getattr(auto, "display_name", automation_id.replace("_", " ").title()),
-                "description": getattr(auto, "display_description", "A Vestaboard automation."),
-                "enabled": bool(self._config_store.get(automation_id).get("enabled", True)) if self._config_store else True,
-            }
-
-            # Include next scheduled fire time
-            next_fire = getattr(auto, "_next_fire_time", None)
-            if next_fire is not None:
-                entry["next_fire_time"] = next_fire
-
-            # Include preview frame
-            if hasattr(auto, "get_preview_frame"):
-                try:
-                    entry["preview_frame"] = json.dumps(auto.get_preview_frame())
-                except Exception as exc:
-                    self.log(
-                        f"get_preview_frame failed for {automation_id!r}: {exc!r}",
-                        level="WARNING",
-                    )
-
-            # Include config schema and current config
-            if hasattr(auto, "get_config_schema"):
-                try:
-                    entry["config_schema"] = auto.get_config_schema()
-                except Exception as exc:
-                    self.log(
-                        f"get_config_schema failed for {automation_id!r}: {exc!r}",
-                        level="WARNING",
-                    )
-
-            if hasattr(auto, "get_effective_config"):
-                try:
-                    entry["config"] = {
-                        k: v for k, v in auto.get_effective_config().items()
-                        if not k.startswith("_") and k != "type"
-                    }
-                except Exception:
-                    entry["config"] = {}
-            else:
-                entry["config"] = {}
-
-            all_automations.append(entry)
-
-        attributes: dict[str, Any] = {
-            "displayed_frame": displayed_frame_info,
-            "displayed_source": displayed.source if displayed else ("external" if displayed_frame_info else None),
-            "displayed_source_label": displayed.source_label if displayed else ("External / Other App" if displayed_frame_info else None),
-            "displayed_ttl_remaining_s": state.displayed_ttl_remaining_s,
-            "pending_count": len(state.pending),
-            "fallback_count": len(state.fallback_stack),
-            "all_automations": all_automations,
-            "last_write_ok": self._last_write_ok,
-            "sleeping": self._is_sleeping(),
-            "sleep_end": self._sleep_end if self._sleep_enabled else None,
-            "ai_art_preview": self._ai_art_preview,
-            "queue_state": {
-                "pending": [
-                    {
-                        "frame_id": f.frame_id,
-                        "source": f.source,
-                        "source_label": f.source_label,
-                        "ttl_s": f.ttl_s,
-                        "max_age_s": f.max_age_s,
-                        "expires_at": (
-                            datetime.fromtimestamp(
-                                f.created_at + f.max_age_s, tz=timezone.utc
-                            ).isoformat()
-                            if f.max_age_s is not None
-                            else None
-                        ),
-                    }
-                    for f in state.pending
-                ],
-                "fallback": [
-                    {
-                        "frame_id": f.frame_id,
-                        "source": f.source,
-                        "source_label": f.source_label,
-                        "remaining_ttl_s": f.remaining_ttl_s,
-                    }
-                    for f in state.fallback_stack
-                ],
-            },
-        }
-
-        sensor_state = "active" if displayed is not None else "idle"
+        sensor_state, attributes = StatusPublisher.build_attributes(
+            queue_state=state,
+            registry=self._registry,
+            board_io=self._board_io,
+            ai_art_preview=self._ai_art_preview,
+            external_board_frame=self._external_board_frame,
+            log_fn=self.log,
+        )
 
         self.set_state(
             self.SENSOR_ENTITY,
