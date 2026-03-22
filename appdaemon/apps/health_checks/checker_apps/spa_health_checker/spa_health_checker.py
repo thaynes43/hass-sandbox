@@ -101,6 +101,10 @@ class SpaHealthChecker(hass.Hass):
         self._unhealthy_since: Optional[datetime.datetime] = None
         self._repair_task: Optional[asyncio.Task] = None
 
+        # Cached auto-repair config (updated each async check cycle)
+        self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
+        self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
+
         self.log(
             f"SpaHealthChecker initialising: id={self._checker_id}, "
             f"gateway={self._gateway_host}, "
@@ -116,6 +120,7 @@ class SpaHealthChecker(hass.Hass):
 
     async def _async_startup(self) -> None:
         await self._provision_entities()
+        await self._refresh_auto_repair_config()
         self._register()
 
         # Listen for controller ready (re-register if controller restarts)
@@ -205,6 +210,7 @@ class SpaHealthChecker(hass.Hass):
                 "checker_name": self._checker_name,
                 "check_names": check_names,
                 "supports_repair": True,
+                "repair_state": self._build_repair_state(),
             }),
         )
         self.log(
@@ -276,6 +282,7 @@ class SpaHealthChecker(hass.Hass):
 
     async def _run_checks(self) -> None:
         """Execute all configured checks and report results."""
+        await self._refresh_auto_repair_config()
         results: List[Dict[str, str]] = []
 
         # 1. Gateway ping
@@ -416,25 +423,25 @@ class SpaHealthChecker(hass.Hass):
     # Auto-repair logic
     # ------------------------------------------------------------------
 
+    async def _refresh_auto_repair_config(self) -> None:
+        """Read auto-repair config from HA helpers (async). Updates cached values."""
+        try:
+            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
+            enabled_state = await self.get_state(entity_id)
+            self._cached_auto_repair_enabled = str(enabled_state) == "on"
+        except Exception:
+            pass
+
+        try:
+            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
+            delay_state = await self.get_state(entity_id)
+            self._cached_auto_repair_delay_min = int(float(delay_state))
+        except Exception:
+            pass
+
     def _read_auto_repair_config(self) -> tuple[bool, int]:
-        """Read auto-repair settings from HA helpers."""
-        try:
-            enabled_state = self.get_state(
-                f"input_boolean.{self._checker_id}_health_auto_repair"
-            )
-            enabled = str(enabled_state) == "on"
-        except Exception:
-            enabled = self._auto_repair_enabled_default
-
-        try:
-            delay_state = self.get_state(
-                f"input_number.{self._checker_id}_health_auto_repair_delay"
-            )
-            delay_min = int(float(delay_state))
-        except Exception:
-            delay_min = self._auto_repair_delay_min_default
-
-        return enabled, delay_min
+        """Return cached auto-repair config (sync-safe)."""
+        return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
 
     def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
         """Evaluate whether to start, continue, or cancel auto-repair."""
@@ -626,24 +633,32 @@ class SpaHealthChecker(hass.Hass):
 
         if auto_enabled is not None:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            service = "input_boolean/turn_on" if auto_enabled else "input_boolean/turn_off"
-            try:
-                self.call_service(service, entity_id=entity_id)
-                self.log(f"Auto-repair {'enabled' if auto_enabled else 'disabled'}", level="INFO")
-            except Exception as exc:
-                self.log(f"Failed to update auto-repair toggle: {exc!r}", level="ERROR")
+            current = str(self.get_state(entity_id))
+            desired = "on" if auto_enabled else "off"
+            if current != desired:
+                service = "input_boolean/turn_on" if auto_enabled else "input_boolean/turn_off"
+                try:
+                    self.call_service(service, entity_id=entity_id)
+                    self.log(f"Auto-repair {'enabled' if auto_enabled else 'disabled'}", level="INFO")
+                except Exception as exc:
+                    self.log(f"Failed to update auto-repair toggle: {exc!r}", level="ERROR")
 
         if delay_min is not None:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
             try:
-                self.call_service(
-                    "input_number/set_value",
-                    entity_id=entity_id,
-                    value=int(delay_min),
-                )
-                self.log(f"Auto-repair delay set to {delay_min}m", level="INFO")
-            except Exception as exc:
-                self.log(f"Failed to update auto-repair delay: {exc!r}", level="ERROR")
+                current = int(float(self.get_state(entity_id)))
+            except (TypeError, ValueError):
+                current = None
+            if current != int(delay_min):
+                try:
+                    self.call_service(
+                        "input_number/set_value",
+                        entity_id=entity_id,
+                        value=int(delay_min),
+                    )
+                    self.log(f"Auto-repair delay set to {delay_min}m", level="INFO")
+                except Exception as exc:
+                    self.log(f"Failed to update auto-repair delay: {exc!r}", level="ERROR")
 
     # ------------------------------------------------------------------
     # Helpers

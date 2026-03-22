@@ -229,7 +229,7 @@ class HealthCheckController(hass.Hass):
                 "alert_history", []
             ),
             "supports_repair": bool(payload.get("supports_repair", False)),
-            "repair_state": None,
+            "repair_state": payload.get("repair_state"),
         }
 
         action = "Registered" if is_new else "Re-registered"

@@ -162,7 +162,8 @@ class TestRepairStateMachine:
     def test_unhealthy_with_auto_repair_goes_pending(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Ping", "status": "critical", "detail": "timeout"},
@@ -257,7 +258,8 @@ class TestReportPayload:
     def test_includes_repair_state(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["off", "5"])
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 5
 
         payload = app._build_report_payload([
             {"name": "Ping", "status": "ok", "detail": "3ms"},

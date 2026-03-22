@@ -446,7 +446,7 @@ class HealthCheckDetailCard extends HTMLElement {
     const rs = checker.repair_state || {};
     const status = rs.status || "idle";
     const detail = rs.detail || "";
-    const enabled = rs.auto_repair_enabled || false;
+    const enabled = rs.auto_repair_enabled === true || rs.auto_repair_enabled === "true";
     const delayMin = rs.auto_repair_delay_min || 15;
     const deadline = rs.auto_repair_deadline;
     const lastAttempt = rs.last_repair_attempt;

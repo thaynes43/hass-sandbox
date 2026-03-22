@@ -310,7 +310,8 @@ class TestRepairStateMachine:
         app = _make_app()
         _init_only(app)
         # Mock auto-repair as enabled
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -326,7 +327,8 @@ class TestRepairStateMachine:
         """When auto-repair is disabled, state stays idle even when unhealthy."""
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["off", "15"])
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 15
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -344,7 +346,8 @@ class TestRepairStateMachine:
         app._repair_status = REPAIR_PENDING
         app._auto_repair_deadline = datetime.datetime.now() + datetime.timedelta(minutes=5)
         app._unhealthy_since = datetime.datetime.now()
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Gateway Ping", "status": "ok", "detail": "5ms"},
@@ -364,7 +367,8 @@ class TestRepairStateMachine:
         # Deadline in the past
         app._auto_repair_deadline = datetime.datetime.now() - datetime.timedelta(seconds=1)
         app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
         # Mock create_task to prevent actual repair execution
         app.create_task = MagicMock()
 
@@ -381,7 +385,8 @@ class TestRepairStateMachine:
         _init_only(app)
         app._repair_status = REPAIR_FAILED
         app._repair_detail = "Did not recover"
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -405,7 +410,8 @@ class TestRepairStateMachine:
         """Unknown status (AppDaemon may be partially up) should not trigger repair."""
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Gateway Ping", "status": "unknown", "detail": ""},
@@ -421,7 +427,8 @@ class TestRepairStateMachine:
         _init_only(app)
         app._repair_status = REPAIR_SUCCESS
         app._repair_detail = "Recovered"
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Gateway Ping", "status": "ok", "detail": "5ms"},
@@ -544,7 +551,8 @@ class TestRepairConfig:
         """_build_repair_state should return a complete dict."""
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["off", "15"])
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 15
 
         state = app._build_repair_state()
 

@@ -315,7 +315,8 @@ class TestAutoRepair:
     def test_auto_repair_triggers_for_first_failing_fan(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
         app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
         app.create_task = MagicMock()
 
@@ -333,7 +334,8 @@ class TestAutoRepair:
     def test_auto_repair_skips_already_failed_fan(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
         app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
         app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
         app.create_task = MagicMock()
@@ -353,7 +355,8 @@ class TestAutoRepair:
     def test_auto_repair_disabled_stays_idle(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["off", "5"])
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 5
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -466,7 +469,8 @@ class TestRepairStateReporting:
     def test_build_repair_state_includes_device_repairs(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["off", "5"])
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 5
         app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
         app._fan_repair_states["Pink Room"]["detail"] = "Did not recover"
 
@@ -480,7 +484,8 @@ class TestRepairStateReporting:
     def test_build_repair_state_detail_shows_active_fan(self):
         app = _make_app()
         _init_only(app)
-        app.get_state = MagicMock(side_effect=["on", "5"])
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
         app._fan_repair_states["Blue Room"]["status"] = REPAIR_IN_PROGRESS
 
         state = app._build_repair_state()
