@@ -1,7 +1,7 @@
 """
 Frame Queue for Vestaboard controller.
 
-Manages a LIFO display queue with TTL, expiration, fallback, and override
+Manages a FIFO display queue with TTL, expiration, fallback, and override
 semantics. Pure Python — no AppDaemon dependencies.
 """
 from __future__ import annotations
@@ -34,11 +34,12 @@ class BoardFrame:
             indefinitely until displayed or replaced).
         override_ttl: If True, immediately display this frame even if the
             currently displayed frame still has an active TTL.
-        should_expire: If True, when the TTL runs out the frame is dropped
-            entirely (not moved to the fallback stack).  Use this for
-            time-sensitive content that is no longer relevant after its TTL.
-            When False (default), the frame behaves normally: it moves to
-            fallback so it can be re-shown when pending is empty.
+        should_expire: If True, when the TTL elapses the frame **auto-leaves
+            the board** and the next frame (from fallback or pending) is
+            promoted.  If displaced before TTL expires, the frame still goes
+            to fallback with remaining TTL preserved.  If False (default),
+            the frame **holds the board** after TTL until a new push displaces
+            it.
         created_at: Unix timestamp when the frame was created (time.time()).
         displayed_at: Unix timestamp when the frame was first displayed.
             None until the frame is actually shown on the board.
@@ -83,9 +84,9 @@ class FrameQueueState:
         displayed: Frame currently shown on the board (None if board is idle).
         displayed_ttl_remaining_s: Seconds until current TTL expires.  None if
             the displayed frame has no TTL or has not been displayed yet.
-        pending: Frames waiting to be shown (LIFO — index 0 is next up).
-        fallback_stack: Previously displayed frames that can be re-shown when
-            pending is empty.
+        pending: Frames waiting to be shown (FIFO — index 0 is next up).
+        fallback_stack: Previously displaced frames (FIFO — index 0 is next
+            to resume).  Fallback is consulted before pending on promotion.
     """
 
     displayed: Optional[BoardFrame]
@@ -127,14 +128,20 @@ def _ttl_expired(frame: BoardFrame, now: float) -> bool:
 
 
 class FrameQueue:
-    """LIFO frame queue with TTL, expiration, fallback, and override support.
+    """FIFO frame queue with TTL, expiration, fallback, and override support.
 
     Design decisions
     ----------------
-    * ``pending`` is a list treated as a stack: the *last* element is the most
-      recently pushed frame.  ``pop()`` (from the end) gives LIFO behaviour.
-    * ``fallback_stack`` holds previously *displayed* frames, most recent last.
-      When pending is empty we fall back to the newest non-expired fallback.
+    * ``pending`` is a FIFO list: index 0 is the oldest pushed frame and is
+      promoted first.  ``append()`` adds to the end.
+    * ``fallback`` holds previously *displaced* frames in FIFO order (first
+      displaced = first re-promoted at index 0).  **All** displaced frames go
+      to fallback regardless of ``should_expire``.
+    * Promotion priority: fallback before pending (displaced frames resume
+      their remaining time before new content is shown).
+    * ``should_expire=True`` means the frame **auto-leaves the board** when
+      its TTL elapses.  ``should_expire=False`` means the frame **holds the
+      board** after TTL until a new push displaces it.
     * Same-source deduplication: only one pending frame per source is kept.
       A newer push from the same source replaces the older pending frame.
     * The currently displayed frame is tracked in ``_displayed`` and is NOT
@@ -148,9 +155,9 @@ class FrameQueue:
     def __init__(self, log_fn: Callable[[str], None]) -> None:
         self._log = log_fn
         self._displayed: Optional[BoardFrame] = None
-        # pending: index 0 = oldest, index -1 = most recent (LIFO pop from end)
+        # pending: index 0 = oldest (FIFO — promoted first)
         self._pending: list[BoardFrame] = []
-        # fallback: index -1 = most recently displayed
+        # fallback: index 0 = first displaced (FIFO — re-promoted first)
         self._fallback: list[BoardFrame] = []
 
     # ------------------------------------------------------------------
@@ -184,31 +191,22 @@ class FrameQueue:
         if should_display_now:
             # Move old displayed to fallback (if it hasn't expired),
             # but discard same-source frames (they're just stale updates).
-            # Also drop (not fallback) if should_expire=True — the frame has
-            # served its purpose and should not be re-shown.
+            # ALL displaced frames go to fallback regardless of should_expire.
             if self._displayed is not None and same_source:
                 dropped.append(self._displayed)
             elif (self._displayed is not None
                     and not _is_expired(self._displayed, now)):
-                if self._displayed.should_expire:
+                displaced = self._displayed
+                if (displaced.ttl_s is not None
+                        and displaced.displayed_at is not None):
+                    elapsed = now - displaced.displayed_at
+                    displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
                     self._log(
-                        f"[FrameQueue] push → displacing should_expire frame — "
-                        f"dropping frame={self._displayed.frame_id} "
-                        f"source={self._displayed.source!r} (not moving to fallback)"
+                        f"[FrameQueue] push → displaced frame to fallback with "
+                        f"remaining_ttl_s={displaced.remaining_ttl_s:.1f} | "
+                        f"frame={displaced.frame_id} source={displaced.source!r}"
                     )
-                    dropped.append(self._displayed)
-                else:
-                    displaced = self._displayed
-                    if (displaced.ttl_s is not None
-                            and displaced.displayed_at is not None):
-                        elapsed = now - displaced.displayed_at
-                        displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
-                        self._log(
-                            f"[FrameQueue] push → displaced frame to fallback with "
-                            f"remaining_ttl_s={displaced.remaining_ttl_s:.1f} | "
-                            f"frame={displaced.frame_id} source={displaced.source!r}"
-                        )
-                    self._fallback.append(displaced)
+                self._fallback.append(displaced)
 
             # For same-source updates, preserve the original displayed_at so
             # TTL counts from when this source first claimed the board.
@@ -241,7 +239,7 @@ class FrameQueue:
                 reason=reason,
             )
 
-        # Step 3: Queue behind active TTL (LIFO, same-source dedup)
+        # Step 3: Queue behind active TTL (FIFO, same-source dedup)
         existing_idx = next(
             (i for i, f in enumerate(self._pending) if f.source == frame.source),
             None,
@@ -257,7 +255,7 @@ class FrameQueue:
         self._pending.append(frame)
 
         reason = (
-            f"active TTL on displayed frame — queued (LIFO) | "
+            f"active TTL on displayed frame — queued (FIFO) | "
             f"pending={len(self._pending)} fallback={len(self._fallback)}"
         )
         self._log(
@@ -322,8 +320,19 @@ class FrameQueue:
                     reason="TTL still active",
                 )
 
+            # NEW: should_expire=True + explicit TTL expired → auto-remove from board
+            if has_explicit_ttl and explicit_ttl_expired and self._displayed.should_expire:
+                self._log(
+                    f"[FrameQueue] tick → should_expire=True + TTL expired — "
+                    f"removing frame={self._displayed.frame_id} "
+                    f"source={self._displayed.source!r} from board"
+                )
+                dropped.append(self._displayed)
+                self._displayed = None
+                # Fall through to promotion logic below
+
             # (e) No TTL, no pending — hold board to prevent fallback cycling
-            if not has_explicit_ttl and not has_pending:
+            elif not has_explicit_ttl and not has_pending:
                 return FrameQueueAction(
                     display_frame=None,
                     dropped_frames=dropped,
@@ -350,23 +359,15 @@ class FrameQueue:
         else:
             self._fallback.remove(next_frame)
 
-        # Move old displayed to fallback before promoting, unless should_expire=True
-        # in which case the frame is dropped rather than preserved for fallback.
+        # Move old displayed to fallback before promoting.
+        # ALL displaced frames go to fallback regardless of should_expire.
         if self._displayed is not None and not _is_expired(self._displayed, now):
-            if self._displayed.should_expire:
-                self._log(
-                    f"[FrameQueue] tick → TTL expired, should_expire=True — "
-                    f"dropping frame={self._displayed.frame_id} "
-                    f"source={self._displayed.source!r} (not moving to fallback)"
-                )
-                dropped.append(self._displayed)
-            else:
-                displaced = self._displayed
-                if (displaced.ttl_s is not None
-                        and displaced.displayed_at is not None):
-                    elapsed = now - displaced.displayed_at
-                    displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
-                self._fallback.append(displaced)
+            displaced = self._displayed
+            if (displaced.ttl_s is not None
+                    and displaced.displayed_at is not None):
+                elapsed = now - displaced.displayed_at
+                displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
+            self._fallback.append(displaced)
 
         next_frame.displayed_at = now
         # If frame was displaced mid-TTL, use the remaining TTL instead of original
@@ -407,8 +408,8 @@ class FrameQueue:
         return FrameQueueState(
             displayed=self._displayed,
             displayed_ttl_remaining_s=ttl_remaining,
-            pending=list(reversed(self._pending)),  # most recent first
-            fallback_stack=list(reversed(self._fallback)),  # most recent first
+            pending=list(self._pending),  # FIFO order (index 0 = next up)
+            fallback_stack=list(self._fallback),  # FIFO order (index 0 = next up)
         )
 
     def clear(self) -> FrameQueueAction:
@@ -493,19 +494,19 @@ class FrameQueue:
         return dropped
 
     def _next_non_expired(self, now: float) -> Optional[BoardFrame]:
-        """Return the best next frame to display (LIFO from pending, then fallback).
+        """Return the best next frame to display (FIFO from fallback first, then pending).
 
-        Pending takes priority.  Within pending we want the most recently pushed
-        (last element).  In fallback we want the most recently displayed (last
-        element).
+        Fallback takes priority (displaced frames resume first).
+        Within fallback: first displaced = first re-promoted (index 0).
+        Within pending: first pushed = first promoted (index 0).
         """
-        # Try pending from most recent (end of list)
-        for f in reversed(self._pending):
+        # Try fallback first (displaced frames get priority)
+        for f in self._fallback:
             if not _is_expired(f, now):
                 return f
 
-        # Fall back to most recently displayed non-expired fallback
-        for f in reversed(self._fallback):
+        # Then try pending (FIFO — oldest first)
+        for f in self._pending:
             if not _is_expired(f, now):
                 return f
 

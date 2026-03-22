@@ -273,7 +273,14 @@ class VestaboardConfigurationCard extends HTMLElement {
         return "";
       }
     })();
-    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${a.sleeping}|${a.sleep_end}|${previewStamp}|${automationsStamp}|${fallbackStamp}`;
+    const queueSeqStamp = (() => {
+      try {
+        return JSON.stringify(a.queue_sequence || []);
+      } catch (_) {
+        return "";
+      }
+    })();
+    return `${s.last_updated}|${a.status}|${a.current_source}|${a.current_ttl_expires}|${a.sleeping}|${a.sleep_end}|${previewStamp}|${automationsStamp}|${fallbackStamp}|${queueSeqStamp}`;
   }
 
   _sensorState() {
@@ -382,6 +389,16 @@ class VestaboardConfigurationCard extends HTMLElement {
       const fireTime = parseFloat(el.getAttribute("data-upcoming-fire"));
       if (!isNaN(fireTime)) {
         el.textContent = vbcCountdown(fireTime) || "now";
+      }
+    });
+
+    // Update queue sequence estimated display countdowns
+    const seqItems = root.querySelectorAll("[data-est-display]");
+    seqItems.forEach((el) => {
+      const estTs = parseFloat(el.getAttribute("data-est-display"));
+      if (!isNaN(estTs)) {
+        const remainS = Math.max(0, Math.round(estTs - Date.now() / 1000));
+        el.textContent = `~${vbcFormatDuration(remainS)}`;
       }
     });
   }
@@ -1199,8 +1216,8 @@ class VestaboardConfigurationCard extends HTMLElement {
   /* ── Queue section ──────────────────────────────────────────────── */
 
   _renderQueueSection() {
-    const queue = this._sensorAttr("queue", []);
-    const fallbackFrames = this._sensorAttr("fallback_frames", []);
+    const queueSequence = this._sensorAttr("queue_sequence", []);
+    const seqList = Array.isArray(queueSequence) ? queueSequence : [];
     const currentSource = this._sensorAttr("current_source", "\u2014");
     const currentTtlExpires = this._sensorAttr("current_ttl_expires", null);
     const sleepingRaw = this._sensorAttr("sleeping", false);
@@ -1208,21 +1225,30 @@ class VestaboardConfigurationCard extends HTMLElement {
     const sleepEnd = this._sensorAttr("sleep_end", null);
     const sleepEndLabel = vbcFormatTime(sleepEnd);
     const chevron = this._queueExpanded ? "mdi:chevron-up" : "mdi:chevron-down";
-    const queueList = Array.isArray(queue) ? queue : [];
 
-    // Upcoming automations
+    // Upcoming automations (not yet in queue — just scheduled timers)
     const automations = this._sensorAttr("automations", []);
     const upcomingAutos = (Array.isArray(automations) ? automations : [])
       .filter((a) => a.enabled && a.next_fire_time && a.next_fire_time > (Date.now() / 1000));
 
     let content = "";
     if (this._queueExpanded) {
-      const queueItems = queueList.map((item) => `
-        <div class="queue-item">
-          <span class="queue-source">${this._esc(item.source || "\u2014")}</span>
-          <span class="queue-countdown" data-queue-expiry="${this._esc(item.expires_at || "")}">${item.expires_at ? `drops in ${vbcCountdown(item.expires_at) || "expired"}` : "no auto-drop"}</span>
-        </div>
-      `).join("");
+      // Compute absolute estimated display timestamps from sensor last_updated + relative seconds
+      const sensorState = this._sensorState();
+      const sensorUpdatedTs = sensorState && sensorState.last_updated
+        ? (new Date(sensorState.last_updated).getTime() / 1000)
+        : (Date.now() / 1000);
+      const sequenceItems = seqList.map((item) => {
+        const estAbsTs = sensorUpdatedTs + (item.est_display_in_s || 0);
+        const remainS = Math.max(0, Math.round(estAbsTs - Date.now() / 1000));
+        return `
+        <div class="queue-item queue-seq-item queue-zone-${this._esc(item.zone || "unknown")}">
+          <span class="queue-seq-num">#${item.seq}</span>
+          <span class="queue-source">${this._esc(item.source_label || item.source || "\u2014")}</span>
+          <span class="queue-zone-badge">${this._esc(item.zone || "")}</span>
+          <span class="queue-est-time queue-seq-countdown" data-est-display="${estAbsTs}">~${vbcFormatDuration(remainS)}</span>
+        </div>`;
+      }).join("");
 
       const upcomingItems = upcomingAutos.map((a) => `
         <div class="queue-item upcoming-item">
@@ -1243,30 +1269,20 @@ class VestaboardConfigurationCard extends HTMLElement {
             <span class="queue-sleep-icon" aria-hidden="true">zzz</span>
             <span class="queue-sleep-text">Board sleeping${sleepEndLabel ? ` until ${this._esc(sleepEndLabel)}` : ""}</span>
           </div>` : ""}
-          ${queueList.length > 0 ? `
-          <div class="queue-pending">
-            <span class="queue-label">Pending (${queueList.length}):</span>
-            ${queueItems}
-          </div>` : ""}
+          <div class="queue-sequence">
+            <span class="queue-label">Up Next (${seqList.length}):</span>
+            ${sequenceItems || '<span class="queue-value">nothing queued</span>'}
+          </div>
           ${upcomingAutos.length > 0 ? `
           <div class="queue-upcoming">
             <span class="queue-label">Upcoming:</span>
             ${upcomingItems}
           </div>` : ""}
-          <div class="queue-fallback">
-            <span class="queue-label">Fallback (${Array.isArray(fallbackFrames) ? fallbackFrames.length : 0}):</span>
-            ${Array.isArray(fallbackFrames) && fallbackFrames.length > 0 ? fallbackFrames.map((f) => `
-              <div class="queue-item">
-                <span class="queue-source">${this._esc(f.source || "\u2014")}</span>
-                ${f.remaining_ttl_s != null ? `<span class="ttl-paused">TTL paused: ${vbcFormatDuration(f.remaining_ttl_s)}</span>` : ""}
-              </div>
-            `).join("") : `<span class="queue-value">none</span>`}
-          </div>
         </div>
       `;
     }
 
-    const totalCount = queueList.length + upcomingAutos.length;
+    const totalCount = seqList.length + upcomingAutos.length;
 
     return `
       <div class="queue-section">
@@ -3344,7 +3360,7 @@ class VestaboardConfigurationCard extends HTMLElement {
         font-size: 12px;
       }
 
-      .queue-current, .queue-pending, .queue-fallback, .queue-upcoming {
+      .queue-current, .queue-pending, .queue-fallback, .queue-upcoming, .queue-sequence {
         display: flex;
         flex-direction: column;
         gap: 4px;
@@ -3411,6 +3427,47 @@ class VestaboardConfigurationCard extends HTMLElement {
       .ttl-paused {
         color: #ff9800;
         font-size: 0.85em;
+      }
+
+      .queue-seq-item {
+        gap: 8px;
+      }
+
+      .queue-seq-num {
+        font-weight: 600;
+        font-size: 11px;
+        color: var(--vbc-on-surface-secondary);
+        min-width: 22px;
+        flex-shrink: 0;
+      }
+
+      .queue-zone-badge {
+        font-size: 10px;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+        padding: 1px 6px;
+        border-radius: 8px;
+        flex-shrink: 0;
+      }
+
+      .queue-zone-fallback .queue-zone-badge {
+        background: rgba(255, 152, 0, 0.15);
+        color: #ff9800;
+      }
+
+      .queue-zone-pending .queue-zone-badge {
+        background: rgba(52, 152, 219, 0.15);
+        color: #3498db;
+      }
+
+      .queue-est-time {
+        margin-left: auto;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--vbc-on-surface-secondary);
+        white-space: nowrap;
+        flex-shrink: 0;
       }
 
       .upcoming-item {

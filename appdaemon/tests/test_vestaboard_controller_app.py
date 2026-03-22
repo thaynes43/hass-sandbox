@@ -2388,3 +2388,581 @@ class TestTemplateResolution:
         app._write_to_board.assert_called_once()
         # Since promoted frame has a template, _last_template_refresh should be set
         assert app._last_template_refresh is not None
+
+
+# ---------------------------------------------------------------------------
+# Frame queue FIFO + should_expire overhaul tests
+# ---------------------------------------------------------------------------
+
+class TestFrameQueueFIFO:
+    """Tests for FIFO ordering in pending and fallback queues."""
+
+    def test_pending_is_fifo(self):
+        """First pushed pending frame is promoted first (FIFO)."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Display a frame with active TTL to block promotion
+        displayed = BoardFrame(
+            frame_id="displayed",
+            characters=_blank_grid(),
+            source="holder",
+            source_label="Holder",
+            ttl_s=300,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+        )
+        q._displayed = displayed
+
+        # Push three frames — first, second, third (in order)
+        for name in ("first", "second", "third"):
+            frame = BoardFrame(
+                frame_id=name,
+                characters=_blank_grid(),
+                source=name,
+                source_label=name.title(),
+                ttl_s=60,
+                max_age_s=None,
+                override_ttl=False,
+                created_at=now,
+            )
+            q.push(frame, now)
+
+        # Simulate TTL expiry so promotion happens
+        future = now + 301
+        action = q.tick(future)
+
+        # FIFO: "first" should be promoted (it was pushed first)
+        assert action.display_frame is not None
+        assert action.display_frame.frame_id == "first"
+
+    def test_fallback_is_fifo(self):
+        """First displaced frame is re-promoted first from fallback (FIFO)."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Display frame A
+        frame_a = BoardFrame(
+            frame_id="A",
+            characters=_blank_grid(),
+            source="source_a",
+            source_label="A",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+        )
+        q._displayed = frame_a
+
+        # Push B with override — A goes to fallback
+        frame_b = BoardFrame(
+            frame_id="B",
+            characters=_blank_grid(),
+            source="source_b",
+            source_label="B",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=now,
+        )
+        q.push(frame_b, now)
+        assert q._displayed.frame_id == "B"
+
+        # Push C with override — B goes to fallback
+        frame_c = BoardFrame(
+            frame_id="C",
+            characters=_blank_grid(),
+            source="source_c",
+            source_label="C",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=now,
+        )
+        q.push(frame_c, now)
+        assert q._displayed.frame_id == "C"
+
+        # Fallback should be [A, B] — FIFO means A is promoted first
+        future = now + 61
+        action = q.tick(future)
+        assert action.display_frame is not None
+        assert action.display_frame.frame_id == "A"
+
+    def test_fallback_before_pending(self):
+        """Fallback frames are promoted before pending frames."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Put a frame in fallback
+        fallback_frame = BoardFrame(
+            frame_id="fallback-1",
+            characters=_blank_grid(),
+            source="source_fb",
+            source_label="Fallback",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        q._fallback.append(fallback_frame)
+
+        # Put a frame in pending
+        pending_frame = BoardFrame(
+            frame_id="pending-1",
+            characters=_blank_grid(),
+            source="source_pd",
+            source_label="Pending",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        q._pending.append(pending_frame)
+
+        # No displayed frame — promotion should pick fallback first
+        action = q.tick(now)
+        assert action.display_frame is not None
+        assert action.display_frame.frame_id == "fallback-1"
+
+    def test_same_source_dedup_still_works_fifo(self):
+        """Same-source newer frame replaces older in pending (dedup)."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Display a frame with active TTL
+        displayed = BoardFrame(
+            frame_id="holder",
+            characters=_blank_grid(),
+            source="holder",
+            source_label="Holder",
+            ttl_s=300,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+        )
+        q._displayed = displayed
+
+        # Push two frames from the same source
+        frame1 = BoardFrame(
+            frame_id="dup-1",
+            characters=_blank_grid(),
+            source="same_src",
+            source_label="Same",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        q.push(frame1, now)
+
+        frame2 = BoardFrame(
+            frame_id="dup-2",
+            characters=_blank_grid(),
+            source="same_src",
+            source_label="Same",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now + 1,
+        )
+        action = q.push(frame2, now + 1)
+
+        # Only one pending frame, and it's the newer one
+        assert len(q._pending) == 1
+        assert q._pending[0].frame_id == "dup-2"
+        # Old one should be in dropped
+        assert any(f.frame_id == "dup-1" for f in action.dropped_frames)
+
+    def test_get_state_returns_fifo_order(self):
+        """get_state returns pending and fallback in FIFO order (index 0 = next up)."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Add frames to pending and fallback in order
+        for i, name in enumerate(("first", "second", "third")):
+            q._pending.append(BoardFrame(
+                frame_id=f"p-{name}",
+                characters=_blank_grid(),
+                source=f"src-{name}",
+                source_label=name,
+                ttl_s=60,
+                max_age_s=None,
+                override_ttl=False,
+                created_at=now + i,
+            ))
+            q._fallback.append(BoardFrame(
+                frame_id=f"f-{name}",
+                characters=_blank_grid(),
+                source=f"fb-{name}",
+                source_label=name,
+                ttl_s=60,
+                max_age_s=None,
+                override_ttl=False,
+                created_at=now + i,
+            ))
+
+        state = q.get_state(now)
+
+        # FIFO: index 0 is the first pushed/displaced (next up)
+        assert state.pending[0].frame_id == "p-first"
+        assert state.pending[2].frame_id == "p-third"
+        assert state.fallback_stack[0].frame_id == "f-first"
+        assert state.fallback_stack[2].frame_id == "f-third"
+
+
+class TestShouldExpireSemantics:
+    """Tests for the new should_expire behavior (TTL-based auto-removal)."""
+
+    def test_should_expire_true_ttl_elapsed_auto_removes(self):
+        """Frame with should_expire=True + TTL expired auto-removes from board on tick."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        frame = BoardFrame(
+            frame_id="expiring",
+            characters=_blank_grid(),
+            source="msg_lib",
+            source_label="MsgLib",
+            ttl_s=30,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = frame
+
+        # Tick after TTL has expired
+        future = now + 31
+        action = q.tick(future)
+
+        # Frame should be auto-removed (dropped) and board should be empty
+        assert q._displayed is None
+        assert any(f.frame_id == "expiring" for f in action.dropped_frames)
+
+    def test_should_expire_true_ttl_elapsed_promotes_next(self):
+        """After auto-removing an expired should_expire frame, the next frame is promoted."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        frame = BoardFrame(
+            frame_id="expiring",
+            characters=_blank_grid(),
+            source="msg_lib",
+            source_label="MsgLib",
+            ttl_s=30,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = frame
+
+        # Add a pending frame to be promoted
+        next_frame = BoardFrame(
+            frame_id="next-up",
+            characters=_blank_grid(),
+            source="calendar",
+            source_label="Calendar",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        q._pending.append(next_frame)
+
+        future = now + 31
+        action = q.tick(future)
+
+        assert action.display_frame is not None
+        assert action.display_frame.frame_id == "next-up"
+
+    def test_should_expire_false_ttl_elapsed_holds_board(self):
+        """Frame with should_expire=False + TTL expired holds the board (not removed)."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        frame = BoardFrame(
+            frame_id="holding",
+            characters=_blank_grid(),
+            source="calendar",
+            source_label="Calendar",
+            ttl_s=30,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=False,
+        )
+        q._displayed = frame
+
+        # No pending or fallback frames
+        future = now + 31
+        action = q.tick(future)
+
+        # Frame should still be displayed (holding the board)
+        assert q._displayed is not None
+        assert q._displayed.frame_id == "holding"
+        assert action.display_frame is None  # no change
+
+    def test_should_expire_true_displaced_goes_to_fallback(self):
+        """Force-push displaces should_expire=True frame -- it goes to fallback, not dropped."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        displayed = BoardFrame(
+            frame_id="expire-me",
+            characters=_blank_grid(),
+            source="msg_lib",
+            source_label="MsgLib",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = displayed
+
+        # Push override frame
+        override = BoardFrame(
+            frame_id="override",
+            characters=_blank_grid(),
+            source="preview",
+            source_label="Preview",
+            ttl_s=30,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=now,
+        )
+        action = q.push(override, now)
+
+        # The displaced should_expire=True frame should be in fallback
+        assert any(f.frame_id == "expire-me" for f in q._fallback)
+        # It should NOT be in dropped
+        assert not any(f.frame_id == "expire-me" for f in action.dropped_frames)
+
+    def test_displaced_remaining_ttl_preserved_in_fallback(self):
+        """Displaced frame retains remaining TTL in fallback."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        displayed = BoardFrame(
+            frame_id="partial-ttl",
+            characters=_blank_grid(),
+            source="src_a",
+            source_label="A",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = displayed
+
+        # 20 seconds later, push with override
+        later = now + 20
+        override = BoardFrame(
+            frame_id="override",
+            characters=_blank_grid(),
+            source="src_b",
+            source_label="B",
+            ttl_s=30,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=later,
+        )
+        q.push(override, later)
+
+        # Check remaining TTL is preserved (~40s remaining)
+        fb_frame = q._fallback[0]
+        assert fb_frame.frame_id == "partial-ttl"
+        assert fb_frame.remaining_ttl_s is not None
+        assert 39 <= fb_frame.remaining_ttl_s <= 41
+
+    def test_remaining_ttl_resumed_on_repromotion(self):
+        """Re-promoted frame gets remaining TTL, not original."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        displayed = BoardFrame(
+            frame_id="will-resume",
+            characters=_blank_grid(),
+            source="src_a",
+            source_label="A",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = displayed
+
+        # Displace after 20s
+        t1 = now + 20
+        override = BoardFrame(
+            frame_id="override",
+            characters=_blank_grid(),
+            source="src_b",
+            source_label="B",
+            ttl_s=10,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=t1,
+        )
+        q.push(override, t1)
+
+        # After override's TTL expires, the fallback frame should be re-promoted
+        t2 = t1 + 11  # override TTL expired
+        action = q.tick(t2)
+
+        assert action.display_frame is not None
+        assert action.display_frame.frame_id == "will-resume"
+        # Its ttl_s should be the remaining ~40s, not the original 60
+        assert action.display_frame.ttl_s <= 41
+        assert action.display_frame.ttl_s >= 39
+
+    def test_should_expire_true_no_ttl_holds_board(self):
+        """should_expire=True with ttl_s=None has no auto-removal (no TTL to expire)."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        frame = BoardFrame(
+            frame_id="no-ttl-expire",
+            characters=_blank_grid(),
+            source="src",
+            source_label="Src",
+            ttl_s=None,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = frame
+
+        # Even far in the future, no TTL means no auto-removal
+        future = now + 10000
+        action = q.tick(future)
+
+        # Frame holds the board (no pending, no TTL to expire)
+        assert q._displayed is not None
+        assert q._displayed.frame_id == "no-ttl-expire"
+
+    def test_combined_scenario_preview_displaces_resumes(self):
+        """Preview force-push displaces, fallback resumes after preview TTL expires."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Calendar clock is displayed (should_expire=False, ttl=120)
+        calendar = BoardFrame(
+            frame_id="calendar",
+            characters=_blank_grid(),
+            source="calendar_clock",
+            source_label="Calendar",
+            ttl_s=120,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=False,
+        )
+        q._displayed = calendar
+
+        # Library message arrives (should_expire=True, ttl=60)
+        # Calendar TTL still active, so it goes to pending
+        msg = BoardFrame(
+            frame_id="msg",
+            characters=_blank_grid(),
+            source="msg_lib",
+            source_label="Messages",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now + 10,
+            should_expire=True,
+        )
+        q.push(msg, now + 10)
+        assert len(q._pending) == 1
+
+        # After calendar TTL expires, msg should be promoted (pending FIFO)
+        t1 = now + 121
+        action1 = q.tick(t1)
+        assert action1.display_frame is not None
+        assert action1.display_frame.frame_id == "msg"
+        # Calendar goes to fallback
+        assert any(f.frame_id == "calendar" for f in q._fallback)
+
+        # Preview arrives with override_ttl (displaces msg)
+        t2 = t1 + 5
+        preview = BoardFrame(
+            frame_id="preview",
+            characters=_blank_grid(),
+            source="preview",
+            source_label="Preview",
+            ttl_s=15,
+            max_age_s=None,
+            override_ttl=True,
+            created_at=t2,
+            should_expire=True,
+        )
+        q.push(preview, t2)
+        assert q._displayed.frame_id == "preview"
+        # msg goes to fallback too (with remaining TTL)
+        assert any(f.frame_id == "msg" for f in q._fallback)
+
+        # After preview TTL expires, fallback resumes (FIFO: calendar first)
+        t3 = t2 + 16
+        action3 = q.tick(t3)
+        assert action3.display_frame is not None
+        assert action3.display_frame.frame_id == "calendar"
+
+    def test_tick_displacement_always_goes_to_fallback(self):
+        """When tick displaces the current frame for a pending one, the displaced
+        frame always goes to fallback regardless of should_expire."""
+        q = FrameQueue(log_fn=lambda msg: None)
+        now = 1000.0
+
+        # Display a should_expire=True frame with expired TTL
+        displayed = BoardFrame(
+            frame_id="expirable",
+            characters=_blank_grid(),
+            source="src_a",
+            source_label="A",
+            ttl_s=30,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+            displayed_at=now,
+            should_expire=True,
+        )
+        q._displayed = displayed
+
+        # Add pending frame
+        pending = BoardFrame(
+            frame_id="pending-new",
+            characters=_blank_grid(),
+            source="src_b",
+            source_label="B",
+            ttl_s=60,
+            max_age_s=None,
+            override_ttl=False,
+            created_at=now,
+        )
+        q._pending.append(pending)
+
+        # Tick when should_expire=True + TTL expired → auto-remove, promote pending
+        future = now + 31
+        action = q.tick(future)
+
+        # The should_expire frame should be auto-removed (dropped), not in fallback
+        assert action.display_frame is not None
+        assert action.display_frame.frame_id == "pending-new"
+        assert any(f.frame_id == "expirable" for f in action.dropped_frames)
