@@ -68,6 +68,12 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `device_checker/README.md` for details.
 
+### Device Group Checker
+
+`DeviceGroupChecker` monitors multiple devices as a single checker. Each device can have one or more entity checks and an optional IP ping. Check names are prefixed with the device name (e.g. "Movie Room Status", "Movie Room Ping"). No repair support.
+
+`RepairableDeviceGroupChecker` extends `DeviceGroupChecker` with per-device repair via smart switch power cycling. Each device can have its own `repair_switch`, or all devices can share a top-level switch. Per-device repair state is tracked and reported via `device_repairs` in the repair_state payload. See `device_group_checker/README.md` for details.
+
 ### Repair Feature
 
 Checkers can declare `supports_repair: true` during registration. The controller routes repair commands to the specific checker without knowing how to repair — all repair logic lives in the checker app. The detail card shows repair controls (manual button, auto-repair toggle, delay config) for repair-capable checkers.
@@ -202,9 +208,15 @@ health_checks/
 │   │   ├── __init__.py
 │   │   ├── fan_health_checker.py
 │   │   └── README.md
-│   └── device_checker/
+│   ├── device_checker/
+│   │   ├── __init__.py
+│   │   ├── device_checker.py
+│   │   ├── repairable_device_checker.py
+│   │   └── README.md
+│   └── device_group_checker/
 │       ├── __init__.py
-│       ├── device_checker.py
+│       ├── device_group_checker.py
+│       ├── repairable_device_group_checker.py
 │       └── README.md
 ├── shared/
 │   ├── __init__.py

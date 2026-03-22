@@ -150,6 +150,26 @@ spa_health_checker_dev:
   auto_repair_enabled_default: false
   auto_repair_delay_min_default: 5
 
+cielo_health_checker_dev:
+  module: health_checks.checker_apps.device_group_checker.device_group_checker
+  class: DeviceGroupChecker
+  checker_id: cielo
+  checker_name: Cielo Home
+  check_interval_s: 180
+  devices:
+    - name: Movie Room
+      ip: "192.168.50.102"
+      entities:
+        - entity_id: binary_sensor.movie_room_breeze_status
+          healthy_state: "on"
+          name: Status
+    - name: Rumpus Room
+      ip: "192.168.50.192"
+      entities:
+        - entity_id: binary_sensor.rumpus_room_breeze_status
+          healthy_state: "on"
+          name: Status
+
 vestaboard_health_checker_dev:
   module: health_checks.checker_apps.device_checker.device_checker
   class: BasicDeviceChecker
