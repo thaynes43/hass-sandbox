@@ -184,6 +184,10 @@ def resolve_entities(
             current_value = "N/A"
         else:
             current_value = str(raw)
+            # Apply value_map if present (e.g. {"off": "Dry", "on": "Leak"})
+            value_map = entry.get("value_map")
+            if isinstance(value_map, dict) and current_value in value_map:
+                current_value = str(value_map[current_value])
         result.append({**entry, "current_value": current_value})
     return result
 

@@ -36,6 +36,7 @@ or household reminders. Keep it fresh — avoid clichés.
 - That leaves a 20-character × 4-row text area for your message.
 - Valid characters: A-Z, 0-9, space, and: ! @ # $ ( ) - + & = ; : ' " % , . / ?
 - Use % for percentages (not "PCT"). Use & for "and" when space is tight.
+- EVERY line must be 20 characters or fewer. Count carefully — this is critical.
 
 ## Message rules
 - Write 1-4 SHORT lines of text. Each line must be 20 characters or fewer.
@@ -44,22 +45,32 @@ or household reminders. Keep it fresh — avoid clichés.
 - When given data (sensor values, etc.), incorporate it naturally into the message. \
 Report the actual values — don't editorialize excessively.
 
-Return ONLY a JSON object: {"message": "YOUR MESSAGE HERE"}
+## Border color
+Choose a border color that matches the mood/sentiment of your message:
+- "red" = alerts, warnings, urgent
+- "orange" = caution, warm
+- "yellow" = cheerful, sunny, attention
+- "green" = good news, all-clear, nature
+- "blue" = calm, informational, cool
+- "violet" = creative, playful, whimsical
+
+Return ONLY a JSON object: {"message": "YOUR MESSAGE HERE", "border_color": "COLOR"}
 The message is plain text (1-4 lines separated by newlines). \
 Do NOT include border characters — borders are added automatically.
 """
 
 
-def _build_bordered_grid(text: str) -> list[list[int]]:
-    color_options = [
-        COLOR_CODES["red"],
-        COLOR_CODES["orange"],
-        COLOR_CODES["yellow"],
-        COLOR_CODES["green"],
-        COLOR_CODES["blue"],
-        COLOR_CODES["violet"],
-    ]
-    border_code = random.choice(color_options)
+_VALID_BORDER_COLORS = {"red", "orange", "yellow", "green", "blue", "violet"}
+
+
+def _build_bordered_grid(text: str, border_color: str | None = None) -> list[list[int]]:
+    if border_color and border_color in _VALID_BORDER_COLORS:
+        border_code = COLOR_CODES[border_color]
+    else:
+        border_code = random.choice([
+            COLOR_CODES["red"], COLOR_CODES["orange"], COLOR_CODES["yellow"],
+            COLOR_CODES["green"], COLOR_CODES["blue"], COLOR_CODES["violet"],
+        ])
 
     grid = text_to_grid(text, justify="center", align="center")
 
@@ -320,9 +331,21 @@ class AiMessageGeneratorApp(hass.Hass, VestaboardAutomation):
         if not message_text:
             raise ValueError("AI returned empty message")
 
-        self.log(f"AI message generated: {message_text!r}", level="INFO")
+        border_color = str(result.get("border_color", "")).strip().lower()
+        if border_color not in _VALID_BORDER_COLORS:
+            border_color = None
 
-        return _build_bordered_grid(message_text)
+        # Enforce 20-char line limit — truncate any lines that exceed it
+        lines = message_text.split("\n")
+        truncated = [line[:20] for line in lines[:4]]
+        message_text = "\n".join(truncated)
+
+        self.log(
+            f"AI message generated: {message_text!r} border={border_color!r}",
+            level="INFO",
+        )
+
+        return _build_bordered_grid(message_text, border_color=border_color)
 
     def _generate_fallback_frame(self) -> list[list[int]]:
         message = random.choice(self._FALLBACK_MESSAGES)

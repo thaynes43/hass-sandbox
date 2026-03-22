@@ -26,4 +26,7 @@
 - description: "Report on water leak sensors"
   entities:
     - entity_id: "binary_sensor.water_leak"
-      description: "Water leak detection status. Either Dry or Water Leak Detected. Leak detected is very bad, should always report dry."
+      description: "Water leak detection status"
+      value_map:
+        "off": "Dry (all clear)"
+        "on": "LEAK DETECTED (alert!)"
