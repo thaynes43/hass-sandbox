@@ -60,12 +60,12 @@ sensor.vestaboard_controller_status (state changes)
 | `quick_save_art` | `frame`, `name`, `creator` | Save AI-generated art with backend-generated defaults |
 | `save_art_to_library` | `frame`, `name`, `creator` | Save AI art as a named library frame |
 | `push_frame` | `frame`, `ttl_minutes`, `should_expire`, `template`, `refresh_interval_minutes` | Push a frame directly to the board (forwarded to controller, template resolved by controller) |
-| `push_library_frame` | `frame_id`, `ttl_minutes`, `respect_ttl` | Look up frame by ID and push it (forwarded to controller) |
-| `toggle_automation` | `automation_id`, `enabled` | Enable or disable a board automation (forwarded to controller) |
+| `push_library_frame` | `frame_id`, `ttl_minutes`, `respect_ttl` | Resolve frame by ID from the local library, then forward as `push_frame` to the controller |
+| `toggle_automation` | `automation_id`, `enabled` | Enable or disable a board automation; translated to `activate_automation` or `deactivate_automation` before forwarding to the controller |
 | `set_automation_config` | `automation_id`, `config` | Update an automation's UI config (forwarded to controller) |
 | `generate_art` | `subject` | Generate AI art preview without pushing to board (forwarded to controller as `generate_ai_art_preview`) |
 | `generate_ai_message` | — | Generate an AI message and push to board (forwarded to controller) |
-| `clear_art_preview` | — | Clear the AI art preview (forwarded to controller) |
+| `clear_art_preview` | — | Clear the AI art preview (forwarded to controller as `clear_ai_art_preview`) |
 | `preview_automation` | `automation_id` | Instantly generate and push a frame from any automation (forwarded to controller) |
 | `add_creator` | `name` | Add a new name to the creators list and update `input_select.vestaboard_creator` |
 | `refresh_status` | — | Re-publish the configuration status sensor |
@@ -86,12 +86,14 @@ vestaboard_configuration:
   module: vestaboard_apps.vestaboard_configuration.vestaboard_configuration_app
   class: VestaboardConfigurationApp
   disable: true
+  dependencies:
+    - vestaboard_controller
   ha_url_env: HA_URL
   ha_token_env: TOKEN
   frame_library_path: /media/vestaboard/frame-library.json
   creators:
     - Mom
-    - Dad
+    - Tom  # production override example; code default is also "Tom"
     - Jackson
     - Penelope
     - Anonymous
@@ -105,5 +107,5 @@ vestaboard_configuration:
 
 ## Upstream/downstream dependencies
 
-- **Upstream**: `vestaboard_controller` — this app reads `sensor.vestaboard_controller_status` and forwards push/automation commands to the controller via `fire_event("vestaboard_controller_command")`. No AppDaemon `dependencies:` entry is needed; communication is purely event-based.
+- **Upstream**: `vestaboard_controller` — this app reads `sensor.vestaboard_controller_status` and forwards push/automation commands to the controller via `fire_event("vestaboard_controller_command")`. AppDaemon `dependencies: [vestaboard_controller]` is declared so the controller starts before this app.
 - **Downstream**: None — this app is the leaf node for the user-facing configuration UI.

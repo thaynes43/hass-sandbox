@@ -6,10 +6,11 @@ Vestaboard automation that uses an LLM to generate pixel art for a given subject
 
 1. On `initialize()`, registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
 2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
-3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. When the timer fires:
+3. After registration, the controller fires back the persisted UI config via a `vb_auto_config` event. `on_config_updated()` handles this event and, if `enabled` is `true`, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. The interval is **not** started during `initialize()` — it only starts once the controller delivers the config. When the timer fires:
    - If `art_prompt_bundles_path` is configured and the file contains valid bundles, randomly picks one. If the bundle has `entities`, resolves their HA state values and includes them as context data in the subject.
    - Otherwise, generates art for the default subject `"abstract art"`.
 4. `generate_frame(subject=...)` is the public entry point:
+   - If called with the default subject `"abstract art"` (i.e. no explicit subject was given), it first attempts to pick a bundle from `art_prompt_bundles_path`. If a bundle is found, it is used as the subject instead of `"abstract art"`. This means on-demand requests without an explicit subject also benefit from the bundles file when it is configured.
    - Builds a structured prompt instructing the LLM to output a JSON `{"grid": [[...], ...]}` with exactly 6 rows × 22 columns using valid Vestaboard codes (0–60, 63–70).
    - Calls `build_simple_text_provider()` from the AI provider registry using `ai_provider_conf.simple_text`.
    - Parses and validates the returned grid. Invalid codes are codes outside `0–60` and `63–70`.

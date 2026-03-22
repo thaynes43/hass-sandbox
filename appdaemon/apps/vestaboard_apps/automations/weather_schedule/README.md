@@ -9,7 +9,7 @@ Displays weather conditions from a Home Assistant weather entity at configured d
 3. Schedules `run_daily` timers for each time in `time_list`.
 4. When a scheduled time fires:
    - Reads current weather state (condition, temperature, humidity, wind speed) from the configured HA weather entity.
-   - Fetches today's daily forecast (high/low) via the HA REST API (`weather.get_forecasts` service).
+   - Fetches today's daily forecast (high/low) via WebSocket (`HaRestClient.send_ws_command()`) because AppDaemon's `call_service` does not support `return_response`.
    - Builds a 6×22 grid with color-coded temperature tiles and wind meter.
    - Pushes the frame and starts a 15-minute periodic update timer.
 5. Every 15 minutes during the TTL window, re-fetches current weather and pushes an updated frame (same-source push replaces the displayed frame without TTL override).
@@ -68,17 +68,24 @@ A bar of 1–4 colored tiles after the "WIND" label:
 
 ### Condition bar colors (row 0)
 
-| Condition | Color |
-|-----------|-------|
-| sunny / clear | Yellow |
-| clear-night | Blue |
-| cloudy / partly cloudy | White |
-| rainy / pouring | Blue |
-| snowy | White |
-| snowy-rainy | Violet |
-| thunderstorm | Yellow |
-| windy | Green |
-| severe weather | Red |
+| Condition (HA API key) | Color |
+|------------------------|-------|
+| `sunny` | Yellow |
+| `clear` | Yellow |
+| `clear-night` | Blue |
+| `partlycloudy` | White |
+| `cloudy` | White |
+| `rainy` | Blue |
+| `pouring` | Blue |
+| `snowy` | White |
+| `snowy-rainy` | Violet |
+| `fog` | White |
+| `hail` | White |
+| `lightning` | Yellow |
+| `lightning-rainy` | Yellow |
+| `windy` | Green |
+| `windy-variant` | Green |
+| `exceptional` | Red |
 
 ## Config reference
 
@@ -100,7 +107,7 @@ A bar of 1–4 colored tiles after the "WIND" label:
 | `ttl_minutes` | int | `60` | How long the frame holds the board |
 | `should_expire` | bool | `true` | Drop frame after TTL (don't move to fallback) |
 | `force_push` | bool | `false` | Override active TTL to display immediately |
-| `time_list` | time_list | `["07:30:00", "15:00:00"]` | Daily times (HH:MM:SS) to display weather |
+| `time_list` | time_list | `[]` | Daily times (HH:MM:SS) to display weather. Not seeded from `DEFAULT_UI_CONFIG` — must be provided in YAML args (see example below). |
 
 ### YAML example
 
@@ -120,7 +127,7 @@ weather_schedule:
 ## Dependencies
 
 - `providers/vestaboard/character_encoding.py` — grid encoding utilities and color codes
-- `providers/ha_provisioner/ha_rest_client.py` — HA REST API client for daily forecast
+- `providers/ha_provisioner/ha_rest_client.py` — HA WebSocket client for daily forecast
 - `providers/secrets.py` — env var secret resolution
 - `vestaboard_apps._shared.base.VestaboardAutomation` — controller registration and frame push API
 

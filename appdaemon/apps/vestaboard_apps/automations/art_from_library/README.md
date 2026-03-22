@@ -7,7 +7,7 @@ Vestaboard automation that randomly selects a pixel art frame from the bundled `
 1. On `initialize()`, loads `art_library.json` from the same package directory into memory.
 2. Registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
 3. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
-4. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
+4. After registration, the controller fires back a `vb_auto_config` event carrying the persisted UI config. The interval only starts at that point if `enabled` is true — it is never started during `initialize()`. The `enabled` flag comes from UI config, not YAML args.
 5. When the timer fires, calls `generate_frame()`:
    - Picks a random entry from the in-memory art library.
    - Validates that the frame has exactly 6 rows × 22 columns. Returns a blank grid if validation fails.
@@ -22,8 +22,9 @@ ArtFromLibraryApp
   → _load_library() reads art_library.json at startup
   → fire_event("vestaboard_controller_command", command="register_automation")
   → run_in(random delay) → generate_frame()
-  → fire_event("vestaboard_controller_command", command="update_next_fire_time")
   → fire_event("vestaboard_controller_command", command="push_automation_frame")
+  → _start_random_interval() → _notify_next_fire_time()
+  → fire_event("vestaboard_controller_command", command="update_next_fire_time")  ← schedules NEXT interval
   → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
 
 On-demand:
@@ -61,7 +62,7 @@ None. The controller provisions all shared entities.
 | `should_expire` | bool | `true` | If `true`, frame is dropped after TTL rather than added to fallback |
 | `frequency_min_minutes` | int | `60` | Minimum minutes between random fires |
 | `frequency_max_minutes` | int | `240` | Maximum minutes between random fires |
-| `min_stars` | int | `2` | Minimum star rating filter (currently applied at config schema level; art_library.json entries include a `rating` field) |
+| `min_stars` | int | `2` | Minimum star rating filter — defined in config schema but not yet implemented. `generate_frame()` selects via `random.choice()` with no filtering; this field is a placeholder for future use. |
 
 ### YAML example
 

@@ -6,12 +6,11 @@ Vestaboard automation that randomly selects a saved message from the frame libra
 
 1. On `initialize()`, reads `frame_library_path` from YAML args and registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
 2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
-3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
+3. The controller fires back a `vb_auto_config` event containing the persisted config (including `enabled`, frequencies, etc.). Only when that event arrives and `enabled` is `true` does the app schedule a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`. The interval is never started at `initialize()` — the comment in that method reads "Do NOT start interval here — wait for config event from controller".
 4. When the timer fires, calls `generate_frame()`:
    - Loads the `FrameLibrary` from disk (lazy — loaded once on first use).
    - Filters for frames with `category="message"` and `rating >= min_stars`.
    - Picks one at random and returns its stored `characters` grid.
-   - If the selected frame has a `template` field (e.g. `"UPS LOAD: {sensor.apc_load}W"`), the template and `refresh_interval_minutes` are passed through to the controller, which resolves `{entity_id}` placeholders to live HA data before displaying.
    - If no qualifying library frames exist, picks from the built-in fallback message list and renders it with a randomly colored border.
 5. The frame is pushed to the controller by firing a `vestaboard_controller_command` event with `command="push_automation_frame"`, then the next random interval is scheduled.
 6. The automation can also be triggered on-demand via the controller's `generate_random_message` command, which fires a `vb_auto_generate (with automation_id in data)` event back to this app.
@@ -51,7 +50,7 @@ None. The controller provisions all shared entities.
 |-----|----------|---------|-------------|
 | `module` | Yes | — | `vestaboard_apps.automations.messages_from_library.messages_from_library_app` |
 | `class` | Yes | — | `MessagesFromLibraryApp` |
-| `frame_library_path` | Yes | — | Filesystem path to the frame library JSON (must match the path used by `vestaboard_configuration`) |
+| `frame_library_path` | No | — | Filesystem path to the frame library JSON (must match the path used by `vestaboard_configuration`). If omitted, the app falls back to built-in curated messages. |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 

@@ -6,14 +6,15 @@ Vestaboard automation that uses an LLM to generate witty, personality-driven bor
 
 1. On `initialize()`, registers with the controller by firing a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
 2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
-3. If `enabled` is true in YAML args, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
+3. Waits for the controller to fire back a `vestaboard_automation_config_<id>` event. When that config arrives (via `on_config_updated()`), if `enabled` is `true`, schedules a random interval timer between `frequency_min_minutes` and `frequency_max_minutes`.
 4. When the timer fires, calls `generate_frame()`:
-   - If `prompt_data_bundles_path` is configured, reads the external YAML file, randomly selects a bundle, resolves all entity values via `get_state()`, and builds a data-aware prompt for the LLM.
-   - Otherwise, calls `build_simple_text_provider()` from the AI provider registry using `ai_provider_conf.simple_text`.
-   - Sends a structured prompt with an AI personality: a clever AI consciousness "trapped inside a flip messageboard." Themes rotate through home status, motivation, smart home humor, weather vibe, family chaos, tech humor, and secret AI thoughts.
-   - The prompt instructs the LLM to return a JSON `{"message": "..."}` where the message is a 6-line × 22-character string with a colored tile border on rows 1 and 6.
-   - If the returned message is already a properly formatted 6×22 pre-formatted grid, it is decoded directly (supports emoji color tile characters).
-   - Otherwise, the raw message text is rendered through `text_to_grid` with a randomly colored border applied.
+   - If `prompt_data_bundles_path` is configured, reads the external YAML file, randomly selects a bundle, resolves all entity values via `get_state()`, and adds a data-aware section to the prompt input. If no bundles path is configured (or the file is missing/empty), the AI is still called but without any bundle context data.
+   - If `ai_provider_conf` is not set at all, the app skips the AI call entirely and falls back to `_generate_fallback_frame()`.
+   - Otherwise, builds a `SimpleTextProvider` via `build_simple_text_provider()` from the AI provider registry and calls it with `_AI_MESSAGE_PROMPT` as the system instructions.
+   - The prompt persona is a family-home mudroom board: warm, clever, family-friendly messages — motivational quotes, fun facts, dad jokes, seasonal greetings, witty observations, or household reminders.
+   - The prompt instructs the LLM to return a JSON object `{"message": "...", "border_color": "..."}`. The message is plain text of 1–4 lines (each at most 20 characters, all caps). The `border_color` field is one of: `red`, `orange`, `yellow`, `green`, `blue`, `violet`.
+   - The code validates `border_color` against `_VALID_BORDER_COLORS`. If the LLM's value is missing or invalid, a random color is chosen as fallback.
+   - The border is NOT part of the returned message text — `_build_bordered_grid()` applies it: row 1 and row 6 become solid color tiles, and columns 1 and 22 of rows 2–5 become color tiles, leaving a 20-character × 4-row text area.
 5. If the AI call fails, falls back to a random message from the built-in fallback list, rendered with a random border color.
 6. The frame is pushed to the controller by firing a `vestaboard_controller_command` event with `command="push_automation_frame"`, then the next random interval is scheduled.
 7. On-demand generation via the controller's `generate_ai_message` command fires a `vb_auto_generate (with automation_id in data)` event back to this app.

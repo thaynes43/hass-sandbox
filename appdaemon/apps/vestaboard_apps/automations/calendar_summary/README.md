@@ -8,7 +8,7 @@ Supports multiple instances: configure one YAML entry per calendar. The display 
 
 ### Event collection
 
-1. On each trigger (state change or periodic interval), fetches all events within the `time_before_event_hours` window using the `calendar.get_events` HA service.
+1. On each trigger (state change or periodic interval), fetches all events within the `time_before_event_hours` window using the HA Calendar REST API (`GET /api/calendars/{entity_id}`) via `HaRestClient`.
 2. Falls back to reading entity state attributes (current + next event) if the service call fails.
 3. Events are sorted by start time (soonest first).
 
@@ -20,6 +20,8 @@ Events are split into two buckets:
 - **Upcoming**: start time is beyond the reminder threshold but within `time_before_event_hours`.
 
 If **any** urgent events exist, **only** urgent events are displayed. If `force_push_at_reminder` is enabled, these frames override the board's current TTL (force-push). Otherwise, all upcoming events are displayed normally.
+
+After a non-urgent push, a cooldown timer (random duration between `cooldown_min_minutes` and `cooldown_max_minutes`) is started. Re-triggers during the cooldown window are suppressed. Urgent events always bypass the cooldown.
 
 ### Rotation logic
 
@@ -52,7 +54,7 @@ Where:
 
 #### Overflow strategy
 
-When `N > max_slots`, events are prioritized by soonest start time. The last rotation slot is reserved for a summary frame ("+4 MORE EVENTS TODAY") so users know there are additional events.
+When `N > max_slots`, events are prioritized by soonest start time. The last rotation slot is reserved for a summary frame showing "+N MORE" on row 2 and "EVENTS UPCOMING" (or "EVENT UPCOMING" for exactly 1 overflow) on row 3, so users know there are additional events.
 
 ### Countdown logic
 
@@ -90,13 +92,14 @@ Countdown updates re-push the frame with the same source, so the controller repl
 
 ### Timer architecture
 
-Three independent timers run during active display:
+Four independent timers run during active display:
 
 1. **Interval timer** (periodic, `check_interval_s`): Polls the calendar and re-runs the full cycle. Detects new/changed/removed events.
 2. **Rotation timer** (`display_time_s`): Fires when it's time to show the next event in rotation.
 3. **Countdown timer** (variable): Fires at the next countdown display update point for the currently shown event. Recalculated after each update.
+4. **Cooldown timer** (random, `cooldown_min_minutes`–`cooldown_max_minutes`): Started after every non-urgent push. While active, subsequent non-urgent pushes are suppressed to avoid overwhelming the board. Urgent events bypass the cooldown entirely.
 
-All timers are cancelled and restarted when the event set changes.
+All timers except the cooldown timer are cancelled and restarted when the event set changes.
 
 ## Architecture
 
@@ -106,7 +109,7 @@ CalendarSummaryApp
     → register_with_controller() via HA events
   → listen_state(calendar_entity) + run_every(check_interval_s)
     → _run_cycle()
-      → _fetch_upcoming_events() via calendar.get_events service
+      → _fetch_upcoming_events() via HA Calendar REST API
       → partition into urgent / upcoming
       → calculate rotation parameters
       → _push_current_event()
@@ -123,6 +126,9 @@ CalendarSummaryApp
 
 - `providers.vestaboard.character_encoding` — character encoding and blank grid
 - `vestaboard_apps._shared.base.VestaboardAutomation` — controller registration and frame push API
+- `providers.ha_provisioner.ha_rest_client.HaRestClient` — HA Calendar REST API calls
+- `providers.secrets` — env var secret resolution for `ha_url_env` / `ha_token_env`
+- `providers.ai_providers.registry` — AI summarization of long event names (optional, when `ai_provider_conf` is set)
 
 ## Self-provisioned entities
 
@@ -140,6 +146,7 @@ None. The controller provisions all shared entities.
 | `ha_url_env` | Yes | — | Env var name holding the HA base URL (needed for calendar REST API) |
 | `ha_token_env` | Yes | — | Env var name holding the HA long-lived access token |
 | `check_interval_s` | No | `300` | How often (seconds) to poll the calendar entity regardless of state changes |
+| `ai_provider_conf` | No | — | AI provider capability bundle for summarizing long calendar event names. If omitted, event names are used as-is. |
 
 ### UI-editable config (stored in controller's `automation_config_path`)
 
@@ -152,6 +159,8 @@ None. The controller provisions all shared entities.
 | `reminder_threshold_minutes` | int | `30` | Minutes before event start to enter urgent mode |
 | `force_push_at_reminder` | bool | `true` | Override board TTL when in urgent mode (force-push to board) |
 | `rotation_floor_minutes` | int | `10` | Minimum display time per event in rotation (minutes) |
+| `cooldown_min_minutes` | int | `30` | Minimum cooldown duration (minutes) after a non-urgent push |
+| `cooldown_max_minutes` | int | `120` | Maximum cooldown duration (minutes) after a non-urgent push |
 
 ### YAML example (single calendar)
 
@@ -251,7 +260,7 @@ Expected countdown sequence:
 Create 8+ calendar events within the next few hours.
 ```
 
-Expected: With default 10 min floor and 60 min TTL, max 6 events shown. Last slot shows "+2 MORE EVENTS TODAY" (or however many overflow).
+Expected: With default 10 min floor and 60 min TTL, max 6 events shown. Last slot shows "+N MORE" / "EVENTS UPCOMING" (or "EVENT UPCOMING" for 1 overflow).
 
 ### Debugging via logs
 
@@ -265,8 +274,8 @@ Key log messages to watch:
 | `Pushing event [i/N]: "name"` | Event frame pushed to board |
 | `Countdown update: "name" → "X MIN"` | Countdown display refreshed |
 | `Rotating to slot i/N` | Advancing to next event |
-| `calendar.get_events returned N event(s)` | Multi-event service call succeeded |
-| `calendar.get_events failed ... falling back` | Using single-event entity state fallback |
+| `Calendar REST API returned N event(s)` | Multi-event REST call succeeded |
+| `Calendar REST API failed ... falling back` | Using single-event entity state fallback |
 
 ## Upstream/downstream dependencies
 

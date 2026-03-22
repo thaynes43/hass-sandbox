@@ -1,12 +1,12 @@
 # Calendar Clock
 
-Vestaboard automation that renders a 7-column calendar grid on the left pane and the current day, date, and time on the right pane, updated every 60 seconds.
+Vestaboard automation that renders a 7-column calendar grid on the left pane and the current day, date, and time on the right pane, updated on a configurable interval (default 1 minute).
 
 ## How it works
 
 1. On `initialize()`, registers with the controller via `VestaboardAutomation.register_with_controller()`. Registration fires a `vestaboard_controller_command` event with `command="register_automation"` — no direct `get_app()` call is needed.
 2. Listens for the `vestaboard_controller_ready` event so it automatically re-registers if the controller restarts.
-3. Starts a 60-second `run_every` timer.
+3. Starts a `run_every` timer with an interval of `update_interval_minutes × 60` seconds (default 60 s). The first fire is aligned to the next clean minute boundary.
 4. Each tick calls `generate_frame()` which builds the 6×22 grid:
    - Left 7 columns: S M T W T F S day-of-week header (row 0) + calendar tiles for the current month's weeks (rows 1–5). Today's tile uses the "today" color; all other days use the "day" color; out-of-month cells are black.
    - 2-column separator gap.
@@ -20,7 +20,7 @@ Vestaboard automation that renders a 7-column calendar grid on the left pane and
 ```
 CalendarClockApp
   → fire_event("vestaboard_controller_command", command="register_automation")
-  → run_every(60s) → generate_frame()
+  → run_every(update_interval_minutes × 60s) → generate_frame()
   → fire_event("vestaboard_controller_command", command="push_automation_frame")
   → VestaboardControllerApp handles push → FrameQueue → VestaboardClient
 ```
@@ -50,6 +50,7 @@ None. The controller provisions all shared entities.
 | `enabled` | bool | `true` | Whether the automation is active |
 | `ttl_minutes` | int or null | `null` | TTL for displayed frames in minutes. `null` = no TTL protection |
 | `should_expire` | bool | `false` | If `true`, frame is dropped after TTL rather than moved to fallback |
+| `update_interval_minutes` | int | `1` | How often the clock frame is regenerated and pushed (range 1–60) |
 
 ### YAML example
 
