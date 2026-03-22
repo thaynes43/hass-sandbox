@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -124,9 +127,8 @@ def archive_runs(*, runs_dir: Path, keep: int) -> int:
             dest_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(r.run_dir), str(dest))
             archived += 1
-        except Exception:
-            # Log-worthy but not fatal — skip and try the next one.
-            pass
+        except Exception as exc:
+            _log.warning("archive_runs: failed to move %s -> %s: %s", r.run_dir, dest, exc)
     return archived
 
 

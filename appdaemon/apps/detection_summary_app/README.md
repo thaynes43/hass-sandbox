@@ -20,7 +20,7 @@ detection_summary_app/
 ├── population.py       — Multi-frame signal consensus (mode/max/median)
 ├── bundle.py           — Bundle dict assembly, stable image mirroring, trace artifacts
 ├── narrative.py        — Run-level narrative synthesis (second LLM step)
-├── retention.py        — Run directory lifecycle (age-based pruning)
+├── retention.py        — Run directory lifecycle (monthly archival and cleanup)
 └── prompting/
     ├── schema_specs.py         — ScoreFieldSpec + ScoreSchemaSpec; schema_from_profile()
     ├── score_prompt_builder.py — Scoring instructions for the multimodal LLM

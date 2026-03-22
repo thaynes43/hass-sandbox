@@ -4,10 +4,11 @@ DetectionSummaryViewer AppDaemon app.
 Manages the run picker, selected run display, viewer cache staging, and
 notification action handling for a detection_summary bundle.
 
-Fully decoupled from detection_summary_app: communicates via
+Communicates with detection_summary_app via:
   - HA event ``detection_summary/run_published`` (fired by detection_summary_app)
   - Shared filesystem under ``snapshot_ha_dir``
   - ``detection_summary_store`` (shared in-process store)
+  - Direct import of ``detection_summary_app.retention`` (archive logic)
 
 Self-provisions:
   - ``input_select.{bundle_key}_detection_summary_run_id``   (run picker)
