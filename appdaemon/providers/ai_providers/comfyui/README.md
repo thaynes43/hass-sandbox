@@ -26,6 +26,48 @@ The model bundle is defined in [../model_settings/comfyui.yaml](../model_setting
 - The current provider implementation is built around a single uploaded reference image, even though the broader AppDaemon image interface accepts a sequence of input image paths
 - Workflow selection is static today; the provider does not dynamically switch between different ComfyUI workspaces or workflow templates based on request shape
 
+## Bundle Options
+
+All options are set under `provider_options` in the model settings YAML bundle (see [`comfyui.yaml`](../model_settings/comfyui.yaml)).
+
+### Workflow node mapping
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `workflow_path` | `str` | `workflows/02_qwen_Image_edit_subgraphed_API.json` | Path to ComfyUI workflow JSON (relative to provider dir) |
+| `prompt_node_id` | `str` | `"115:111"` | Node ID for TextEncodeQwenImageEditPlus (positive prompt) |
+| `negative_prompt_node_id` | `str \| null` | `"115:110"` | Node ID for negative prompt (null to skip) |
+| `load_image_node_id` | `str` | `"78"` | Node ID for LoadImage |
+| `save_image_node_id` | `str` | `"60"` | Node ID for SaveImage |
+| `sampler_node_id` | `str \| null` | `"115:3"` | Node ID for KSampler (null to skip seed/overrides) |
+| `sampler_seed_input` | `str` | `"seed"` | KSampler input field name for the random seed |
+| `filename_prefix` | `str` | `"detection-summary"` | Prefix for saved output filenames |
+
+### Sampler overrides
+
+Override workflow-hardcoded KSampler values at runtime. `null` preserves the workflow default.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `sampler_cfg` | `float \| null` | `null` | Classifier-free guidance scale. Higher values force stronger prompt adherence. Recommended 3.0–5.0 for stylization on low-res inputs. |
+| `sampler_steps` | `int \| null` | `null` | Number of diffusion steps. Lightning LoRA is tuned for 4. |
+| `sampler_denoise` | `float \| null` | `null` | Denoise strength (0.0–1.0). 1.0 = full generation from latent. |
+
+### Scale override
+
+Override the ImageScaleToTotalPixels node's megapixel target.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `scale_node_id` | `str \| null` | `null` | Node ID for ImageScaleToTotalPixels (e.g. `"115:93"`) |
+| `scale_megapixels` | `float \| null` | `null` | Target megapixels. Requires `scale_node_id`. Higher values give the model more room to work with on small inputs. |
+
+### Input validation
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `min_input_pixels` | `int \| null` | `null` | Log a warning when the input image's total pixel count (width × height) is below this threshold. Does not block generation. |
+
 ## Notes
 
 - This provider is intended for local image editing workflows backed by a prepared ComfyUI workspace.
