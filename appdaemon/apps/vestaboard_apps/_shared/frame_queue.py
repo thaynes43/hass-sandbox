@@ -12,6 +12,18 @@ from typing import Callable, Optional
 
 
 # ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# Fallback frames with less than this remaining TTL are pruned rather than
+# re-promoted.  A very short display (e.g. 5 seconds) wastes a board write
+# and clutters the queue time estimates shown in the UI.  30 seconds is 2x
+# the typical tick interval, ensuring we never re-promote a frame that would
+# expire on the very next tick.
+FALLBACK_MIN_TTL_S = 30
+
+
+# ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
 
@@ -501,11 +513,12 @@ class FrameQueue:
                     f"[FrameQueue] prune → expired fallback frame={f.frame_id} "
                     f"source={f.source!r}"
                 )
-            elif f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0:
+            elif f.remaining_ttl_s is not None and f.remaining_ttl_s < FALLBACK_MIN_TTL_S:
                 dropped.append(f)
                 self._log(
                     f"[FrameQueue] prune → exhausted fallback frame={f.frame_id} "
-                    f"source={f.source!r} (remaining_ttl_s=0)"
+                    f"source={f.source!r} (remaining_ttl_s={f.remaining_ttl_s:.1f} "
+                    f"< {FALLBACK_MIN_TTL_S}s threshold)"
                 )
             else:
                 new_fallback.append(f)
@@ -520,15 +533,16 @@ class FrameQueue:
         Within fallback: first displaced = first re-promoted (index 0).
         Within pending: first pushed = first promoted (index 0).
 
-        Fallback frames with ``remaining_ttl_s <= 0`` are skipped — they have
-        already exhausted their display time and should not be re-promoted.
+        Fallback frames with ``remaining_ttl_s < FALLBACK_MIN_TTL_S`` are
+        skipped — they don't have enough display time remaining to justify a
+        board write.
         """
         # Try fallback first (displaced frames get priority)
         for f in self._fallback:
             if _is_expired(f, now):
                 continue
-            # Skip fallback frames that have exhausted their display time
-            if f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0:
+            # Skip fallback frames below the minimum remaining TTL threshold
+            if f.remaining_ttl_s is not None and f.remaining_ttl_s < FALLBACK_MIN_TTL_S:
                 continue
             return f
 

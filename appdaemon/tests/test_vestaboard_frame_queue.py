@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps"))
 import uuid
 import pytest
 from vestaboard_apps._shared.frame_queue import (
+    FALLBACK_MIN_TTL_S,
     BoardFrame,
     FrameQueue,
     FrameQueueAction,
@@ -1289,7 +1290,7 @@ class TestRemainingTTL:
 
         alert = make_frame(
             source="alert",
-            ttl_s=30,
+            ttl_s=60,
             should_expire=True,
             max_age_s=None,
             created_at=1000.0,
@@ -1306,9 +1307,9 @@ class TestRemainingTTL:
         # alert SHOULD be in fallback with remaining_ttl_s preserved
         fallback_ids = {f.frame_id for f in state.fallback_stack}
         assert alert.frame_id in fallback_ids
-        # remaining_ttl_s should be 30 - 10 = 20.0
+        # remaining_ttl_s should be 60 - 10 = 50.0
         alert_fb = next(f for f in state.fallback_stack if f.frame_id == alert.frame_id)
-        assert alert_fb.remaining_ttl_s == 20.0
+        assert alert_fb.remaining_ttl_s == 50.0
         # Override is displayed
         assert state.displayed is override
 
@@ -1376,3 +1377,101 @@ class TestRemainingTTL:
         cal_fallback = next((f for f in state.fallback_stack if f.source == "calendar"), None)
         assert cal_fallback is not None
         assert cal_fallback.remaining_ttl_s == pytest.approx(60.0)
+
+    def test_fallback_below_min_ttl_pruned_on_next_operation(self):
+        """Fallback frame with remaining_ttl_s below FALLBACK_MIN_TTL_S is pruned
+        by the next push/tick that triggers _prune_expired."""
+        q = make_queue()
+
+        # Display frame with ttl_s=100, displace after 95s → remaining=5s (< 30s threshold)
+        cal = make_frame(source="calendar", ttl_s=100, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        urgent = make_frame(
+            source="preview", ttl_s=60, max_age_s=None, override_ttl=True, created_at=1095.0
+        )
+        q.push(urgent, now=1095.0)
+
+        # Immediately after displacement, fallback still has the frame
+        state = q.get_state(now=1095.0)
+        assert len(state.fallback_stack) == 1
+        assert state.fallback_stack[0].remaining_ttl_s == pytest.approx(5.0)
+
+        # Next tick triggers _prune_expired which removes the near-zero frame
+        action = q.tick(now=1096.0)
+        state_after = q.get_state(now=1096.0)
+        assert len(state_after.fallback_stack) == 0
+
+    def test_fallback_above_min_ttl_not_pruned(self):
+        """Fallback frame with remaining_ttl_s >= FALLBACK_MIN_TTL_S survives pruning."""
+        q = make_queue()
+
+        # Display frame with ttl_s=100, displace after 50s → remaining=50s (>= 30s threshold)
+        cal = make_frame(source="calendar", ttl_s=100, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        urgent = make_frame(
+            source="preview", ttl_s=10, max_age_s=None, override_ttl=True, created_at=1050.0
+        )
+        q.push(urgent, now=1050.0)
+
+        # Frame in fallback with 50s remaining
+        state = q.get_state(now=1050.0)
+        assert len(state.fallback_stack) == 1
+        assert state.fallback_stack[0].remaining_ttl_s == pytest.approx(50.0)
+
+        # Tick does NOT prune this frame; it survives
+        q.tick(now=1051.0)
+        state_after = q.get_state(now=1051.0)
+        assert len(state_after.fallback_stack) == 1
+
+    def test_fallback_at_exactly_threshold_not_pruned(self):
+        """Fallback frame with remaining_ttl_s == FALLBACK_MIN_TTL_S is kept (threshold is exclusive)."""
+        q = make_queue()
+
+        # Display frame with ttl_s=100, displace after 70s → remaining=30s (== threshold)
+        cal = make_frame(source="calendar", ttl_s=100, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        urgent = make_frame(
+            source="preview", ttl_s=10, max_age_s=None, override_ttl=True, created_at=1070.0
+        )
+        q.push(urgent, now=1070.0)
+
+        state = q.get_state(now=1070.0)
+        assert len(state.fallback_stack) == 1
+        assert state.fallback_stack[0].remaining_ttl_s == pytest.approx(30.0)
+
+        # Tick should NOT prune — 30.0 is not < 30
+        q.tick(now=1071.0)
+        state_after = q.get_state(now=1071.0)
+        assert len(state_after.fallback_stack) == 1
+
+    def test_fallback_below_threshold_skipped_by_next_non_expired(self):
+        """_next_non_expired skips fallback frames below the threshold, promoting
+        from pending instead."""
+        q = make_queue()
+
+        # Display frame, displace with small remaining TTL
+        cal = make_frame(source="calendar", ttl_s=35, max_age_s=None, created_at=1000.0)
+        q.push(cal, now=1000.0)
+
+        # Queue a pending frame
+        pending = make_frame(source="bg", ttl_s=60, max_age_s=None, created_at=1001.0)
+        q.push(pending, now=1001.0)
+
+        # Override displaces cal after 30s → remaining=5s (below threshold)
+        override = make_frame(
+            source="preview", ttl_s=10, max_age_s=None, override_ttl=True,
+            created_at=1030.0, should_expire=True,
+        )
+        q.push(override, now=1030.0)
+
+        # Override TTL expires, tick should skip cal (5s remaining) and promote pending
+        tick = q.tick(now=1041.0)
+        assert tick.display_frame is not None
+        assert tick.display_frame.source == "bg"
+
+    def test_fallback_min_ttl_constant_value(self):
+        """Verify the FALLBACK_MIN_TTL_S constant is 30 seconds."""
+        assert FALLBACK_MIN_TTL_S == 30
