@@ -206,6 +206,15 @@ class FrameQueue:
                         f"remaining_ttl_s={displaced.remaining_ttl_s:.1f} | "
                         f"frame={displaced.frame_id} source={displaced.source!r}"
                     )
+                # Same-source dedup in fallback: remove older frame from same source
+                old_fb = [f for f in self._fallback if f.source == displaced.source]
+                for old in old_fb:
+                    self._fallback.remove(old)
+                    dropped.append(old)
+                    self._log(
+                        f"[FrameQueue] push → fallback dedup same-source | "
+                        f"evicted={old.frame_id} source={displaced.source!r}"
+                    )
                 self._fallback.append(displaced)
 
             # For same-source updates, preserve the original displayed_at so
@@ -367,6 +376,11 @@ class FrameQueue:
                     and displaced.displayed_at is not None):
                 elapsed = now - displaced.displayed_at
                 displaced.remaining_ttl_s = max(0.0, displaced.ttl_s - elapsed)
+            # Same-source dedup in fallback
+            old_fb = [f for f in self._fallback if f.source == displaced.source]
+            for old in old_fb:
+                self._fallback.remove(old)
+                dropped.append(old)
             self._fallback.append(displaced)
 
         next_frame.displayed_at = now
@@ -487,12 +501,11 @@ class FrameQueue:
                     f"[FrameQueue] prune → expired fallback frame={f.frame_id} "
                     f"source={f.source!r}"
                 )
-            elif (f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0
-                    and f.should_expire):
+            elif f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0:
                 dropped.append(f)
                 self._log(
                     f"[FrameQueue] prune → exhausted fallback frame={f.frame_id} "
-                    f"source={f.source!r} (remaining_ttl_s=0, should_expire=True)"
+                    f"source={f.source!r} (remaining_ttl_s=0)"
                 )
             else:
                 new_fallback.append(f)
@@ -514,9 +527,8 @@ class FrameQueue:
         for f in self._fallback:
             if _is_expired(f, now):
                 continue
-            # Skip should_expire fallback frames that have exhausted their display time
-            if (f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0
-                    and f.should_expire):
+            # Skip fallback frames that have exhausted their display time
+            if f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0:
                 continue
             return f
 
