@@ -487,6 +487,13 @@ class FrameQueue:
                     f"[FrameQueue] prune → expired fallback frame={f.frame_id} "
                     f"source={f.source!r}"
                 )
+            elif (f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0
+                    and f.should_expire):
+                dropped.append(f)
+                self._log(
+                    f"[FrameQueue] prune → exhausted fallback frame={f.frame_id} "
+                    f"source={f.source!r} (remaining_ttl_s=0, should_expire=True)"
+                )
             else:
                 new_fallback.append(f)
         self._fallback = new_fallback
@@ -499,11 +506,19 @@ class FrameQueue:
         Fallback takes priority (displaced frames resume first).
         Within fallback: first displaced = first re-promoted (index 0).
         Within pending: first pushed = first promoted (index 0).
+
+        Fallback frames with ``remaining_ttl_s <= 0`` are skipped — they have
+        already exhausted their display time and should not be re-promoted.
         """
         # Try fallback first (displaced frames get priority)
         for f in self._fallback:
-            if not _is_expired(f, now):
-                return f
+            if _is_expired(f, now):
+                continue
+            # Skip should_expire fallback frames that have exhausted their display time
+            if (f.remaining_ttl_s is not None and f.remaining_ttl_s <= 0
+                    and f.should_expire):
+                continue
+            return f
 
         # Then try pending (FIFO — oldest first)
         for f in self._pending:
