@@ -635,6 +635,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         self._current_overflow = overflow
         self._current_event_index = 0
         self._rotations_done = 0
+        self._last_countdown_text = None
         self._is_urgent = is_urgent
         self._display_time_s = display_time_s
         self._force_push = force_push and is_urgent
@@ -667,6 +668,7 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         total_slots = len(self._current_events) + (1 if self._current_overflow > 0 else 0)
         self._current_event_index = (self._current_event_index + 1) % total_slots
         self._rotations_done = getattr(self, "_rotations_done", 0) + 1
+        self._last_countdown_text = None  # reset so first push of new event always fires
 
         self.log(
             f"Rotating to slot {self._current_event_index}/{total_slots - 1} "
@@ -834,6 +836,18 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         seconds_until = int((start_dt - now).total_seconds())
         event_time = _format_event_time(start_dt)
         countdown = _format_countdown(seconds_until)
+
+        # Skip push if the countdown text hasn't changed (e.g. still "20 HRS")
+        last = getattr(self, "_last_countdown_text", None)
+        if last == countdown:
+            self.log(
+                f"Countdown unchanged: {event['summary']!r} → {countdown!r} — skipping push",
+                level="DEBUG",
+            )
+            await self._schedule_countdown_update()
+            return
+        self._last_countdown_text = countdown
+
         display_name = self._get_display_name(event)
         grid = _build_event_grid(display_name, event_time, countdown)
 
