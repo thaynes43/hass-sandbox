@@ -153,6 +153,36 @@ def build_image_provider(cfg: ImageProviderConfig) -> ImageGenerationProvider:
                 upload_overwrite=bool(options.get("upload_overwrite", True)),
                 poll_interval_s=float(options.get("poll_interval_s") or 1.0),
                 provider_options=options,
+                sampler_cfg=(
+                    float(options["sampler_cfg"])
+                    if options.get("sampler_cfg") is not None
+                    else None
+                ),
+                sampler_steps=(
+                    int(options["sampler_steps"])
+                    if options.get("sampler_steps") is not None
+                    else None
+                ),
+                sampler_denoise=(
+                    float(options["sampler_denoise"])
+                    if options.get("sampler_denoise") is not None
+                    else None
+                ),
+                scale_node_id=(
+                    str(options["scale_node_id"])
+                    if options.get("scale_node_id") is not None
+                    else None
+                ),
+                scale_megapixels=(
+                    float(options["scale_megapixels"])
+                    if options.get("scale_megapixels") is not None
+                    else None
+                ),
+                min_input_pixels=(
+                    int(options["min_input_pixels"])
+                    if options.get("min_input_pixels") is not None
+                    else None
+                ),
             )
         )
 

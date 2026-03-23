@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import mimetypes
+import struct
 import time
 import urllib.error
 import urllib.parse
@@ -12,7 +14,9 @@ import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
+
+logger = logging.getLogger(__name__)
 
 from ..image_generation_provider import (
     ExternalImageGenError,
@@ -39,6 +43,15 @@ class ComfyUIImageGenerationConfig:
     upload_overwrite: bool = True
     poll_interval_s: float = 1.0
     provider_options: Dict[str, Any] = field(default_factory=dict)
+    # Sampler overrides — None means use workflow defaults
+    sampler_cfg: Optional[float] = None
+    sampler_steps: Optional[int] = None
+    sampler_denoise: Optional[float] = None
+    # Scale override — override ImageScaleToTotalPixels megapixels value
+    scale_node_id: Optional[str] = None
+    scale_megapixels: Optional[float] = None
+    # Warn when input image total pixels < this threshold
+    min_input_pixels: Optional[int] = None
 
 
 def _safe_json(obj: Any) -> bytes:
@@ -87,6 +100,40 @@ def _build_multipart(
     return b"".join(lines), boundary
 
 
+def _get_image_dimensions(path: Path) -> Optional[Tuple[int, int]]:
+    """Read width/height from JPEG or PNG headers without Pillow."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(32)
+            # PNG: bytes 16-23 of IHDR are width (4B) + height (4B)
+            if header[:8] == b"\x89PNG\r\n\x1a\n" and len(header) >= 24:
+                w, h = struct.unpack(">II", header[16:24])
+                return (w, h)
+            # JPEG: scan for SOF0 (0xFFC0) or SOF2 (0xFFC2) marker
+            if header[:2] == b"\xff\xd8":
+                f.seek(2)
+                while True:
+                    marker = f.read(2)
+                    if len(marker) < 2 or marker[0] != 0xFF:
+                        return None
+                    if marker[1] in (0xC0, 0xC2):
+                        seg = f.read(7)
+                        if len(seg) < 7:
+                            return None
+                        h, w = struct.unpack(">HH", seg[3:7])
+                        return (w, h)
+                    if marker[1] == 0xD9:  # EOI
+                        return None
+                    seg_len_b = f.read(2)
+                    if len(seg_len_b) < 2:
+                        return None
+                    seg_len = struct.unpack(">H", seg_len_b)[0]
+                    f.seek(seg_len - 2, 1)
+    except Exception:
+        pass
+    return None
+
+
 class ComfyUIImageGenerationProvider(ImageGenerationProvider):
     name = ImageProviderName.COMFYUI
     capabilities = ImageProviderCapabilities(
@@ -131,6 +178,16 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             raise ExternalImageGenError("prompt is required")
 
         primary_input = in_paths[0]
+        input_dimensions: Optional[Tuple[int, int]] = _get_image_dimensions(primary_input)
+        if input_dimensions and self._config.min_input_pixels:
+            w, h = input_dimensions
+            total = w * h
+            if total < self._config.min_input_pixels:
+                logger.warning(
+                    "Input image %s is %dx%d (%d pixels), below min_input_pixels=%d. "
+                    "Low-res inputs may produce poor stylization results.",
+                    primary_input.name, w, h, total, self._config.min_input_pixels,
+                )
         uploaded_name = self._upload_image(primary_input)
         workflow = self._build_workflow(prompt=str(prompt), uploaded_name=uploaded_name, output_path=out_path)
 
@@ -143,7 +200,7 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_bytes(img_bytes)
 
-        meta = {
+        meta: Dict[str, Any] = {
             "backend": "external",
             "provider": "comfyui",
             "endpoint": self._config.base_url.rstrip("/"),
@@ -157,6 +214,8 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             "request": {"prompt_len": len(str(prompt)), "prompt": str(prompt)},
             "response": {"image_info": image_info},
         }
+        if input_dimensions:
+            meta["input_dimensions"] = {"width": input_dimensions[0], "height": input_dimensions[1]}
         if len(in_paths) > 1:
             meta["ignored_input_paths"] = [str(p) for p in in_paths[1:]]
         return meta
@@ -176,7 +235,16 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
                 workflow[self._config.negative_prompt_node_id]["inputs"]["prompt"] = ""
             workflow[self._config.save_image_node_id]["inputs"]["filename_prefix"] = output_path.stem or self._config.filename_prefix
             if self._config.sampler_node_id:
-                workflow[self._config.sampler_node_id]["inputs"][self._config.sampler_seed_input] = int(time.time() * 1000)
+                sampler_inputs = workflow[self._config.sampler_node_id]["inputs"]
+                sampler_inputs[self._config.sampler_seed_input] = int(time.time() * 1000)
+                if self._config.sampler_cfg is not None:
+                    sampler_inputs["cfg"] = self._config.sampler_cfg
+                if self._config.sampler_steps is not None:
+                    sampler_inputs["steps"] = self._config.sampler_steps
+                if self._config.sampler_denoise is not None:
+                    sampler_inputs["denoise"] = self._config.sampler_denoise
+            if self._config.scale_node_id and self._config.scale_megapixels is not None:
+                workflow[self._config.scale_node_id]["inputs"]["megapixels"] = self._config.scale_megapixels
         except KeyError as e:
             raise ExternalImageGenError(f"workflow is missing expected ComfyUI node/input: {e!r}") from e
         return workflow
