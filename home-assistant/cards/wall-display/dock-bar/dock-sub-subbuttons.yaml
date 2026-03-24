@@ -72,7 +72,7 @@ sub_button:
       content_layout: icon-top
       tap_action:
         action: navigate
-        navigation_path: "#test3-popup"
+        navigation_path: "#livingroom-popup"
     - name: Study
       icon: mdi:globe-model
       show_name: true
@@ -82,7 +82,7 @@ sub_button:
       content_layout: icon-top
       tap_action:
         action: navigate
-        navigation_path: "#test4-popup"
+        navigation_path: "#study-popup"
     - name: Foyer
       icon: mdi:chandelier
       show_name: true
