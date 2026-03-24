@@ -22,6 +22,9 @@ guardrails:
     - Avoid single huge bubble cards in a one-card row
     - Prefer compact grids over phone-style full-width stacks
     - Keep the visual density appropriate for a 1920x1080 wall tablet
+  performance_bias:
+    - Prefer faster cards over the heaviest frosted-glass treatment when the wall tablet struggles
+    - Treat Android wall-tablet rendering as the performance baseline, not desktop dev responsiveness
 
 mcp_workflow:
   step_1_area_ids:
@@ -159,12 +162,31 @@ styling_rules:
     - Follow /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/bubble-card-custom-style-playbook.md
     - Keep the shared frosted-glass shell: translucent dark surface, subtle border, blur, soft inner highlight
     - Reuse the validated wall-display Bubble styling blocks instead of inventing a new visual language per popup
+    - For popup internals, prefer a flatter opaque or semi-opaque shell over repeated blur effects
+    - Prefer Bubble variables on ha-card over repeated deep internal selector overrides
   markdown_headers:
     - Headers should be centered
     - Use markdown with card_mod styling instead of oversized custom HTML
     - Keep the header cards visually invisible so the Bubble cards carry the visual weight
   tile_cards:
     - Use the same glass shell values as the Bubble cards so the sensor/status cards do not look foreign
+    - Keep tile styling lightweight: border, radius, and a small shadow are usually enough
+
+performance_limits:
+  hard_rules:
+    - Do not use backdrop-filter or -webkit-backdrop-filter on every nested card in a popup
+    - Avoid repeated .bubble-button-card-container overrides unless a visual bug requires them
+    - Avoid heavy multi-layer inset plus outer shadow stacks on every single card
+  soft_rules:
+    - Keep summary sections compact; if they become crowded, trim secondary media or status cards first
+    - Use tile cards for condensed sensor/status information instead of turning every sensor into a fully styled Bubble card
+    - If a popup feels sluggish, simplify styling before removing important controls
+    - If styling simplification is not enough, split the popup scope or reduce the number of always-visible secondary cards
+  debugging_order:
+    - First remove per-card blur
+    - Then remove deep container overrides and large shadow stacks
+    - Then reduce the number of media-player and secondary status cards
+    - Only after that consider restructuring the popup layout
 
 primary_suite_example:
   summary_entities:
@@ -225,3 +247,4 @@ iteration_notes:
   - If it is unclear whether an entity is already represented by a cleaner grouped control, prefer inclusion for the first draft and trim later
   - Preserve naming consistency across popups once a label pattern is chosen
   - Update this runbook after each popup if a better pattern emerges
+  - Performance changes should be recorded in this runbook so later popups do not repeat slow patterns
