@@ -23,6 +23,9 @@ appdaemon:
       client_port: 1883
       client_user: !secret mqtt_user
       client_password: !secret mqtt_password
+      client_topics:
+        - zigbee2mqtt/#
+        - appdaemon/health_check/#
 http:
   url: http://0.0.0.0:5050
 

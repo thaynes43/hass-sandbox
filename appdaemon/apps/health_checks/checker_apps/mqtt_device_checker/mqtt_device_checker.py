@@ -1,15 +1,16 @@
-"""MQTT Device Checker -- dual HA entity + MQTT linkquality monitoring.
+"""MQTT Device Checker -- dual HA entity state + MQTT last-seen monitoring.
 
 Discovers HA entities via configurable regex patterns, then monitors each
-device via both its HA entity state and Zigbee2MQTT linkquality messages.
-This dual-check approach distinguishes between device failures and
-integration/bridge failures:
+device via both its HA entity state and direct MQTT message tracking from
+Zigbee2MQTT.  This dual-check approach distinguishes between device failures
+and HA integration failures:
 
-- HA entity fails + MQTT ok -> **warning** (likely integration issue)
-- Both fail -> **critical** (device or network down)
+- HA entity fails + MQTT recent  -> **warning** (likely integration issue)
+- MQTT stale + HA entity ok      -> **warning** (device quiet but reachable)
+- Both fail                      -> **critical** (device or network down)
 
-MQTT linkquality checks can declare a dependency on the MQTT Broker checker
-so they show as ``unknown`` when the broker itself is down.
+MQTT checks can declare a dependency on a protocol checker (e.g. Zigbee)
+so they show as ``unknown`` when the protocol itself is down.
 
 Communication with the controller is event-only (never ``get_app``).
 """
@@ -32,7 +33,7 @@ import hassapi as hass
 
 
 class MqttDeviceChecker(hass.Hass):
-    """Monitors devices via both HA entity state and MQTT linkquality."""
+    """Monitors devices via HA entity state and MQTT message recency."""
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -47,17 +48,17 @@ class MqttDeviceChecker(hass.Hass):
 
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 300))
+        self._mqtt_stale_s: int = int(args.get("mqtt_stale_s", 21600))
 
         # MQTT
         self._mqtt_namespace: str = args.get("mqtt_namespace", "mqtt")
         self._mqtt_topic_prefix: str = args.get(
             "mqtt_topic_prefix", "zigbee2mqtt"
         )
-        self._mqtt_stale_s: int = int(args.get("mqtt_stale_s", 600))
 
-        # Dependency on broker checker
-        self._broker_dependency_id: str = args.get(
-            "broker_dependency_id", "mqtt_broker"
+        # Dependency on protocol checker (e.g. zigbee)
+        self._protocol_dependency_id: str = args.get(
+            "protocol_dependency_id", ""
         )
 
         # Entity discovery patterns
@@ -75,13 +76,16 @@ class MqttDeviceChecker(hass.Hass):
 
         # Discovered entities: entity_id -> friendly_name
         self._entities: Dict[str, str] = {}
-        # MQTT tracking: mqtt_device_name -> {linkquality, last_seen}
-        self._mqtt_linkquality: Dict[str, dict] = {}
+        # MQTT tracking: friendly_name -> last message timestamp (epoch)
+        self._mqtt_last_seen: Dict[str, float] = {}
+        # Ignore retained messages: only count messages after this time
+        self._mqtt_accept_after: float = 0.0
 
         self.log(
             f"MqttDeviceChecker initialising: id={self._checker_id}, "
             f"includes={len(self._include_patterns)}, "
-            f"excludes={len(self._exclude_patterns)}",
+            f"excludes={len(self._exclude_patterns)}, "
+            f"stale_threshold={self._mqtt_stale_s}s",
             level="INFO",
         )
 
@@ -93,7 +97,6 @@ class MqttDeviceChecker(hass.Hass):
 
     async def _async_startup(self) -> None:
         """Discover entities, register, set up listeners and timer."""
-        # Discover entities
         await self._discover_entities()
 
         if not self._entities:
@@ -106,17 +109,19 @@ class MqttDeviceChecker(hass.Hass):
         # Register with controller
         self._register()
 
-        # Listen for MQTT messages to track linkquality.
-        # We filter by topic prefix in the callback.
+        # Listen for MQTT messages to track device activity
         try:
             self.listen_event(
                 self._on_mqtt_message,
                 "MQTT_MESSAGE",
                 namespace=self._mqtt_namespace,
             )
+            # Ignore retained messages delivered on subscribe — only count
+            # messages arriving after a short grace period
+            self._mqtt_accept_after = time.time() + 5
             self.log(
                 f"Listening for MQTT messages (filtering for "
-                f"'{self._mqtt_topic_prefix}/')",
+                f"'{self._mqtt_topic_prefix}/', ignoring first 5s for retained)",
                 level="INFO",
             )
         except Exception as exc:
@@ -124,7 +129,7 @@ class MqttDeviceChecker(hass.Hass):
                 f"Failed to listen for MQTT messages: {exc!r}", level="ERROR"
             )
 
-        # Listen for controller events (HASS namespace)
+        # Listen for controller events
         self.listen_event(
             self._on_controller_ready, "health_check_controller_ready"
         )
@@ -190,9 +195,9 @@ class MqttDeviceChecker(hass.Hass):
     def _build_check_names(self) -> List[str]:
         """Build the list of check names for all discovered entities."""
         names: List[str] = []
-        for entity_id, friendly_name in sorted(self._entities.items()):
+        for entity_id in sorted(self._entities.keys()):
             short = self._short_name(entity_id)
-            names.append(f"{short} HA State")
+            names.append(f"{short} State")
             names.append(f"{short} MQTT")
         return names
 
@@ -200,14 +205,14 @@ class MqttDeviceChecker(hass.Hass):
         """Fire registration event to the controller."""
         check_names = self._build_check_names()
 
-        # Build dependencies: MQTT checks depend on broker being healthy
+        # Build dependencies: MQTT checks depend on protocol checker
         dependencies: List[dict] = []
-        if self._broker_dependency_id:
-            mqtt_check_names = [n for n in check_names if n.endswith(" MQTT")]
-            if mqtt_check_names:
+        if self._protocol_dependency_id:
+            mqtt_checks = [n for n in check_names if n.endswith(" MQTT")]
+            if mqtt_checks:
                 dependencies.append({
-                    "checker_id": self._broker_dependency_id,
-                    "affects_checks": mqtt_check_names,
+                    "checker_id": self._protocol_dependency_id,
+                    "affects_checks": mqtt_checks,
                 })
 
         payload = {
@@ -277,46 +282,36 @@ class MqttDeviceChecker(hass.Hass):
     def _on_mqtt_message(
         self, event_name: str, data: dict, kwargs: Any
     ) -> None:
-        """Track linkquality from incoming MQTT messages."""
-        topic = data.get("topic", "")
+        """Track when we last received any MQTT message from each device."""
+        topic = data.get("topic")
+        if not topic:
+            return  # Connection state events have topic=None
 
         # Only process messages under our topic prefix
         prefix = self._mqtt_topic_prefix + "/"
         if not topic.startswith(prefix):
             return
 
-        # Extract device name from topic: zigbee2mqtt/<device_name>[/...]
+        # Extract device name: zigbee2mqtt/<device_name>[/...]
         remainder = topic[len(prefix):]
         device_name = remainder.split("/")[0] if remainder else ""
-        if not device_name:
+        if not device_name or device_name in ("bridge", "group"):
             return
 
-        # Skip bridge and meta topics
-        if device_name in ("bridge", "group"):
+        # Skip retained messages delivered during initial subscribe burst
+        now = time.time()
+        if now < self._mqtt_accept_after:
             return
 
-        # Parse payload for linkquality
-        try:
-            raw_payload = data.get("payload", "{}")
-            if isinstance(raw_payload, str):
-                msg = json.loads(raw_payload)
-            else:
-                msg = raw_payload or {}
-
-            if "linkquality" in msg:
-                self._mqtt_linkquality[device_name] = {
-                    "linkquality": msg["linkquality"],
-                    "last_seen": time.time(),
-                }
-        except (json.JSONDecodeError, TypeError):
-            pass
+        # Record the time we last saw a live message from this device
+        self._mqtt_last_seen[device_name] = now
 
     # ------------------------------------------------------------------
     # Check execution
     # ------------------------------------------------------------------
 
     def _run_checks(self) -> None:
-        """Run HA entity + MQTT linkquality checks for all devices."""
+        """Run HA entity state + MQTT recency checks for all devices."""
         results: List[Dict[str, str]] = []
         now = time.time()
 
@@ -326,19 +321,28 @@ class MqttDeviceChecker(hass.Hass):
             # HA Entity State Check
             ha_status, ha_detail = self._check_ha_entity(entity_id)
 
-            # MQTT Linkquality Check
-            mqtt_status, mqtt_detail = self._check_mqtt_linkquality(
+            # MQTT Recency Check (using friendly_name as Z2M device name)
+            mqtt_status, mqtt_detail = self._check_mqtt_recency(
                 friendly_name, now
             )
 
-            # Cross-check logic: if HA fails but MQTT is ok, downgrade
-            # HA to warning (likely integration issue, not device failure)
-            if ha_status == "critical" and mqtt_status == "ok":
-                ha_status = "warning"
-                ha_detail = f"{ha_detail} (MQTT ok)"
+            # Cross-check logic:
+            #   Both fail -> stay critical (device dead)
+            #   Only one fails -> downgrade to warning
+            both_bad = (
+                ha_status in ("critical", "unknown")
+                and mqtt_status in ("critical", "unknown")
+            )
+            if not both_bad:
+                if ha_status == "critical":
+                    ha_status = "warning"
+                    ha_detail = f"{ha_detail} (MQTT ok)"
+                if mqtt_status == "critical":
+                    mqtt_status = "warning"
+                    mqtt_detail = f"{mqtt_detail} (HA state ok)"
 
             results.append({
-                "name": f"{short} HA State",
+                "name": f"{short} State",
                 "status": ha_status,
                 "detail": ha_detail,
             })
@@ -357,15 +361,34 @@ class MqttDeviceChecker(hass.Hass):
             }),
         )
 
+        # Log MQTT match diagnostics
+        expected_names = set(self._entities.values())
+        tracked_names = set(self._mqtt_last_seen.keys())
+        matched = expected_names & tracked_names
+        unmatched_expected = expected_names - tracked_names
+        extra_tracked = tracked_names - expected_names
+        self.log(
+            f"MQTT tracking: {len(tracked_names)} total seen, "
+            f"{len(matched)}/{len(expected_names)} matched, "
+            f"{len(unmatched_expected)} missing, {len(extra_tracked)} extra",
+            level="INFO",
+        )
+        if unmatched_expected:
+            self.log(
+                f"  Missing: {sorted(unmatched_expected)[:5]}",
+                level="INFO",
+            )
+
         # Log summary
         ok_count = sum(1 for r in results if r["status"] == "ok")
         warn_count = sum(1 for r in results if r["status"] == "warning")
-        fail_count = sum(1 for r in results if r["status"] == "critical")
+        crit_count = sum(1 for r in results if r["status"] == "critical")
+        unk_count = sum(1 for r in results if r["status"] == "unknown")
         self.log(
             f"Check complete for '{self._checker_name}': "
-            f"{ok_count} ok, {warn_count} warning, {fail_count} critical "
-            f"({len(self._entities)} devices)",
-            level="INFO" if fail_count == 0 and warn_count == 0 else "WARNING",
+            f"{ok_count} ok, {warn_count} warning, {crit_count} critical, "
+            f"{unk_count} unknown ({len(self._entities)} devices)",
+            level="INFO" if crit_count == 0 and warn_count == 0 else "WARNING",
         )
 
     def _check_ha_entity(self, entity_id: str) -> tuple:
@@ -378,22 +401,30 @@ class MqttDeviceChecker(hass.Hass):
         except Exception as exc:
             return ("critical", f"error: {exc}")
 
-    def _check_mqtt_linkquality(
-        self, friendly_name: str, now: float
-    ) -> tuple:
-        """Check MQTT linkquality for a device. Returns (status, detail)."""
-        lq_data = self._mqtt_linkquality.get(friendly_name)
+    def _check_mqtt_recency(self, friendly_name: str, now: float) -> tuple:
+        """Check when we last saw an MQTT message from a device."""
+        last_seen = self._mqtt_last_seen.get(friendly_name)
 
-        if not lq_data:
-            return ("unknown", "no MQTT data received")
+        if last_seen is None:
+            return ("unknown", "no MQTT data yet")
 
-        age_s = now - lq_data["last_seen"]
-        linkquality = lq_data["linkquality"]
-
+        age_s = now - last_seen
         if age_s > self._mqtt_stale_s:
             return (
                 "critical",
-                f"last seen {int(age_s)}s ago (stale)",
+                f"last MQTT {self._format_age(age_s)} ago (stale)",
             )
 
-        return ("ok", f"linkquality: {linkquality}, {int(age_s)}s ago")
+        return ("ok", f"MQTT {self._format_age(age_s)} ago")
+
+    @staticmethod
+    def _format_age(seconds: float) -> str:
+        """Format age in seconds to a human-readable string."""
+        s = int(seconds)
+        if s < 60:
+            return f"{s}s"
+        if s < 3600:
+            return f"{s // 60}m"
+        if s < 86400:
+            return f"{s // 3600}h {(s % 3600) // 60}m"
+        return f"{s // 86400}d {(s % 86400) // 3600}h"

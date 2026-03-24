@@ -872,9 +872,9 @@ basement_lights_checker:
   checker_id: basement_lights
   checker_name: Basement Lights
   check_interval_s: 300
+  mqtt_stale_s: 21600
   mqtt_namespace: mqtt
-  mqtt_stale_s: 600
-  broker_dependency_id: mqtt_broker
+  protocol_dependency_id: zigbee
   entity_patterns:
     - include: "(light|switch)\\.basement.*inovelli.*"
     - include: "light\\.basement.*hue.*\\d+$"
@@ -887,9 +887,9 @@ downstairs_lights_checker:
   checker_id: downstairs_lights
   checker_name: Downstairs Lights
   check_interval_s: 300
+  mqtt_stale_s: 21600
   mqtt_namespace: mqtt
-  mqtt_stale_s: 600
-  broker_dependency_id: mqtt_broker
+  protocol_dependency_id: zigbee
   entity_patterns:
     - include: "(light|switch)\\.downstairs.*inovelli.*"
     - include: "light\\.downstairs.*hue.*\\d+$"
@@ -905,9 +905,9 @@ upstairs_lights_checker:
   checker_id: upstairs_lights
   checker_name: Upstairs Lights
   check_interval_s: 300
+  mqtt_stale_s: 21600
   mqtt_namespace: mqtt
-  mqtt_stale_s: 600
-  broker_dependency_id: mqtt_broker
+  protocol_dependency_id: zigbee
   entity_patterns:
     - include: "(light|switch)\\.upstairs.*inovelli.*"
     - include: "light\\.upstairs.*hue.*\\d+$"
@@ -920,9 +920,9 @@ exterior_lights_checker:
   checker_id: exterior_lights
   checker_name: Exterior Lights
   check_interval_s: 300
+  mqtt_stale_s: 21600
   mqtt_namespace: mqtt
-  mqtt_stale_s: 600
-  broker_dependency_id: mqtt_broker
+  protocol_dependency_id: zigbee
   entity_patterns:
     - include: "(light|switch)\\.garage.*inovelli.*"
     - include: "(light|switch)\\.downstairs_front_door_inovelli_on_off.*"

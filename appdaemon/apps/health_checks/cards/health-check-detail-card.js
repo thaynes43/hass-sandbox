@@ -341,13 +341,11 @@ class HealthCheckDetailCard extends HTMLElement {
         ? this._formatTimestamp(checker.last_check)
         : "never";
 
-      // Sort checks: non-ok first (critical > warning > degraded > unknown > ok)
-      const statusOrder = { critical: 0, warning: 1, degraded: 2, unknown: 3, ok: 4 };
-      const sortedChecks = [...(checker.checks || [])].sort((a, b) => {
-        const sa = backendOnline ? a.status : "unknown";
-        const sb = backendOnline ? b.status : "unknown";
-        return (statusOrder[sa] ?? 3) - (statusOrder[sb] ?? 3);
-      });
+      // Sort checks alphabetically only — status is shown via icons/colors.
+      // Avoids reordering when checks flip between unknown/ok/critical.
+      const sortedChecks = [...(checker.checks || [])].sort((a, b) =>
+        (a.name || "").localeCompare(b.name || "")
+      );
 
       let checksHtml = "";
       for (const check of sortedChecks) {

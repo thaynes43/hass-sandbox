@@ -348,6 +348,8 @@ class HealthCheckController(hass.Hass):
                 worst_status = "degraded"
             elif status == "warning" and worst_status not in ("critical", "degraded"):
                 worst_status = "warning"
+            elif status == "unknown" and worst_status not in ("critical", "degraded", "warning"):
+                worst_status = "unknown"
 
         # Prune alerts older than retention period (TTL), then cap at max
         cutoff = now - self._alert_retention
