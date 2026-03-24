@@ -101,7 +101,8 @@ health_check_controller_dev:
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   heartbeat_interval_s: 60
-  alert_history_max: 20
+  alert_history_max: 50
+  alert_retention: "1:12:00:00"
 
 zigbee_health_checker_dev:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
@@ -204,6 +205,54 @@ printer_health_checker_dev:
     - entity_id: sensor.brother_mfc_l3780cdw_series
       name: Status
 
+cigar_humidity_checker_dev:
+  module: health_checks.checker_apps.temp_humidity_checker.temp_humidity_checker
+  class: TempHumidityChecker
+  checker_id: cigar_humidity
+  checker_name: Cigars
+  check_interval_s: 120
+  humidity_low_warning: 62
+  humidity_high_warning: 68
+  humidity_low_critical: 60
+  humidity_high_critical: 70
+  sensors:
+    - entity_id: sensor.cigar_humidity_sensor_01_humidity
+      name: Tupperdor 01
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_02_humidity
+      name: Tupperdor 02
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_03_humidity
+      name: Jar 01
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_04_humidity
+      name: Jar 02
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_05_humidity
+      name: Cooler
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_06_humidity
+      name: Tupperdor 03
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_07_humidity
+      name: Tupperdor 04
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.basement_aqara_w100_01_humidity
+      name: MON1800
+      type: humidity
+      dependency: zigbee
+    - entity_id: sensor.basement_aqara_w100_02_humidity
+      name: MA50
+      type: humidity
+      dependency: zigbee
+
 fan_health_checker_dev:
   module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker
@@ -253,3 +302,78 @@ fan_health_checker_dev:
       power_switch: switch.downstairs_study_scene_controller
       relay_control: select.downstairs_study_scene_controller_relay_control
       scene_control: select.downstairs_study_scene_controller_scene_control_relay
+
+mqtt_broker_checker_dev:
+  module: health_checks.checker_apps.mqtt_broker_checker.mqtt_broker_checker
+  class: MqttBrokerChecker
+  checker_id: mqtt_broker
+  checker_name: MQTT Broker
+  check_interval_s: 120
+  ping_timeout_s: 10
+  mqtt_namespace: mqtt
+  ping_topic: appdaemon/health_check/ping
+
+basement_lights_checker_dev:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  checker_id: basement_lights
+  checker_name: Basement Lights
+  check_interval_s: 300
+  mqtt_namespace: mqtt
+  mqtt_stale_s: 600
+  broker_dependency_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.basement.*inovelli.*"
+    - include: "light\\.basement.*hue.*\\d+$"
+    - exclude: ".*night_light.*"
+
+downstairs_lights_checker_dev:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  checker_id: downstairs_lights
+  checker_name: Downstairs Lights
+  check_interval_s: 300
+  mqtt_namespace: mqtt
+  mqtt_stale_s: 600
+  broker_dependency_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.downstairs.*inovelli.*"
+    - include: "light\\.downstairs.*hue.*\\d+$"
+    - exclude: ".*downstairs_front_door_inovelli_on_off.*"
+    - exclude: ".*downstairs_front_porch_inovelli_dimmer.*"
+    - exclude: ".*downstairs_kitchen_back_yard_spotlight.*"
+    - exclude: ".*night_light.*"
+
+upstairs_lights_checker_dev:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  checker_id: upstairs_lights
+  checker_name: Upstairs Lights
+  check_interval_s: 300
+  mqtt_namespace: mqtt
+  mqtt_stale_s: 600
+  broker_dependency_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.upstairs.*inovelli.*"
+    - include: "light\\.upstairs.*hue.*\\d+$"
+    - exclude: ".*night_light.*"
+
+exterior_lights_checker_dev:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  checker_id: exterior_lights
+  checker_name: Exterior Lights
+  check_interval_s: 300
+  mqtt_namespace: mqtt
+  mqtt_stale_s: 600
+  broker_dependency_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.garage.*inovelli.*"
+    - include: "(light|switch)\\.downstairs_front_door_inovelli_on_off.*"
+    - include: "(light|switch)\\.downstairs_front_porch_inovelli_dimmer.*"
+    - include: "(light|switch)\\.downstairs_kitchen_back_yard_spotlight.*"
+    - include: "light\\.front.*hue.*\\d+$"
+    - include: "light\\.outdoor.*hue.*\\d+$"
+    - exclude: ".*front_yard_lamp_post_hue_edison.*"
+    - exclude: ".*outdoor_hue_string_lights_01.*"
+    - exclude: ".*night_light.*"

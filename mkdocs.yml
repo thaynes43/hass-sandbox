@@ -48,6 +48,7 @@ nav:
       - Dashboard Notify: features/dashboard-notify.md
       - School Lunch Menu: features/school-lunch.md
       - Vestaboard: features/vestaboard.md
+      - System Health Monitoring: features/health-checks.md
   - Architecture:
       - Overview: architecture/overview.md
       - AppDaemon Apps: apps/index.md

@@ -14,6 +14,7 @@
 | **school_lunch_app** | Fetch daily school lunch menus and publish to HA sensor |
 | **vestaboard_controller_app** | Vestaboard controller with frame queue, TTL/expiration, and board automations |
 | **vestaboard_configuration_app** | Configuration bridge between Lovelace card and Vestaboard controller |
+| **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
 
 ## Shared providers
 
@@ -46,6 +47,11 @@ school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
 vestaboard_controller_app
   └─ controls physical Vestaboard via provider
        └─ vestaboard_configuration_app (forwards user commands)
+
+health_checks (controller + checker_apps)
+  └─ checker apps fire health_check_command events
+       └─ health_check_controller (aggregates → sensor.health_check_status)
+            └─ health-check-card / health-check-detail-card (reads sensor)
 ```
 
 !!! note "Per-app documentation"

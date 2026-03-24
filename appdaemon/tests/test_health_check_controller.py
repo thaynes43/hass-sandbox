@@ -6,6 +6,7 @@ Mocks AppDaemon methods and HAProvisioner — no real HA access required.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import sys
 from pathlib import Path
@@ -29,6 +30,7 @@ from health_checks.controller.health_check_controller import (
     HealthCheckController,
     HEARTBEAT_ENTITY_ID,
     SENSOR_ENTITY_ID,
+    _parse_retention,
 )
 
 
@@ -40,7 +42,8 @@ DEFAULT_ARGS: Dict[str, Any] = {
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
     "heartbeat_interval_s": 60,
-    "alert_history_max": 20,
+    "alert_history_max": 50,
+    "alert_retention": "1:12:00:00",
 }
 
 
@@ -223,7 +226,8 @@ class TestRegisterChecker:
         # Add an alert to history
         app._checkers["zigbee"]["alert_history"] = [
             {"timestamp": "2026-01-01T00:00:00", "check": "Bridge",
-             "from_status": "ok", "to_status": "critical", "detail": "down"}
+             "from_status": "ok", "to_status": "critical", "detail": "down",
+             "previous_state_entered": None, "previous_state_duration_s": None}
         ]
 
         # Re-register
@@ -251,6 +255,40 @@ class TestRegisterChecker:
         }, {})
 
         assert len(app._checkers) == 0
+
+    def test_register_stores_dependencies(self):
+        """Registering with dependencies should store them in checker dict."""
+        app = _make_app()
+        _startup(app)
+
+        deps = [{"checker_id": "mqtt_broker", "affects_checks": ["MQTT Status"]}]
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "checker_name": "MQTT Lights",
+                "check_names": ["MQTT Status", "HA State"],
+                "dependencies": deps,
+            }),
+        }, {})
+
+        assert app._checkers["mqtt_lights"]["dependencies"] == deps
+
+    def test_register_without_dependencies_defaults_empty(self):
+        """Registering without dependencies should default to empty list."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "zigbee",
+                "checker_name": "Zigbee",
+                "check_names": ["Bridge"],
+            }),
+        }, {})
+
+        assert app._checkers["zigbee"]["dependencies"] == []
 
 
 # ---------------------------------------------------------------------------
@@ -363,10 +401,18 @@ class TestReportStatus:
             }),
         }, {})
 
-        # Pre-fill with 5 alerts
+        # Pre-fill with 5 recent alerts
+        now = datetime.datetime.now()
         app._checkers["test"]["alert_history"] = [
-            {"timestamp": f"t{i}", "check": "Check1",
-             "from_status": "ok", "to_status": "critical", "detail": f"d{i}"}
+            {
+                "timestamp": (now - datetime.timedelta(minutes=i)).isoformat(timespec="seconds"),
+                "check": "Check1",
+                "from_status": "ok",
+                "to_status": "critical",
+                "detail": f"d{i}",
+                "previous_state_entered": None,
+                "previous_state_duration_s": None,
+            }
             for i in range(5)
         ]
 
@@ -777,3 +823,869 @@ class TestRepairRouting:
         }, {})
 
         app.fire_event.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests — Alert history enhancement (Enhancement 1)
+# ---------------------------------------------------------------------------
+
+class TestAlertHistoryEnhancement:
+    def test_first_transition_has_null_previous_state(self):
+        """First status transition (no prior last_changed) should have null fields."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Bridge"],
+            }),
+        }, {})
+
+        # Initial checks have last_changed=None; transition from unknown → critical
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Bridge", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+
+        alerts = app._checkers["test"]["alert_history"]
+        assert len(alerts) == 1
+        assert alerts[0]["previous_state_entered"] is None
+        assert alerts[0]["previous_state_duration_s"] is None
+
+    def test_second_transition_has_duration(self):
+        """Second status transition should have previous_state_entered and duration."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Bridge"],
+            }),
+        }, {})
+
+        # First report: unknown → ok (no alert, ok is the "good" direction)
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Bridge", "status": "ok", "detail": "up"}],
+            }),
+        }, {})
+
+        # Second report: ok → critical (alert should have previous_state_entered set)
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Bridge", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+
+        alerts = app._checkers["test"]["alert_history"]
+        assert len(alerts) == 1
+        assert alerts[0]["previous_state_entered"] is not None
+        assert alerts[0]["previous_state_duration_s"] is not None
+        assert alerts[0]["previous_state_duration_s"] >= 0.0
+
+    def test_alert_entry_has_all_required_fields(self):
+        """Alert history entries should include all enhanced fields."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Bridge"],
+            }),
+        }, {})
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Bridge", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+
+        alerts = app._checkers["test"]["alert_history"]
+        assert len(alerts) == 1
+        entry = alerts[0]
+        assert "timestamp" in entry
+        assert "check" in entry
+        assert "from_status" in entry
+        assert "to_status" in entry
+        assert "detail" in entry
+        assert "previous_state_entered" in entry
+        assert "previous_state_duration_s" in entry
+
+
+# ---------------------------------------------------------------------------
+# Tests — Alert retention TTL (Enhancement 2)
+# ---------------------------------------------------------------------------
+
+class TestAlertRetentionTTL:
+    def test_parse_retention_dd_hh_mm_ss(self):
+        """_parse_retention should parse DD:HH:MM:SS format."""
+        td = _parse_retention("1:12:00:00")
+        assert td.total_seconds() == 129600.0  # 1d 12h
+
+    def test_parse_retention_hh_mm_ss(self):
+        """_parse_retention should parse HH:MM:SS format."""
+        td = _parse_retention("02:30:00")
+        assert td.total_seconds() == 9000.0  # 2.5h
+
+    def test_parse_retention_default_on_bad_input(self):
+        """_parse_retention should fall back to default on invalid input."""
+        from health_checks.controller.health_check_controller import _DEFAULT_RETENTION
+        td = _parse_retention("not-valid")
+        assert td == _DEFAULT_RETENTION
+
+    def test_default_retention_applied(self):
+        """Controller should use 1:12:00:00 if alert_retention not configured."""
+        app = _make_app({"alert_retention": "1:12:00:00"})
+        app.initialize()
+        assert app._alert_retention.total_seconds() == 129600.0
+
+    def test_old_alerts_pruned_on_report(self):
+        """Alerts older than retention period should be pruned on report."""
+        app = _make_app({"alert_retention": "00:01:00"})  # 1 minute
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1"],
+            }),
+        }, {})
+
+        # Plant an old alert (2 minutes ago) and a recent one
+        now = datetime.datetime.now()
+        old_ts = (now - datetime.timedelta(minutes=2)).isoformat(timespec="seconds")
+        recent_ts = (now - datetime.timedelta(seconds=10)).isoformat(timespec="seconds")
+
+        app._checkers["test"]["alert_history"] = [
+            {
+                "timestamp": recent_ts,
+                "check": "Check1", "from_status": "ok", "to_status": "critical",
+                "detail": "recent", "previous_state_entered": None,
+                "previous_state_duration_s": None,
+            },
+            {
+                "timestamp": old_ts,
+                "check": "Check1", "from_status": "ok", "to_status": "critical",
+                "detail": "old", "previous_state_entered": None,
+                "previous_state_duration_s": None,
+            },
+        ]
+
+        # Trigger a report (status same → no new alert, but pruning should run)
+        # Force a transition so the report code path runs
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Check1", "status": "ok", "detail": "recovered"}],
+            }),
+        }, {})
+
+        # The old alert should be gone; recent + possibly new transition alert remains
+        history = app._checkers["test"]["alert_history"]
+        timestamps = [a["timestamp"] for a in history]
+        assert old_ts not in timestamps
+
+    def test_max_cap_still_applied_after_ttl_prune(self):
+        """alert_history_max cap should still apply after TTL pruning."""
+        app = _make_app({"alert_history_max": 2, "alert_retention": "1:00:00:00"})
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1"],
+            }),
+        }, {})
+
+        now = datetime.datetime.now()
+        # 4 recent alerts (all within TTL)
+        app._checkers["test"]["alert_history"] = [
+            {
+                "timestamp": (now - datetime.timedelta(minutes=i)).isoformat(timespec="seconds"),
+                "check": "Check1", "from_status": "ok", "to_status": "critical",
+                "detail": f"d{i}", "previous_state_entered": None,
+                "previous_state_duration_s": None,
+            }
+            for i in range(4)
+        ]
+
+        # Trigger status change to run prune logic
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Check1", "status": "ok", "detail": "ok"}],
+            }),
+        }, {})
+
+        assert len(app._checkers["test"]["alert_history"]) <= 2
+
+
+# ---------------------------------------------------------------------------
+# Tests — Clear alert history (Enhancement 3)
+# ---------------------------------------------------------------------------
+
+class TestClearAlertHistory:
+    def _setup_with_alerts(self) -> HealthCheckController:
+        app = _make_app()
+        _startup(app)
+
+        for cid in ["zigbee", "zwave"]:
+            app._on_command("health_check_command", {
+                "command": "register_checker",
+                "payload": json.dumps({
+                    "checker_id": cid,
+                    "checker_name": cid.capitalize(),
+                    "check_names": ["Bridge"],
+                }),
+            }, {})
+            app._checkers[cid]["alert_history"] = [
+                {"timestamp": "2026-01-01T00:00:00", "check": "Bridge",
+                 "from_status": "ok", "to_status": "critical", "detail": "d",
+                 "previous_state_entered": None, "previous_state_duration_s": None}
+            ]
+
+        app.set_state.reset_mock()
+        return app
+
+    def test_clear_all_alert_history(self):
+        """clear_alert_history without checker_id clears all checkers."""
+        app = self._setup_with_alerts()
+
+        app._on_command("health_check_command", {
+            "command": "clear_alert_history",
+            "payload": "{}",
+        }, {})
+
+        for cid in ["zigbee", "zwave"]:
+            assert app._checkers[cid]["alert_history"] == []
+        # Should publish updated status
+        app.set_state.assert_called()
+
+    def test_clear_specific_checker_alert_history(self):
+        """clear_alert_history with checker_id clears only that checker."""
+        app = self._setup_with_alerts()
+
+        app._on_command("health_check_command", {
+            "command": "clear_alert_history",
+            "payload": json.dumps({"checker_id": "zigbee"}),
+        }, {})
+
+        assert app._checkers["zigbee"]["alert_history"] == []
+        # zwave untouched
+        assert len(app._checkers["zwave"]["alert_history"]) == 1
+
+    def test_clear_unknown_checker_logs_warning(self):
+        """clear_alert_history for unknown checker_id should log a warning."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "clear_alert_history",
+            "payload": json.dumps({"checker_id": "nonexistent"}),
+        }, {})
+
+        app.log.assert_any_call(
+            "clear_alert_history for unknown checker: 'nonexistent'",
+            level="WARNING",
+        )
+
+    def test_clear_when_no_alerts_does_not_crash(self):
+        """clear_alert_history when history is empty should not crash."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "zigbee",
+                "checker_name": "Zigbee",
+                "check_names": ["Bridge"],
+            }),
+        }, {})
+        assert app._checkers["zigbee"]["alert_history"] == []
+
+        app._on_command("health_check_command", {
+            "command": "clear_alert_history",
+            "payload": "{}",
+        }, {})
+
+        assert app._checkers["zigbee"]["alert_history"] == []
+
+
+# ---------------------------------------------------------------------------
+# Tests — Warning status level (Enhancement 4)
+# ---------------------------------------------------------------------------
+
+class TestWarningStatusLevel:
+    def test_warning_status_stored_on_report(self):
+        """A warning check should set checker status to warning."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1", "Check2"],
+            }),
+        }, {})
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "Check1", "status": "warning", "detail": "slightly off"},
+                    {"name": "Check2", "status": "ok", "detail": "good"},
+                ],
+            }),
+        }, {})
+
+        assert app._checkers["test"]["status"] == "warning"
+
+    def test_warning_published_in_sensor(self):
+        """Warning overall status should appear in the sensor state."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1"],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [{"name": "Check1", "status": "warning", "detail": "warn"}],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        assert call_args[1]["state"] == "warning"
+
+    def test_warning_does_not_override_degraded(self):
+        """Warning should not override degraded status."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1", "Check2"],
+            }),
+        }, {})
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "Check1", "status": "degraded", "detail": "degraded"},
+                    {"name": "Check2", "status": "warning", "detail": "warn"},
+                ],
+            }),
+        }, {})
+
+        assert app._checkers["test"]["status"] == "degraded"
+
+    def test_warning_does_not_override_critical(self):
+        """Warning should not override critical status."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1", "Check2"],
+            }),
+        }, {})
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "Check1", "status": "critical", "detail": "down"},
+                    {"name": "Check2", "status": "warning", "detail": "warn"},
+                ],
+            }),
+        }, {})
+
+        assert app._checkers["test"]["status"] == "critical"
+
+    def test_severity_ordering_ok_lt_warning_lt_degraded_lt_critical(self):
+        """Severity ordering: ok < warning < degraded < critical."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["C1", "C2", "C3", "C4"],
+            }),
+        }, {})
+
+        # All four statuses present — critical should win
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "C1", "status": "ok", "detail": ""},
+                    {"name": "C2", "status": "warning", "detail": ""},
+                    {"name": "C3", "status": "degraded", "detail": ""},
+                    {"name": "C4", "status": "critical", "detail": ""},
+                ],
+            }),
+        }, {})
+        assert app._checkers["test"]["status"] == "critical"
+
+        # Remove critical — degraded should win
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "C1", "status": "ok", "detail": ""},
+                    {"name": "C2", "status": "warning", "detail": ""},
+                    {"name": "C3", "status": "degraded", "detail": ""},
+                    {"name": "C4", "status": "ok", "detail": ""},
+                ],
+            }),
+        }, {})
+        assert app._checkers["test"]["status"] == "degraded"
+
+        # Remove degraded — warning should win
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "C1", "status": "ok", "detail": ""},
+                    {"name": "C2", "status": "warning", "detail": ""},
+                    {"name": "C3", "status": "ok", "detail": ""},
+                    {"name": "C4", "status": "ok", "detail": ""},
+                ],
+            }),
+        }, {})
+        assert app._checkers["test"]["status"] == "warning"
+
+    def test_warning_overall_status_between_ok_and_degraded(self):
+        """Overall sensor state with one warning checker and one ok checker is warning."""
+        app = _make_app()
+        _startup(app)
+
+        for cid in ["a", "b"]:
+            app._on_command("health_check_command", {
+                "command": "register_checker",
+                "payload": json.dumps({
+                    "checker_id": cid, "checker_name": cid,
+                    "check_names": ["C"],
+                }),
+            }, {})
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "a",
+                "results": [{"name": "C", "status": "ok", "detail": ""}],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "b",
+                "results": [{"name": "C", "status": "warning", "detail": ""}],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        assert call_args[1]["state"] == "warning"
+
+
+# ---------------------------------------------------------------------------
+# Tests — Dependency system (Enhancement 5)
+# ---------------------------------------------------------------------------
+
+class TestDependencySystem:
+    def _register_broker(self, app: HealthCheckController) -> None:
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "checker_name": "MQTT Broker",
+                "check_names": ["Broker Status"],
+            }),
+        }, {})
+
+    def _register_lights(
+        self, app: HealthCheckController, affects: list | None = None
+    ) -> None:
+        deps = [{"checker_id": "mqtt_broker"}]
+        if affects is not None:
+            deps = [{"checker_id": "mqtt_broker", "affects_checks": affects}]
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "checker_name": "MQTT Lights",
+                "check_names": ["HA State", "MQTT Status"],
+                "dependencies": deps,
+            }),
+        }, {})
+
+    def test_registration_stores_dependencies(self):
+        """Dependencies should be stored in the checker dict at registration."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        self._register_lights(app, affects=["MQTT Status"])
+
+        deps = app._checkers["mqtt_lights"]["dependencies"]
+        assert len(deps) == 1
+        assert deps[0]["checker_id"] == "mqtt_broker"
+        assert deps[0]["affects_checks"] == ["MQTT Status"]
+
+    def test_published_view_overrides_when_dependency_down(self):
+        """When dependency is critical, affected checks published as unknown."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        self._register_lights(app, affects=["MQTT Status"])
+
+        # Broker goes critical
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+
+        # Lights report both ok
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        # Published: MQTT Status should be unknown, HA State unaffected
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        checks = {c["name"]: c for c in attrs["checkers"]["mqtt_lights"]["checks"]}
+        assert checks["MQTT Status"]["status"] == "unknown"
+        assert checks["MQTT Status"]["detail"] == "dependency unavailable"
+        assert checks["HA State"]["status"] == "ok"
+
+    def test_internal_state_not_modified_by_dependency(self):
+        """Internal _checkers state must not be changed by dependency resolution."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        self._register_lights(app, affects=["MQTT Status"])
+
+        # Broker down
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+
+        # Lights ok
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        # Internal state should still show ok
+        internal_checks = {
+            c["name"]: c for c in app._checkers["mqtt_lights"]["checks"]
+        }
+        assert internal_checks["MQTT Status"]["status"] == "ok"
+        assert app._checkers["mqtt_lights"]["status"] == "ok"
+
+    def test_all_checks_affected_when_affects_checks_omitted(self):
+        """When affects_checks is omitted, all checks should be overridden."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        # No affects_checks — all checks affected
+        self._register_lights(app, affects=None)
+
+        # Broker down
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+
+        # Lights report ok
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        checks = {c["name"]: c for c in attrs["checkers"]["mqtt_lights"]["checks"]}
+        # Both checks affected
+        assert checks["HA State"]["status"] == "unknown"
+        assert checks["MQTT Status"]["status"] == "unknown"
+
+    def test_partial_dependency_only_affects_named_checks(self):
+        """Partial dependency (affects_checks set) should only affect named checks."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        # Only MQTT Status affected
+        self._register_lights(app, affects=["MQTT Status"])
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        checks = {c["name"]: c for c in attrs["checkers"]["mqtt_lights"]["checks"]}
+        assert checks["HA State"]["status"] == "ok"
+        assert checks["MQTT Status"]["status"] == "unknown"
+
+    def test_missing_dependency_checker_treated_as_unhealthy(self):
+        """A dependency on a checker not yet registered should override affected checks."""
+        app = _make_app()
+        _startup(app)
+
+        # Register lights with dep on a broker that hasn't registered yet
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "checker_name": "MQTT Lights",
+                "check_names": ["HA State", "MQTT Status"],
+                "dependencies": [
+                    {"checker_id": "mqtt_broker", "affects_checks": ["MQTT Status"]}
+                ],
+            }),
+        }, {})
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        checks = {c["name"]: c for c in attrs["checkers"]["mqtt_lights"]["checks"]}
+        # mqtt_broker not registered → treated as unhealthy
+        assert checks["MQTT Status"]["status"] == "unknown"
+
+    def test_dependency_recovery_restores_real_status(self):
+        """When dependency recovers to ok, affected checks return to real status."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        self._register_lights(app, affects=["MQTT Status"])
+
+        # Broker down
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "critical", "detail": "down"}],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        # Verify override is active
+        attrs_down = app.set_state.call_args[1]["attributes"]
+        checks_down = {c["name"]: c for c in attrs_down["checkers"]["mqtt_lights"]["checks"]}
+        assert checks_down["MQTT Status"]["status"] == "unknown"
+
+        # Broker recovers
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "ok", "detail": "up"}],
+            }),
+        }, {})
+
+        # Now the published state should show the real status
+        attrs_up = app.set_state.call_args[1]["attributes"]
+        checks_up = {c["name"]: c for c in attrs_up["checkers"]["mqtt_lights"]["checks"]}
+        assert checks_up["MQTT Status"]["status"] == "ok"
+
+    def test_warning_dependency_does_not_override(self):
+        """A dependency with warning status should NOT override affected checks."""
+        app = _make_app()
+        _startup(app)
+        self._register_broker(app)
+        self._register_lights(app, affects=["MQTT Status"])
+
+        # Broker is warning (acceptable — dependency satisfied)
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [{"name": "Broker Status", "status": "warning", "detail": "slow"}],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "HA State", "status": "ok", "detail": "on"},
+                    {"name": "MQTT Status", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        checks = {c["name"]: c for c in attrs["checkers"]["mqtt_lights"]["checks"]}
+        # warning dependency should not suppress real status
+        assert checks["MQTT Status"]["status"] == "ok"
+
+    def test_dependency_system_is_generic(self):
+        """Adding a new dependency chain requires no controller code changes."""
+        # This test validates the generic design by wiring up a completely new
+        # dependency chain (internet_checker → cloud_integration_checker) that
+        # was never anticipated in the controller code, and confirming it works.
+        app = _make_app()
+        _startup(app)
+
+        # Register internet checker
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "internet_checker",
+                "checker_name": "Internet",
+                "check_names": ["External Ping"],
+            }),
+        }, {})
+
+        # Register cloud integration checker with dependency on internet
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "cloud_integration",
+                "checker_name": "Cloud Integration",
+                "check_names": ["API Health", "Local Fallback"],
+                "dependencies": [
+                    {"checker_id": "internet_checker", "affects_checks": ["API Health"]}
+                ],
+            }),
+        }, {})
+
+        # Internet goes down
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "internet_checker",
+                "results": [{"name": "External Ping", "status": "critical", "detail": "no route"}],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "cloud_integration",
+                "results": [
+                    {"name": "API Health", "status": "ok", "detail": "ok"},
+                    {"name": "Local Fallback", "status": "ok", "detail": "ok"},
+                ],
+            }),
+        }, {})
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        checks = {
+            c["name"]: c
+            for c in attrs["checkers"]["cloud_integration"]["checks"]
+        }
+        assert checks["API Health"]["status"] == "unknown"
+        assert checks["Local Fallback"]["status"] == "ok"

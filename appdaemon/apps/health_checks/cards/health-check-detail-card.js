@@ -52,6 +52,23 @@ class HealthCheckDetailCard extends HTMLElement {
   // HA card lifecycle
   // ---------------------------------------------------------------------------
 
+  disconnectedCallback() {
+    // Reset expanded state when popup closes so next open starts collapsed
+    this._expandedCheckers.clear();
+    if (this._refreshTimer) {
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+  }
+
+  connectedCallback() {
+    // Restart refresh timer when re-attached (popup reopened)
+    if (this._domBuilt) {
+      this._startRefreshTimer();
+      this._update();
+    }
+  }
+
   setConfig(config) {
     this._config = { ...HCD_DEFAULTS, ...config };
   }
@@ -158,10 +175,30 @@ class HealthCheckDetailCard extends HTMLElement {
     });
   }
 
+  _formatDurationCompact(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return "?";
+    if (seconds < 60) return `${Math.floor(seconds)}s`;
+    if (seconds < 3600) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return s > 0 ? `${m}m ${s}s` : `${m}m`;
+    }
+    if (seconds < 86400) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    }
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    return h > 0 ? `${d}d ${h}h` : `${d}d`;
+  }
+
   _statusIcon(status) {
     switch (status) {
       case "ok":
         return { icon: "mdi:check-circle", color: "var(--success-color, #4caf50)" };
+      case "warning":
+        return { icon: "mdi:alert", color: "var(--warning-color, #ff9800)" };
       case "degraded":
         return { icon: "mdi:alert-circle", color: "var(--warning-color, #ff9800)" };
       case "critical":
@@ -180,6 +217,8 @@ class HealthCheckDetailCard extends HTMLElement {
     switch (status) {
       case "ok":
         return "Healthy";
+      case "warning":
+        return "Warning";
       case "degraded":
         return "Degraded";
       case "critical":
@@ -216,6 +255,9 @@ class HealthCheckDetailCard extends HTMLElement {
           <button class="recheck-btn" data-action="recheck">
             <ha-icon icon="mdi:refresh" style="--mdc-icon-size:16px;"></ha-icon> Force Re-check
           </button>
+          <button class="clear-history-btn" data-action="clear_history">
+            <ha-icon icon="mdi:notification-clear-all" style="--mdc-icon-size:16px;"></ha-icon> Clear Alert History
+          </button>
         </div>
       </div>
     `;
@@ -249,7 +291,8 @@ class HealthCheckDetailCard extends HTMLElement {
       : "no heartbeat received";
 
     const hbState = this._hass?.states?.[this._config.heartbeat_entity];
-    const lastHb = hbState?.state || "—";
+    const rawHb = hbState?.state || "";
+    const lastHb = rawHb ? this._formatTimestamp(rawHb.replace(" ", "T")) : "—";
 
     this._els.adSection.innerHTML = `
       <div class="section-header">
@@ -298,8 +341,16 @@ class HealthCheckDetailCard extends HTMLElement {
         ? this._formatTimestamp(checker.last_check)
         : "never";
 
+      // Sort checks: non-ok first (critical > warning > degraded > unknown > ok)
+      const statusOrder = { critical: 0, warning: 1, degraded: 2, unknown: 3, ok: 4 };
+      const sortedChecks = [...(checker.checks || [])].sort((a, b) => {
+        const sa = backendOnline ? a.status : "unknown";
+        const sb = backendOnline ? b.status : "unknown";
+        return (statusOrder[sa] ?? 3) - (statusOrder[sb] ?? 3);
+      });
+
       let checksHtml = "";
-      for (const check of checker.checks || []) {
+      for (const check of sortedChecks) {
         const effectiveCheckStatus = backendOnline ? check.status : "unknown";
         const cIconHtml = this._statusIconHtml(effectiveCheckStatus, 14);
         const changedStr = check.last_changed
@@ -321,16 +372,18 @@ class HealthCheckDetailCard extends HTMLElement {
         repairHtml = this._buildRepairHtml(checkerId, checker);
       }
 
-      // Build a compact summary for the header: count ok/failing checks
+      // Build a compact summary for the header using checks_summary if available
       const checks = checker.checks || [];
-      const failCount = checks.filter(
+      const summary = checker.checks_summary;
+      const totalChecks = summary ? summary.total : checks.length;
+      const nonOkCount = summary ? summary.non_ok : checks.filter(
         (c) => (backendOnline ? c.status : "unknown") !== "ok"
       ).length;
       const summaryParts = [];
-      if (backendOnline && failCount === 0 && checks.length > 0) {
-        summaryParts.push(`${checks.length}/${checks.length} checks passing`);
-      } else if (backendOnline && failCount > 0) {
-        summaryParts.push(`${failCount}/${checks.length} failing`);
+      if (backendOnline && nonOkCount === 0 && totalChecks > 0) {
+        summaryParts.push(`${totalChecks}/${totalChecks} checks passing`);
+      } else if (backendOnline && nonOkCount > 0) {
+        summaryParts.push(`${nonOkCount}/${totalChecks} failing`);
       }
       if (lastCheck !== "never") {
         summaryParts.push(lastCheck);
@@ -338,12 +391,9 @@ class HealthCheckDetailCard extends HTMLElement {
       const summaryText = summaryParts.join(" · ");
 
       // Determine if this checker should be expanded
-      // Non-ok auto-expands unless user explicitly collapsed it
+      // Only expand if user explicitly clicked to expand
       const wasExplicitlyExpanded = this._expandedCheckers.has(checkerId);
-      const wasExplicitlyCollapsed = this._collapsedCheckers.has(checkerId);
-      const autoExpand = effectiveStatus !== "ok" && !wasExplicitlyCollapsed;
-      const defaultExpand = autoExpand || wasExplicitlyExpanded;
-      const expandedClass = defaultExpand ? "expanded" : "";
+      const expandedClass = wasExplicitlyExpanded ? "expanded" : "";
 
       html += `
         <div class="section checker-block ${expandedClass}" data-checker-id="${hcdEscapeHtml(checkerId)}">
@@ -414,12 +464,17 @@ class HealthCheckDetailCard extends HTMLElement {
     let alertsHtml = "";
     for (const alert of allAlerts.slice(0, 20)) {
       const alertIconHtml = this._statusIconHtml(alert.to_status, 14);
+      const prevDuration = alert.previous_state_duration_s;
+      let transitionDetail = "";
+      if (prevDuration != null && prevDuration > 0) {
+        transitionDetail = ` (was ${hcdEscapeHtml(alert.from_status)} for ${this._formatDurationCompact(prevDuration)})`;
+      }
       alertsHtml += `
         <div class="alert-row">
           <span class="alert-icon">${alertIconHtml}</span>
           <span class="alert-time">${hcdEscapeHtml(this._formatTimestamp(alert.timestamp))}</span>
           <span class="alert-source"><span class="alert-checker">${hcdEscapeHtml(alert.checker_name)}</span> <span class="alert-arrow">→</span> ${hcdEscapeHtml(alert.check)}</span>
-          <span class="alert-transition">${hcdEscapeHtml(alert.from_status)} → ${hcdEscapeHtml(alert.to_status)}</span>
+          <span class="alert-transition">${hcdEscapeHtml(alert.from_status)} → ${hcdEscapeHtml(alert.to_status)}${transitionDetail}</span>
         </div>
       `;
     }
@@ -608,6 +663,8 @@ class HealthCheckDetailCard extends HTMLElement {
             this._collapsedCheckers.add(cid);
           }
         }
+      } else if (action === "clear_history") {
+        this._callRelay("clear_alert_history", {});
       } else if (action === "start_repair") {
         this._callRelay("start_repair", { checker_id: el.dataset.checker });
       } else if (action === "toggle_auto_repair") {
@@ -771,6 +828,11 @@ class HealthCheckDetailCard extends HTMLElement {
       }
 
       .badge-degraded {
+        background: rgba(255, 152, 0, 0.18);
+        color: var(--hcd-degraded);
+      }
+
+      .badge-warning {
         background: rgba(255, 152, 0, 0.18);
         color: var(--hcd-degraded);
       }
@@ -1119,6 +1181,8 @@ class HealthCheckDetailCard extends HTMLElement {
       .actions-section {
         display: flex;
         justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
         padding: 4px 0;
       }
 
@@ -1133,6 +1197,9 @@ class HealthCheckDetailCard extends HTMLElement {
         font-size: 13px;
         font-weight: 600;
         letter-spacing: 0.02em;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
         transition: background 120ms ease, border-color 120ms ease;
       }
 
@@ -1142,6 +1209,32 @@ class HealthCheckDetailCard extends HTMLElement {
       }
 
       .recheck-btn:active {
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .clear-history-btn {
+        all: unset;
+        cursor: pointer;
+        padding: 10px 20px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid var(--hcd-border);
+        color: var(--hcd-muted);
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+
+      .clear-history-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+
+      .clear-history-btn:active {
         background: rgba(255, 255, 255, 0.04);
       }
 

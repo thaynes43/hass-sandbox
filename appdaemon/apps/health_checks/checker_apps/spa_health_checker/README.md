@@ -6,10 +6,11 @@ Monitors a Gecko-integrated hot tub (Haynes Spa) connected via the [ha-gecko-int
 
 | Check | Method | Healthy When |
 |-------|--------|-------------|
-| Gateway Ping | ICMP ping to in.touch gateway IP | Responds within timeout |
-| Overall Connection | `binary_sensor.*_overall_connection` state | `"on"` |
-| Transport Connection | `binary_sensor.*_transport_connection` state | `"on"` |
-| Thermostat Staleness | Age of `last_updated` on climate entity | < `staleness_threshold_s` |
+| Gateway Ping | ICMP ping to in.touch gateway IP (`gateway_host`) | Responds within timeout |
+| Connection entity checks | Entity state for each entry in `connection_entities` | `"on"` |
+| Thermostat Staleness | Age of `last_updated` on `staleness_entity` | < `staleness_threshold_s` |
+
+The checks are config-driven: `connection_entities` accepts a list of binary sensor entity IDs. Check names are derived from the entity ID (e.g. `binary_sensor.haynes_spa_overall_connection` becomes "Overall Connection"). Any check can be omitted by removing its config key.
 
 The staleness check is the key zombie detector — the Gecko integration's coordinator polls every 30 seconds, so if `last_updated` hasn't changed in 5+ minutes, the data path is stale even if connectivity sensors still report "on".
 
@@ -61,14 +62,13 @@ spa_health_checker:
   gateway_host: "192.168.0.163"                # in.touch gateway IP to ping
   connection_entities:                         # Binary sensors to monitor
     - binary_sensor.haynes_spa_overall_connection
-    - binary_sensor.haynes_spa_transport_connection
   staleness_entity: climate.haynes_spa_thermostat_1  # Entity for staleness detection
   staleness_threshold_s: 300                   # Seconds before entity is considered stale
   repair_switch: switch.power_distribution_hi_density_hot_tub  # Smart switch for power cycle
   repair_recovery_wait_s: 300                  # Max seconds to wait for recovery after repair
   check_interval_s: 120                        # Check frequency (seconds)
   auto_repair_enabled_default: false           # Default auto-repair toggle state
-  auto_repair_delay_min_default: 5             # Default minutes before auto-repair triggers
+  auto_repair_delay_min_default: 15            # Default minutes before auto-repair triggers
 ```
 
 ## Dependencies

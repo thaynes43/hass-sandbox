@@ -16,6 +16,13 @@ appdaemon:
       token: !secret token
       ws_max_msg_size: 8388608
       ws_timeout: 60
+    MQTT:
+      type: mqtt
+      namespace: mqtt
+      client_host: !secret mqtt_host
+      client_port: 1883
+      client_user: !secret mqtt_user
+      client_password: !secret mqtt_password
 http:
   url: http://0.0.0.0:5050
 

@@ -243,14 +243,20 @@ class HealthCheckCard extends HTMLElement {
     // Determine overall status for bar styling
     const hasCritical = !backendOnline || items.some((i) => i.status === "critical");
     const hasDegraded = items.some((i) => i.status === "degraded");
+    const hasWarning = items.some((i) => i.status === "warning");
     const hasUnknown = items.some((i) => i.status === "unknown");
 
     this._els.bar.classList.toggle("bar-critical", hasCritical);
     this._els.bar.classList.toggle("bar-degraded", !hasCritical && hasDegraded);
+    this._els.bar.classList.toggle("bar-warning", !hasCritical && !hasDegraded && hasWarning);
     this._els.bar.classList.toggle(
       "bar-unknown",
-      !hasCritical && !hasDegraded && hasUnknown
+      !hasCritical && !hasDegraded && !hasWarning && hasUnknown
     );
+
+    // Sort non-ok items first so they aren't clipped by overflow
+    const order = { critical: 0, warning: 1, degraded: 2, unknown: 3, ok: 4 };
+    items.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
 
     // Render checker items
     let html = "";
@@ -282,6 +288,8 @@ class HealthCheckCard extends HTMLElement {
     switch (status) {
       case "ok":
         return { icon: "mdi:check-circle", color: "var(--success-color, #4caf50)" };
+      case "warning":
+        return { icon: "mdi:alert", color: "var(--warning-color, #ff9800)" };
       case "degraded":
         return { icon: "mdi:alert-circle", color: "var(--warning-color, #ff9800)" };
       case "critical":
@@ -413,6 +421,10 @@ class HealthCheckCard extends HTMLElement {
         border-color: rgba(255, 180, 50, 0.35);
       }
 
+      .hc-bar.bar-warning {
+        border-color: rgba(255, 180, 50, 0.3);
+      }
+
       .hc-bar.bar-unknown {
         border-color: rgba(180, 180, 180, 0.25);
       }
@@ -439,8 +451,10 @@ class HealthCheckCard extends HTMLElement {
       .hc-items {
         display: flex;
         align-items: center;
-        gap: 16px;
+        gap: 6px 16px;
         flex-wrap: wrap;
+        max-height: calc(8 * 28px);
+        overflow: hidden;
       }
 
       .hc-item {
@@ -463,6 +477,11 @@ class HealthCheckCard extends HTMLElement {
       }
 
       .hc-item.status-degraded .item-name {
+        color: rgba(255, 200, 100, 0.95);
+        font-weight: 600;
+      }
+
+      .hc-item.status-warning .item-name {
         color: rgba(255, 200, 100, 0.95);
         font-weight: 600;
       }
