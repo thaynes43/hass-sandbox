@@ -89,7 +89,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
-| `vestaboard` | `appdaemon/providers/vestaboard/` (no README yet) | Vestaboard local API client and character encoding |
+| `vestaboard` | `appdaemon/providers/vestaboard/README.md` | Vestaboard local API client and character encoding |
 
 ### Repository docs (`agent-docs/`)
 

@@ -44,14 +44,14 @@ All automation-to-controller communication is also event-based. Automation apps 
 
 ## Frame queue
 
-The controller maintains a LIFO frame queue. Each queued frame carries:
+The controller maintains a FIFO frame queue. Each queued frame carries:
 
-- **TTL** — how many seconds the frame stays at the front of the queue before expiring
+- **TTL** — how many seconds the frame holds the board before the next frame is promoted
 - **override_ttl** — immediately pre-empts whatever is on the board regardless of active TTL
 - **max_age_s** — absolute expiry since creation; frame is discarded even if never shown
-- **should_expire** — if true, drop the frame after TTL instead of moving it to the fallback stack
+- **should_expire** — if true, the frame auto-leaves the board when TTL elapses; if false, the frame holds the board until displaced
 
-When the queue empties, the controller falls back to the most recently displayed frame that is still in the fallback stack.
+When a frame is displaced from the board (by a force-push or a new frame after TTL expiry), it moves to the fallback queue with its remaining TTL preserved. The fallback queue is consulted before the pending queue — displaced frames resume before new content shows. Fallback frames with less than 30 seconds of remaining TTL are pruned.
 
 ## Board automations
 

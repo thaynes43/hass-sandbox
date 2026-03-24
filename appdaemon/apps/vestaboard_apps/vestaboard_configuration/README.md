@@ -93,7 +93,7 @@ vestaboard_configuration:
   frame_library_path: /media/vestaboard/frame-library.json
   creators:
     - Mom
-    - Tom  # production override example; code default is also "Tom"
+    - Dad
     - Jackson
     - Penelope
     - Anonymous
