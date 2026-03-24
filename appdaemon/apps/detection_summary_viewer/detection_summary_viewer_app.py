@@ -4,10 +4,11 @@ DetectionSummaryViewer AppDaemon app.
 Manages the run picker, selected run display, viewer cache staging, and
 notification action handling for a detection_summary bundle.
 
-Fully decoupled from detection_summary_app: communicates via
+Communicates with detection_summary_app via:
   - HA event ``detection_summary/run_published`` (fired by detection_summary_app)
   - Shared filesystem under ``snapshot_ha_dir``
   - ``detection_summary_store`` (shared in-process store)
+  - Direct import of ``detection_summary_app.retention`` (archive logic)
 
 Self-provisions:
   - ``input_select.{bundle_key}_detection_summary_run_id``   (run picker)
@@ -28,6 +29,7 @@ from typing import Any, Optional
 import hassapi as hass
 
 from detection_summary_store import STORE as DETECTION_SUMMARY_STORE
+from detection_summary_app.retention import archive_runs as _archive_runs
 
 from .viewer_cache import ViewerCache, ViewerCacheConfig
 
@@ -118,22 +120,6 @@ def _list_published_run_ids(runs_dir: Path) -> list[tuple[str, float]]:
     out.sort(key=lambda t: t[1], reverse=True)
     return out
 
-
-def _prune_runs_to_max(runs_dir: Path, max_runs: int) -> int:
-    max_runs = int(max_runs)
-    if max_runs <= 0:
-        return 0
-    runs = _list_published_run_ids(runs_dir)
-    if len(runs) <= max_runs:
-        return 0
-    deleted = 0
-    for run_id, _ in runs[max_runs:]:
-        try:
-            shutil.rmtree(runs_dir / run_id, ignore_errors=True)
-            deleted += 1
-        except Exception:
-            pass
-    return deleted
 
 
 def _recent_published_run_ids(runs_dir: Path, max_options: int) -> list[str]:
@@ -762,15 +748,14 @@ class DetectionSummaryViewer(hass.Hass):
             return
 
     def _sync_run_picker_periodic(self, kwargs) -> None:
-        """Prune old runs and sync picker options with disk."""
-        max_retained_runs = int(self.args.get("max_retained_runs", 100))
+        """Archive old runs and sync picker options with disk."""
         runs_dir = self._ha_path_to_local_fs(self.snapshot_ha_dir) / self.bundle_runs_subdir
         try:
-            pruned = _prune_runs_to_max(runs_dir=runs_dir, max_runs=int(max_retained_runs))
+            archived = _archive_runs(runs_dir=runs_dir, keep=int(self.run_picker_max_options))
             options = _recent_published_run_ids(runs_dir=runs_dir, max_options=int(self.run_picker_max_options))
             self.log(
                 f"DetectionSummaryViewer[{self.bundle_key}]: sync run picker runs_dir={runs_dir} "
-                f"max_retained_runs={int(max_retained_runs)} pruned={int(pruned)} options={len(options)}",
+                f"keep={int(self.run_picker_max_options)} archived={int(archived)} options={len(options)}",
                 level="INFO",
             )
             if not options:

@@ -749,15 +749,25 @@ class DashboardNotifyCard extends HTMLElement {
       }
       .text-area {
         padding: 12px 16px;
-        min-height: 48px;
         display: flex;
         flex-direction: column;
         gap: 4px;
       }
       .notif-text {
+        --dashboard-notify-text-lines: 3;
+        --dashboard-notify-text-line-height: 1.35;
         font-size: 1.05em;
+        line-height: var(--dashboard-notify-text-line-height);
         font-weight: 500;
         color: var(--primary-text-color);
+        min-height: calc(1em * var(--dashboard-notify-text-line-height) * var(--dashboard-notify-text-lines));
+        max-height: calc(1em * var(--dashboard-notify-text-line-height) * var(--dashboard-notify-text-lines));
+        overflow: hidden;
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: var(--dashboard-notify-text-lines);
+        line-clamp: var(--dashboard-notify-text-lines);
+        white-space: normal;
       }
       .notif-meta {
         font-size: 0.8em;

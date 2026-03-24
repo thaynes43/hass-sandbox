@@ -13,7 +13,7 @@ use_blueprint:
         data:
           switch_name: downstairs_kitchen_back_yard_spotlight
           hold_color: input_text.inovelli_manual_hold
-          prev_led_color_helper: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+          prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
           automation_entity_ids:
             - automation.switch_back_yard_slider_opens_turn_on_spotlight
             - automation.switch_back_yard_camera_detects_motion_turn_on_lights

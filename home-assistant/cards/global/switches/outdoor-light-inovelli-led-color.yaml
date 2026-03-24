@@ -13,7 +13,7 @@ cards:
     rows: 1.5
     sub_button:
       main:
-        - entity: input_text.downstairs_kitchen_back_yard_spotlight_led_color
+        - entity: input_number.outdoor_light_inovelli_led_color
           show_name: false
           show_state: true
           icon: mdi:spotlight

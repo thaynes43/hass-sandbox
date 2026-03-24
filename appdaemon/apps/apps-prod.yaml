@@ -103,7 +103,7 @@ detection_summary_bulkhead:
   snapshot_ha_dir: /media/detection-summary/bulkhead
   media_fs_root_env: MEDIA_FS_ROOT
   hass_entities:
-    camera_entity_id: camera.basement_g5_dome_ultra_medium_resolution_channel
+    camera_entity_id: camera.basement_g5_dome_ultra_high_resolution_channel
     trigger_entity_id: binary_sensor.basement_g5_dome_ultra_motion
     best_image_camera_entity_id: camera.bulkhead_detection_summary_best
     generated_image_camera_entity_id: camera.bulkhead_detection_summary_generated
@@ -489,6 +489,8 @@ dashboard_notify:
   carousel_interval_s: 10
   default_ttl_s: 3600
   no_notification_refresh_s: 3600
+  notification_text_target_chars: 180
+  notification_text_truncate_suffix: "..."
   ai_provider_conf:
     image: gemini-default
   notifications:

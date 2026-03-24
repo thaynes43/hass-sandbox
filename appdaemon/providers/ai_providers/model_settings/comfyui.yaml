@@ -18,3 +18,22 @@ bundles:
       sampler_node_id: "115:3"
       sampler_seed_input: seed
       filename_prefix: detection-summary
+      # Sampler overrides — null = use workflow defaults (cfg=1, steps=4, denoise=1).
+      # HA camera snapshots can be inconsistent: a "1280x720" medium channel may
+      # actually deliver 640x360 frames.  sampler_cfg > 1 forces the model to
+      # follow the style/environment prompt more strongly, preventing near-
+      # identical copies of the source image on low-res inputs.
+      # Recommended range: 3.0-5.0. Start conservative and increase if outputs
+      # still look too similar to the source.
+      sampler_cfg: 3.5
+      sampler_steps: null
+      sampler_denoise: null
+      # Scale override — node 115:93 is ImageScaleToTotalPixels in the workflow.
+      # Bumping from 1 to 1.5 MP gives the model more pixel budget, which helps
+      # when inputs are unexpectedly small.  Image gen is not time-sensitive so
+      # the extra compute is acceptable.
+      scale_node_id: "115:93"
+      scale_megapixels: 1.5
+      # Warn when input image is below this total pixel count.
+      # 921600 = 1280*720 (expected medium-channel minimum).
+      min_input_pixels: 921600

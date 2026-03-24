@@ -137,7 +137,7 @@ detection_viewer_garage_dev:
 | `viewer_stage_subdir` | `viewer_stage` | Staging directory name under `snapshot_ha_dir` |
 | `viewer_www_subdir` | `viewer` | Viewer www directory name (under `/config/www/.../`). Must be non-empty for the atomic swap. |
 | `viewer_refresh_shell_command` | `ds_refresh_detection_summary_viewer_www` | Shell command name |
-| `run_picker_max_options` | `25` | Maximum run_ids to show in the picker |
+| `run_picker_max_options` | `25` | Maximum run_ids to keep in the active directory and show in the picker; older runs are archived to `runs/archive/YYYY-MM/` |
 | `selected_auto_reset_s` | `900` | Seconds of inactivity before picker auto-resets to latest (0 = disabled) |
 | `notification_action_prefix` | `None` | Prefix for iOS notification action buttons (e.g. `GARAGE_DS_VIEW`) |
 
