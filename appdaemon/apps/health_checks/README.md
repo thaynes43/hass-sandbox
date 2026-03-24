@@ -89,7 +89,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 ### MQTT Device Checker
 
-`MqttDeviceChecker` monitors devices via both HA entity state and MQTT linkquality messages. Discovers entities using configurable regex patterns and creates two checks per device: an HA State check and an MQTT check. Cross-check logic downgrades HA failures to **warning** when MQTT is still ok (indicates an integration issue rather than device failure). MQTT checks declare a dependency on the MQTT Broker checker so they show as **unknown** when the broker itself is down. See `mqtt_device_checker/README.md` for details.
+`MqttDeviceChecker` monitors devices via both HA entity state and MQTT message timestamps. Discovers entities using configurable regex patterns and creates two checks per device: a State check and an MQTT check. Cross-check logic is symmetric: if only one check fails it is downgraded to **warning**; both must fail for **critical**. MQTT checks can declare a dependency on a protocol checker (e.g. Zigbee) so they show as **unknown** when the protocol itself is down. See `mqtt_device_checker/README.md` for details.
 
 ### Temp/Humidity Checker
 
@@ -97,7 +97,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 ### Dependency System
 
-Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker's status is not `ok` or `warning`, the affected checks are overridden to `unknown` with detail `"dependency unavailable"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the MQTT broker) is down.
+Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker's status is not `ok` or `warning`, the affected checks are overridden to `unknown` with detail `"dependency unavailable"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down.
 
 Dependencies are declared per-check via `affects_checks`, or if omitted, all checks in the registering checker are affected:
 
@@ -105,14 +105,14 @@ Dependencies are declared per-check via `affects_checks`, or if omitted, all che
 {
   "dependencies": [
     {
-      "checker_id": "mqtt_broker",
+      "checker_id": "zigbee",
       "affects_checks": ["Device1 MQTT", "Device2 MQTT"]
     }
   ]
 }
 ```
 
-The checker-level status is recomputed from the modified checks in the published view using the standard severity precedence: critical > degraded > warning > ok > unknown.
+The checker-level status is recomputed from the modified checks in the published view using the standard severity precedence: critical > degraded > warning > unknown > ok.
 
 ### Repair Feature
 
@@ -203,6 +203,11 @@ Any check can be disabled by omitting its config key (e.g., remove `radio_host` 
           "last_changed": "2026-03-19T20:00:00"
         }
       ],
+      "checks_summary": {
+        "total": 3,
+        "ok": 3,
+        "non_ok": 0
+      },
       "alert_history": [
         {
           "timestamp": "2026-03-19T19:55:00",
@@ -223,6 +228,8 @@ Any check can be disabled by omitting its config key (e.g., remove `radio_host` 
   "icon": "mdi:heart-pulse"
 }
 ```
+
+**Note:** For checkers with more than 20 checks, only non-ok checks are included in the `checks` array to stay within HA's WebSocket attribute size limit. The `checks_summary` object always contains the full counts.
 
 ## Manual Setup Required
 

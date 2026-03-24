@@ -50,7 +50,7 @@ cigar_humidity_checker:
   module: health_checks.checker_apps.temp_humidity_checker.temp_humidity_checker
   class: TempHumidityChecker
   checker_id: cigar_humidity         # Unique checker ID
-  checker_name: Cigar Room Humidity  # Display name on cards
+  checker_name: Cigars               # Display name on cards
   check_interval_s: 120             # Check frequency (seconds)
 
   # Default thresholds (applied to all sensors unless overridden)

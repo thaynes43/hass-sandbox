@@ -48,9 +48,13 @@ mqtt_broker_checker:
 | `mqtt_namespace` | No | `mqtt` | AppDaemon MQTT plugin namespace |
 | `ping_topic` | No | `appdaemon/health_check/ping` | MQTT topic for ping/pong messages |
 
+## Implementation Notes
+
+Publishes via `call_service("mqtt/publish", ...)` rather than `mqtt_publish()` to use the HA MQTT service through the MQTT namespace.
+
 ## Manual Setup
 
-The AppDaemon MQTT plugin must be configured in `appdaemon.yaml`:
+The AppDaemon MQTT plugin must be configured in `appdaemon.yaml` with `client_topics` that include the ping topic:
 
 ```yaml
 plugins:
@@ -61,6 +65,9 @@ plugins:
     client_port: 1883
     client_user: !secret mqtt_user
     client_password: !secret mqtt_password
+    client_topics:
+      - zigbee2mqtt/#
+      - appdaemon/health_check/#
 ```
 
 Add the corresponding secrets to `secrets.yaml` (gitignored).

@@ -1,14 +1,15 @@
 # MQTT Device Checker
 
-Monitors Zigbee2MQTT devices via dual HA entity state and MQTT linkquality checks. Discovers entities dynamically using configurable regex patterns, then cross-references HA availability with MQTT linkquality messages to distinguish device failures from integration/bridge issues.
+Monitors Zigbee2MQTT devices via dual HA entity state and MQTT message tracking. Discovers entities dynamically using configurable regex patterns, then cross-references HA availability with MQTT message timestamps to distinguish device failures from integration/bridge issues.
 
 ## How It Works
 
 1. On startup, discovers HA entities matching configured include/exclude regex patterns
-2. Subscribes to all MQTT messages and tracks `linkquality` per Zigbee2MQTT device
-3. Periodically checks each discovered entity for both HA state and MQTT freshness
-4. Cross-check logic: if HA entity fails but MQTT linkquality is fresh, the HA check is downgraded to **warning** (likely an integration issue, not a device failure)
-5. MQTT checks declare a dependency on the MQTT Broker checker so they show as **unknown** when the broker itself is down
+2. Subscribes to all MQTT messages and tracks the timestamp of the last message received per `zigbee2mqtt/<device>` topic (any message, not just linkquality)
+3. Skips retained messages delivered during initial subscribe (5-second grace period)
+4. Periodically checks each discovered entity for both HA state and MQTT freshness
+5. Cross-check logic is symmetric: if only one check fails, it is downgraded to **warning**; if both fail, both stay **critical**
+6. MQTT checks declare a dependency on a protocol checker (e.g. Zigbee) so they show as **unknown** when the protocol itself is down
 
 ## Checks
 
@@ -16,16 +17,16 @@ For each discovered entity, two checks are registered:
 
 | Check | Method | Healthy When |
 |-------|--------|-------------|
-| `{name} HA State` | `get_state(entity_id)` | State is not `None`, `unavailable`, or `unknown` |
-| `{name} MQTT` | Zigbee2MQTT linkquality tracking | `linkquality` message received within `mqtt_stale_s` |
+| `{name} State` | `get_state(entity_id)` | State is not `None`, `unavailable`, or `unknown` |
+| `{name} MQTT` | MQTT message timestamp tracking | Any MQTT message received from device within `mqtt_stale_s` |
 
 ### Cross-Check Warning Logic
 
-| HA State | MQTT Status | Result |
-|----------|-------------|--------|
+| State Check | MQTT Check | Result |
+|-------------|------------|--------|
 | ok | ok | Both ok |
-| ok | unknown/critical | HA ok, MQTT as reported |
-| critical | ok | HA **warning** (not critical), MQTT ok |
+| ok | critical | State ok, MQTT **warning** (HA state ok) |
+| critical | ok | State **warning** (MQTT ok), MQTT ok |
 | critical | critical | Both critical |
 
 ## Entity Discovery
@@ -43,8 +44,8 @@ All matched entities are logged on startup for validation.
 
 ## Dependencies
 
-- MQTT Broker Checker (`mqtt_broker`) -- MQTT checks depend on broker health
-- AppDaemon MQTT plugin must be configured
+- Protocol checker (e.g. `zigbee`) -- MQTT checks depend on protocol health via `protocol_dependency_id`
+- AppDaemon MQTT plugin must be configured with `client_topics` including `zigbee2mqtt/#`
 
 ## Self-Provisioned Entities
 
@@ -60,11 +61,11 @@ basement_lights_checker:
   checker_id: basement_lights
   checker_name: Basement Lights
   check_interval_s: 300
+  mqtt_stale_s: 21600
   mqtt_namespace: mqtt
-  mqtt_stale_s: 600
-  broker_dependency_id: mqtt_broker
+  protocol_dependency_id: zigbee
   entity_patterns:
-    - include: ".*basement.*inovelli.*"
+    - include: "(light|switch)\\.basement.*inovelli.*"
     - include: "light\\.basement.*hue.*\\d+$"
     - exclude: ".*night_light.*"
 ```
@@ -76,8 +77,8 @@ basement_lights_checker:
 | `check_interval_s` | No | `300` | How often to run checks (seconds) |
 | `mqtt_namespace` | No | `mqtt` | AppDaemon MQTT plugin namespace |
 | `mqtt_topic_prefix` | No | `zigbee2mqtt` | MQTT topic prefix for device messages |
-| `mqtt_stale_s` | No | `600` | Seconds before MQTT data is considered stale |
-| `broker_dependency_id` | No | `mqtt_broker` | Checker ID of the MQTT broker checker (for dependency) |
+| `mqtt_stale_s` | No | `21600` | Seconds before MQTT data is considered stale (default 6 hours) |
+| `protocol_dependency_id` | No | `""` (none) | Checker ID of a protocol checker (e.g. `zigbee`) — MQTT checks depend on this |
 | `entity_patterns` | Yes | `[]` | List of include/exclude regex patterns for entity discovery |
 
 ### Entity Pattern Config

@@ -51,7 +51,7 @@ fan_health_checker:
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   checker_id: fans                                   # Unique ID
-  checker_name: Fans                                 # Display name on cards
+  checker_name: Ceiling Fans                          # Display name on cards
   check_interval_s: 180                              # Check frequency (seconds)
   repair_recovery_wait_s: 300                        # Max wait for recovery after repair
   auto_repair_enabled_default: false                 # Default auto-repair toggle
