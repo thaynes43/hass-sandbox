@@ -523,6 +523,107 @@ dashboard_notify:
     ttl_s: 7200
     bundle_keys: [garage, bulkhead, front_door, package, back_deck_pets, back_yard_pets, shed]
 
+vestaboard_controller:
+  module: vestaboard_apps.vestaboard_controller.vestaboard_controller_app
+  class: VestaboardControllerApp
+  disable: true
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  vestaboard_ip_env: VESTABOARD_IP
+  vestaboard_api_key_env: VESTABOARD_API_KEY
+  tick_interval_s: 15
+  frame_library_path: /media/vestaboard/frame-library.json
+  automation_config_path: /media/vestaboard/automation-config.yaml
+  sleep_window:
+    enabled: true
+    start: "01:00:00"
+    end: "06:45:00"
+
+vestaboard_configuration:
+  module: vestaboard_apps.vestaboard_configuration.vestaboard_configuration_app
+  class: VestaboardConfigurationApp
+  disable: true
+  dependencies:
+    - vestaboard_controller
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  frame_library_path: /media/vestaboard/frame-library.json
+  creators:
+    - Mom
+    - Dad
+    - Jackson
+    - Penelope
+    - Anonymous
+
+calendar_clock:
+  module: vestaboard_apps.automations.calendar_clock.calendar_clock_app
+  class: CalendarClockApp
+  disable: true
+
+messages_from_library:
+  module: vestaboard_apps.automations.messages_from_library.messages_from_library_app
+  class: MessagesFromLibraryApp
+  disable: true
+  frame_library_path: /media/vestaboard/frame-library.json
+
+art_from_library:
+  module: vestaboard_apps.automations.art_from_library.art_from_library_app
+  class: ArtFromLibraryApp
+  disable: true
+
+art_generated_by_ai:
+  module: vestaboard_apps.automations.ai_art_generator.ai_art_generator_app
+  class: AiArtGeneratorApp
+  disable: true
+  ai_provider_conf:
+    simple_text: openai-pixel-art
+  art_prompt_bundles_path: /media/vestaboard/art-prompt-bundles.yaml
+
+message_generated_by_ai:
+  module: vestaboard_apps.automations.ai_message_generator.ai_message_generator_app
+  class: AiMessageGeneratorApp
+  disable: true
+  ai_provider_conf:
+    simple_text: openai-default
+  prompt_data_bundles_path: /media/vestaboard/prompt-data-bundles.yaml
+
+calendar_summary_family:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  disable: true
+  calendar_entity: calendar.family
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+
+calendar_summary_hot_tub_maintenance:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  disable: true
+  calendar_entity: calendar.hot_tub_maintenance
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  ai_provider_conf:
+    simple_text: openai-default
+
+calendar_summary_holidays:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  disable: true
+  calendar_entity: calendar.holidays_for_united_states_ma
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+
+weather_schedule:
+  module: vestaboard_apps.automations.weather_schedule.weather_schedule_app
+  class: WeatherScheduleApp
+  disable: true
+  weather_entity: weather.forecast_home
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  time_list:
+    - "07:30:00"
+    - "15:00:00"
+
 calendar_hot_tub_maintenance:
   module: calendar_from_schedule_app.calendar_schedule_app
   class: CalendarScheduleApp

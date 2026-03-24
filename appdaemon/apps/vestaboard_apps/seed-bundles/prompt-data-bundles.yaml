@@ -1,0 +1,32 @@
+# Prompt Data Bundles for the AI Message Generator
+#
+# Each entry is a "bundle" the LLM can use as a topic. On each fire,
+# the app picks one bundle at random, resolves entity values from HA,
+# and feeds them to the AI to generate a data-driven board message.
+#
+# Format:
+#   - description: "What the AI should write about"
+#     entities:                          # optional — omit for topic-only bundles
+#       - entity_id: "sensor.xxx"
+#         description: "Human-readable label for the value"
+#
+# Tips:
+#   - Use valid HA entity_ids that exist in your instance.
+#   - The description should tell the AI what the value means.
+#   - Keep descriptions concise — they become part of the LLM prompt.
+#   - You can edit this file at any time; changes take effect on the next fire.
+
+- description: "Report on home UPS power status for both server and media racks"
+  entities:
+    - entity_id: "sensor.apc_2700w_load"
+      description: "Server rack UPS load — percentage of current wattage out of 2700W max capacity"
+    - entity_id: "sensor.apc_900w_01_load"
+      description: "Media rack UPS load — percentage of current wattage out of 900W max capacity"
+
+- description: "Report on water leak sensors"
+  entities:
+    - entity_id: "binary_sensor.water_leak"
+      description: "Water leak detection status"
+      value_map:
+        "off": "Dry (all clear)"
+        "on": "LEAK DETECTED (alert!)"

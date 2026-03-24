@@ -67,6 +67,15 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
 | `dashboard_notify` | `appdaemon/apps/dashboard_notify/README.md` | AI-generated notification carousel for wall displays |
 | `school_lunch_app` | `appdaemon/apps/school_lunch_app/README.md` | Fetch daily school lunch menus and publish to HA sensor |
+| `vestaboard_controller` | `appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md` | Vestaboard board controller with FIFO frame queue and dynamic automation registration |
+| `vestaboard_configuration` | `appdaemon/apps/vestaboard_apps/vestaboard_configuration/README.md` | Vestaboard configuration bridge: frame library CRUD, card ↔ controller communication |
+| `calendar_clock` | `appdaemon/apps/vestaboard_apps/automations/calendar_clock/README.md` | Calendar grid + clock display, updated every 60 seconds |
+| `calendar_summary` | `appdaemon/apps/vestaboard_apps/automations/calendar_summary/README.md` | Upcoming HA calendar events with countdown (multi-instance) |
+| `messages_from_library` | `appdaemon/apps/vestaboard_apps/automations/messages_from_library/README.md` | Random messages from frame library with curated fallback |
+| `art_from_library` | `appdaemon/apps/vestaboard_apps/automations/art_from_library/README.md` | Random pixel art from bundled art_library.json |
+| `ai_art_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_art_generator/README.md` | LLM-generated pixel art with grid validation and retry |
+| `ai_message_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_message_generator/README.md` | LLM-generated witty messages with curated fallback |
+| `weather_schedule` | `appdaemon/apps/vestaboard_apps/automations/weather_schedule/README.md` | Weather summary displayed on a daily schedule |
 
 ### Providers
 
@@ -80,6 +89,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
+| `vestaboard` | `appdaemon/providers/vestaboard/README.md` | Vestaboard local API client and character encoding |
 
 ### Repository docs (`agent-docs/`)
 
@@ -115,6 +125,21 @@ detection_summary_app
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 
 school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
+
+vestaboard_controller (vestaboard_apps/vestaboard_controller)
+  └─ controls physical Vestaboard via provider
+  └─ automation apps register via HA events (vestaboard_controller_command)
+  |    — no AppDaemon dependencies: entries needed
+  |    — automations can run in a different AppDaemon instance
+       ├─ calendar_clock            fires register_automation + push_automation_frame
+       ├─ calendar_summary          fires register_automation + push_automation_frame (one instance per calendar entity)
+       ├─ messages_from_library     fires register_automation + push_automation_frame + update_next_fire_time
+       ├─ art_from_library          fires register_automation + push_automation_frame + update_next_fire_time
+       ├─ ai_art_generator          fires register_automation + push_automation_frame + push_ai_art_preview_result + update_next_fire_time
+       ├─ ai_message_generator      fires register_automation + push_automation_frame + update_next_fire_time
+       └─ weather_schedule          fires register_automation + push_automation_frame
+  └─ fires vestaboard_controller_ready on startup (automations re-register automatically)
+  └─ vestaboard_configuration (reads status sensor, forwards card commands via vestaboard_controller_command event)
 ```
 
 ## When creating a new app or provider

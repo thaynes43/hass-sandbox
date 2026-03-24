@@ -1,2 +1,95 @@
 # Local dev app list (AppDaemon reads this via `appdaemon/appdaemon.yaml`).
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
+
+# --- Vestaboard Controller (no more automations: block) ---
+vestaboard_controller_dev:
+  module: vestaboard_apps.vestaboard_controller.vestaboard_controller_app
+  class: VestaboardControllerApp
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  vestaboard_ip_env: VESTABOARD_IP
+  vestaboard_api_key_env: VESTABOARD_API_KEY
+  tick_interval_s: 15
+  frame_library_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/frame-library.json
+  automation_config_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/automation-config.yaml
+  sleep_window:
+    enabled: true
+    start: "01:00:00"
+    end: "06:45:00"
+
+# --- Configuration App ---
+vestaboard_configuration_dev:
+  module: vestaboard_apps.vestaboard_configuration.vestaboard_configuration_app
+  class: VestaboardConfigurationApp
+  dependencies:
+    - vestaboard_controller_dev
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  frame_library_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/frame-library.json
+  creators:
+    - Mom
+    - Dad
+    - Jackson
+    - Penelope
+    - Anonymous
+
+# --- Individual Automation Apps ---
+calendar_clock_dev:
+  module: vestaboard_apps.automations.calendar_clock.calendar_clock_app
+  class: CalendarClockApp
+
+messages_from_library_dev:
+  module: vestaboard_apps.automations.messages_from_library.messages_from_library_app
+  class: MessagesFromLibraryApp
+  frame_library_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/frame-library.json
+
+art_from_library_dev:
+  module: vestaboard_apps.automations.art_from_library.art_from_library_app
+  class: ArtFromLibraryApp
+
+art_generated_by_ai_dev:
+  module: vestaboard_apps.automations.ai_art_generator.ai_art_generator_app
+  class: AiArtGeneratorApp
+  ai_provider_conf:
+    simple_text: openai-pixel-art
+  art_prompt_bundles_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/art-prompt-bundles.yaml
+
+message_generated_by_ai_dev:
+  module: vestaboard_apps.automations.ai_message_generator.ai_message_generator_app
+  class: AiMessageGeneratorApp
+  ai_provider_conf:
+    simple_text: openai-default
+  prompt_data_bundles_path: /mnt/cephfs-hdd/misc/hass-media/vestaboard/prompt-data-bundles.yaml
+
+calendar_summary_family_dev:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  calendar_entity: calendar.hayneshome01886_gmail_com
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+
+calendar_summary_hot_tub_maintenance_dev:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  calendar_entity: calendar.hot_tub_maintenance
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  ai_provider_conf:
+    simple_text: openai-default
+
+calendar_summary_holidays_dev:
+  module: vestaboard_apps.automations.calendar_summary.calendar_summary_app
+  class: CalendarSummaryApp
+  calendar_entity: calendar.holidays_for_united_states_ma
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+
+weather_schedule_dev:
+  module: vestaboard_apps.automations.weather_schedule.weather_schedule_app
+  class: WeatherScheduleApp
+  weather_entity: weather.forecast_home
+  ha_url_env: HA_URL
+  ha_token_env: TOKEN
+  time_list:
+    - "07:30:00"
+    - "15:00:00"
