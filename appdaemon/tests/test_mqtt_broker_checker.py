@@ -259,21 +259,57 @@ class TestPingPong:
         assert len(calls) == 0
 
     def test_timeout_reports_critical(self):
+        """After startup retries are exhausted, timeout reports critical."""
         app = _make_app()
         _startup(app)
         app.fire_event.reset_mock()
 
+        # Start a ping (sets the initial nonce)
         app._run_ping()
-        nonce = app._current_nonce
 
-        # Simulate timeout firing without pong
-        app._evaluate_ping({"nonce": nonce})
+        # Exhaust startup retries — each retry calls _run_ping which changes nonce
+        for _ in range(app._startup_retries + 1):
+            nonce = app._current_nonce
+            app._evaluate_ping({"nonce": nonce})
 
         calls = _find_events(app, "report_status")
         assert len(calls) == 1
         payload = json.loads(calls[0][1]["payload"])
         assert payload["results"][0]["status"] == "critical"
         assert "timeout" in payload["results"][0]["detail"]
+
+    def test_startup_retry_on_timeout(self):
+        """During startup, timeout retries instead of reporting critical."""
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+
+        app._run_ping()
+        nonce = app._current_nonce
+        retries_before = app._startup_retries
+
+        # First timeout should retry, not report
+        app._evaluate_ping({"nonce": nonce})
+
+        assert app._startup_retries == retries_before - 1
+        calls = _find_events(app, "report_status")
+        assert len(calls) == 0  # No critical reported yet
+
+    def test_no_startup_retry_after_success(self):
+        """After a successful pong, timeout goes straight to critical."""
+        app = _make_app()
+        _startup(app)
+        app._ever_succeeded = True
+        app.fire_event.reset_mock()
+
+        app._run_ping()
+        nonce = app._current_nonce
+        app._evaluate_ping({"nonce": nonce})
+
+        calls = _find_events(app, "report_status")
+        assert len(calls) == 1
+        payload = json.loads(calls[0][1]["payload"])
+        assert payload["results"][0]["status"] == "critical"
 
     def test_stale_timeout_ignored(self):
         app = _make_app()

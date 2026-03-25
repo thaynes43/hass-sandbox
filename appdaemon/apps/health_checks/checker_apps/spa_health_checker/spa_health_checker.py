@@ -90,6 +90,9 @@ class SpaHealthChecker(hass.Hass):
             args.get("auto_repair_delay_min_default", 15)
         )
 
+        # "health_dependencies" avoids collision with AppDaemon's built-in "dependencies"
+        self._dependencies: List[dict] = args.get("health_dependencies", [])
+
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 120))
 
@@ -202,16 +205,19 @@ class SpaHealthChecker(hass.Hass):
 
     def _register(self) -> None:
         check_names = self._build_check_names()
+        payload: dict = {
+            "checker_id": self._checker_id,
+            "checker_name": self._checker_name,
+            "check_names": check_names,
+            "supports_repair": True,
+            "repair_state": self._build_repair_state(),
+        }
+        if self._dependencies:
+            payload["dependencies"] = self._dependencies
         self.fire_event(
             "health_check_command",
             command="register_checker",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "checker_name": self._checker_name,
-                "check_names": check_names,
-                "supports_repair": True,
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(payload),
         )
         self.log(
             f"Registered '{self._checker_name}' with checks: {check_names}",

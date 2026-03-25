@@ -24,6 +24,8 @@ zigbee_health_checker_dev:
   web_ui_url: https://zigbee.haynesops.com
   web_ui_check_name: Web UI
   check_interval_s: 180
+  health_dependencies:
+    - checker_id: mqtt_broker
 
 zwave_health_checker_dev:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
@@ -56,13 +58,17 @@ spa_health_checker_dev:
   check_interval_s: 120
   auto_repair_enabled_default: false
   auto_repair_delay_min_default: 5
+  health_dependencies:
+    - checker_id: cloud
 
 cielo_health_checker_dev:
   module: health_checks.checker_apps.device_group_checker.device_group_checker
   class: DeviceGroupChecker
   checker_id: cielo
-  checker_name: Cielo Home
+  checker_name: Cielo
   check_interval_s: 180
+  health_dependencies:
+    - checker_id: cloud
   devices:
     - name: Movie Room
       ip: "192.168.50.102"
@@ -210,6 +216,17 @@ fan_health_checker_dev:
       relay_control: select.downstairs_study_scene_controller_relay_control
       scene_control: select.downstairs_study_scene_controller_scene_control_relay
 
+cloud_checker_dev:
+  module: health_checks.checker_apps.cloud_checker.cloud_checker
+  class: CloudChecker
+  checker_id: cloud
+  checker_name: Cloud
+  check_interval_s: 120
+  force_fail: false
+  checks:
+    - url: https://www.google.com
+      name: Google
+
 mqtt_broker_checker_dev:
   module: health_checks.checker_apps.mqtt_broker_checker.mqtt_broker_checker
   class: MqttBrokerChecker
@@ -229,6 +246,8 @@ basement_lights_checker_dev:
   mqtt_stale_s: 21600
   mqtt_namespace: mqtt
   protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
   entity_patterns:
     - include: "(light|switch)\\.basement.*inovelli.*"
     - include: "light\\.basement.*hue.*\\d+$"
@@ -243,6 +262,8 @@ downstairs_lights_checker_dev:
   mqtt_stale_s: 21600
   mqtt_namespace: mqtt
   protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
   entity_patterns:
     - include: "(light|switch)\\.downstairs.*inovelli.*"
     - include: "light\\.downstairs.*hue.*\\d+$"
@@ -260,6 +281,8 @@ upstairs_lights_checker_dev:
   mqtt_stale_s: 21600
   mqtt_namespace: mqtt
   protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
   entity_patterns:
     - include: "(light|switch)\\.upstairs.*inovelli.*"
     - include: "light\\.upstairs.*hue.*\\d+$"
@@ -274,6 +297,8 @@ exterior_lights_checker_dev:
   mqtt_stale_s: 21600
   mqtt_namespace: mqtt
   protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
   entity_patterns:
     - include: "(light|switch)\\.garage.*inovelli.*"
     - include: "(light|switch)\\.downstairs_front_door_inovelli_on_off.*"

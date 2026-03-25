@@ -56,10 +56,13 @@ class MqttDeviceChecker(hass.Hass):
             "mqtt_topic_prefix", "zigbee2mqtt"
         )
 
-        # Dependency on protocol checker (e.g. zigbee)
+        # Dependency on protocol checker (e.g. zigbee) — affects MQTT checks only
         self._protocol_dependency_id: str = args.get(
             "protocol_dependency_id", ""
         )
+
+        # "health_dependencies" avoids collision with AppDaemon's built-in "dependencies"
+        self._dependencies: List[dict] = args.get("health_dependencies", [])
 
         # Entity discovery patterns
         self._include_patterns: List[re.Pattern] = []
@@ -214,6 +217,8 @@ class MqttDeviceChecker(hass.Hass):
                     "checker_id": self._protocol_dependency_id,
                     "affects_checks": mqtt_checks,
                 })
+        # Additional dependencies affecting all checks (e.g. mqtt_broker)
+        dependencies.extend(self._dependencies)
 
         payload = {
             "checker_id": self._checker_id,

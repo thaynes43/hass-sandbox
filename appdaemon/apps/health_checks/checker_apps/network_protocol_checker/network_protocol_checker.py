@@ -66,6 +66,11 @@ class NetworkProtocolChecker(hass.Hass):
         self._web_ui_url: str = args.get("web_ui_url", "")
         self._web_ui_check_name: str = args.get("web_ui_check_name", "Web UI")
 
+        # Dependencies (list of dicts with checker_id, optional affects_checks)
+        # "health_dependencies" avoids collision with AppDaemon's built-in
+        # "dependencies" key (which controls app start ordering)
+        self._dependencies: List[Dict[str, Any]] = args.get("health_dependencies", [])
+
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 180))
 
@@ -118,17 +123,22 @@ class NetworkProtocolChecker(hass.Hass):
     def _register(self) -> None:
         """Fire registration event to the controller."""
         check_names = self._build_check_names()
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "checker_name": self._checker_name,
+            "check_names": check_names,
+        }
+        if self._dependencies:
+            payload["dependencies"] = self._dependencies
         self.fire_event(
             "health_check_command",
             command="register_checker",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "checker_name": self._checker_name,
-                "check_names": check_names,
-            }),
+            payload=json.dumps(payload),
         )
+        dep_ids = [d.get("checker_id", "?") for d in self._dependencies]
         self.log(
-            f"Registered '{self._checker_name}' with checks: {check_names}",
+            f"Registered '{self._checker_name}' with checks: {check_names}"
+            f"{f', dependencies: {dep_ids}' if dep_ids else ''}",
             level="INFO",
         )
 

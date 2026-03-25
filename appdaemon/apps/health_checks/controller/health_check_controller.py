@@ -467,29 +467,32 @@ class HealthCheckController(hass.Hass):
         if not deps:
             return checker
 
-        # Determine which checks are affected by unmet dependencies
-        affected_checks: set = set()
+        # Determine which checks are affected by which unmet dependencies
+        # Maps check_name -> set of dependency names that are down
+        affected_by: dict = {}
+        all_check_names = {c["name"] for c in checker["checks"]}
         for dep in deps:
             dep_id = dep.get("checker_id", "")
             dep_checker = self._checkers.get(dep_id)
             # Treat missing dependency as unhealthy
             if dep_checker is None or dep_checker["status"] not in ("ok", "warning"):
+                dep_name = dep_checker["name"] if dep_checker else dep_id
                 affects = dep.get("affects_checks", [])
-                if affects:
-                    affected_checks.update(affects)
-                else:
-                    # All checks in this checker are affected
-                    affected_checks.update(c["name"] for c in checker["checks"])
+                targets = set(affects) if affects else all_check_names
+                for check_name in targets:
+                    affected_by.setdefault(check_name, set()).add(dep_name)
 
-        if not affected_checks:
+        if not affected_by:
             return checker
 
         # Create a modified copy — do NOT mutate the original
         modified = copy.deepcopy(checker)
         for check in modified["checks"]:
-            if check["name"] in affected_checks:
+            dep_names = affected_by.get(check["name"])
+            if dep_names:
                 check["status"] = "unknown"
-                check["detail"] = "dependency unavailable"
+                names = ", ".join(sorted(dep_names))
+                check["detail"] = f"dependency unavailable: {names}"
 
         # Recompute the checker-level status from modified checks
         statuses = [c["status"] for c in modified["checks"]]
@@ -510,7 +513,7 @@ class HealthCheckController(hass.Hass):
     # Sensor publication
     # ------------------------------------------------------------------
 
-    def _checker_attrs(self, c: dict) -> dict:
+    def _checker_attrs(self, c: dict, is_dependency: bool = False) -> dict:
         """Extract the attributes to publish for a single checker.
 
         For checkers with many checks, only non-ok checks are included
@@ -543,6 +546,7 @@ class HealthCheckController(hass.Hass):
             "alert_history": c["alert_history"],
             "supports_repair": c.get("supports_repair", False),
             "repair_state": c.get("repair_state"),
+            "is_dependency": is_dependency,
         }
 
     def _publish_status(self) -> None:
@@ -552,6 +556,12 @@ class HealthCheckController(hass.Hass):
             cid: self._resolve_dependencies(cid, c)
             for cid, c in self._checkers.items()
         }
+
+        # Compute which checker_ids are referenced as dependencies by other checkers
+        dep_ids: set = set()
+        for c in self._checkers.values():
+            for d in c.get("dependencies", []):
+                dep_ids.add(d.get("checker_id"))
 
         # Compute overall status from resolved (published) views
         if not resolved:
@@ -571,7 +581,7 @@ class HealthCheckController(hass.Hass):
 
         attrs = {
             "checkers": {
-                cid: self._checker_attrs(c)
+                cid: self._checker_attrs(c, is_dependency=(cid in dep_ids))
                 for cid, c in resolved.items()
             },
             "last_updated": datetime.datetime.now().isoformat(timespec="seconds"),

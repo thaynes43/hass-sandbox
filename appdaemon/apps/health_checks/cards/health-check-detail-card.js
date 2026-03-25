@@ -213,6 +213,18 @@ class HealthCheckDetailCard extends HTMLElement {
     return `<ha-icon icon="${icon}" style="color:${color};--mdc-icon-size:${size}px;"></ha-icon>`;
   }
 
+  _dependencyIconHtml(checkerId, status, size = 18) {
+    const DEP_ICONS = {
+      mqtt_broker: "mdi:access-point",
+      zigbee: "mdi:zigbee",
+      zwave: "mdi:z-wave",
+      cloud: "mdi:cloud",
+    };
+    const icon = DEP_ICONS[checkerId] || "mdi:link-variant";
+    const { color } = this._statusIcon(status);
+    return `<ha-icon icon="${icon}" style="color:${color};--mdc-icon-size:${size}px;"></ha-icon>`;
+  }
+
   _statusLabel(status) {
     switch (status) {
       case "ok":
@@ -332,10 +344,52 @@ class HealthCheckDetailCard extends HTMLElement {
       return;
     }
 
+    // Split into dependencies and regular checkers
+    const allEntries = Object.entries(checkers);
+    const depEntries = allEntries.filter(
+      ([, c]) => c.is_dependency === true || c.is_dependency === "true"
+    );
+    const regularEntries = allEntries.filter(
+      ([, c]) => c.is_dependency !== true && c.is_dependency !== "true"
+    );
+
+    // Sort both groups: status severity first, then alphabetically by name
+    const STATUS_ORDER = { critical: 0, warning: 1, degraded: 2, unknown: 3, ok: 4 };
+    const sortEntries = (entries) => {
+      entries.sort((a, b) => {
+        const aStatus = backendOnline ? a[1].status : "unknown";
+        const bStatus = backendOnline ? b[1].status : "unknown";
+        const s = (STATUS_ORDER[aStatus] ?? 3) - (STATUS_ORDER[bStatus] ?? 3);
+        return s !== 0 ? s : (a[1].name || "").localeCompare(b[1].name || "");
+      });
+    };
+    sortEntries(depEntries);
+    sortEntries(regularEntries);
+
     let html = "";
-    for (const [checkerId, checker] of Object.entries(checkers)) {
+
+    // Render Dependencies section
+    if (depEntries.length > 0) {
+      html += `<div class="section-label">Dependencies</div>`;
+      html += this._renderCheckerEntries(depEntries, backendOnline, true);
+    }
+
+    // Render Checkers section
+    if (regularEntries.length > 0) {
+      html += `<div class="section-label">Checkers</div>`;
+      html += this._renderCheckerEntries(regularEntries, backendOnline, false);
+    }
+
+    this._els.checkersSection.innerHTML = html;
+  }
+
+  _renderCheckerEntries(entries, backendOnline, isDependency) {
+    let html = "";
+    for (const [checkerId, checker] of entries) {
       const effectiveStatus = backendOnline ? checker.status : "unknown";
-      const iconHtml = this._statusIconHtml(effectiveStatus, 18);
+      const iconHtml = isDependency
+        ? this._dependencyIconHtml(checkerId, effectiveStatus, 18)
+        : this._statusIconHtml(effectiveStatus, 18);
       const label = this._statusLabel(effectiveStatus);
       const lastCheck = checker.last_check
         ? this._formatTimestamp(checker.last_check)
@@ -421,8 +475,7 @@ class HealthCheckDetailCard extends HTMLElement {
         </div>
       `;
     }
-
-    this._els.checkersSection.innerHTML = html;
+    return html;
   }
 
   _updateHistorySection() {
@@ -990,6 +1043,19 @@ class HealthCheckDetailCard extends HTMLElement {
         color: var(--hcd-muted);
         font-style: italic;
         text-align: center;
+      }
+
+      .section-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        color: var(--secondary-text-color, #888);
+        padding: 8px 16px 4px;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+      }
+
+      .section-label + .checker-block {
+        margin-top: 0;
       }
 
       .checker-block {

@@ -149,47 +149,81 @@ class HealthCheckCard extends HTMLElement {
     return staleness <= this._config.stale_threshold_s;
   }
 
-  /** Build the status items array for rendering. */
-  _buildStatusItems() {
-    const backendOnline = this._isBackendOnline();
+  /** Map checker_id to a dependency icon. */
+  _dependencyIcon(checkerId) {
+    const map = {
+      mqtt_broker: "mdi:access-point",
+      zigbee: "mdi:zigbee",
+      zwave: "mdi:z-wave",
+      cloud: "mdi:cloud",
+    };
+    return map[checkerId] || "mdi:link-variant";
+  }
 
-    // Registered checkers
-    const status = this._hass?.states?.[this._config.status_entity];
-    const checkers = status?.attributes?.checkers || {};
-    const items = [];
+  /** Sort items by status severity, then alphabetically by name. */
+  _sortItems(items) {
+    const order = { critical: 0, warning: 1, degraded: 2, unknown: 3, ok: 4 };
+    items.sort((a, b) => {
+      const s = (order[a.status] ?? 3) - (order[b.status] ?? 3);
+      return s !== 0 ? s : (a.name || "").localeCompare(b.name || "");
+    });
+    return items;
+  }
 
-    for (const [, checker] of Object.entries(checkers)) {
-      // If backend is offline, override all checkers to unknown
-      if (!backendOnline) {
-        items.push({
-          name: checker.name || "Unknown",
-          status: "unknown",
-          duration: "",
-        });
-        continue;
-      }
-
-      let duration = "";
-      if (checker.status !== "ok") {
-        // Find the earliest last_changed among non-ok checks
-        const failingChecks = (checker.checks || []).filter(
-          (c) => c.status !== "ok" && c.last_changed
-        );
-        if (failingChecks.length > 0) {
-          const earliest = failingChecks.reduce((a, b) =>
-            new Date(a.last_changed) < new Date(b.last_changed) ? a : b
-          );
-          duration = this._sinceLastChanged(earliest.last_changed, false);
-        }
-      }
-      items.push({
+  /** Build a single checker item from its data. */
+  _buildCheckerItem(checkerId, checker, backendOnline) {
+    if (!backendOnline) {
+      return {
+        checker_id: checkerId,
         name: checker.name || "Unknown",
-        status: checker.status || "unknown",
-        duration,
-      });
+        status: "unknown",
+        duration: "",
+        is_dependency: String(checker.is_dependency) === "true",
+      };
     }
 
-    return items;
+    let duration = "";
+    if (checker.status !== "ok") {
+      const failingChecks = (checker.checks || []).filter(
+        (c) => c.status !== "ok" && c.last_changed
+      );
+      if (failingChecks.length > 0) {
+        const earliest = failingChecks.reduce((a, b) =>
+          new Date(a.last_changed) < new Date(b.last_changed) ? a : b
+        );
+        duration = this._sinceLastChanged(earliest.last_changed, false);
+      }
+    }
+    return {
+      checker_id: checkerId,
+      name: checker.name || "Unknown",
+      status: checker.status || "unknown",
+      duration,
+      is_dependency: String(checker.is_dependency) === "true",
+    };
+  }
+
+  /** Build the status items array, split into dependencies and regular. */
+  _buildStatusItems() {
+    const backendOnline = this._isBackendOnline();
+    const status = this._hass?.states?.[this._config.status_entity];
+    const checkers = status?.attributes?.checkers || {};
+    const dependencies = [];
+    const regularItems = [];
+
+    for (const [checkerId, checker] of Object.entries(checkers)) {
+      const item = this._buildCheckerItem(checkerId, checker, backendOnline);
+      if (item.is_dependency) {
+        dependencies.push(item);
+      } else {
+        regularItems.push(item);
+      }
+    }
+
+    return {
+      dependencies: this._sortItems(dependencies),
+      regularItems: this._sortItems(regularItems),
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -213,7 +247,7 @@ class HealthCheckCard extends HTMLElement {
       <div class="hc-bar" data-action="open">
         <div class="hc-header">
           <ha-icon icon="mdi:heart-pulse" class="hc-backend-icon"></ha-icon>
-          <span class="hc-title">Health Checks</span>
+          <span class="hc-title">AppDaemon</span>
         </div>
         <div class="hc-items"></div>
       </div>
@@ -233,18 +267,19 @@ class HealthCheckCard extends HTMLElement {
     if (!this._els) return;
 
     const backendOnline = this._isBackendOnline();
-    const items = this._buildStatusItems();
+    const { dependencies, regularItems } = this._buildStatusItems();
+    const allItems = [...dependencies, ...regularItems];
 
     // Update backend connectivity icon
     this._els.backendIcon.style.color = backendOnline
       ? "var(--success-color, #4caf50)"
       : "var(--error-color, #f44336)";
 
-    // Determine overall status for bar styling
-    const hasCritical = !backendOnline || items.some((i) => i.status === "critical");
-    const hasDegraded = items.some((i) => i.status === "degraded");
-    const hasWarning = items.some((i) => i.status === "warning");
-    const hasUnknown = items.some((i) => i.status === "unknown");
+    // Determine overall status for bar styling (includes deps + regular)
+    const hasCritical = !backendOnline || allItems.some((i) => i.status === "critical");
+    const hasDegraded = allItems.some((i) => i.status === "degraded");
+    const hasWarning = allItems.some((i) => i.status === "warning");
+    const hasUnknown = allItems.some((i) => i.status === "unknown");
 
     this._els.bar.classList.toggle("bar-critical", hasCritical);
     this._els.bar.classList.toggle("bar-degraded", !hasCritical && hasDegraded);
@@ -254,13 +289,26 @@ class HealthCheckCard extends HTMLElement {
       !hasCritical && !hasDegraded && !hasWarning && hasUnknown
     );
 
-    // Sort non-ok items first so they aren't clipped by overflow
-    const order = { critical: 0, warning: 1, degraded: 2, unknown: 3, ok: 4 };
-    items.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
-
-    // Render checker items
+    // Render all items: dependencies first (with custom icons), then regular checkers
     let html = "";
-    for (const item of items) {
+
+    // Dependencies — use custom per-checker icons
+    for (const dep of dependencies) {
+      const depIcon = this._dependencyIcon(dep.checker_id);
+      const { color } = this._statusIcon(dep.status);
+      const durationHtml = dep.duration
+        ? `<span class="item-duration">(${dep.duration})</span>`
+        : "";
+      html += `
+        <div class="hc-item status-${dep.status}">
+          <ha-icon icon="${depIcon}" style="color:${color};--mdc-icon-size:16px;" class="item-icon"></ha-icon>
+          <span class="item-name">${this._escapeHtml(dep.name)}</span>
+          ${durationHtml}
+        </div>`;
+    }
+
+    // Regular checkers — use status-based icons
+    for (const item of regularItems) {
       const { icon, color } = this._statusIcon(item.status);
       const durationHtml = item.duration
         ? `<span class="item-duration">(${item.duration})</span>`
@@ -273,8 +321,8 @@ class HealthCheckCard extends HTMLElement {
         </div>`;
     }
 
-    // If no checkers registered yet, show loading
-    if (items.length === 0) {
+    // If nothing registered yet, show loading
+    if (regularItems.length === 0 && dependencies.length === 0) {
       html = `<div class="hc-item status-unknown">
         <ha-icon icon="mdi:loading" style="color:var(--disabled-color, #9e9e9e);--mdc-icon-size:16px;" class="item-icon"></ha-icon>
         <span class="item-name">Loading...</span>

@@ -53,6 +53,8 @@ class MqttBrokerChecker(hass.Hass):
         self._last_pong_nonce: str | None = None
         self._broker_status: str = "unknown"
         self._broker_detail: str = "initializing"
+        self._startup_retries: int = 3  # retries before first successful check
+        self._ever_succeeded: bool = False
 
         self.log(
             f"MqttBrokerChecker initialising: id={self._checker_id}, "
@@ -206,6 +208,7 @@ class MqttBrokerChecker(hass.Hass):
                 latency_ms = (time.time() - msg.get("ts", time.time())) * 1000
                 self._broker_status = "ok"
                 self._broker_detail = f"round-trip {latency_ms:.0f}ms"
+                self._ever_succeeded = True
                 self._report_status()
         except (json.JSONDecodeError, TypeError, AttributeError) as exc:
             self.log(f"Failed to parse MQTT pong: {exc!r}", level="DEBUG")
@@ -218,6 +221,18 @@ class MqttBrokerChecker(hass.Hass):
 
         if self._last_pong_nonce == nonce:
             return  # Already handled in _on_mqtt_message
+
+        # Timeout — during startup MQTT may still be reconnecting, so retry
+        # a few times before declaring critical
+        if not self._ever_succeeded and self._startup_retries > 0:
+            self._startup_retries -= 1
+            self.log(
+                f"Ping timeout during startup — retrying "
+                f"({self._startup_retries} retries left)",
+                level="INFO",
+            )
+            self._run_ping()
+            return
 
         # Timeout -- broker unreachable
         self._broker_status = "critical"

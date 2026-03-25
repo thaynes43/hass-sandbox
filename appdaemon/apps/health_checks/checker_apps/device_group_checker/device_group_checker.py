@@ -69,6 +69,9 @@ class DeviceGroupChecker(hass.Hass):
                 "entities": entities,
             })
 
+        # "health_dependencies" avoids collision with AppDaemon's built-in "dependencies"
+        self._dependencies: List[dict] = args.get("health_dependencies", [])
+
         self.log(
             f"DeviceGroupChecker initialising: id={self._checker_id}, "
             f"name={self._checker_name}, "
@@ -122,11 +125,14 @@ class DeviceGroupChecker(hass.Hass):
 
     def _build_register_payload(self, check_names: List[str]) -> Dict[str, Any]:
         """Build the register_checker payload. Subclasses can extend."""
-        return {
+        payload: Dict[str, Any] = {
             "checker_id": self._checker_id,
             "checker_name": self._checker_name,
             "check_names": check_names,
         }
+        if self._dependencies:
+            payload["dependencies"] = self._dependencies
+        return payload
 
     # ------------------------------------------------------------------
     # Event handlers

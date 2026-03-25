@@ -1414,7 +1414,7 @@ class TestDependencySystem:
         attrs = call_args[1]["attributes"]
         checks = {c["name"]: c for c in attrs["checkers"]["mqtt_lights"]["checks"]}
         assert checks["MQTT Status"]["status"] == "unknown"
-        assert checks["MQTT Status"]["detail"] == "dependency unavailable"
+        assert checks["MQTT Status"]["detail"] == "dependency unavailable: MQTT Broker"
         assert checks["HA State"]["status"] == "ok"
 
     def test_internal_state_not_modified_by_dependency(self):
@@ -1689,3 +1689,52 @@ class TestDependencySystem:
         }
         assert checks["API Health"]["status"] == "unknown"
         assert checks["Local Fallback"]["status"] == "ok"
+
+    def test_is_dependency_flag_published_correctly(self):
+        """checker_a is referenced by checker_b → is_dependency=True; checker_b is not."""
+        app = _make_app()
+        _startup(app)
+
+        # Register checker_a (will be a dependency of checker_b)
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "checker_a",
+                "checker_name": "Checker A",
+                "check_names": ["Check A"],
+            }),
+        }, {})
+
+        # Register checker_b with a dependency on checker_a
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "checker_b",
+                "checker_name": "Checker B",
+                "check_names": ["Check B"],
+                "dependencies": [{"checker_id": "checker_a"}],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        assert attrs["checkers"]["checker_a"]["is_dependency"] is True
+        assert attrs["checkers"]["checker_b"]["is_dependency"] is False
+
+    def test_is_dependency_false_when_no_checker_depends_on_it(self):
+        """A checker not referenced by any other checker has is_dependency=False."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "standalone",
+                "checker_name": "Standalone",
+                "check_names": ["Check S"],
+            }),
+        }, {})
+
+        call_args = app.set_state.call_args
+        attrs = call_args[1]["attributes"]
+        assert attrs["checkers"]["standalone"]["is_dependency"] is False
