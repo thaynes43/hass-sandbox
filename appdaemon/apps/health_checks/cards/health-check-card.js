@@ -501,7 +501,7 @@ class HealthCheckCard extends HTMLElement {
         align-items: center;
         gap: 6px 16px;
         flex-wrap: wrap;
-        max-height: calc(8 * 28px);
+        max-height: calc(5 * 28px);
         overflow: hidden;
       }
 
