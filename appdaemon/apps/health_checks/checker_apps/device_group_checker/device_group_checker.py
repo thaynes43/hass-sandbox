@@ -22,7 +22,7 @@ if _health_checks_root not in sys.path:
 
 import hassapi as hass
 
-from shared.check_utils import ping_check
+from shared.check_utils import apply_cross_check_per_device, ping_check
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +165,9 @@ class DeviceGroupChecker(hass.Hass):
 
     async def _run_checks(self) -> None:
         results = await self._run_checks_only()
+        apply_cross_check_per_device(
+            results, [d["name"] for d in self._devices]
+        )
 
         payload = self._build_report_payload(results)
         self.fire_event(

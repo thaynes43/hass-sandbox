@@ -285,7 +285,14 @@ class MqttDeviceChecker(hass.Hass):
         """Track when we last received any MQTT message from each device."""
         topic = data.get("topic")
         if not topic:
-            return  # Connection state events have topic=None
+            # Connection state event (connect/disconnect) — reset the grace
+            # period so retained messages from the new subscription are ignored
+            self._mqtt_accept_after = time.time() + 5
+            self.log(
+                "MQTT connection state change — resetting 5s retained-message filter",
+                level="DEBUG",
+            )
+            return
 
         # Only process messages under our topic prefix
         prefix = self._mqtt_topic_prefix + "/"

@@ -29,7 +29,7 @@ if _health_checks_root not in sys.path:
 
 import hassapi as hass
 
-from shared.check_utils import http_check, ping_check
+from shared.check_utils import apply_cross_check, http_check, ping_check
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +191,9 @@ class NetworkProtocolChecker(hass.Hass):
         if self._web_ui_url:
             result = await self._check_web_ui()
             results.append(result)
+
+        # Cross-check: downgrade critical→warning for partial failures
+        apply_cross_check(results)
 
         # Report to controller
         self.fire_event(

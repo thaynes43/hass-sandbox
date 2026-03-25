@@ -34,6 +34,7 @@ from providers.ha_provisioner import HAProvisioner
 from health_checks.checker_apps.device_group_checker.device_group_checker import (
     DeviceGroupChecker,
 )
+from shared.check_utils import apply_cross_check_per_device
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,12 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
         # Evaluate auto-repair (skip if any repair is in progress)
         if not self._is_any_repair_active():
             self._evaluate_auto_repair(results)
+
+        # Cross-check: downgrade critical→warning for partial failures per device
+        # (after auto-repair eval so repair triggers see raw statuses)
+        apply_cross_check_per_device(
+            results, [d["name"] for d in self._devices]
+        )
 
         payload = self._build_report_payload(results)
         self.fire_event(

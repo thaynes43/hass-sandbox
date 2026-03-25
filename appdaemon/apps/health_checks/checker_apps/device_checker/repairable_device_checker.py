@@ -29,6 +29,7 @@ from providers.ha_provisioner import HAProvisioner
 from health_checks.checker_apps.device_checker.device_checker import (
     BasicDeviceChecker,
 )
+from shared.check_utils import apply_cross_check
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,10 @@ class RepairableDeviceChecker(BasicDeviceChecker):
         # Evaluate auto-repair (skip if repair in progress)
         if self._repair_status != REPAIR_IN_PROGRESS:
             self._evaluate_auto_repair(results)
+
+        # Cross-check: downgrade critical→warning for partial failures
+        # (after auto-repair eval so repair triggers see raw statuses)
+        apply_cross_check(results)
 
         payload = self._build_report_payload(results)
         self.fire_event(

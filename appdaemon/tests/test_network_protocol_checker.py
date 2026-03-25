@@ -214,8 +214,8 @@ class TestCheckExecution:
         assert all(r["status"] == "ok" for r in payload["results"])
         assert len(payload["results"]) == 3
 
-    def test_entity_critical_when_wrong_state(self):
-        """Entity in wrong state should report critical."""
+    def test_entity_warning_when_wrong_state_partial_failure(self):
+        """Entity in wrong state with other checks ok should report warning (partial failure)."""
         app = _make_app()
         _startup(app)
         app.fire_event.reset_mock()
@@ -241,11 +241,11 @@ class TestCheckExecution:
         entity_result = next(
             r for r in payload["results"] if r["name"] == "Integration Status"
         )
-        assert entity_result["status"] == "critical"
+        assert entity_result["status"] == "warning"
         assert "off" in entity_result["detail"]
 
-    def test_entity_critical_when_not_found(self):
-        """Entity returning None should report critical."""
+    def test_entity_warning_when_not_found_partial_failure(self):
+        """Entity returning None with other checks ok should report warning (partial failure)."""
         app = _make_app()
         _startup(app)
         app.fire_event.reset_mock()
@@ -270,11 +270,11 @@ class TestCheckExecution:
         entity_result = next(
             r for r in payload["results"] if r["name"] == "Integration Status"
         )
-        assert entity_result["status"] == "critical"
+        assert entity_result["status"] == "warning"
         assert "not found" in entity_result["detail"].lower()
 
-    def test_ping_failure_reported(self):
-        """Failed ping should report critical for radio check."""
+    def test_ping_warning_when_partial_failure(self):
+        """Failed ping with other checks ok should report warning (partial failure)."""
         app = _make_app()
         _startup(app)
         app.fire_event.reset_mock()
@@ -299,10 +299,10 @@ class TestCheckExecution:
         ping_result = next(
             r for r in payload["results"] if r["name"] == "Coordinator Ping"
         )
-        assert ping_result["status"] == "critical"
+        assert ping_result["status"] == "warning"
 
-    def test_http_failure_reported(self):
-        """Failed HTTP check should report critical for web UI check."""
+    def test_http_warning_when_partial_failure(self):
+        """Failed HTTP check with other checks ok should report warning (partial failure)."""
         app = _make_app()
         _startup(app)
         app.fire_event.reset_mock()
@@ -327,8 +327,34 @@ class TestCheckExecution:
         web_result = next(
             r for r in payload["results"] if r["name"] == "Web UI"
         )
-        assert web_result["status"] == "critical"
+        assert web_result["status"] == "warning"
         assert "503" in web_result["detail"]
+
+    def test_all_checks_critical_stays_critical(self):
+        """All checks failing should stay critical (not downgraded)."""
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+        app.get_state.return_value = "off"
+
+        with patch(
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "critical", "detail": "timeout"},
+        ), patch(
+            "health_checks.checker_apps.network_protocol_checker.network_protocol_checker.http_check",
+            new_callable=AsyncMock,
+            return_value={"status": "critical", "detail": "HTTP 503"},
+        ):
+            _run(app._run_checks())
+
+        payload = json.loads([
+            c for c in app.fire_event.call_args_list
+            if c[0][0] == "health_check_command"
+            and c[1].get("command") == "report_status"
+        ][0][1]["payload"])
+        for r in payload["results"]:
+            assert r["status"] == "critical"
 
     def test_skipped_checks_not_reported(self):
         """Unconfigured checks should not appear in results."""

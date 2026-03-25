@@ -16,7 +16,12 @@ import pytest
 _apps_root = Path(__file__).resolve().parent.parent / "apps"
 sys.path.insert(0, str(_apps_root / "health_checks"))
 
-from shared.check_utils import http_check, ping_check
+from shared.check_utils import (
+    apply_cross_check,
+    apply_cross_check_per_device,
+    http_check,
+    ping_check,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -170,3 +175,111 @@ class TestHttpCheck:
             result = _run(http_check("https://refused.example.com"))
         assert result["status"] == "critical"
         assert "Connection error" in result["detail"]
+
+
+# ---------------------------------------------------------------------------
+# apply_cross_check tests
+# ---------------------------------------------------------------------------
+
+class TestApplyCrossCheck:
+    def test_all_ok_no_change(self):
+        """All ok results should remain ok."""
+        results = [
+            {"name": "Ping", "status": "ok", "detail": "2ms"},
+            {"name": "Entity", "status": "ok", "detail": "on"},
+        ]
+        apply_cross_check(results)
+        assert all(r["status"] == "ok" for r in results)
+
+    def test_all_critical_stays_critical(self):
+        """All critical results should stay critical (device truly down)."""
+        results = [
+            {"name": "Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Entity", "status": "critical", "detail": "unavailable"},
+        ]
+        apply_cross_check(results)
+        assert all(r["status"] == "critical" for r in results)
+
+    def test_partial_failure_downgrades_to_warning(self):
+        """One critical + one ok = critical downgraded to warning."""
+        results = [
+            {"name": "Ping", "status": "ok", "detail": "2ms"},
+            {"name": "Entity", "status": "critical", "detail": "unavailable"},
+        ]
+        apply_cross_check(results)
+        assert results[0]["status"] == "ok"
+        assert results[1]["status"] == "warning"
+        assert "partial failure" in results[1]["detail"]
+
+    def test_unknown_treated_as_bad(self):
+        """unknown + critical = all bad, stays critical."""
+        results = [
+            {"name": "Ping", "status": "unknown", "detail": "no data"},
+            {"name": "Entity", "status": "critical", "detail": "unavailable"},
+        ]
+        apply_cross_check(results)
+        assert results[0]["status"] == "unknown"
+        assert results[1]["status"] == "critical"
+
+    def test_unknown_plus_ok_downgrades_critical(self):
+        """unknown + ok + critical = not all bad, critical→warning."""
+        results = [
+            {"name": "A", "status": "ok", "detail": "fine"},
+            {"name": "B", "status": "unknown", "detail": "no data"},
+            {"name": "C", "status": "critical", "detail": "down"},
+        ]
+        apply_cross_check(results)
+        assert results[0]["status"] == "ok"
+        assert results[1]["status"] == "unknown"  # unchanged
+        assert results[2]["status"] == "warning"
+
+    def test_single_result_unchanged(self):
+        """A single-check result should not be modified."""
+        results = [{"name": "Only", "status": "critical", "detail": "down"}]
+        apply_cross_check(results)
+        assert results[0]["status"] == "critical"
+
+    def test_empty_results_no_error(self):
+        """Empty list should not raise."""
+        apply_cross_check([])
+
+
+class TestApplyCrossCheckPerDevice:
+    def test_per_device_isolation(self):
+        """Cross-check should be applied independently per device."""
+        results = [
+            # Device A: ping ok, entity critical → entity becomes warning
+            {"name": "DevA Ping", "status": "ok", "detail": "2ms"},
+            {"name": "DevA Entity", "status": "critical", "detail": "unavailable"},
+            # Device B: both critical → stays critical
+            {"name": "DevB Ping", "status": "critical", "detail": "timeout"},
+            {"name": "DevB Entity", "status": "critical", "detail": "unavailable"},
+        ]
+        apply_cross_check_per_device(results, ["DevA", "DevB"])
+        assert results[0]["status"] == "ok"
+        assert results[1]["status"] == "warning"  # downgraded
+        assert results[2]["status"] == "critical"  # stayed
+        assert results[3]["status"] == "critical"  # stayed
+
+    def test_all_devices_ok(self):
+        """All ok across devices should remain ok."""
+        results = [
+            {"name": "X Ping", "status": "ok", "detail": "1ms"},
+            {"name": "X State", "status": "ok", "detail": "on"},
+            {"name": "Y Ping", "status": "ok", "detail": "2ms"},
+            {"name": "Y State", "status": "ok", "detail": "on"},
+        ]
+        apply_cross_check_per_device(results, ["X", "Y"])
+        assert all(r["status"] == "ok" for r in results)
+
+    def test_device_with_single_check_unchanged(self):
+        """A device with only one check should not be modified."""
+        results = [
+            {"name": "Solo State", "status": "critical", "detail": "down"},
+            {"name": "Duo Ping", "status": "ok", "detail": "1ms"},
+            {"name": "Duo State", "status": "critical", "detail": "down"},
+        ]
+        apply_cross_check_per_device(results, ["Solo", "Duo"])
+        assert results[0]["status"] == "critical"  # single check, unchanged
+        assert results[1]["status"] == "ok"
+        assert results[2]["status"] == "warning"  # downgraded (Duo has ok ping)

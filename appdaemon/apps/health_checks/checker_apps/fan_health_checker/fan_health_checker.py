@@ -35,7 +35,7 @@ if _appdaemon_root not in sys.path:
 import hassapi as hass
 
 from providers.ha_provisioner import HAProvisioner
-from shared.check_utils import ping_check
+from shared.check_utils import apply_cross_check_per_device, ping_check
 
 logger = logging.getLogger(__name__)
 
@@ -274,6 +274,12 @@ class FanHealthChecker(hass.Hass):
         # Evaluate auto-repair (skip if any repair is in progress)
         if not self._is_any_repair_active():
             self._evaluate_auto_repair(results)
+
+        # Cross-check: downgrade critical→warning for partial failures per fan
+        # (after auto-repair eval so repair triggers see raw statuses)
+        apply_cross_check_per_device(
+            results, [f["name"] for f in self._fans]
+        )
 
         # Report
         payload: Dict[str, Any] = {

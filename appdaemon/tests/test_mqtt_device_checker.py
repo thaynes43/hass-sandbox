@@ -284,6 +284,8 @@ class TestMqttMessageTracking:
     def test_tracks_device_message(self):
         app = _make_app()
         _startup(app)
+        # Expire the retained-message grace period so the message is accepted
+        app._mqtt_accept_after = 0
         app._on_mqtt_message("MQTT_MESSAGE", {
             "topic": "zigbee2mqtt/basement_hue_01",
             "payload": '{"state":"ON"}',
@@ -293,6 +295,7 @@ class TestMqttMessageTracking:
     def test_ignores_bridge_topic(self):
         app = _make_app()
         _startup(app)
+        app._mqtt_accept_after = 0
         app._on_mqtt_message("MQTT_MESSAGE", {
             "topic": "zigbee2mqtt/bridge/state",
             "payload": "online",
@@ -307,6 +310,21 @@ class TestMqttMessageTracking:
             "topic": None,
             "state": "Connected",
         }, {})
+
+    def test_reconnection_resets_grace_period(self):
+        """MQTT reconnection (topic=None) should reset the retained-message filter."""
+        app = _make_app()
+        _startup(app)
+        # Expire the grace period so messages would normally be accepted
+        app._mqtt_accept_after = 0
+        # Simulate MQTT reconnection event (topic=None)
+        app._on_mqtt_message("MQTT_MESSAGE", {"topic": None, "state": "Connected"}, {})
+        # Grace period should be reset — messages should be rejected again
+        app._on_mqtt_message("MQTT_MESSAGE", {
+            "topic": "zigbee2mqtt/dead_device",
+            "payload": '{"state":"ON"}',
+        }, {})
+        assert "dead_device" not in app._mqtt_last_seen
 
     def test_ignores_wrong_prefix(self):
         app = _make_app()

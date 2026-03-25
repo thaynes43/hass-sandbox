@@ -38,7 +38,7 @@ if _appdaemon_root not in sys.path:
 import hassapi as hass
 
 from providers.ha_provisioner import HAProvisioner
-from shared.check_utils import ping_check
+from shared.check_utils import apply_cross_check, ping_check
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +303,10 @@ class SpaHealthChecker(hass.Hass):
         # Evaluate auto-repair logic (skip if repair is already in progress)
         if self._repair_status not in (REPAIR_IN_PROGRESS,):
             self._evaluate_auto_repair(results)
+
+        # Cross-check: downgrade critical→warning for partial failures
+        # (after auto-repair eval so repair triggers see raw statuses)
+        apply_cross_check(results)
 
         # Report to controller
         payload: Dict[str, Any] = {

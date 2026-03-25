@@ -5,6 +5,10 @@ AppDaemon apps.  These are lightweight wrappers around ``asyncio``
 subprocesses and ``aiohttp`` that return a uniform result dict::
 
     {"status": "ok" | "critical", "detail": "<human-readable detail>"}
+
+Also provides ``apply_cross_check`` for symmetric cross-check logic:
+when a device has multiple health signals and only some fail, the
+failing checks are downgraded to **warning** instead of **critical**.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ import asyncio
 import logging
 import sys
 import time
-from typing import Dict
+from typing import Dict, List
 
 import aiohttp
 
@@ -103,3 +107,43 @@ async def http_check(url: str, timeout_s: int = 5) -> Dict[str, str]:
     except Exception as exc:
         logger.warning("http_check %s error: %s", url, exc)
         return {"status": "critical", "detail": f"Error: {exc}"}
+
+
+# ------------------------------------------------------------------
+# Cross-check helpers
+# ------------------------------------------------------------------
+
+
+def apply_cross_check(results: List[Dict[str, str]]) -> None:
+    """Downgrade critical to warning when not all checks are failing.
+
+    Mutates *results* in-place.  If every check is critical or unknown the
+    device is truly down and statuses stay as-is.  If at least one check
+    passes, any ``critical`` result is downgraded to ``warning`` (partial
+    failure).
+
+    A single-check result list is left unchanged — there is nothing to
+    cross-check against.
+    """
+    if len(results) < 2:
+        return
+    all_bad = all(r["status"] in ("critical", "unknown") for r in results)
+    if not all_bad:
+        for r in results:
+            if r["status"] == "critical":
+                r["status"] = "warning"
+                r["detail"] += " (partial failure)"
+
+
+def apply_cross_check_per_device(
+    results: List[Dict[str, str]],
+    device_names: List[str],
+) -> None:
+    """Apply :func:`apply_cross_check` independently per device.
+
+    Groups results by matching their ``name`` prefix against each device
+    name, then applies the cross-check within each group.
+    """
+    for dev_name in device_names:
+        dev_results = [r for r in results if r["name"].startswith(dev_name)]
+        apply_cross_check(dev_results)
