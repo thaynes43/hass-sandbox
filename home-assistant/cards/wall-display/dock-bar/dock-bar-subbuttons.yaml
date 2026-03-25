@@ -73,22 +73,12 @@ sub_button:
       tap_action:
         action: navigate
         navigation_path: "#livingroom-popup"
-    - name: Study
+    - name: Study & Foyer
       icon: mdi:globe-model
       show_name: true
       fill_width: false
       custom_height: 72
       width: 8.33
-      content_layout: icon-top
-      tap_action:
-        action: navigate
-        navigation_path: "#study-popup"
-    - name: Foyer
-      icon: mdi:chandelier
-      show_name: true
-      fill_width: false
-      custom_height: 72
-      width: 8.34
       content_layout: icon-top
       tap_action:
         action: navigate
@@ -103,6 +93,16 @@ sub_button:
       tap_action:
         action: navigate
         navigation_path: "#primary-popup"
+    - name: Cloffice
+      icon: mdi:desk
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.34
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#cloffice-popup"
     - name: Kids Bedrooms
       icon: mdi:bunk-bed-outline
       show_name: true
