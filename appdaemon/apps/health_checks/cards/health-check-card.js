@@ -502,7 +502,21 @@ class HealthCheckCard extends HTMLElement {
         gap: 6px 16px;
         flex-wrap: wrap;
         max-height: calc(5 * 28px);
-        overflow: hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.2) transparent;
+      }
+      .hc-items::-webkit-scrollbar {
+        width: 4px;
+      }
+      .hc-items::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .hc-items::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.2);
+        border-radius: 2px;
       }
 
       .hc-item {

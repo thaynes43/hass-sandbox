@@ -934,7 +934,8 @@ upstairs_lights_checker:
     - checker_id: mqtt_broker
   entity_patterns:
     - include: "(light|switch)\\.upstairs.*inovelli.*"
-    - include: "light\\.upstairs.*hue.*\\d+$"
+    - include: "light\\.upstairs.*hue.*"
+    - include: "light\\.upstairs_primary_nightstand_lights"
     - exclude: ".*night_light.*"
 
 exterior_lights_checker:
@@ -971,65 +972,8 @@ zwave_battery_checker:
   critical_threshold: 10
   health_dependencies:
     - checker_id: zwave
-  sensors:
-    - entity_id: sensor.basement_movie_room_wall_remote_battery_level
-      name: Movie Room Wall Remote
-    - entity_id: sensor.server_room_temperature_sensor_01_battery_level
-      name: Server Room Temp
-    - entity_id: sensor.upstairs_cloffice_temperature_sensor_01_battery_level
-      name: Cloffice Temp
-    - entity_id: sensor.cigar_humidity_sensor_01_battery_level
-      name: Tupperdor 01
-    - entity_id: sensor.cigar_humidity_sensor_02_battery_level
-      name: Tupperdor 02
-    - entity_id: sensor.cigar_humidity_sensor_03_battery_level
-      name: Jar 01
-    - entity_id: sensor.cigar_humidity_sensor_04_battery_level
-      name: Jar 02
-    - entity_id: sensor.cigar_humidity_sensor_05_battery_level
-      name: Cooler
-    - entity_id: sensor.cigar_humidity_sensor_06_battery_level
-      name: Tupperdor 03
-    - entity_id: sensor.cigar_humidity_sensor_07_battery_level
-      name: Tupperdor 04
-    - entity_id: sensor.upstairs_laundry_range_extender_battery_level
-      name: Laundry Range Extender
-    - entity_id: sensor.garage_range_extender_battery_level
-      name: Garage Range Extender
-    - entity_id: sensor.basement_rumpus_range_extender_battery_level
-      name: Rumpus Range Extender
-    - entity_id: sensor.shed_extender_battery_level
-      name: Shed Extender
-    - entity_id: sensor.shed_temperature_sensor_battery_level
-      name: Shed Temp
-    - entity_id: sensor.basement_storage_trap_leak_sensor_battery_level
-      name: Storage Trap Leak
-    - entity_id: sensor.basement_storage_sump_pump_leak_sensor_battery_level
-      name: Sump Pump Leak
-    - entity_id: sensor.basement_storage_open_closed_sensor_battery_level
-      name: Storage Open/Close
-    - entity_id: sensor.basement_movie_room_water_meter_leak_sensor_battery_level
-      name: Movie Room Water Leak
-    - entity_id: sensor.basement_server_room_water_main_leak_sensor_battery_level
-      name: Server Room Water Main Leak
-    - entity_id: sensor.basement_server_room_ac_leak_sensor_battery_level
-      name: Server Room AC Leak
-    - entity_id: sensor.shed_door_open_closed_sensor_battery_level
-      name: Shed Door Open/Close
-    - entity_id: sensor.shed_indoor_motion_sensor_battery_level
-      name: Shed Motion
-    - entity_id: sensor.upstairs_primary_closet_open_closed_sensor_battery_level
-      name: Primary Closet Open/Close
-    - entity_id: sensor.basement_hallway_qsensor_battery_level
-      name: Hallway Q-Sensor
-    - entity_id: sensor.basement_concessions_qsensor_battery_level
-      name: Concessions Q-Sensor
-    - entity_id: sensor.basement_rumpus_room_wall_remote_battery_level
-      name: Rumpus Wall Remote
-    - entity_id: sensor.basement_sump_pump_shock_sensor_battery_level
-      name: Sump Pump Shock
-    - entity_id: sensor.basement_ejector_pump_shock_sensor_battery_level
-      name: Ejector Pump Shock
+  entity_patterns:
+    - include: "sensor\\..*_battery_level$"
 
 shade_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
@@ -1040,95 +984,34 @@ shade_battery_checker:
   check_interval_s: 300
   warning_threshold: 25
   critical_threshold: 5
-  sensors:
-    - entity_id: sensor.kitchen_shade_battery
-      name: Kitchen
-    - entity_id: sensor.livingroom_backyard_shade_1_battery
-      name: Living Room Backyard 1
-    - entity_id: sensor.livingroom_backyard_shade_2_battery
-      name: Living Room Backyard 2
-    - entity_id: sensor.livingroom_side_yard_shade_1_battery
-      name: Living Room Side Yard 1
-    - entity_id: sensor.livingroom_side_yard_shade_2_battery
-      name: Living Room Side Yard 2
-    - entity_id: sensor.livingroom_front_yard_shade_battery
-      name: Living Room Front Yard
-    - entity_id: sensor.dining_room_shade_1_battery
-      name: Dining Room 1
-    - entity_id: sensor.dining_room_shade_2_battery
-      name: Dining Room 2
-    - entity_id: sensor.study_shade_1_battery
-      name: Study 1
-    - entity_id: sensor.study_shade_2_battery
-      name: Study 2
-    - entity_id: sensor.first_floor_bathroom_shade_battery
-      name: First Floor Bathroom
-    - entity_id: sensor.primary_bedroom_front_shade_battery
-      name: Primary Bedroom Front
-    - entity_id: sensor.primary_bedroom_side_shade_battery
-      name: Primary Bedroom Side
-    - entity_id: sensor.primary_bathroom_shade_battery
-      name: Primary Bathroom
-    - entity_id: sensor.kids_bathroom_shade_battery
-      name: Kids Bathroom
-    - entity_id: sensor.blue_room_shade_1_battery
-      name: Blue Room 1
-    - entity_id: sensor.blue_room_shade_2_battery
-      name: Blue Room 2
-    - entity_id: sensor.white_room_shade_1_battery
-      name: White Room 1
-    - entity_id: sensor.white_room_shade_2_battery
-      name: White Room 2
-    - entity_id: sensor.pink_room_shade_1_battery
-      name: Pink Room 1
-    - entity_id: sensor.pink_room_shade_2_battery
-      name: Pink Room 2
-    - entity_id: sensor.cloffice_shade_battery
-      name: Cloffice
+  entity_patterns:
+    - include: "sensor\\..*shade.*_battery$"
 
 lock_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
   class: BatteryChecker
   disable: true
   checker_id: lock_batteries
-  checker_name: Lock Batteries
+  checker_name: Schlage
   check_interval_s: 300
   warning_threshold: 25
   critical_threshold: 10
   health_dependencies:
     - checker_id: cloud
-  sensors:
-    - entity_id: sensor.bulkhead_lock_battery
-      name: Bulkhead
-    - entity_id: sensor.front_door_lock_battery
-      name: Front Door
-    - entity_id: sensor.side_door_lock_battery
-      name: Side Door
-    - entity_id: sensor.mudroom_door_lock_battery
-      name: Mudroom
+  entity_patterns:
+    - include: "sensor\\..*_lock_battery$"
 
 airthings_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
   class: BatteryChecker
   disable: true
   checker_id: airthings_batteries
-  checker_name: Airthings Batteries
+  checker_name: Airthings
   check_interval_s: 300
   warning_threshold: 20
   critical_threshold: 5
-  sensors:
-    - entity_id: sensor.livingroom_view_plus_battery
-      name: Living Room View Plus
-    - entity_id: sensor.basement_view_radon_battery
-      name: Basement View Radon
-    - entity_id: sensor.primary_bedroom_wave_plus_battery
-      name: Primary Bedroom Wave Plus
-    - entity_id: sensor.primary_bathroom_battery
-      name: Primary Bathroom
-    - entity_id: sensor.basement_wave_mini_battery
-      name: Basement Wave Mini
-    - entity_id: sensor.laundry_room_wave_mini_battery
-      name: Laundry Room Wave Mini
+  entity_patterns:
+    - include: "sensor\\.(livingroom_view_plus|basement_view_radon|primary_bedroom_wave_plus|primary_bathroom|basement_wave_mini|laundry_room_wave_mini)_battery$"
 
 protect_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
@@ -1139,15 +1022,9 @@ protect_battery_checker:
   check_interval_s: 300
   warning_threshold: 20
   critical_threshold: 10
-  sensors:
-    - entity_id: sensor.usl_entry_battery_3
-      name: Front Door
-    - entity_id: sensor.usl_entry_battery_2
-      name: Garage Side Door
-    - entity_id: sensor.kitchen_slider_usl_entry_battery
-      name: Kitchen Slider
-    - entity_id: sensor.usl_entry_battery
-      name: Basement Bulkhead
+  entity_patterns:
+    - include: "sensor\\..*usl_entry_battery.*"
+    - include: "sensor\\..*_usl_entry_battery$"
 
 zigbee_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
@@ -1160,13 +1037,8 @@ zigbee_battery_checker:
   critical_threshold: 10
   health_dependencies:
     - checker_id: zigbee
-  sensors:
-    - entity_id: sensor.basement_rumpus_aqara_fp300_presence_battery
-      name: Rumpus FP300 Presence
-    - entity_id: sensor.basement_aqara_w100_01_battery
-      name: MON1800
-    - entity_id: sensor.basement_aqara_w100_02_battery
-      name: MA50
+  entity_patterns:
+    - include: "sensor\\.basement_(rumpus_aqara_fp300_presence|aqara_w100_0[12])_battery$"
 
 ups_checker:
   module: health_checks.checker_apps.battery_checker.ups_checker

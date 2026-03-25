@@ -1,8 +1,9 @@
-"""Battery Health Checker — monitors battery level sensors with warning/critical thresholds."""
+"""Battery Health Checker — auto-discovers battery sensors via entity patterns."""
 
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -14,9 +15,20 @@ if _health_checks_root not in sys.path:
 
 import hassapi as hass
 
+# Suffixes to strip from friendly_name for cleaner display names (case-insensitive)
+_BATTERY_SUFFIXES = [
+    " battery level",
+    " battery",
+]
+
 
 class BatteryChecker(hass.Hass):
-    """Monitors battery level sensors with configurable thresholds."""
+    """Monitors battery level sensors with configurable thresholds.
+
+    Discovers entities automatically using ``entity_patterns`` config
+    (include/exclude regexes) filtered to ``device_class=battery`` and
+    ``unit_of_measurement=%``.
+    """
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -33,26 +45,31 @@ class BatteryChecker(hass.Hass):
         self._critical_threshold: float = float(args.get("critical_threshold", 10))
 
         # Instance-level dependencies
-        self._health_dependencies: List[str] = list(args.get("health_dependencies", []))
+        self._health_dependencies: List[dict] = list(
+            args.get("health_dependencies", [])
+        )
 
-        # Parse sensor configs
-        self._sensors: List[Dict[str, Any]] = []
-        for sensor_cfg in args.get("sensors", []):
-            self._sensors.append({
-                "entity_id": sensor_cfg["entity_id"],
-                "name": sensor_cfg.get("name", sensor_cfg["entity_id"]),
-                "dependency": sensor_cfg.get("dependency"),
-                "warning_threshold": float(
-                    sensor_cfg.get("warning_threshold", self._warning_threshold)
-                ),
-                "critical_threshold": float(
-                    sensor_cfg.get("critical_threshold", self._critical_threshold)
-                ),
-            })
+        # Entity discovery patterns
+        self._include_patterns: List[re.Pattern] = []
+        self._exclude_patterns: List[re.Pattern] = []
+        for pattern_cfg in args.get("entity_patterns", []):
+            if "include" in pattern_cfg:
+                self._include_patterns.append(
+                    re.compile(pattern_cfg["include"])
+                )
+            if "exclude" in pattern_cfg:
+                self._exclude_patterns.append(
+                    re.compile(pattern_cfg["exclude"])
+                )
+
+        # Discovered entities: entity_id -> display_name
+        self._entities: Dict[str, str] = {}
 
         self.log(
             f"BatteryChecker initializing: id={self._checker_id}, "
-            f"sensors={len(self._sensors)}, interval={self._check_interval_s}s",
+            f"includes={len(self._include_patterns)}, "
+            f"excludes={len(self._exclude_patterns)}, "
+            f"interval={self._check_interval_s}s",
             level="INFO",
         )
 
@@ -63,7 +80,15 @@ class BatteryChecker(hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
-        """Register with controller, set up listeners and timer."""
+        """Discover entities, register with controller, set up listeners and timer."""
+        await self._discover_entities()
+
+        if not self._entities:
+            self.log(
+                f"No entities matched patterns for checker '{self._checker_id}'",
+                level="WARNING",
+            )
+
         self._register()
 
         # Listen for controller ready (re-register if controller restarts)
@@ -75,18 +100,9 @@ class BatteryChecker(hass.Hass):
         # Run first check after a short delay, then start periodic timer
         self.run_in(self._first_check, 5)
 
-        # Log sensor configuration
-        self.log(f"Monitoring {len(self._sensors)} battery sensors:", level="INFO")
-        for s in self._sensors:
-            dep_str = f" (depends on {s['dependency']})" if s.get("dependency") else ""
-            self.log(
-                f"  - {s['entity_id']} ({s['name']}, "
-                f"warn={s['warning_threshold']}%, crit={s['critical_threshold']}%){dep_str}",
-                level="INFO",
-            )
-
         self.log(
-            f"BatteryChecker '{self._checker_name}' started",
+            f"BatteryChecker '{self._checker_name}' started with "
+            f"{len(self._entities)} entities",
             level="INFO",
         )
 
@@ -100,27 +116,80 @@ class BatteryChecker(hass.Hass):
         )
 
     # ------------------------------------------------------------------
+    # Entity discovery
+    # ------------------------------------------------------------------
+
+    async def _discover_entities(self) -> None:
+        """Discover battery entities matching configured regex patterns.
+
+        Filters to entities with ``device_class=battery`` and
+        ``unit_of_measurement=%``, then applies include/exclude patterns.
+        Strips common battery suffixes from friendly_name for cleaner
+        display names.
+        """
+        all_states = await self.get_state() or {}
+        matched: Dict[str, str] = {}
+
+        for entity_id, state_obj in all_states.items():
+            if not isinstance(state_obj, dict):
+                continue
+
+            attrs = state_obj.get("attributes", {})
+            if not isinstance(attrs, dict):
+                attrs = {}
+
+            # Must be a battery percentage sensor
+            if attrs.get("device_class") != "battery":
+                continue
+            if attrs.get("unit_of_measurement") != "%":
+                continue
+
+            # Check include patterns
+            included = any(p.search(entity_id) for p in self._include_patterns)
+            if not included:
+                continue
+
+            # Check exclude patterns
+            excluded = any(p.search(entity_id) for p in self._exclude_patterns)
+            if excluded:
+                continue
+
+            # Build display name by stripping battery suffixes
+            friendly_name = attrs.get("friendly_name", entity_id)
+            display_name = friendly_name
+            lower = display_name.lower()
+            for suffix in _BATTERY_SUFFIXES:
+                if lower.endswith(suffix):
+                    display_name = display_name[: len(display_name) - len(suffix)]
+                    break
+
+            matched[entity_id] = display_name
+
+        self._entities = matched
+
+        # Log discovered entities for validation
+        self.log(
+            f"Discovered {len(self._entities)} battery entities for checker "
+            f"'{self._checker_id}':",
+            level="INFO",
+        )
+        for entity_id, display_name in sorted(self._entities.items()):
+            self.log(f"  - {entity_id} ({display_name})", level="INFO")
+
+    # ------------------------------------------------------------------
     # Registration
     # ------------------------------------------------------------------
 
     def _register(self) -> None:
         """Fire registration event to the controller."""
-        check_names = [s["name"] for s in self._sensors]
+        check_names = sorted(self._entities.values())
 
-        # Build dependencies grouped by dependency checker_id
+        # Build dependencies from instance-level health_dependencies
         dep_map: Dict[str, List[str]] = {}
-
-        # Instance-level health_dependencies affect all checks
         for dep in self._health_dependencies:
             dep_id = dep.get("checker_id", "") if isinstance(dep, dict) else str(dep)
             if dep_id:
                 dep_map.setdefault(dep_id, []).extend(check_names)
-
-        # Per-sensor dependencies
-        for s in self._sensors:
-            dep = s.get("dependency")
-            if dep:
-                dep_map.setdefault(dep, []).append(s["name"])
 
         dependencies = [
             {"checker_id": dep_id, "affects_checks": checks}
@@ -181,13 +250,9 @@ class BatteryChecker(hass.Hass):
         """Execute all configured checks and report results."""
         results: List[Dict[str, str]] = []
 
-        for sensor in self._sensors:
-            status, detail = self._evaluate_sensor(sensor)
-            results.append({
-                "name": sensor["name"],
-                "status": status,
-                "detail": detail,
-            })
+        for entity_id, display_name in sorted(self._entities.items()):
+            result = self._evaluate_entity(entity_id, display_name)
+            results.append(result)
 
         self.fire_event(
             "health_check_command",
@@ -206,28 +271,23 @@ class BatteryChecker(hass.Hass):
             level="INFO" if crit_count == 0 and warn_count == 0 else "WARNING",
         )
 
-    def _evaluate_sensor(self, sensor: Dict[str, Any]) -> tuple:
-        """Evaluate a single battery sensor. Returns (status, detail)."""
-        entity_id = sensor["entity_id"]
-
+    def _evaluate_entity(self, entity_id: str, display_name: str) -> Dict[str, str]:
+        """Evaluate a single battery entity. Returns a result dict."""
         try:
             state = self.get_state(entity_id)
         except Exception as exc:
-            return ("critical", f"error reading state: {exc}")
+            return {"name": display_name, "status": "critical", "detail": f"error reading state: {exc}"}
 
-        if state is None or state in ("unavailable", "unknown"):
-            return ("critical", f"state: {state or 'not found'}")
+        if state is None or str(state) in ("unavailable", "unknown"):
+            return {"name": display_name, "status": "critical", "detail": f"state: {state or 'not found'}"}
 
         try:
             value = float(state)
         except (ValueError, TypeError):
-            return ("critical", f"non-numeric state: {state}")
+            return {"name": display_name, "status": "critical", "detail": f"non-numeric state: {state}"}
 
-        warn = sensor.get("warning_threshold", self._warning_threshold)
-        crit = sensor.get("critical_threshold", self._critical_threshold)
-
-        if value <= crit:
-            return ("critical", f"{value:.0f}% (critical \u2264{crit:.0f}%)")
-        if value <= warn:
-            return ("warning", f"{value:.0f}% (warning \u2264{warn:.0f}%)")
-        return ("ok", f"{value:.0f}%")
+        if value <= self._critical_threshold:
+            return {"name": display_name, "status": "critical", "detail": f"{value:.0f}% (critical ≤{self._critical_threshold:.0f}%)"}
+        if value <= self._warning_threshold:
+            return {"name": display_name, "status": "warning", "detail": f"{value:.0f}% (warning ≤{self._warning_threshold:.0f}%)"}
+        return {"name": display_name, "status": "ok", "detail": f"{value:.0f}%"}
