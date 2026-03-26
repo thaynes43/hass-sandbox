@@ -386,23 +386,12 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
 
         # Check if we're still the displayed source — if another frame
         # took the board, stop refreshing to avoid queuing stale frames
-        try:
-            status = self.get_state(
-                "sensor.vestaboard_controller_status", attribute="all"
+        if not self.is_displayed():
+            self.log(
+                "Weather no longer on board — stopping periodic updates",
+                level="INFO",
             )
-            if status and isinstance(status, dict):
-                displayed_source = status.get("attributes", {}).get(
-                    "displayed_source", ""
-                )
-                if displayed_source and displayed_source != self.name:
-                    self.log(
-                        f"Weather no longer on board (current={displayed_source!r}) "
-                        f"— stopping periodic updates",
-                        level="INFO",
-                    )
-                    return  # Don't push or schedule another update
-        except Exception:
-            pass  # If we can't check, proceed with the update
+            return  # Don't push or schedule another update
 
         try:
             grid = await self.generate_frame()

@@ -290,6 +290,32 @@ class VestaboardAutomation:
                 )
 
     # ------------------------------------------------------------------
+    # Display ownership check
+    # ------------------------------------------------------------------
+
+    def is_displayed(self) -> bool:
+        """Return True if this automation is currently the displayed source.
+
+        Checks ``sensor.vestaboard_controller_status`` for the
+        ``displayed_source`` attribute.  Useful for refresh/update timers
+        that should stop pushing when another frame owns the board —
+        pushing when not displayed queues stale frames in pending.
+        """
+        try:
+            status = self.get_state(
+                "sensor.vestaboard_controller_status", attribute="all"
+            )
+            if status and isinstance(status, dict):
+                displayed = status.get("attributes", {}).get(
+                    "displayed_source", ""
+                )
+                return displayed == self.name
+        except Exception:
+            pass
+        # If we can't determine, assume yes (don't block pushes)
+        return True
+
+    # ------------------------------------------------------------------
     # Frame pushing
     # ------------------------------------------------------------------
 
