@@ -1,0 +1,563 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#primary-popup"
+    button_type: name
+    width_desktop: 75vw
+    width_mobile: 90vw
+    show_header: true
+    name: Return To Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
+    content: |
+      ## Primary Suite
+
+      <p><strong>Bedroom</strong> {{ states('sensor.primary_bedroom_wave_plus_temperature') }}&deg;F, {{ states('sensor.primary_bedroom_wave_plus_carbon_dioxide') }} ppm CO2 &nbsp;•&nbsp; <strong>Bathroom</strong> {{ states('sensor.primary_bathroom_temperature') }}&deg;F, {{ states('sensor.primary_bathroom_humidity') }}% Hum, {{ states('sensor.primary_bathroom_vocs') }} ppb VOC</p>
+
+      <p><strong>Closet</strong> {{ 'Open' if is_state('binary_sensor.upstairs_primary_closet_open_closed_sensor_window_door_is_open', 'on') else 'Closed' }}, {{ states('sensor.upstairs_primary_closet_open_closed_sensor_battery_level') }}% Batt</p>
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.primary_suite_lights
+        name: Suite Lights
+        icon: mdi:lightbulb-group
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        card_layout: large-2-rows
+        entity: climate.second_floor_ecobee
+        name: Upstairs Ecobee
+        icon: mdi:thermostat
+        show_state: true
+        sub_button:
+          main:
+            - entity: sensor.second_floor_ecobee_temperature
+              name: ""
+              show_state: true
+              show_name: false
+              show_icon: true
+              show_background: false
+              icon: mdi:home-thermometer
+              tap_action:
+                action: more-info
+            - entity: sensor.second_floor_ecobee_target_temperature
+              name: ""
+              show_state: true
+              show_name: false
+              show_icon: true
+              show_background: false
+              icon: mdi:target
+              tap_action:
+                action: more-info
+            - entity: sensor.second_floor_ecobee_humidity
+              name: ""
+              show_state: true
+              show_name: false
+              show_icon: true
+              show_background: false
+              icon: mdi:water-percent
+              tap_action:
+                action: more-info
+          bottom: []
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: cover.primary_bedroom_shades
+        name: Bedroom Shades
+        show_state: true
+        rows: 1.719
+        card_layout: large-sub-buttons-grid
+        button_action:
+          tap_action:
+            action: more-info
+        sub_button:
+          main: []
+          bottom:
+            - entity: scene.laundry_gateway_main_bedroom_tilt_open
+              name: Tilt Open
+              icon: mdi:blinds-horizontal
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_main_bedroom_tilt_open
+            - entity: scene.laundry_gateway_main_bedroom_open
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_main_bedroom_open
+            - entity: scene.laundry_gateway_main_bedroom_close
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_main_bedroom_close
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.primary_bedroom
+        name: Bedroom Sonos
+        show_name: true
+        show_state: true
+        show_attribute: false
+        scrolling_effect: false
+        card_layout: normal
+        rows: 1
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.primary_bathroom
+        name: Bathroom Sonos
+        show_name: true
+        show_state: true
+        show_attribute: false
+        scrolling_effect: false
+        card_layout: normal
+        rows: 1
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: media_player.primary_bedroom_lg_tv
+        name: Bedroom TV
+        icon: mdi:television
+        show_state: true
+        button_action:
+          tap_action:
+            action: more-info
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Primary Bedroom
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bed_lights
+                name: Recessed Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_nook_lights
+                name: Nook Lights
+                icon: mdi:ceiling-light
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_nightstand_lights
+                name: Nightstands
+                icon: mdi:lamp
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: fan.primary_bedroom_fan_fan
+                name: Ceiling Fan
+                icon: mdi:fan
+                show_state: true
+                show_attribute: true
+                attribute: percentage
+                tap_action:
+                  action: toggle
+                button_action:
+                  tap_action:
+                    action: more-info
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bed_nightstand_hue_bulb_tom
+                name: Tom Lamp
+                icon: mdi:lamp-outline
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bed_nightstand_hue_bulb_kellie
+                name: Kellie Lamp
+                icon: mdi:lamp-outline
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.1_5
+                name: Front Shade
+                show_state: true
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.2_4
+                name: Side Shade
+                show_state: true
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Primary Bathroom
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bath_lights
+                name: Recessed Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bath_vanity_inovelli_presence
+                name: Vanity Lights
+                icon: mdi:mirror-rectangle
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bath_shower_inovelli_presence
+                name: Shower Lights
+                icon: mdi:shower
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_water_closet_inovelli_presence
+                name: Water Closet
+                icon: mdi:paper-roll
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bath_fan_light_inovelli_on_off
+                name: Fan Light
+                icon: mdi:ceiling-fan-light
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: cover.1_6
+                name: Primary Bathroom Shade
+                show_state: true
+                rows: 1.719
+                card_layout: large-sub-buttons-grid
+                button_action:
+                  tap_action:
+                    action: more-info
+                sub_button:
+                  main: []
+                  bottom:
+                    - entity: scene.laundry_gateway_main_bed_bath_tilt_open
+                      name: Tilt Open
+                      icon: mdi:blinds-horizontal
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_main_bed_bath_tilt_open
+                    - entity: scene.laundry_gateway_main_bed_bath_open
+                      name: Open
+                      icon: mdi:arrow-up-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_main_bed_bath_open
+                    - entity: scene.laundry_gateway_main_bed_bath_close
+                      name: Close
+                      icon: mdi:arrow-down-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_main_bed_bath_close
+                  bottom_layout: rows
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_bath_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Primary Hallway
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_hall_lights
+                name: Hall Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_hall_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Primary Closet
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_primary_closet_lights
+                name: Closet Lights
+                icon: mdi:hanger
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right

@@ -1,0 +1,259 @@
+version: 1
+title: Dock Bar Popup Runbook
+status: draft
+scope: Repo-only Lovelace popup authoring for wall-display dock-bar popups
+
+references:
+  scope_communication_rules:
+    - .cursor/rules/ha-change-scope-communication.mdc
+  style_playbook:
+    - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/bubble-card-custom-style-playbook.md
+  validated_examples:
+    - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/media-player.yaml
+    - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/climate-control-button.yaml
+    - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/dock-bar/shed-popup.yaml
+    - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/upstairs/primary-bedroom/kellie-mobile-primary-bedroom-popup.yaml
+  first_popup_built_from_this_runbook:
+    - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/dock-bar/primary-popup.yaml
+
+guardrails:
+  deployment_scope: repo only unless the user explicitly asks for live HA updates
+  completion_communication: first response line must use the exact scope phrase from ha-change-scope-communication.mdc, followed by the required copy-paste/reference bullets
+  preserve_popup_shell: never replace or rewrite the seeded pop-up card at the top of a dock-bar popup file
+  edit_boundary: remove the placeholder body only, then append the new layout below the existing popup shell
+  status_deduplication:
+    - Put ambient sensor rollups in the top markdown summary first
+    - Do not repeat that same sensor data as read-only Bubble cards in the area grids
+    - Keep read-only cards only when the status is uniquely important, such as appliance state that changes what the user should do next
+  wall_tablet_bias:
+    - Avoid single huge bubble cards in a one-card row
+    - Prefer compact grids over phone-style full-width stacks
+    - Keep the visual density appropriate for a 1920x1080 wall tablet
+  performance_bias:
+    - Prefer faster cards over the heaviest frosted-glass treatment when the wall tablet struggles
+    - Treat Android wall-tablet rendering as the performance baseline, not desktop dev responsiveness
+
+mcp_workflow:
+  step_1_area_ids:
+    tool: ha_config_list_areas
+    notes:
+      - Confirm the exact Home Assistant area IDs before selecting entities
+      - Use the user-provided area order as the display order unless they ask otherwise
+  step_2_devices_by_area:
+    tool: ha_get_device(area_id=...)
+    notes:
+      - This is the fastest way to find the important device-backed entities for a room
+      - Use it to identify grouped lights, media players, covers, thermostats, fans, and readable device names
+  step_3_entity_sweep:
+    tool: ha_search_entities(query="", area_filter=..., group_by_domain=true)
+    notes:
+      - Use this after ha_get_device to catch helper entities, grouped entities, and area-tagged strays
+      - Expect noisy output; use it to discover candidates, not to decide final inclusion by itself
+  step_4_state_and_naming_check:
+    tool: ha_get_states([...]) or ha_get_state(entity_id)
+    notes:
+      - Pull final friendly names, current state, and supported attributes before writing the card
+      - Use this to confirm Hunter Douglas cover friendly names and to see if a grouped entity already exists
+  step_5_edge_case_searches:
+    tool: ha_search_entities(query="...")
+    notes:
+      - Run targeted searches for grouped shades, suite-wide light groups, thermostats, locks, or appliances
+      - Prefer exact entity lookups for things the user explicitly mentions, such as cover.primary_bedroom_shades
+
+layout_order:
+  summary_section:
+    description: Top section for standalone devices and grouped controls that span or summarize the popup
+    include_in_this_order:
+      - suite or combined light groups
+      - grouped shades or grouped window coverings
+      - thermostat or HVAC summary
+      - Sonos or Music Assistant speakers
+      - TVs and other clearly standalone media devices
+      - locks, appliances, or other standalone controls if they are clearly relevant to the popup
+    layout_rules:
+      - Prefer a 3-column grid for the summary section
+      - Media player cards are allowed here, but do not let the whole popup become a stack of large media cards
+      - Omit the summary grid entirely when there are no shared or top-level controls for the popup scope
+  area_sections:
+    description: Room-by-room controls shown after the summary section
+    layout_rules:
+      - Use a parent 2-column grid
+      - Each area is one vertical-stack block inside that 2-column grid
+      - Each area block starts with a centered markdown header
+      - Under the header, use a 2-column grid for the room controls
+      - Use a Bubble separator between the summary section and the area grid when the popup needs visual breathing room
+    display_order:
+      - Match the user-provided area order
+
+entity_selection_rules:
+  grouped_lights:
+    - Prefer grouped Zigbee2MQTT light entities over individual recessed bulbs
+    - If a grouped light exists, omit the individual recessed members from the popup
+    - Keep distinct non-grouped lights such as nook lights, nightstand lamps, fan lights, iris lamps, or other obvious standalone fixtures
+  smart_switches:
+    - Do not include the switch-backed light entity when it clearly represents the same grouped recessed load already exposed as a cleaner group light
+    - Keep switch-backed light entities when they represent a distinct load the user is likely to control directly
+  shades_and_covers:
+    - Put grouped shade controls in the top summary section
+    - Put individual area shades in the corresponding area grid below
+    - For Hunter Douglas and similar covers, use the readable device-derived friendly names from HA, not raw entity IDs
+  media_players:
+    - For Music Assistant or Sonos, choose the Sonos entity without airplay in its name
+    - Use AirPlay-only entities only if there is no better non-AirPlay target, or if the user explicitly calls one out
+    - TVs belong in the summary section when they are clearly standalone room anchors
+  sensors_and_status:
+    - Prioritize main controls first: lights, fans, covers, media, thermostat
+    - Add compact sensor or status cards after the main controls
+    - Good compact candidates are temperature, humidity, CO2, VOCs, door state, and battery for critical room sensors
+    - Use native tile cards for compact status when Bubble would be too bulky
+    - If those statuses already appear in the markdown summary, omit the duplicate room card unless the user specifically wants both
+  appliances_and_misc:
+    - Include appliances, air filters, or locks only when they are clearly relevant to the popup scope and meaningfully controllable or informative
+
+card_recipes:
+  bubble_slider_button:
+    use_for:
+      - light groups
+      - standalone dimmable lights
+      - fans with percentage attributes
+    defaults:
+      - card_type: button
+      - button_type: slider
+      - show_state: true
+      - tap_action: more-info
+      - button_action tap: toggle for lights, more-info for fan edge cases if needed
+      - slider_fill_orientation: left
+      - slider_value_position: right
+      - apply the shared frosted-glass button styles from the style playbook
+  bubble_name_button:
+    use_for:
+      - thermostat summary
+      - TVs
+      - standalone launcher cards
+    defaults:
+      - card_type: button
+      - button_type: name
+      - show_state: true
+      - tap action should open more-info unless the card is intentionally a popup launcher
+      - sub-buttons are appropriate for thermostat current, target, and humidity
+  bubble_cover:
+    use_for:
+      - grouped shades
+      - individual shades
+    defaults:
+      - card_type: cover
+      - show_state: true
+      - apply the same shell and text treatment as Bubble buttons
+  bubble_media_player:
+    use_for:
+      - Sonos and Music Assistant speakers
+    defaults:
+      - place in the summary section
+      - use Bubble media-player-specific variables from the style playbook
+      - prefer variable-based styling on ha-card over aggressive internal layout overrides
+      - when appropriate, add a bottom sub-button that launches /wall-display/music-assistant
+  compact_tile:
+    use_for:
+      - temperature
+      - humidity
+      - CO2
+      - VOCs
+      - door status
+      - battery
+    defaults:
+      - type: tile
+      - vertical: false
+      - use the same frosted-glass shell via card_mod
+      - keep them secondary and compact
+
+styling_rules:
+  bubble_cards:
+    - Follow /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/bubble-card-custom-style-playbook.md
+    - Keep the shared frosted-glass shell: translucent dark surface, subtle border, blur, soft inner highlight
+    - Reuse the validated wall-display Bubble styling blocks instead of inventing a new visual language per popup
+    - For popup internals, prefer a flatter opaque or semi-opaque shell over repeated blur effects
+    - Prefer Bubble variables on ha-card over repeated deep internal selector overrides
+  markdown_headers:
+    - Headers should be centered
+    - Use markdown with card_mod styling instead of oversized custom HTML
+    - Keep the header cards visually invisible so the Bubble cards carry the visual weight
+  tile_cards:
+    - Use the same glass shell values as the Bubble cards so the sensor/status cards do not look foreign
+    - Keep tile styling lightweight: border, radius, and a small shadow are usually enough
+
+performance_limits:
+  hard_rules:
+    - Do not use backdrop-filter or -webkit-backdrop-filter on every nested card in a popup
+    - Avoid repeated .bubble-button-card-container overrides unless a visual bug requires them
+    - Avoid heavy multi-layer inset plus outer shadow stacks on every single card
+  soft_rules:
+    - Keep summary sections compact; if they become crowded, trim secondary media or status cards first
+    - Use tile cards for condensed sensor/status information instead of turning every sensor into a fully styled Bubble card
+    - If a popup feels sluggish, simplify styling before removing important controls
+    - If styling simplification is not enough, split the popup scope or reduce the number of always-visible secondary cards
+  debugging_order:
+    - First remove per-card blur
+    - Then remove deep container overrides and large shadow stacks
+    - Then reduce the number of media-player and secondary status cards
+    - Only after that consider restructuring the popup layout
+
+primary_suite_example:
+  summary_entities:
+    - light.primary_suite_lights
+    - climate.second_floor_ecobee
+    - cover.primary_bedroom_shades
+    - cover.cloffice_shade_combined
+    - media_player.primary_bedroom
+    - media_player.primary_bathroom
+    - media_player.primary_bedroom_lg_tv
+  area_order:
+    - Primary Bedroom
+    - Primary Bathroom
+    - Primary Hallway
+    - Primary Closet
+    - Primary Cloffice
+  area_examples:
+    Primary Bedroom:
+      - light.upstairs_primary_bed_lights
+      - light.upstairs_primary_nook_lights
+      - light.upstairs_primary_nightstand_lights
+      - fan.primary_bedroom_fan_fan
+      - light.upstairs_primary_bed_nightstand_hue_bulb_tom
+      - light.upstairs_primary_bed_nightstand_hue_bulb_kellie
+      - cover.1_5
+      - cover.2_4
+      - sensor.primary_bedroom_wave_plus_temperature
+      - sensor.primary_bedroom_wave_plus_carbon_dioxide
+    Primary Bathroom:
+      - light.upstairs_primary_bath_lights
+      - light.upstairs_primary_bath_vanity_inovelli_presence
+      - light.upstairs_primary_bath_shower_inovelli_presence
+      - light.upstairs_primary_water_closet_inovelli_presence
+      - light.upstairs_primary_bath_fan_light_inovelli_on_off
+      - cover.1_6
+      - light.upstairs_primary_bath_night_light
+      - sensor.primary_bathroom_humidity
+      - sensor.primary_bathroom_vocs
+      - sensor.primary_bathroom_temperature
+    Primary Hallway:
+      - light.upstairs_primary_hall_lights
+      - light.upstairs_primary_hall_night_light
+    Primary Closet:
+      - light.upstairs_primary_closet_lights
+      - binary_sensor.upstairs_primary_closet_open_closed_sensor_open
+      - sensor.upstairs_primary_closet_open_closed_sensor_battery_level
+    Primary Cloffice:
+      - light.upstairs_primary_cloffice_lights
+      - light.den_hue_iris_light
+      - light.upstairs_cloffice_night_light
+      - cover.cloffice_shade_front
+      - cover.cloffice_shade_rear
+      - sensor.upstairs_cloffice_temperature_sensor_01_air_temperature
+      - sensor.upstairs_cloffice_temperature_sensor_01_humidity
+
+iteration_notes:
+  - Start broad when uncertain, then prune in later passes
+  - If it is unclear whether an entity is already represented by a cleaner grouped control, prefer inclusion for the first draft and trim later
+  - Preserve naming consistency across popups once a label pattern is chosen
+  - Update this runbook after each popup if a better pattern emerges
+  - Performance changes should be recorded in this runbook so later popups do not repeat slow patterns

@@ -20,7 +20,7 @@ Reference examples already validated in this repo:
 - `home-assistant/cards/wall-display/bubble-cards/media-player.yaml`
 - `home-assistant/cards/wall-display/bubble-cards/wall-display-garage-doors-button.yaml`
 - `home-assistant/cards/wall-display/bubble-cards/wall-display-locks-button.yaml`
-- `home-assistant/cards/wall-display/dock-bar/dock-sub-subbuttons.yaml`
+- `home-assistant/cards/wall-display/dock-bar/dock-bar-subbuttons.yaml`
 
 ## Visual Direction
 

@@ -1,0 +1,240 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#livingroom-popup"
+    button_type: name
+    width_desktop: 75vw
+    width_mobile: 90vw
+    show_header: true
+    name: Return To Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
+    content: |
+      ## Livingroom
+
+      <p><strong>Room</strong> {{ states('sensor.livingroom_view_plus_temperature') | float(0) | round(0) }}&deg;F, {{ states('sensor.livingroom_view_plus_humidity') | float(0) | round(0) }}% Hum, {{ states('sensor.livingroom_view_plus_carbon_dioxide') | float(0) | round(0) }} ppm CO2</p>
+      <p><strong>Air</strong> {{ states('sensor.livingroom_view_plus_vocs') | float(0) | round(0) }} ppb VOC &nbsp;•&nbsp; <strong>Shades</strong> {{ states('cover.livingroom_shades') | title }} &nbsp;•&nbsp; <strong>Sonos</strong> {{ states('media_player.living_room') | title }}</p>
+  - type: grid
+    columns: 4
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_livingroom_lights
+        name: Recessed Lights
+        icon: mdi:light-recessed
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: cover.livingroom_shades
+        name: Livingroom Shades
+        show_state: true
+        rows: 1.719
+        card_layout: large-sub-buttons-grid
+        button_action:
+          tap_action:
+            action: more-info
+        sub_button:
+          main: []
+          bottom:
+            - entity: scene.laundry_gateway_family_room_tilt_open
+              name: Tilt Open
+              icon: mdi:blinds-horizontal
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_family_room_tilt_open
+            - entity: scene.laundry_gateway_family_room_open
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_family_room_open
+            - entity: scene.laundry_gateway_family_room_close
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_family_room_close
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: fan.livingroom_fan_fan
+        name: Ceiling Fan
+        icon: mdi:fan
+        show_state: true
+        show_attribute: true
+        attribute: percentage
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.living_room
+        name: Living Room Sonos
+        show_name: true
+        show_state: true
+        show_attribute: false
+        scrolling_effect: false
+        card_layout: normal
+        rows: 1
+        button_action:
+          tap_action:
+            action: more-info
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.livingroom_fan_light
+        name: Fan Light
+        icon: mdi:lightbulb
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_livingroom_sconce_inovelli_dimmer
+        name: Sconce Light
+        icon: mdi:wall-sconce-flat
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_livingroom_lamp
+        name: Lamp Light
+        icon: mdi:floor-lamp
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: cover
+        entity: cover.1
+        name: Backyard Shade 1
+        show_state: true
+      - type: custom:bubble-card
+        card_type: cover
+        entity: cover.2
+        name: Backyard Shade 2
+        show_state: true
+      - type: custom:bubble-card
+        card_type: cover
+        entity: cover.5
+        name: Front Shade
+        show_state: true
+      - type: custom:bubble-card
+        card_type: cover
+        entity: cover.3
+        name: Side Shade 1
+        show_state: true
+      - type: custom:bubble-card
+        card_type: cover
+        entity: cover.4
+        name: Side Shade 2
+        show_state: true

@@ -1,0 +1,70 @@
+title: CCTV
+path: cctv
+icon: mdi:cctv
+type: sections
+subview: true
+theme: Frosted Glass Dark Lite
+max_columns: 3
+dense_section_placement: true
+sections:
+  - type: grid
+    column_span: 3
+    cards:
+      - type: picture-entity
+        entity: camera.driveway_ai_pro_medium_resolution_channel
+        camera_image: camera.driveway_ai_pro_medium_resolution_channel
+        camera_view: live
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.g4_doorbell_pro_poe_high_resolution_channel
+        camera_view: live
+        fit_mode: fill
+        aspect_ratio: "16:9"
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.front_yard_ai_pro_medium_resolution_channel
+        camera_image: camera.front_yard_ai_pro_medium_resolution_channel
+        camera_view: live
+        fit_mode: cover
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.front_porch_g5_ptz_medium_resolution_channel
+        camera_image: camera.front_porch_g5_ptz_medium_resolution_channel
+        camera_view: live
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.side_yard_g5_ptz_medium_resolution_channel
+        camera_image: camera.side_yard_g5_ptz_medium_resolution_channel
+        camera_view: live
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.shed_g5_ptz_medium_resolution_channel
+        camera_image: camera.shed_g5_ptz_medium_resolution_channel
+        camera_view: live
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.garage_g5_dome_medium_resolution_channel
+        camera_image: camera.garage_g5_dome_medium_resolution_channel
+        camera_view: live
+        fit_mode: cover
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.basement_storage_g6_instant_medium_resolution_channel
+        camera_image: camera.basement_storage_g6_instant_medium_resolution_channel
+        camera_view: live
+        fit_mode: cover
+        show_name: false
+        show_state: false
+      - type: picture-entity
+        entity: camera.shed_ai_turret_medium_resolution_channel
+        camera_image: camera.shed_ai_turret_medium_resolution_channel
+        camera_view: live
+        show_name: false
+        show_state: false

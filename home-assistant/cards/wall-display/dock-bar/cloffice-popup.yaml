@@ -1,0 +1,168 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#cloffice-popup"
+    button_type: name
+    width_desktop: 75vw
+    width_mobile: 90vw
+    show_header: true
+    name: Return To Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
+    content: |
+      ## Primary Cloffice
+
+      <p><strong>Cloffice</strong> {{ states('sensor.upstairs_cloffice_temperature_sensor_01_air_temperature') }}&deg;F, {{ states('sensor.upstairs_cloffice_temperature_sensor_01_humidity') }}% Hum</p>
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_cloffice_lights
+        name: Recessed Lights
+        icon: mdi:light-recessed
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.den_hue_iris_light
+        name: Hue Iris
+        icon: mdi:circle-slice-8
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_cloffice_night_light
+        name: Night Light
+        icon: mdi:weather-night
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: cover.cloffice_shade_combined
+        name: Cloffice Shade
+        show_state: true
+        rows: 1.719
+        card_layout: large-sub-buttons-grid
+        button_action:
+          tap_action:
+            action: more-info
+        sub_button:
+          main: []
+          bottom:
+            - entity: scene.upstairs_gateway_cloffice_tilt_open
+              name: Tilt Open
+              icon: mdi:blinds-horizontal
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.upstairs_gateway_cloffice_tilt_open
+            - entity: scene.upstairs_gateway_cloffice_open
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.upstairs_gateway_cloffice_open
+            - entity: scene.upstairs_gateway_cloffice_privacy
+              name: Privacy
+              icon: mdi:blinds-horizontal-closed
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.upstairs_gateway_cloffice_privacy
+            - entity: scene.upstairs_gateway_cloffice_close
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.upstairs_gateway_cloffice_close
+          bottom_layout: rows
