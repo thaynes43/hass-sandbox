@@ -1,7 +1,7 @@
 type: custom:bubble-card
 card_type: button
 button_type: name
-name: Wall Display - Locks
+name: Locks
 icon: mdi:shield-lock
 entity: input_text.wall_display_entry_locks_status
 show_state: true
@@ -9,7 +9,6 @@ button_action:
   tap_action:
     action: navigate
     navigation_path: "#wall-display-locks"
-rows: 1.04
 styles: |-
   ha-card {
     --bubble-border-radius: 28px !important;
@@ -72,3 +71,9 @@ styles: |-
       inset 0 1px 0 rgba(255, 255, 255, 0.12),
       0 8px 20px rgba(0, 0, 0, 0.16) !important;
   }
+sub_button:
+  main: []
+  bottom: []
+grid_options:
+  columns: 6
+  rows: auto
