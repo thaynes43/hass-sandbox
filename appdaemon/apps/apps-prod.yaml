@@ -734,7 +734,6 @@ vestaboard_health_checker:
   check_interval_s: 180
   entities:
     - entity_id: sensor.vestaboard_controller_status
-      healthy_state: active
       name: Controller Status
     - entity_id: sensor.vestaboard_configuration_status
       healthy_state: ok
