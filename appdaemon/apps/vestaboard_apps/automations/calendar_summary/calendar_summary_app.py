@@ -665,6 +665,11 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         if not self._current_events:
             return
 
+        # Stop rotating if we're no longer displayed
+        if not self.is_displayed():
+            self.log("No longer displayed — stopping rotation", level="INFO")
+            return
+
         total_slots = len(self._current_events) + (1 if self._current_overflow > 0 else 0)
         self._current_event_index = (self._current_event_index + 1) % total_slots
         self._rotations_done = getattr(self, "_rotations_done", 0) + 1
@@ -825,6 +830,11 @@ class CalendarSummaryApp(hass.Hass, VestaboardAutomation):
         if not self._current_events:
             return
         if self._current_overflow > 0 and self._current_event_index >= len(self._current_events):
+            return
+
+        # Stop countdown updates if we're no longer displayed
+        if not self.is_displayed():
+            self.log("No longer displayed — stopping countdown updates", level="INFO")
             return
 
         event = self._current_events[self._current_event_index]
