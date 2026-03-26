@@ -819,9 +819,9 @@ cigar_humidity_checker:
   checker_name: Cigars
   check_interval_s: 120
   humidity_low_warning: 62
-  humidity_high_warning: 68
+  humidity_high_warning: 70
   humidity_low_critical: 60
-  humidity_high_critical: 70
+  humidity_high_critical: 74
   sensors:
     - entity_id: sensor.cigar_humidity_sensor_01_humidity
       name: Tupperdor 01

@@ -194,12 +194,16 @@ class HealthCheckCard extends HTMLElement {
         duration = this._sinceLastChanged(earliest.last_changed, false);
       }
     }
+    const repairFailed =
+      checker.repair_state?.status === "failed" ||
+      String(checker.repair_state?.status) === "failed";
     return {
       checker_id: checkerId,
       name: checker.name || "Unknown",
       status: checker.status || "unknown",
       duration,
       is_dependency: String(checker.is_dependency) === "true",
+      repair_failed: repairFailed,
     };
   }
 
@@ -307,15 +311,16 @@ class HealthCheckCard extends HTMLElement {
         </div>`;
     }
 
-    // Regular checkers — use status-based icons
+    // Regular checkers — use status-based icons (robot-dead if repair failed)
     for (const item of regularItems) {
       const { icon, color } = this._statusIcon(item.status);
+      const displayIcon = item.repair_failed ? "mdi:robot-dead" : icon;
       const durationHtml = item.duration
         ? `<span class="item-duration">(${item.duration})</span>`
         : "";
       html += `
         <div class="hc-item status-${item.status}">
-          <ha-icon icon="${icon}" style="color:${color};--mdc-icon-size:16px;" class="item-icon"></ha-icon>
+          <ha-icon icon="${displayIcon}" style="color:${color};--mdc-icon-size:16px;" class="item-icon"></ha-icon>
           <span class="item-name">${this._escapeHtml(item.name)}</span>
           ${durationHtml}
         </div>`;

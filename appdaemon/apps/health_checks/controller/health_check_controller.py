@@ -79,6 +79,8 @@ class HealthCheckController(hass.Hass):
 
         # State: registered checkers
         self._checkers: Dict[str, Dict[str, Any]] = {}
+        # Track last known repair status per checker for transition detection
+        self._repair_statuses: Dict[str, str] = {}  # checker_id → last repair status
 
         self.log(
             f"HealthCheckController initialising: "
@@ -364,6 +366,26 @@ class HealthCheckController(hass.Hass):
         repair_state = payload.get("repair_state")
         if repair_state is not None:
             checker["repair_state"] = repair_state
+
+        # Record repair lifecycle transitions in alert history
+        if repair_state:
+            new_repair_status = repair_state.get("status", "idle")
+            old_repair_status = self._repair_statuses.get(checker_id, "idle")
+
+            if new_repair_status != old_repair_status:
+                self._repair_statuses[checker_id] = new_repair_status
+
+                # Record meaningful transitions (skip idle→idle, idle→pending is noise)
+                interesting = {"in_progress", "success", "failed"}
+                if new_repair_status in interesting or old_repair_status in interesting:
+                    checker["alert_history"].insert(0, {
+                        "timestamp": now_iso,
+                        "check": "Auto-Repair",
+                        "from_status": old_repair_status,
+                        "to_status": new_repair_status,
+                        "detail": repair_state.get("detail", ""),
+                        "is_repair_event": True,
+                    })
 
         checker["checks"] = new_checks
         checker["status"] = worst_status

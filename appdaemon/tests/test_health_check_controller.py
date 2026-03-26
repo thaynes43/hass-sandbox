@@ -738,6 +738,163 @@ class TestRepairStateStorage:
         assert app._checkers["spa"]["repair_state"]["status"] == "success"
 
 
+class TestRepairLifecycleAlertHistory:
+    """Tests for repair status transitions recorded in alert history."""
+
+    def test_repair_transition_recorded_in_alert_history(self):
+        """Repair transition to in_progress should create an alert history entry."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "critical", "detail": "timeout"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "in_progress", "detail": "Power cycling..."},
+            }),
+        }, {})
+
+        history = app._checkers["spa"]["alert_history"]
+        repair_events = [a for a in history if a.get("is_repair_event")]
+        assert len(repair_events) == 1
+        entry = repair_events[0]
+        assert entry["check"] == "Auto-Repair"
+        assert entry["from_status"] == "idle"
+        assert entry["to_status"] == "in_progress"
+        assert entry["detail"] == "Power cycling..."
+        assert entry["is_repair_event"] is True
+
+    def test_repair_success_recorded(self):
+        """Transition from in_progress to success should be recorded."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        # First report: idle → in_progress
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "critical", "detail": "timeout"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "in_progress", "detail": "Power cycling..."},
+            }),
+        }, {})
+
+        # Second report: in_progress → success
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "ok", "detail": "2ms"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "success", "detail": "Recovered after 45s"},
+            }),
+        }, {})
+
+        history = app._checkers["spa"]["alert_history"]
+        repair_events = [a for a in history if a.get("is_repair_event")]
+        assert len(repair_events) == 2
+        # Most recent first (inserted at index 0)
+        assert repair_events[0]["from_status"] == "in_progress"
+        assert repair_events[0]["to_status"] == "success"
+        assert repair_events[0]["detail"] == "Recovered after 45s"
+        assert repair_events[0]["is_repair_event"] is True
+
+    def test_idle_to_idle_not_recorded(self):
+        """idle→idle transition should not create a repair alert entry."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "ok", "detail": "2ms"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "idle"},
+            }),
+        }, {})
+
+        history = app._checkers["spa"]["alert_history"]
+        repair_events = [a for a in history if a.get("is_repair_event")]
+        assert len(repair_events) == 0
+
+    def test_idle_to_pending_not_recorded(self):
+        """idle→pending is noise and should not create a repair alert entry."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "critical", "detail": "timeout"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "pending", "detail": "Auto-repair in 5m"},
+            }),
+        }, {})
+
+        history = app._checkers["spa"]["alert_history"]
+        repair_events = [a for a in history if a.get("is_repair_event")]
+        assert len(repair_events) == 0
+
+    def test_repair_failed_recorded(self):
+        """in_progress → failed should be recorded."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+
+        # Set up in_progress state
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "critical", "detail": "timeout"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "in_progress", "detail": "Power cycling..."},
+            }),
+        }, {})
+
+        # Transition to failed
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "spa",
+                "results": [
+                    {"name": "Ping", "status": "critical", "detail": "timeout"},
+                    {"name": "Connection", "status": "ok", "detail": "on"},
+                ],
+                "repair_state": {"status": "failed", "detail": "Did not recover after 300s"},
+            }),
+        }, {})
+
+        history = app._checkers["spa"]["alert_history"]
+        repair_events = [a for a in history if a.get("is_repair_event")]
+        # idle→in_progress and in_progress→failed
+        assert len(repair_events) == 2
+        assert repair_events[0]["from_status"] == "in_progress"
+        assert repair_events[0]["to_status"] == "failed"
+        assert repair_events[0]["detail"] == "Did not recover after 300s"
+
+
 class TestRepairRouting:
     def test_start_repair_fires_targeted_event(self):
         """start_repair should fire health_check_repair_{checker_id}."""

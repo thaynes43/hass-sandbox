@@ -44,6 +44,7 @@ class HealthCheckDetailCard extends HTMLElement {
     this._domBuilt = false;
     this._touchActive = false;
     this._refreshTimer = null;
+    this._countdownInterval = null;
     this._expandedCheckers = new Set();
     this._collapsedCheckers = new Set();
   }
@@ -59,12 +60,14 @@ class HealthCheckDetailCard extends HTMLElement {
       clearInterval(this._refreshTimer);
       this._refreshTimer = null;
     }
+    this._stopCountdown();
   }
 
   connectedCallback() {
     // Restart refresh timer when re-attached (popup reopened)
     if (this._domBuilt) {
       this._startRefreshTimer();
+      this._startCountdown();
       this._update();
     }
   }
@@ -94,6 +97,7 @@ class HealthCheckDetailCard extends HTMLElement {
       this._buildDom();
       this._update();
       this._startRefreshTimer();
+      this._startCountdown();
       return;
     }
 
@@ -133,6 +137,44 @@ class HealthCheckDetailCard extends HTMLElement {
     this._refreshTimer = setInterval(() => {
       this._update();
     }, 15000);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Countdown timer (1s interval for repair deadline text)
+  // ---------------------------------------------------------------------------
+
+  _startCountdown() {
+    this._stopCountdown();
+    this._countdownInterval = setInterval(() => this._updateCountdowns(), 1000);
+  }
+
+  _stopCountdown() {
+    if (this._countdownInterval) {
+      clearInterval(this._countdownInterval);
+      this._countdownInterval = null;
+    }
+  }
+
+  _updateCountdowns() {
+    if (!this.shadowRoot) return;
+    const els = this.shadowRoot.querySelectorAll("[data-repair-deadline]");
+    for (const el of els) {
+      const deadline = el.getAttribute("data-repair-deadline");
+      if (!deadline) continue;
+      const remaining = Math.max(
+        0,
+        Math.floor((new Date(deadline).getTime() - Date.now()) / 1000)
+      );
+      if (remaining <= 0) {
+        el.textContent = "Starting repair...";
+      } else if (remaining < 60) {
+        el.textContent = `Auto-repair in ${remaining}s`;
+      } else {
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        el.textContent = `Auto-repair in ${m}m ${s}s`;
+      }
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -514,7 +556,19 @@ class HealthCheckDetailCard extends HTMLElement {
 
     let alertsHtml = "";
     for (const alert of allAlerts.slice(0, 20)) {
-      const alertIconHtml = this._statusIconHtml(alert.to_status, 14);
+      let alertIconHtml;
+      if (alert.is_repair_event) {
+        const repairColorMap = {
+          in_progress: "var(--hcd-accent)",
+          success: "var(--hcd-ok)",
+          failed: "var(--hcd-critical)",
+          pending: "var(--hcd-degraded)",
+        };
+        const repairColor = repairColorMap[alert.to_status] || "var(--hcd-muted)";
+        alertIconHtml = `<ha-icon icon="mdi:wrench" style="color:${repairColor};--mdc-icon-size:14px;"></ha-icon>`;
+      } else {
+        alertIconHtml = this._statusIconHtml(alert.to_status, 14);
+      }
       const prevDuration = alert.previous_state_duration_s;
       let transitionDetail = "";
       if (prevDuration != null && prevDuration > 0) {
@@ -564,12 +618,20 @@ class HealthCheckDetailCard extends HTMLElement {
         0,
         Math.floor((new Date(deadline).getTime() - Date.now()) / 1000)
       );
-      const min = Math.floor(remaining / 60);
-      const sec = remaining % 60;
+      let initialText;
+      if (remaining <= 0) {
+        initialText = "Starting repair...";
+      } else if (remaining < 60) {
+        initialText = `Auto-repair in ${remaining}s`;
+      } else {
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        initialText = `Auto-repair in ${m}m ${s}s`;
+      }
       statusHtml = `
         <div class="repair-status repair-pending">
           <ha-icon icon="mdi:timer-sand" style="--mdc-icon-size:14px;color:var(--hcd-degraded);"></ha-icon>
-          <span>Auto-repair in ${min}:${String(sec).padStart(2, "0")}</span>
+          <span class="repair-countdown" data-repair-deadline="${hcdEscapeHtml(deadline)}">${initialText}</span>
         </div>
       `;
     } else if (status === "in_progress") {
@@ -589,7 +651,7 @@ class HealthCheckDetailCard extends HTMLElement {
     } else if (status === "failed") {
       statusHtml = `
         <div class="repair-status repair-failed-status">
-          <ha-icon icon="mdi:alert-circle" style="--mdc-icon-size:14px;color:var(--hcd-critical);"></ha-icon>
+          <ha-icon icon="mdi:robot-dead" style="--mdc-icon-size:14px;color:var(--hcd-critical);"></ha-icon>
           <span>${hcdEscapeHtml(detail) || "Repair failed"}</span>
         </div>
       `;
@@ -673,7 +735,7 @@ class HealthCheckDetailCard extends HTMLElement {
       case "success":
         return `<ha-icon icon="mdi:check-circle" style="--mdc-icon-size:12px;color:var(--hcd-ok);"></ha-icon>`;
       case "failed":
-        return `<ha-icon icon="mdi:alert-circle" style="--mdc-icon-size:12px;color:var(--hcd-critical);"></ha-icon>`;
+        return `<ha-icon icon="mdi:robot-dead" style="--mdc-icon-size:12px;color:var(--hcd-critical);"></ha-icon>`;
       case "pending":
         return `<ha-icon icon="mdi:timer-sand" style="--mdc-icon-size:12px;color:var(--hcd-degraded);"></ha-icon>`;
       default:
