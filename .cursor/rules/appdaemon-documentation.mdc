@@ -159,7 +159,7 @@ health_check_controller (listens for health_check_command events from all checke
   ├─ repairable_device_checker/printer
   ├─ device_group_checker/cielo (depends on: cloud)
   ├─ fan_health_checker/fans
-  ├─ spa_health_checker/spa (depends on: cloud, runs from dev only)
+  ├─ spa_health_checker/spa (depends on: cloud)
   └─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
 ```
 

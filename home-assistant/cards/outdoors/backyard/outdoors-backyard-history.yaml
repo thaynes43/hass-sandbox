@@ -86,7 +86,7 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-            - entity: light.haynes_spa_light_1
+            - entity: light.westford_spa_light_1
               name: Spa Lights
               icon: mdi:hot-tub
               show_name: true
@@ -143,7 +143,7 @@ cards:
         name: Animal
       - entity: binary_sensor.backyard_all_clear
         name: All Clear
-      - entity: light.haynes_spa_light_1
+      - entity: light.westford_spa_light_1
         name: Spa Lights
       - entity: light.downstairs_kitchen_back_yard_spotlight
         name: Spotlight

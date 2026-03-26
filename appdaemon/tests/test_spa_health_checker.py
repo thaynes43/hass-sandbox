@@ -44,13 +44,13 @@ DEFAULT_ARGS: Dict[str, Any] = {
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
     "checker_id": "spa",
-    "checker_name": "Haynes Spa",
+    "checker_name": "Westford Spa",
     "gateway_host": "192.168.0.163",
     "connection_entities": [
-        "binary_sensor.haynes_spa_overall_connection",
-        "binary_sensor.haynes_spa_transport_connection",
+        "binary_sensor.westford_spa_overall_connection",
+        "binary_sensor.westford_spa_transport_connection",
     ],
-    "staleness_entity": "climate.haynes_spa_thermostat_1",
+    "staleness_entity": "climate.westford_spa_thermostat_1",
     "staleness_threshold_s": 300,
     "repair_switch": "switch.power_distribution_hi_density_hot_tub",
     "repair_recovery_wait_s": 300,
@@ -203,7 +203,7 @@ class TestChecks:
         app.get_state = AsyncMock(return_value="on")
         result = _run(
             app._check_connection_entity(
-                "binary_sensor.haynes_spa_overall_connection"
+                "binary_sensor.westford_spa_overall_connection"
             )
         )
         assert result["status"] == "ok"
@@ -215,7 +215,7 @@ class TestChecks:
         app.get_state = AsyncMock(return_value="off")
         result = _run(
             app._check_connection_entity(
-                "binary_sensor.haynes_spa_overall_connection"
+                "binary_sensor.westford_spa_overall_connection"
             )
         )
         assert result["status"] == "critical"
@@ -226,7 +226,7 @@ class TestChecks:
         app.get_state = AsyncMock(return_value=None)
         result = _run(
             app._check_connection_entity(
-                "binary_sensor.haynes_spa_overall_connection"
+                "binary_sensor.westford_spa_overall_connection"
             )
         )
         assert result["status"] == "critical"

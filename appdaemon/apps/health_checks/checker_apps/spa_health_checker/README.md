@@ -1,6 +1,6 @@
 # Spa Health Checker
 
-Monitors a Gecko-integrated hot tub (Haynes Spa) connected via the [ha-gecko-integration](https://github.com/geckoal/ha-gecko-integration). Detects network failures, cloud connectivity issues, and the "zombie" state where entities report normal values but commands time out.
+Monitors a Gecko-integrated hot tub (Westford Spa) connected via the [ha-gecko-integration](https://github.com/geckoal/ha-gecko-integration). Detects network failures, cloud connectivity issues, and the "zombie" state where entities report normal values but commands time out.
 
 ## Checks
 
@@ -10,7 +10,7 @@ Monitors a Gecko-integrated hot tub (Haynes Spa) connected via the [ha-gecko-int
 | Connection entity checks | Entity state for each entry in `connection_entities` | `"on"` |
 | Thermostat Staleness | Age of `last_updated` on `staleness_entity` | < `staleness_threshold_s` |
 
-The checks are config-driven: `connection_entities` accepts a list of binary sensor entity IDs. Check names are derived from the entity ID (e.g. `binary_sensor.haynes_spa_overall_connection` becomes "Overall Connection"). Any check can be omitted by removing its config key.
+The checks are config-driven: `connection_entities` accepts a list of binary sensor entity IDs. Check names are derived from the entity ID (e.g. `binary_sensor.westford_spa_overall_connection` becomes "Overall Connection"). Any check can be omitted by removing its config key.
 
 The staleness check is the key zombie detector — the Gecko integration's coordinator polls every 30 seconds, so if `last_updated` hasn't changed in 5+ minutes, the data path is stale even if connectivity sensors still report "on".
 
@@ -59,10 +59,10 @@ spa_health_checker:
   ha_token_env: TOKEN
   checker_id: spa                              # Unique ID
   checker_name: Spa                            # Display name on cards
-  gateway_host: "192.168.0.163"                # in.touch gateway IP to ping
+  gateway_host: "192.168.50.122"                # in.touch gateway IP to ping
   connection_entities:                         # Binary sensors to monitor
-    - binary_sensor.haynes_spa_overall_connection
-  staleness_entity: climate.haynes_spa_thermostat_1  # Entity for staleness detection
+    - binary_sensor.westford_spa_overall_connection
+  staleness_entity: climate.westford_spa_thermostat_1  # Entity for staleness detection
   staleness_threshold_s: 300                   # Seconds before entity is considered stale
   repair_switch: switch.power_distribution_hi_density_hot_tub  # Smart switch for power cycle
   repair_recovery_wait_s: 300                  # Max seconds to wait for recovery after repair

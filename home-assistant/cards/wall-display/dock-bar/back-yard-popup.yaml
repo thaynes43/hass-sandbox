@@ -56,7 +56,7 @@ cards:
 
       <p><strong>Lighting</strong> Spotlight {{ states('light.downstairs_kitchen_back_yard_spotlight') | title }}, Deck {{ states('light.garage_back_yard_inovelli_dimmer') | title }}</p>
       <p><strong>Cameras</strong> Backyard {{ 'Motion' if is_state('binary_sensor.back_yard_ai_pro_motion', 'on') else 'Idle' }}, Side Yard {{ 'Motion' if is_state('binary_sensor.side_yard_g5_ptz_motion', 'on') else 'Idle' }}, {{ 'Dark' if is_state('binary_sensor.back_yard_ai_pro_is_dark', 'on') else 'Daylight' }}</p>
-      <p><strong>Systems</strong> Generator {{ states('sensor.generac_2232402_status') }}, Spa {{ 'Connected' if is_state('binary_sensor.haynes_spa_transport_connection', 'on') else 'Offline' }}</p>
+      <p><strong>Systems</strong> Generator {{ states('sensor.generac_2232402_status') }}, Spa {{ 'Connected' if is_state('binary_sensor.westford_spa_transport_connection', 'on') else 'Offline' }}</p>
   - type: heading
     heading: Back Yard
     heading_style: subtitle
