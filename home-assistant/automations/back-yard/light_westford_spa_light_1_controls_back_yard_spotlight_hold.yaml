@@ -6,11 +6,11 @@ description: >
 mode: restart
 trigger:
   - platform: state
-    entity_id: light.haynes_spa_light_1
+    entity_id: light.westford_spa_light_1
     to: "on"
     id: spa_on
   - platform: state
-    entity_id: light.haynes_spa_light_1
+    entity_id: light.westford_spa_light_1
     to: "off"
     id: spa_off
 condition: []

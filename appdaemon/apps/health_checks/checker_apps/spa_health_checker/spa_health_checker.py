@@ -230,7 +230,7 @@ class SpaHealthChecker(hass.Hass):
             names.append("Gateway Ping")
         for entity_id in self._connection_entities:
             # Derive a friendly name from the entity ID
-            # e.g. binary_sensor.haynes_spa_overall_connection → Overall Connection
+            # e.g. binary_sensor.westford_spa_overall_connection → Overall Connection
             short = entity_id.split(".")[-1]
             # Strip prefix up to and including "spa_"
             if "_spa_" in short:
