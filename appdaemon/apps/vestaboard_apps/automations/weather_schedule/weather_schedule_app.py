@@ -367,6 +367,9 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
 
         Stops updating once the original TTL window has elapsed so the
         weather frame can expire and pending frames can be promoted.
+        Also stops if we are no longer the displayed source — pushing a
+        refresh when another frame owns the board would queue a stale
+        weather frame in pending that surfaces hours later.
         """
         import time as _time
 
@@ -380,6 +383,26 @@ class WeatherScheduleApp(hass.Hass, VestaboardAutomation):
                 level="INFO",
             )
             return  # Don't schedule another update
+
+        # Check if we're still the displayed source — if another frame
+        # took the board, stop refreshing to avoid queuing stale frames
+        try:
+            status = self.get_state(
+                "sensor.vestaboard_controller_status", attribute="all"
+            )
+            if status and isinstance(status, dict):
+                displayed_source = status.get("attributes", {}).get(
+                    "displayed_source", ""
+                )
+                if displayed_source and displayed_source != self.name:
+                    self.log(
+                        f"Weather no longer on board (current={displayed_source!r}) "
+                        f"— stopping periodic updates",
+                        level="INFO",
+                    )
+                    return  # Don't push or schedule another update
+        except Exception:
+            pass  # If we can't check, proceed with the update
 
         try:
             grid = await self.generate_frame()
