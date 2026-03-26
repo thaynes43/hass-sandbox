@@ -679,27 +679,6 @@ zwave_health_checker:
   web_ui_check_name: Web UI
   check_interval_s: 180
 
-spa_health_checker:
-  module: health_checks.checker_apps.spa_health_checker.spa_health_checker
-  class: SpaHealthChecker
-  disable: true
-  ha_url: !secret ha_url
-  ha_token_env: TOKEN
-  checker_id: spa
-  checker_name: Spa
-  gateway_host: "192.168.0.163"
-  connection_entities:
-    - binary_sensor.haynes_spa_overall_connection
-  staleness_entity: climate.haynes_spa_thermostat_1
-  staleness_threshold_s: 300
-  repair_switch: switch.power_distribution_hi_density_hot_tub
-  repair_recovery_wait_s: 300
-  check_interval_s: 120
-  auto_repair_enabled_default: false
-  auto_repair_delay_min_default: 5
-  health_dependencies:
-    - checker_id: cloud
-
 cielo_health_checker:
   module: health_checks.checker_apps.device_group_checker.device_group_checker
   class: DeviceGroupChecker
