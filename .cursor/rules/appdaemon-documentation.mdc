@@ -143,10 +143,24 @@ vestaboard_controller (vestaboard_apps/vestaboard_controller)
   └─ fires vestaboard_controller_ready on startup (automations re-register automatically)
   └─ vestaboard_configuration (reads status sensor, forwards card commands via vestaboard_controller_command event)
 
-health_check_controller
-  └─ listens for health_check_command events
-       └─ network_protocol_checker/zigbee (fires register + report_status events)
-       └─ network_protocol_checker/zwave (fires register + report_status events)
+health_check_controller (listens for health_check_command events from all checkers)
+  ├─ cloud_checker/cloud (root dependency)
+  │    └─ depended on by: cielo, lock_batteries
+  ├─ mqtt_broker_checker/mqtt_broker (root dependency)
+  │    └─ depended on by: zigbee, basement_lights, downstairs_lights, upstairs_lights, exterior_lights
+  ├─ network_protocol_checker/zigbee (depends on: mqtt_broker)
+  │    └─ depended on by: basement_lights, downstairs_lights, upstairs_lights, exterior_lights, zigbee_batteries
+  ├─ network_protocol_checker/zwave (root dependency)
+  │    └─ depended on by: zwave_batteries
+  ├─ mqtt_device_checker (4 instances: basement/downstairs/upstairs/exterior_lights, depends on: zigbee + mqtt_broker)
+  ├─ battery_checker (6 instances: zwave/shade/lock/airthings/protect/zigbee_batteries)
+  ├─ ups_checker/ups
+  ├─ device_checker/vestaboard
+  ├─ repairable_device_checker/printer
+  ├─ device_group_checker/cielo (depends on: cloud)
+  ├─ fan_health_checker/fans
+  ├─ spa_health_checker/spa (depends on: cloud, runs from dev only)
+  └─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
 ```
 
 ## When creating a new app or provider

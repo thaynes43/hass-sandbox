@@ -107,6 +107,19 @@ class HealthCheckCard extends HTMLElement {
     }, 15000); // every 15s to keep duration labels fresh
   }
 
+  connectedCallback() {
+    super.connectedCallback?.();
+    this._startRefreshTimer();
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback?.();
+    if (this._refreshTimer) {
+      clearInterval(this._refreshTimer);
+      this._refreshTimer = null;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Data helpers
   // ---------------------------------------------------------------------------

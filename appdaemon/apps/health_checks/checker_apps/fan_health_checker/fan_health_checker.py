@@ -175,8 +175,8 @@ class FanHealthChecker(hass.Hass):
                         entity_id=entity_id,
                         value=self._auto_repair_delay_min_default,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self.log(f"Failed to set default for {entity_id}: {exc!r}", level="DEBUG")
                 self.log(f"Provisioned {entity_id}", level="INFO")
         except Exception as exc:
             self.log(
@@ -388,15 +388,16 @@ class FanHealthChecker(hass.Hass):
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
             enabled_state = await self.get_state(entity_id)
             self._cached_auto_repair_enabled = str(enabled_state) == "on"
-        except Exception:
-            pass
+        except Exception as exc:
+            self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
 
         try:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
             delay_state = await self.get_state(entity_id)
-            self._cached_auto_repair_delay_min = int(float(delay_state))
-        except Exception:
-            pass
+            if delay_state is not None and str(delay_state) not in ("unavailable", "unknown"):
+                self._cached_auto_repair_delay_min = int(float(delay_state))
+        except Exception as exc:
+            self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
 
     def _read_auto_repair_config(self) -> tuple[bool, int]:
         """Return cached auto-repair config (sync-safe)."""
