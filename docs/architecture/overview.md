@@ -24,6 +24,7 @@
                                      │  ├─ dashboard_notify│
                                      │  ├─ calendar_from_*│
                                      │  ├─ immich_fetcher │
+                                     │  ├─ health_checks  │
                                      │  └─ school_lunch_* │
                                      │                    │
                                      │  providers/        │
@@ -63,6 +64,10 @@ Lovelace cards communicate with AppDaemon through relay scripts:
 3. AppDaemon listens for the event and processes it
 
 This pattern works for non-admin users (unlike `fire_event` which requires admin).
+
+### Health monitoring
+
+The [health check system](../features/health-checks.md) uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling) while the controller only routes commands.
 
 ### Container separation
 

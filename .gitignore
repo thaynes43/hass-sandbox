@@ -4,6 +4,9 @@ appdaemon/secrets.yaml
 # AppDaemon runtime state (detection summary store persistence)
 appdaemon/apps/_state/
 
+# Agent memory files
+**/MEMORY.md
+
 # Python caches / artifacts
 __pycache__/
 **/__pycache__/

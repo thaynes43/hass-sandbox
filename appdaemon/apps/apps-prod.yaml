@@ -637,6 +637,410 @@ calendar_hot_tub_maintenance:
   horizon_days: 90
   sync_interval_hours: 6
 
+health_check_controller:
+  module: health_checks.controller.health_check_controller
+  class: HealthCheckController
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  heartbeat_interval_s: 60
+  alert_history_max: 50
+  alert_retention: "1:12:00:00"
+
+zigbee_health_checker:
+  module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
+  class: NetworkProtocolChecker
+  disable: true
+  checker_id: zigbee
+  checker_name: Zigbee
+  entity_id: binary_sensor.zigbee2mqtt_bridge_connection_state
+  entity_healthy_state: "on"
+  entity_check_name: Integration Status
+  radio_host: tubeszb-zigbee01.haynesnetwork
+  radio_check_name: Coordinator Ping
+  web_ui_url: https://zigbee.haynesops.com
+  web_ui_check_name: Web UI
+  check_interval_s: 180
+  health_dependencies:
+    - checker_id: mqtt_broker
+
+zwave_health_checker:
+  module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
+  class: NetworkProtocolChecker
+  disable: true
+  checker_id: zwave
+  checker_name: Z-Wave
+  entity_id: sensor.800_series_long_range_gpio_module_status
+  entity_healthy_state: "ready"
+  entity_check_name: Integration Status
+  radio_host: tubeszb-zwave01.haynesnetwork
+  radio_check_name: Radio Ping
+  web_ui_url: https://zwave.haynesops.com
+  web_ui_check_name: Web UI
+  check_interval_s: 180
+
+cielo_health_checker:
+  module: health_checks.checker_apps.device_group_checker.device_group_checker
+  class: DeviceGroupChecker
+  disable: true
+  checker_id: cielo
+  checker_name: Cielo
+  check_interval_s: 180
+  health_dependencies:
+    - checker_id: cloud
+  devices:
+    - name: Movie Room
+      ip: "192.168.50.102"
+      entities:
+        - entity_id: binary_sensor.movie_room_breeze_status
+          healthy_state: "on"
+          name: Status
+    - name: Rumpus Room
+      ip: "192.168.50.192"
+      entities:
+        - entity_id: binary_sensor.rumpus_room_breeze_status
+          healthy_state: "on"
+          name: Status
+
+vestaboard_health_checker:
+  module: health_checks.checker_apps.device_checker.device_checker
+  class: BasicDeviceChecker
+  disable: true
+  checker_id: vestaboard
+  checker_name: Vestaboard
+  ping_host: "192.168.50.159"
+  ping_check_name: Ping
+  check_interval_s: 180
+  entities:
+    - entity_id: sensor.vestaboard_controller_status
+      name: Controller Status
+    - entity_id: sensor.vestaboard_configuration_status
+      healthy_state: ok
+      name: Configuration Status
+
+printer_health_checker:
+  module: health_checks.checker_apps.device_checker.repairable_device_checker
+  class: RepairableDeviceChecker
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: printer
+  checker_name: Printer
+  ping_host: "192.168.0.211"
+  ping_check_name: Ping
+  check_interval_s: 180
+  repair_switch: switch.downstairs_study_printer_switch
+  repair_recovery_wait_s: 300
+  repair_off_duration_s: 10
+  auto_repair_enabled_default: false
+  auto_repair_delay_min_default: 5
+  entities:
+    - entity_id: sensor.brother_mfc_l3780cdw_series
+      name: Status
+
+fan_health_checker:
+  module: health_checks.checker_apps.fan_health_checker.fan_health_checker
+  class: FanHealthChecker
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: fans
+  checker_name: Ceiling Fans
+  check_interval_s: 180
+  repair_recovery_wait_s: 300
+  auto_repair_enabled_default: false
+  auto_repair_delay_min_default: 5
+  repair_script: script.zen32_hard_reset
+  fans:
+    - name: Pink Room
+      entity_id: fan.pink_room_fan_fan
+      ip: "192.168.50.112"
+      power_switch: switch.upstairs_pink_room_scene_controller
+      relay_control: select.upstairs_pink_room_scene_controller_relay_control
+      scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
+    - name: Blue Room
+      entity_id: fan.blue_room_fan_fan
+      ip: "192.168.50.134"
+      power_switch: switch.upstairs_blue_room_scene_controller
+      relay_control: select.upstairs_blue_room_scene_controller_relay_control
+      scene_control: select.upstairs_blue_room_scene_controller_scene_control_relay
+    - name: White Room
+      entity_id: fan.white_room_fan_fan
+      ip: "192.168.50.187"
+      power_switch: switch.upstairs_white_room_scene_controller
+      relay_control: select.upstairs_white_room_scene_controller_relay_control
+      scene_control: select.upstairs_white_room_scene_controller_scene_control_relay
+    - name: Primary Bedroom
+      entity_id: fan.primary_bedroom_fan_fan
+      ip: "192.168.50.146"
+      power_switch: switch.upstairs_primary_bedroom_scene_controller
+      relay_control: select.upstairs_primary_bedroom_scene_controller_relay_control
+      scene_control: select.upstairs_primary_bedroom_scene_controller_scene_control_relay
+    - name: Living Room
+      entity_id: fan.livingroom_fan_fan
+      ip: "192.168.50.148"
+      power_switch: switch.downstairs_livingroom_scene_controller
+      relay_control: select.downstairs_livingroom_scene_controller_relay_control
+      scene_control: select.downstairs_livingroom_scene_controller_scene_control_relay
+    - name: Study
+      entity_id: fan.study_fan_fan
+      ip: "192.168.50.179"
+      power_switch: switch.downstairs_study_scene_controller
+      relay_control: select.downstairs_study_scene_controller_relay_control
+      scene_control: select.downstairs_study_scene_controller_scene_control_relay
+
+cigar_humidity_checker:
+  module: health_checks.checker_apps.temp_humidity_checker.temp_humidity_checker
+  class: TempHumidityChecker
+  disable: true
+  checker_id: cigar_humidity
+  checker_name: Cigars
+  check_interval_s: 120
+  humidity_low_warning: 62
+  humidity_high_warning: 70
+  humidity_low_critical: 60
+  humidity_high_critical: 74
+  sensors:
+    - entity_id: sensor.cigar_humidity_sensor_01_humidity
+      name: Tupperdor 01
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_02_humidity
+      name: Tupperdor 02
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_03_humidity
+      name: Jar 01
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_04_humidity
+      name: Jar 02
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_05_humidity
+      name: Cooler
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_06_humidity
+      name: Tupperdor 03
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.cigar_humidity_sensor_07_humidity
+      name: Tupperdor 04
+      type: humidity
+      dependency: zwave
+    - entity_id: sensor.basement_aqara_w100_01_humidity
+      name: MON1800
+      type: humidity
+      dependency: zigbee
+    - entity_id: sensor.basement_aqara_w100_02_humidity
+      name: MA50
+      type: humidity
+      dependency: zigbee
+
+cloud_checker:
+  module: health_checks.checker_apps.cloud_checker.cloud_checker
+  class: CloudChecker
+  disable: true
+  checker_id: cloud
+  checker_name: Cloud
+  check_interval_s: 120
+  force_fail: false
+  checks:
+    - url: https://www.google.com
+      name: Google
+
+mqtt_broker_checker:
+  module: health_checks.checker_apps.mqtt_broker_checker.mqtt_broker_checker
+  class: MqttBrokerChecker
+  disable: true
+  checker_id: mqtt_broker
+  checker_name: MQTT Broker
+  check_interval_s: 120
+  ping_timeout_s: 10
+  mqtt_namespace: mqtt
+  ping_topic: appdaemon/health_check/ping
+
+basement_lights_checker:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  disable: true
+  checker_id: basement_lights
+  checker_name: Basement Lights
+  check_interval_s: 300
+  mqtt_stale_s: 21600
+  mqtt_namespace: mqtt
+  protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.basement.*inovelli.*"
+    - include: "light\\.basement.*hue.*\\d+$"
+    - exclude: ".*night_light.*"
+
+downstairs_lights_checker:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  disable: true
+  checker_id: downstairs_lights
+  checker_name: Downstairs Lights
+  check_interval_s: 300
+  mqtt_stale_s: 21600
+  mqtt_namespace: mqtt
+  protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.downstairs.*inovelli.*"
+    - include: "light\\.downstairs.*hue.*\\d+$"
+    - exclude: ".*downstairs_front_door_inovelli_on_off.*"
+    - exclude: ".*downstairs_front_porch_inovelli_dimmer.*"
+    - exclude: ".*downstairs_kitchen_back_yard_spotlight.*"
+    - exclude: ".*night_light.*"
+
+upstairs_lights_checker:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  disable: true
+  checker_id: upstairs_lights
+  checker_name: Upstairs Lights
+  check_interval_s: 300
+  mqtt_stale_s: 21600
+  mqtt_namespace: mqtt
+  protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.upstairs.*inovelli.*"
+    - include: "light\\.upstairs.*hue.*"
+    - include: "light\\.upstairs_primary_nightstand_lights"
+    - exclude: ".*night_light.*"
+
+exterior_lights_checker:
+  module: health_checks.checker_apps.mqtt_device_checker.mqtt_device_checker
+  class: MqttDeviceChecker
+  disable: true
+  checker_id: exterior_lights
+  checker_name: Exterior Lights
+  check_interval_s: 300
+  mqtt_stale_s: 21600
+  mqtt_namespace: mqtt
+  protocol_dependency_id: zigbee
+  health_dependencies:
+    - checker_id: mqtt_broker
+  entity_patterns:
+    - include: "(light|switch)\\.garage.*inovelli.*"
+    - include: "(light|switch)\\.downstairs_front_door_inovelli_on_off.*"
+    - include: "(light|switch)\\.downstairs_front_porch_inovelli_dimmer.*"
+    - include: "(light|switch)\\.downstairs_kitchen_back_yard_spotlight.*"
+    - include: "light\\.front.*hue.*\\d+$"
+    - include: "light\\.outdoor.*hue.*\\d+$"
+    - exclude: ".*front_yard_lamp_post_hue_edison.*"
+    - exclude: ".*outdoor_hue_string_lights_01.*"
+    - exclude: ".*night_light.*"
+
+zwave_battery_checker:
+  module: health_checks.checker_apps.battery_checker.battery_checker
+  class: BatteryChecker
+  disable: true
+  checker_id: zwave_batteries
+  checker_name: Z-Wave Batteries
+  check_interval_s: 300
+  warning_threshold: 20
+  critical_threshold: 10
+  health_dependencies:
+    - checker_id: zwave
+  entity_patterns:
+    - include: "sensor\\..*_battery_level$"
+
+shade_battery_checker:
+  module: health_checks.checker_apps.battery_checker.battery_checker
+  class: BatteryChecker
+  disable: true
+  checker_id: shade_batteries
+  checker_name: Shade Batteries
+  check_interval_s: 300
+  warning_threshold: 25
+  critical_threshold: 5
+  entity_patterns:
+    - include: "sensor\\..*shade.*_battery$"
+
+lock_battery_checker:
+  module: health_checks.checker_apps.battery_checker.battery_checker
+  class: BatteryChecker
+  disable: true
+  checker_id: lock_batteries
+  checker_name: Schlage
+  check_interval_s: 300
+  warning_threshold: 25
+  critical_threshold: 10
+  health_dependencies:
+    - checker_id: cloud
+  entity_patterns:
+    - include: "sensor\\..*_lock_battery$"
+
+airthings_battery_checker:
+  module: health_checks.checker_apps.battery_checker.battery_checker
+  class: BatteryChecker
+  disable: true
+  checker_id: airthings_batteries
+  checker_name: Airthings
+  check_interval_s: 300
+  warning_threshold: 20
+  critical_threshold: 5
+  entity_patterns:
+    - include: "sensor\\.(livingroom_view_plus|basement_view_radon|primary_bedroom_wave_plus|primary_bathroom|basement_wave_mini|laundry_room_wave_mini)_battery$"
+
+protect_battery_checker:
+  module: health_checks.checker_apps.battery_checker.battery_checker
+  class: BatteryChecker
+  disable: true
+  checker_id: protect_batteries
+  checker_name: UniFi Batteries
+  check_interval_s: 300
+  warning_threshold: 20
+  critical_threshold: 10
+  entity_patterns:
+    - include: "sensor\\..*usl_entry_battery.*"
+    - include: "sensor\\..*_usl_entry_battery$"
+
+zigbee_battery_checker:
+  module: health_checks.checker_apps.battery_checker.battery_checker
+  class: BatteryChecker
+  disable: true
+  checker_id: zigbee_batteries
+  checker_name: Zigbee Batteries
+  check_interval_s: 300
+  warning_threshold: 20
+  critical_threshold: 10
+  health_dependencies:
+    - checker_id: zigbee
+  entity_patterns:
+    - include: "sensor\\.basement_(rumpus_aqara_fp300_presence|aqara_w100_0[12])_battery$"
+
+ups_checker:
+  module: health_checks.checker_apps.battery_checker.ups_checker
+  class: UpsChecker
+  disable: true
+  checker_id: ups
+  checker_name: UPS
+  check_interval_s: 120
+  ups_devices:
+    - name: APC 2700W
+      battery_entity: sensor.apc_2700w_battery_charge
+      load_entity: sensor.apc_2700w_load
+      battery_warning: 90
+      battery_critical: 50
+      load_warning: 90
+      load_critical: 100
+    - name: APC 900W
+      battery_entity: sensor.apc_900w_01_battery_charge
+      load_entity: sensor.apc_900w_01_load
+      battery_warning: 90
+      battery_critical: 50
+      load_warning: 90
+      load_critical: 100
+
 school_lunch_app:
   module: school_lunch_app.school_lunch_app
   class: SchoolLunchApp
