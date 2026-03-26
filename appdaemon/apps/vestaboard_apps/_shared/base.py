@@ -310,8 +310,12 @@ class VestaboardAutomation:
                     "displayed_source", ""
                 )
                 return displayed == self.name
-        except Exception:
-            pass
+        except Exception as exc:
+            self.log(
+                "is_displayed() check failed — assuming displayed: %s",
+                exc,
+                level="DEBUG",
+            )
         # If we can't determine, assume yes (don't block pushes)
         return True
 
