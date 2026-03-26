@@ -76,6 +76,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_art_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_art_generator/README.md` | LLM-generated pixel art with grid validation and retry |
 | `ai_message_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_message_generator/README.md` | LLM-generated witty messages with curated fallback |
 | `weather_schedule` | `appdaemon/apps/vestaboard_apps/automations/weather_schedule/README.md` | Weather summary displayed on a daily schedule |
+| `health_checks` | `appdaemon/apps/health_checks/README.md` | System health monitoring: controller + network protocol checkers + dashboard cards |
 
 ### Providers
 
@@ -101,6 +102,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `agent-docs/button-mappings.md` | Switch button mapping reference (must stay in sync with automations) |
 | `agent-docs/roadmap.md` | General project roadmap |
 | `agent-docs/image-view-roadmap.md` | Image viewing feature roadmap |
+| `agent-docs/appdaemon-app-decoupling.md` | Event-based app decoupling pattern for split dev/prod deployment |
 
 ### Root
 
@@ -140,6 +142,25 @@ vestaboard_controller (vestaboard_apps/vestaboard_controller)
        └─ weather_schedule          fires register_automation + push_automation_frame
   └─ fires vestaboard_controller_ready on startup (automations re-register automatically)
   └─ vestaboard_configuration (reads status sensor, forwards card commands via vestaboard_controller_command event)
+
+health_check_controller (listens for health_check_command events from all checkers)
+  ├─ cloud_checker/cloud (root dependency)
+  │    └─ depended on by: cielo, lock_batteries
+  ├─ mqtt_broker_checker/mqtt_broker (root dependency)
+  │    └─ depended on by: zigbee, basement_lights, downstairs_lights, upstairs_lights, exterior_lights
+  ├─ network_protocol_checker/zigbee (depends on: mqtt_broker)
+  │    └─ depended on by: basement_lights, downstairs_lights, upstairs_lights, exterior_lights, zigbee_batteries
+  ├─ network_protocol_checker/zwave (root dependency)
+  │    └─ depended on by: zwave_batteries
+  ├─ mqtt_device_checker (4 instances: basement/downstairs/upstairs/exterior_lights, depends on: zigbee + mqtt_broker)
+  ├─ battery_checker (6 instances: zwave/shade/lock/airthings/protect/zigbee_batteries)
+  ├─ ups_checker/ups
+  ├─ device_checker/vestaboard
+  ├─ repairable_device_checker/printer
+  ├─ device_group_checker/cielo (depends on: cloud)
+  ├─ fan_health_checker/fans
+  ├─ spa_health_checker/spa (depends on: cloud, runs from dev only)
+  └─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
 ```
 
 ## When creating a new app or provider

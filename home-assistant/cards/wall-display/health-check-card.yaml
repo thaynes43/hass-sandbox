@@ -1,0 +1,5 @@
+type: custom:health-check-card
+status_entity: sensor.health_check_status
+heartbeat_entity: input_datetime.appdaemon_heartbeat
+navigation_path: "#health-check-popup"
+stale_threshold_s: 180

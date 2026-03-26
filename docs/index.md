@@ -11,6 +11,7 @@ Welcome to the documentation for the HaynesOps smart home — a Home Assistant +
 - **AI-powered camera notifications** — motion-triggered detection with LLM-generated summaries and AI illustrations delivered as push notifications
 - **Occupancy-based lighting** — mmWave presence sensors + Inovelli switches for automatic, zone-aware lighting across the house
 - **Immich photo frame** — wall-mounted displays cycling personal photos from a self-hosted Immich library
+- **System health monitoring** — proactive infrastructure checks with auto-repair for fans, printers, and the hot tub
 - **Custom Lovelace dashboards** — purpose-built cards for wall displays, mobile, and desktop
 
 ## How it works
@@ -54,5 +55,6 @@ This smart home has evolved alongside the rapid advancement of LLMs in programmi
 | [GenAI Camera Notifications](features/camera-notifications.md) | AI-powered detection summaries and door open alerts |
 | [Occupancy-Based Lighting](features/occupancy-lighting.md) | mmWave presence + Inovelli switch automation |
 | [Immich Photo Frame](features/photo-frame.md) | Wall display photo slideshow from self-hosted photos |
+| [System Health Monitoring](features/health-checks.md) | Proactive infrastructure monitoring with auto-repair |
 | [Architecture](architecture/overview.md) | System diagram and data flow |
 | [Getting Started](setup/getting-started.md) | Development environment setup |
