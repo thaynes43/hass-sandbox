@@ -68,6 +68,6 @@ jobs:
               - Brief positive callouts if the code does something well
             - If no issues found, post a brief "LGTM — no issues found" summary
 
-          claude_args: "--max-turns 15"
+          claude_args: "--max-turns 50000"
           additional_permissions: |
             actions: read
