@@ -21,5 +21,93 @@ cards:
         action: navigate
         navigation_path: "#"
   - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
     content: |
-      ## Coming Soon
+      ## Back Yard
+
+      <p><strong>Lighting</strong> Spotlight {{ states('light.downstairs_kitchen_back_yard_spotlight') | title }}, Deck {{ states('light.garage_back_yard_inovelli_dimmer') | title }}</p>
+      <p><strong>Cameras</strong> Backyard {{ 'Motion' if is_state('binary_sensor.back_yard_ai_pro_motion', 'on') else 'Idle' }}, Side Yard {{ 'Motion' if is_state('binary_sensor.side_yard_g5_ptz_motion', 'on') else 'Idle' }}, {{ 'Dark' if is_state('binary_sensor.back_yard_ai_pro_is_dark', 'on') else 'Daylight' }}</p>
+      <p><strong>Systems</strong> Generator {{ states('sensor.generac_2232402_status') }}, Spa {{ 'Connected' if is_state('binary_sensor.haynes_spa_transport_connection', 'on') else 'Offline' }}</p>
+  - type: heading
+    heading: Back Yard
+    heading_style: subtitle
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_back_yard_spotlight
+        name: Back Yard Spotlight
+        icon: mdi:spotlight
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.garage_back_yard_inovelli_dimmer
+        name: Deck Light
+        icon: mdi:string-lights
+        show_state: true
+        show_attribute: true
+        attribute: brightness
+        allow_light_slider_to_0: true
+        tap_action:
+          action: more-info
+        button_action:
+          tap_action:
+            action: toggle
+        slider_fill_orientation: left
+        slider_value_position: right
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.back_yard
+        name: Back Yard Sonos
+        show_name: true
+        show_state: true
+        show_attribute: false
+        scrolling_effect: false
+        card_layout: normal
+        rows: 1
+        button_action:
+          tap_action:
+            action: more-info

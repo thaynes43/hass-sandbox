@@ -21,5 +21,147 @@ cards:
         action: navigate
         navigation_path: "#"
   - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
     content: |
-      ## Coming Soon
+      ## Driveway & Garage
+
+      <p><strong>Driveway</strong> Lights {{ states('light.garage_driveway_inovelli_dimmer') | title }}, {{ 'Motion' if is_state('binary_sensor.driveway_ai_pro_motion', 'on') else 'Idle' }}, {{ 'Dark' if is_state('binary_sensor.driveway_ai_pro_is_dark', 'on') else 'Daylight' }}</p>
+      <p><strong>Garage</strong> Tesla {{ states('cover.ratgdov25i_4a0325_door') | title }}, Wagoneer {{ states('cover.ratgdov25i_dbfa50_door') | title }}, Side Door {{ states('lock.side_door_lock') | title }}</p>
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Garage
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.garage_interior_lights
+                name: Garage Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.garage_interior_side_inovelli_presence
+                name: Side Lights
+                icon: mdi:lightbulb-group
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: cover.ratgdov25i_4a0325_door
+                name: Tesla Door
+                icon: mdi:garage
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: cover.ratgdov25i_dbfa50_door
+                name: Wagoneer Door
+                icon: mdi:garage
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: lock.side_door_lock
+                name: Side Door Lock
+                icon: mdi:lock
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Driveway
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.garage_driveway_inovelli_dimmer
+                name: Driveway Lights
+                icon: mdi:coach-lamp
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right

@@ -21,5 +21,251 @@ cards:
         action: navigate
         navigation_path: "#"
   - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
     content: |
-      ## Coming Soon
+      ## Entrance
+
+      <p><strong>Entrance</strong> {{ states('sensor.downstairs_entrance_inovelli_presence_illuminance') }} lx, {{ 'Occupied' if is_state('binary_sensor.downstairs_entrance_inovelli_presence_occupancy', 'on') else 'Vacant' }}</p>
+      <p><strong>Mudroom</strong> {{ states('sensor.ecobee_mudroom_sensor_temperature') | float(0) | round(0) }}&deg;F, Door {{ states('lock.mudroom_door_lock') | title }}, {{ states('sensor.mudroom_door_lock_battery') | float(0) | round(0) }}% Batt</p>
+      <p><strong>Bathroom</strong> Shade {{ states('cover.1_4') | title }}, {{ states('sensor.downstairs_bathroom_shower_inovelli_on_off_humidity') | float(0) | round(0) }}% Hum</p>
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Entrance
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_entrance_lights
+                name: Entrance Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.downstairs_entrance_inovelli_presence
+                name: Motion Light
+                icon: mdi:motion-sensor
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+          - type: heading
+            heading: First Floor Bathroom
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_bathroom_vanity_inovelli_presence
+                name: Vanity Lights
+                icon: mdi:mirror-rectangle
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.downstairs_bathroom_shower_inovelli_on_off
+                name: Shower Light
+                icon: mdi:shower
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.downstairs_bathroom_fan_light_inovelli_on_off
+                name: Fan Light
+                icon: mdi:lightbulb
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.downstairs_bathroom_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: cover.1_4
+                name: Bathroom Shade
+                show_state: true
+                rows: 1.719
+                card_layout: large-sub-buttons-grid
+                button_action:
+                  tap_action:
+                    action: more-info
+                sub_button:
+                  main: []
+                  bottom:
+                    - entity: scene.laundry_gateway_1st_floor_bath_tilt_open
+                      name: Tilt Open
+                      icon: mdi:blinds-horizontal
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_1st_floor_bath_tilt_open
+                    - entity: scene.laundry_gateway_1st_floor_bath_open
+                      name: Open
+                      icon: mdi:arrow-up-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_1st_floor_bath_open
+                    - entity: scene.laundry_gateway_1st_floor_bath_close
+                      name: Close
+                      icon: mdi:arrow-down-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_1st_floor_bath_close
+                  bottom_layout: rows
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Mudroom
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_mudroom_lights
+                name: Mudroom Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.downstairs_mudroom_inovelli_presence
+                name: Motion Light
+                icon: mdi:motion-sensor
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.downstairs_mudroom_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: lock.mudroom_door_lock
+                name: Mudroom Door
+                icon: mdi:lock
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
