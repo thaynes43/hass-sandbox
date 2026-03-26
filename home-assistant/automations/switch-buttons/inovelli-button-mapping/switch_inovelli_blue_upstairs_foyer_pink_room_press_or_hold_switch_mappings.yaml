@@ -1,0 +1,14 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Upstairs] [Foyer Pink Room] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 330170ecd7aa86ef0e9c5974c85f3fe8
+    config_single:
+      - action: light.toggle
+        metadata: {}
+        target:
+          entity_id: light.pink_room_fan_light
+        data: {}
