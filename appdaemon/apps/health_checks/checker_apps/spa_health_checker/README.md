@@ -59,7 +59,7 @@ spa_health_checker:
   ha_token_env: TOKEN
   checker_id: spa                              # Unique ID
   checker_name: Spa                            # Display name on cards
-  gateway_host: "192.168.0.163"                # in.touch gateway IP to ping
+  gateway_host: "192.168.50.122"                # in.touch gateway IP to ping
   connection_entities:                         # Binary sensors to monitor
     - binary_sensor.westford_spa_overall_connection
   staleness_entity: climate.westford_spa_thermostat_1  # Entity for staleness detection
