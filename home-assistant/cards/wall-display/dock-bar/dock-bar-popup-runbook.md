@@ -8,6 +8,7 @@ Scope:
 - Preserve the seeded popup shell at the top of each file. Replace only the placeholder body below it.
 
 References:
+- Home Assistant scope and copy/paste communication rules: `.cursor/rules/ha-change-scope-communication.mdc`
 - Bubble style reference: [`bubble-card-custom-style-playbook.md`](/Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/bubble-card-custom-style-playbook.md)
 - First worked example: [`primary-popup.yaml`](/Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/dock-bar/primary-popup.yaml)
 - Approved popup card library: [`dock-bar-approved-card-library.md`](/Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/dock-bar/dock-bar-approved-card-library.md)
@@ -22,6 +23,8 @@ References:
 6. Prefer grouped entities over individual members when the grouped entity is clear and useful.
 7. If a grouped entity is unclear, err on the side of adding too much rather than hiding useful controls.
 8. Do not include camera feeds in dock-bar popups.
+9. Follow the response-scope format from `.cursor/rules/ha-change-scope-communication.mdc` when reporting completed work.
+10. Do not duplicate markdown summary sensor data with extra read-only room cards below unless that status is uniquely important to act on or monitor.
 
 ## MCP Discovery Workflow
 
@@ -197,6 +200,7 @@ Rules:
 - use a plain card background
 - aim for one or two lines of status text, not four stacked paragraphs
 - use short human-readable labels like `Bedroom`, `Bathroom`, `Closet`, `Cloffice`
+- this is the preferred place for ambient sensor rollups such as temperature, humidity, CO2, VOC, occupancy, and laundry-ready status
 
 Recommended content pattern:
 - line 1: two major areas
@@ -222,6 +226,7 @@ Include in this order:
 Notes:
 - Avoid huge one-card rows.
 - Bubble media cards are allowed here, but keep the count low and use the compact approved pattern.
+- If the popup has no room-spanning or top-level controls, omit this row entirely and move straight to the area blocks.
 
 ### 4. Area blocks
 
@@ -241,6 +246,11 @@ Recommended inner room grid:
 - `type: grid`
 - `columns: 2`
 - `square: false`
+
+Rules:
+- cards in area grids should usually be interactive controls
+- avoid adding read-only Bubble status cards that simply repeat what is already shown in the markdown summary
+- keep read-only cards only when the status is unique and operationally important, such as appliance state that affects what the user should do next
 
 Single-area exception:
 - if the popup only contains one area, do not add a duplicate room heading or subsection under the main summary heading

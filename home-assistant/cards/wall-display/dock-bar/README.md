@@ -111,7 +111,7 @@ Popup card count:
 Markdown summary count:
 - Sensor/status entities shown in the top markdown summary: 5
 
-### foyer-popup
+### study-foyer-popup
 
 Areas pulled in:
 - Foyer

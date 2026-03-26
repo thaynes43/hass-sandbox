@@ -82,7 +82,7 @@ sub_button:
       content_layout: icon-top
       tap_action:
         action: navigate
-        navigation_path: "#foyer-popup"
+        navigation_path: "#study-foyer-popup"
     - name: Primary
       icon: mdi:bed-king-outline
       show_name: true

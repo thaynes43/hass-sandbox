@@ -2,7 +2,7 @@ type: vertical-stack
 cards:
   - type: custom:bubble-card
     card_type: pop-up
-    hash: "#kitchen-popup"
+    hash: "#study-foyer-popup"
     button_type: name
     width_desktop: 75vw
     width_mobile: 90vw
@@ -52,36 +52,31 @@ cards:
           font-weight: 600;
         }
     content: |
-      ## Kitchen & Dining
+      ## Study & Foyer
 
-      <p><strong>Kitchen</strong> {{ states('sensor.downstairs_kitchen_sink_inovelli_presence_illuminance') }} lx, Shade {{ states('cover.kitchen_shade') | title }}, Sonos {{ states('media_player.kitchen') | title }}</p>
-      <p><strong>Dining</strong> {{ states('sensor.ecobee_dining_room_sensor_temperature') | float(0) | round(0) }}&deg;F, Table Light {{ states('light.downstairs_dining_room_table_light') | title }}, Shades {{ states('cover.dining_room_shades') | title }}</p>
+      <p><strong>Study</strong> {{ states('sensor.ecobee_study_sensor_temperature') | float(0) | round(0) }}&deg;F, Sonos {{ states('media_player.study') | title }}, Shades {{ states('cover.study_shades') | title }}</p>
+      <p><strong>Foyer</strong> Downstairs {{ states('sensor.downstairs_foyer_chaos_inovelli_presence_illuminance') }} lx, Upstairs {{ states('sensor.upstairs_foyer_chaos_inovelli_presence_illuminance') }} lx, Night Lights {{ states('light.downstairs_foyer_night_light') | title }}/{{ states('light.upstairs_foyer_night_light') | title }}</p>
   - type: grid
-    columns: 4
+    columns: 2
     square: false
     cards:
       - type: custom:bubble-card
         card_type: button
-        button_type: slider
-        entity: light.downstairs_kitchen_lights
-        name: Kitchen Main Lights
-        icon: mdi:light-recessed
+        button_type: name
+        entity: light.foyer_chaos_light_switches
+        name: Foyer Chaos
+        icon: mdi:lightbulb-group
         show_state: true
-        show_attribute: true
-        attribute: brightness
-        allow_light_slider_to_0: true
-        tap_action:
-          action: more-info
         button_action:
           tap_action:
             action: toggle
-        slider_fill_orientation: left
-        slider_value_position: right
+        tap_action:
+          action: more-info
       - type: custom:bubble-card
         card_type: button
         button_type: name
-        entity: cover.kitchen_shade
-        name: Kitchen Shade
+        entity: cover.study_shades
+        name: Study Shades
         show_state: true
         rows: 1.719
         card_layout: large-sub-buttons-grid
@@ -91,7 +86,7 @@ cards:
         sub_button:
           main: []
           bottom:
-            - entity: scene.laundry_gateway_kitchen_tilt_open
+            - entity: scene.laundry_gateway_study_tilt_open
               name: Tilt Open
               icon: mdi:blinds-horizontal
               show_name: true
@@ -101,8 +96,8 @@ cards:
                 action: call-service
                 service: scene.turn_on
                 target:
-                  entity_id: scene.laundry_gateway_kitchen_tilt_open
-            - entity: scene.laundry_gateway_kitchen_open
+                  entity_id: scene.laundry_gateway_study_tilt_open
+            - entity: scene.laundry_gateway_study_open
               name: Open
               icon: mdi:arrow-up-bold
               show_name: true
@@ -112,8 +107,8 @@ cards:
                 action: call-service
                 service: scene.turn_on
                 target:
-                  entity_id: scene.laundry_gateway_kitchen_open
-            - entity: scene.laundry_gateway_kitchen_close
+                  entity_id: scene.laundry_gateway_study_open
+            - entity: scene.laundry_gateway_study_close
               name: Close
               icon: mdi:arrow-down-bold
               show_name: true
@@ -123,72 +118,7 @@ cards:
                 action: call-service
                 service: scene.turn_on
                 target:
-                  entity_id: scene.laundry_gateway_kitchen_close
-          bottom_layout: rows
-      - type: custom:bubble-card
-        card_type: button
-        button_type: slider
-        entity: light.downstairs_dining_room_table_light
-        name: Dining Main Light
-        icon: mdi:ceiling-light
-        show_state: true
-        show_attribute: true
-        attribute: brightness
-        allow_light_slider_to_0: true
-        tap_action:
-          action: more-info
-        button_action:
-          tap_action:
-            action: toggle
-        slider_fill_orientation: left
-        slider_value_position: right
-      - type: custom:bubble-card
-        card_type: button
-        button_type: name
-        entity: cover.dining_room_shades
-        name: Dining Shades
-        show_state: true
-        rows: 1.719
-        card_layout: large-sub-buttons-grid
-        button_action:
-          tap_action:
-            action: more-info
-        sub_button:
-          main: []
-          bottom:
-            - entity: scene.laundry_gateway_dining_room_tilt_open
-              name: Tilt Open
-              icon: mdi:blinds-horizontal
-              show_name: true
-              show_icon: true
-              show_state: false
-              tap_action:
-                action: call-service
-                service: scene.turn_on
-                target:
-                  entity_id: scene.laundry_gateway_dining_room_tilt_open
-            - entity: scene.laundry_gateway_dining_room_open
-              name: Open
-              icon: mdi:arrow-up-bold
-              show_name: true
-              show_icon: true
-              show_state: false
-              tap_action:
-                action: call-service
-                service: scene.turn_on
-                target:
-                  entity_id: scene.laundry_gateway_dining_room_open
-            - entity: scene.laundry_gateway_dining_room_close
-              name: Close
-              icon: mdi:arrow-down-bold
-              show_name: true
-              show_icon: true
-              show_state: false
-              tap_action:
-                action: call-service
-                service: scene.turn_on
-                target:
-                  entity_id: scene.laundry_gateway_dining_room_close
+                  entity_id: scene.laundry_gateway_study_close
           bottom_layout: rows
   - type: custom:bubble-card
     card_type: separator
@@ -202,17 +132,168 @@ cards:
     cards:
       - type: vertical-stack
         cards:
+          - type: vertical-stack
+            cards:
+              - type: heading
+                heading: Foyer
+                heading_style: subtitle
+              - type: grid
+                columns: 2
+                square: false
+                cards:
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: slider
+                    entity: light.downstairs_front_door_foyer_lights_inovelli_dimmer
+                    name: Main Lights
+                    icon: mdi:light-recessed
+                    show_state: true
+                    show_attribute: true
+                    attribute: brightness
+                    allow_light_slider_to_0: true
+                    tap_action:
+                      action: more-info
+                    button_action:
+                      tap_action:
+                        action: toggle
+                    slider_fill_orientation: left
+                    slider_value_position: right
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    entity: light.downstairs_foyer_chaos_inovelli_presence
+                    name: Chaos Light
+                    icon: mdi:lightbulb
+                    show_state: true
+                    tap_action:
+                      action: more-info
+                    button_action:
+                      tap_action:
+                        action: toggle
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    entity: light.downstairs_foyer_night_light
+                    name: Night Light
+                    icon: mdi:weather-night
+                    show_state: true
+                    tap_action:
+                      action: more-info
+                    button_action:
+                      tap_action:
+                        action: toggle
           - type: heading
-            heading: Kitchen
+            heading: Upstairs Foyer
             heading_style: subtitle
           - type: grid
             columns: 2
             square: false
             cards:
               - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_foyer_lights
+                name: Main Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_staircase_foyer_lights_inovelli_dimmer
+                name: Staircase
+                icon: mdi:stairs
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.upstairs_foyer_chaos_inovelli_presence
+                name: Chaos Light
+                icon: mdi:lightbulb
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.upstairs_foyer_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Study
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_study_lights
+                name: Main Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_study_bookshelf_inovelli_dimmer
+                name: Bookshelf Lights
+                icon: mdi:bookshelf
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
                 card_type: media-player
-                entity: media_player.kitchen
-                name: Kitchen Sonos
+                entity: media_player.study
+                name: Study Sonos
                 show_name: true
                 show_state: true
                 show_attribute: false
@@ -225,140 +306,24 @@ cards:
               - type: custom:bubble-card
                 card_type: button
                 button_type: slider
-                entity: light.downstairs_kitchen_island_inovelli_dimmer
-                name: Island Lights
-                icon: mdi:lightbulb-group
+                entity: fan.study_fan_fan
+                name: Ceiling Fan
+                icon: mdi:fan
                 show_state: true
                 show_attribute: true
-                attribute: brightness
-                allow_light_slider_to_0: true
+                attribute: percentage
                 tap_action:
                   action: more-info
                 button_action:
                   tap_action:
                     action: toggle
-                slider_fill_orientation: left
-                slider_value_position: right
               - type: custom:bubble-card
                 card_type: button
                 button_type: slider
-                entity: light.downstairs_kitches_under_cabinet_inovelli_dimmer
-                name: Under Cabinet
-                icon: mdi:led-strip-variant
-                show_state: true
-                show_attribute: true
-                attribute: brightness
-                allow_light_slider_to_0: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-                slider_fill_orientation: left
-                slider_value_position: right
-              - type: custom:bubble-card
-                card_type: button
-                button_type: slider
-                entity: light.downstairs_kitchen_sink_inovelli_presence
-                name: Sink Lights
-                icon: mdi:countertop
-                show_state: true
-                show_attribute: true
-                attribute: brightness
-                allow_light_slider_to_0: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-                slider_fill_orientation: left
-                slider_value_position: right
-              - type: custom:bubble-card
-                card_type: button
-                button_type: name
-                entity: light.downstairs_kitchen_chaos_inovelli_presence
-                name: Chaos Light
+                entity: light.study_fan_light
+                name: Fan Light
                 icon: mdi:lightbulb
                 show_state: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-              - type: custom:bubble-card
-                card_type: button
-                button_type: name
-                entity: light.downstairs_kitchen_night_light
-                name: Night Light
-                icon: mdi:weather-night
-                show_state: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-              - type: custom:bubble-card
-                card_type: button
-                button_type: name
-                entity: light.downstairs_kitchen_back_yard_spotlight
-                name: Backyard Spotlight
-                icon: mdi:spotlight-beam
-                show_state: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-      - type: vertical-stack
-        cards:
-          - type: heading
-            heading: Dining
-            heading_style: subtitle
-          - type: grid
-            columns: 2
-            square: false
-            cards:
-              - type: custom:bubble-card
-                card_type: button
-                button_type: slider
-                entity: light.downstairs_dining_room_cove_inovelli_dimmer
-                name: Cove Lights
-                icon: mdi:wall-sconce-round
-                show_state: true
-                show_attribute: true
-                attribute: brightness
-                allow_light_slider_to_0: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-                slider_fill_orientation: left
-                slider_value_position: right
-              - type: custom:bubble-card
-                card_type: button
-                button_type: slider
-                entity: light.downstairs_dining_room_table_corner_inovelli_presence
-                name: Table Corner
-                icon: mdi:ceiling-light-multiple
-                show_state: true
-                show_attribute: true
-                attribute: brightness
-                allow_light_slider_to_0: true
-                tap_action:
-                  action: more-info
-                button_action:
-                  tap_action:
-                    action: toggle
-                slider_fill_orientation: left
-                slider_value_position: right
-              - type: custom:bubble-card
-                card_type: button
-                button_type: slider
-                entity: light.downstairs_dining_room_table_wall_inovelli_presence
-                name: Table Wall
-                icon: mdi:ceiling-light-multiple
-                show_state: true
                 show_attribute: true
                 attribute: brightness
                 allow_light_slider_to_0: true
@@ -371,11 +336,11 @@ cards:
                 slider_value_position: right
               - type: custom:bubble-card
                 card_type: cover
-                entity: cover.1_2
-                name: Shade 1
+                entity: cover.1_3
+                name: Front Shade
                 show_state: true
               - type: custom:bubble-card
                 card_type: cover
-                entity: cover.2_2
-                name: Shade 2
+                entity: cover.2_3
+                name: Rear Shade
                 show_state: true

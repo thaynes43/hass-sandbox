@@ -21,5 +21,328 @@ cards:
         action: navigate
         navigation_path: "#"
   - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
     content: |
-      ## Coming Soon
+      ## Kids Bedrooms
+
+      <p><strong>Blue</strong> {{ states('sensor.ecobee_blue_room_sensor_temperature') | float(0) | round(0) }}&deg;F, {{ 'Occupied' if is_state('binary_sensor.ecobee_blue_room_sensor_occupancy', 'on') else 'Vacant' }}, Shades {{ states('cover.blue_room_shades') | title }}</p>
+      <p><strong>Pink</strong> {{ states('sensor.ecobee_pink_room_sensor_temperature') | float(0) | round(0) }}&deg;F, {{ 'Occupied' if is_state('binary_sensor.ecobee_pink_room_sensor_occupancy', 'on') else 'Vacant' }}, Shades {{ states('cover.pink_room_shades') | title }}</p>
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: cover.blue_room_shades
+        name: Blue Room Shades
+        show_state: true
+        rows: 1.719
+        card_layout: large-sub-buttons-grid
+        button_action:
+          tap_action:
+            action: more-info
+        sub_button:
+          main: []
+          bottom:
+            - entity: scene.laundry_gateway_blue_room_tilt_open
+              name: Tilt Open
+              icon: mdi:blinds-horizontal
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_blue_room_tilt_open
+            - entity: scene.laundry_gateway_blue_room_open
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_blue_room_open
+            - entity: scene.laundry_gateway_blue_room_close
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_blue_room_close
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: cover.pink_room_shades
+        name: Pink Room Shades
+        show_state: true
+        rows: 1.719
+        card_layout: large-sub-buttons-grid
+        button_action:
+          tap_action:
+            action: more-info
+        sub_button:
+          main: []
+          bottom:
+            - entity: scene.laundry_gateway_pink_room_tilt_open
+              name: Tilt Open
+              icon: mdi:blinds-horizontal
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_pink_room_tilt_open
+            - entity: scene.laundry_gateway_pink_room_open
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_pink_room_open
+            - entity: scene.laundry_gateway_pink_room_close
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_pink_room_close
+          bottom_layout: rows
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Blue Room
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: media-player
+                entity: media_player.blue_room
+                name: Blue Room Sonos
+                show_name: true
+                show_state: true
+                show_attribute: false
+                scrolling_effect: false
+                card_layout: normal
+                rows: 1
+                button_action:
+                  tap_action:
+                    action: more-info
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: media_player.blue_room_lg_tv
+                name: Blue Room TV
+                icon: mdi:television
+                show_state: true
+                button_action:
+                  tap_action:
+                    action: more-info
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: fan.blue_room_fan_fan
+                name: Ceiling Fan
+                icon: mdi:fan
+                show_state: true
+                show_attribute: true
+                attribute: percentage
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.blue_room_fan_light
+                name: Fan Light
+                icon: mdi:lightbulb
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_blue_room_nightstand_hue_bulb_jackson
+                name: Nightstand Lamp
+                icon: mdi:lamp
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.1_8
+                name: Front Shade
+                show_state: true
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.2_5
+                name: Rear Shade
+                show_state: true
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Pink Room
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: media-player
+                entity: media_player.pink_room
+                name: Pink Room Sonos
+                show_name: true
+                show_state: true
+                show_attribute: false
+                scrolling_effect: false
+                card_layout: normal
+                rows: 1
+                button_action:
+                  tap_action:
+                    action: more-info
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: media_player.pink_room_lg_tv
+                name: Pink Room TV
+                icon: mdi:television
+                show_state: true
+                button_action:
+                  tap_action:
+                    action: more-info
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: fan.pink_room_fan_fan
+                name: Ceiling Fan
+                icon: mdi:fan
+                show_state: true
+                show_attribute: true
+                attribute: percentage
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.pink_room_fan_light
+                name: Fan Light
+                icon: mdi:lightbulb
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_pink_room_nightstand_hue_bulb_penelope
+                name: Nightstand Lamp
+                icon: mdi:lamp
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.1_10
+                name: Front Shade
+                show_state: true
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.2_7
+                name: Rear Shade
+                show_state: true
