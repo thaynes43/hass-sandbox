@@ -429,9 +429,7 @@ class HealthCheckDetailCard extends HTMLElement {
     let html = "";
     for (const [checkerId, checker] of entries) {
       const effectiveStatus = backendOnline ? checker.status : "unknown";
-      const repairFailed =
-        checker.repair_state?.status === "failed" ||
-        String(checker.repair_state?.status) === "failed";
+      const repairFailed = checker.repair_state?.status === "failed";
       const iconHtml = repairFailed
         ? `<ha-icon icon="mdi:robot-dead" style="--mdc-icon-size:18px;color:var(--hcd-critical);"></ha-icon>`
         : isDependency
