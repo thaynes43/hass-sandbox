@@ -250,14 +250,13 @@ class RepairableDeviceChecker(BasicDeviceChecker):
         if all_ok:
             if self._repair_status == REPAIR_PENDING:
                 self.log("All checks ok — cancelling pending auto-repair", level="INFO")
-            if self._repair_status in (REPAIR_PENDING, REPAIR_SUCCESS):
+            if self._repair_status == REPAIR_FAILED:
+                self.log("All checks ok — clearing failed repair state", level="INFO")
+            if self._repair_status in (REPAIR_PENDING, REPAIR_SUCCESS, REPAIR_FAILED):
                 self._repair_status = REPAIR_IDLE
                 self._repair_detail = ""
                 self._auto_repair_deadline = None
                 self._unhealthy_since = None
-            return
-
-        if self._repair_status == REPAIR_FAILED:
             return
 
         if self._repair_status == REPAIR_SUCCESS:

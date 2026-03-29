@@ -32,15 +32,15 @@ pending → idle    (checks recover before deadline)
 pending → in_progress  (deadline reached, executing power cycle)
 in_progress → success  (checks green during recovery polling)
 in_progress → failed   (timeout without recovery)
-failed → (stays failed, no auto-retry — manual intervention required)
+failed → idle    (checks recover naturally — state clears automatically)
 ```
 
 ### Safety Rules
 
 - **Unknown** status does NOT trigger auto-repair (handles AppDaemon-down case)
 - Only sustained **critical** or **degraded** triggers auto-repair
-- After failure, stays in **failed** — no auto-retry
-- Manual "Repair" button resets from failed to allow retry
+- After failure, resets to **idle** automatically when all checks pass, or via the manual "Repair" button
+- No auto-retry from **failed** state while checks are still unhealthy
 
 ## Self-Provisioned Entities
 

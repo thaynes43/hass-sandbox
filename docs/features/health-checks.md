@@ -102,14 +102,14 @@ Some checkers support automatic repair, typically via smart switch power cycling
 
 - **Only sustained failures trigger repair** — a brief blip does not cause a power cycle
 - **Configurable delay** — the problem must persist for a configurable number of minutes before repair begins
-- **One attempt only** — after a failed repair, the checker stays in `failed` state until manually reset
+- **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy.
 - **Unknown does not trigger repair** — if AppDaemon itself is restarting, repair actions are suppressed
 
 The repair state machine:
 
 ```
-idle → pending → in_progress → success
-                             → failed (manual reset required)
+idle → pending → in_progress → success → idle (checks stay healthy)
+                             → failed  → idle (checks recover naturally)
 ```
 
 Repair-capable checkers provision their own HA helpers for configuration:
