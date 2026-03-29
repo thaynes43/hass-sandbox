@@ -196,6 +196,22 @@ class TestRepairStateMachine:
         app._evaluate_auto_repair(results)
         assert app._repair_status == REPAIR_FAILED
 
+    def test_failed_clears_when_checks_recover(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_detail = "Did not recover after 300s"
+        app._unhealthy_since = datetime.datetime.now()
+
+        results = [
+            {"name": "Ping", "status": "ok", "detail": "3ms"},
+            {"name": "Status", "status": "ok", "detail": "idle"},
+        ]
+        app._evaluate_auto_repair(results)
+        assert app._repair_status == REPAIR_IDLE
+        assert app._repair_detail == ""
+        assert app._unhealthy_since is None
+
     def test_manual_repair_from_failed(self):
         app = _make_app()
         _init_only(app)

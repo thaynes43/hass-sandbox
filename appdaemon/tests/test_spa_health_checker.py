@@ -395,6 +395,25 @@ class TestRepairStateMachine:
 
         assert app._repair_status == REPAIR_FAILED
 
+    def test_failed_clears_when_checks_recover(self):
+        """REPAIR_FAILED should reset to IDLE when all checks pass."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_detail = "Did not recover after 300s"
+        app._unhealthy_since = datetime.datetime.now()
+
+        results = [
+            {"name": "Gateway Ping", "status": "ok", "detail": ""},
+            {"name": "Overall Connection", "status": "ok", "detail": ""},
+            {"name": "Thermostat Staleness", "status": "ok", "detail": ""},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._repair_detail == ""
+        assert app._unhealthy_since is None
+
     def test_manual_repair_resets_from_failed(self):
         """Manual start_repair should reset from failed state."""
         app = _make_app()
