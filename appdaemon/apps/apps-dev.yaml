@@ -30,8 +30,8 @@ media_dashboard_app_dev:
   popularity_threshold: 10.0
   vote_count_threshold: 50
   stale_ttl_days: 7
-  # Filesystem — media_fs_root resolved from MEDIA_FS_ROOT env var
-  media_fs_root_env: MEDIA_FS_ROOT
+  # Filesystem — NFS mount: sudo mount -t nfs -o nfsvers=4,proto=tcp gasha01:/hdd-nfs-repl /mnt/cephfs-hdd
+  media_fs_root: /Volumes/cephfs-hdd/misc/hass-media
   poster_media_subdir: media-dashboard/posters
   poster_www_subdir: media-dashboard/posters
   preferences_file_subdir: media-dashboard

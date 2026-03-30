@@ -1,30 +1,41 @@
-"""SerpApi showtime fetcher — searches Google showtimes and parses results.
+"""SerpApi showtime fetcher — searches Google showtimes per theater.
 
 Pure-Python — no AppDaemon dependency.  Wraps ``SerpApiClient`` with
 higher-level showtime-aggregation logic.
 
-SerpApi response structure for showtimes_results::
+Strategy: search for each configured theater by name (e.g.
+``"AMC Tyngsboro 12 showtimes"``).  Google returns a ``showtimes``
+array grouped by day, each day containing ``movies`` with showtime
+data.  This is more reliable than a generic ``"movies"`` query because
+it targets specific theaters and always triggers Google's showtimes
+knowledge panel.
 
-    [
-        {
-            "title": "Thunderbolts*",
-            "theaters": [
-                {
-                    "name": "AMC CLASSIC Tyngsborough 12",
-                    "showing": [
-                        {
-                            "time": ["1:30 PM", "4:15 PM", "7:00 PM", "9:45 PM"]
-                        }
-                    ]
-                },
-                ...
-            ]
-        },
-        ...
-    ]
+SerpApi response structure when searching a theater name::
 
-Each element in ``showtimes_results`` represents one movie; nested under
-``theaters`` are the cinemas showing that movie with their times.
+    {
+        "showtimes": [
+            {
+                "day": "Today",
+                "date": "Mar 29",
+                "movies": [
+                    {
+                        "name": "Thunderbolts*",
+                        "link": "...",
+                        "showing": [
+                            {
+                                "type": "Standard",
+                                "time": ["1:30pm", "4:15pm", "7:00pm"]
+                            },
+                            {
+                                "type": "IMAX",
+                                "time": ["9:45pm"]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
 """
 
 from __future__ import annotations
@@ -43,8 +54,8 @@ class SerpApiFetcher:
     """Fetches theater showtimes via SerpApi Google search.
 
     On each call to ``fetch_showtimes()``, the fetcher queries Google for
-    showtimes near the configured location and filters the results to only
-    the configured theater names using case-insensitive substring matching.
+    each configured theater and aggregates the results into a single
+    ``ShowtimeCache`` keyed by lowercase film title.
     """
 
     def __init__(
@@ -57,8 +68,7 @@ class SerpApiFetcher:
 
         self._api_key = resolve_secret(api_key_env)
         self._location = location
-        # Store lowercased for case-insensitive matching
-        self._theater_names: List[str] = [t.lower() for t in theater_names]
+        self._theater_names: List[str] = theater_names
 
     # -------------------------------------------------------------------------
     # Factory
@@ -73,109 +83,104 @@ class SerpApiFetcher:
     # -------------------------------------------------------------------------
 
     async def fetch_showtimes(self) -> ShowtimeCache:
-        """Fetch showtimes by searching Google for the configured location.
+        """Fetch showtimes by searching Google for each configured theater.
 
-        Searches ``"showtimes near {location}"`` and parses the
-        ``showtimes_results`` from the SerpApi response.  Only theaters
-        matching the configured ``theater_names`` (case-insensitive substring)
-        are included.
+        Makes one SerpApi request per theater (e.g. ``"AMC Tyngsboro 12
+        showtimes"``).  Per-theater errors are logged as warnings and do
+        not abort the whole batch.
 
         Returns:
             A ``ShowtimeCache`` with today's date and aggregated showtimes,
-            keyed by lowercase film title.  Returns an empty cache on failure.
+            keyed by lowercase film title.  Returns an empty cache on
+            total failure.
         """
-        query = f"showtimes near {self._location}"
         today = datetime.date.today().isoformat()
         cache = ShowtimeCache(date=today)
 
+        if not self._theater_names:
+            logger.warning("SerpApiFetcher: no theaters configured")
+            return cache
+
         try:
             async with self._create_client() as client:
-                raw = await client.get_showtimes(
-                    query=query,
-                    location=self._location,
-                )
+                for theater_name in self._theater_names:
+                    await self._fetch_theater(client, theater_name, cache)
         except Exception as exc:
             logger.error(
                 "SerpApiFetcher.fetch_showtimes failed: %s", exc, exc_info=True
             )
-            return cache
-
-        cache = self._parse_showtimes_response(raw)
-        cache.date = today
 
         total_films = len(cache.films)
         logger.info(
-            "SerpApiFetcher.fetch_showtimes: parsed %d films from response",
+            "SerpApiFetcher.fetch_showtimes: %d theaters queried, %d films found",
+            len(self._theater_names),
             total_films,
         )
         return cache
 
-    # -------------------------------------------------------------------------
-    # Response parsing
-    # -------------------------------------------------------------------------
-
-    def _parse_showtimes_response(self, raw: dict) -> ShowtimeCache:
-        """Parse a SerpApi showtimes response into a ShowtimeCache.
-
-        Iterates over ``showtimes_results``, each of which represents one
-        movie.  For each movie, iterates over its ``theaters`` list.  Only
-        theaters matching the configured ``theater_names`` via
-        ``_match_theater()`` are included.
-
-        Args:
-            raw: Full SerpApi JSON response dict.
-
-        Returns:
-            A ``ShowtimeCache`` with films keyed by lowercase title.
-        """
-        today = datetime.date.today().isoformat()
-        cache = ShowtimeCache(date=today)
-
-        showtime_results = raw.get("showtimes_results", [])
-        if not showtime_results:
+    async def _fetch_theater(
+        self,
+        client: SerpApiClient,
+        theater_name: str,
+        cache: ShowtimeCache,
+    ) -> None:
+        """Fetch showtimes for a single theater and merge into *cache*."""
+        query = f"{theater_name} showtimes"
+        try:
+            raw = await client.get_showtimes(query=query)
+        except Exception as exc:
             logger.warning(
-                "SerpApiFetcher._parse_showtimes_response: "
-                "no showtimes_results in response"
+                "SerpApiFetcher: failed to fetch showtimes for '%s': %s",
+                theater_name,
+                exc,
             )
-            return cache
+            return
 
-        for movie in showtime_results:
-            film_title: str = movie.get("title", "")
+        showtimes_list = raw.get("showtimes") or []
+        if not showtimes_list:
+            top_keys = list(raw.keys())[:15]
+            logger.warning(
+                "SerpApiFetcher: no 'showtimes' key for theater '%s'.  "
+                "Top-level keys: %s",
+                theater_name,
+                top_keys,
+            )
+            return
+
+        # Only parse the first day (today).  SerpApi may return multiple days.
+        today_block = showtimes_list[0] if showtimes_list else {}
+        movies = today_block.get("movies") or []
+
+        for movie in movies:
+            film_title: str = movie.get("name", "")
             if not film_title:
                 continue
 
             film_key = film_title.lower()
-            theaters = movie.get("theaters", [])
 
-            for theater in theaters:
-                theater_name: str = theater.get("name", "")
-                matched = self._match_theater(theater_name)
-                if matched is None:
-                    continue
+            # Collect all times across all format types (Standard, IMAX, etc.)
+            times: List[str] = []
+            for showing in movie.get("showing", []):
+                for t in showing.get("time", []):
+                    if t:
+                        times.append(t)
 
-                # Collect all times from the showing list
-                times: List[str] = []
-                for showing in theater.get("showing", []):
-                    for t in showing.get("time", []):
-                        if t:
-                            times.append(t)
+            if not times:
+                continue
 
-                entry = ShowtimeEntry(cinema_name=theater_name, times=times)
-                if film_key not in cache.films:
-                    cache.films[film_key] = []
-                cache.films[film_key].append(entry)
+            entry = ShowtimeEntry(cinema_name=theater_name, times=times)
+            if film_key not in cache.films:
+                cache.films[film_key] = []
+            cache.films[film_key].append(entry)
 
-                logger.debug(
-                    "SerpApiFetcher: matched theater '%s' for film '%s' (%d times)",
-                    theater_name,
-                    film_title,
-                    len(times),
-                )
-
-        return cache
+        logger.info(
+            "SerpApiFetcher: theater '%s' -> %d movies with showtimes",
+            theater_name,
+            len(movies),
+        )
 
     # -------------------------------------------------------------------------
-    # Theater name matching
+    # Theater name matching (used by app when cross-referencing with TMDb)
     # -------------------------------------------------------------------------
 
     def _match_theater(self, theater_name: str) -> Optional[str]:
@@ -185,15 +190,16 @@ class SerpApiFetcher:
         configured name is a substring of the API name, or vice versa.
 
         Args:
-            theater_name: Theater name from the SerpApi response.
+            theater_name: Theater name from an external source.
 
         Returns:
-            The matching configured theater name (lowercased), or ``None``.
+            The matching configured theater name, or ``None``.
         """
         if not theater_name:
             return None
         api_lower = theater_name.lower()
         for configured in self._theater_names:
-            if configured in api_lower or api_lower in configured:
+            conf_lower = configured.lower()
+            if conf_lower in api_lower or api_lower in conf_lower:
                 return configured
         return None

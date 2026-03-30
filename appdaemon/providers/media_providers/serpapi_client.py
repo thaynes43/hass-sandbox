@@ -79,9 +79,12 @@ class SerpApiClient:
 
         Args:
             query: Search query string, e.g. ``"showtimes near 01886"``.
-            location: Optional location string passed as the ``location``
-                      param to help Google resolve geographic context,
-                      e.g. ``"Westford, MA"``.
+            location: Optional SerpApi location string.  Must be a value
+                      from SerpApi's location database (e.g. ``"Boston,
+                      Massachusetts, United States"``).  If the location
+                      is not in their database the request returns 400,
+                      so prefer embedding the location in *query* instead
+                      (e.g. ``"showtimes near Westford, MA"``).
 
         Returns:
             Full SerpApi JSON response dict.

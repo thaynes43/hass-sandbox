@@ -378,7 +378,14 @@ class MediaDashboardApp(hass.Hass):
             filtered = self._apply_stale_ttl(items)
             filtered = self._apply_preferences(filtered)
             capped = filtered[: self._max_items_per_category]
-            published_categories[cat_name] = [item.to_dict() for item in capped]
+            serialized = []
+            for item in capped:
+                d = item.to_dict()
+                # Build full /local/ URL from the poster filename
+                if item.local_poster:
+                    d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
+                serialized.append(d)
+            published_categories[cat_name] = serialized
 
         # Compute overall state
         statuses = list(self._fetch_status.values())

@@ -213,7 +213,12 @@ class TautulliFetcher:
         media_type = "tv" if media_type_raw == "show" else "movie"
 
         # Duration: Tautulli reports milliseconds for movies/episodes.
-        duration_ms = int(raw.get("duration", 0))
+        # Some items return empty string for duration.
+        duration_raw = raw.get("duration", 0)
+        try:
+            duration_ms = int(duration_raw) if duration_raw != "" else 0
+        except (ValueError, TypeError):
+            duration_ms = 0
         runtime_min = duration_ms // 60000
 
         # Genres: can be a list of strings or a comma-joined string.

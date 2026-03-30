@@ -189,7 +189,7 @@ class MediaDashboardCard extends HTMLElement {
   _buildDom() {
     this.shadowRoot.innerHTML = `
       <style>${this._styles()}</style>
-      <div class="md-card">
+      <div class="md-card" data-action="open-popup">
         <div class="md-header">
           <span class="md-title">MEDIA &amp; MOVIES</span>
           <div class="md-nav">
