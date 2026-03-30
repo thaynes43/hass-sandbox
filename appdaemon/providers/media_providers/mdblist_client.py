@@ -97,6 +97,9 @@ class MdbListClient:
         await asyncio.sleep(1.0)
 
         async with self.session.get(url, params=merged) as resp:
+            if resp.status == 404:
+                logger.debug("MdbListClient GET %s -> 404 (item not found)", path)
+                return {}
             data = await resp.json()
             body_len = len(str(data))
             if resp.status != 200 or body_len <= 200:

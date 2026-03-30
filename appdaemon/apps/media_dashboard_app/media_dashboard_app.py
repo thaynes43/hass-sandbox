@@ -474,10 +474,11 @@ class MediaDashboardApp(hass.Hass):
         )
 
         enriched = 0
-        async with self._mdblist as client:
+        async with MdbListClient(api_key=self._mdblist._api_key) as client:
             for item in eligible:
                 try:
-                    data = await client.get_ratings(item.tmdb_id, item.media_type)  # type: ignore[arg-type]
+                    mdb_type = "show" if item.media_type == "tv" else item.media_type
+                    data = await client.get_ratings(item.tmdb_id, mdb_type)  # type: ignore[arg-type]
                     ratings = MdbListClient.extract_ratings(data)
                     if ratings.get("imdb_rating"):
                         item.imdb_rating = ratings["imdb_rating"]
