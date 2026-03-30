@@ -118,6 +118,7 @@ class MediaDashboardDetailCard extends HTMLElement {
   disconnectedCallback() {
     // Clear selection when popup closes so next open starts fresh
     this._selectedItemId = null;
+    this._detailCache = "";
     if (this._refreshTimer) {
       clearInterval(this._refreshTimer);
       this._refreshTimer = null;
@@ -151,7 +152,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     return JSON.stringify({
       status: status ? { s: status.state, cats: catSummary } : null,
       detail: detail ? { s: detail.state, id: detail.attributes?.id } : null,
-      selectedId: this._selectedItemId,
+      selectedId: this._selectedItemId,  // gates detail slot rendering
       hiddenEligible: hiddenSummary,
       hiddenExpanded: Array.from(this._hiddenExpanded).sort().join(","),
     });
@@ -196,7 +197,12 @@ class MediaDashboardDetailCard extends HTMLElement {
           <span class="mdd-title">MEDIA &amp; MOVIES</span>
           <span class="mdd-close" data-action="close">&#10005;</span>
         </div>
-        <div class="mdd-body"></div>
+        <div class="mdd-body">
+          <div class="mdd-detail-slot"></div>
+          <div class="mdd-section-slot" data-slot="in_theaters"></div>
+          <div class="mdd-section-slot" data-slot="plex_new"></div>
+          <div class="mdd-section-slot" data-slot="coming_soon"></div>
+        </div>
         <div class="mdd-footer">
           <span class="mdd-updated"></span>
           <span class="mdd-refresh" data-action="refresh">&#8635; Refresh</span>
@@ -207,14 +213,23 @@ class MediaDashboardDetailCard extends HTMLElement {
     this._els = {
       body: this.shadowRoot.querySelector(".mdd-body"),
       updated: this.shadowRoot.querySelector(".mdd-updated"),
+      detailSlot: this.shadowRoot.querySelector(".mdd-detail-slot"),
+      sectionSlots: {
+        in_theaters: this.shadowRoot.querySelector('[data-slot="in_theaters"]'),
+        plex_new: this.shadowRoot.querySelector('[data-slot="plex_new"]'),
+        coming_soon: this.shadowRoot.querySelector('[data-slot="coming_soon"]'),
+      },
     };
+
+    // Track last-rendered detail HTML to skip no-op updates
+    this._detailCache = "";
 
     this._bindEvents();
     this._domBuilt = true;
   }
 
   // ---------------------------------------------------------------------------
-  // Update — full re-render of body content
+  // Update — targeted slot updates (avoids full DOM replacement / image flash)
   // ---------------------------------------------------------------------------
 
   _update() {
@@ -229,39 +244,146 @@ class MediaDashboardDetailCard extends HTMLElement {
       ? `Updated ${this._formatRelative(lastUpdated)}`
       : "";
 
-    // Category definitions in render order
+    // --- Detail slot ---
+    let detailHtml = "";
+    if (this._selectedItemId !== null) {
+      const detailAttrs = detailEntity?.attributes || {};
+      const detailId = detailEntity?.state;
+
+      if (detailId === String(this._selectedItemId)) {
+        detailHtml = this._renderDetailPanel(detailAttrs);
+      } else {
+        detailHtml = this._renderDetailLoading();
+      }
+    }
+    if (detailHtml !== this._detailCache) {
+      this._detailCache = detailHtml;
+      this._els.detailSlot.innerHTML = detailHtml;
+    }
+
+    // --- Category section slots ---
+    const hiddenEligible = statusEntity?.attributes?.hidden_eligible || {};
     const CATEGORIES = [
       { key: "in_theaters", label: "IN THEATERS" },
       { key: "plex_new", label: "NEW ON PLEX" },
       { key: "coming_soon", label: "COMING SOON" },
     ];
 
-    let bodyHtml = "";
+    for (const cat of CATEGORIES) {
+      const items = statusEntity?.attributes?.categories?.[cat.key] || [];
+      const hiddenItems = hiddenEligible[cat.key] || [];
+      this._updateSection(cat.key, cat.label, items, hiddenItems);
+    }
 
-    // Render detail panel FIRST (at top) if an item is selected
-    if (this._selectedItemId !== null) {
-      const detailAttrs = detailEntity?.attributes || {};
-      const detailId = detailEntity?.state;
+    // Apply selection highlight and liked state without touching innerHTML
+    this._applyOverlayState(statusEntity);
+  }
 
-      if (detailId === String(this._selectedItemId)) {
-        bodyHtml += this._renderDetailPanel(detailAttrs);
-      } else {
-        // Detail is loading — show spinner
-        bodyHtml += this._renderDetailLoading();
+  // ---------------------------------------------------------------------------
+  // Section update — keyed reconciliation to avoid image flash
+  // ---------------------------------------------------------------------------
+
+  _updateSection(key, label, items, hiddenItems) {
+    const slotEl = this._els.sectionSlots[key];
+    const scrollEl = slotEl.querySelector(".mdd-poster-scroll");
+
+    // First render or structural change (no scroll container yet) — full HTML
+    if (!scrollEl) {
+      slotEl.innerHTML = this._renderSection(key, label, items, hiddenItems);
+      return;
+    }
+
+    // Reconcile poster elements inside the existing scroll container
+    this._reconcilePosters(scrollEl, items);
+
+    // Update hidden toggle area (lightweight — no images)
+    const toggleHtml = this._renderHiddenToggle(key, hiddenItems);
+    let toggleContainer = slotEl.querySelector(".mdd-hidden-area");
+    if (!toggleContainer) {
+      toggleContainer = document.createElement("div");
+      toggleContainer.className = "mdd-hidden-area";
+      slotEl.querySelector(".mdd-section")?.appendChild(toggleContainer);
+    }
+    toggleContainer.innerHTML = toggleHtml;
+  }
+
+  _reconcilePosters(scrollEl, items) {
+    // Build map of existing poster DOM elements by data-id
+    const existing = new Map();
+    for (const el of scrollEl.querySelectorAll(".mdd-poster")) {
+      existing.set(el.dataset.id, el);
+    }
+
+    const newIds = new Set(items.map((i) => String(i.id ?? "")));
+
+    // Remove posters no longer in the data
+    for (const [id, el] of existing) {
+      if (!newIds.has(id)) {
+        el.remove();
+        existing.delete(id);
       }
     }
 
-    const hiddenEligible = statusEntity?.attributes?.hidden_eligible || {};
+    // Ensure correct order, creating new elements as needed
+    let cursor = scrollEl.firstElementChild;
+    for (const item of items) {
+      const id = String(item.id ?? "");
+      let el = existing.get(id);
+      if (!el) {
+        // New poster — parse from HTML and insert
+        const temp = document.createElement("div");
+        temp.innerHTML = this._renderPoster(item);
+        el = temp.firstElementChild;
+      }
+      // Position: el should be at cursor position
+      if (el !== cursor) {
+        scrollEl.insertBefore(el, cursor);
+      } else {
+        cursor = cursor?.nextElementSibling;
+      }
+    }
+  }
 
-    // Render each category section below the detail
-    for (const cat of CATEGORIES) {
-      const items =
-        statusEntity?.attributes?.categories?.[cat.key] || [];
-      const hiddenItems = hiddenEligible[cat.key] || [];
-      bodyHtml += this._renderSection(cat.key, cat.label, items, hiddenItems);
+  // ---------------------------------------------------------------------------
+  // Overlay state — selection + liked applied via DOM, never in cached HTML
+  // ---------------------------------------------------------------------------
+
+  _applyOverlayState(statusEntity) {
+    // Apply selection + liked state via direct DOM manipulation so that
+    // section cached HTML never changes for these toggles — avoids full
+    // section innerHTML replacement and the resulting image flash.
+
+    // --- Selection highlight (section posters only) ---
+    for (const slot of Object.values(this._els.sectionSlots)) {
+      slot.querySelectorAll(".mdd-poster--selected").forEach((el) =>
+        el.classList.remove("mdd-poster--selected")
+      );
+      if (this._selectedItemId !== null) {
+        const sel = slot.querySelector(
+          `.mdd-poster[data-id="${this._selectedItemId}"]`
+        );
+        if (sel) sel.classList.add("mdd-poster--selected");
+      }
     }
 
-    this._els.body.innerHTML = bodyHtml;
+    // --- Liked state on section poster buttons ---
+    const likedIds = new Set();
+    const cats = statusEntity?.attributes?.categories || {};
+    for (const items of Object.values(cats)) {
+      for (const item of items || []) {
+        if (item.liked) likedIds.add(String(item.id));
+      }
+    }
+
+    for (const slot of Object.values(this._els.sectionSlots)) {
+      slot.querySelectorAll(".mdd-btn-like").forEach((btn) => {
+        const id = btn.dataset.id;
+        const liked = likedIds.has(id);
+        btn.classList.toggle("mdd-btn--active", liked);
+        const icon = btn.querySelector("ha-icon");
+        if (icon) icon.setAttribute("icon", liked ? "mdi:heart" : "mdi:heart-outline");
+      });
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -276,7 +398,7 @@ class MediaDashboardDetailCard extends HTMLElement {
         <div class="mdd-section" data-category="${safeKey}">
           <div class="mdd-section-header">${mddEscapeHtml(label)}</div>
           <div class="mdd-empty-section">No items available</div>
-          ${this._renderHiddenToggle(key, hiddenItems)}
+          <div class="mdd-hidden-area">${this._renderHiddenToggle(key, hiddenItems)}</div>
         </div>
       `;
     }
@@ -300,7 +422,7 @@ class MediaDashboardDetailCard extends HTMLElement {
             <ha-icon icon="mdi:chevron-right" style="--mdc-icon-size:22px;"></ha-icon>
           </span>
         </div>
-        ${this._renderHiddenToggle(key, hiddenItems)}
+        <div class="mdd-hidden-area">${this._renderHiddenToggle(key, hiddenItems)}</div>
       </div>
     `;
   }
@@ -334,9 +456,9 @@ class MediaDashboardDetailCard extends HTMLElement {
     const title = mddEscapeHtml(item.title || "");
     const subtitle = mddEscapeHtml(item.subtitle || item.year || "");
     const posterSrc = mddEscapeHtml(item.poster || "");
-    const isSelected = String(item.id) === String(this._selectedItemId);
-    const selectedClass = isSelected ? " mdd-poster--selected" : "";
-    const isLiked = !!item.liked;
+    // Selection and liked state are applied via _applyOverlayState() after
+    // innerHTML is set, so they never change the section's cached HTML and
+    // never cause a full section re-render.
 
     const imgHtml = posterSrc
       ? `<img class="mdd-poster-img" src="${posterSrc}" alt="${title}" loading="lazy" />`
@@ -344,17 +466,13 @@ class MediaDashboardDetailCard extends HTMLElement {
            <span class="mdd-poster-placeholder-text">${title}</span>
          </div>`;
 
-    // No poster badge on detail card — liked state shown via the heart button below
-    const likedBadge = "";
-
     return `
-      <div class="mdd-poster${selectedClass}" data-action="select" data-id="${id}">
+      <div class="mdd-poster" data-action="select" data-id="${id}">
         ${imgHtml}
-        ${likedBadge}
         <div class="mdd-poster-title">${title}</div>
         <div class="mdd-poster-sub">${subtitle}</div>
         <div class="mdd-poster-btns">
-          <span class="mdd-btn mdd-btn-like${isLiked ? " mdd-btn--active" : ""}" data-action="like" data-id="${id}" title="Like"><ha-icon icon="${isLiked ? "mdi:heart" : "mdi:heart-outline"}" style="--mdc-icon-size:16px;"></ha-icon></span>
+          <span class="mdd-btn mdd-btn-like" data-action="like" data-id="${id}" title="Like"><ha-icon icon="mdi:heart-outline" style="--mdc-icon-size:16px;"></ha-icon></span>
           <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss"><ha-icon icon="mdi:close-circle-outline" style="--mdc-icon-size:16px;"></ha-icon></span>
         </div>
       </div>
@@ -609,7 +727,8 @@ class MediaDashboardDetailCard extends HTMLElement {
         this._lastSnapshot = null;
         this._update();
       } else if (action === "like") {
-        this._callRelay("like", { id });
+        const isLiked = this._isItemLiked(id);
+        this._callRelay(isLiked ? "unlike" : "like", { id });
       } else if (action === "dismiss") {
         this._callRelay("dismiss", { id });
       } else if (action === "refresh") {
@@ -786,6 +905,11 @@ class MediaDashboardDetailCard extends HTMLElement {
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
         padding: 8px 0 4px;
+      }
+
+      .mdd-detail-slot:empty,
+      .mdd-section-slot:empty {
+        display: none;
       }
 
       .mdd-body::-webkit-scrollbar {

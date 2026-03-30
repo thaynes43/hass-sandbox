@@ -145,7 +145,7 @@ vestaboard_controller (vestaboard_apps/vestaboard_controller)
   └─ fires vestaboard_controller_ready on startup (automations re-register automatically)
   └─ vestaboard_configuration (reads status sensor, forwards card commands via vestaboard_controller_command event)
 
-media_dashboard_app (standalone — fetches from Tautulli, TMDb, MovieGlu; publishes sensors for compact and detail Lovelace cards)
+media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publishes sensors for compact and detail Lovelace cards)
 
 health_check_controller (listens for health_check_command events from all checkers)
   ├─ cloud_checker/cloud (root dependency)

@@ -556,6 +556,8 @@ class MediaDashboardApp(hass.Hass):
             self._handle_dismiss(payload)
         elif cmd == "like":
             self._handle_like(payload)
+        elif cmd == "unlike":
+            self._handle_unlike(payload)
         elif cmd == "undo_dismiss":
             self._handle_undo_dismiss(payload)
         else:
@@ -637,6 +639,20 @@ class MediaDashboardApp(hass.Hass):
         self._save_preferences()
         self._publish_sensor()
         self.log(f"Liked item: {item_id}", level="INFO")
+
+    def _handle_unlike(self, payload: dict) -> None:
+        """Remove item from liked list and re-publish sensor."""
+        item_id = payload.get("id", "")
+        if not item_id:
+            self.log("unlike command missing 'id'", level="WARNING")
+            return
+
+        if item_id in self._preferences["liked"]:
+            self._preferences["liked"].remove(item_id)
+            self._preferences["liked_at"].pop(item_id, None)
+        self._save_preferences()
+        self._publish_sensor()
+        self.log(f"Unliked item: {item_id}", level="INFO")
 
     def _handle_undo_dismiss(self, payload: dict) -> None:
         """Remove item from hidden list and re-publish sensor."""

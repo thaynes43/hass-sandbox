@@ -118,8 +118,8 @@ appdaemon/tests/
 
 | Card | File | Purpose |
 |------|------|---------|
-| Compact view | `cards/media-dashboard-card.js` | Shows 3 posters per row with category tabs at the bottom; auto-rotates; dismiss button per poster |
-| Detail popup | `cards/media-dashboard-detail-card.js` | Full-screen popup with all three category rows; tap poster to expand inline detail with synopsis and showtimes |
+| Compact view | `cards/media-dashboard-card.js` | Shows 3 posters per row with category tabs; auto-rotates; paginate by 3 with chevron arrows; dismiss button per poster |
+| Detail popup | `cards/media-dashboard-detail-card.js` | Popup with all three category rows; scroll arrows on poster rows; tap poster for inline detail with synopsis and showtimes; like/unlike toggle; hidden items restore |
 
 ## Dependencies
 
@@ -167,7 +167,7 @@ media_dashboard_app:
 | `tautulli_refresh_interval` | `7200` | Seconds between Tautulli refreshes (2 hours) |
 | `tmdb_refresh_interval` | `43200` | Seconds between TMDb refreshes (12 hours) |
 | `showtimes_refresh_interval` | `86400` | Seconds between showtime refreshes (24 hours) |
-| `max_items_per_category` | `10` | Max items published per category in the main sensor |
+| `max_items_per_category` | `20` | Max items published per category in the main sensor |
 | `popularity_threshold` | `10.0` | TMDb popularity minimum to pass the filter |
 | `vote_count_threshold` | `50` | TMDb vote count minimum to pass the filter |
 | `stale_ttl_days` | `7` | Days before an item is evicted from a category for staleness |
@@ -189,6 +189,7 @@ Cards communicate with the app via `hass.callService("script", "media_dashboard_
 | `get_detail` | `{"id": "tmdb-11111"}` | Read full metadata + showtimes from cache; publish to `sensor.media_dashboard_detail` |
 | `dismiss` | `{"id": "tmdb-11111"}` | Hide an item (thumbs down); persist to preferences file |
 | `like` | `{"id": "tmdb-11111"}` | Boost an item to the top (thumbs up); persist to preferences file |
+| `unlike` | `{"id": "tmdb-11111"}` | Remove a previously liked item from the liked list |
 | `undo_dismiss` | `{"id": "tmdb-11111"}` | Remove a previously dismissed item from the hidden list |
 
 ## Sensor Schema
@@ -201,64 +202,46 @@ State: `ok` | `degraded` | `error`
 {
   "last_updated": "2026-03-29T18:00:00",
   "categories": {
-    "in_theaters": {
-      "label": "In Theaters",
-      "items": [
-        {
-          "id": "tmdb-11111",
-          "title": "Thunderbolts*",
-          "year": 2025,
-          "poster": "/local/media-dashboard/posters/tmdb-11111.jpg",
-          "type": "movie",
-          "subtitle": "PG-13 · 2h 7m",
-          "rating": "PG-13",
-          "runtime_min": 127,
-          "tmdb_score": 7.8,
-          "genres": "Action, Adventure",
-          "has_showtimes": true
-        }
-      ]
-    },
-    "plex_new": {
-      "label": "New on Plex",
-      "items": [
-        {
-          "id": "plex-12345",
-          "title": "Movie Title",
-          "year": 2026,
-          "poster": "/local/media-dashboard/posters/plex-12345.jpg",
-          "type": "movie",
-          "subtitle": "Added 2 days ago",
-          "rating": "PG-13",
-          "genres": "Action, Sci-Fi"
-        }
-      ]
-    },
-    "coming_soon": {
-      "label": "Coming Soon",
-      "items": [
-        {
-          "id": "tmdb-22222",
-          "title": "Movie Title",
-          "poster": "/local/media-dashboard/posters/tmdb-22222.jpg",
-          "type": "movie",
-          "subtitle": "Opens May 2",
-          "release_date": "2026-05-02",
-          "release_type": "theatrical",
-          "genres": "Animation, Comedy"
-        }
-      ]
-    }
+    "in_theaters": [
+      {
+        "id": "tmdb-11111",
+        "title": "Project Hail Mary",
+        "year": 2026,
+        "poster": "/local/media-dashboard/posters/tmdb-11111.jpg",
+        "media_type": "movie",
+        "subtitle": "PG-13 · 2h 7m",
+        "rating": "PG-13",
+        "runtime_min": 127,
+        "tmdb_score": 7.8,
+        "genres": "Action, Adventure",
+        "has_showtimes": true,
+        "liked": true
+      }
+    ],
+    "plex_new": [ ... ],
+    "coming_soon": [ ... ]
+  },
+  "hidden_eligible": {
+    "in_theaters": [
+      {
+        "id": "tmdb-22222",
+        "title": "Hidden Movie",
+        "poster": "/local/media-dashboard/posters/tmdb-22222.jpg",
+        "hidden": true
+      }
+    ]
   },
   "fetch_status": {
-    "tautulli": {"last_ok": "2026-03-29T17:00:00", "status": "ok"},
-    "tmdb": {"last_ok": "2026-03-29T12:00:00", "status": "ok"},
-    "serpapi": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
+    "tautulli": "ok",
+    "tmdb": "ok",
+    "serpapi": "ok"
   },
-  "friendly_name": "Media Dashboard",
-  "icon": "mdi:movie-open-outline"
+  "friendly_name": "Media Dashboard Status",
+  "icon": "mdi:movie-roll"
 }
 ```
+
+The `hidden_eligible` attribute contains items that passed quality/stale filters but were dismissed by the user. The detail card shows these in a collapsible "Hidden (N)" section with a restore button per category.
 
 ### `sensor.media_dashboard_detail`
 
@@ -311,7 +294,7 @@ Preferences are persisted to `{media_fs_root}/{preferences_file_subdir}/preferen
 }
 ```
 
-Preferences are loaded on startup and written back on each `dismiss`, `like`, or `undo_dismiss` command. Timestamps enable future cleanup of stale preferences (items dismissed more than 90 days ago).
+Preferences are loaded on startup and written back on each `dismiss`, `like`, `unlike`, or `undo_dismiss` command. Timestamps enable future cleanup of stale preferences (items dismissed more than 90 days ago).
 
 ## Failure Modes
 

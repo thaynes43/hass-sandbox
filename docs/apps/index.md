@@ -15,6 +15,7 @@
 | **vestaboard_controller_app** | Vestaboard controller with frame queue, TTL/expiration, and board automations |
 | **vestaboard_configuration_app** | Configuration bridge between Lovelace card and Vestaboard controller |
 | **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
+| **media_dashboard_app** | Media dashboard: Plex new arrivals, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
 
 ## Shared providers
 
@@ -24,6 +25,7 @@
 | **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers) |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
 | **school_menu** | Async client for the School Nutrition and Fitness API |
+| **media_providers** | Media data fetchers (Tautulli, TMDb, SerpApi) and shared types |
 | **vestaboard** | Vestaboard local API client and character encoding |
 
 ## App dependency graph
@@ -52,6 +54,10 @@ health_checks (controller + checker_apps)
   └─ checker apps fire health_check_command events
        └─ health_check_controller (aggregates → sensor.health_check_status)
             └─ health-check-card / health-check-detail-card (reads sensor)
+
+media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi)
+  └─ publishes sensor.media_dashboard_status + sensor.media_dashboard_detail
+       └─ media-dashboard-card / media-dashboard-detail-card (reads sensors)
 ```
 
 !!! note "Per-app documentation"
