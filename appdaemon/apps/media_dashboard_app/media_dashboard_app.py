@@ -30,6 +30,7 @@ from providers.media_providers.types import MediaItem, ShowtimeCache
 from providers.secrets import resolve_arg_secret
 
 import logging
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,75 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 SENSOR_STATUS = "sensor.media_dashboard_status"
+
+# ---------------------------------------------------------------------------
+# Ranking heuristic
+# ---------------------------------------------------------------------------
+# Unified score = quality * W_Q + recency * W_R + prominence * W_P
+# Each component is 0..1.  Higher score = more interesting to the user.
+
+_W_QUALITY = 0.45      # How good is it? (TMDb score or runtime proxy)
+_W_RECENCY = 0.25      # How new is it? (release date or added date)
+_W_PROMINENCE = 0.30   # How well-known is it? (popularity / vote count / genre presence)
+
+
+def _compute_rank_score(item: MediaItem, now: datetime.datetime) -> float:
+    """Compute a 0..1 ranking score for a media item.
+
+    Works for both TMDb items (have tmdb_score, popularity, vote_count)
+    and Plex items (have runtime, rating, genres, added_at).
+    """
+    # --- Quality (0..1) ---
+    if item.tmdb_score > 0:
+        # TMDb items: score is 0-10
+        quality = item.tmdb_score / 10.0
+    else:
+        # Plex items without TMDb data: use runtime as a proxy.
+        # Real movies are 80-180 min; TV episodes are 20-60 min.
+        quality = min(1.0, max(0.0, item.runtime_min / 120.0))
+
+    # --- Recency (0..1) ---
+    # For past dates: 1.0 = today, 0.0 = 30+ days ago (rewards recent releases).
+    # For future dates: 1.0 = tomorrow, 0.0 = 90+ days away (rewards soonest).
+    date_str = item.release_date or item.added_at or ""
+    if date_str:
+        try:
+            if "T" in date_str:
+                dt = datetime.datetime.fromisoformat(date_str)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=datetime.timezone.utc)
+            else:
+                dt = datetime.datetime.fromisoformat(date_str).replace(
+                    tzinfo=datetime.timezone.utc
+                )
+            days_delta = (now - dt).total_seconds() / 86400
+            if days_delta >= 0:
+                # Past: newer is better
+                recency = max(0.0, 1.0 - days_delta / 30.0)
+            else:
+                # Future: sooner is better (days_delta is negative)
+                days_away = abs(days_delta)
+                recency = max(0.0, 1.0 - days_away / 90.0)
+        except (ValueError, TypeError):
+            recency = 0.5
+    else:
+        recency = 0.5
+
+    # --- Prominence (0..1) ---
+    if item.tmdb_popularity > 0:
+        # TMDb items: log-scale popularity.  Values range ~5-500+.
+        # log10(300) ≈ 2.48, log10(50) ≈ 1.70, log10(10) ≈ 1.0
+        prominence = min(1.0, math.log10(max(1, item.tmdb_popularity)) / 3.0)
+    elif item.vote_count > 0:
+        prominence = min(1.0, math.log10(max(1, item.vote_count)) / 4.0)
+    else:
+        # Plex items: genre presence + movie-like rating as proxy.
+        has_genres = 1.0 if item.genres else 0.0
+        is_movie_rating = 1.0 if item.rating in ("G", "PG", "PG-13", "R", "NC-17") else 0.0
+        prominence = 0.2 + 0.4 * has_genres + 0.4 * is_movie_rating
+
+    score = _W_QUALITY * quality + _W_RECENCY * recency + _W_PROMINENCE * prominence
+    return round(score, 4)
 SENSOR_DETAIL = "sensor.media_dashboard_detail"
 RELAY_SCRIPT_ID = "media_dashboard_relay"
 COMMAND_EVENT = "media_dashboard_command"
@@ -282,7 +352,7 @@ class MediaDashboardApp(hass.Hass):
                 raise RuntimeError(result.error_message)
 
             await self._tautulli.download_posters(result.items)
-            self._categories["plex_new"] = result.items
+            self._categories["plex_new"] = self._rank_items(result.items, "plex_new")
             self._fetch_status["tautulli"] = "ok"
             self._sync_posters()
             self._publish_sensor()
@@ -313,8 +383,12 @@ class MediaDashboardApp(hass.Hass):
             all_items = theaters_result.items + coming_result.items
             await self._tmdb.download_posters(all_items)
 
-            self._categories["in_theaters"] = theaters_result.items
-            self._categories["coming_soon"] = coming_result.items
+            self._categories["in_theaters"] = self._rank_items(
+                theaters_result.items, "in_theaters"
+            )
+            self._categories["coming_soon"] = self._rank_items(
+                coming_result.items, "coming_soon"
+            )
             self._fetch_status["tmdb"] = "ok"
             self._sync_posters()
             self._publish_sensor()
@@ -416,6 +490,8 @@ class MediaDashboardApp(hass.Hass):
     def _publish_detail(self, item: MediaItem, showtimes: dict) -> None:
         """Publish full item detail (including summary + showtimes) to detail sensor."""
         attrs = item.to_detail_dict()
+        if item.local_poster:
+            attrs["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
         attrs["showtimes"] = showtimes
         attrs["showtimes_date"] = datetime.date.today().isoformat()
         attrs["friendly_name"] = f"Media Dashboard Detail: {item.title}"
@@ -552,20 +628,27 @@ class MediaDashboardApp(hass.Hass):
     # ------------------------------------------------------------------
 
     def _apply_preferences(self, items: List[MediaItem]) -> List[MediaItem]:
-        """Filter out hidden items and sort: liked first, then by popularity."""
+        """Filter out hidden items; boost liked items to the top.
+
+        Preserves the existing sort order (set per-category in the refresh
+        methods) — only moves liked items ahead of non-liked.
+        """
         hidden = set(self._preferences.get("hidden", []))
         liked = set(self._preferences.get("liked", []))
 
         visible = [item for item in items if item.id not in hidden]
 
-        # Sort: liked items first, then by tmdb_popularity descending
-        visible.sort(
-            key=lambda x: (0 if x.id in liked else 1, -x.tmdb_popularity)
-        )
+        # Stable sort: liked items first, preserve order within each group
+        visible.sort(key=lambda x: 0 if x.id in liked else 1)
         return visible
 
     def _apply_stale_ttl(self, items: List[MediaItem]) -> List[MediaItem]:
-        """Remove items older than stale_ttl_days based on added_at or release_date."""
+        """Remove items older than stale_ttl_days based on added_at.
+
+        Only applies to Plex items (which have ``added_at``).  TMDb items
+        use ``release_date`` which can be weeks/months in the past for
+        movies still in theaters — those should NOT be evicted.
+        """
         if self._stale_ttl_days <= 0:
             return list(items)
 
@@ -575,7 +658,8 @@ class MediaDashboardApp(hass.Hass):
 
         result = []
         for item in items:
-            date_str = item.added_at or item.release_date
+            # Only evict based on added_at (Plex items), not release_date
+            date_str = item.added_at
             if not date_str:
                 result.append(item)
                 continue
@@ -603,6 +687,26 @@ class MediaDashboardApp(hass.Hass):
                 result.append(item)
 
         return result
+
+    def _rank_items(self, items: List[MediaItem], category: str) -> List[MediaItem]:
+        """Sort items by the unified ranking heuristic, log the top 10."""
+        now = datetime.datetime.now(tz=datetime.timezone.utc)
+        scored = [(item, _compute_rank_score(item, now)) for item in items]
+        scored.sort(key=lambda x: -x[1])
+
+        # Log top 10 for tuning
+        for i, (item, score) in enumerate(scored[:10]):
+            q = item.tmdb_score / 10.0 if item.tmdb_score > 0 else min(1.0, item.runtime_min / 120.0)
+            self.log(
+                f"  [{category}] #{i+1}: {item.title} "
+                f"(score={score:.3f}, quality={q:.2f}, "
+                f"pop={item.tmdb_popularity:.0f}, votes={item.vote_count}, "
+                f"year={item.year}, runtime={item.runtime_min}m, "
+                f"rating={item.rating}, genres={'Y' if item.genres else 'N'})",
+                level="INFO",
+            )
+
+        return [item for item, _ in scored]
 
     def _load_preferences(self) -> None:
         """Load preferences from the JSON file; reset to defaults on any error."""
@@ -703,6 +807,8 @@ class MediaDashboardApp(hass.Hass):
                     entries.append({
                         "cinema_name": st_entry.cinema_name,
                         "times": st_entry.times,
+                        "day": st_entry.day,
+                        "date": st_entry.date,
                     })
 
         result: dict = {"entries": entries}

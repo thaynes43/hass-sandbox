@@ -228,14 +228,7 @@ class MediaDashboardDetailCard extends HTMLElement {
 
     let bodyHtml = "";
 
-    // Render each category section
-    for (const cat of CATEGORIES) {
-      const items =
-        statusEntity?.attributes?.categories?.[cat.key] || [];
-      bodyHtml += this._renderSection(cat.key, cat.label, items);
-    }
-
-    // Render detail panel if an item is selected
+    // Render detail panel FIRST (at top) if an item is selected
     if (this._selectedItemId !== null) {
       const detailAttrs = detailEntity?.attributes || {};
       const detailId = detailEntity?.state;
@@ -246,6 +239,13 @@ class MediaDashboardDetailCard extends HTMLElement {
         // Detail is loading — show spinner
         bodyHtml += this._renderDetailLoading();
       }
+    }
+
+    // Render each category section below the detail
+    for (const cat of CATEGORIES) {
+      const items =
+        statusEntity?.attributes?.categories?.[cat.key] || [];
+      bodyHtml += this._renderSection(cat.key, cat.label, items);
     }
 
     this._els.body.innerHTML = bodyHtml;
@@ -284,7 +284,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     const id = mddEscapeHtml(String(item.id ?? ""));
     const title = mddEscapeHtml(item.title || "");
     const subtitle = mddEscapeHtml(item.subtitle || item.year || "");
-    const posterSrc = mddEscapeHtml(item.local_poster || item.poster_path || "");
+    const posterSrc = mddEscapeHtml(item.poster || "");
     const isSelected = String(item.id) === String(this._selectedItemId);
     const selectedClass = isSelected ? " mdd-poster--selected" : "";
 
@@ -315,7 +315,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     const id = mddEscapeHtml(String(attrs.id ?? ""));
     const title = mddEscapeHtml(attrs.title || "");
     const posterSrc = mddEscapeHtml(
-      attrs.local_poster || attrs.poster_path || ""
+      attrs.poster || ""
     );
     const score = attrs.tmdb_score != null ? attrs.tmdb_score.toFixed(1) : "—";
     const rating = mddEscapeHtml(attrs.rating || "");
@@ -337,7 +337,7 @@ class MediaDashboardDetailCard extends HTMLElement {
            <span>${title}</span>
          </div>`;
 
-    const showtimesHtml = this._renderShowtimes(attrs.showtimes);
+    const showtimesHtml = this._renderShowtimes(attrs.showtimes, attrs.showtimes_date);
 
     return `
       <div class="mdd-detail">
@@ -359,39 +359,66 @@ class MediaDashboardDetailCard extends HTMLElement {
     `;
   }
 
-  _renderShowtimes(showtimes) {
-    if (!showtimes || !showtimes.date) return "";
+  _renderShowtimes(showtimes, showtimesDate) {
+    if (!showtimes) return "";
 
-    const theaters = showtimes.theaters || [];
-    if (theaters.length === 0) return "";
-
-    let theatersHtml = "";
-    for (const theater of theaters) {
-      const cinemaName = mddEscapeHtml(theater.cinema_name || "");
-      const times = theater.times || [];
-      if (times.length === 0) continue;
-
-      let timesHtml = "";
-      for (const t of times) {
-        timesHtml += `<span class="mdd-time">${mddEscapeHtml(t)}</span>`;
-      }
-
-      theatersHtml += `
-        <div class="mdd-theater">
-          <div class="mdd-theater-name">${cinemaName}</div>
-          <div class="mdd-theater-times">${timesHtml}</div>
-        </div>
-      `;
+    // The app publishes showtimes as {entries: [...], stale, note}
+    const entries = showtimes.entries || showtimes.theaters || [];
+    if (entries.length === 0) {
+      const note = showtimes.note;
+      return note
+        ? `<div class="mdd-showtimes"><div class="mdd-showtimes-header">${mddEscapeHtml(note)}</div></div>`
+        : "";
     }
 
-    if (!theatersHtml) return "";
+    // Group entries by day label (e.g. "Today", "Tomorrow", "Monday")
+    const dayOrder = [];
+    const dayMap = {};
+    for (const entry of entries) {
+      const dayKey = entry.day || entry.date || "Today";
+      const dateLabel = entry.date || "";
+      if (!dayMap[dayKey]) {
+        dayMap[dayKey] = { label: dayKey, date: dateLabel, theaters: [] };
+        dayOrder.push(dayKey);
+      }
+      dayMap[dayKey].theaters.push(entry);
+    }
 
-    return `
-      <div class="mdd-showtimes">
-        <div class="mdd-showtimes-header">SHOWTIMES &mdash; ${mddEscapeHtml(showtimes.date)}</div>
-        ${theatersHtml}
-      </div>
-    `;
+    let html = '<div class="mdd-showtimes">';
+    html += `<div class="mdd-showtimes-header">SHOWTIMES</div>`;
+
+    for (const dayKey of dayOrder) {
+      const day = dayMap[dayKey];
+      const dayLabel = day.date
+        ? `${mddEscapeHtml(day.label)} &mdash; ${mddEscapeHtml(day.date)}`
+        : mddEscapeHtml(day.label);
+
+      html += `<div class="mdd-showtime-day">`;
+      html += `<div class="mdd-day-label">${dayLabel}</div>`;
+
+      for (const theater of day.theaters) {
+        const cinemaName = mddEscapeHtml(theater.cinema_name || "");
+        const times = theater.times || [];
+        if (times.length === 0) continue;
+
+        let timesHtml = "";
+        for (const t of times) {
+          timesHtml += `<span class="mdd-time">${mddEscapeHtml(t)}</span>`;
+        }
+
+        html += `
+          <div class="mdd-theater">
+            <div class="mdd-theater-name">${cinemaName}</div>
+            <div class="mdd-theater-times">${timesHtml}</div>
+          </div>
+        `;
+      }
+
+      html += `</div>`;
+    }
+
+    html += "</div>";
+    return html;
   }
 
   _renderDetailLoading() {
@@ -888,6 +915,19 @@ class MediaDashboardDetailCard extends HTMLElement {
         color: var(--mdd-section-label);
         text-transform: uppercase;
         margin-bottom: 10px;
+      }
+
+      .mdd-showtime-day {
+        margin-bottom: 14px;
+      }
+
+      .mdd-day-label {
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(240, 243, 255, 0.85);
+        margin-bottom: 6px;
+        padding-bottom: 4px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
       }
 
       .mdd-theater {

@@ -147,36 +147,46 @@ class SerpApiFetcher:
             )
             return
 
-        # Only parse the first day (today).  SerpApi may return multiple days.
-        today_block = showtimes_list[0] if showtimes_list else {}
-        movies = today_block.get("movies") or []
+        # Parse up to 7 days of showtimes
+        total_movies = 0
+        for day_block in showtimes_list[:7]:
+            day_label = day_block.get("day", "")   # e.g. "Today", "Tomorrow", "Monday"
+            day_date = day_block.get("date", "")    # e.g. "Mar 29"
+            movies = day_block.get("movies") or []
 
-        for movie in movies:
-            film_title: str = movie.get("name", "")
-            if not film_title:
-                continue
+            for movie in movies:
+                film_title: str = movie.get("name", "")
+                if not film_title:
+                    continue
 
-            film_key = film_title.lower()
+                film_key = film_title.lower()
 
-            # Collect all times across all format types (Standard, IMAX, etc.)
-            times: List[str] = []
-            for showing in movie.get("showing", []):
-                for t in showing.get("time", []):
-                    if t:
-                        times.append(t)
+                # Collect all times across all format types (Standard, IMAX, etc.)
+                times: List[str] = []
+                for showing in movie.get("showing", []):
+                    for t in showing.get("time", []):
+                        if t:
+                            times.append(t)
 
-            if not times:
-                continue
+                if not times:
+                    continue
 
-            entry = ShowtimeEntry(cinema_name=theater_name, times=times)
-            if film_key not in cache.films:
-                cache.films[film_key] = []
-            cache.films[film_key].append(entry)
+                entry = ShowtimeEntry(
+                    cinema_name=theater_name,
+                    times=times,
+                    day=day_label,
+                    date=day_date,
+                )
+                if film_key not in cache.films:
+                    cache.films[film_key] = []
+                cache.films[film_key].append(entry)
+                total_movies += 1
 
         logger.info(
-            "SerpApiFetcher: theater '%s' -> %d movies with showtimes",
+            "SerpApiFetcher: theater '%s' -> %d movie/day entries across %d days",
             theater_name,
-            len(movies),
+            total_movies,
+            min(len(showtimes_list), 7),
         )
 
     # -------------------------------------------------------------------------

@@ -171,13 +171,26 @@ class TmdbFetcher:
                     pass
             merged.append(item)
 
-        filtered = self._apply_filters(merged)
+        # For coming soon, only require future release date and popularity threshold.
+        # Skip vote_count filter — unreleased movies have few votes by definition.
+        today_str = today.isoformat()
+        filtered = []
+        for item in merged:
+            if not item.release_date or item.release_date < today_str:
+                continue  # Past releases don't belong in Coming Soon
+            if item.tmdb_popularity < self._popularity_threshold:
+                continue  # Still require minimum popularity
+            if self._genre_filter:
+                item_genres = {g.strip() for g in item.genres.split(",")} if item.genres else set()
+                if not item_genres.intersection(self._genre_filter):
+                    continue
+            filtered.append(item)
 
-        # Sort by release_date ascending (empty dates go last)
-        filtered.sort(key=lambda x: x.release_date if x.release_date else "9999")
+        # Sort by release_date ascending (soonest first)
+        filtered.sort(key=lambda x: x.release_date)
 
         logger.info(
-            "TmdbFetcher.fetch_coming_soon: %d raw -> %d after filters",
+            "TmdbFetcher.fetch_coming_soon: %d raw -> %d future+filtered",
             len(merged),
             len(filtered),
         )

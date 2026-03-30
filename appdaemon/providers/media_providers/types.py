@@ -116,10 +116,12 @@ class MediaItem:
 
 @dataclass
 class ShowtimeEntry:
-    """Showtimes for one film at one cinema."""
+    """Showtimes for one film at one cinema on one day."""
 
     cinema_name: str
     times: List[str] = field(default_factory=list)
+    day: str = ""    # e.g. "Today", "Tomorrow", "Mon, Mar 31"
+    date: str = ""   # e.g. "Mar 29"
 
 
 # ---------------------------------------------------------------------------
@@ -138,7 +140,12 @@ class ShowtimeCache:
             "date": self.date,
             "films": {
                 item_id: [
-                    {"cinema_name": entry.cinema_name, "times": entry.times}
+                    {
+                        "cinema_name": entry.cinema_name,
+                        "times": entry.times,
+                        "day": entry.day,
+                        "date": entry.date,
+                    }
                     for entry in entries
                 ]
                 for item_id, entries in self.films.items()
@@ -153,6 +160,8 @@ class ShowtimeCache:
                 ShowtimeEntry(
                     cinema_name=e["cinema_name"],
                     times=e.get("times", []),
+                    day=e.get("day", ""),
+                    date=e.get("date", ""),
                 )
                 for e in raw_entries
             ]
