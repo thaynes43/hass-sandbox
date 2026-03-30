@@ -14,7 +14,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .tmdb_client import TmdbClient
 from .types import FetchResult, MediaItem
@@ -51,12 +51,31 @@ class TmdbFetcher:
         self._popularity_threshold = popularity_threshold
         self._vote_count_threshold = vote_count_threshold
         self._genre_filter: List[str] = genre_filter or []
+        self._genre_map: Dict[int, str] = {}
 
     # -- Client factory -------------------------------------------------------
 
     def _create_client(self) -> TmdbClient:
         """Create a new TmdbClient for use within an async context."""
         return TmdbClient(api_key=self._api_key)
+
+    async def _ensure_genre_map(self) -> None:
+        """Populate _genre_map with {id: name} from TMDb if not already loaded.
+
+        Called at the start of fetch_in_theaters() and fetch_coming_soon() so
+        that _normalize_movie() can resolve genre IDs to human-readable names.
+        No-op if the map is already populated.
+        """
+        if self._genre_map:
+            return
+        try:
+            async with self._create_client() as client:
+                data = await client.get_genre_list()
+            genres = data.get("genres", [])
+            self._genre_map = {g["id"]: g["name"] for g in genres if "id" in g and "name" in g}
+            logger.info("TmdbFetcher._ensure_genre_map: loaded %d genres", len(self._genre_map))
+        except Exception as exc:
+            logger.warning("TmdbFetcher._ensure_genre_map: failed to load genre map: %s", exc)
 
     # -- Public fetch methods -------------------------------------------------
 
@@ -70,6 +89,8 @@ class TmdbFetcher:
         Returns:
             FetchResult with status="ok" on success, "error" on failure.
         """
+        await self._ensure_genre_map()
+
         try:
             async with self._create_client() as client:
                 now_playing_resp = await client.get_now_playing()
@@ -113,6 +134,8 @@ class TmdbFetcher:
         Returns:
             FetchResult with status="ok" on success, "error" on failure.
         """
+        await self._ensure_genre_map()
+
         today = date.today()
         date_lte = today + timedelta(days=90)
 
@@ -213,7 +236,9 @@ class TmdbFetcher:
                 raw = await client.get_tv_detail(tmdb_id)
                 item = self._normalize_tv(raw)
             else:
-                raw = await client.get_movie_detail(tmdb_id)
+                raw = await client.get_movie_detail(
+                    tmdb_id, append_to_response="release_dates,credits"
+                )
                 item = self._normalize_movie(raw)
 
         # Detail endpoint returns genre objects with name; overwrite genres field
@@ -225,11 +250,37 @@ class TmdbFetcher:
         if media_type != "tv":
             item.runtime_min = raw.get("runtime") or 0
 
+        # Extract revenue and tagline
+        item.revenue = raw.get("revenue", 0) or 0
+        item.tagline = raw.get("tagline", "") or ""
+
+        # Extract US MPAA certification from release_dates
+        if media_type != "tv":
+            for country in raw.get("release_dates", {}).get("results", []):
+                if country.get("iso_3166_1") == "US":
+                    for rd in country.get("release_dates", []):
+                        cert = rd.get("certification", "")
+                        if cert:
+                            item.certification = cert
+                            item.rating = cert  # Fix the MPAA rating bug
+                            break
+                    break
+
+        # Extract director from credits crew
+        crew = raw.get("credits", {}).get("crew", [])
+        directors = [c["name"] for c in crew if c.get("job") == "Director"]
+        if directors:
+            item.director = ", ".join(directors[:2])  # Cap at 2 directors
+
         logger.debug(
-            "TmdbFetcher.fetch_detail: tmdb_id=%d media_type=%s title=%s",
+            "TmdbFetcher.fetch_detail: tmdb_id=%d media_type=%s title=%s "
+            "certification=%r director=%r revenue=%d",
             tmdb_id,
             media_type,
             item.title,
+            item.certification,
+            item.director,
+            item.revenue,
         )
         return item
 
@@ -352,11 +403,13 @@ class TmdbFetcher:
             except ValueError:
                 pass
 
-        # genre_ids list (from list endpoints) → comma-separated IDs as placeholder
-        # Full genre names come from the detail endpoint
+        # genre_ids list (from list endpoints) → resolve via genre_map when available
+        # Full genre names come from the detail endpoint or genre_map
         genre_ids = raw.get("genre_ids", [])
         genres_str = ""
-        if genre_ids:
+        if genre_ids and self._genre_map:
+            genres_str = ", ".join(self._genre_map.get(gid, str(gid)) for gid in genre_ids)
+        elif genre_ids:
             genres_str = ", ".join(str(g) for g in genre_ids)
         # Detail endpoint may provide genre objects instead
         genre_objs = raw.get("genres", [])

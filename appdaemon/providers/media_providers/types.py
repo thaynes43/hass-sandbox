@@ -34,6 +34,14 @@ class MediaItem:
     source: str = ""
     added_at: str = ""
     tmdb_id: Optional[int] = None
+    imdb_rating: float = 0.0
+    rt_critics: int = 0
+    rt_audience: int = 0
+    metacritic: int = 0
+    director: str = ""
+    revenue: int = 0
+    tagline: str = ""
+    certification: str = ""
 
     def to_dict(self) -> dict:
         """Serialize to the lean format used by the main sensor (excludes summary)."""
@@ -75,13 +83,46 @@ class MediaItem:
             d["added_at"] = self.added_at
         if self.tmdb_id is not None:
             d["tmdb_id"] = self.tmdb_id
+        if self.imdb_rating:
+            d["imdb_rating"] = self.imdb_rating
+        if self.rt_critics:
+            d["rt_critics"] = self.rt_critics
+        if self.rt_audience:
+            d["rt_audience"] = self.rt_audience
+        if self.metacritic:
+            d["metacritic"] = self.metacritic
+        if self.director:
+            d["director"] = self.director
+        if self.revenue:
+            d["revenue"] = self.revenue
+        if self.tagline:
+            d["tagline"] = self.tagline
+        if self.certification:
+            d["certification"] = self.certification
         return d
 
     def to_detail_dict(self) -> dict:
-        """Serialize including summary for detail views."""
+        """Serialize including summary and all detail fields for detail views."""
         d = self.to_dict()
         if self.summary:
             d["summary"] = self.summary
+        # Always include detail-only fields when non-empty/non-zero
+        if self.director:
+            d["director"] = self.director
+        if self.revenue:
+            d["revenue"] = self.revenue
+        if self.tagline:
+            d["tagline"] = self.tagline
+        if self.certification:
+            d["certification"] = self.certification
+        if self.imdb_rating:
+            d["imdb_rating"] = self.imdb_rating
+        if self.rt_critics:
+            d["rt_critics"] = self.rt_critics
+        if self.rt_audience:
+            d["rt_audience"] = self.rt_audience
+        if self.metacritic:
+            d["metacritic"] = self.metacritic
         return d
 
     @classmethod
@@ -107,6 +148,14 @@ class MediaItem:
             source=data.get("source", ""),
             added_at=data.get("added_at", ""),
             tmdb_id=data.get("tmdb_id"),
+            imdb_rating=data.get("imdb_rating", 0.0),
+            rt_critics=data.get("rt_critics", 0),
+            rt_audience=data.get("rt_audience", 0),
+            metacritic=data.get("metacritic", 0),
+            director=data.get("director", ""),
+            revenue=data.get("revenue", 0),
+            tagline=data.get("tagline", ""),
+            certification=data.get("certification", ""),
         )
 
 

@@ -157,16 +157,32 @@ class TmdbClient:
         """
         return await self._get("/3/discover/movie", params=dict(params))
 
-    async def get_movie_detail(self, movie_id: int) -> dict:
+    async def get_genre_list(self, language: str = "en-US") -> dict:
+        """``GET /3/genre/movie/list`` – list of official movie genre IDs and names.
+
+        Args:
+            language: ISO 639-1 language code (default ``"en-US"``).
+
+        Returns:
+            TMDb response dict with ``genres`` list of ``{id, name}`` objects.
+        """
+        return await self._get("/3/genre/movie/list", {"language": language})
+
+    async def get_movie_detail(self, movie_id: int, append_to_response: str = "") -> dict:
         """``GET /3/movie/{movie_id}`` – full movie metadata.
 
         Args:
             movie_id: TMDb numeric movie ID.
+            append_to_response: Comma-separated list of sub-requests to append
+                (e.g. ``"release_dates,credits"``).  Empty string sends no param.
 
         Returns:
             TMDb movie detail dict.
         """
-        return await self._get(f"/3/movie/{movie_id}")
+        params: dict = {}
+        if append_to_response:
+            params["append_to_response"] = append_to_response
+        return await self._get(f"/3/movie/{movie_id}", params or None)
 
     async def get_tv_detail(self, tv_id: int) -> dict:
         """``GET /3/tv/{tv_id}`` – full TV series metadata.

@@ -78,13 +78,15 @@ appdaemon/providers/media_providers/
 ├── tmdb_client.py                  # HTTP client for TMDb v3 API
 ├── tmdb_fetcher.py                 # Fetcher: now playing, upcoming, trending, poster download
 ├── serpapi_client.py               # HTTP client for SerpApi Google Showtimes
-└── serpapi_fetcher.py              # Fetcher: showtime search and parsing
+├── serpapi_fetcher.py              # Fetcher: showtime search and parsing
+└── mdblist_client.py               # HTTP client for MDbList ratings aggregator (IMDb, RT, Metacritic)
 
 appdaemon/tests/
 ├── test_media_types.py
 ├── test_tautulli_fetcher.py
 ├── test_tmdb_fetcher.py
 ├── test_serpapi_fetcher.py
+├── test_mdblist_client.py
 ├── test_media_dashboard_app.py
 ├── test_media_dashboard_relay.py
 └── test_media_dashboard_showtime_cache.py
@@ -97,6 +99,7 @@ appdaemon/tests/
 | **Tautulli** | Recently added movies/shows from Plex, watch popularity stats, poster images via `pms_image_proxy` (hides Plex token) | Every 2 hours |
 | **TMDb** | Now-playing theaters list, upcoming releases, trending movies, popularity/vote metadata, poster images from CDN | Every 12 hours |
 | **SerpApi** (Google Showtimes) | Theater showtimes via Google search; filters results to configured local theaters | Once daily |
+| **MDbList** | External ratings aggregator — IMDb score, Rotten Tomatoes critics/audience, Metacritic; fetched per item (1 req/s) | On each TMDb/Tautulli refresh |
 
 ## Content Categories
 
@@ -128,6 +131,7 @@ appdaemon/tests/
 | `providers.media_providers.tautulli_fetcher` | Plex recently-added items, popularity cross-reference, poster download |
 | `providers.media_providers.tmdb_fetcher` | In-theaters and coming-soon data, mainstream filter, poster download |
 | `providers.media_providers.serpapi_fetcher` | Theater showtime search and parsing |
+| `providers.media_providers.mdblist_client` | External ratings aggregator — IMDb, Rotten Tomatoes, Metacritic |
 | `providers.media_providers.types` | `MediaItem`, `FetchResult`, `ShowtimeCache`, `ShowtimeEntry`, `CinemaInfo` dataclasses |
 | `providers.ha_provisioner.HAProvisioner` | Creates relay script and sensors on startup |
 | `providers.secrets.resolve_arg_secret` | Resolves `_env`-suffix config keys to actual values at runtime |
@@ -146,10 +150,11 @@ media_dashboard_app:
   class: MediaDashboardApp
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  tautulli_url: !secret tautulli_url
+  tautulli_url_env: TAUTULLI_URL
   tautulli_api_key_env: TAUTULLI_API_KEY
   tmdb_api_key_env: TMDB_API_KEY
   serpapi_api_key_env: SERPAPI_KEY
+  mdblist_api_key_env: MDBLIST_API_KEY
   location: "Westford, MA"
   theaters:
     - AMC Tyngsboro 12
@@ -346,9 +351,11 @@ Configure the following environment variables (dev: `.env` file; prod: Kubernete
 
 | Variable | Description |
 |----------|-------------|
+| `TAUTULLI_URL` | Tautulli base URL (e.g. `http://192.168.1.10:8181`) |
 | `TAUTULLI_API_KEY` | Tautulli API key (Settings > Web Interface > API Key) |
 | `TMDB_API_KEY` | TMDb v3 API key (free tier, from themoviedb.org/settings/api) |
 | `SERPAPI_KEY` | SerpApi API key (from serpapi.com/manage-api-key) |
+| `MDBLIST_API_KEY` | MDbList API key (from mdblist.com/api/) — optional; disables external ratings if absent |
 | `MEDIA_FS_ROOT` | Filesystem root for `/media/` (default: `/media`; override in dev) |
 | `TOKEN` | Home Assistant long-lived access token |
 

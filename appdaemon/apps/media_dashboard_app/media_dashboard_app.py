@@ -23,6 +23,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 import hassapi as hass
 
+from providers.media_providers.mdblist_client import MdbListClient
 from providers.media_providers.tautulli_fetcher import TautulliFetcher
 from providers.media_providers.tmdb_fetcher import TmdbFetcher
 from providers.media_providers.serpapi_fetcher import SerpApiFetcher
@@ -129,7 +130,7 @@ class MediaDashboardApp(hass.Hass):
         cfg = self.args or {}
 
         # --- Tautulli config ---
-        self._tautulli_url: str = str(cfg.get("tautulli_url", ""))
+        self._tautulli_url: str = str(resolve_arg_secret(cfg, "tautulli_url", default=""))
         self._tautulli_api_key_env: str = str(cfg.get("tautulli_api_key_env", ""))
 
         # --- TMDb config ---
@@ -225,6 +226,18 @@ class MediaDashboardApp(hass.Hass):
             location=self._location,
             theater_names=self._theaters,
         )
+
+        # --- MDbList client (optional — external ratings) ---
+        mdblist_api_key = str(resolve_arg_secret(cfg, "mdblist_api_key", default=""))
+        self._mdblist: Optional[MdbListClient] = None
+        if mdblist_api_key:
+            self._mdblist = MdbListClient(api_key=mdblist_api_key)
+            self.log("MDbList client initialized", level="INFO")
+        else:
+            self.log(
+                "MDbList API key not configured — external ratings disabled",
+                level="WARNING",
+            )
 
         self.log(
             f"MediaDashboardApp initializing: "
@@ -352,6 +365,7 @@ class MediaDashboardApp(hass.Hass):
                 raise RuntimeError(result.error_message)
 
             await self._tautulli.download_posters(result.items)
+            await self._enrich_mdblist_ratings(result.items)
             self._categories["plex_new"] = self._rank_items(result.items, "plex_new")
             self._fetch_status["tautulli"] = "ok"
             self._sync_posters()
@@ -382,6 +396,7 @@ class MediaDashboardApp(hass.Hass):
 
             all_items = theaters_result.items + coming_result.items
             await self._tmdb.download_posters(all_items)
+            await self._enrich_mdblist_ratings(all_items)
 
             self._categories["in_theaters"] = self._rank_items(
                 theaters_result.items, "in_theaters"
@@ -439,6 +454,50 @@ class MediaDashboardApp(hass.Hass):
         await self._refresh_tautulli()
         await self._refresh_tmdb()
         await self._refresh_showtimes()
+
+    async def _enrich_mdblist_ratings(self, items: List[MediaItem]) -> None:
+        """Batch-fetch ratings from MDbList for items that have a tmdb_id.
+
+        Skips silently if MDbList is not configured.  Individual item failures
+        are logged at WARNING level and do not abort the rest.
+        """
+        if not self._mdblist:
+            return
+
+        eligible = [item for item in items if item.tmdb_id is not None]
+        if not eligible:
+            return
+
+        self.log(
+            f"Enriching {len(eligible)} items with MDbList ratings",
+            level="DEBUG",
+        )
+
+        enriched = 0
+        async with self._mdblist as client:
+            for item in eligible:
+                try:
+                    data = await client.get_ratings(item.tmdb_id, item.media_type)  # type: ignore[arg-type]
+                    ratings = MdbListClient.extract_ratings(data)
+                    if ratings.get("imdb_rating"):
+                        item.imdb_rating = ratings["imdb_rating"]
+                    if ratings.get("rt_critics"):
+                        item.rt_critics = ratings["rt_critics"]
+                    if ratings.get("rt_audience"):
+                        item.rt_audience = ratings["rt_audience"]
+                    if ratings.get("metacritic"):
+                        item.metacritic = ratings["metacritic"]
+                    enriched += 1
+                except Exception as exc:
+                    self.log(
+                        f"MDbList rating fetch failed for {item.id}: {exc!r}",
+                        level="WARNING",
+                    )
+
+        self.log(
+            f"MDbList enrichment complete: {enriched}/{len(eligible)} items rated",
+            level="INFO",
+        )
 
     # ------------------------------------------------------------------
     # Sensor publication
@@ -597,6 +656,16 @@ class MediaDashboardApp(hass.Hass):
                     item.runtime_min = detailed.runtime_min
                 if detailed.genres:
                     item.genres = detailed.genres
+                # New detail fields
+                if detailed.director:
+                    item.director = detailed.director
+                if detailed.certification:
+                    item.certification = detailed.certification
+                    item.rating = detailed.certification
+                if detailed.revenue:
+                    item.revenue = detailed.revenue
+                if detailed.tagline:
+                    item.tagline = detailed.tagline
             except Exception as exc:
                 self.log(
                     f"TMDb detail fetch failed for {item_id}: {exc!r}",

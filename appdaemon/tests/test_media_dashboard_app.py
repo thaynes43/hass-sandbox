@@ -955,3 +955,130 @@ class TestHiddenEligible:
         # Item should no longer be in hidden_eligible
         hidden_ids = [i["id"] for i in attrs_after["hidden_eligible"].get("in_theaters", [])]
         assert "tmdb-10" not in hidden_ids
+
+
+# ---------------------------------------------------------------------------
+# Tests: Detail enrichment fields (new in this iteration)
+# ---------------------------------------------------------------------------
+
+class TestDetailEnrichmentFields:
+    def test_new_fields_in_detail_sensor(self):
+        """director, certification, revenue, and tagline appear in the detail sensor attributes."""
+        app = _make_app()
+        item = MediaItem(
+            id="tmdb-999",
+            title="Inside Out 3",
+            tmdb_id=999,
+            summary="A fantastic film",
+            director="Pete Docter",
+            certification="PG",
+            rating="PG",
+            revenue=1_500_000_000,
+            tagline="Joy meets a new emotion.",
+            imdb_rating=8.1,
+            rt_critics=95,
+            rt_audience=92,
+            metacritic=88,
+            local_poster="tmdb-999.jpg",
+        )
+        showtimes = {"entries": []}
+
+        app._publish_detail(item, showtimes)
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs.get("director") == "Pete Docter"
+        assert attrs.get("certification") == "PG"
+        assert attrs.get("revenue") == 1_500_000_000
+        assert attrs.get("tagline") == "Joy meets a new emotion."
+
+    def test_mdblist_ratings_appear_in_detail_sensor(self):
+        """imdb_rating, rt_critics, and rt_audience appear in the detail sensor."""
+        app = _make_app()
+        item = MediaItem(
+            id="tmdb-100",
+            title="Some Film",
+            tmdb_id=100,
+            summary="A film with ratings.",
+            imdb_rating=7.6,
+            rt_critics=80,
+            rt_audience=75,
+            metacritic=72,
+        )
+        showtimes = {}
+
+        app._publish_detail(item, showtimes)
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs.get("imdb_rating") == 7.6
+        assert attrs.get("rt_critics") == 80
+        assert attrs.get("rt_audience") == 75
+        assert attrs.get("metacritic") == 72
+
+    def test_mdblist_ratings_appear_in_category_sensor(self):
+        """imdb_rating, rt_critics, and rt_audience appear in the main sensor category items."""
+        app = _make_app()
+        app._categories["in_theaters"] = [
+            MediaItem(
+                id="tmdb-200",
+                title="Rated Movie",
+                tmdb_id=200,
+                imdb_rating=8.3,
+                rt_critics=91,
+                rt_audience=88,
+                local_poster="tmdb-200.jpg",
+            )
+        ]
+        app._fetch_status = {"tautulli": "ok", "tmdb": "ok", "serpapi": "ok"}
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        items = attrs["categories"]["in_theaters"]
+        assert len(items) == 1
+        item_dict = items[0]
+        assert item_dict.get("imdb_rating") == 8.3
+        assert item_dict.get("rt_critics") == 91
+        assert item_dict.get("rt_audience") == 88
+
+    def test_new_fields_absent_when_defaults(self):
+        """Fields with default values (0, empty string) are NOT included in the sensor dict."""
+        app = _make_app()
+        item = MediaItem(
+            id="tmdb-300",
+            title="No Ratings Movie",
+            tmdb_id=300,
+            summary="No external ratings yet.",
+            # All new fields left at default: 0.0, 0, "", ""
+        )
+        showtimes = {}
+
+        app._publish_detail(item, showtimes)
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        # These fields should be absent because they are 0 / empty
+        assert "imdb_rating" not in attrs
+        assert "rt_critics" not in attrs
+        assert "rt_audience" not in attrs
+        assert "metacritic" not in attrs
+        assert "director" not in attrs
+        assert "revenue" not in attrs
+        assert "tagline" not in attrs
+        assert "certification" not in attrs
+
+    def test_certification_and_rating_both_set(self):
+        """When certification is set, both certification and rating reflect it."""
+        app = _make_app()
+        item = MediaItem(
+            id="tmdb-400",
+            title="Certified Movie",
+            tmdb_id=400,
+            certification="R",
+            rating="R",
+        )
+        showtimes = {}
+
+        app._publish_detail(item, showtimes)
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs.get("certification") == "R"
+        assert attrs.get("rating") == "R"

@@ -512,25 +512,73 @@ class MediaDashboardDetailCard extends HTMLElement {
   _renderDetailPanel(attrs) {
     const id = mddEscapeHtml(String(attrs.id ?? ""));
     const title = mddEscapeHtml(attrs.title || "");
-    const posterSrc = mddEscapeHtml(
-      attrs.poster || ""
-    );
+    const posterSrc = mddEscapeHtml(attrs.poster || "");
 
     // Check liked status from main sensor data
     const isLiked = this._isItemLiked(attrs.id);
-    const score = attrs.tmdb_score != null ? attrs.tmdb_score.toFixed(1) : "—";
-    const rating = mddEscapeHtml(attrs.rating || "");
+
+    // --- Ratings row ---
+    let ratingsHtml = "";
+    const tmdbScore = attrs.tmdb_score != null ? Number(attrs.tmdb_score) : 0;
+    const imdbRating = attrs.imdb_rating != null ? Number(attrs.imdb_rating) : 0;
+    const rtCritics = attrs.rt_critics != null ? Number(attrs.rt_critics) : 0;
+    const rtAudience = attrs.rt_audience != null ? Number(attrs.rt_audience) : 0;
+
+    const ratingItems = [];
+    if (tmdbScore > 0) {
+      ratingItems.push(`<span class="mdd-rating-item"><img class="mdd-rating-icon" src="/local/media-dashboard/icons/TMDb.png" alt="TMDb" /><span>${tmdbScore.toFixed(1)}</span></span>`);
+    }
+    if (imdbRating > 0) {
+      ratingItems.push(`<span class="mdd-rating-item"><img class="mdd-rating-icon" src="/local/media-dashboard/icons/IMDb.png" alt="IMDb" /><span>${imdbRating.toFixed(1)}</span></span>`);
+    }
+    if (rtCritics > 0) {
+      const rtCritIcon = rtCritics >= 60 ? "RT-Crit-Fresh.png" : "RT-Crit-Rotten.png";
+      ratingItems.push(`<span class="mdd-rating-item"><img class="mdd-rating-icon" src="/local/media-dashboard/icons/${rtCritIcon}" alt="RT Critics" /><span>${rtCritics}%</span></span>`);
+    }
+    if (rtAudience > 0) {
+      const rtAudIcon = rtAudience >= 60 ? "RT-Aud-Fresh.png" : "RT-Aud-Rotten.png";
+      ratingItems.push(`<span class="mdd-rating-item"><img class="mdd-rating-icon" src="/local/media-dashboard/icons/${rtAudIcon}" alt="RT Audience" /><span>${rtAudience}%</span></span>`);
+    }
+    if (ratingItems.length > 0) {
+      ratingsHtml = `<div class="mdd-detail-ratings">${ratingItems.join("")}</div>`;
+    }
+
+    // --- Info row: certification, runtime, genres ---
+    const certification = mddEscapeHtml(attrs.certification || attrs.rating || "");
     const runtime = attrs.runtime_min
       ? `${Math.floor(attrs.runtime_min / 60)}h ${attrs.runtime_min % 60}m`
       : "";
     const genres = Array.isArray(attrs.genres)
       ? mddEscapeHtml(attrs.genres.join(", "))
       : mddEscapeHtml(attrs.genres || "");
-    const summary = mddEscapeHtml(attrs.summary || "");
+    const infoParts = [certification, runtime, genres].filter(Boolean).join(" · ");
+    const infoHtml = infoParts
+      ? `<div class="mdd-detail-info">${infoParts}</div>`
+      : "";
 
-    const metaParts = [score ? `&#9733; ${score}` : null, rating, runtime, genres]
-      .filter(Boolean)
-      .join(" &middot; ");
+    // --- Extra row: director, release date, box office ---
+    const extraParts = [];
+    if (attrs.director) {
+      extraParts.push(`Dir. ${mddEscapeHtml(attrs.director)}`);
+    }
+    const releaseDateFormatted = this._formatReleaseDate(attrs.release_date);
+    if (releaseDateFormatted) {
+      extraParts.push(mddEscapeHtml(releaseDateFormatted));
+    }
+    const revenueFormatted = this._formatRevenue(attrs.revenue);
+    if (revenueFormatted) {
+      extraParts.push(mddEscapeHtml(revenueFormatted));
+    }
+    const extraHtml = extraParts.length > 0
+      ? `<div class="mdd-detail-extra">${extraParts.join(" · ")}</div>`
+      : "";
+
+    // --- Tagline ---
+    const taglineHtml = attrs.tagline
+      ? `<div class="mdd-detail-tagline">"${mddEscapeHtml(attrs.tagline)}"</div>`
+      : "";
+
+    const summary = mddEscapeHtml(attrs.summary || "");
 
     const imgHtml = posterSrc
       ? `<img class="mdd-detail-poster" src="${posterSrc}" alt="${title}" />`
@@ -547,13 +595,16 @@ class MediaDashboardDetailCard extends HTMLElement {
           ${imgHtml}
           <div class="mdd-detail-meta">
             <div class="mdd-detail-title">${title}</div>
-            <div class="mdd-detail-info">${metaParts}</div>
+            ${ratingsHtml}
+            ${infoHtml}
+            ${extraHtml}
             <div class="mdd-detail-btns">
               <span class="mdd-btn mdd-btn-like${isLiked ? " mdd-btn--active" : ""}" data-action="like" data-id="${id}" title="Like"><ha-icon icon="${isLiked ? "mdi:heart" : "mdi:heart-outline"}" style="--mdc-icon-size:16px;"></ha-icon> ${isLiked ? "Liked" : "Like"}</span>
               <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss"><ha-icon icon="mdi:close-circle-outline" style="--mdc-icon-size:16px;"></ha-icon> Dismiss</span>
             </div>
           </div>
         </div>
+        ${taglineHtml}
         ${summary ? `<div class="mdd-detail-summary">${summary}</div>` : ""}
         ${showtimesHtml}
       </div>
@@ -696,6 +747,20 @@ class MediaDashboardDetailCard extends HTMLElement {
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  _formatRevenue(revenue) {
+    if (!revenue || revenue <= 0) return "";
+    if (revenue >= 1_000_000_000) return `$${(revenue / 1_000_000_000).toFixed(1)}B box office`;
+    if (revenue >= 1_000_000) return `$${Math.round(revenue / 1_000_000)}M box office`;
+    return `$${revenue.toLocaleString()} box office`;
+  }
+
+  _formatReleaseDate(isoDate) {
+    if (!isoDate) return "";
+    const d = new Date(isoDate + "T00:00:00");
+    if (isNaN(d.getTime())) return isoDate;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   }
 
   // ---------------------------------------------------------------------------
@@ -1179,6 +1244,34 @@ class MediaDashboardDetailCard extends HTMLElement {
         line-height: 1.4;
       }
 
+      .mdd-detail-ratings {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 6px;
+      }
+
+      .mdd-rating-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--mdd-text);
+      }
+
+      .mdd-rating-icon {
+        width: 16px;
+        height: 16px;
+        object-fit: contain;
+      }
+
+      .mdd-detail-extra {
+        font-size: 12px;
+        color: var(--mdd-muted);
+        margin-top: 4px;
+      }
+
       .mdd-detail-btns {
         display: flex;
         gap: 8px;
@@ -1204,6 +1297,13 @@ class MediaDashboardDetailCard extends HTMLElement {
         padding: 0 14px 12px;
         border-top: 1px solid rgba(255, 255, 255, 0.06);
         padding-top: 10px;
+      }
+
+      .mdd-detail-tagline {
+        font-size: 12px;
+        font-style: italic;
+        color: rgba(200, 205, 220, 0.6);
+        padding: 0 14px 8px;
       }
 
       /* ---- Showtimes ---- */

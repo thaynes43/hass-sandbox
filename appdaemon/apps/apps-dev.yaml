@@ -7,12 +7,14 @@ media_dashboard_app_dev:
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   # Tautulli — "New on Plex"
-  tautulli_url: !secret tautulli_url
+  tautulli_url_env: TAUTULLI_URL
   tautulli_api_key_env: TAUTULLI_API_KEY
   # TMDb — in theaters + coming soon
   tmdb_api_key_env: TMDB_API_KEY
   # SerpApi — theater showtimes via Google
   serpapi_api_key_env: SERPAPI_KEY
+  # MDbList — external ratings (IMDb, RT, Metacritic)
+  mdblist_api_key_env: MDBLIST_API_KEY
   # Location (01886 Westford MA area)
   location: "Westford, MA"
   theaters:

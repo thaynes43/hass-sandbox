@@ -601,3 +601,326 @@ class TestDownloadPosters:
         assert count == 1
         assert items[0].local_poster == ""
         assert items[1].local_poster == "tmdb-2.jpg"
+
+
+# ---------------------------------------------------------------------------
+# TestGenreResolution
+# ---------------------------------------------------------------------------
+
+class TestGenreResolution:
+    def test_genre_ids_resolved_to_names(self):
+        """When _genre_map is populated, genre_ids are resolved to their names."""
+        fetcher = _make_fetcher()
+        fetcher._genre_map = {16: "Animation", 35: "Comedy"}
+        raw = _movie(tmdb_id=1, genre_ids=[16, 35])
+        item = fetcher._normalize_movie(raw)
+        assert item.genres == "Animation, Comedy"
+
+    def test_genre_ids_fallback_without_map(self):
+        """When _genre_map is empty, genre_ids are stored as numeric strings."""
+        fetcher = _make_fetcher()
+        assert fetcher._genre_map == {}  # Empty by default
+        raw = _movie(tmdb_id=1, genre_ids=[16, 35])
+        item = fetcher._normalize_movie(raw)
+        # Numeric fallback: IDs stored as comma-separated strings
+        assert "16" in item.genres
+        assert "35" in item.genres
+        # Names must NOT appear
+        assert "Animation" not in item.genres
+        assert "Comedy" not in item.genres
+
+    def test_genre_ids_partially_resolved(self):
+        """IDs missing from the map fall back to their string representation."""
+        fetcher = _make_fetcher()
+        fetcher._genre_map = {16: "Animation"}  # 35 not present
+        raw = _movie(tmdb_id=1, genre_ids=[16, 35])
+        item = fetcher._normalize_movie(raw)
+        assert "Animation" in item.genres
+        assert "35" in item.genres
+
+    @pytest.mark.asyncio
+    async def test_ensure_genre_map_calls_client(self):
+        """_ensure_genre_map() populates _genre_map from client.get_genre_list()."""
+        mock_client = _make_mock_client()
+        mock_client.get_genre_list = AsyncMock(
+            return_value={"genres": [{"id": 28, "name": "Action"}, {"id": 12, "name": "Adventure"}]}
+        )
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            assert fetcher._genre_map == {}
+            await fetcher._ensure_genre_map()
+
+        assert fetcher._genre_map == {28: "Action", 12: "Adventure"}
+        mock_client.get_genre_list.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_ensure_genre_map_no_op_if_already_loaded(self):
+        """_ensure_genre_map() is a no-op when the map is already populated."""
+        mock_client = _make_mock_client()
+        mock_client.get_genre_list = AsyncMock(
+            return_value={"genres": [{"id": 99, "name": "New Genre"}]}
+        )
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            # Pre-populate the map
+            fetcher._genre_map = {28: "Action"}
+            await fetcher._ensure_genre_map()
+
+        # Map should be unchanged; client should not have been called
+        assert fetcher._genre_map == {28: "Action"}
+        mock_client.get_genre_list.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_ensure_genre_map_handles_client_error(self):
+        """_ensure_genre_map() logs a warning and leaves map empty on failure."""
+        mock_client = _make_mock_client()
+        mock_client.get_genre_list = AsyncMock(side_effect=RuntimeError("network error"))
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            # Should not raise
+            await fetcher._ensure_genre_map()
+
+        # Map remains empty after failure
+        assert fetcher._genre_map == {}
+
+
+# ---------------------------------------------------------------------------
+# TestDetailEnrichment
+# ---------------------------------------------------------------------------
+
+class TestDetailEnrichment:
+    def _make_detail_response(
+        self,
+        tmdb_id: int = 42,
+        title: str = "Test Movie",
+        directors: List[str] | None = None,
+        us_certification: str = "PG-13",
+        revenue: int = 1_000_000_000,
+        tagline: str = "A test tagline",
+        runtime: int = 127,
+        include_credits: bool = True,
+        include_release_dates: bool = True,
+    ) -> dict:
+        """Build a minimal TMDb movie detail response with appended data."""
+        raw: dict = {
+            "id": tmdb_id,
+            "title": title,
+            "popularity": 50.0,
+            "vote_count": 500,
+            "vote_average": 8.0,
+            "release_date": "2025-06-14",
+            "genre_ids": [],
+            "poster_path": "/poster.jpg",
+            "overview": f"Overview of {title}",
+            "revenue": revenue,
+            "tagline": tagline,
+            "runtime": runtime,
+            "genres": [{"id": 16, "name": "Animation"}, {"id": 35, "name": "Comedy"}],
+        }
+
+        if include_credits:
+            crew = []
+            for name in (directors or ["Pete Docter"]):
+                crew.append({"name": name, "job": "Director"})
+            crew.append({"name": "Some Producer", "job": "Producer"})
+            raw["credits"] = {"crew": crew}
+
+        if include_release_dates:
+            raw["release_dates"] = {
+                "results": [
+                    {
+                        "iso_3166_1": "US",
+                        "release_dates": [
+                            {"certification": us_certification, "type": 3},
+                        ],
+                    },
+                    {
+                        "iso_3166_1": "GB",
+                        "release_dates": [{"certification": "15", "type": 3}],
+                    },
+                ]
+            }
+
+        return raw
+
+    @pytest.mark.asyncio
+    async def test_detail_extracts_director_certification_revenue(self):
+        """fetch_detail() extracts director, certification, revenue, and tagline."""
+        raw = self._make_detail_response(
+            tmdb_id=42,
+            directors=["Pete Docter"],
+            us_certification="PG",
+            revenue=1_000_000_000,
+            tagline="A test tagline",
+        )
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(42, media_type="movie")
+
+        assert item.director == "Pete Docter"
+        assert item.certification == "PG"
+        assert item.rating == "PG"
+        assert item.revenue == 1_000_000_000
+        assert item.tagline == "A test tagline"
+
+    @pytest.mark.asyncio
+    async def test_detail_extracts_multiple_directors_capped_at_two(self):
+        """Up to 2 directors are captured, joined by comma."""
+        raw = self._make_detail_response(
+            tmdb_id=10,
+            directors=["Director One", "Director Two", "Director Three"],
+        )
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(10, media_type="movie")
+
+        assert item.director == "Director One, Director Two"
+        assert "Director Three" not in item.director
+
+    @pytest.mark.asyncio
+    async def test_detail_handles_missing_credits(self):
+        """fetch_detail() leaves director empty when credits key is absent."""
+        raw = self._make_detail_response(tmdb_id=5, include_credits=False)
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(5, media_type="movie")
+
+        assert item.director == ""
+
+    @pytest.mark.asyncio
+    async def test_detail_handles_missing_release_dates(self):
+        """fetch_detail() leaves certification empty when release_dates is absent."""
+        raw = self._make_detail_response(tmdb_id=7, include_release_dates=False)
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(7, media_type="movie")
+
+        assert item.certification == ""
+
+    @pytest.mark.asyncio
+    async def test_detail_uses_us_certification_not_gb(self):
+        """Only US certification is extracted; other countries are ignored."""
+        raw = self._make_detail_response(
+            tmdb_id=8,
+            us_certification="R",
+        )
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(8, media_type="movie")
+
+        assert item.certification == "R"
+        assert item.rating == "R"
+
+    @pytest.mark.asyncio
+    async def test_detail_extracts_genres_from_genre_objects(self):
+        """fetch_detail() resolves full genre names from the genres array."""
+        raw = self._make_detail_response(tmdb_id=9)
+        # raw already has "genres": [Animation, Comedy]
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(9, media_type="movie")
+
+        assert "Animation" in item.genres
+        assert "Comedy" in item.genres
+
+    @pytest.mark.asyncio
+    async def test_detail_zero_revenue_stored_as_zero(self):
+        """Revenue of 0 or missing is stored as 0 (not None)."""
+        raw = self._make_detail_response(tmdb_id=11, revenue=0)
+
+        mock_client = _make_mock_client()
+        mock_client.get_movie_detail = AsyncMock(return_value=raw)
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(
+                api_key_env="TMDB_API_KEY",
+                poster_dir="/tmp/test",
+            )
+            item = await fetcher.fetch_detail(11, media_type="movie")
+
+        assert item.revenue == 0
+        assert item.revenue is not None
