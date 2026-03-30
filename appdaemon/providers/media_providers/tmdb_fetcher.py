@@ -273,14 +273,14 @@ class TmdbFetcher:
             item.director = ", ".join(directors[:2])  # Cap at 2 directors
 
         logger.debug(
-            "TmdbFetcher.fetch_detail: tmdb_id=%d media_type=%s title=%s "
-            "certification=%r director=%r revenue=%d",
+            "TmdbFetcher.fetch_detail: tmdb_id=%d title=%s "
+            "cert=%r director=%r revenue=%d tagline=%r",
             tmdb_id,
-            media_type,
             item.title,
             item.certification,
             item.director,
             item.revenue,
+            item.tagline,
         )
         return item
 

@@ -648,8 +648,9 @@ class MediaDashboardApp(hass.Hass):
             self.log(f"get_detail: item not found: {item_id}", level="WARNING")
             return
 
-        # Enrich from TMDb if summary is empty and we have a tmdb_id
-        if item.tmdb_id and not item.summary:
+        # Enrich from TMDb if detail fields are missing and we have a tmdb_id
+        needs_detail = not item.summary or not item.director or not item.certification
+        if item.tmdb_id and needs_detail:
             try:
                 detailed = await self._tmdb.fetch_detail(item.tmdb_id, item.media_type)
                 item.summary = detailed.summary

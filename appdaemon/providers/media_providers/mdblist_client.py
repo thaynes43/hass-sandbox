@@ -101,17 +101,18 @@ class MdbListClient:
                 logger.debug("MdbListClient GET %s -> 404 (item not found)", path)
                 return {}
             data = await resp.json()
+
+            # MDbList returns 200 with {"response": false, "error": "Not Found"}
+            # for items not in its database — treat as empty, don't log at INFO
+            if data.get("response") is False:
+                logger.debug("MdbListClient GET %s -> not found in MDbList", path)
+                return {}
+
             body_len = len(str(data))
-            if resp.status != 200 or body_len <= 200:
-                logger.info(
-                    "MdbListClient GET %s -> %d  (%d chars) %s",
-                    path, resp.status, body_len, data,
-                )
-            else:
-                logger.info(
-                    "MdbListClient GET %s -> %d  (%d chars)",
-                    path, resp.status, body_len,
-                )
+            logger.info(
+                "MdbListClient GET %s -> %d  (%d chars)",
+                path, resp.status, body_len,
+            )
             resp.raise_for_status()
             return data  # type: ignore[return-value]
 

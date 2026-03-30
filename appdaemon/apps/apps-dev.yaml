@@ -29,7 +29,7 @@ media_dashboard_app_dev:
   showtimes_refresh_interval: 86400  # 24 hours
   # Filtering
   max_items_per_category: 20
-  popularity_threshold: 10.0
+  popularity_threshold: 5.0
   vote_count_threshold: 50
   stale_ttl_days: 7
   # Filesystem — NFS mount: sudo mount -t nfs -o nfsvers=4,proto=tcp gasha01:/hdd-nfs-repl /mnt/cephfs-hdd
