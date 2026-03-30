@@ -452,12 +452,15 @@ class MediaDashboardApp(hass.Hass):
             filtered = self._apply_stale_ttl(items)
             filtered = self._apply_preferences(filtered)
             capped = filtered[: self._max_items_per_category]
+            liked = set(self._preferences.get("liked", []))
             serialized = []
             for item in capped:
                 d = item.to_dict()
                 # Build full /local/ URL from the poster filename
                 if item.local_poster:
                     d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
+                if item.id in liked:
+                    d["liked"] = True
                 serialized.append(d)
             published_categories[cat_name] = serialized
 
@@ -588,9 +591,11 @@ class MediaDashboardApp(hass.Hass):
             self.log("dismiss command missing 'id'", level="WARNING")
             return
 
-        if item_id not in self._preferences["hidden"]:
-            self._preferences["hidden"].append(item_id)
-            self._preferences["hidden_at"][item_id] = datetime.datetime.now().isoformat()
+        if item_id in self._preferences["hidden"]:
+            self.log(f"Item already dismissed: {item_id}", level="DEBUG")
+            return
+        self._preferences["hidden"].append(item_id)
+        self._preferences["hidden_at"][item_id] = datetime.datetime.now().isoformat()
         self._save_preferences()
         self._publish_sensor()
         self.log(f"Dismissed item: {item_id}", level="INFO")
@@ -602,9 +607,11 @@ class MediaDashboardApp(hass.Hass):
             self.log("like command missing 'id'", level="WARNING")
             return
 
-        if item_id not in self._preferences["liked"]:
-            self._preferences["liked"].append(item_id)
-            self._preferences["liked_at"][item_id] = datetime.datetime.now().isoformat()
+        if item_id in self._preferences["liked"]:
+            self.log(f"Item already liked: {item_id}", level="DEBUG")
+            return
+        self._preferences["liked"].append(item_id)
+        self._preferences["liked_at"][item_id] = datetime.datetime.now().isoformat()
         self._save_preferences()
         self._publish_sensor()
         self.log(f"Liked item: {item_id}", level="INFO")

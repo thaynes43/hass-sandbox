@@ -131,19 +131,18 @@ class MediaDashboardDetailCard extends HTMLElement {
     if (!this._hass) return null;
     const status = this._hass.states[this._config.status_entity];
     const detail = this._hass.states[this._config.detail_entity];
+
+    // Only track item IDs per category (not full attributes / timestamps)
+    // to avoid re-rendering when only last_updated changes.
+    const cats = status?.attributes?.categories || {};
+    const catSummary = {};
+    for (const [key, items] of Object.entries(cats)) {
+      catSummary[key] = (items || []).map((i) => `${i.id}${i.liked ? "*" : ""}`).join(",");
+    }
+
     return JSON.stringify({
-      status: status
-        ? {
-            s: status.state,
-            attrs: status.attributes,
-          }
-        : null,
-      detail: detail
-        ? {
-            s: detail.state,
-            attrs: detail.attributes,
-          }
-        : null,
+      status: status ? { s: status.state, cats: catSummary } : null,
+      detail: detail ? { s: detail.state, id: detail.attributes?.id } : null,
       selectedId: this._selectedItemId,
     });
   }
@@ -288,6 +287,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     const posterSrc = mddEscapeHtml(item.poster || "");
     const isSelected = String(item.id) === String(this._selectedItemId);
     const selectedClass = isSelected ? " mdd-poster--selected" : "";
+    const isLiked = !!item.liked;
 
     const imgHtml = posterSrc
       ? `<img class="mdd-poster-img" src="${posterSrc}" alt="${title}" loading="lazy" />`
@@ -295,14 +295,18 @@ class MediaDashboardDetailCard extends HTMLElement {
            <span class="mdd-poster-placeholder-text">${title}</span>
          </div>`;
 
+    // No poster badge on detail card — liked state shown via the heart button below
+    const likedBadge = "";
+
     return `
       <div class="mdd-poster${selectedClass}" data-action="select" data-id="${id}">
         ${imgHtml}
+        ${likedBadge}
         <div class="mdd-poster-title">${title}</div>
         <div class="mdd-poster-sub">${subtitle}</div>
         <div class="mdd-poster-btns">
-          <span class="mdd-btn mdd-btn-like" data-action="like" data-id="${id}" title="Like">&#128077;</span>
-          <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss">&#128078;</span>
+          <span class="mdd-btn mdd-btn-like${isLiked ? " mdd-btn--active" : ""}" data-action="like" data-id="${id}" title="Like"><ha-icon icon="${isLiked ? "mdi:heart" : "mdi:heart-outline"}" style="--mdc-icon-size:16px;"></ha-icon></span>
+          <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss"><ha-icon icon="mdi:close-circle-outline" style="--mdc-icon-size:16px;"></ha-icon></span>
         </div>
       </div>
     `;
@@ -318,6 +322,9 @@ class MediaDashboardDetailCard extends HTMLElement {
     const posterSrc = mddEscapeHtml(
       attrs.poster || ""
     );
+
+    // Check liked status from main sensor data
+    const isLiked = this._isItemLiked(attrs.id);
     const score = attrs.tmdb_score != null ? attrs.tmdb_score.toFixed(1) : "—";
     const rating = mddEscapeHtml(attrs.rating || "");
     const runtime = attrs.runtime_min
@@ -349,8 +356,8 @@ class MediaDashboardDetailCard extends HTMLElement {
             <div class="mdd-detail-title">${title}</div>
             <div class="mdd-detail-info">${metaParts}</div>
             <div class="mdd-detail-btns">
-              <span class="mdd-btn mdd-btn-like" data-action="like" data-id="${id}" title="Like">&#128077; Like</span>
-              <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss">&#128078; Dismiss</span>
+              <span class="mdd-btn mdd-btn-like${isLiked ? " mdd-btn--active" : ""}" data-action="like" data-id="${id}" title="Like"><ha-icon icon="${isLiked ? "mdi:heart" : "mdi:heart-outline"}" style="--mdc-icon-size:16px;"></ha-icon> ${isLiked ? "Liked" : "Like"}</span>
+              <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss"><ha-icon icon="mdi:close-circle-outline" style="--mdc-icon-size:16px;"></ha-icon> Dismiss</span>
             </div>
           </div>
         </div>
@@ -474,6 +481,18 @@ class MediaDashboardDetailCard extends HTMLElement {
   // ---------------------------------------------------------------------------
   // Formatting helpers
   // ---------------------------------------------------------------------------
+
+  _isItemLiked(itemId) {
+    if (!itemId || !this._hass) return false;
+    const status = this._hass.states[this._config.status_entity];
+    const cats = status?.attributes?.categories || {};
+    for (const items of Object.values(cats)) {
+      for (const item of items || []) {
+        if (String(item.id) === String(itemId) && item.liked) return true;
+      }
+    }
+    return false;
+  }
 
   _formatRelative(isoStr) {
     if (!isoStr) return "";
@@ -737,6 +756,7 @@ class MediaDashboardDetailCard extends HTMLElement {
       /* ---- Individual poster ---- */
 
       .mdd-poster {
+        position: relative;
         flex: 0 0 auto;
         width: 110px;
         display: flex;
@@ -833,11 +853,25 @@ class MediaDashboardDetailCard extends HTMLElement {
       }
 
       .mdd-btn-like:active {
-        background: rgba(102, 204, 119, 0.2);
+        background: rgba(229, 57, 53, 0.2);
       }
 
       .mdd-btn-dismiss:active {
         background: rgba(224, 96, 96, 0.2);
+      }
+
+      .mdd-btn--active {
+        color: #e53935;
+      }
+
+      .mdd-liked-badge {
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        color: #e53935;
+        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+        pointer-events: none;
+        z-index: 1;
       }
 
       /* ---- Detail panel ---- */

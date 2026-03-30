@@ -241,6 +241,7 @@ class MediaDashboardCard extends HTMLElement {
         const title = this._escapeHtml(String(item.title || ""));
         const subtitle = this._escapeHtml(String(item.subtitle || ""));
         const poster = this._escapeHtml(String(item.poster || ""));
+        const isLiked = !!item.liked;
 
         let imgHtml;
         if (poster) {
@@ -251,9 +252,14 @@ class MediaDashboardCard extends HTMLElement {
           </div>`;
         }
 
+        const likedBadge = isLiked
+          ? `<span class="md-liked-badge"><ha-icon icon="mdi:heart" style="--mdc-icon-size:16px;"></ha-icon></span>`
+          : "";
+
         html += `
           <div class="md-poster" data-action="open-popup" data-id="${id}">
             ${imgHtml}
+            ${likedBadge}
             <div class="md-poster-info">
               <div class="md-poster-title">${title}</div>
               <div class="md-poster-sub">${subtitle}</div>
@@ -553,6 +559,18 @@ class MediaDashboardCard extends HTMLElement {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      /* ---- Liked badge ---- */
+
+      .md-liked-badge {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        color: #e53935;
+        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.7));
+        pointer-events: none;
+        z-index: 1;
       }
 
       /* ---- Dismiss button ---- */
