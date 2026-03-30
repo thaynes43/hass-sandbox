@@ -1101,12 +1101,10 @@ media_dashboard_app:
   tautulli_api_key_env: TAUTULLI_API_KEY
   # TMDb — in theaters + coming soon
   tmdb_api_key_env: TMDB_API_KEY
-  # MovieGlu — theater showtimes (via RapidAPI)
-  movieglu_api_key_env: MOVIEGLU_API_KEY
-  movieglu_client_id_env: MOVIEGLU_CLIENT_ID
+  # SerpApi — theater showtimes via Google
+  serpapi_api_key_env: SERPAPI_KEY
   # Location (01886 Westford MA area)
-  location_lat: "42.5793"
-  location_lng: "-71.4387"
+  location: "Westford, MA"
   theaters:
     - AMC Tyngsboro 12
     - Showcase Cinema de Lux Lowell

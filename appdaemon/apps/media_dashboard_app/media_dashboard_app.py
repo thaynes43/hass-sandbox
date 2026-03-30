@@ -1,6 +1,6 @@
 """Media Dashboard AppDaemon app.
 
-Orchestrates Tautulli, TMDb, and MovieGlu fetchers to produce a media
+Orchestrates Tautulli, TMDb, and SerpApi fetchers to produce a media
 dashboard sensor that drives the wall-display media card.  Supports
 user preference commands (dismiss / like / undo_dismiss) and showtime
 lookups via a relay script pattern.
@@ -25,7 +25,7 @@ import hassapi as hass
 
 from providers.media_providers.tautulli_fetcher import TautulliFetcher
 from providers.media_providers.tmdb_fetcher import TmdbFetcher
-from providers.media_providers.movieglu_fetcher import MoviegluFetcher
+from providers.media_providers.serpapi_fetcher import SerpApiFetcher
 from providers.media_providers.types import MediaItem, ShowtimeCache
 from providers.secrets import resolve_arg_secret
 
@@ -65,11 +65,9 @@ class MediaDashboardApp(hass.Hass):
         # --- TMDb config ---
         self._tmdb_api_key_env: str = str(cfg.get("tmdb_api_key_env", ""))
 
-        # --- MovieGlu config ---
-        self._movieglu_api_key_env: str = str(cfg.get("movieglu_api_key_env", ""))
-        self._movieglu_client_id_env: str = str(cfg.get("movieglu_client_id_env", ""))
-        self._location_lat: str = str(cfg.get("location_lat", ""))
-        self._location_lng: str = str(cfg.get("location_lng", ""))
+        # --- SerpApi config ---
+        self._serpapi_api_key_env: str = str(cfg.get("serpapi_api_key_env", ""))
+        self._location: str = str(cfg.get("location", ""))
         self._theaters: List[str] = list(cfg.get("theaters", []))
 
         # --- Refresh intervals ---
@@ -125,7 +123,7 @@ class MediaDashboardApp(hass.Hass):
         self._fetch_status: Dict[str, str] = {
             "tautulli": "pending",
             "tmdb": "pending",
-            "showtimes": "pending",
+            "serpapi": "pending",
         }
         self._preferences: Dict[str, Any] = {
             "hidden": [],
@@ -152,17 +150,16 @@ class MediaDashboardApp(hass.Hass):
             vote_count_threshold=self._vote_count_threshold,
             genre_filter=self._genre_filter if self._genre_filter else None,
         )
-        self._movieglu = MoviegluFetcher(
-            api_key_env=self._movieglu_api_key_env,
-            client_id_env=self._movieglu_client_id_env,
-            lat=self._location_lat,
-            lng=self._location_lng,
+        self._serpapi = SerpApiFetcher(
+            api_key_env=self._serpapi_api_key_env,
+            location=self._location,
             theater_names=self._theaters,
         )
 
         self.log(
             f"MediaDashboardApp initializing: "
             f"tautulli_url={self._tautulli_url}, "
+            f"location={self._location}, "
             f"theaters={self._theaters}, "
             f"poster_dir={self._poster_dir}",
             level="INFO",
@@ -179,21 +176,8 @@ class MediaDashboardApp(hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
-        """Provision relay, discover cinemas, fetch data, register listeners."""
+        """Provision relay, fetch data, register listeners."""
         await self._provision_relay()
-
-        # Discover cinema IDs (one-time; cached in fetcher instance)
-        try:
-            cinemas = await self._movieglu.discover_cinemas()
-            self.log(
-                f"Discovered {len(cinemas)} cinemas matching configured theaters",
-                level="INFO",
-            )
-        except Exception as exc:
-            self.log(
-                f"Cinema discovery failed (will retry on next refresh): {exc!r}",
-                level="WARNING",
-            )
 
         # Initial data fetch
         await self._refresh_all()
@@ -349,10 +333,10 @@ class MediaDashboardApp(hass.Hass):
             self._publish_sensor()
 
     async def _refresh_showtimes(self) -> None:
-        """Fetch showtimes from MovieGlu; retain cached version on failure."""
+        """Fetch showtimes from SerpApi; retain cached version on failure."""
         self.log("Refreshing showtimes", level="DEBUG")
         try:
-            cache = await self._movieglu.fetch_showtimes()
+            cache = await self._serpapi.fetch_showtimes()
 
             # Write cache to disk
             self._write_showtime_cache(cache)
@@ -362,7 +346,7 @@ class MediaDashboardApp(hass.Hass):
             for item in self._categories["in_theaters"]:
                 item.has_showtimes = item.title.lower() in film_titles_lower
 
-            self._fetch_status["showtimes"] = "ok"
+            self._fetch_status["serpapi"] = "ok"
             self._publish_sensor()
             self.log(
                 f"Showtime refresh complete: {len(cache.films)} films",
@@ -373,7 +357,7 @@ class MediaDashboardApp(hass.Hass):
                 f"Showtime refresh failed (retaining cached data): {exc!r}",
                 level="ERROR",
             )
-            self._fetch_status["showtimes"] = "error"
+            self._fetch_status["serpapi"] = "error"
             self._publish_sensor()
 
     async def _refresh_all(self) -> None:

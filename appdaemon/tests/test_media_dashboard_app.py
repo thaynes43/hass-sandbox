@@ -90,10 +90,8 @@ _DEFAULT_ARGS: Dict[str, Any] = {
     "tautulli_url": "http://tautulli:8181",
     "tautulli_api_key_env": "TAUTULLI_API_KEY",
     "tmdb_api_key_env": "TMDB_API_KEY",
-    "movieglu_api_key_env": "MOVIEGLU_API_KEY",
-    "movieglu_client_id_env": "MOVIEGLU_CLIENT_ID",
-    "location_lat": "42.5",
-    "location_lng": "-71.5",
+    "serpapi_api_key_env": "SERPAPI_KEY",
+    "location": "Westford, MA",
     "theaters": ["AMC Tyngsboro 12"],
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
@@ -142,7 +140,7 @@ def _make_app(extra_args: dict | None = None, tmpdir: str | None = None) -> Medi
     # Patch fetcher constructors so initialize() doesn't try to resolve real secrets
     with patch("media_dashboard_app.media_dashboard_app.TautulliFetcher") as MockT, \
          patch("media_dashboard_app.media_dashboard_app.TmdbFetcher") as MockTM, \
-         patch("media_dashboard_app.media_dashboard_app.MoviegluFetcher") as MockM:
+         patch("media_dashboard_app.media_dashboard_app.SerpApiFetcher") as MockS:
 
         mock_tautulli = MagicMock()
         mock_tautulli.fetch_recently_added = AsyncMock(
@@ -164,12 +162,11 @@ def _make_app(extra_args: dict | None = None, tmpdir: str | None = None) -> Medi
         )
         MockTM.return_value = mock_tmdb
 
-        mock_movieglu = MagicMock()
-        mock_movieglu.discover_cinemas = AsyncMock(return_value=[])
-        mock_movieglu.fetch_showtimes = AsyncMock(
+        mock_serpapi = MagicMock()
+        mock_serpapi.fetch_showtimes = AsyncMock(
             return_value=ShowtimeCache(date=datetime.date.today().isoformat(), films={})
         )
-        MockM.return_value = mock_movieglu
+        MockS.return_value = mock_serpapi
 
         app.initialize()
 
@@ -217,11 +214,11 @@ class TestInitialize:
         td = tempfile.mkdtemp(prefix="mda_fetch_")
         with patch("media_dashboard_app.media_dashboard_app.TautulliFetcher") as MockT, \
              patch("media_dashboard_app.media_dashboard_app.TmdbFetcher") as MockTM, \
-             patch("media_dashboard_app.media_dashboard_app.MoviegluFetcher") as MockM:
+             patch("media_dashboard_app.media_dashboard_app.SerpApiFetcher") as MockS:
 
             MockT.return_value = MagicMock()
             MockTM.return_value = MagicMock()
-            MockM.return_value = MagicMock()
+            MockS.return_value = MagicMock()
 
             ad = MagicMock()
             app = MediaDashboardApp(ad, MagicMock())
@@ -240,7 +237,7 @@ class TestInitialize:
 
             MockT.assert_called_once()
             MockTM.assert_called_once()
-            MockM.assert_called_once()
+            MockS.assert_called_once()
 
     def test_initialize_loads_preferences_from_file(self):
         td = tempfile.mkdtemp(prefix="mda_prefs_")
@@ -269,7 +266,7 @@ class TestPublishSensor:
     def test_sensor_attributes_match_schema(self):
         app = _make_app()
         app._categories["in_theaters"] = [_make_item("tmdb-1", "Movie A")]
-        app._fetch_status = {"tautulli": "ok", "tmdb": "ok", "showtimes": "ok"}
+        app._fetch_status = {"tautulli": "ok", "tmdb": "ok", "serpapi": "ok"}
 
         app._publish_sensor()
 
@@ -292,19 +289,19 @@ class TestPublishSensor:
 
     def test_sensor_state_all_ok(self):
         app = _make_app()
-        app._fetch_status = {"tautulli": "ok", "tmdb": "ok", "showtimes": "ok"}
+        app._fetch_status = {"tautulli": "ok", "tmdb": "ok", "serpapi": "ok"}
         app._publish_sensor()
         assert app.set_state.call_args[1]["state"] == "ok"
 
     def test_sensor_state_partial_when_some_error(self):
         app = _make_app()
-        app._fetch_status = {"tautulli": "ok", "tmdb": "error", "showtimes": "ok"}
+        app._fetch_status = {"tautulli": "ok", "tmdb": "error", "serpapi": "ok"}
         app._publish_sensor()
         assert app.set_state.call_args[1]["state"] == "partial"
 
     def test_sensor_state_error_when_all_error(self):
         app = _make_app()
-        app._fetch_status = {"tautulli": "error", "tmdb": "error", "showtimes": "error"}
+        app._fetch_status = {"tautulli": "error", "tmdb": "error", "serpapi": "error"}
         app._publish_sensor()
         assert app.set_state.call_args[1]["state"] == "error"
 

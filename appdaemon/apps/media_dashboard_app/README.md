@@ -1,13 +1,12 @@
 # Media Dashboard App
 
-AppDaemon app that aggregates media content from Tautulli (Plex), TMDb, and MovieGlu into a Wall Display dashboard card. Shows what's new on Plex, what's currently in theaters, and what's coming soon — with poster art, showtimes at local theaters, and a thumbs-up/down preference system.
+AppDaemon app that aggregates media content from Tautulli (Plex), TMDb, and SerpApi (Google Showtimes) into a Wall Display dashboard card. Shows what's new on Plex, what's currently in theaters, and what's coming soon — with poster art, showtimes at local theaters, and a thumbs-up/down preference system.
 
 ## How It Works
 
 1. On startup, provisions a relay script and two sensors, creates required filesystem directories, and loads persisted user preferences from disk.
-2. Discovers configured theaters via MovieGlu and caches their cinema IDs.
-3. Runs an initial fetch from all three sources: Tautulli (recently added + popular stats), TMDb (now playing + upcoming + trending), and MovieGlu (showtimes for each configured theater).
-4. Applies popularity filtering (TMDb score + vote count thresholds), genre filtering, and user preference boosts/hides to rank each category.
+2. Runs an initial fetch from all three sources: Tautulli (recently added + popular stats), TMDb (now playing + upcoming + trending), and SerpApi (showtimes via Google search).
+3. Applies popularity filtering (TMDb score + vote count thresholds), genre filtering, and user preference boosts/hides to rank each category.
 5. Downloads poster images for each item to a shared `/media/` directory, then calls a `shell_command` to sync them to `/config/www/` where HA can serve them.
 6. Publishes the three categories (In Theaters, New on Plex, Coming Soon) to `sensor.media_dashboard_status` with local poster URLs and metadata.
 7. When a user taps a poster, the card sends `get_detail` via relay. The app reads full metadata and cached showtimes from disk (no API call) and publishes to `sensor.media_dashboard_detail`.
@@ -21,12 +20,12 @@ AppDaemon app that aggregates media content from Tautulli (Plex), TMDb, and Movi
 │  media_dashboard_app (AppDaemon)                    │
 │                                                     │
 │  ┌───────────────┐ ┌──────────────┐ ┌────────────┐ │
-│  │ tautulli_     │ │ tmdb_        │ │ movieglu_  │ │
+│  │ tautulli_     │ │ tmdb_        │ │ serpapi_   │ │
 │  │ fetcher.py    │ │ fetcher.py   │ │ fetcher.py │ │
 │  │               │ │              │ │            │ │
 │  │ recently_     │ │ now_playing  │ │ showtimes/ │ │
-│  │ added         │ │ upcoming     │ │ cinema     │ │
-│  │ home_stats    │ │ trending     │ │ (MovieGlu) │ │
+│  │ added         │ │ upcoming     │ │ theater    │ │
+│  │ home_stats    │ │ trending     │ │ (SerpApi)  │ │
 │  │ pms_image_    │ │ discover     │ │            │ │
 │  │ proxy (imgs)  │ │ image CDN    │ │            │ │
 │  └───────┬───────┘ └──────┬───────┘ └─────┬──────┘ │
@@ -78,14 +77,14 @@ appdaemon/providers/media_providers/
 ├── tautulli_fetcher.py             # Fetcher: recently added, popular stats, poster download
 ├── tmdb_client.py                  # HTTP client for TMDb v3 API
 ├── tmdb_fetcher.py                 # Fetcher: now playing, upcoming, trending, poster download
-├── movieglu_client.py              # HTTP client for MovieGlu via RapidAPI
-└── movieglu_fetcher.py             # Fetcher: cinema discovery, showtime batch fetch
+├── serpapi_client.py               # HTTP client for SerpApi Google Showtimes
+└── serpapi_fetcher.py              # Fetcher: showtime search and parsing
 
 appdaemon/tests/
 ├── test_media_types.py
 ├── test_tautulli_fetcher.py
 ├── test_tmdb_fetcher.py
-├── test_movieglu_fetcher.py
+├── test_serpapi_fetcher.py
 ├── test_media_dashboard_app.py
 ├── test_media_dashboard_relay.py
 └── test_media_dashboard_showtime_cache.py
@@ -97,7 +96,7 @@ appdaemon/tests/
 |--------|---------|---------|
 | **Tautulli** | Recently added movies/shows from Plex, watch popularity stats, poster images via `pms_image_proxy` (hides Plex token) | Every 2 hours |
 | **TMDb** | Now-playing theaters list, upcoming releases, trending movies, popularity/vote metadata, poster images from CDN | Every 12 hours |
-| **MovieGlu** (via RapidAPI) | Theater showtimes for up to 5 configured local theaters (75 requests/day free tier; 5 theaters = 5 req/day) | Once daily |
+| **SerpApi** (Google Showtimes) | Theater showtimes via Google search; filters results to configured local theaters | Once daily |
 
 ## Content Categories
 
@@ -128,7 +127,7 @@ appdaemon/tests/
 |----------|-------|
 | `providers.media_providers.tautulli_fetcher` | Plex recently-added items, popularity cross-reference, poster download |
 | `providers.media_providers.tmdb_fetcher` | In-theaters and coming-soon data, mainstream filter, poster download |
-| `providers.media_providers.movieglu_fetcher` | Theater showtime batch fetch and cinema discovery |
+| `providers.media_providers.serpapi_fetcher` | Theater showtime search and parsing |
 | `providers.media_providers.types` | `MediaItem`, `FetchResult`, `ShowtimeCache`, `ShowtimeEntry`, `CinemaInfo` dataclasses |
 | `providers.ha_provisioner.HAProvisioner` | Creates relay script and sensors on startup |
 | `providers.secrets.resolve_arg_secret` | Resolves `_env`-suffix config keys to actual values at runtime |
@@ -150,10 +149,8 @@ media_dashboard_app:
   tautulli_url: !secret tautulli_url
   tautulli_api_key_env: TAUTULLI_API_KEY
   tmdb_api_key_env: TMDB_API_KEY
-  movieglu_api_key_env: MOVIEGLU_API_KEY
-  movieglu_client_id_env: MOVIEGLU_CLIENT_ID
-  location_lat: "42.5793"
-  location_lng: "-71.4387"
+  serpapi_api_key_env: SERPAPI_KEY
+  location: "Westford, MA"
   theaters:
     - AMC Tyngsboro 12
     - Showcase Cinema de Lux Lowell
@@ -188,7 +185,7 @@ Cards communicate with the app via `hass.callService("script", "media_dashboard_
 
 | Command | Payload | Description |
 |---------|---------|-------------|
-| `refresh` | `{"source": "all"\|"tautulli"\|"tmdb"\|"movieglu"}` | Force refresh from one or all sources |
+| `refresh` | `{"source": "all"\|"tautulli"\|"tmdb"\|"showtimes"}` | Force refresh from one or all sources |
 | `get_detail` | `{"id": "tmdb-11111"}` | Read full metadata + showtimes from cache; publish to `sensor.media_dashboard_detail` |
 | `dismiss` | `{"id": "tmdb-11111"}` | Hide an item (thumbs down); persist to preferences file |
 | `like` | `{"id": "tmdb-11111"}` | Boost an item to the top (thumbs up); persist to preferences file |
@@ -256,7 +253,7 @@ State: `ok` | `degraded` | `error`
   "fetch_status": {
     "tautulli": {"last_ok": "2026-03-29T17:00:00", "status": "ok"},
     "tmdb": {"last_ok": "2026-03-29T12:00:00", "status": "ok"},
-    "movieglu": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
+    "serpapi": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
   },
   "friendly_name": "Media Dashboard",
   "icon": "mdi:movie-open-outline"
@@ -295,7 +292,7 @@ State: selected item ID (e.g., `tmdb-11111`), or `none` when nothing is selected
 
 ## Showtime Caching
 
-Showtimes are batch-fetched daily and cached to `{media_fs_root}/{showtime_cache_subdir}/showtime-cache.json`. The `get_detail` command reads from this disk cache — no API call on user interaction. This keeps MovieGlu API usage within the free-tier limit (75 requests/day; 5 theaters = 5 requests/day).
+Showtimes are batch-fetched daily and cached to `{media_fs_root}/{showtime_cache_subdir}/showtime-cache.json`. The `get_detail` command reads from this disk cache — no API call on user interaction. SerpApi is queried once daily (one search covers all configured theaters).
 
 Staleness handling:
 - Cache older than 24h and refresh failed: showtimes shown with "Showtimes from yesterday" note
@@ -322,7 +319,7 @@ Preferences are loaded on startup and written back on each `dismiss`, `like`, or
 |---------|----------|
 | Tautulli unreachable | Retain last-known-good `plex_new` items; set `fetch_status.tautulli.status = "error"` |
 | TMDb unreachable | Retain last-known-good `in_theaters` and `coming_soon`; set `fetch_status.tmdb.status = "error"` |
-| MovieGlu unreachable | Retain cached showtimes on disk; set `fetch_status.movieglu.status = "error"`; detail view shows stale data with note |
+| SerpApi unreachable | Retain cached showtimes on disk; set `fetch_status.serpapi = "error"`; detail view shows stale data with note |
 | Source returns empty | Clear that category's items (genuinely empty is valid); set status to `"ok"` |
 
 ## Manual Setup Required
@@ -368,8 +365,7 @@ Configure the following environment variables (dev: `.env` file; prod: Kubernete
 |----------|-------------|
 | `TAUTULLI_API_KEY` | Tautulli API key (Settings > Web Interface > API Key) |
 | `TMDB_API_KEY` | TMDb v3 API key (free tier, from themoviedb.org/settings/api) |
-| `MOVIEGLU_API_KEY` | RapidAPI key with MovieGlu subscription |
-| `MOVIEGLU_CLIENT_ID` | MovieGlu client ID (from RapidAPI dashboard) |
+| `SERPAPI_KEY` | SerpApi API key (from serpapi.com/manage-api-key) |
 | `MEDIA_FS_ROOT` | Filesystem root for `/media/` (default: `/media`; override in dev) |
 | `TOKEN` | Home Assistant long-lived access token |
 

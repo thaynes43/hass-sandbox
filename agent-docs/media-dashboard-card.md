@@ -39,22 +39,22 @@ A new AppDaemon-powered dashboard card that displays media content across four c
 
 **Refresh cadence**: Every 12 hours
 
-### 3. MovieGlu — Theater Showtimes
+### 3. SerpApi — Theater Showtimes
 
-**API**: MovieGlu via RapidAPI (free tier: 75 requests/day — sufficient for 5 theaters checked 1-2x/day)
+**API**: SerpApi Google Showtimes (paid plan required; single API key, no per-theater calls)
 
-**Endpoints used**:
-- `GET /cinemas/nearby` — discover cinemas by lat/lon (one-time setup, cache theater IDs)
-- `GET /showtimes/cinema/{cinema_id}` — all showtimes for a specific cinema today
-- `GET /showtimes/film/{film_id}` — showtimes for a specific film across nearby cinemas
+**Endpoint used**:
+- `GET /search?engine=google&q=showtimes+near+{location}&location={location}&api_key={key}` — returns `showtimes_results` structured data grouping movies by theater
 
-**Signup**: Free RapidAPI account required. API key stored as `MOVIEGLU_API_KEY` env var.
+**Signup**: SerpApi account required. API key stored as `SERPAPI_KEY` env var.
 
-**Coverage**: Confirmed coverage of AMC, Cinemark, and Showcase chains in the US.
+**Coverage**: Uses Google's live showtime data — covers all major US chains (AMC, Cinemark, Showcase, Regal, etc.).
 
-**Refresh cadence**: Once daily (showtimes don't change intra-day)
+**Refresh cadence**: Once daily (one search covers all configured theaters)
 
-**Fallback**: If MovieGlu coverage is insufficient for specific theaters, TMDb still provides "now playing" and "upcoming" theater data (just no showtimes). The card degrades gracefully — movie posters and metadata still show, just without specific showtime data.
+**Theater filtering**: Response includes many theaters; results are filtered to the configured `theaters` list using case-insensitive substring matching (e.g. configured `"Showcase Cinema de Lux Lowell"` matches API name `"Showcase Cinema de Lux Lowell"`).
+
+**Fallback**: If SerpApi returns no results or fails, TMDb still provides "now playing" and "upcoming" theater data (just no showtimes). The card degrades gracefully — movie posters and metadata still show, just without specific showtime data.
 
 ### Configured Theaters (01886 area)
 
@@ -224,9 +224,9 @@ Tapping a specific poster in the popup expands an inline detail section below th
 │  │ tautulli_     │ │ tmdb_        │ │ showtime_  │ │
 │  │ fetcher.py    │ │ fetcher.py   │ │ fetcher.py │ │
 │  │               │ │              │ │            │ │
-│  │ get_recently_ │ │ now_playing  │ │ MovieGlu   │ │
+│  │ get_recently_ │ │ now_playing  │ │ SerpApi    │ │
 │  │ added         │ │ upcoming     │ │ showtimes/ │ │
-│  │ get_home_stats│ │ trending     │ │ cinema     │ │
+│  │ get_home_stats│ │ trending     │ │ theater    │ │
 │  │ pms_image_    │ │ discover     │ │            │ │
 │  │ proxy (imgs)  │ │ image CDN    │ │            │ │
 │  └───────┬───────┘ └──────┬───────┘ └─────┬──────┘ │
@@ -275,7 +275,8 @@ appdaemon/providers/media_providers/
 ├── __init__.py
 ├── tautulli_fetcher.py         # Plex recently added + popular, poster download
 ├── tmdb_fetcher.py             # TMDb now playing, upcoming, trending, poster download
-└── movieglu_fetcher.py         # MovieGlu showtimes for configured theaters
+├── serpapi_client.py           # HTTP client for SerpApi Google Showtimes
+└── serpapi_fetcher.py          # SerpApi showtimes for configured theaters
 ```
 
 **Fetcher pattern**: Each fetcher is a standalone module (not an AppDaemon app) under `providers/media_providers/`. The main app imports and calls them. This follows the S2 security rule (all external HTTP in `providers/`) and matches the `photo_providers/` pattern for Immich. Fetchers are reusable if other apps need media data in the future.
@@ -342,7 +343,7 @@ To stay under HA's ~16KB WebSocket limit, we keep items lean — metadata only, 
     "fetch_status": {
       "tautulli": {"last_ok": "2026-03-29T17:00:00", "status": "ok"},
       "tmdb": {"last_ok": "2026-03-29T12:00:00", "status": "ok"},
-      "movieglu": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
+      "serpapi": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
     },
     "friendly_name": "Media Dashboard",
     "icon": "mdi:movie-open-outline"
@@ -356,7 +357,7 @@ To stay under HA's ~16KB WebSocket limit, we keep items lean — metadata only, 
 
 | Command | Payload | Description |
 |---------|---------|-------------|
-| `refresh` | `{"source": "all"\|"tautulli"\|"tmdb"\|"movieglu"}` | Force refresh from one or all sources |
+| `refresh` | `{"source": "all"\|"tautulli"\|"tmdb"\|"showtimes"}` | Force refresh from one or all sources |
 | `get_detail` | `{"id": "tmdb-11111"}` | Fetch full detail + showtimes for a movie; publishes to a separate detail sensor |
 | `dismiss` | `{"id": "tmdb-11111"}` | Hide an item (thumbs down) |
 | `like` | `{"id": "tmdb-11111"}` | Boost an item (thumbs up) |
@@ -410,11 +411,9 @@ media_dashboard_app:
   tautulli_api_key_env: TAUTULLI_API_KEY
   # TMDb
   tmdb_api_key_env: TMDB_API_KEY
-  # MovieGlu (via RapidAPI)
-  movieglu_api_key_env: MOVIEGLU_API_KEY
-  movieglu_client_id_env: MOVIEGLU_CLIENT_ID
-  location_lat: "42.58"
-  location_lng: "-71.44"
+  # SerpApi — Google Showtimes
+  serpapi_api_key_env: SERPAPI_KEY
+  location: "Westford, MA"
   theaters:
     - name: "AMC Tyngsboro 12"
     - name: "Showcase Cinema de Lux Lowell"
@@ -516,13 +515,13 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
 ### Flow
 
 1. **Daily batch fetch** (via `showtimes_refresh_interval`, default 24h):
-   - MovieGlu fetcher calls `showtimes/cinema/{cinema_id}` for each configured theater
-   - Results are cached to `{media_fs_root}/{showtime_cache_subdir}` as a JSON file
-   - Keyed by `{cinema_id}` → `{film_id}` → list of showtimes
+   - SerpApi fetcher searches ``"showtimes near {location}"`` — one request covers all configured theaters
+   - Results are filtered to configured theater names (case-insensitive substring match)
+   - Cached to `{media_fs_root}/{showtime_cache_subdir}` as a JSON file keyed by lowercase film title
 
 2. **`get_detail` relay command** (user taps a poster):
    - App reads the item's full metadata from the in-memory fetcher cache
-   - App reads showtimes from the **disk cache** — no MovieGlu API call
+   - App reads showtimes from the **disk cache** — no SerpApi call
    - Publishes combined result to `sensor.media_dashboard_detail`
 
 3. **Staleness handling**:
@@ -531,8 +530,8 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
    - `has_showtimes` field in the main sensor reflects whether current-day data exists
 
 ### Why not on-demand?
-- MovieGlu free tier has 75 requests/day — on-demand fetches for each poster tap would exhaust this quickly
-- Batch fetch for 5 theaters = 5 requests/day, leaving ample headroom
+- SerpApi charges per search request — on-demand fetches for each poster tap would be costly
+- One daily search covers all configured theaters (single API call per day)
 - Cached showtimes don't change intra-day, so staleness is not a concern within the same day
 
 ## Failure Modes
@@ -543,10 +542,10 @@ On partial upstream failure, the app **retains last-known-good data** per catego
 |---|---|
 | Tautulli unreachable | Keep existing `plex_new` items. Set `fetch_status.tautulli.status = "error"`. Log warning. |
 | TMDb unreachable | Keep existing `in_theaters` and `coming_soon` items. Set `fetch_status.tmdb.status = "error"`. |
-| MovieGlu unreachable | Keep existing showtime cache on disk. Set `fetch_status.movieglu.status = "error"`. Detail view shows stale showtimes with note. |
+| SerpApi unreachable | Keep existing showtime cache on disk. Set `fetch_status.serpapi = "error"`. Detail view shows stale showtimes with note. |
 | Tautulli returns empty | Clear `plex_new` items (genuinely empty library is valid). Set status to `"ok"`. |
 | TMDb returns empty | Clear items for affected category. Set status to `"ok"`. |
-| MovieGlu returns no showtimes for a theater | Set `has_showtimes = false` for affected movies. Other theaters' data retained. |
+| SerpApi returns no configured theaters | Set `has_showtimes = false` for all in-theater movies. |
 | All sources fail simultaneously | All categories retain last-known-good data. All `fetch_status` entries show `"error"`. |
 | Stale data TTL | Items older than `stale_ttl` (configurable, default 7 days) are evicted even if refresh keeps failing. Prevents showing week-old "now playing" data. |
 
@@ -562,7 +561,7 @@ Since fetchers live in `providers/media_providers/`, they must be testable indep
 |---|---|
 | **Tautulli fetcher** | Parse `get_recently_added` response → normalized item list. Handle empty response. Handle malformed response. Poster URL construction from `rating_key`. |
 | **TMDb fetcher** | Parse `now_playing`, `upcoming`, `trending` responses → normalized items. Popularity/vote_count filtering (items below threshold excluded). Genre filtering. Poster URL construction from `poster_path`. |
-| **MovieGlu fetcher** | Parse `showtimes/cinema` response → normalized showtime map. Handle missing theaters. Handle empty showtimes. Cinema ID discovery from `cinemas/nearby`. |
+| **SerpApi fetcher** | Parse `showtimes_results` response → normalized showtime map. Filter to configured theaters. Handle empty results. Handle missing film titles. |
 | **Poster download** | Download to correct path. Skip if file already exists and is recent. Cleanup of stale posters. |
 | **Cross-source ID matching** | Plex `guids` field parsed to extract TMDb IDs. TMDb popularity lookup for Plex items. |
 
@@ -584,17 +583,17 @@ Since fetchers live in `providers/media_providers/`, they must be testable indep
 |---|---|
 | Live Tautulli fetch | `RUN_TAUTULLI_TESTS=1` |
 | Live TMDb fetch | `RUN_TMDB_TESTS=1` |
-| Live MovieGlu fetch | `RUN_MOVIEGLU_TESTS=1` |
+| Live SerpApi fetch | `RUN_SERPAPI_TESTS=1` |
 
 ## Resolved Decisions
 
 | Question | Decision | Rationale |
 |----------|----------|-----------|
-| Showtimes API | **MovieGlu via RapidAPI** | Only API with actual showtimes on a free tier (75 req/day). Covers AMC, Cinemark, Showcase. Free signup. |
+| Showtimes API | **SerpApi Google Showtimes** | Replaced MovieGlu (which required RapidAPI, was brittle). SerpApi uses Google's live data — covers all major US chains. One daily search covers all configured theaters. |
 | Content filtering | **Layered: popularity gate + Plex history + thumbs up/down** | Automatic mainstream filter via TMDb popularity, user refinement via thumbs up/down persisted to JSON file on `/media/` |
 | Poster hosting | **Local cache via /media → /config/www sync** | Matches existing repo patterns (photo_frame, detection_summary). Works offline. Tautulli proxies Plex images; TMDb CDN for non-Plex. |
 | Sensor size | **Split: main sensor (lean) + detail sensor (on-demand)** | Main sensor stays under 16KB. Detail sensor provides clean selection signal + showtimes for frontend simplicity. Justified in detail sensor section. |
-| Theater location | **Hard-coded lat/lng + theater names in config** | Simple, deterministic. MovieGlu discovers theater IDs on first run via lat/lng search. |
+| Theater location | **Location string + theater names in config** | SerpApi takes a human-readable location string (e.g. "Westford, MA"). Theater names are filtered client-side by substring match — no cinema ID discovery needed. |
 | Fetcher placement | **`providers/media_providers/`** | Follows S2 rule (all external HTTP in providers/). Matches `photo_providers/` pattern. |
 | Preference storage | **JSON file on `/media/`** | `input_text` 255-char limit would overflow immediately. File-based persistence matches `immich_fetcher` (`config_file`) and `photo_frame_viewer` (`state_dir`) patterns. |
 | Showtime caching | **Daily batch fetch, cached to disk, read from cache on `get_detail`** | Explicit caching boundary. 5 API calls/day for 5 theaters. No on-demand fetches — predictable API usage, fast detail view. |

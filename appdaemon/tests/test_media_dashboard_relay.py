@@ -69,10 +69,8 @@ _DEFAULT_ARGS: dict = {
     "tautulli_url": "http://tautulli:8181",
     "tautulli_api_key_env": "TAUTULLI_API_KEY",
     "tmdb_api_key_env": "TMDB_API_KEY",
-    "movieglu_api_key_env": "MOVIEGLU_API_KEY",
-    "movieglu_client_id_env": "MOVIEGLU_CLIENT_ID",
-    "location_lat": "42.5",
-    "location_lng": "-71.5",
+    "serpapi_api_key_env": "SERPAPI_KEY",
+    "location": "Westford, MA",
     "theaters": ["AMC Tyngsboro 12"],
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
@@ -111,7 +109,7 @@ def _make_app(extra_args: dict | None = None) -> MediaDashboardApp:
 
     with patch("media_dashboard_app.media_dashboard_app.TautulliFetcher") as MockT, \
          patch("media_dashboard_app.media_dashboard_app.TmdbFetcher") as MockTM, \
-         patch("media_dashboard_app.media_dashboard_app.MoviegluFetcher") as MockM:
+         patch("media_dashboard_app.media_dashboard_app.SerpApiFetcher") as MockS:
 
         mock_tautulli = MagicMock()
         mock_tautulli.fetch_recently_added = AsyncMock(
@@ -133,14 +131,13 @@ def _make_app(extra_args: dict | None = None) -> MediaDashboardApp:
         )
         MockTM.return_value = mock_tmdb
 
-        mock_movieglu = MagicMock()
-        mock_movieglu.discover_cinemas = AsyncMock(return_value=[])
-        mock_movieglu.fetch_showtimes = AsyncMock(
+        mock_serpapi = MagicMock()
+        mock_serpapi.fetch_showtimes = AsyncMock(
             return_value=ShowtimeCache(
                 date=datetime.date.today().isoformat(), films={}
             )
         )
-        MockM.return_value = mock_movieglu
+        MockS.return_value = mock_serpapi
 
         app.initialize()
 
