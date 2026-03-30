@@ -58,6 +58,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     this._touchActive = false;
     this._selectedItemId = null;
     this._refreshTimer = null;
+    this._expandedDays = new Set(); // Track which showtime days are expanded
   }
 
   // ---------------------------------------------------------------------------
@@ -371,47 +372,84 @@ class MediaDashboardDetailCard extends HTMLElement {
         : "";
     }
 
-    // Group entries by day label (e.g. "Today", "Tomorrow", "Monday")
+    // Short theater name map for summary line
+    const shortName = (name) => {
+      if (!name) return "?";
+      return name
+        .replace(/Cinema de Lux /i, "")
+        .replace(/Rockingham Park and /i, "")
+        .replace(/Cinema /i, "")
+        .replace(/ \d+$/, ""); // strip trailing number
+    };
+
+    // Group entries by ISO date (e.g. "2026-03-30") — backend normalizes all
+    // day labels to ISO dates so entries from different theaters merge correctly.
     const dayOrder = [];
     const dayMap = {};
     for (const entry of entries) {
-      const dayKey = entry.day || entry.date || "Today";
-      const dateLabel = entry.date || "";
+      // date field is now ISO "YYYY-MM-DD", day field is the friendly label
+      const dayKey = entry.date || entry.day || "unknown";
+      const friendlyLabel = entry.day || entry.date || "Today";
       if (!dayMap[dayKey]) {
-        dayMap[dayKey] = { label: dayKey, date: dateLabel, theaters: [] };
+        dayMap[dayKey] = { label: friendlyLabel, date: entry.date || "", theaters: [] };
         dayOrder.push(dayKey);
       }
       dayMap[dayKey].theaters.push(entry);
     }
 
+    // Sort days chronologically — ISO date strings sort naturally
+    dayOrder.sort();
+
     let html = '<div class="mdd-showtimes">';
     html += `<div class="mdd-showtimes-header">SHOWTIMES</div>`;
 
-    for (const dayKey of dayOrder) {
+    for (let i = 0; i < dayOrder.length; i++) {
+      const dayKey = dayOrder[i];
       const day = dayMap[dayKey];
-      const dayLabel = day.date
-        ? `${mddEscapeHtml(day.label)} &mdash; ${mddEscapeHtml(day.date)}`
-        : mddEscapeHtml(day.label);
+      const isExpanded = this._expandedDays.has(dayKey);
+      const expandedClass = isExpanded ? " mdd-day--expanded" : "";
 
-      html += `<div class="mdd-showtime-day">`;
-      html += `<div class="mdd-day-label">${dayLabel}</div>`;
-
+      // Build summary: "AMC Tyngs (6) · Showcase (4) · Cinemark (8)"
+      const summaryParts = [];
       for (const theater of day.theaters) {
-        const cinemaName = mddEscapeHtml(theater.cinema_name || "");
         const times = theater.times || [];
         if (times.length === 0) continue;
+        summaryParts.push(`${mddEscapeHtml(shortName(theater.cinema_name))} (${times.length})`);
+      }
+      const summary = summaryParts.join(" · ");
 
-        let timesHtml = "";
-        for (const t of times) {
-          timesHtml += `<span class="mdd-time">${mddEscapeHtml(t)}</span>`;
+      const dayLabel = mddEscapeHtml(day.label);
+
+      html += `<div class="mdd-showtime-day${expandedClass}">`;
+      html += `
+        <div class="mdd-day-header" data-action="toggle_day" data-day="${mddEscapeHtml(dayKey)}">
+          <span class="mdd-day-chevron">${isExpanded ? "▾" : "▸"}</span>
+          <span class="mdd-day-label">${dayLabel}</span>
+          <span class="mdd-day-summary">${summary}</span>
+        </div>
+      `;
+
+      // Collapsible body — only rendered when expanded
+      if (isExpanded) {
+        html += `<div class="mdd-day-body">`;
+        for (const theater of day.theaters) {
+          const cinemaName = mddEscapeHtml(theater.cinema_name || "");
+          const times = theater.times || [];
+          if (times.length === 0) continue;
+
+          let timesHtml = "";
+          for (const t of times) {
+            timesHtml += `<span class="mdd-time">${mddEscapeHtml(t)}</span>`;
+          }
+
+          html += `
+            <div class="mdd-theater">
+              <div class="mdd-theater-name">${cinemaName}</div>
+              <div class="mdd-theater-times">${timesHtml}</div>
+            </div>
+          `;
         }
-
-        html += `
-          <div class="mdd-theater">
-            <div class="mdd-theater-name">${cinemaName}</div>
-            <div class="mdd-theater-times">${timesHtml}</div>
-          </div>
-        `;
+        html += `</div>`;
       }
 
       html += `</div>`;
@@ -484,6 +522,17 @@ class MediaDashboardDetailCard extends HTMLElement {
         this._callRelay("refresh", { source: "all" });
       } else if (action === "close") {
         history.back();
+      } else if (action === "toggle_day") {
+        const dayKey = el.dataset.day;
+        if (dayKey) {
+          if (this._expandedDays.has(dayKey)) {
+            this._expandedDays.delete(dayKey);
+          } else {
+            this._expandedDays.add(dayKey);
+          }
+          this._lastSnapshot = null;
+          this._update();
+        }
       }
     };
 
@@ -918,16 +967,48 @@ class MediaDashboardDetailCard extends HTMLElement {
       }
 
       .mdd-showtime-day {
-        margin-bottom: 14px;
+        margin-bottom: 4px;
+      }
+
+      .mdd-day-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 0;
+        cursor: pointer;
+        user-select: none;
+        -webkit-user-select: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      }
+
+      .mdd-day-header:active {
+        opacity: 0.7;
+      }
+
+      .mdd-day-chevron {
+        font-size: 10px;
+        color: rgba(240, 243, 255, 0.5);
+        flex-shrink: 0;
+        width: 12px;
       }
 
       .mdd-day-label {
         font-size: 11px;
         font-weight: 600;
         color: rgba(240, 243, 255, 0.85);
-        margin-bottom: 6px;
-        padding-bottom: 4px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        flex-shrink: 0;
+      }
+
+      .mdd-day-summary {
+        font-size: 10px;
+        color: rgba(240, 243, 255, 0.45);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mdd-day-body {
+        padding: 6px 0 8px 18px;
       }
 
       .mdd-theater {

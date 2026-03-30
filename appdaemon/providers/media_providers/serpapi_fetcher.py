@@ -149,9 +149,24 @@ class SerpApiFetcher:
 
         # Parse up to 7 days of showtimes
         total_movies = 0
+        today = datetime.date.today()
         for day_block in showtimes_list[:7]:
             day_label = day_block.get("day", "")   # e.g. "Today", "Tomorrow", "Monday"
             day_date = day_block.get("date", "")    # e.g. "Mar 29"
+
+            # Normalize to an ISO date string for consistent grouping across theaters
+            iso_date = self._resolve_date(day_label, day_date, today)
+            # Build a friendly label like "Mon, Mar 31"
+            try:
+                dt = datetime.date.fromisoformat(iso_date)
+                friendly = dt.strftime("%a, %b %-d")
+                if dt == today:
+                    friendly = f"Today — {friendly}"
+                elif dt == today + datetime.timedelta(days=1):
+                    friendly = f"Tomorrow — {friendly}"
+            except (ValueError, TypeError):
+                friendly = day_label or day_date or iso_date
+
             movies = day_block.get("movies") or []
 
             for movie in movies:
@@ -174,8 +189,8 @@ class SerpApiFetcher:
                 entry = ShowtimeEntry(
                     cinema_name=theater_name,
                     times=times,
-                    day=day_label,
-                    date=day_date,
+                    day=friendly,
+                    date=iso_date,
                 )
                 if film_key not in cache.films:
                     cache.films[film_key] = []
@@ -188,6 +203,65 @@ class SerpApiFetcher:
             total_movies,
             min(len(showtimes_list), 7),
         )
+
+    # -------------------------------------------------------------------------
+    # Date resolution
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_date(
+        day_label: str, date_str: str, today: datetime.date
+    ) -> str:
+        """Convert SerpApi day/date into an ISO date string (YYYY-MM-DD).
+
+        SerpApi returns inconsistent combos:
+        - ``day="Today", date=""``
+        - ``day="Tomorrow", date=""``
+        - ``day="Mon", date="Mar 31"``
+        - ``day="Tue", date="Apr 1"``
+
+        Returns:
+            ISO date string like ``"2026-03-30"``.
+        """
+        # Handle relative labels without a date
+        label_lower = (day_label or "").strip().lower()
+        if label_lower == "today":
+            return today.isoformat()
+        if label_lower == "tomorrow":
+            return (today + datetime.timedelta(days=1)).isoformat()
+
+        # Parse "Mar 31" style date strings
+        if date_str:
+            MONTHS = {
+                "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+                "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+            }
+            parts = date_str.strip().split()
+            if len(parts) >= 2:
+                month = MONTHS.get(parts[0].lower().rstrip("."), 0)
+                try:
+                    day_num = int(parts[1])
+                except (ValueError, IndexError):
+                    day_num = 0
+                if month and day_num:
+                    year = today.year
+                    # Handle year rollover (e.g., Dec 30 query shows Jan dates)
+                    candidate = datetime.date(year, month, day_num)
+                    if candidate < today - datetime.timedelta(days=180):
+                        candidate = datetime.date(year + 1, month, day_num)
+                    return candidate.isoformat()
+
+        # Fallback: try to match day-of-week label to the next occurrence
+        DOW = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+        dow = DOW.get(label_lower[:3], -1)
+        if dow >= 0:
+            days_ahead = (dow - today.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7  # next week if same dow
+            return (today + datetime.timedelta(days=days_ahead)).isoformat()
+
+        # Last resort
+        return today.isoformat()
 
     # -------------------------------------------------------------------------
     # Theater name matching (used by app when cross-referencing with TMDb)
