@@ -59,6 +59,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     this._selectedItemId = null;
     this._refreshTimer = null;
     this._expandedDays = new Set(); // Track which showtime days are expanded
+    this._hiddenExpanded = new Set(); // Track which category hidden rows are expanded
   }
 
   // ---------------------------------------------------------------------------
@@ -140,10 +141,19 @@ class MediaDashboardDetailCard extends HTMLElement {
       catSummary[key] = (items || []).map((i) => `${i.id}${i.liked ? "*" : ""}`).join(",");
     }
 
+    // Summarize hidden_eligible counts per category
+    const hiddenEligible = status?.attributes?.hidden_eligible || {};
+    const hiddenSummary = {};
+    for (const [key, items] of Object.entries(hiddenEligible)) {
+      hiddenSummary[key] = (items || []).length;
+    }
+
     return JSON.stringify({
       status: status ? { s: status.state, cats: catSummary } : null,
       detail: detail ? { s: detail.state, id: detail.attributes?.id } : null,
       selectedId: this._selectedItemId,
+      hiddenEligible: hiddenSummary,
+      hiddenExpanded: Array.from(this._hiddenExpanded).sort().join(","),
     });
   }
 
@@ -241,11 +251,14 @@ class MediaDashboardDetailCard extends HTMLElement {
       }
     }
 
+    const hiddenEligible = statusEntity?.attributes?.hidden_eligible || {};
+
     // Render each category section below the detail
     for (const cat of CATEGORIES) {
       const items =
         statusEntity?.attributes?.categories?.[cat.key] || [];
-      bodyHtml += this._renderSection(cat.key, cat.label, items);
+      const hiddenItems = hiddenEligible[cat.key] || [];
+      bodyHtml += this._renderSection(cat.key, cat.label, items, hiddenItems);
     }
 
     this._els.body.innerHTML = bodyHtml;
@@ -255,12 +268,15 @@ class MediaDashboardDetailCard extends HTMLElement {
   // Section renderer — horizontal poster scroll
   // ---------------------------------------------------------------------------
 
-  _renderSection(key, label, items) {
+  _renderSection(key, label, items, hiddenItems = []) {
+    const safeKey = mddEscapeHtml(key);
+
     if (!items || items.length === 0) {
       return `
-        <div class="mdd-section" data-category="${mddEscapeHtml(key)}">
+        <div class="mdd-section" data-category="${safeKey}">
           <div class="mdd-section-header">${mddEscapeHtml(label)}</div>
           <div class="mdd-empty-section">No items available</div>
+          ${this._renderHiddenToggle(key, hiddenItems)}
         </div>
       `;
     }
@@ -271,12 +287,45 @@ class MediaDashboardDetailCard extends HTMLElement {
     }
 
     return `
-      <div class="mdd-section" data-category="${mddEscapeHtml(key)}">
+      <div class="mdd-section" data-category="${safeKey}">
         <div class="mdd-section-header">${mddEscapeHtml(label)}</div>
-        <div class="mdd-poster-scroll">
-          ${postersHtml}
+        <div class="mdd-scroll-container">
+          <span class="mdd-scroll-arrow mdd-scroll-arrow--left" data-action="scroll-left" data-category="${safeKey}">
+            <ha-icon icon="mdi:chevron-left" style="--mdc-icon-size:22px;"></ha-icon>
+          </span>
+          <div class="mdd-poster-scroll">
+            ${postersHtml}
+          </div>
+          <span class="mdd-scroll-arrow mdd-scroll-arrow--right" data-action="scroll-right" data-category="${safeKey}">
+            <ha-icon icon="mdi:chevron-right" style="--mdc-icon-size:22px;"></ha-icon>
+          </span>
         </div>
+        ${this._renderHiddenToggle(key, hiddenItems)}
       </div>
+    `;
+  }
+
+  _renderHiddenToggle(key, hiddenItems) {
+    if (!hiddenItems || hiddenItems.length === 0) return "";
+
+    const safeKey = mddEscapeHtml(key);
+    const isExpanded = this._hiddenExpanded.has(key);
+
+    let hiddenRowHtml = "";
+    if (isExpanded) {
+      let hiddenPostersHtml = "";
+      for (const item of hiddenItems) {
+        hiddenPostersHtml += this._renderHiddenPoster(item);
+      }
+      hiddenRowHtml = `<div class="mdd-hidden-row">${hiddenPostersHtml}</div>`;
+    }
+
+    return `
+      <div class="mdd-hidden-toggle" data-action="toggle_hidden" data-category="${safeKey}">
+        <ha-icon icon="mdi:eye-off-outline" style="--mdc-icon-size:14px;"></ha-icon>
+        Hidden (${hiddenItems.length})
+      </div>
+      ${hiddenRowHtml}
     `;
   }
 
@@ -307,6 +356,32 @@ class MediaDashboardDetailCard extends HTMLElement {
         <div class="mdd-poster-btns">
           <span class="mdd-btn mdd-btn-like${isLiked ? " mdd-btn--active" : ""}" data-action="like" data-id="${id}" title="Like"><ha-icon icon="${isLiked ? "mdi:heart" : "mdi:heart-outline"}" style="--mdc-icon-size:16px;"></ha-icon></span>
           <span class="mdd-btn mdd-btn-dismiss" data-action="dismiss" data-id="${id}" title="Dismiss"><ha-icon icon="mdi:close-circle-outline" style="--mdc-icon-size:16px;"></ha-icon></span>
+        </div>
+      </div>
+    `;
+  }
+
+  _renderHiddenPoster(item) {
+    const id = mddEscapeHtml(String(item.id ?? ""));
+    const title = mddEscapeHtml(item.title || "");
+    const subtitle = mddEscapeHtml(item.subtitle || item.year || "");
+    const posterSrc = mddEscapeHtml(item.poster || "");
+
+    const imgHtml = posterSrc
+      ? `<img class="mdd-poster-img" src="${posterSrc}" alt="${title}" loading="lazy" />`
+      : `<div class="mdd-poster-placeholder">
+           <span class="mdd-poster-placeholder-text">${title}</span>
+         </div>`;
+
+    return `
+      <div class="mdd-poster mdd-poster--hidden" data-id="${id}">
+        ${imgHtml}
+        <div class="mdd-poster-title">${title}</div>
+        <div class="mdd-poster-sub">${subtitle}</div>
+        <div class="mdd-poster-btns">
+          <span class="mdd-btn mdd-btn-restore" data-action="undo_dismiss" data-id="${id}" title="Restore">
+            <ha-icon icon="mdi:restore" style="--mdc-icon-size:16px;"></ha-icon>
+          </span>
         </div>
       </div>
     `;
@@ -345,7 +420,7 @@ class MediaDashboardDetailCard extends HTMLElement {
            <span>${title}</span>
          </div>`;
 
-    const showtimesHtml = this._renderShowtimes(attrs.showtimes, attrs.showtimes_date);
+    const showtimesHtml = this._renderShowtimes(attrs.showtimes);
 
     return `
       <div class="mdd-detail">
@@ -367,7 +442,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     `;
   }
 
-  _renderShowtimes(showtimes, showtimesDate) {
+  _renderShowtimes(showtimes) {
     if (!showtimes) return "";
 
     // The app publishes showtimes as {entries: [...], stale, note}
@@ -552,6 +627,29 @@ class MediaDashboardDetailCard extends HTMLElement {
           this._lastSnapshot = null;
           this._update();
         }
+      } else if (action === "toggle_hidden") {
+        const catKey = el.dataset.category;
+        if (catKey) {
+          if (this._hiddenExpanded.has(catKey)) {
+            this._hiddenExpanded.delete(catKey);
+          } else {
+            this._hiddenExpanded.add(catKey);
+          }
+          this._lastSnapshot = null;
+          this._update();
+        }
+      } else if (action === "undo_dismiss") {
+        this._callRelay("undo_dismiss", { id });
+      } else if (action === "scroll-left") {
+        const catKey = el.dataset.category;
+        const section = this.shadowRoot.querySelector(`.mdd-section[data-category="${catKey}"]`);
+        const scrollEl = section?.querySelector(".mdd-poster-scroll");
+        if (scrollEl) scrollEl.scrollBy({ left: -440, behavior: "smooth" });
+      } else if (action === "scroll-right") {
+        const catKey = el.dataset.category;
+        const section = this.shadowRoot.querySelector(`.mdd-section[data-category="${catKey}"]`);
+        const scrollEl = section?.querySelector(".mdd-poster-scroll");
+        if (scrollEl) scrollEl.scrollBy({ left: 440, behavior: "smooth" });
       }
     };
 
@@ -1076,6 +1174,97 @@ class MediaDashboardDetailCard extends HTMLElement {
         padding: 3px 8px;
         white-space: nowrap;
         letter-spacing: 0.03em;
+      }
+
+      /* ---- Scroll container and arrows ---- */
+
+      .mdd-scroll-container {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+
+      .mdd-scroll-arrow {
+        position: absolute;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(28, 29, 33, 0.75);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        cursor: pointer;
+        color: var(--mdd-text);
+        user-select: none;
+        -webkit-user-select: none;
+        transition: background 150ms ease;
+        flex-shrink: 0;
+      }
+
+      .mdd-scroll-arrow:active {
+        background: rgba(102, 179, 255, 0.2);
+      }
+
+      .mdd-scroll-arrow--left {
+        left: 2px;
+      }
+
+      .mdd-scroll-arrow--right {
+        right: 2px;
+      }
+
+      /* ---- Hidden items toggle ---- */
+
+      .mdd-hidden-toggle {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--mdd-muted);
+        cursor: pointer;
+        padding: 4px 16px 6px;
+        user-select: none;
+        -webkit-user-select: none;
+        transition: color 150ms ease;
+      }
+
+      .mdd-hidden-toggle:active {
+        color: var(--mdd-text);
+      }
+
+      .mdd-hidden-row {
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        padding: 0 16px 8px;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+      }
+
+      .mdd-hidden-row::-webkit-scrollbar {
+        height: 3px;
+      }
+
+      .mdd-hidden-row::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .mdd-hidden-row::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 2px;
+      }
+
+      .mdd-poster--hidden {
+        opacity: 0.5;
+      }
+
+      .mdd-btn-restore {
+        color: var(--mdd-accent);
       }
 
       /* ---- Loading indicator ---- */

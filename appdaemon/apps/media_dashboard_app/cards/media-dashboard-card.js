@@ -193,8 +193,8 @@ class MediaDashboardCard extends HTMLElement {
         <div class="md-header">
           <span class="md-title">MEDIA &amp; MOVIES</span>
           <div class="md-nav">
-            <span class="md-arrow" data-action="prev">&#9664;</span>
-            <span class="md-arrow" data-action="next">&#9654;</span>
+            <span class="md-arrow" data-action="prev"><ha-icon icon="mdi:chevron-left" style="--mdc-icon-size:20px;"></ha-icon></span>
+            <span class="md-arrow" data-action="next"><ha-icon icon="mdi:chevron-right" style="--mdc-icon-size:20px;"></ha-icon></span>
           </div>
         </div>
         <div class="md-poster-row"></div>
@@ -314,7 +314,7 @@ class MediaDashboardCard extends HTMLElement {
       }
 
       if (action === "prev") {
-        this._scrollOffset = Math.max(0, this._scrollOffset - 1);
+        this._scrollOffset = Math.max(0, this._scrollOffset - 3);
         this._pauseForInteraction();
         this._update();
         return;
@@ -323,7 +323,7 @@ class MediaDashboardCard extends HTMLElement {
       if (action === "next") {
         const items = this._getCategoryItems();
         const maxOffset = Math.max(0, items.length - 3);
-        this._scrollOffset = Math.min(maxOffset, this._scrollOffset + 1);
+        this._scrollOffset = Math.min(maxOffset, this._scrollOffset + 3);
         this._pauseForInteraction();
         this._update();
         return;

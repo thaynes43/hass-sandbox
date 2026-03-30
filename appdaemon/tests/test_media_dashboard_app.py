@@ -793,3 +793,165 @@ class TestShowtimeCache:
         # Too old — omit
         assert result["entries"] == []
         assert "too old" in result.get("note", "").lower()
+
+
+# ---------------------------------------------------------------------------
+# Tests: Hidden eligible
+# ---------------------------------------------------------------------------
+
+class TestHiddenEligible:
+    def test_hidden_eligible_appears_in_sensor_attributes(self):
+        """hidden_eligible key is always present in sensor attributes, even when empty."""
+        app = _make_app()
+        app._categories["in_theaters"] = [_make_item("tmdb-1", "Visible Movie")]
+        # No hidden preferences
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert "hidden_eligible" in attrs
+        assert isinstance(attrs["hidden_eligible"], dict)
+
+    def test_hidden_eligible_contains_dismissed_items(self):
+        """Items in preferences hidden list appear in hidden_eligible, NOT in main categories."""
+        app = _make_app()
+        app._categories["in_theaters"] = [
+            _make_item("tmdb-1", "Visible Movie"),
+            _make_item("tmdb-2", "Hidden Movie"),
+        ]
+        app._preferences["hidden"] = ["tmdb-2"]
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        # tmdb-2 should not appear in main category
+        main_ids = [item["id"] for item in attrs["categories"]["in_theaters"]]
+        assert "tmdb-2" not in main_ids
+        # tmdb-2 should appear in hidden_eligible
+        assert "in_theaters" in attrs["hidden_eligible"]
+        hidden_ids = [item["id"] for item in attrs["hidden_eligible"]["in_theaters"]]
+        assert "tmdb-2" in hidden_ids
+
+    def test_hidden_eligible_respects_stale_ttl(self):
+        """Stale hidden items (older than stale_ttl_days) are NOT in hidden_eligible."""
+        app = _make_app(extra_args={"stale_ttl_days": 7})
+        # Item with added_at older than TTL
+        stale_item = _make_item("plex-old", "Old Plex Movie", added_at=_days_ago_iso(10))
+        app._categories["plex_new"] = [stale_item]
+        app._preferences["hidden"] = ["plex-old"]
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        # The stale item doesn't make it past _apply_stale_ttl, so it should
+        # not appear in hidden_eligible
+        in_plex_hidden = attrs["hidden_eligible"].get("plex_new", [])
+        hidden_ids = [item["id"] for item in in_plex_hidden]
+        assert "plex-old" not in hidden_ids
+
+    def test_hidden_eligible_capped_at_max(self):
+        """No more than max_items_per_category hidden items per category."""
+        app = _make_app(extra_args={"max_items_per_category": 3})
+        # Create 5 hidden items
+        items = [_make_item(f"tmdb-{i}", f"Movie {i}") for i in range(5)]
+        app._categories["in_theaters"] = items
+        app._preferences["hidden"] = [f"tmdb-{i}" for i in range(5)]
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        hidden_in_theaters = attrs["hidden_eligible"].get("in_theaters", [])
+        assert len(hidden_in_theaters) <= 3
+
+    def test_hidden_eligible_items_have_hidden_flag(self):
+        """Each item in hidden_eligible has hidden: True."""
+        app = _make_app()
+        app._categories["in_theaters"] = [
+            _make_item("tmdb-1", "Visible"),
+            _make_item("tmdb-2", "Hidden"),
+        ]
+        app._preferences["hidden"] = ["tmdb-2"]
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        hidden_items = attrs["hidden_eligible"].get("in_theaters", [])
+        assert len(hidden_items) == 1
+        assert hidden_items[0]["hidden"] is True
+
+    def test_hidden_eligible_items_have_poster_url(self):
+        """Hidden items with local_poster get a /local/.../poster.jpg URL."""
+        app = _make_app()
+        item = _make_item("tmdb-5", "Poster Movie", local_poster="tmdb-5.jpg")
+        app._categories["in_theaters"] = [item]
+        app._preferences["hidden"] = ["tmdb-5"]
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        hidden_items = attrs["hidden_eligible"].get("in_theaters", [])
+        assert len(hidden_items) == 1
+        poster_url = hidden_items[0].get("poster", "")
+        assert poster_url.startswith("/local/")
+        assert "tmdb-5.jpg" in poster_url
+
+    def test_hidden_eligible_empty_when_no_hidden_prefs(self):
+        """No hidden preferences results in an empty hidden_eligible dict."""
+        app = _make_app()
+        app._categories["in_theaters"] = [_make_item("tmdb-1", "Some Movie")]
+        # Explicitly clear hidden preferences
+        app._preferences["hidden"] = []
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["hidden_eligible"] == {}
+
+    def test_hidden_eligible_category_absent_when_no_hidden_items_in_cat(self):
+        """Categories without hidden items don't appear as keys in hidden_eligible."""
+        app = _make_app()
+        app._categories["in_theaters"] = [_make_item("tmdb-1", "Visible")]
+        app._categories["plex_new"] = [_make_item("plex-1", "Plex Hidden")]
+        app._categories["coming_soon"] = [_make_item("tmdb-cs", "Coming Soon Visible")]
+        # Only hide one plex item
+        app._preferences["hidden"] = ["plex-1"]
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        hidden_eligible = attrs["hidden_eligible"]
+        # plex_new should appear because it has a hidden item
+        assert "plex_new" in hidden_eligible
+        # in_theaters and coming_soon should NOT appear (no hidden items there)
+        assert "in_theaters" not in hidden_eligible
+        assert "coming_soon" not in hidden_eligible
+
+    def test_undo_dismiss_moves_item_from_hidden_to_visible(self):
+        """Full lifecycle: item starts hidden, undo_dismiss makes it visible and removes from hidden_eligible."""
+        app = _make_app()
+        item = _make_item("tmdb-10", "Restored Movie")
+        app._categories["in_theaters"] = [item]
+        app._preferences["hidden"] = ["tmdb-10"]
+        app._preferences["hidden_at"] = {"tmdb-10": _now_iso()}
+
+        # Confirm item is in hidden_eligible before undo
+        app._publish_sensor()
+        app.set_state.reset_mock()
+
+        attrs_before = app.set_state.call_args  # None after reset — call again
+        app._publish_sensor()
+        attrs_before = app.set_state.call_args[1]["attributes"]
+        assert "tmdb-10" in [i["id"] for i in attrs_before["hidden_eligible"].get("in_theaters", [])]
+        assert "tmdb-10" not in [i["id"] for i in attrs_before["categories"].get("in_theaters", [])]
+
+        # Undo the dismiss
+        app._handle_undo_dismiss({"id": "tmdb-10"})
+
+        # Verify final sensor state
+        attrs_after = app.set_state.call_args[1]["attributes"]
+        # Item should now be visible in main category
+        main_ids = [i["id"] for i in attrs_after["categories"].get("in_theaters", [])]
+        assert "tmdb-10" in main_ids
+        # Item should no longer be in hidden_eligible
+        hidden_ids = [i["id"] for i in attrs_after["hidden_eligible"].get("in_theaters", [])]
+        assert "tmdb-10" not in hidden_ids

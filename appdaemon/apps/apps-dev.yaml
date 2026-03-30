@@ -26,7 +26,7 @@ media_dashboard_app_dev:
   tmdb_refresh_interval: 43200       # 12 hours
   showtimes_refresh_interval: 86400  # 24 hours
   # Filtering
-  max_items_per_category: 10
+  max_items_per_category: 20
   popularity_threshold: 10.0
   vote_count_threshold: 50
   stale_ttl_days: 7

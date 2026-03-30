@@ -447,19 +447,38 @@ class MediaDashboardApp(hass.Hass):
     def _publish_sensor(self) -> None:
         """Build and publish the main status sensor."""
         published_categories: Dict[str, List[dict]] = {}
+        hidden_eligible: Dict[str, List[dict]] = {}
+
+        liked_set = set(self._preferences.get("liked", []))
+        hidden_set = set(self._preferences.get("hidden", []))
 
         for cat_name, items in self._categories.items():
             filtered = self._apply_stale_ttl(items)
+
+            # Collect hidden-eligible items: pass stale filter but are in the hidden list.
+            # Do this BEFORE _apply_preferences() strips them out.
+            hidden_items_for_cat = [
+                item for item in filtered if item.id in hidden_set
+            ]
+            if hidden_items_for_cat:
+                hidden_serialized = []
+                for item in hidden_items_for_cat[: self._max_items_per_category]:
+                    d = item.to_dict()
+                    if item.local_poster:
+                        d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
+                    d["hidden"] = True
+                    hidden_serialized.append(d)
+                hidden_eligible[cat_name] = hidden_serialized
+
             filtered = self._apply_preferences(filtered)
             capped = filtered[: self._max_items_per_category]
-            liked = set(self._preferences.get("liked", []))
             serialized = []
             for item in capped:
                 d = item.to_dict()
                 # Build full /local/ URL from the poster filename
                 if item.local_poster:
                     d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
-                if item.id in liked:
+                if item.id in liked_set:
                     d["liked"] = True
                 serialized.append(d)
             published_categories[cat_name] = serialized
@@ -475,17 +494,20 @@ class MediaDashboardApp(hass.Hass):
 
         attrs = {
             "categories": published_categories,
+            "hidden_eligible": hidden_eligible,
             "fetch_status": dict(self._fetch_status),
             "last_updated": datetime.datetime.now().isoformat(timespec="seconds"),
             "friendly_name": "Media Dashboard Status",
             "icon": "mdi:movie-roll",
         }
 
+        total_hidden = sum(len(v) for v in hidden_eligible.values())
         self.log(
             f"Publishing sensor: state={overall}, "
             f"in_theaters={len(published_categories.get('in_theaters', []))}, "
             f"plex_new={len(published_categories.get('plex_new', []))}, "
-            f"coming_soon={len(published_categories.get('coming_soon', []))}",
+            f"coming_soon={len(published_categories.get('coming_soon', []))}, "
+            f"hidden_eligible={total_hidden}",
             level="DEBUG",
         )
         self.set_state(SENSOR_STATUS, state=overall, attributes=attrs)
