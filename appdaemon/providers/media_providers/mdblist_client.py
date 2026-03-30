@@ -120,7 +120,7 @@ class MdbListClient:
     async def get_ratings(self, tmdb_id: int, media_type: str = "movie") -> dict:
         """Fetch ratings for a single item by TMDb ID.
 
-        Calls ``GET /tmdb/{media_type}/{tmdb_id}/?apikey=...``.
+        Calls ``GET /?tm={tmdb_id}&m={media_type}&apikey=...``.
 
         Args:
             tmdb_id: The TMDb numeric ID of the movie or show.
@@ -129,7 +129,7 @@ class MdbListClient:
         Returns:
             MDbList response dict containing a ``ratings`` list.
         """
-        return await self._get(f"/tmdb/{media_type}/{tmdb_id}/")
+        return await self._get("/", {"tm": tmdb_id, "m": media_type})
 
     async def get_ratings_bulk(
         self, tmdb_ids: List[int], media_type: str = "movie"
