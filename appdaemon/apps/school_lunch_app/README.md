@@ -6,8 +6,8 @@ Fetches daily lunch menus from the School Nutrition and Fitness API for multiple
 
 1. **Startup** — provisions the `input_text.school_lunch_selected_schools` helper and the `script.school_lunch_relay` relay script if they don't already exist.
 2. **ID resolution** — resolves the human-readable numeric `download_id` for each configured school to an internal MongoDB ObjectId (used by the GraphQL API).
-3. **Initial fetch** — fetches the current month's menu for all configured schools and publishes the sensor.
-4. **Daily refresh** — at 5:00 AM, re-fetches menus for all schools and updates the sensor. If a school fetch fails, the stale data for that school is preserved.
+3. **Initial fetch** — fetches the current month's menu for all configured schools. If a resolved menu is behind the current calendar month (download IDs are month-specific), the app follows the `nextMonthPublished` chain to advance automatically. The next month's data is also pre-fetched and merged so cross-month week views (e.g., last week of March showing April days) display real menu data. Publishes the sensor.
+4. **Daily refresh** — at 5:00 AM, re-resolves and re-fetches menus for all schools (with the same auto-advance and next-month pre-fetch). If a school fetch fails, the stale data for that school is preserved.
 5. **Command routing** — listens for `school_lunch_command` events (fired by the relay script) to handle `select_schools` and `fetch_month` commands from the Lovelace detail card.
 
 ## Dependencies
@@ -105,6 +105,8 @@ Fetch a specific month for a given school (used for prev/next month navigation i
       "days": [
         {
           "day": 3,
+          "month": 3,
+          "year": 2026,
           "items": [
             {"name": "Chicken Nuggets, Sweet Potato Fries, Garden Salad Cups", "role": "option"},
             {"name": "Grilled Cheese Sandwich", "role": "option"},
@@ -123,8 +125,9 @@ Fetch a specific month for a given school (used for prev/next month navigation i
 ```
 
 Notes:
-- `month` is **1-indexed** (1 = January, 12 = December) — ready for display.
-- `days` only includes school days that have menu data (weekends and holidays are absent).
+- School-level `month` is **1-indexed** (1 = January, 12 = December) and represents the primary loaded month.
+- Each day also carries its own `month` and `year` (1-indexed) to support cross-month lookups (e.g., next month's days appended for week views spanning a month boundary).
+- `days` only includes school days that have menu data (weekends and holidays are absent). May include days from the next month when pre-fetched.
 - Items have a `role` field: `"option"` for menu choices, `"includes"` for items appearing daily (auto-classified by the app based on 75%+ day frequency).
 - Items starting with "OR " have the prefix stripped; all options are presented without it.
 - `show_tomorrow_after` is the configured cutoff time. Cards read this to determine whether to show today's or tomorrow's lunch.

@@ -433,6 +433,10 @@ class TestSensorState:
         assert len(school["days"]) > 0
         first_day = school["days"][0]
         assert "day" in first_day
+        assert "month" in first_day
+        assert "year" in first_day
+        assert first_day["month"] == 3  # 1-indexed (0-indexed month=2 → display 3)
+        assert first_day["year"] == 2026
         assert "items" in first_day
         for item in first_day["items"]:
             assert "name" in item
