@@ -49,7 +49,14 @@ class MdbListClient:
 
     async def __aenter__(self) -> "MdbListClient":
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            # Disable keep-alive: the 1s rate-limit sleep between requests
+            # lets Cloudflare close idle connections silently, causing aiohttp
+            # to hang when it tries to reuse a dead socket.
+            connector = aiohttp.TCPConnector(force_close=True)
+            timeout = aiohttp.ClientTimeout(total=30)
+            self._session = aiohttp.ClientSession(
+                connector=connector, timeout=timeout,
+            )
             self._owns_session = True
         return self
 
@@ -59,7 +66,6 @@ class MdbListClient:
     async def close(self) -> None:
         if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
-        self._session = None
 
     # -- Internal helpers ------------------------------------------------------
 
@@ -101,7 +107,6 @@ class MdbListClient:
             if resp.status == 404:
                 logger.debug("MdbListClient GET %s -> 404 (item not found)", path)
                 return {}
-            resp.raise_for_status()
             data = await resp.json()
 
             # MDbList returns 200 with {"response": false, "error": "Not Found"}
@@ -115,6 +120,7 @@ class MdbListClient:
                 "MdbListClient GET %s -> %d  (%d chars)",
                 path, resp.status, body_len,
             )
+            resp.raise_for_status()
             return data  # type: ignore[return-value]
 
     # -- Public API methods ----------------------------------------------------
