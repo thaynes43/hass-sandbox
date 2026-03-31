@@ -255,17 +255,24 @@ class MediaDashboardDetailCard extends HTMLElement {
 
     // --- Detail slot ---
     let detailHtml = "";
+    let skipDetailUpdate = false;
     if (this._selectedItemId !== null) {
       const detailAttrs = detailEntity?.attributes || {};
       const detailId = detailEntity?.state;
 
       if (detailId === String(this._selectedItemId)) {
         detailHtml = this._renderDetailPanel(detailAttrs);
+      } else if (this._detailCache) {
+        // Keep previous detail visible with a dimmed overlay instead of
+        // replacing it with a spinner (prevents layout shift).
+        const detail = this._els.detailSlot.querySelector(".mdd-detail");
+        if (detail) detail.classList.add("mdd-detail--switching");
+        skipDetailUpdate = true;
       } else {
         detailHtml = this._renderDetailLoading();
       }
     }
-    if (detailHtml !== this._detailCache) {
+    if (!skipDetailUpdate && detailHtml !== this._detailCache) {
       this._detailCache = detailHtml;
       this._els.detailSlot.innerHTML = detailHtml;
     }
@@ -1183,7 +1190,12 @@ class MediaDashboardDetailCard extends HTMLElement {
 
       .mdd-detail--loading {
         padding-bottom: 24px;
-        min-height: 220px;
+      }
+
+      .mdd-detail--switching {
+        opacity: 0.5;
+        pointer-events: none;
+        transition: opacity 150ms ease;
       }
 
       .mdd-detail-back {

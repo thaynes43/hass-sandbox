@@ -698,8 +698,10 @@ class MediaDashboardApp(hass.Hass):
                     level="WARNING",
                 )
 
-        # Read showtime cache from disk and find matching showtimes
-        showtimes = self._get_showtimes_for_item(item)
+        # Read showtime cache from disk — only for in_theaters items
+        showtimes: dict = {"entries": []}
+        if item.id in {i.id for i in self._categories.get("in_theaters", [])}:
+            showtimes = self._get_showtimes_for_item(item)
 
         self._publish_detail(item, showtimes)
 
