@@ -525,19 +525,30 @@ class MediaDashboardApp(hass.Hass):
                 for item in hidden_items_for_cat[: self._max_items_per_category]:
                     d = item.to_dict()
                     if item.local_poster:
-                        d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
+                        hp = os.path.join(self._poster_dir, item.local_poster)
+                        try:
+                            hmt = int(os.path.getmtime(hp))
+                        except OSError:
+                            hmt = 0
+                        d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}?t={hmt}"
                     d["hidden"] = True
                     hidden_serialized.append(d)
                 hidden_eligible[cat_name] = hidden_serialized
 
             filtered = self._apply_preferences(filtered)
+            filtered = [item for item in filtered if item.local_poster]
             capped = filtered[: self._max_items_per_category]
             serialized = []
             for item in capped:
                 d = item.to_dict()
                 # Build full /local/ URL from the poster filename
                 if item.local_poster:
-                    d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
+                    poster_path = os.path.join(self._poster_dir, item.local_poster)
+                    try:
+                        mtime = int(os.path.getmtime(poster_path))
+                    except OSError:
+                        mtime = 0
+                    d["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}?t={mtime}"
                 if item.id in liked_set:
                     d["liked"] = True
                 serialized.append(d)
@@ -576,7 +587,12 @@ class MediaDashboardApp(hass.Hass):
         """Publish full item detail (including summary + showtimes) to detail sensor."""
         attrs = item.to_detail_dict()
         if item.local_poster:
-            attrs["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}"
+            dp = os.path.join(self._poster_dir, item.local_poster)
+            try:
+                dmt = int(os.path.getmtime(dp))
+            except OSError:
+                dmt = 0
+            attrs["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}?t={dmt}"
         attrs["showtimes"] = showtimes
         attrs["showtimes_date"] = datetime.date.today().isoformat()
         attrs["friendly_name"] = f"Media Dashboard Detail: {item.title}"
