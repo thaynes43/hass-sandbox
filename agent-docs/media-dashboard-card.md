@@ -421,7 +421,7 @@ media_dashboard_app:
   class: MediaDashboardApp
   disable: true
   # Tautulli
-  tautulli_url: !secret tautulli_url
+  tautulli_url_env: TAUTULLI_URL
   tautulli_api_key_env: TAUTULLI_API_KEY
   # TMDb
   tmdb_api_key_env: TMDB_API_KEY
