@@ -202,13 +202,11 @@ class SchoolLunchCard extends HTMLElement {
    * Filters: category contains "Entree" (case-insensitive) AND is_ancillary === false.
    */
   _getDayInfo(school, targetDay, targetMonth, targetYear) {
-    // The sensor stores the current month's menu. Verify the school's
-    // month/year matches what we are looking for.
-    if (school.month !== targetMonth || school.year !== targetYear) {
-      return null; // wrong month — no data for this date
-    }
-
-    const dayData = (school.days || []).find((d) => d.day === targetDay);
+    // Each day carries its own month/year so cross-month lookups work
+    // (e.g. last week of March showing April days).
+    const dayData = (school.days || []).find(
+      (d) => d.day === targetDay && d.month === targetMonth && d.year === targetYear
+    );
     if (!dayData) return null;
 
     return {

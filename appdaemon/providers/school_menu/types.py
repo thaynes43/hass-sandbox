@@ -20,8 +20,8 @@ class MenuDay:
     """All menu items for a single calendar day."""
 
     day: int
-    month: int
-    year: int
+    month: Optional[int]  # 0-indexed; may be None if API returns null
+    year: Optional[int]
     items: List[MenuItem] = field(default_factory=list)
     notice: str = ""  # e.g. "EARLY RELEASE", "NO SCHOOL"
 
