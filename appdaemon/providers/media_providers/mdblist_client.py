@@ -49,7 +49,14 @@ class MdbListClient:
 
     async def __aenter__(self) -> "MdbListClient":
         if self._session is None:
-            self._session = aiohttp.ClientSession()
+            # Disable keep-alive: the 1s rate-limit sleep between requests
+            # lets Cloudflare close idle connections silently, causing aiohttp
+            # to hang when it tries to reuse a dead socket.
+            connector = aiohttp.TCPConnector(force_close=True)
+            timeout = aiohttp.ClientTimeout(total=30)
+            self._session = aiohttp.ClientSession(
+                connector=connector, timeout=timeout,
+            )
             self._owns_session = True
         return self
 
