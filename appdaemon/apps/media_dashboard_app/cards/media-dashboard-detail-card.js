@@ -1183,6 +1183,7 @@ class MediaDashboardDetailCard extends HTMLElement {
 
       .mdd-detail--loading {
         padding-bottom: 24px;
+        min-height: 220px;
       }
 
       .mdd-detail-back {
