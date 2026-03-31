@@ -561,14 +561,15 @@ class TestStaleTTL:
 
         assert len(result) == 1
 
-    def test_release_date_used_when_added_at_missing(self):
+    def test_item_without_added_at_is_kept(self):
+        """Items without added_at (e.g. TMDb items with only release_date) are not evicted."""
         app = _make_app(extra_args={"stale_ttl_days": 5})
         old_date = (datetime.date.today() - datetime.timedelta(days=10)).isoformat()
         items = [_make_item("tmdb-1", release_date=old_date)]
 
         result = app._apply_stale_ttl(items)
 
-        assert len(result) == 0
+        assert len(result) == 1
 
 
 # ---------------------------------------------------------------------------

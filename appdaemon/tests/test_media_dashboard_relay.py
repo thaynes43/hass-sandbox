@@ -237,14 +237,18 @@ class TestGetDetailCommand:
         # Item summary should be populated
         assert item.summary == "Fetched synopsis"
 
-    def test_get_detail_does_not_fetch_if_summary_exists(self):
+    def test_get_detail_does_not_fetch_if_all_detail_fields_exist(self):
         app = _make_app()
-        item = _make_item("tmdb-1", summary="Already rich", tmdb_id=42)
+        item = _make_item(
+            "tmdb-1", summary="Already rich", tmdb_id=42,
+        )
+        item.director = "Some Director"
+        item.certification = "PG-13"
         app._categories["in_theaters"] = [item]
 
         _run(app._handle_get_detail({"id": "tmdb-1"}))
 
-        # fetch_detail should not be called since summary exists
+        # fetch_detail should not be called since summary, director, and certification all exist
         app._tmdb.fetch_detail.assert_not_called()
 
     def test_get_detail_reads_showtime_cache(self):

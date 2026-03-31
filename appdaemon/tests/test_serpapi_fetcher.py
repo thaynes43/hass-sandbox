@@ -290,8 +290,8 @@ class TestFetchTheater:
         assert cache.films == {}
 
     @pytest.mark.asyncio
-    async def test_only_first_day_parsed(self):
-        """Only the first day block (today) is parsed; subsequent days are ignored."""
+    async def test_parses_multiple_days(self):
+        """Multiple day blocks (up to 7) are parsed into the cache."""
         raw = {
             "showtimes": [
                 {
@@ -323,7 +323,7 @@ class TestFetchTheater:
         await fetcher._fetch_theater(mock_client, "AMC Tyngsboro 12", cache)
 
         assert "today film" in cache.films
-        assert "tomorrow film" not in cache.films
+        assert "tomorrow film" in cache.films
 
     @pytest.mark.asyncio
     async def test_api_error_is_caught_gracefully(self):
