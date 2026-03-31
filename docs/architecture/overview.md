@@ -25,19 +25,22 @@
                                      │  ├─ calendar_from_*│
                                      │  ├─ immich_fetcher │
                                      │  ├─ health_checks  │
+                                     │  ├─ media_dashboard│
                                      │  └─ school_lunch_* │
                                      │                    │
                                      │  providers/        │
                                      │  ├─ ai_providers   │
                                      │  ├─ ha_provisioner │
                                      │  ├─ photo_providers│
+                                     │  ├─ media_providers│
                                      │  └─ school_menu    │
                                      └───────────────────-┘
                                               │
                                      External APIs
                                      (OpenAI, Gemini, Ollama,
                                       ComfyUI, Immich,
-                                      School Nutrition and Fitness)
+                                      School Nutrition and Fitness,
+                                      Tautulli, TMDb, SerpApi)
 ```
 
 ## Data flow paths

@@ -49,6 +49,8 @@ Production deploys are automated via Docker image builds. Merging to `main` trig
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. The merge to `main` then automatically produces the semver tag.
 
+**Before bumping VERSION**: Always compare the current `VERSION` file against `main` (`git show main:VERSION`). If it's already been bumped on this branch, do not bump again. Context wipes between sessions cause duplicate bumps — always check first.
+
 ### Install dependencies
 
 ```bash

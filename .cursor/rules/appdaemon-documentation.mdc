@@ -77,6 +77,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_message_generator` | `appdaemon/apps/vestaboard_apps/automations/ai_message_generator/README.md` | LLM-generated witty messages with curated fallback |
 | `weather_schedule` | `appdaemon/apps/vestaboard_apps/automations/weather_schedule/README.md` | Weather summary displayed on a daily schedule |
 | `health_checks` | `appdaemon/apps/health_checks/README.md` | System health monitoring: controller + network protocol checkers + dashboard cards |
+| `media_dashboard_app` | `appdaemon/apps/media_dashboard_app/README.md` | Media dashboard: Plex new arrivals, in-theaters, coming-soon with showtimes and thumbs up/down |
 
 ### Providers
 
@@ -90,6 +91,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
+| `media_providers` | `appdaemon/providers/media_providers/README.md` | HTTP clients and fetchers for Tautulli, TMDb, and MovieGlu |
 | `vestaboard` | `appdaemon/providers/vestaboard/README.md` | Vestaboard local API client and character encoding |
 
 ### Repository docs (`agent-docs/`)
@@ -142,6 +144,8 @@ vestaboard_controller (vestaboard_apps/vestaboard_controller)
        └─ weather_schedule          fires register_automation + push_automation_frame
   └─ fires vestaboard_controller_ready on startup (automations re-register automatically)
   └─ vestaboard_configuration (reads status sensor, forwards card commands via vestaboard_controller_command event)
+
+media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publishes sensors for compact and detail Lovelace cards)
 
 health_check_controller (listens for health_check_command events from all checkers)
   ├─ cloud_checker/cloud (root dependency)

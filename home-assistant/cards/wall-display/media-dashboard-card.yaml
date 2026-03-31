@@ -1,0 +1,5 @@
+type: custom:media-dashboard-card
+status_entity: sensor.media_dashboard_status
+navigation_path: "#media-dashboard-popup"
+relay_script: media_dashboard_relay
+auto_rotate_s: 15
