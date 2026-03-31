@@ -59,7 +59,6 @@ class MdbListClient:
     async def close(self) -> None:
         if self._owns_session and self._session and not self._session.closed:
             await self._session.close()
-        self._session = None
 
     # -- Internal helpers ------------------------------------------------------
 
@@ -101,7 +100,6 @@ class MdbListClient:
             if resp.status == 404:
                 logger.debug("MdbListClient GET %s -> 404 (item not found)", path)
                 return {}
-            resp.raise_for_status()
             data = await resp.json()
 
             # MDbList returns 200 with {"response": false, "error": "Not Found"}
@@ -115,6 +113,7 @@ class MdbListClient:
                 "MdbListClient GET %s -> %d  (%d chars)",
                 path, resp.status, body_len,
             )
+            resp.raise_for_status()
             return data  # type: ignore[return-value]
 
     # -- Public API methods ----------------------------------------------------
