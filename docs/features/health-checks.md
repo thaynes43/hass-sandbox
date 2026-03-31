@@ -100,16 +100,19 @@ Alerts are pruned automatically — both by age (default 36 hours) and by count 
 
 Some checkers support automatic repair, typically via smart switch power cycling. The repair system follows strict safety rules:
 
+- **Only CRITICAL failures trigger repair** — repair fires only when all checks are down; partial failures (warnings or degraded) do not cause a power cycle
 - **Only sustained failures trigger repair** — a brief blip does not cause a power cycle
 - **Configurable delay** — the problem must persist for a configurable number of minutes before repair begins
 - **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy.
 - **Unknown does not trigger repair** — if AppDaemon itself is restarting, repair actions are suppressed
+- **Cancellable** — a pending repair can be cancelled via the detail popup before the power cycle executes
 
 The repair state machine:
 
 ```
 idle → pending → in_progress → success → idle (checks stay healthy)
-                             → failed  → idle (checks recover naturally)
+         │                   → failed  → idle (checks recover naturally)
+         └──▶ idle (cancel_repair command received before deadline)
 ```
 
 Repair-capable checkers provision their own HA helpers for configuration:
@@ -141,7 +144,7 @@ The detail card provides a full breakdown:
 - **Alert history** with transition details (e.g., "Bridge Connection: ok -> critical")
 - **Force Re-check** button to trigger all checkers immediately
 - **Clear History** button to dismiss resolved alerts
-- **Repair controls** for repair-capable checkers (manual trigger, auto-repair toggle, delay setting)
+- **Repair controls** for repair-capable checkers (manual trigger, cancel pending repair, auto-repair toggle, delay setting)
 
 ## Extending the System
 
@@ -222,7 +225,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | MQTT Broker | `MqttBrokerChecker` | Publish/subscribe round-trip latency | No |
 | Basement Lights | `MqttDeviceChecker` | Zigbee2MQTT device HA state + linkquality | No |
 | Cigar Room Humidity | `TempHumidityChecker` | Humidity sensors with threshold alerts | No |
-| Spa | `SpaHealthChecker` | Gateway ping, connections, thermostat staleness | Yes — power cycle |
+| Spa | `SpaHealthChecker` | Gateway ping, connections, multi-entity staleness (OR logic across thermostat/lights/pumps) | Yes — power cycle |
 | Fans | `FanHealthChecker` | Entity state + IP ping per fan | Yes — per-fan zen32 reset |
 | Printer | `RepairableDeviceChecker` | Entity state + IP ping | Yes — power cycle |
 | Vestaboard | `BasicDeviceChecker` | Controller + configuration status | No |
