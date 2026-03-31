@@ -693,13 +693,19 @@ class HealthCheckDetailCard extends HTMLElement {
       `;
     }
 
-    // Repair button — show when idle, success, or failed; hide during in_progress/pending
-    const showBtn = status === "idle" || status === "success" || status === "failed";
-    const btnHtml = showBtn
-      ? `<button class="repair-btn" data-action="start_repair" data-checker="${hcdEscapeHtml(checkerId)}">
-           <ha-icon icon="mdi:wrench" style="--mdc-icon-size:14px;"></ha-icon> Repair
-         </button>`
-      : "";
+    // Repair button — show when idle, success, or failed; cancel button when pending
+    const showRepairBtn = status === "idle" || status === "success" || status === "failed";
+    const showCancelBtn = status === "pending";
+    let btnHtml = "";
+    if (showRepairBtn) {
+      btnHtml = `<button class="repair-btn" data-action="start_repair" data-checker="${hcdEscapeHtml(checkerId)}">
+        <ha-icon icon="mdi:wrench" style="--mdc-icon-size:14px;"></ha-icon> Repair
+      </button>`;
+    } else if (showCancelBtn) {
+      btnHtml = `<button class="cancel-repair-btn" data-action="cancel_repair" data-checker="${hcdEscapeHtml(checkerId)}">
+        <ha-icon icon="mdi:close-circle" style="--mdc-icon-size:14px;"></ha-icon> Cancel
+      </button>`;
+    }
 
     // Auto-repair controls
     const checkedAttr = enabled ? "checked" : "";
@@ -783,6 +789,8 @@ class HealthCheckDetailCard extends HTMLElement {
         this._callRelay("clear_alert_history", {});
       } else if (action === "start_repair") {
         this._callRelay("start_repair", { checker_id: el.dataset.checker });
+      } else if (action === "cancel_repair") {
+        this._callRelay("cancel_repair", { checker_id: el.dataset.checker });
       } else if (action === "toggle_auto_repair") {
         const checker_id = el.dataset.checker;
         const auto_repair_enabled = el.checked;
@@ -1234,6 +1242,28 @@ class HealthCheckDetailCard extends HTMLElement {
 
       .repair-btn:active {
         background: rgba(255, 255, 255, 0.04);
+      }
+
+      .cancel-repair-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 6px 14px;
+        border: none;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        background: rgba(239, 83, 80, 0.15);
+        color: var(--hcd-critical);
+      }
+
+      .cancel-repair-btn:hover {
+        background: rgba(239, 83, 80, 0.25);
+      }
+
+      .cancel-repair-btn:active {
+        opacity: 0.7;
       }
 
       .repair-auto-label,

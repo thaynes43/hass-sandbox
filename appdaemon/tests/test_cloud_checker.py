@@ -315,7 +315,11 @@ class TestNormalMode:
         assert "Error" in payload["results"][0]["detail"]
 
     def test_multiple_urls_checked_independently(self):
-        """Each URL in checks is checked independently and reported separately."""
+        """Each URL in checks is checked independently and reported separately.
+
+        When one of two checks fails, cross-check downgrades it from critical to
+        warning (partial failure — at least one URL is still reachable).
+        """
         app = _make_app({
             "force_fail": False,
             "checks": [
@@ -344,7 +348,8 @@ class TestNormalMode:
         assert len(payload["results"]) == 2
         names = {r["name"]: r["status"] for r in payload["results"]}
         assert names["Google"] == "ok"
-        assert names["Cloudflare DNS"] == "critical"
+        # Cross-check: partial failure is downgraded from critical to warning
+        assert names["Cloudflare DNS"] == "warning"
 
     def test_report_includes_checker_id(self):
         """Report payload should include the checker_id."""
@@ -388,3 +393,114 @@ class TestEventHandlers:
 
         app.run_every.assert_called_once()
         app.create_task.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests — Cross-check (apply_cross_check integration)
+# ---------------------------------------------------------------------------
+
+class TestCrossCheck:
+    def test_partial_failure_downgraded_to_warning(self):
+        """When 1 of N URLs fail, the failing check should be downgraded to warning."""
+        app = _make_app({
+            "force_fail": False,
+            "checks": [
+                {"url": "https://www.google.com", "name": "Google"},
+                {"url": "https://1.1.1.1", "name": "Cloudflare DNS"},
+                {"url": "https://www.cloudflare.com", "name": "Cloudflare"},
+            ],
+        })
+        app.initialize()
+
+        results_iter = iter([
+            {"status": "ok", "detail": "200 OK"},
+            {"status": "critical", "detail": "timeout"},
+            {"status": "ok", "detail": "200 OK"},
+        ])
+
+        async def _fake_http(url, timeout_s=5):
+            return next(results_iter)
+
+        with patch(
+            "health_checks.checker_apps.cloud_checker.cloud_checker.http_check",
+            new=_fake_http,
+        ):
+            _run(app._run_checks())
+
+        call = app.fire_event.call_args
+        payload = json.loads(call[1]["payload"])
+        statuses = {r["name"]: r["status"] for r in payload["results"]}
+        # Partial failure: one check failed while others passed → downgraded to warning
+        assert statuses["Google"] == "ok"
+        assert statuses["Cloudflare DNS"] == "warning"
+        assert statuses["Cloudflare"] == "ok"
+
+    def test_all_failures_stay_critical(self):
+        """When all URL checks fail, statuses should remain critical (full failure)."""
+        app = _make_app({
+            "force_fail": False,
+            "checks": [
+                {"url": "https://www.google.com", "name": "Google"},
+                {"url": "https://1.1.1.1", "name": "Cloudflare DNS"},
+            ],
+        })
+        app.initialize()
+
+        with patch(
+            "health_checks.checker_apps.cloud_checker.cloud_checker.http_check",
+            new=AsyncMock(return_value={"status": "critical", "detail": "timeout"}),
+        ):
+            _run(app._run_checks())
+
+        call = app.fire_event.call_args
+        payload = json.loads(call[1]["payload"])
+        for result in payload["results"]:
+            assert result["status"] == "critical"
+
+    def test_single_check_not_downgraded(self):
+        """A single-check result list should not be downgraded by cross-check."""
+        app = _make_app({
+            "force_fail": False,
+            "checks": [{"url": "https://www.google.com", "name": "Google"}],
+        })
+        app.initialize()
+
+        with patch(
+            "health_checks.checker_apps.cloud_checker.cloud_checker.http_check",
+            new=AsyncMock(return_value={"status": "critical", "detail": "timeout"}),
+        ):
+            _run(app._run_checks())
+
+        call = app.fire_event.call_args
+        payload = json.loads(call[1]["payload"])
+        assert payload["results"][0]["status"] == "critical"
+
+    def test_partial_failure_detail_appended(self):
+        """Downgraded results should have '(partial failure)' appended to detail."""
+        app = _make_app({
+            "force_fail": False,
+            "checks": [
+                {"url": "https://www.google.com", "name": "Google"},
+                {"url": "https://1.1.1.1", "name": "Cloudflare DNS"},
+            ],
+        })
+        app.initialize()
+
+        results_iter = iter([
+            {"status": "ok", "detail": "200 OK"},
+            {"status": "critical", "detail": "timeout"},
+        ])
+
+        async def _fake_http(url, timeout_s=5):
+            return next(results_iter)
+
+        with patch(
+            "health_checks.checker_apps.cloud_checker.cloud_checker.http_check",
+            new=_fake_http,
+        ):
+            _run(app._run_checks())
+
+        call = app.fire_event.call_args
+        payload = json.loads(call[1]["payload"])
+        failed = next(r for r in payload["results"] if r["name"] == "Cloudflare DNS")
+        assert "partial failure" in failed["detail"]

@@ -36,6 +36,8 @@ Each configured URL produces one named check:
 - **ok**: HTTP 2xx response received
 - **critical**: Timeout, connection error, or non-2xx response
 
+After all URL results are collected, `apply_cross_check()` is applied: if at least one URL passes, any single failing URL is downgraded from **critical** to **warning**. The overall checker status only reaches **critical** when all configured URLs fail simultaneously.
+
 Uses `http_check()` from `shared/check_utils.py`.
 
 ## Dependencies

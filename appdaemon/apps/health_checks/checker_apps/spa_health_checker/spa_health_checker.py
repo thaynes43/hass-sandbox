@@ -72,8 +72,11 @@ class SpaHealthChecker(hass.Hass):
         # Entity connectivity checks
         self._connection_entities: List[str] = args.get("connection_entities", [])
 
-        # Staleness detection
-        self._staleness_entity: str = args.get("staleness_entity", "")
+        # Staleness detection — support list (staleness_entities) or single (staleness_entity)
+        staleness_list = args.get("staleness_entities", [])
+        if not staleness_list and args.get("staleness_entity"):
+            staleness_list = [args.get("staleness_entity")]
+        self._staleness_entities: List[str] = staleness_list
         self._staleness_threshold_s: int = int(
             args.get("staleness_threshold_s", 300)
         )
@@ -111,7 +114,7 @@ class SpaHealthChecker(hass.Hass):
         self.log(
             f"SpaHealthChecker initialising: id={self._checker_id}, "
             f"gateway={self._gateway_host}, "
-            f"staleness_entity={self._staleness_entity}, "
+            f"staleness_entities={self._staleness_entities}, "
             f"repair_switch={self._repair_switch}",
             level="INFO",
         )
@@ -237,8 +240,8 @@ class SpaHealthChecker(hass.Hass):
                 short = short.split("_spa_", 1)[1]
             friendly = short.replace("_", " ").title()
             names.append(friendly)
-        if self._staleness_entity:
-            names.append("Thermostat Staleness")
+        if self._staleness_entities:
+            names.append("Staleness")
         return names
 
     # ------------------------------------------------------------------
@@ -268,6 +271,8 @@ class SpaHealthChecker(hass.Hass):
         if action == "start_repair":
             self.log("Manual repair requested", level="INFO")
             self._start_repair()
+        elif action == "cancel_repair":
+            self._cancel_repair()
         elif action == "update_repair_config":
             self._update_repair_config(data)
 
@@ -302,17 +307,18 @@ class SpaHealthChecker(hass.Hass):
             results.append(result)
 
         # 3. Staleness detection
-        if self._staleness_entity:
+        if self._staleness_entities:
             result = await self._check_staleness()
             results.append(result)
+
+        # Cross-check: downgrade critical→warning for partial failures
+        # Must run BEFORE auto-repair eval so partial failures (warning)
+        # do not trigger auto-repair — only genuine overall critical does.
+        apply_cross_check(results)
 
         # Evaluate auto-repair logic (skip if repair is already in progress)
         if self._repair_status not in (REPAIR_IN_PROGRESS,):
             self._evaluate_auto_repair(results)
-
-        # Cross-check: downgrade critical→warning for partial failures
-        # (after auto-repair eval so repair triggers see raw statuses)
-        apply_cross_check(results)
 
         # Report to controller
         payload: Dict[str, Any] = {
@@ -382,52 +388,75 @@ class SpaHealthChecker(hass.Hass):
             }
 
     async def _check_staleness(self) -> Dict[str, str]:
-        try:
-            attrs = await self.get_state(self._staleness_entity, attribute="all")
-            if attrs is None:
-                return {
-                    "name": "Thermostat Staleness",
-                    "status": "critical",
-                    "detail": "Entity not found",
-                }
+        """Check staleness across all configured entities.
 
-            last_updated = attrs.get("last_updated", "")
-            if not last_updated:
-                return {
-                    "name": "Thermostat Staleness",
-                    "status": "critical",
-                    "detail": "No last_updated",
-                }
+        Uses OR logic — if ANY entity is fresh, the check passes.
+        Tracks the minimum (freshest) age across all entities.
+        """
+        min_age_s: Optional[float] = None
+        freshest_name: str = ""
 
-            # Parse ISO timestamp from HA
-            if isinstance(last_updated, str):
-                # HA returns ISO format, may have +00:00 timezone
-                lu_dt = datetime.datetime.fromisoformat(last_updated)
-                if lu_dt.tzinfo is not None:
-                    lu_dt = lu_dt.replace(tzinfo=None)
-            else:
-                lu_dt = last_updated
+        for entity_id in self._staleness_entities:
+            entity_name = entity_id.split(".")[-1]
+            try:
+                attrs = await self.get_state(entity_id, attribute="all")
+                if attrs is None:
+                    self.log(
+                        f"Staleness: entity {entity_id} not found", level="WARNING"
+                    )
+                    continue
 
-            age_s = (datetime.datetime.utcnow() - lu_dt).total_seconds()
+                last_updated = attrs.get("last_updated", "")
+                if not last_updated:
+                    self.log(
+                        f"Staleness: entity {entity_id} has no last_updated",
+                        level="WARNING",
+                    )
+                    continue
 
-            if age_s <= self._staleness_threshold_s:
-                return {
-                    "name": "Thermostat Staleness",
-                    "status": "ok",
-                    "detail": f"Updated {int(age_s)}s ago",
-                }
+                # Parse ISO timestamp from HA
+                if isinstance(last_updated, str):
+                    lu_dt = datetime.datetime.fromisoformat(last_updated)
+                    if lu_dt.tzinfo is not None:
+                        lu_dt = lu_dt.replace(tzinfo=None)
+                else:
+                    lu_dt = last_updated
+
+                age_s = (datetime.datetime.utcnow() - lu_dt).total_seconds()
+
+                if min_age_s is None or age_s < min_age_s:
+                    min_age_s = age_s
+                    freshest_name = entity_name
+
+            except Exception as exc:
+                self.log(
+                    f"Staleness check failed for {entity_id}: {exc!r}", level="ERROR"
+                )
+
+        if min_age_s is None:
+            # All entities were missing or errored
             return {
-                "name": "Thermostat Staleness",
+                "name": "Staleness",
                 "status": "critical",
-                "detail": f"Stale: {int(age_s)}s (threshold {self._staleness_threshold_s}s)",
+                "detail": "Entity not found",
             }
-        except Exception as exc:
-            self.log(f"Staleness check failed: {exc!r}", level="ERROR")
+
+        if min_age_s <= self._staleness_threshold_s:
             return {
-                "name": "Thermostat Staleness",
-                "status": "critical",
-                "detail": f"Error: {exc}",
+                "name": "Staleness",
+                "status": "ok",
+                "detail": f"Freshest: {freshest_name} updated {int(min_age_s)}s ago",
             }
+
+        n = len(self._staleness_entities)
+        return {
+            "name": "Staleness",
+            "status": "critical",
+            "detail": (
+                f"All {n} entities stale "
+                f"(freshest: {int(min_age_s)}s, threshold: {self._staleness_threshold_s}s)"
+            ),
+        }
 
     # ------------------------------------------------------------------
     # Auto-repair logic
@@ -455,9 +484,14 @@ class SpaHealthChecker(hass.Hass):
         return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
 
     def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
-        """Evaluate whether to start, continue, or cancel auto-repair."""
+        """Evaluate whether to start, continue, or cancel auto-repair.
+
+        Called after apply_cross_check, so partial failures are already
+        downgraded to 'warning'. Only a genuinely overall-critical situation
+        (all checks failing → no cross-check downgrade) should trigger repair.
+        """
         all_ok = all(r["status"] == "ok" for r in results)
-        any_bad = any(r["status"] in ("critical", "degraded") for r in results)
+        any_critical = any(r["status"] == "critical" for r in results)
 
         # If all checks pass, cancel any pending repair and reset
         if all_ok:
@@ -476,8 +510,8 @@ class SpaHealthChecker(hass.Hass):
         if self._repair_status == REPAIR_SUCCESS:
             return
 
-        # Only trigger on actual critical/degraded, not unknown
-        if not any_bad:
+        # Only trigger on actual critical (after cross-check, partial failures are warning)
+        if not any_critical:
             return
 
         enabled, delay_min = self._read_auto_repair_config()
@@ -542,6 +576,21 @@ class SpaHealthChecker(hass.Hass):
         self._report_repair_status_only()
 
         self._repair_task = self.create_task(self._execute_repair())
+
+    def _cancel_repair(self) -> None:
+        """Cancel a pending auto-repair."""
+        if self._repair_status != REPAIR_PENDING:
+            self.log(
+                f"Cannot cancel repair — status is {self._repair_status}",
+                level="WARNING",
+            )
+            return
+        self.log("Auto-repair cancelled by user", level="INFO")
+        self._repair_status = REPAIR_IDLE
+        self._repair_detail = ""
+        self._auto_repair_deadline = None
+        self._unhealthy_since = None
+        self._report_repair_status_only()
 
     async def _execute_repair(self) -> None:
         """Power cycle the spa and poll for recovery."""
@@ -615,7 +664,7 @@ class SpaHealthChecker(hass.Hass):
             results.append(await self._check_gateway_ping())
         for entity_id in self._connection_entities:
             results.append(await self._check_connection_entity(entity_id))
-        if self._staleness_entity:
+        if self._staleness_entities:
             results.append(await self._check_staleness())
         return results
 
