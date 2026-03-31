@@ -1258,6 +1258,10 @@ class HealthCheckDetailCard extends HTMLElement {
         color: var(--hcd-critical);
       }
 
+      .cancel-repair-btn:hover {
+        background: rgba(239, 83, 80, 0.25);
+      }
+
       .cancel-repair-btn:active {
         opacity: 0.7;
       }
