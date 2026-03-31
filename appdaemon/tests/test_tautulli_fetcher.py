@@ -70,6 +70,28 @@ def _raw_show(**overrides) -> dict:
     return base
 
 
+def _raw_episode(**overrides) -> dict:
+    """Return a minimal raw Tautulli episode dict."""
+    base = {
+        "rating_key": "3001",
+        "grandparent_rating_key": "2001",
+        "grandparent_title": "Test Show",
+        "title": "Pilot",
+        "parent_media_index": "1",
+        "media_index": "1",
+        "year": "2023",
+        "media_type": "episode",
+        "content_rating": "TV-14",
+        "duration": "2700000",  # 45 min in ms
+        "genres": "Drama",
+        "summary": "A test episode summary.",
+        "added_at": "1711584000",
+        "guids": [{"id": "tmdb://99999"}],
+    }
+    base.update(overrides)
+    return base
+
+
 # ---------------------------------------------------------------------------
 # TestParseGuids
 # ---------------------------------------------------------------------------
@@ -214,6 +236,51 @@ class TestNormalizeItem:
         item = fetcher._normalize_item(raw)
         assert item.runtime_min == 0
 
+    def test_normalizes_episode(self):
+        fetcher = self._fetcher()
+        raw = _raw_episode()
+        item = fetcher._normalize_item(raw)
+
+        assert item.id == "plex-2001"  # grandparent_rating_key
+        assert item.title == "Test Show"  # grandparent_title
+        assert item.media_type == "tv"
+        assert item.runtime_min == 45
+        assert "S1E1" in item.subtitle
+        assert "Added" in item.subtitle
+        assert item.local_poster == "plex-2001.jpg"
+        assert item.tmdb_id == 99999
+
+
+# ---------------------------------------------------------------------------
+# TestGroupEpisodes
+# ---------------------------------------------------------------------------
+
+class TestGroupEpisodes:
+    def test_keeps_latest_episode_per_series(self):
+        fetcher = _make_fetcher()
+        ep1 = fetcher._normalize_item(_raw_episode(
+            rating_key="3001", added_at="1711580000",
+            parent_media_index="1", media_index="1",
+        ))
+        ep2 = fetcher._normalize_item(_raw_episode(
+            rating_key="3002", added_at="1711590000",
+            parent_media_index="1", media_index="2",
+        ))
+        result = TautulliFetcher._group_episodes_by_series([ep1, ep2])
+        assert len(result) == 1
+        assert "E2" in result[0].subtitle  # kept the later episode
+
+    def test_different_series_both_kept(self):
+        fetcher = _make_fetcher()
+        ep_a = fetcher._normalize_item(_raw_episode(grandparent_rating_key="100"))
+        ep_b = fetcher._normalize_item(_raw_episode(grandparent_rating_key="200"))
+        result = TautulliFetcher._group_episodes_by_series([ep_a, ep_b])
+        assert len(result) == 2
+
+    def test_empty_list(self):
+        result = TautulliFetcher._group_episodes_by_series([])
+        assert result == []
+
 
 # ---------------------------------------------------------------------------
 # TestFetchRecentlyAdded
@@ -224,8 +291,8 @@ class TestFetchRecentlyAdded:
     async def test_returns_items_on_success(self):
         mock_client = _make_mock_client()
         mock_client.get_recently_added = AsyncMock(side_effect=[
-            [_raw_movie()],  # movies
-            [_raw_show()],   # shows
+            [_raw_movie()],    # movies
+            [_raw_episode()],  # shows (Tautulli returns episodes for media_type=show)
         ])
 
         with patch(

@@ -4,10 +4,11 @@ A wall-display card that aggregates media content from four sources into a singl
 
 ## Overview
 
-The media dashboard shows what's worth watching right now across three categories:
+The media dashboard shows what's worth watching right now across four categories:
 
 - **In Theaters** -- movies currently playing at local cinemas, ranked by quality and popularity, with showtimes for nearby theaters
-- **New on Plex** -- recently added movies and shows on the home Plex server, ranked by runtime and rating
+- **Plex Movies** -- recently added movies on the home Plex server, ranked by runtime and rating
+- **Plex Shows** -- recently added TV shows on the home Plex server, quality scored using a 50-minute episode runtime normalization instead of the 120-minute movie baseline
 - **Coming Soon** -- upcoming theatrical and streaming releases
 
 Users can like or dismiss items. Liked items float to the top; dismissed items move to a collapsible "Hidden" section with a restore button. All preferences persist across restarts.
@@ -20,7 +21,7 @@ The compact card sits on the wall display alongside other dashboard cards. It sh
 
 ### Detail Popup
 
-Tapping the compact card opens the detail popup with all three categories as horizontally scrollable poster rows. Each row has scroll arrows for quick navigation. Tapping a poster loads its full detail panel with:
+Tapping the compact card opens the detail popup with all four categories as horizontally scrollable poster rows. Each row has scroll arrows for quick navigation. Tapping a poster loads its full detail panel with:
 
 - Ratings row with Kometa-style icons: TMDb, IMDb, Rotten Tomatoes critics (tomato), and RT audience (popcorn) -- fresh/rotten icon variants based on 60% threshold
 - MPAA certification, runtime, and genre names
@@ -67,7 +68,7 @@ All items are scored using a unified heuristic combining three factors:
 
 | Factor | Weight | Measures |
 |--------|--------|----------|
-| Quality | 45% | TMDb score (0-10) or runtime as a proxy for Plex items |
+| Quality | 45% | TMDb score (0-10) or runtime as a proxy for Plex items (TV shows use 50min episode normalization; movies use 120min) |
 | Recency | 25% | How recently released or added (newer = higher) |
 | Prominence | 30% | TMDb popularity (log-scale), vote count, genre presence |
 

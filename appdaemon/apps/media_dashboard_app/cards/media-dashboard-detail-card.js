@@ -43,6 +43,13 @@ function mddEscapeHtml(str) {
   return div.innerHTML;
 }
 
+const MDD_CATEGORY_ICONS = {
+  in_theaters: '<ha-icon icon="mdi:filmstrip" style="--mdc-icon-size:14px; vertical-align:middle;"></ha-icon>',
+  plex_movies: '<img src="/local/media-dashboard/icons/plex.png" alt="Plex" style="width:14px;height:14px;vertical-align:middle;object-fit:contain;" />',
+  plex_shows: '<img src="/local/media-dashboard/icons/plex.png" alt="Plex" style="width:14px;height:14px;vertical-align:middle;object-fit:contain;" />',
+  coming_soon: '<ha-icon icon="mdi:calendar-clock" style="--mdc-icon-size:14px; vertical-align:middle;"></ha-icon>',
+};
+
 // ---------------------------------------------------------------------------
 // Card class
 // ---------------------------------------------------------------------------
@@ -200,7 +207,8 @@ class MediaDashboardDetailCard extends HTMLElement {
         <div class="mdd-body">
           <div class="mdd-detail-slot"></div>
           <div class="mdd-section-slot" data-slot="in_theaters"></div>
-          <div class="mdd-section-slot" data-slot="plex_new"></div>
+          <div class="mdd-section-slot" data-slot="plex_movies"></div>
+          <div class="mdd-section-slot" data-slot="plex_shows"></div>
           <div class="mdd-section-slot" data-slot="coming_soon"></div>
         </div>
         <div class="mdd-footer">
@@ -216,7 +224,8 @@ class MediaDashboardDetailCard extends HTMLElement {
       detailSlot: this.shadowRoot.querySelector(".mdd-detail-slot"),
       sectionSlots: {
         in_theaters: this.shadowRoot.querySelector('[data-slot="in_theaters"]'),
-        plex_new: this.shadowRoot.querySelector('[data-slot="plex_new"]'),
+        plex_movies: this.shadowRoot.querySelector('[data-slot="plex_movies"]'),
+        plex_shows: this.shadowRoot.querySelector('[data-slot="plex_shows"]'),
         coming_soon: this.shadowRoot.querySelector('[data-slot="coming_soon"]'),
       },
     };
@@ -265,7 +274,8 @@ class MediaDashboardDetailCard extends HTMLElement {
     const hiddenEligible = statusEntity?.attributes?.hidden_eligible || {};
     const CATEGORIES = [
       { key: "in_theaters", label: "IN THEATERS" },
-      { key: "plex_new", label: "NEW ON PLEX" },
+      { key: "plex_movies", label: "PLEX MOVIES" },
+      { key: "plex_shows", label: "PLEX SHOWS" },
       { key: "coming_soon", label: "COMING SOON" },
     ];
 
@@ -396,7 +406,7 @@ class MediaDashboardDetailCard extends HTMLElement {
     if (!items || items.length === 0) {
       return `
         <div class="mdd-section" data-category="${safeKey}">
-          <div class="mdd-section-header">${mddEscapeHtml(label)}</div>
+          <div class="mdd-section-header">${MDD_CATEGORY_ICONS[key] || ""} ${mddEscapeHtml(label)}</div>
           <div class="mdd-empty-section">No items available</div>
           <div class="mdd-hidden-area">${this._renderHiddenToggle(key, hiddenItems)}</div>
         </div>
@@ -410,7 +420,7 @@ class MediaDashboardDetailCard extends HTMLElement {
 
     return `
       <div class="mdd-section" data-category="${safeKey}">
-        <div class="mdd-section-header">${mddEscapeHtml(label)}</div>
+        <div class="mdd-section-header">${MDD_CATEGORY_ICONS[key] || ""} ${mddEscapeHtml(label)}</div>
         <div class="mdd-scroll-container">
           <span class="mdd-scroll-arrow mdd-scroll-arrow--left" data-action="scroll-left" data-category="${safeKey}">
             <ha-icon icon="mdi:chevron-left" style="--mdc-icon-size:22px;"></ha-icon>

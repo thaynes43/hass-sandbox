@@ -8,7 +8,7 @@ AppDaemon app that aggregates media content from Tautulli (Plex), TMDb, and Serp
 2. Runs an initial fetch from all three sources: Tautulli (recently added + popular stats), TMDb (now playing + upcoming + trending), and SerpApi (showtimes via Google search).
 3. Applies popularity filtering (TMDb score + vote count thresholds), genre filtering, and user preference boosts/hides to rank each category.
 5. Downloads poster images for each item to a shared `/media/` directory, then calls a `shell_command` to sync them to `/config/www/` where HA can serve them.
-6. Publishes the three categories (In Theaters, New on Plex, Coming Soon) to `sensor.media_dashboard_status` with local poster URLs and metadata.
+6. Publishes the four categories (In Theaters, Plex Movies, Plex Shows, Coming Soon) to `sensor.media_dashboard_status` with local poster URLs and metadata.
 7. When a user taps a poster, the card sends `get_detail` via relay. The app reads full metadata and cached showtimes from disk (no API call) and publishes to `sensor.media_dashboard_detail`.
 8. Scheduled timers refresh each source on its own cadence (Tautulli: 2h, TMDb: 12h, showtimes: 24h). On partial upstream failure, the app retains last-known-good data per category.
 9. Thumbs-down (`dismiss`) and thumbs-up (`like`) commands persist to a JSON preferences file and take effect on the next sensor publish.
@@ -106,7 +106,8 @@ appdaemon/tests/
 | Category | Key | Icon | Content | Subtitle Format |
 |----------|-----|------|---------|-----------------|
 | In Theaters | `in_theaters` | Film | TMDb now-playing filtered by popularity | "PG-13 · 2h 15m" |
-| New on Plex | `plex_new` | TV | Tautulli recently-added, cross-referenced with TMDb popularity | "Added 2 days ago" |
+| Plex Movies | `plex_movies` | TV | Tautulli recently-added movies, cross-referenced with TMDb popularity | "Added 2 days ago" |
+| Plex Shows | `plex_shows` | TV | Tautulli recently-added TV shows, quality scored with 50min runtime normalization | "Added 2 days ago" |
 | Coming Soon | `coming_soon` | Popcorn | TMDb upcoming theatrical + streaming releases, sorted by release date | "Opens Apr 18" / "Netflix Apr 2" |
 
 ## Self-Provisioned Entities
@@ -122,7 +123,7 @@ appdaemon/tests/
 | Card | File | Purpose |
 |------|------|---------|
 | Compact view | `cards/media-dashboard-card.js` | Shows 3 posters per row with category tabs; auto-rotates; paginate by 3 with chevron arrows; dismiss button per poster |
-| Detail popup | `cards/media-dashboard-detail-card.js` | Popup with all three category rows; scroll arrows on poster rows; tap poster for inline detail with synopsis and showtimes; like/unlike toggle; hidden items restore |
+| Detail popup | `cards/media-dashboard-detail-card.js` | Popup with all four category rows; scroll arrows on poster rows; tap poster for inline detail with synopsis and showtimes; like/unlike toggle; hidden items restore |
 
 ## Dependencies
 
@@ -223,7 +224,8 @@ State: `ok` | `degraded` | `error`
         "liked": true
       }
     ],
-    "plex_new": [ ... ],
+    "plex_movies": [ ... ],
+    "plex_shows": [ ... ],
     "coming_soon": [ ... ]
   },
   "hidden_eligible": {
@@ -276,7 +278,7 @@ State: selected item ID (e.g., `tmdb-11111`), or `none` when nothing is selected
 }
 ```
 
-**Size budget**: The main sensor targets ~6KB (10 items × 3 categories × ~200 bytes each). Showtimes and synopsis are only in the detail sensor, keeping both sensors well under the HA WebSocket 16KB limit.
+**Size budget**: The main sensor targets ~8KB (10 items × 4 categories × ~200 bytes each). Showtimes and synopsis are only in the detail sensor, keeping both sensors well under the HA WebSocket 16KB limit.
 
 ## Showtime Caching
 
@@ -305,7 +307,7 @@ Preferences are loaded on startup and written back on each `dismiss`, `like`, `u
 
 | Failure | Behavior |
 |---------|----------|
-| Tautulli unreachable | Retain last-known-good `plex_new` items; set `fetch_status.tautulli.status = "error"` |
+| Tautulli unreachable | Retain last-known-good `plex_movies` and `plex_shows` items; set `fetch_status.tautulli.status = "error"` |
 | TMDb unreachable | Retain last-known-good `in_theaters` and `coming_soon`; set `fetch_status.tmdb.status = "error"` |
 | SerpApi unreachable | Retain cached showtimes on disk; set `fetch_status.serpapi = "error"`; detail view shows stale data with note |
 | Source returns empty | Clear that category's items (genuinely empty is valid); set status to `"ok"` |

@@ -65,7 +65,10 @@ def _compute_rank_score(item: MediaItem, now: datetime.datetime) -> float:
     else:
         # Plex items without TMDb data: use runtime as a proxy.
         # Real movies are 80-180 min; TV episodes are 20-60 min.
-        quality = min(1.0, max(0.0, item.runtime_min / 120.0))
+        if item.media_type == "tv":
+            quality = min(1.0, max(0.0, item.runtime_min / 50.0))
+        else:
+            quality = min(1.0, max(0.0, item.runtime_min / 120.0))
 
     # --- Recency (0..1) ---
     # For past dates: 1.0 = today, 0.0 = 30+ days ago (rewards recent releases).
@@ -188,7 +191,8 @@ class MediaDashboardApp(hass.Hass):
         # --- State ---
         self._categories: Dict[str, List[MediaItem]] = {
             "in_theaters": [],
-            "plex_new": [],
+            "plex_movies": [],
+            "plex_shows": [],
             "coming_soon": [],
         }
         self._fetch_status: Dict[str, str] = {
@@ -366,7 +370,10 @@ class MediaDashboardApp(hass.Hass):
 
             await self._tautulli.download_posters(result.items)
             await self._enrich_mdblist_ratings(result.items)
-            self._categories["plex_new"] = self._rank_items(result.items, "plex_new")
+            movies = [item for item in result.items if item.media_type == "movie"]
+            shows = [item for item in result.items if item.media_type == "tv"]
+            self._categories["plex_movies"] = self._rank_items(movies, "plex_movies")
+            self._categories["plex_shows"] = self._rank_items(shows, "plex_shows")
             self._fetch_status["tautulli"] = "ok"
             self._sync_posters()
             self._publish_sensor()
@@ -576,7 +583,8 @@ class MediaDashboardApp(hass.Hass):
         self.log(
             f"Publishing sensor: state={overall}, "
             f"in_theaters={len(published_categories.get('in_theaters', []))}, "
-            f"plex_new={len(published_categories.get('plex_new', []))}, "
+            f"plex_movies={len(published_categories.get('plex_movies', []))}, "
+            f"plex_shows={len(published_categories.get('plex_shows', []))}, "
             f"coming_soon={len(published_categories.get('coming_soon', []))}, "
             f"hidden_eligible={total_hidden}",
             level="DEBUG",
@@ -828,7 +836,12 @@ class MediaDashboardApp(hass.Hass):
 
         # Log top 10 for tuning
         for i, (item, score) in enumerate(scored[:10]):
-            q = item.tmdb_score / 10.0 if item.tmdb_score > 0 else min(1.0, item.runtime_min / 120.0)
+            if item.tmdb_score > 0:
+                q = item.tmdb_score / 10.0
+            elif item.media_type == "tv":
+                q = min(1.0, item.runtime_min / 50.0)
+            else:
+                q = min(1.0, item.runtime_min / 120.0)
             self.log(
                 f"  [{category}] #{i+1}: {item.title} "
                 f"(score={score:.3f}, quality={q:.2f}, "

@@ -15,7 +15,7 @@
 | **vestaboard_controller_app** | Vestaboard controller with frame queue, TTL/expiration, and board automations |
 | **vestaboard_configuration_app** | Configuration bridge between Lovelace card and Vestaboard controller |
 | **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
-| **media_dashboard_app** | Media dashboard: Plex new arrivals, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
+| **media_dashboard_app** | Media dashboard: Plex movies, Plex shows, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
 
 ## Shared providers
 

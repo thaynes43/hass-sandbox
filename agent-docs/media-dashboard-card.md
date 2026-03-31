@@ -309,8 +309,8 @@ To stay under HA's ~16KB WebSocket limit, we keep items lean — metadata only, 
           }
         ]
       },
-      "plex_new": {
-        "label": "New on Plex",
+      "plex_movies": {
+        "label": "Plex Movies",
         "items": [
           {
             "id": "plex-12345",
@@ -321,6 +321,20 @@ To stay under HA's ~16KB WebSocket limit, we keep items lean — metadata only, 
             "subtitle": "Added 2 days ago",
             "rating": "PG-13",
             "genres": "Action, Sci-Fi"
+          }
+        ]
+      },
+      "plex_shows": {
+        "label": "Plex Shows",
+        "items": [
+          {
+            "id": "plex-67890",
+            "title": "Show Title",
+            "year": 2026,
+            "poster": "/local/media-dashboard/posters/plex-67890.jpg",
+            "type": "show",
+            "subtitle": "Added 1 day ago",
+            "genres": "Drama, Thriller"
           }
         ]
       },
@@ -540,10 +554,10 @@ On partial upstream failure, the app **retains last-known-good data** per catego
 
 | Failure scenario | Behavior |
 |---|---|
-| Tautulli unreachable | Keep existing `plex_new` items. Set `fetch_status.tautulli.status = "error"`. Log warning. |
+| Tautulli unreachable | Keep existing `plex_movies` and `plex_shows` items. Set `fetch_status.tautulli.status = "error"`. Log warning. |
 | TMDb unreachable | Keep existing `in_theaters` and `coming_soon` items. Set `fetch_status.tmdb.status = "error"`. |
 | SerpApi unreachable | Keep existing showtime cache on disk. Set `fetch_status.serpapi = "error"`. Detail view shows stale showtimes with note. |
-| Tautulli returns empty | Clear `plex_new` items (genuinely empty library is valid). Set status to `"ok"`. |
+| Tautulli returns empty | Clear `plex_movies` and `plex_shows` items (genuinely empty library is valid). Set status to `"ok"`. |
 | TMDb returns empty | Clear items for affected category. Set status to `"ok"`. |
 | SerpApi returns no configured theaters | Set `has_showtimes = false` for all in-theater movies. |
 | All sources fail simultaneously | All categories retain last-known-good data. All `fetch_status` entries show `"error"`. |
@@ -572,7 +586,7 @@ Since fetchers live in `providers/media_providers/`, they must be testable indep
 | **Ranking/filtering** | Items sorted by popularity within each category. Hidden items excluded. Liked items boosted to top. Genre whitelist applied. |
 | **Preference persistence** | `dismiss` writes to JSON file. `like` writes to JSON file. `undo_dismiss` removes from hidden list. File survives app restart. |
 | **Poster cache cleanup** | Posters not in active set are removed from media dir. Shell command called after cleanup. |
-| **Partial-source failure** | Tautulli failure retains `plex_new` items. TMDb failure retains `in_theaters` + `coming_soon`. `fetch_status` updated correctly. |
+| **Partial-source failure** | Tautulli failure retains `plex_movies` + `plex_shows` items. TMDb failure retains `in_theaters` + `coming_soon`. `fetch_status` updated correctly. |
 | **Stale data TTL** | Items older than `stale_ttl` evicted. Fresh items retained. |
 | **Relay command handling** | `refresh` triggers correct fetcher(s). `get_detail` reads from cache and publishes detail sensor. `dismiss`/`like`/`undo_dismiss` update preferences and re-publish main sensor. |
 | **Showtime cache** | Daily fetch writes cache file. `get_detail` reads from cache (no API call). Stale cache >24h shows warning. Stale cache >48h omits showtimes. |

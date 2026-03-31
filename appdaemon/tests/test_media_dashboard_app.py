@@ -58,6 +58,8 @@ def _make_item(
     summary: str = "",
     has_showtimes: bool = False,
     local_poster: str = "",
+    media_type: str = "movie",
+    runtime_min: int = 0,
 ) -> MediaItem:
     return MediaItem(
         id=id,
@@ -70,6 +72,8 @@ def _make_item(
         summary=summary,
         has_showtimes=has_showtimes,
         local_poster=local_poster or f"{id}.jpg",
+        media_type=media_type,
+        runtime_min=runtime_min,
     )
 
 
@@ -284,7 +288,8 @@ class TestPublishSensor:
         assert "friendly_name" in attrs
         assert "icon" in attrs
         assert "in_theaters" in attrs["categories"]
-        assert "plex_new" in attrs["categories"]
+        assert "plex_movies" in attrs["categories"]
+        assert "plex_shows" in attrs["categories"]
         assert "coming_soon" in attrs["categories"]
 
     def test_sensor_state_all_ok(self):
@@ -318,11 +323,11 @@ class TestPublishSensor:
 
     def test_items_serialized_as_dicts(self):
         app = _make_app()
-        app._categories["plex_new"] = [_make_item("plex-1", "Plex Movie")]
+        app._categories["plex_movies"] = [_make_item("plex-1", "Plex Movie")]
         app._publish_sensor()
 
         attrs = app.set_state.call_args[1]["attributes"]
-        items = attrs["categories"]["plex_new"]
+        items = attrs["categories"]["plex_movies"]
         assert len(items) == 1
         assert isinstance(items[0], dict)
         assert items[0]["id"] == "plex-1"
@@ -344,7 +349,7 @@ class TestPreferences:
 
     def test_like_adds_to_liked(self):
         app = _make_app()
-        app._categories["plex_new"] = [_make_item("plex-7", "Love It")]
+        app._categories["plex_movies"] = [_make_item("plex-7", "Love It")]
 
         app._handle_like({"id": "plex-7"})
 
@@ -428,8 +433,10 @@ class TestPreferences:
 class TestPartialFailure:
     def test_tautulli_failure_retains_plex_items(self):
         app = _make_app()
-        original_items = [_make_item("plex-1", "Original Plex Movie")]
-        app._categories["plex_new"] = list(original_items)
+        original_movies = [_make_item("plex-1", "Original Plex Movie")]
+        original_shows = [_make_item("plex-show-1", "Original Plex Show", media_type="tv")]
+        app._categories["plex_movies"] = list(original_movies)
+        app._categories["plex_shows"] = list(original_shows)
 
         # Make the fetcher raise
         app._tautulli.fetch_recently_added = AsyncMock(
@@ -439,8 +446,10 @@ class TestPartialFailure:
         _run(app._refresh_tautulli())
 
         # Items retained
-        assert len(app._categories["plex_new"]) == 1
-        assert app._categories["plex_new"][0].id == "plex-1"
+        assert len(app._categories["plex_movies"]) == 1
+        assert app._categories["plex_movies"][0].id == "plex-1"
+        assert len(app._categories["plex_shows"]) == 1
+        assert app._categories["plex_shows"][0].id == "plex-show-1"
 
     def test_tmdb_failure_retains_categories(self):
         app = _make_app()
@@ -490,8 +499,10 @@ class TestPartialFailure:
     def test_tautulli_fetch_result_error_status_triggers_retention(self):
         """FetchResult with status='error' also triggers retention."""
         app = _make_app()
-        original = [_make_item("plex-1")]
-        app._categories["plex_new"] = list(original)
+        original_movies = [_make_item("plex-1")]
+        original_shows = [_make_item("plex-show-1", media_type="tv")]
+        app._categories["plex_movies"] = list(original_movies)
+        app._categories["plex_shows"] = list(original_shows)
 
         app._tautulli.fetch_recently_added = AsyncMock(
             return_value=FetchResult(status="error", error_message="API error")
@@ -499,7 +510,8 @@ class TestPartialFailure:
 
         _run(app._refresh_tautulli())
 
-        assert app._categories["plex_new"] == original
+        assert app._categories["plex_movies"] == original_movies
+        assert app._categories["plex_shows"] == original_shows
         assert app._fetch_status["tautulli"] == "error"
 
 
@@ -576,7 +588,8 @@ class TestPosterCleanup:
         app._categories["in_theaters"] = [
             _make_item("tmdb-1", local_poster="tmdb-1.jpg")
         ]
-        app._categories["plex_new"] = []
+        app._categories["plex_movies"] = []
+        app._categories["plex_shows"] = []
         app._categories["coming_soon"] = []
 
         app._cleanup_stale_posters()
@@ -589,7 +602,8 @@ class TestPosterCleanup:
         app = _make_app(tmpdir=td)
 
         app._categories["in_theaters"] = []
-        app._categories["plex_new"] = []
+        app._categories["plex_movies"] = []
+        app._categories["plex_shows"] = []
         app._categories["coming_soon"] = []
 
         app.call_service.reset_mock()
@@ -607,7 +621,8 @@ class TestPosterCleanup:
         Path(poster_dir, "plex-10.jpg").write_bytes(b"active")
         Path(poster_dir, "tmdb-20.jpg").write_bytes(b"active")
 
-        app._categories["plex_new"] = [_make_item("plex-10", local_poster="plex-10.jpg")]
+        app._categories["plex_movies"] = [_make_item("plex-10", local_poster="plex-10.jpg")]
+        app._categories["plex_shows"] = []
         app._categories["in_theaters"] = [_make_item("tmdb-20", local_poster="tmdb-20.jpg")]
         app._categories["coming_soon"] = []
 
@@ -837,7 +852,7 @@ class TestHiddenEligible:
         app = _make_app(extra_args={"stale_ttl_days": 7})
         # Item with added_at older than TTL
         stale_item = _make_item("plex-old", "Old Plex Movie", added_at=_days_ago_iso(10))
-        app._categories["plex_new"] = [stale_item]
+        app._categories["plex_movies"] = [stale_item]
         app._preferences["hidden"] = ["plex-old"]
 
         app._publish_sensor()
@@ -845,7 +860,7 @@ class TestHiddenEligible:
         attrs = app.set_state.call_args[1]["attributes"]
         # The stale item doesn't make it past _apply_stale_ttl, so it should
         # not appear in hidden_eligible
-        in_plex_hidden = attrs["hidden_eligible"].get("plex_new", [])
+        in_plex_hidden = attrs["hidden_eligible"].get("plex_movies", [])
         hidden_ids = [item["id"] for item in in_plex_hidden]
         assert "plex-old" not in hidden_ids
 
@@ -911,7 +926,8 @@ class TestHiddenEligible:
         """Categories without hidden items don't appear as keys in hidden_eligible."""
         app = _make_app()
         app._categories["in_theaters"] = [_make_item("tmdb-1", "Visible")]
-        app._categories["plex_new"] = [_make_item("plex-1", "Plex Hidden")]
+        app._categories["plex_movies"] = [_make_item("plex-1", "Plex Hidden")]
+        app._categories["plex_shows"] = []
         app._categories["coming_soon"] = [_make_item("tmdb-cs", "Coming Soon Visible")]
         # Only hide one plex item
         app._preferences["hidden"] = ["plex-1"]
@@ -920,10 +936,11 @@ class TestHiddenEligible:
 
         attrs = app.set_state.call_args[1]["attributes"]
         hidden_eligible = attrs["hidden_eligible"]
-        # plex_new should appear because it has a hidden item
-        assert "plex_new" in hidden_eligible
-        # in_theaters and coming_soon should NOT appear (no hidden items there)
+        # plex_movies should appear because it has a hidden item
+        assert "plex_movies" in hidden_eligible
+        # in_theaters, plex_shows, and coming_soon should NOT appear (no hidden items there)
         assert "in_theaters" not in hidden_eligible
+        assert "plex_shows" not in hidden_eligible
         assert "coming_soon" not in hidden_eligible
 
     def test_undo_dismiss_moves_item_from_hidden_to_visible(self):
@@ -1082,3 +1099,96 @@ class TestDetailEnrichmentFields:
         attrs = app.set_state.call_args[1]["attributes"]
         assert attrs.get("certification") == "R"
         assert attrs.get("rating") == "R"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Plex category split (movies vs shows)
+# ---------------------------------------------------------------------------
+
+class TestPlexCategorySplit:
+    def test_tautulli_refresh_splits_by_media_type(self):
+        """_refresh_tautulli splits items into plex_movies and plex_shows."""
+        app = _make_app()
+        movie = _make_item("plex-m1", "Plex Movie", media_type="movie")
+        show = _make_item("plex-s1", "Plex Show", media_type="tv")
+
+        app._tautulli.fetch_recently_added = AsyncMock(
+            return_value=FetchResult(items=[movie, show], status="ok")
+        )
+        app._tautulli.download_posters = AsyncMock(return_value=0)
+
+        _run(app._refresh_tautulli())
+
+        assert len(app._categories["plex_movies"]) == 1
+        assert app._categories["plex_movies"][0].id == "plex-m1"
+        assert len(app._categories["plex_shows"]) == 1
+        assert app._categories["plex_shows"][0].id == "plex-s1"
+
+    def test_plex_movies_and_shows_both_appear_in_sensor(self):
+        """Both plex_movies and plex_shows appear in published sensor categories."""
+        app = _make_app()
+        app._categories["plex_movies"] = [_make_item("plex-m1", "Plex Movie")]
+        app._categories["plex_shows"] = [_make_item("plex-s1", "Plex Show", media_type="tv")]
+        app._fetch_status = {"tautulli": "ok", "tmdb": "ok", "serpapi": "ok"}
+
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert "plex_movies" in attrs["categories"]
+        assert "plex_shows" in attrs["categories"]
+        assert len(attrs["categories"]["plex_movies"]) == 1
+        assert len(attrs["categories"]["plex_shows"]) == 1
+        assert attrs["categories"]["plex_movies"][0]["id"] == "plex-m1"
+        assert attrs["categories"]["plex_shows"][0]["id"] == "plex-s1"
+
+    def test_tautulli_failure_retains_both_plex_categories(self):
+        """On Tautulli failure, both plex_movies and plex_shows are retained."""
+        app = _make_app()
+        original_movies = [_make_item("plex-m1", "Plex Movie")]
+        original_shows = [_make_item("plex-s1", "Plex Show", media_type="tv")]
+        app._categories["plex_movies"] = list(original_movies)
+        app._categories["plex_shows"] = list(original_shows)
+
+        app._tautulli.fetch_recently_added = AsyncMock(
+            side_effect=RuntimeError("Tautulli connection refused")
+        )
+
+        _run(app._refresh_tautulli())
+
+        assert app._categories["plex_movies"] == original_movies
+        assert app._categories["plex_shows"] == original_shows
+        assert app._fetch_status["tautulli"] == "error"
+
+    def test_all_movies_no_shows(self):
+        """When all Tautulli items are movies, plex_shows is empty."""
+        app = _make_app()
+        movies = [
+            _make_item("plex-m1", "Movie One", media_type="movie"),
+            _make_item("plex-m2", "Movie Two", media_type="movie"),
+        ]
+        app._tautulli.fetch_recently_added = AsyncMock(
+            return_value=FetchResult(items=movies, status="ok")
+        )
+        app._tautulli.download_posters = AsyncMock(return_value=0)
+
+        _run(app._refresh_tautulli())
+
+        assert len(app._categories["plex_movies"]) == 2
+        assert len(app._categories["plex_shows"]) == 0
+
+    def test_all_shows_no_movies(self):
+        """When all Tautulli items are TV shows, plex_movies is empty."""
+        app = _make_app()
+        shows = [
+            _make_item("plex-s1", "Show One", media_type="tv"),
+            _make_item("plex-s2", "Show Two", media_type="tv"),
+        ]
+        app._tautulli.fetch_recently_added = AsyncMock(
+            return_value=FetchResult(items=shows, status="ok")
+        )
+        app._tautulli.download_posters = AsyncMock(return_value=0)
+
+        _run(app._refresh_tautulli())
+
+        assert len(app._categories["plex_movies"]) == 0
+        assert len(app._categories["plex_shows"]) == 2

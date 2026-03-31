@@ -81,12 +81,17 @@ class TautulliFetcher:
             items: List[MediaItem] = []
             for raw in raw_movies:
                 items.append(self._normalize_item(raw))
+
+            show_items: List[MediaItem] = []
             for raw in raw_shows:
-                items.append(self._normalize_item(raw))
+                show_items.append(self._normalize_item(raw))
+            show_items = self._group_episodes_by_series(show_items)
+            items.extend(show_items)
 
             logger.info(
-                "TautulliFetcher.fetch_recently_added: %d movies + %d shows = %d total items",
+                "TautulliFetcher.fetch_recently_added: %d movies + %d shows (%d episodes) = %d total",
                 len(raw_movies),
+                len(show_items),
                 len(raw_shows),
                 len(items),
             )
@@ -199,6 +204,14 @@ class TautulliFetcher:
     def _normalize_item(self, raw: dict) -> MediaItem:
         """Map a raw Tautulli recently-added dict into a :class:`MediaItem`.
 
+        Handles three ``media_type`` values from the Tautulli API:
+
+        * ``"movie"`` — standard movie; uses ``rating_key`` for ID/poster.
+        * ``"show"`` — show-level entry; uses ``rating_key`` for ID/poster.
+        * ``"episode"`` — individual episode; uses ``grandparent_rating_key``
+          (the series key) for ID and poster so all episodes of the same show
+          share one identity and one poster file.
+
         Args:
             raw: A single entry from the ``recently_added`` list returned by
                 Tautulli's ``get_recently_added`` API command.
@@ -206,11 +219,41 @@ class TautulliFetcher:
         Returns:
             A fully-populated :class:`MediaItem`.
         """
-        rating_key = str(raw.get("rating_key", ""))
-        item_id = f"plex-{rating_key}"
+        # added_at must be extracted early because episode subtitle uses it.
+        added_at_raw = raw.get("added_at", "")
+        added_at = _unix_to_iso(added_at_raw)
 
         media_type_raw = raw.get("media_type", "movie")
-        media_type = "tv" if media_type_raw == "show" else "movie"
+
+        if media_type_raw == "episode":
+            # Use the series-level key so all episodes of a show share the
+            # same id and poster.
+            rating_key = str(
+                raw.get("grandparent_rating_key", "") or raw.get("rating_key", "")
+            )
+            item_id = f"plex-{rating_key}"
+            title = raw.get("grandparent_title", "") or raw.get("title", "")
+            media_type = "tv"
+            local_poster = f"plex-{rating_key}.jpg"
+
+            season = raw.get("parent_media_index", "")
+            episode = raw.get("media_index", "")
+            days_ago = _days_ago_subtitle(added_at_raw)
+            subtitle = f"S{season}E{episode} · {days_ago}" if days_ago else f"S{season}E{episode}"
+        elif media_type_raw == "show":
+            rating_key = str(raw.get("rating_key", ""))
+            item_id = f"plex-{rating_key}"
+            title = raw.get("title", "")
+            media_type = "tv"
+            local_poster = f"plex-{rating_key}.jpg"
+            subtitle = _days_ago_subtitle(added_at_raw)
+        else:
+            rating_key = str(raw.get("rating_key", ""))
+            item_id = f"plex-{rating_key}"
+            title = raw.get("title", "")
+            media_type = "movie"
+            local_poster = f"plex-{rating_key}.jpg"
+            subtitle = _days_ago_subtitle(added_at_raw)
 
         # Duration: Tautulli reports milliseconds for movies/episodes.
         # Some items return empty string for duration.
@@ -228,18 +271,11 @@ class TautulliFetcher:
         else:
             genres = str(genres_raw)
 
-        # added_at: unix timestamp (int or string) → ISO 8601 string.
-        added_at_raw = raw.get("added_at", "")
-        added_at = _unix_to_iso(added_at_raw)
-
-        # subtitle: "Added X days ago"
-        subtitle = _days_ago_subtitle(added_at_raw)
-
         tmdb_id = self._parse_guids(raw.get("guids"))
 
         return MediaItem(
             id=item_id,
-            title=raw.get("title", ""),
+            title=title,
             year=int(raw.get("year", 0) or 0),
             media_type=media_type,
             rating=raw.get("content_rating", ""),
@@ -250,8 +286,30 @@ class TautulliFetcher:
             added_at=added_at,
             subtitle=subtitle,
             tmdb_id=tmdb_id,
-            local_poster=f"plex-{rating_key}.jpg",
+            local_poster=local_poster,
         )
+
+    @staticmethod
+    def _group_episodes_by_series(items: List[MediaItem]) -> List[MediaItem]:
+        """Keep only the most-recently-added episode per series.
+
+        Multiple episodes of the same series share the same ``id`` (based on
+        ``grandparent_rating_key``).  This method deduplicates by keeping the
+        episode with the latest ``added_at`` timestamp for each series.
+
+        Args:
+            items: List of :class:`MediaItem` objects, potentially containing
+                multiple episodes from the same series.
+
+        Returns:
+            Deduplicated list with at most one item per series ``id``.
+        """
+        best: dict[str, MediaItem] = {}
+        for item in items:
+            existing = best.get(item.id)
+            if existing is None or item.added_at > existing.added_at:
+                best[item.id] = item
+        return list(best.values())
 
     def _parse_guids(self, guids: Any) -> Optional[int]:
         """Extract a TMDb integer ID from Plex ``guids`` metadata.

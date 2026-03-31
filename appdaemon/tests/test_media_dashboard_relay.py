@@ -286,10 +286,10 @@ class TestGetDetailCommand:
         warn_calls = [c for c in app.log.call_args_list if c[1].get("level") == "WARNING"]
         assert len(warn_calls) > 0
 
-    def test_get_detail_finds_item_in_plex_new(self):
+    def test_get_detail_finds_item_in_plex_movies(self):
         app = _make_app()
         item = _make_item("plex-10", "Plex Movie", summary="Plex summary")
-        app._categories["plex_new"] = [item]
+        app._categories["plex_movies"] = [item]
 
         _run(app._handle_get_detail({"id": "plex-10"}))
 

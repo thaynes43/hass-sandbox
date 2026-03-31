@@ -146,7 +146,7 @@ class MediaDashboardCard extends HTMLElement {
   }
 
   _rotateNextCategory() {
-    const tabs = ["in_theaters", "plex_new", "coming_soon"];
+    const tabs = ["in_theaters", "plex_movies", "plex_shows", "coming_soon"];
     const current = tabs.indexOf(this._activeCategory);
     this._activeCategory = tabs[(current + 1) % tabs.length];
     this._scrollOffset = 0;
@@ -199,9 +199,10 @@ class MediaDashboardCard extends HTMLElement {
         </div>
         <div class="md-poster-row"></div>
         <div class="md-tabs">
-          <div class="md-tab" data-action="tab" data-category="in_theaters">&#127916; THEATERS</div>
-          <div class="md-tab" data-action="tab" data-category="plex_new">&#128250; PLEX</div>
-          <div class="md-tab" data-action="tab" data-category="coming_soon">&#127997; COMING SOON</div>
+          <div class="md-tab" data-action="tab" data-category="in_theaters"><ha-icon icon="mdi:filmstrip" style="--mdc-icon-size:14px;"></ha-icon> THEATERS</div>
+          <div class="md-tab" data-action="tab" data-category="plex_movies"><img class="md-tab-icon" src="/local/media-dashboard/icons/plex.png" alt="Plex" /> MOVIES</div>
+          <div class="md-tab" data-action="tab" data-category="plex_shows"><img class="md-tab-icon" src="/local/media-dashboard/icons/plex.png" alt="Plex" /> SHOWS</div>
+          <div class="md-tab" data-action="tab" data-category="coming_soon"><ha-icon icon="mdi:calendar-clock" style="--mdc-icon-size:14px;"></ha-icon> SOON</div>
         </div>
       </div>
     `;
@@ -660,6 +661,14 @@ class MediaDashboardCard extends HTMLElement {
       .md-tab.active {
         color: rgba(240, 243, 255, 0.95);
         border-bottom-color: var(--primary-color, #66b3ff);
+      }
+
+      .md-tab-icon {
+        width: 14px;
+        height: 14px;
+        vertical-align: middle;
+        margin-right: 2px;
+        object-fit: contain;
       }
     `;
   }
