@@ -481,7 +481,7 @@ class MediaDashboardApp(hass.Hass):
         )
 
         enriched = 0
-        async with MdbListClient(api_key=self._mdblist._api_key) as client:
+        async with self._mdblist as client:
             for item in eligible:
                 try:
                     mdb_type = "show" if item.media_type == "tv" else item.media_type
