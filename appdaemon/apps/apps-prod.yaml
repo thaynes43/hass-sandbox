@@ -852,8 +852,8 @@ cloud_checker:
       name: Google
     - url: https://one.one.one.one
       name: Cloudflare
-    - url: https://www.amazon.com
-      name: Amazon
+    - url: https://speedtest.xfinity.com
+      name: Xfinity
 
 mqtt_broker_checker:
   module: health_checks.checker_apps.mqtt_broker_checker.mqtt_broker_checker
