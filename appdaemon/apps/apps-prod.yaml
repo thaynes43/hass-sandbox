@@ -1096,7 +1096,7 @@ media_dashboard_app:
   disable: true
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  # Tautulli — "New on Plex"
+  # Tautulli — Plex Movies + Plex Shows
   tautulli_url_env: TAUTULLI_URL
   tautulli_api_key_env: TAUTULLI_API_KEY
   # TMDb — in theaters + coming soon
