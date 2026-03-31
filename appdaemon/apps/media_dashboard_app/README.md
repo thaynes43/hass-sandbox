@@ -173,7 +173,7 @@ media_dashboard_app:
 | `tmdb_refresh_interval` | `43200` | Seconds between TMDb refreshes (12 hours) |
 | `showtimes_refresh_interval` | `86400` | Seconds between showtime refreshes (24 hours) |
 | `max_items_per_category` | `20` | Max items published per category in the main sensor |
-| `popularity_threshold` | `10.0` | TMDb popularity minimum to pass the filter |
+| `popularity_threshold` | `5.0` | TMDb popularity minimum to pass the filter |
 | `vote_count_threshold` | `50` | TMDb vote count minimum to pass the filter |
 | `stale_ttl_days` | `7` | Days before an item is evicted from a category for staleness |
 | `genre_filter` | `[]` | Optional genre allow-list. Empty = all genres pass through |

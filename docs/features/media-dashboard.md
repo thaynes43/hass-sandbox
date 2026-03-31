@@ -1,6 +1,6 @@
 # Media Dashboard
 
-A wall-display card that aggregates media content from three sources into a single glanceable view with poster art, local theater showtimes, and a preference system.
+A wall-display card that aggregates media content from four sources into a single glanceable view with poster art, external ratings, local theater showtimes, and a preference system.
 
 ## Overview
 
@@ -22,7 +22,11 @@ The compact card sits on the wall display alongside other dashboard cards. It sh
 
 Tapping the compact card opens the detail popup with all three categories as horizontally scrollable poster rows. Each row has scroll arrows for quick navigation. Tapping a poster loads its full detail panel with:
 
-- Synopsis and metadata (rating, runtime, genres, TMDb score)
+- Ratings row with Kometa-style icons: TMDb, IMDb, Rotten Tomatoes critics (tomato), and RT audience (popcorn) -- fresh/rotten icon variants based on 60% threshold
+- MPAA certification, runtime, and genre names
+- Director, theatrical release date, and worldwide box office revenue
+- Movie tagline in italics
+- Synopsis
 - Like/unlike toggle and dismiss button
 - Collapsible 7-day showtime schedule grouped by day, with theater summaries
 
@@ -33,8 +37,9 @@ Dismissed items appear in a "Hidden (N)" toggle below each category's poster row
 | Source | What it provides | Refresh cadence |
 |--------|-----------------|-----------------|
 | **Tautulli** | Recently added Plex movies and shows, poster images via `pms_image_proxy` | Every 2 hours |
-| **TMDb** | Now-playing and upcoming movies, popularity/vote metadata, poster CDN | Every 12 hours |
+| **TMDb** | Now-playing and upcoming movies, popularity/vote metadata, poster CDN, director/certification/revenue via detail endpoint | Every 12 hours |
 | **SerpApi** | Theater showtimes via Google search for configured local cinemas | Once daily |
+| **MDbList** | External ratings aggregator -- IMDb, Rotten Tomatoes (critics + audience), Metacritic; enriches items during each refresh | On each refresh |
 
 ## Architecture
 
