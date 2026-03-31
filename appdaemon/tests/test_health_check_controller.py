@@ -981,6 +981,50 @@ class TestRepairRouting:
 
         app.fire_event.assert_not_called()
 
+    def test_cancel_repair_fires_targeted_event(self):
+        """cancel_repair should fire health_check_repair_{checker_id} with action=cancel_repair."""
+        app = _make_app()
+        _startup(app)
+        _register_repair_checker(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "cancel_repair",
+            "payload": json.dumps({"checker_id": "spa"}),
+        }, {})
+
+        app.fire_event.assert_called_once_with(
+            "health_check_repair_spa",
+            action="cancel_repair",
+        )
+
+    def test_cancel_repair_rejects_non_repair_checker(self):
+        """cancel_repair should reject checkers without supports_repair."""
+        app = _make_app()
+        _startup(app)
+        _register_no_repair_checker(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "cancel_repair",
+            "payload": json.dumps({"checker_id": "zigbee"}),
+        }, {})
+
+        app.fire_event.assert_not_called()
+
+    def test_cancel_repair_rejects_unknown_checker(self):
+        """cancel_repair for an unknown checker should be rejected."""
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "cancel_repair",
+            "payload": json.dumps({"checker_id": "nonexistent"}),
+        }, {})
+
+        app.fire_event.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Tests — Alert history enhancement (Enhancement 1)

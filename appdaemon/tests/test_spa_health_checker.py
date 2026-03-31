@@ -146,7 +146,7 @@ class TestLifecycle:
         assert payload["supports_repair"] is True
         assert payload["checker_id"] == "spa"
         assert "Gateway Ping" in payload["check_names"]
-        assert "Thermostat Staleness" in payload["check_names"]
+        assert "Staleness" in payload["check_names"]
 
     def test_startup_registers_event_listeners(self):
         app = _make_app()
@@ -239,7 +239,7 @@ class TestChecks:
         app.get_state = AsyncMock(return_value={"last_updated": recent})
         result = _run(app._check_staleness())
         assert result["status"] == "ok"
-        assert result["name"] == "Thermostat Staleness"
+        assert result["name"] == "Staleness"
 
     def test_staleness_critical(self):
         app = _make_app()
@@ -250,7 +250,7 @@ class TestChecks:
         app.get_state = AsyncMock(return_value={"last_updated": old})
         result = _run(app._check_staleness())
         assert result["status"] == "critical"
-        assert "Stale" in result["detail"]
+        assert "stale" in result["detail"].lower()
 
     def test_staleness_entity_not_found(self):
         app = _make_app()
@@ -278,7 +278,7 @@ class TestChecks:
                 return_value={"name": "Overall Connection", "status": "ok", "detail": "connected"}
             )
             app._check_staleness = AsyncMock(
-                return_value={"name": "Thermostat Staleness", "status": "ok", "detail": "Updated 10s ago"}
+                return_value={"name": "Staleness", "status": "ok", "detail": "Freshest: thermostat_1 updated 10s ago"}
             )
             await app._run_checks()
 
@@ -406,7 +406,7 @@ class TestRepairStateMachine:
         results = [
             {"name": "Gateway Ping", "status": "ok", "detail": ""},
             {"name": "Overall Connection", "status": "ok", "detail": ""},
-            {"name": "Thermostat Staleness", "status": "ok", "detail": ""},
+            {"name": "Staleness", "status": "ok", "detail": ""},
         ]
         app._evaluate_auto_repair(results)
 
@@ -612,3 +612,154 @@ class TestRepairCommandHandler:
         # Should have called service to enable auto-repair
         calls = [c[0][0] for c in app.call_service.call_args_list]
         assert "input_boolean/turn_on" in calls
+
+    def test_cancel_repair_command_while_pending(self):
+        """cancel_repair command resets pending state to idle."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_PENDING
+        app._repair_detail = "Auto-repair at 2025-01-01T00:00:00"
+        app._auto_repair_deadline = datetime.datetime.now() + datetime.timedelta(minutes=5)
+        app._unhealthy_since = datetime.datetime.now()
+
+        app._on_repair_command(
+            "health_check_repair_spa",
+            {"action": "cancel_repair"},
+            {},
+        )
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._repair_detail == ""
+        assert app._auto_repair_deadline is None
+        assert app._unhealthy_since is None
+        # Should fire a status report
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        assert len(report_calls) >= 1
+
+    def test_cancel_repair_rejected_when_not_pending(self):
+        """cancel_repair logs a warning and does nothing when status is not pending."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IDLE
+
+        app._on_repair_command(
+            "health_check_repair_spa",
+            {"action": "cancel_repair"},
+            {},
+        )
+
+        assert app._repair_status == REPAIR_IDLE
+        # Should have logged a warning
+        warning_calls = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" or (len(c[0]) > 1 and c[0][1] == "WARNING")
+        ]
+        assert len(warning_calls) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Tests — Auto-repair cross-check interaction
+# ---------------------------------------------------------------------------
+
+class TestAutoRepairCrossCheck:
+    def test_partial_failure_does_not_trigger_auto_repair(self):
+        """With 3 checks where only 1 is critical, cross-check downgrades it to
+        warning before _evaluate_auto_repair runs — auto-repair must NOT trigger."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+
+        # Simulate post-cross-check results: 1-of-3 critical → downgraded to warning
+        results = [
+            {"name": "Gateway Ping", "status": "warning", "detail": "timeout (partial failure)"},
+            {"name": "Overall Connection", "status": "ok", "detail": "connected"},
+            {"name": "Transport Connection", "status": "ok", "detail": "connected"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        # No critical → auto-repair must not trigger
+        assert app._repair_status == REPAIR_IDLE
+        assert app._unhealthy_since is None
+
+    def test_all_critical_triggers_auto_repair(self):
+        """When all checks are critical (cross-check leaves them as critical),
+        auto-repair should go to pending."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+
+        # All critical — cross-check leaves them unchanged
+        results = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Overall Connection", "status": "critical", "detail": "State: off"},
+            {"name": "Transport Connection", "status": "critical", "detail": "State: off"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_PENDING
+        assert app._auto_repair_deadline is not None
+        assert app._unhealthy_since is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests — Multi-entity staleness
+# ---------------------------------------------------------------------------
+
+class TestMultiEntityStaleness:
+    def test_staleness_ok_when_one_entity_is_fresh(self):
+        """Returns ok when at least one entity is within the threshold."""
+        app = _make_app(extra_args={
+            "staleness_entities": [
+                "climate.spa_thermostat",
+                "sensor.spa_temperature",
+            ],
+            "staleness_threshold_s": 300,
+        })
+        _init_only(app)
+
+        recent = datetime.datetime.utcnow().isoformat()
+        old = (datetime.datetime.utcnow() - datetime.timedelta(seconds=600)).isoformat()
+
+        # First entity is stale, second is fresh
+        app.get_state = AsyncMock(side_effect=[
+            {"last_updated": old},    # climate.spa_thermostat — stale
+            {"last_updated": recent}, # sensor.spa_temperature — fresh
+        ])
+
+        result = _run(app._check_staleness())
+
+        assert result["status"] == "ok"
+        assert result["name"] == "Staleness"
+        assert "spa_temperature" in result["detail"]
+
+    def test_staleness_critical_when_all_entities_stale(self):
+        """Returns critical when all entities exceed the threshold."""
+        app = _make_app(extra_args={
+            "staleness_entities": [
+                "climate.spa_thermostat",
+                "sensor.spa_temperature",
+            ],
+            "staleness_threshold_s": 300,
+        })
+        _init_only(app)
+
+        old1 = (datetime.datetime.utcnow() - datetime.timedelta(seconds=700)).isoformat()
+        old2 = (datetime.datetime.utcnow() - datetime.timedelta(seconds=600)).isoformat()
+
+        # Both stale; old2 is the freshest (600s < 700s)
+        app.get_state = AsyncMock(side_effect=[
+            {"last_updated": old1},
+            {"last_updated": old2},
+        ])
+
+        result = _run(app._check_staleness())
+
+        assert result["status"] == "critical"
+        assert result["name"] == "Staleness"
+        assert "All 2 entities stale" in result["detail"]
+        assert "600" in result["detail"] or "599" in result["detail"]  # freshest age

@@ -236,6 +236,8 @@ class HealthCheckController(hass.Hass):
             self._handle_force_recheck(payload)
         elif cmd == "start_repair":
             self._handle_start_repair(payload)
+        elif cmd == "cancel_repair":
+            self._handle_cancel_repair(payload)
         elif cmd == "update_repair_config":
             self._handle_update_repair_config(payload)
         elif cmd == "clear_alert_history":
@@ -423,6 +425,28 @@ class HealthCheckController(hass.Hass):
         self.fire_event(
             f"health_check_repair_{checker_id}",
             action="start_repair",
+        )
+
+    def _handle_cancel_repair(self, payload: dict) -> None:
+        """Forward a cancel repair request to the target checker."""
+        checker_id = payload.get("checker_id", "")
+        checker = self._checkers.get(checker_id)
+        if not checker:
+            self.log(
+                f"cancel_repair for unknown checker: {checker_id!r}",
+                level="WARNING",
+            )
+            return
+        if not checker.get("supports_repair"):
+            self.log(
+                f"cancel_repair rejected — checker '{checker_id}' does not support repair",
+                level="WARNING",
+            )
+            return
+        self.log(f"Forwarding cancel_repair to checker '{checker_id}'", level="INFO")
+        self.fire_event(
+            f"health_check_repair_{checker_id}",
+            action="cancel_repair",
         )
 
     def _handle_update_repair_config(self, payload: dict) -> None:

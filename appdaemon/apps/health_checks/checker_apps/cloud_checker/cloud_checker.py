@@ -23,7 +23,7 @@ if _health_checks_root not in sys.path:
 
 import hassapi as hass
 
-from shared.check_utils import http_check
+from shared.check_utils import apply_cross_check, http_check
 
 
 class CloudChecker(hass.Hass):
@@ -177,6 +177,8 @@ class CloudChecker(hass.Hass):
                         "status": "critical",
                         "detail": f"Error: {exc}",
                     })
+
+        apply_cross_check(results)
 
         self.fire_event(
             "health_check_command",

@@ -11,8 +11,13 @@ spa_health_checker_dev:
   gateway_host: "192.168.50.122"
   connection_entities:
     - binary_sensor.westford_spa_overall_connection
-  staleness_entity: climate.westford_spa_thermostat_1
-  staleness_threshold_s: 300
+  staleness_entities:
+    - climate.westford_spa_thermostat_1
+    - light.westford_spa_light_1
+    - light.westford_spa_light_2
+    - fan.westford_spa_pump_1
+    - fan.westford_spa_pump_2
+  staleness_threshold_s: 10800
   repair_switch: switch.power_distribution_hi_density_hot_tub
   repair_recovery_wait_s: 300
   check_interval_s: 120
