@@ -228,14 +228,51 @@ class SchoolLunchApp(hass.Hass):
 
         Returns a list of school dicts suitable for sensor attributes.
         Per-school errors are logged but don't abort the whole batch.
+
+        If the fetched menu is behind the current calendar month, the
+        ``nextMonthPublished`` chain is followed to advance to the current
+        month (download IDs are month-specific, so the initial resolve may
+        return a stale month).
         """
+        now = datetime.datetime.now()
         schools = []
         async with self._client:
             for name, info in self._resolved_menus.items():
                 mongo_id = info["mongo_id"]
                 try:
                     menu_month = await self._client.fetch_menu(mongo_id)
+                    original_menu_id = menu_month.menu_id
+                    menu_month = await self._advance_to_current_month(
+                        name, menu_month, now,
+                    )
+                    # Update stored mongo_id when advance moved us forward
+                    # so subsequent fetches use the new month directly.
+                    if menu_month.menu_id != original_menu_id:
+                        info["mongo_id"] = menu_month.menu_id
                     school_dict = self._build_school_dict(name, menu_month)
+
+                    # Pre-fetch next month so cross-month week views
+                    # (e.g. last week of March showing April days) have data.
+                    if menu_month.next_month_id:
+                        try:
+                            next_mm = await self._client.fetch_menu(
+                                menu_month.next_month_id,
+                            )
+                            next_dict = self._build_school_dict(name, next_mm)
+                            school_dict["days"].extend(next_dict["days"])
+                            self.log(
+                                f"Pre-fetched next month for '{name}': "
+                                f"{next_mm.display_month}/{next_mm.year}, "
+                                f"{len(next_mm.days)} days",
+                                level="DEBUG",
+                            )
+                        except Exception as exc:
+                            self.log(
+                                f"Failed to pre-fetch next month for "
+                                f"'{name}': {exc!r}",
+                                level="WARNING",
+                            )
+
                     schools.append(school_dict)
                     self.log(
                         f"Fetched menu for '{name}': "
@@ -250,6 +287,48 @@ class SchoolLunchApp(hass.Hass):
                         level="WARNING",
                     )
         return schools
+
+    async def _advance_to_current_month(
+        self,
+        school_name: str,
+        menu_month: MenuMonth,
+        now: datetime.datetime,
+    ) -> MenuMonth:
+        """Follow ``nextMonthPublished`` links until the menu matches the
+        current calendar month (or there is no next month available).
+
+        Download IDs are month-specific: the ID configured in ``apps.yaml``
+        always resolves to the month it was published for.  When a new
+        calendar month starts the resolved ID still points to the old month,
+        so we walk forward via the GraphQL ``nextMonthPublished`` field.
+        """
+        current_year = now.year
+        current_month = now.month  # 1-indexed
+
+        # Guard: advance at most 12 hops to avoid infinite loops
+        for _ in range(12):
+            display = menu_month.display_month  # 1-indexed
+            if (menu_month.year, display) >= (current_year, current_month):
+                return menu_month
+
+            next_id = menu_month.next_month_id
+            if not next_id:
+                self.log(
+                    f"'{school_name}' menu is {display}/{menu_month.year} "
+                    f"but no nextMonthPublished available to advance to "
+                    f"{current_month}/{current_year}",
+                    level="WARNING",
+                )
+                return menu_month
+
+            self.log(
+                f"'{school_name}' menu is {display}/{menu_month.year}, "
+                f"advancing to next month (id={next_id})",
+                level="INFO",
+            )
+            menu_month = await self._client.fetch_menu(next_id)
+
+        return menu_month
 
     @staticmethod
     def _build_school_dict(name: str, menu_month: MenuMonth) -> Dict[str, Any]:
@@ -300,7 +379,20 @@ class SchoolLunchApp(hass.Hass):
                     cleaned = or_prefix_re.sub("", raw_name)
                     items.append({"name": cleaned, "role": "option"})
 
-            day_dict: Dict[str, Any] = {"day": menu_day.day, "items": items}
+            # Per-day month may be None for notice days; fall back to
+            # the parent MenuMonth values.
+            day_month = (
+                menu_day.month + 1
+                if menu_day.month is not None
+                else menu_month.display_month
+            )
+            day_year = menu_day.year or menu_month.year
+            day_dict: Dict[str, Any] = {
+                "day": menu_day.day,
+                "month": day_month,
+                "year": day_year,
+                "items": items,
+            }
             if menu_day.notice:
                 day_dict["notice"] = menu_day.notice
             days.append(day_dict)

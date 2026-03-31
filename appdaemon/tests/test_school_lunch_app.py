@@ -644,6 +644,153 @@ class TestDailyFetch:
         assert last_call[1]["state"] == "error"
 
 
+class TestMonthAdvance:
+    """Tests for the auto-advance logic that follows nextMonthPublished."""
+
+    def test_advance_when_menu_is_stale(self):
+        """If fetched menu is behind the current month, advance via next_month_id."""
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()
+
+        # March menu (month=2, 0-indexed) with next_month_id pointing to April
+        march_menu = _make_menu_month(name="Elementary", month=2, year=2026, next_id="april-mongo-id")
+        april_menu = _make_menu_month(name="Elementary", month=3, year=2026, prev_id="march-mongo-id", next_id=None)
+        april_menu.menu_id = "april-mongo-id"
+
+        fetch_calls = []
+
+        async def _tracking_fetch(menu_id: str) -> MenuMonth:
+            fetch_calls.append(menu_id)
+            if menu_id == "april-mongo-id":
+                return april_menu
+            # Default: return march menus for all initial IDs
+            menus = {
+                "mongo-elementary": march_menu,
+                "mongo-middle": _make_menu_month(name="Middle School", month=3, year=2026, next_id=None),
+                "mongo-high": _make_menu_month(name="High School", month=3, year=2026, next_id=None),
+            }
+            return menus[menu_id]
+
+        mock_client = _make_mock_client()
+        mock_client.fetch_menu = AsyncMock(side_effect=_tracking_fetch)
+
+        _startup(app, mock_prov, mock_client)
+
+        # Simulate April — the startup fetched March, should have advanced
+        # We need to test _advance_to_current_month directly
+        app._client = mock_client
+        april_now = datetime.datetime(2026, 4, 15)
+        result = _run(app._advance_to_current_month("Elementary", march_menu, april_now))
+
+        assert result.display_month == 4
+        assert result.menu_id == "april-mongo-id"
+        assert "april-mongo-id" in fetch_calls
+
+    def test_no_advance_when_current(self):
+        """If menu already matches current month, no extra fetch happens."""
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()
+        mock_client = _make_mock_client()
+
+        _startup(app, mock_prov, mock_client)
+
+        april_menu = _make_menu_month(name="Elementary", month=3, year=2026)
+        app._client = mock_client
+        mock_client.fetch_menu.reset_mock()
+
+        april_now = datetime.datetime(2026, 4, 15)
+        result = _run(app._advance_to_current_month("Elementary", april_menu, april_now))
+
+        assert result is april_menu
+        mock_client.fetch_menu.assert_not_called()
+
+    def test_advance_stops_when_no_next_month(self):
+        """If nextMonthPublished is None, advance stops and returns what we have."""
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()
+        mock_client = _make_mock_client()
+
+        _startup(app, mock_prov, mock_client)
+
+        march_menu = _make_menu_month(name="Elementary", month=2, year=2026, next_id=None)
+        app._client = mock_client
+        mock_client.fetch_menu.reset_mock()
+
+        april_now = datetime.datetime(2026, 4, 15)
+        result = _run(app._advance_to_current_month("Elementary", march_menu, april_now))
+
+        # Should return March since no next is available
+        assert result.display_month == 3
+        mock_client.fetch_menu.assert_not_called()
+        # Should have logged a warning
+        app.log.assert_any_call(
+            "'Elementary' menu is 3/2026 but no nextMonthPublished "
+            "available to advance to 4/2026",
+            level="WARNING",
+        )
+
+    def test_advance_updates_resolved_mongo_id(self):
+        """After advancing, _resolved_menus mongo_id is updated for next fetch."""
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()
+
+        march_menu = _make_menu_month(name="Elementary", month=2, year=2026, next_id="april-mongo-id")
+        april_menu = _make_menu_month(name="Elementary", month=3, year=2026)
+        april_menu.menu_id = "april-mongo-id"
+
+        async def _fetch(menu_id: str) -> MenuMonth:
+            if menu_id == "april-mongo-id":
+                return april_menu
+            menus = {
+                "mongo-elementary": march_menu,
+                "mongo-middle": _make_menu_month(name="Middle School", month=3, year=2026),
+                "mongo-high": _make_menu_month(name="High School", month=3, year=2026),
+            }
+            return menus[menu_id]
+
+        mock_client = _make_mock_client()
+        mock_client.fetch_menu = AsyncMock(side_effect=_fetch)
+
+        _startup(app, mock_prov, mock_client)
+
+        # Now simulate a daily fetch in April
+        april_now = datetime.datetime(2026, 4, 15)
+        with patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = april_now
+            mock_dt.time = datetime.time
+            with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client):
+                _run(app._do_daily_fetch())
+
+        # The Elementary mongo_id should have been updated
+        assert app._resolved_menus["Elementary"]["mongo_id"] == "april-mongo-id"
+
+    def test_advance_multi_month_gap(self):
+        """Advance follows the chain through multiple months."""
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()
+        mock_client = _make_mock_client()
+
+        _startup(app, mock_prov, mock_client)
+
+        # Jan -> Feb -> March (current)
+        jan_menu = _make_menu_month(name="Elementary", month=0, year=2026, next_id="feb-id")
+        feb_menu = _make_menu_month(name="Elementary", month=1, year=2026, next_id="mar-id")
+        mar_menu = _make_menu_month(name="Elementary", month=2, year=2026)
+        mar_menu.menu_id = "mar-id"
+
+        async def _chain_fetch(menu_id: str) -> MenuMonth:
+            return {"feb-id": feb_menu, "mar-id": mar_menu}[menu_id]
+
+        mock_client.fetch_menu = AsyncMock(side_effect=_chain_fetch)
+        app._client = mock_client
+
+        march_now = datetime.datetime(2026, 3, 15)
+        result = _run(app._advance_to_current_month("Elementary", jan_menu, march_now))
+
+        assert result.display_month == 3
+        assert mock_client.fetch_menu.call_count == 2
+
+
 class TestListenerRegistration:
     def test_event_listener_registered(self):
         """listen_event is called for school_lunch_command during startup."""

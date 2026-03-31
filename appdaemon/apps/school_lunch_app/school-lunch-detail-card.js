@@ -440,9 +440,6 @@ class SchoolLunchDetailCard extends HTMLElement {
 
     const rows = filteredSchools
       .map((school) => {
-        const schoolMonth = school.month; // 1-indexed
-        const schoolYear = school.year;
-
         const cells = weekDates
           .map((d) => {
             const isTarget =
@@ -450,25 +447,23 @@ class SchoolLunchDetailCard extends HTMLElement {
               d.getMonth() === targetMonth &&
               d.getFullYear() === targetYear;
 
-            // Check if this weekday falls in the school's loaded month
+            // Match per-day month/year so cross-month weeks work
             const cellMonth = d.getMonth() + 1; // 1-indexed
             const cellYear = d.getFullYear();
+            const dayData = school.days?.find(
+              (day) => day.day === d.getDate() && day.month === cellMonth && day.year === cellYear
+            );
             let cellContent = "";
 
-            if (cellMonth === schoolMonth && cellYear === schoolYear) {
-              const dayData = school.days?.find((day) => day.day === d.getDate());
-              if (dayData) {
-                if (dayData.notice) {
-                  cellContent = `<span class="day-notice">${sldEscapeHtml(dayData.notice)}</span>`;
-                  const parsed = parseLunchItems(dayData.items);
-                  if (parsed.options.length > 0) {
-                    cellContent += renderLunchHtml(parsed, "menu");
-                  }
-                } else {
-                  cellContent = renderLunchHtml(parseLunchItems(dayData.items), "menu");
+            if (dayData) {
+              if (dayData.notice) {
+                cellContent = `<span class="day-notice">${sldEscapeHtml(dayData.notice)}</span>`;
+                const parsed = parseLunchItems(dayData.items);
+                if (parsed.options.length > 0) {
+                  cellContent += renderLunchHtml(parsed, "menu");
                 }
               } else {
-                cellContent = `<span class="no-menu">No menu</span>`;
+                cellContent = renderLunchHtml(parseLunchItems(dayData.items), "menu");
               }
             } else {
               cellContent = `<span class="no-menu">—</span>`;
@@ -551,7 +546,9 @@ class SchoolLunchDetailCard extends HTMLElement {
             if (dayNum === null) {
               return `<td class="cal-cell empty"></td>`;
             }
-            const dayData = days?.find((d) => d.day === dayNum);
+            const dayData = days?.find(
+              (d) => d.day === dayNum && d.month === month && d.year === year
+            );
             let itemsHtml = "";
             if (dayData) {
               if (dayData.notice) {
