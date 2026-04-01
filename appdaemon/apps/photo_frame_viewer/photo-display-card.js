@@ -76,8 +76,6 @@ class PhotoDisplayCard extends HTMLElement {
       fetcher: fetcher
         ? {
             a: {
-              active_filter_index: fetcher.attributes?.active_filter_index,
-              filters: fetcher.attributes?.filters,
               last_fetch_filter: fetcher.attributes?.last_fetch_filter,
             },
           }
@@ -173,15 +171,16 @@ class PhotoDisplayCard extends HTMLElement {
   }
 
   _filterTitle() {
-    const filters = this._parseJsonAttr(this._config.fetcher_entity, "filters", []);
-    const idx = Number(
-      this._sensorAttr(this._config.fetcher_entity, "active_filter_index", 0)
-    ) || 0;
+    // Read from the viewer sensor — this is updated only when the viewer
+    // actually swaps to a new generation, not when the fetcher finishes
+    // downloading (which races ahead).
+    const viewerFilter = String(
+      this._sensorAttr(this._config.status_entity, "displaying_filter_name", "") || ""
+    ).trim();
+    if (viewerFilter) return viewerFilter;
 
-    if (Array.isArray(filters) && filters[idx]?.name) {
-      return String(filters[idx].name);
-    }
-
+    // Fallback: read from the fetcher sensor for backwards compatibility
+    // (e.g. before the viewer has published any filter name).
     const lastFetchFilter = String(
       this._sensorAttr(this._config.fetcher_entity, "last_fetch_filter", "") || ""
     ).trim();

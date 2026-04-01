@@ -1,3 +1,7 @@
+# OS artifacts
+.DS_Store
+**/.DS_Store
+
 # AppDaemon secrets - replace token and never commit (production uses ExternalSecret)
 appdaemon/secrets.yaml
 

@@ -349,6 +349,8 @@ class TestPendingSwap:
         to be rescheduled repeatedly.
         """
         app = self._init_with_gen("3")
+        # Clear any pending gen so _on_tick exercises the normal advance path.
+        app._pending_gen_id = None
         opts = app._picker_options()
         assert len(opts) >= 2, "Need at least 2 picker options"
         first_label = opts[0]
@@ -383,6 +385,39 @@ class TestPendingSwap:
         )
         # Target should be cleared after absorption.
         assert app._programmatic_target is None
+
+    def test_tick_with_pending_gen_does_not_double_advance(self):
+        """_on_tick must return early after applying a pending gen swap.
+
+        Regression test: previously _on_tick would apply the pending gen
+        (selecting photo_0000) and then also advance to photo_0001 in the
+        same tick, overwriting _programmatic_target.  The echo for
+        photo_0000 would then be misclassified as manual nav, causing a
+        visible double-advance (rapid skip).
+        """
+        app = self._init_with_gen("3")
+        assert app._pending_gen_id is not None, "Should have a pending gen"
+        pending_labels = app._pending_labels[:]
+        assert len(pending_labels) >= 2, "Need at least 2 pending labels"
+
+        app.call_service.reset_mock()
+        app._on_tick({})
+
+        # The pending gen should have been applied — first label selected.
+        assert app._pending_gen_id is None, "Pending gen should be consumed"
+        assert app._programmatic_target == pending_labels[0]
+
+        # Crucially, _on_tick should NOT have also advanced to the next label.
+        select_option_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args[0] == "input_select/select_option"
+        ]
+        # Expect exactly one select_option call (from _apply_pending_gen),
+        # not two (which would mean the tick also advanced).
+        options_selected = [c.kwargs.get("option") for c in select_option_calls]
+        assert options_selected == [pending_labels[0]], (
+            f"Expected only [{pending_labels[0]}] but got {options_selected}"
+        )
 
     def test_real_manual_nav_not_absorbed(self):
         """A genuine user navigation must not be absorbed by the programmatic target."""
@@ -420,3 +455,26 @@ class TestPendingSwap:
 
         stage_calls = _service_calls(app, "shell_command/photo_frame_stage_gen")
         assert len(stage_calls) == 1
+
+    def test_displaying_filter_name_set_on_gen_swap(self):
+        """Filter name from batch_ready event is published only when the gen is applied."""
+        app = self._init_with_gen("3")
+        # Simulate a batch_ready with a filter name + new source files.
+        _replace_source_files(app.source_dir, ["F1.jpg", "F2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready",
+            {"count": 2, "filter": "Boats"},
+            {},
+        )
+        # Staging is triggered but the gen is only pending — filter name
+        # should NOT be displayed yet.
+        app._on_stage_settled({})
+        assert app._displaying_filter_name == "", (
+            "Filter name should not update until gen is actually applied"
+        )
+
+        # Now apply the pending gen via a tick.
+        app._on_tick({})
+        assert app._displaying_filter_name == "Boats", (
+            "Filter name should update when gen is applied"
+        )
