@@ -131,6 +131,11 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pause_auto_resume_handle: Optional[Any] = None
         self._pause_auto_resume_deadline: Optional[float] = None
 
+        # Filter name of the batch currently being displayed.  Updated only
+        # when the viewer *actually* swaps to a new generation, not when the
+        # fetcher finishes downloading (which races ahead of the viewer).
+        self._displaying_filter_name: str = ""
+
         # Slideshow timer
         self._timer_handle: Optional[Any] = None
         self._periodic_handle: Optional[Any] = None
@@ -154,6 +159,11 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pending_label_to_path: dict[str, str] = {}
         self._pending_path_to_label: dict[str, str] = {}
         self._pending_fingerprint: Optional[str] = None
+        self._pending_filter_name: str = ""
+
+        # Filter name received from the most recent batch_ready event,
+        # consumed when the staging flow captures it for the pending gen.
+        self._staged_filter_name: str = ""
 
         # Label we expect back from the next HA state-change echo after a
         # programmatic picker update.  Cleared when the echo arrives so that
@@ -439,6 +449,7 @@ class PhotoFrameViewerApp(hass.Hass):
                 "pause_auto_resume_s": self.pause_auto_resume_s,
                 "pause_resume_at": self._pause_auto_resume_deadline,
                 "current_gen": self._current_gen_id or "",
+                "displaying_filter_name": self._displaying_filter_name,
                 "friendly_name": f"{self._entity_prefix.replace('_', ' ').title()} Photo Frame",
             },
         )
@@ -723,6 +734,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         if not gen_id or not source_paths:
             self.log("PhotoFrameViewerApp: stage settled but no staging context", level="WARNING")
+            self._staged_filter_name = ""
             return
 
         # Build gen paths and label maps for the new generation
@@ -734,10 +746,12 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pending_label_to_path = l2p
         self._pending_path_to_label = p2l
         self._pending_fingerprint = fingerprint
+        self._pending_filter_name = self._staged_filter_name
+        self._staged_filter_name = ""
 
         self.log(
             f"PhotoFrameViewerApp: gen={gen_id} ready as pending "
-            f"({len(labels)} labels)",
+            f"({len(labels)} labels, filter={self._pending_filter_name!r})",
             level="INFO",
         )
 
@@ -841,6 +855,11 @@ class PhotoFrameViewerApp(hass.Hass):
         if self._pending_gen_id is None:
             return
 
+        # Promote the filter name so the card knows which filter is actually
+        # being displayed (not the one the fetcher is already fetching next).
+        if self._pending_filter_name:
+            self._displaying_filter_name = self._pending_filter_name
+
         pending_labels = self._pending_labels[:]
         self._finalize_pending(reason=reason)
 
@@ -917,6 +936,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pending_labels = []
         self._pending_label_to_path = {}
         self._pending_path_to_label = {}
+        self._pending_filter_name = ""
         self._pending_fingerprint = None
 
     def _call_cleanup(self, gen_id: str, *, reason: str) -> None:
@@ -1000,6 +1020,11 @@ class PhotoFrameViewerApp(hass.Hass):
 
     def _on_batch_ready(self, event_name: str, data: dict, kwargs: Any) -> None:
         """Fetcher wrote a new batch — poll for changes immediately."""
+        # Stash the filter name from the event so we can publish it when the
+        # viewer actually swaps to the new generation (avoiding title drift).
+        batch_filter = str(data.get("filter", "") or "").strip()
+        if batch_filter:
+            self._staged_filter_name = batch_filter
         self._poll_for_changes(reason="batch_ready")
 
     def _on_picker_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
@@ -1047,6 +1072,12 @@ class PhotoFrameViewerApp(hass.Hass):
 
         if self._pending_gen_id is not None:
             self._apply_pending_gen(reason="tick")
+            # Gen swap already selected photo_0000 and published its URL.
+            # Advancing further would overwrite _programmatic_target causing
+            # the echo for photo_0000 to be misclassified as manual nav,
+            # which triggers a visible double-advance (rapid skip).
+            self._schedule_next(reason="tick_gen_swap")
+            return
 
         opts = self._picker_options()
         if len(opts) <= 1:

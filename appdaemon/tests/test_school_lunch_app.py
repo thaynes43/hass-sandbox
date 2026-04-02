@@ -123,11 +123,19 @@ def _run(coro):
         loop.close()
 
 
+# Freeze time to March 15 2026 so _advance_to_current_month() is a no-op
+# for the default test data (month=2, 0-indexed March → display_month=3).
+_FROZEN_NOW = datetime.datetime(2026, 3, 15, 12, 0, 0)
+
+
 def _startup(app: SchoolLunchApp, mock_prov: MagicMock, mock_client: MagicMock) -> None:
     """Initialize the app and run the async startup coroutine."""
     app.initialize()
     with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov), \
-         patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client):
+         patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client), \
+         patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+        mock_dt.datetime.now.return_value = _FROZEN_NOW
+        mock_dt.time = datetime.time
         _run(app._async_startup())
 
 
@@ -591,7 +599,10 @@ class TestDailyFetch:
         _startup(app, mock_prov, mock_client)
         app.set_state.reset_mock()
 
-        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client):
+        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client), \
+             patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _FROZEN_NOW
+            mock_dt.time = datetime.time
             _run(app._do_daily_fetch())
 
         app.set_state.assert_called()
@@ -622,7 +633,10 @@ class TestDailyFetch:
 
         mock_client.fetch_menu = AsyncMock(side_effect=_flaky_fetch)
 
-        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client):
+        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client), \
+             patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _FROZEN_NOW
+            mock_dt.time = datetime.time
             _run(app._do_daily_fetch())
 
         names = {s["name"] for s in app._school_data}
@@ -641,7 +655,10 @@ class TestDailyFetch:
 
         mock_client.fetch_menu = AsyncMock(side_effect=ValueError("All gone"))
 
-        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client):
+        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client), \
+             patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _FROZEN_NOW
+            mock_dt.time = datetime.time
             _run(app._do_daily_fetch())
 
         last_call = app.set_state.call_args
