@@ -134,7 +134,8 @@ class PhotoFrameViewerApp(hass.Hass):
         # Filter name of the batch currently being displayed.  Updated only
         # when the viewer *actually* swaps to a new generation, not when the
         # fetcher finishes downloading (which races ahead of the viewer).
-        self._displaying_filter_name: str = ""
+        # Recovered from sensor (primary) or state file (backup) on startup.
+        self._displaying_filter_name: str = self._load_displaying_filter_name()
 
         # Slideshow timer
         self._timer_handle: Optional[Any] = None
@@ -279,6 +280,11 @@ class PhotoFrameViewerApp(hass.Hass):
         data = self._load_runtime_state()
         return max(0.0, _safe_float(data.get("pause_auto_resume_s", default), default))
 
+    def _load_displaying_filter_name(self) -> str:
+        """Load persisted filter name from state file, or return empty string."""
+        data = self._load_runtime_state()
+        return str(data.get("displaying_filter_name", "") or "").strip()
+
     def _save_runtime_state(self) -> None:
         """Persist runtime settings to state file."""
         try:
@@ -287,12 +293,14 @@ class PhotoFrameViewerApp(hass.Hass):
                 json.dumps({
                     "interval_seconds": self._interval,
                     "pause_auto_resume_s": self.pause_auto_resume_s,
+                    "displaying_filter_name": self._displaying_filter_name,
                 }),
                 encoding="utf-8",
             )
             self.log(
                 "PhotoFrameViewerApp: runtime state persisted "
-                f"(interval={self._interval}s pause_auto_resume_s={self.pause_auto_resume_s}s)",
+                f"(interval={self._interval}s pause_auto_resume_s={self.pause_auto_resume_s}s "
+                f"filter={self._displaying_filter_name!r})",
                 level="DEBUG",
             )
         except Exception as exc:
@@ -306,7 +314,7 @@ class PhotoFrameViewerApp(hass.Hass):
     # ------------------------------------------------------------------
 
     def _recover_gen_from_sensor(self) -> None:
-        """On startup, recover the generation counter from the existing virtual sensor."""
+        """On startup, recover the generation counter and filter name from the existing virtual sensor."""
         try:
             state = self.get_state(self._sensor_entity_id, attribute="all")
             if not isinstance(state, dict):
@@ -325,9 +333,19 @@ class PhotoFrameViewerApp(hass.Hass):
             self._current_gen_id = gen
             self._next_gen_counter = gen_int + 1
             self._last_published_local_url = raw
+
+            # Recover the filter name so the card title stays correct
+            # across restarts (without this, the card falls back to the
+            # fetcher's last_fetch_filter which may already point to the
+            # next filter in the rotation).
+            recovered_filter = str(attrs.get("displaying_filter_name", "") or "").strip()
+            if recovered_filter:
+                self._displaying_filter_name = recovered_filter
+
             self.log(
                 f"PhotoFrameViewerApp: recovered gen={gen} from sensor url={raw!r}, "
-                f"next_counter={self._next_gen_counter}",
+                f"next_counter={self._next_gen_counter} "
+                f"filter={self._displaying_filter_name!r}",
                 level="INFO",
             )
 
@@ -859,6 +877,7 @@ class PhotoFrameViewerApp(hass.Hass):
         # being displayed (not the one the fetcher is already fetching next).
         if self._pending_filter_name:
             self._displaying_filter_name = self._pending_filter_name
+            self._save_runtime_state()
 
         pending_labels = self._pending_labels[:]
         self._finalize_pending(reason=reason)
