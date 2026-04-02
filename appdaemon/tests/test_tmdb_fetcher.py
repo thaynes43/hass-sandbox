@@ -48,7 +48,7 @@ def _movie(
     popularity: float = 20.0,
     vote_count: int = 100,
     vote_average: float = 7.5,
-    release_date: str = "2026-05-15",
+    release_date: str = "2027-05-15",
     genre_ids: List[int] | None = None,
     poster_path: str = "/poster.jpg",
 ) -> dict:
@@ -148,7 +148,7 @@ class TestNormalizeMovie:
             popularity=30.0,
             vote_count=500,
             vote_average=8.0,
-            release_date="2026-07-04",
+            release_date="2027-07-04",
             genre_ids=[28, 12],
             poster_path="/abc123.jpg",
         )
@@ -156,12 +156,12 @@ class TestNormalizeMovie:
 
         assert item.id == "tmdb-999"
         assert item.title == "Big Film"
-        assert item.year == 2026
+        assert item.year == 2027
         assert item.poster_path == "/abc123.jpg"
         assert item.tmdb_score == 8.0
         assert item.tmdb_popularity == 30.0
         assert item.vote_count == 500
-        assert item.release_date == "2026-07-04"
+        assert item.release_date == "2027-07-04"
         assert item.source == "tmdb"
         assert item.tmdb_id == 999
         assert item.media_type == "movie"
@@ -176,9 +176,9 @@ class TestNormalizeMovie:
 
     def test_extracts_year_from_release_date(self):
         fetcher = _make_fetcher()
-        raw = _movie(release_date="2026-05-02")
+        raw = _movie(release_date="2027-05-02")
         item = fetcher._normalize_movie(raw)
-        assert item.year == 2026
+        assert item.year == 2027
 
     def test_handles_empty_release_date(self):
         fetcher = _make_fetcher()
@@ -337,10 +337,10 @@ class TestFetchComingSoon:
     async def test_merges_upcoming_and_discover(self):
         mock_client = _make_mock_client()
         mock_client.get_upcoming = AsyncMock(
-            return_value={"results": [_movie(tmdb_id=10, popularity=30.0, release_date="2026-04-10")]}
+            return_value={"results": [_movie(tmdb_id=10, popularity=30.0, release_date="2027-04-10")]}
         )
         mock_client.get_discover_movies = AsyncMock(
-            return_value={"results": [_movie(tmdb_id=20, popularity=25.0, release_date="2026-04-20")]}
+            return_value={"results": [_movie(tmdb_id=20, popularity=25.0, release_date="2027-04-20")]}
         )
 
         with patch(
@@ -360,7 +360,7 @@ class TestFetchComingSoon:
 
     @pytest.mark.asyncio
     async def test_deduplicates_across_sources(self):
-        shared_movie = _movie(tmdb_id=99, popularity=40.0, release_date="2026-05-01")
+        shared_movie = _movie(tmdb_id=99, popularity=40.0, release_date="2027-05-01")
         mock_client = _make_mock_client()
         mock_client.get_upcoming = AsyncMock(
             return_value={"results": [shared_movie]}
@@ -385,10 +385,10 @@ class TestFetchComingSoon:
     async def test_sets_release_types(self):
         mock_client = _make_mock_client()
         mock_client.get_upcoming = AsyncMock(
-            return_value={"results": [_movie(tmdb_id=1, popularity=30.0, release_date="2026-05-01")]}
+            return_value={"results": [_movie(tmdb_id=1, popularity=30.0, release_date="2027-05-01")]}
         )
         mock_client.get_discover_movies = AsyncMock(
-            return_value={"results": [_movie(tmdb_id=2, popularity=25.0, release_date="2026-05-10")]}
+            return_value={"results": [_movie(tmdb_id=2, popularity=25.0, release_date="2027-05-10")]}
         )
 
         with patch(
@@ -408,11 +408,13 @@ class TestFetchComingSoon:
     @pytest.mark.asyncio
     async def test_sorts_by_release_date_ascending(self):
         mock_client = _make_mock_client()
+        # Use dates far enough in the future to avoid the "past release"
+        # filter in fetch_coming_soon() regardless of when tests run.
         mock_client.get_upcoming = AsyncMock(
             return_value={
                 "results": [
-                    _movie(tmdb_id=1, popularity=30.0, release_date="2026-06-15"),
-                    _movie(tmdb_id=2, popularity=25.0, release_date="2026-04-01"),
+                    _movie(tmdb_id=1, popularity=30.0, release_date="2027-06-15"),
+                    _movie(tmdb_id=2, popularity=25.0, release_date="2027-04-01"),
                 ]
             }
         )
