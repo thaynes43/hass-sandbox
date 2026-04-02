@@ -734,6 +734,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         if not gen_id or not source_paths:
             self.log("PhotoFrameViewerApp: stage settled but no staging context", level="WARNING")
+            self._staged_filter_name = ""
             return
 
         # Build gen paths and label maps for the new generation
