@@ -1550,3 +1550,74 @@ class TestOnCommandEdgeCases:
                 and c.kwargs.get("level") == "WARNING"
             ]
             assert len(warning_logs) == 1
+
+
+class TestFilterIndexRecovery:
+    """Filter index must survive app restarts so the fetcher card indicator
+    stays correct and the fetch rotation resumes from the right position."""
+
+    def _make_multi_filter_app(self, sensor_attrs=None):
+        td = tempfile.mkdtemp(prefix="fetcher_recovery_")
+        cfg = FetcherConfig(
+            filters=[
+                PhotoFilter(name="Boston Museum of Science", selection="album", album_name="BMOS"),
+                PhotoFilter(name="Pax East 2026", selection="album", album_name="Pax"),
+                PhotoFilter(name="Hampton Beach", selection="all_photos"),
+                PhotoFilter(name="Robot", selection="search", search_query="Robot"),
+            ],
+            num_photos=10,
+        )
+        cfg_path = os.path.join(td, "config.json")
+        Path(cfg_path).write_text(json.dumps(cfg.to_dict()))
+
+        app = _make_app(config_file=cfg_path, output_dir=os.path.join(td, "photos"))
+
+        if sensor_attrs is not None:
+            def fake_get_state(entity_id, attribute=None):
+                if entity_id == SENSOR_ENTITY_ID and attribute == "all":
+                    return {"state": "idle", "attributes": sensor_attrs}
+                return None
+            app.get_state = MagicMock(side_effect=fake_get_state)
+
+        return app
+
+    def test_recovers_filter_index_from_sensor(self):
+        app = self._make_multi_filter_app(sensor_attrs={
+            "active_filter_index": 2,
+            "last_fetch_filter": "Hampton Beach",
+        })
+        app.initialize()
+        assert app._displaying_filter_index == 2
+        assert app._active_filter_index == 3  # next after recovered
+        assert app._last_fetch_filter == "Hampton Beach"
+
+    def test_recovers_last_filter_wraps_to_zero(self):
+        app = self._make_multi_filter_app(sensor_attrs={
+            "active_filter_index": 3,  # Robot (last)
+            "last_fetch_filter": "Robot",
+        })
+        app.initialize()
+        assert app._displaying_filter_index == 3
+        assert app._active_filter_index == 0  # wraps to first
+
+    def test_index_out_of_range_stays_at_zero(self):
+        app = self._make_multi_filter_app(sensor_attrs={
+            "active_filter_index": 99,  # way out of range
+        })
+        app.initialize()
+        assert app._displaying_filter_index == 0
+        assert app._active_filter_index == 0
+
+    def test_sensor_unavailable_no_crash(self):
+        app = self._make_multi_filter_app(sensor_attrs=None)
+        # get_state returns None by default
+        app.initialize()
+        assert app._displaying_filter_index == 0
+        assert app._active_filter_index == 0
+
+    def test_sensor_missing_attributes_recovers_index_zero(self):
+        """Empty attrs → active_filter_index defaults to 0, which is valid."""
+        app = self._make_multi_filter_app(sensor_attrs={})
+        app.initialize()
+        assert app._displaying_filter_index == 0
+        assert app._active_filter_index == 1  # next after recovered 0
