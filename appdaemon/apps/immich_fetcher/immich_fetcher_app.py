@@ -74,6 +74,10 @@ class ImmichFetcherApp(hass.Hass):
 
         # Load config (persisted file takes precedence over apps.yaml defaults)
         self._config = self._load_config(args)
+
+        # Recover the filter index from the sensor so the fetcher card's
+        # active indicator stays correct across restarts.
+        self._recover_filter_index_from_sensor()
         self.log(
             f"ImmichFetcherApp initialised: "
             f"output_dir={self._output_dir} "
@@ -91,6 +95,47 @@ class ImmichFetcherApp(hass.Hass):
 
         # Single event listener for all card commands (routed via relay script)
         self.listen_event(self._on_command, "immich_fetcher_command")
+
+    # ------------------------------------------------------------------
+    # Recovery
+    # ------------------------------------------------------------------
+
+    def _recover_filter_index_from_sensor(self) -> None:
+        """Recover the active/displaying filter index from the existing sensor.
+
+        Without this, both indices reset to 0 on restart, causing the
+        fetcher card's active indicator to jump to the first filter and
+        the next fetch to restart from the beginning of the list.
+        """
+        try:
+            state = self.get_state(SENSOR_ENTITY_ID, attribute="all")
+            if not isinstance(state, dict):
+                return
+            attrs = state.get("attributes", {})
+        except Exception:
+            return
+
+        # Recover last_fetch_filter so the viewer card fallback stays correct
+        recovered_filter = str(attrs.get("last_fetch_filter", "") or "").strip()
+        if recovered_filter:
+            self._last_fetch_filter = recovered_filter
+
+        # Recover the displaying index (used by the fetcher card's active indicator)
+        try:
+            recovered_idx = int(attrs.get("active_filter_index", 0))
+        except (TypeError, ValueError):
+            recovered_idx = 0
+
+        if self._config.filters and 0 <= recovered_idx < len(self._config.filters):
+            self._displaying_filter_index = recovered_idx
+            # Resume fetching from the NEXT filter after the one last displayed
+            self._active_filter_index = (recovered_idx + 1) % len(self._config.filters)
+            self.log(
+                f"ImmichFetcherApp: recovered filter index={recovered_idx} "
+                f"('{self._config.filters[recovered_idx].name}'), "
+                f"next fetch index={self._active_filter_index}",
+                level="INFO",
+            )
 
     # ------------------------------------------------------------------
     # Config loading / persistence

@@ -42,6 +42,7 @@ def _make_app(
     picker_value: str = "",
     picker_options: list[str] | None = None,
     extra_args: dict | None = None,
+    sensor_attrs: dict | None = None,
 ) -> PhotoFrameViewerApp:
     """Create a PhotoFrameViewerApp with mocked AppDaemon methods.
 
@@ -96,9 +97,12 @@ def _make_app(
         # Virtual status sensor — used by _recover_gen_from_sensor()
         if entity_id == _SENSOR_ENTITY_ID:
             if attribute == "all":
+                attrs = {"image_url": current_url}
+                if sensor_attrs:
+                    attrs.update(sensor_attrs)
                 return {
                     "state": "playing",
-                    "attributes": {"image_url": current_url},
+                    "attributes": attrs,
                 }
             return "playing"
         # Picker entity
@@ -478,3 +482,93 @@ class TestPendingSwap:
         assert app._displaying_filter_name == "Boats", (
             "Filter name should update when gen is applied"
         )
+
+
+class TestFilterNameRecovery:
+    """Filter name must survive app restarts so the card title stays correct."""
+
+    def test_recovers_filter_name_from_sensor(self):
+        """On restart, _displaying_filter_name is restored from the sensor attribute."""
+        app = _make_app(
+            current_url="/local/photo-frame/live/10/IMG_001.jpg",
+            sensor_attrs={"displaying_filter_name": "Hampton Beach"},
+        )
+        app.initialize()
+        assert app._displaying_filter_name == "Hampton Beach"
+
+    def test_recovers_empty_filter_gracefully(self):
+        """If the sensor has no filter name, recovery doesn't crash."""
+        app = _make_app(
+            current_url="/local/photo-frame/live/10/IMG_001.jpg",
+            sensor_attrs={},
+        )
+        app.initialize()
+        # Should be empty (no filter to recover) — not crash
+        assert app._displaying_filter_name == ""
+
+    def test_recovered_filter_survives_startup_staging(self):
+        """Recovered filter name persists even when the startup re-stage
+        produces a pending gen with no filter name (no batch_ready event)."""
+        app = _make_app(
+            current_url="/local/photo-frame/live/10/IMG_001.jpg",
+            sensor_attrs={"displaying_filter_name": "Robot"},
+        )
+        app.initialize()
+        assert app._displaying_filter_name == "Robot"
+
+        # Startup forces a re-stage. Settle produces a pending gen with
+        # empty _staged_filter_name (no batch_ready event fired).
+        app._on_stage_settled({})
+        assert app._pending_filter_name == ""
+
+        # Apply the pending gen via tick — filter should NOT be cleared.
+        app._on_tick({})
+        assert app._displaying_filter_name == "Robot", (
+            "Recovered filter name must survive gen swap with empty pending filter"
+        )
+
+    def test_filter_name_persisted_to_state_file(self):
+        """Filter name is saved to the runtime state file when it changes."""
+        app = _make_app(
+            current_url="/local/photo-frame/live/3/IMG_001.jpg",
+            sensor_attrs={"displaying_filter_name": ""},
+        )
+        app.initialize()
+
+        # Simulate a batch_ready + stage + apply cycle.
+        _replace_source_files(app.source_dir, ["P1.jpg", "P2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready",
+            {"count": 2, "filter": "Theme Park"},
+            {},
+        )
+        app._on_stage_settled({})
+        app._on_tick({})
+
+        assert app._displaying_filter_name == "Theme Park"
+
+        # Verify the state file contains the filter name.
+        import json
+        state_path = Path(app._state_file)
+        assert state_path.is_file(), "State file should exist after gen swap"
+        data = json.loads(state_path.read_text())
+        assert data.get("displaying_filter_name") == "Theme Park"
+
+    def test_filter_name_loaded_from_state_file_as_fallback(self):
+        """If sensor doesn't have the filter name, the state file is used."""
+        td = tempfile.mkdtemp(prefix="viewer_state_")
+        import json
+        state_file = os.path.join(td, "state.json")
+        Path(state_file).write_text(json.dumps({
+            "interval_seconds": 15,
+            "pause_auto_resume_s": 600,
+            "displaying_filter_name": "Florida",
+        }))
+
+        app = _make_app(
+            source_dir=td,
+            current_url="",  # No sensor to recover gen from
+            extra_args={"state_dir": td},
+        )
+        app.initialize()
+        assert app._displaying_filter_name == "Florida"
