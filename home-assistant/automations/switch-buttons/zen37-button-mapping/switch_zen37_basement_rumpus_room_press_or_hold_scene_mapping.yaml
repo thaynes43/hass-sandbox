@@ -17,14 +17,14 @@ use_blueprint:
       - action: light.turn_on
         metadata: {}
         data:
-          kelvin: 2750
+          color_temp_kelvin: 2750
           brightness_pct: 100
         target:
           entity_id: light.basement_rumpus_room_lights
       - action: light.turn_on
         metadata: {}
         data:
-          kelvin: 2750
+          color_temp_kelvin: 2750
           brightness_pct: 100
         target:
           entity_id: light.basement_rumpus_room_lamp
@@ -48,14 +48,14 @@ use_blueprint:
       - action: light.turn_on
         metadata: {}
         data:
-          kelvin: 2750
+          color_temp_kelvin: 2750
           brightness_pct: 50
         target:
           entity_id: light.basement_rumpus_room_lights
       - action: light.turn_on
         metadata: {}
         data:
-          kelvin: 2750
+          color_temp_kelvin: 2750
           brightness_pct: 50
         target:
           entity_id: light.basement_rumpus_room_lamp
@@ -97,7 +97,7 @@ use_blueprint:
       - action: light.turn_on
         metadata: {}
         data:
-          kelvin: 2750
+          color_temp_kelvin: 2750
           brightness_pct: 100
         target:
           entity_id: light.basement_concessions_lights
@@ -121,7 +121,7 @@ use_blueprint:
       - action: light.turn_on
         metadata: {}
         data:
-          kelvin: 2750
+          color_temp_kelvin: 2750
           brightness_pct: 100
         target:
           entity_id: light.basement_hall_lights
