@@ -484,6 +484,104 @@ class TestPendingSwap:
         )
 
 
+class TestPollPendingFingerprintRace:
+    """Regression tests for the periodic-poll vs pending-gen race condition.
+
+    Root cause: _current_fingerprint only updates on finalization, not when a
+    gen becomes pending.  A periodic poll between staging and finalization sees
+    a different fingerprint, triggers a redundant re-stage that replaces the
+    pending gen, and loses the filter name.
+    """
+
+    def _init_with_gen(self, gen_id: str = "3") -> PhotoFrameViewerApp:
+        url = f"/local/photo-frame/live/{gen_id}/IMG_001.jpg"
+        app = _make_app(
+            current_url=url,
+            picker_value="IMG_001.jpg",
+            picker_options=["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"],
+        )
+        app.initialize()
+        app._on_stage_settled({})
+        app.call_service.reset_mock()
+        app.log.reset_mock()
+        return app
+
+    def test_poll_skips_when_pending_fingerprint_matches(self):
+        """A periodic poll must not re-stage when source files match the
+        pending gen's fingerprint (the whole reason for the fix)."""
+        app = self._init_with_gen("3")
+
+        # Stage a new gen via batch_ready (like the fetcher finishing).
+        _replace_source_files(app.source_dir, ["FLORIDA_1.jpg", "FLORIDA_2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready",
+            {"count": 2, "filter": "Florida"},
+            {},
+        )
+        app._on_stage_settled({})
+
+        assert app._pending_gen_id is not None
+        assert app._pending_filter_name == "Florida"
+        pending_gen = app._pending_gen_id
+
+        app.call_service.reset_mock()
+
+        # Simulate periodic poll with SAME source files on disk — this is the
+        # race that used to replace the pending gen and lose the filter name.
+        app._poll_for_changes(reason="poll")
+
+        # No new staging should have happened.
+        stage_calls = _service_calls(app, "shell_command/photo_frame_stage_gen")
+        assert len(stage_calls) == 0, (
+            "Periodic poll must not re-stage when pending fingerprint matches"
+        )
+        assert app._pending_gen_id == pending_gen, "Pending gen must not be replaced"
+        assert app._pending_filter_name == "Florida", "Filter name must be preserved"
+
+        # Now apply via tick — title should be correct.
+        app._on_tick({})
+        assert app._displaying_filter_name == "Florida"
+
+    def test_filter_name_carries_forward_on_restage(self):
+        """If a re-stage IS needed (e.g. files actually changed), the filter
+        name from the pending gen must carry forward via _staged_filter_name."""
+        app = self._init_with_gen("3")
+
+        # Stage a new gen via batch_ready.
+        _replace_source_files(app.source_dir, ["FLORIDA_1.jpg", "FLORIDA_2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready",
+            {"count": 2, "filter": "Florida"},
+            {},
+        )
+        app._on_stage_settled({})
+
+        assert app._pending_filter_name == "Florida"
+
+        # Force a re-stage by changing files (simulates an mtime change or
+        # partial download that produces a different fingerprint).
+        _replace_source_files(app.source_dir, ["FLORIDA_1.jpg", "FLORIDA_2.jpg", "FLORIDA_3.jpg"])
+        # Force the pending fingerprint to NOT match so re-staging is triggered.
+        app._pending_fingerprint = "force_mismatch"
+        app.call_service.reset_mock()
+        app._poll_for_changes(reason="poll")
+
+        # A new staging SHOULD have happened (files genuinely changed).
+        stage_calls = _service_calls(app, "shell_command/photo_frame_stage_gen")
+        assert len(stage_calls) == 1, "Should re-stage when files actually changed"
+
+        # The filter name should have been carried forward.
+        assert app._staged_filter_name == "Florida", (
+            "Filter name must carry forward from replaced pending gen"
+        )
+
+        # Settle and apply — filter name should survive.
+        app._on_stage_settled({})
+        assert app._pending_filter_name == "Florida"
+        app._on_tick({})
+        assert app._displaying_filter_name == "Florida"
+
+
 class TestFilterNameRecovery:
     """Filter name must survive app restarts so the card title stays correct."""
 
