@@ -11,7 +11,7 @@ fields:
 sequence:
   - variables:
       helper_entity_id: "{{ color_helper | default('input_number.outdoor_light_inovelli_led_color') }}"
-      helper_value: "{{ states(helper_entity_id) | int(255) }}"
+      helper_value: "{{ states(helper_entity_id) | float(255) | round(0) | int }}"
       switches:
         - switch_name: downstairs_front_porch_inovelli_dimmer
         - switch_name: garage_driveway_inovelli_dimmer

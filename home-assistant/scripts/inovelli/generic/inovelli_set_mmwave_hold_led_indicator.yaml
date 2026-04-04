@@ -1,8 +1,8 @@
 alias: HOLD ON - Inovelli Set mmWave Hold + LED Indicator
 description: >
   Forces MmwaveControlWiredDevice to Disabled (hold). Optionally caches current
-  LED color (LED1 WhenOn) into an input_text, then sets LED 1-7 (on+off) to
-  hold_color.
+  LED color (LED1 WhenOn) into an input_* helper, then sets LED 1-7 (on+off)
+  to hold_color.
 fields:
   switch_name:
     description: >-
@@ -22,7 +22,7 @@ fields:
       ["automation.light_fp2_server_room_motion_detected_lights_on",
       "automation.light_fp2_server_room_motion_cleared_lights_off"]
   prev_led_color_helper:
-    description: Optional input_text helper to cache the previous LED color (0-255)
+    description: Optional input_text or input_number helper to cache the previous LED color (0-255)
     example: input_text.upstairs_primary_water_closet_default_led_color
 sequence:
   - variables:
@@ -35,14 +35,14 @@ sequence:
       manual_hold_color_value: |-
         {% set v = manual_hold_color_entity %}
         {% if v is string and v.startswith('input_') %}
-          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+          {{ [ [ states(v) | float(85) | round(0) | int, 0 ] | max, 255 ] | min }}
         {% else %}
           {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
         {% endif %}
       auto_hold_color_value: |-
         {% set v = auto_hold_color_entity %}
         {% if v is string and v.startswith('input_') %}
-          {{ [ [ states(v) | int(0), 0 ] | max, 255 ] | min }}
+          {{ [ [ states(v) | float(0) | round(0) | int, 0 ] | max, 255 ] | min }}
         {% else %}
           {{ [ [ v | int(0), 0 ] | max, 255 ] | min }}
         {% endif %}
@@ -83,13 +83,20 @@ sequence:
       hold_color_value: |-
         {% set v = hold_color | default(85) %}
         {% if v is string and v.startswith('input_') %}
-          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
+          {{ [ [ states(v) | float(85) | round(0) | int, 0 ] | max, 255 ] | min }}
         {% else %}
           {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
         {% endif %}
-      helper_provided: "{{ (prev_led_color_helper | default('') | string | length) > 0 }}"
+      helper_entity_id: "{{ prev_led_color_helper | default('') | string }}"
+      helper_provided: "{{ helper_entity_id | length > 0 }}"
+      helper_domain: >-
+        {% if helper_provided and '.' in helper_entity_id %}
+          {{ helper_entity_id.split('.')[0] }}
+        {% else %}
+          {{ '' }}
+        {% endif %}
       helper_needs_cache: >-
-        {{ helper_provided and states(prev_led_color_helper) in
+        {{ helper_provided and states(helper_entity_id) in
         ['unknown','unavailable','none','None',''] }}
   - choose:
       - conditions:
@@ -110,13 +117,24 @@ sequence:
               - condition: template
                 value_template: >-
                   {{ helper_needs_cache and (current_led1_on !=
-                  hold_color_value) }}
+                  hold_color_value) and helper_domain == 'input_text' }}
             sequence:
               - action: input_text.set_value
                 target:
-                  entity_id: "{{ prev_led_color_helper }}"
+                  entity_id: "{{ helper_entity_id }}"
                 data:
                   value: "{{ states(led1_on) }}"
+          - conditions:
+              - condition: template
+                value_template: >-
+                  {{ helper_needs_cache and (current_led1_on !=
+                  hold_color_value) and helper_domain == 'input_number' }}
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: "{{ helper_entity_id }}"
+                data:
+                  value: "{{ states(led1_on) | float(255) }}"
       - choose:
           - conditions:
               - condition: template

@@ -1,18 +1,18 @@
 alias: Inovelli Set LED 1-7 Color From input_text
 description: >
-  Reads a 0-255 value from an input_text helper and applies it to DefaultLed1-7
+  Reads a 0-255 value from an input_* helper and applies it to DefaultLed1-7
   ColorWhenOn and ColorWhenOff for the given Inovelli device switch_name.
 fields:
   switch_name:
     description: switch_name name used for the LED number entities
     example: upstairs_primary_water_closet_inovelli_presence
   color_helper:
-    description: input_text entity_id containing the 0-255 color value
+    description: input_text or input_number entity_id containing the 0-255 color value
     example: input_text.upstairs_primary_water_closet_default_led_color
 sequence:
   - variables:
       raw: "{{ states(color_helper) }}"
-      color_value: "{{ [ [ raw | int(255), 0 ] | max, 255 ] | min }}"
+      color_value: "{{ [ [ raw | float(255) | round(0) | int, 0 ] | max, 255 ] | min }}"
       led_color_on:
         - number.{{ switch_name }}_defaultled1colorwhenon
         - number.{{ switch_name }}_defaultled2colorwhenon
