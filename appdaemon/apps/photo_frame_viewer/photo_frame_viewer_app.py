@@ -695,6 +695,14 @@ class PhotoFrameViewerApp(hass.Hass):
         if fp == self._current_fingerprint and self._current_gen_id is not None:
             return  # No change
 
+        # Source already matches the pending gen — no need to re-stage.
+        # Without this, the periodic poll sees a fingerprint that differs from
+        # _current_fingerprint (which only updates on finalization) and triggers
+        # a redundant re-stage that replaces the pending gen and loses its
+        # filter name, causing a title/image mismatch on the card.
+        if self._pending_fingerprint is not None and fp == self._pending_fingerprint:
+            return
+
         if self._staging_in_progress:
             self.log("PhotoFrameViewerApp: staging already in progress, skipping", level="DEBUG")
             return
@@ -716,6 +724,13 @@ class PhotoFrameViewerApp(hass.Hass):
         # If there's an existing pending gen that was never adopted, clean it up
         if self._pending_gen_id is not None:
             old_pending = self._pending_gen_id
+            # Carry forward the filter name so it survives re-staging.
+            # The original batch_ready set _staged_filter_name, which was
+            # consumed by the first settle and stored in _pending_filter_name.
+            # Without this carry-forward, a re-stage (e.g. from an mtime
+            # change) would lose the name and the card title would go stale.
+            if self._pending_filter_name and not self._staged_filter_name:
+                self._staged_filter_name = self._pending_filter_name
             self._clear_pending()
             self.log(
                 f"PhotoFrameViewerApp: replacing pending gen={old_pending} with gen={gen_id}",
