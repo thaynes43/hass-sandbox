@@ -45,6 +45,7 @@ class CountdownConfigCard extends HTMLElement {
     this._editingId = null;         // ID of countdown being edited (null for new)
     this._isCreatingNew = false;    // True when adding a new countdown
     this._generatingIds = new Set(); // IDs with image generation in progress
+    this._generatingAcked = new Set(); // IDs where sensor has confirmed generating=true
     this._confirmDeleteId = null;   // ID awaiting delete confirmation
     this._pendingEdits = {};        // Buffered form values during editing
   }
@@ -60,6 +61,24 @@ class CountdownConfigCard extends HTMLElement {
   set hass(hass) {
     const firstSet = !this._hass;
     this._hass = hass;
+
+    // Sync _generatingIds with sensor state.  Two-phase approach:
+    // 1. When sensor shows generating=true, mark the id as "acknowledged"
+    // 2. Only clear the id once it was acknowledged AND generating is now false
+    // This prevents clearing the id before the sensor has caught up.
+    if (this._generatingIds.size > 0) {
+      const countdowns = this._getCountdowns();
+      for (const id of [...this._generatingIds]) {
+        const countdown = countdowns.find((c) => c.id === id);
+        if (countdown && countdown.generating) {
+          this._generatingAcked.add(id);
+        }
+        if (countdown && this._generatingAcked.has(id) && !countdown.generating) {
+          this._generatingIds.delete(id);
+          this._generatingAcked.delete(id);
+        }
+      }
+    }
 
     const snap = this._snapshot();
     if (!firstSet && snap === this._lastSnapshot) return;
@@ -198,7 +217,8 @@ class CountdownConfigCard extends HTMLElement {
     // Background image — use current countdown image if editing existing
     if (bgEl && this._editingId && this._editingId !== "__new__") {
       const countdown = this._getCountdownById(this._editingId);
-      const imgUrl = countdown?.image_url || "";
+      const rawUrl = countdown?.image_url || "";
+      const imgUrl = rawUrl ? rawUrl + (countdown?.image_version ? "?v=" + countdown.image_version : "") : "";
       if (imgUrl && bgEl.src !== imgUrl) {
         bgEl.src = imgUrl;
         bgEl.style.display = "";
@@ -209,13 +229,16 @@ class CountdownConfigCard extends HTMLElement {
       bgEl.style.display = "none";
     }
 
-    if (titleEl) titleEl.textContent = pe.title || "Title";
+    if (titleEl) {
+      titleEl.textContent = pe.title || "Title";
+      titleEl.style.fontSize = (style.title_size || 24) + "px";
+    }
     if (subEl) subEl.textContent = pe.subtitle || "";
     if (countdownEl) {
       countdownEl.textContent = this._previewCountdownText(pe.target_datetime);
       countdownEl.style.fontSize = (style.font_size || 50) + "px";
       countdownEl.style.color = style.color || "#ffd24a";
-      countdownEl.style.top = (style.position_y || 70) + "%";
+      countdownEl.style.top = (style.position_y ?? 70) + "%";
       countdownEl.style.transform = "translateY(-50%)";
       if (style.text_shadow !== false) {
         countdownEl.style.textShadow =
@@ -228,11 +251,13 @@ class CountdownConfigCard extends HTMLElement {
       }
     }
 
-    // Update font size display value
+    // Update display values for sliders
     const sizeValEl = this.shadowRoot?.querySelector(".cdc-style-font-val");
     if (sizeValEl) sizeValEl.textContent = style.font_size || 50;
+    const titleValEl = this.shadowRoot?.querySelector(".cdc-style-title-val");
+    if (titleValEl) titleValEl.textContent = style.title_size || 24;
     const posValEl = this.shadowRoot?.querySelector(".cdc-style-pos-val");
-    if (posValEl) posValEl.textContent = (style.position_y || 70) + "%";
+    if (posValEl) posValEl.textContent = (style.position_y ?? 70) + "%";
   }
 
   // ---------------------------------------------------------------------------
@@ -269,12 +294,12 @@ class CountdownConfigCard extends HTMLElement {
       subtitle: "",
       target_datetime: "",
       image_prompt: "",
-      text_style: { font_size: 50, color: "#ffd24a", position_y: 70, text_shadow: true },
+      text_style: { font_size: 50, title_size: 24, color: "#ffd24a", position_y: 70, text_shadow: true },
     };
     this._update();
   }
 
-  _doSave() {
+  _doSave(opts) {
     const pe = this._pendingEdits;
     if (!pe.title || !pe.target_datetime) return;
 
@@ -286,6 +311,13 @@ class CountdownConfigCard extends HTMLElement {
       text_style: pe.text_style,
     };
 
+    // When auto_generate is set, the server will generate the image
+    // immediately after creating the countdown (avoids needing the ID
+    // on the client side for new countdowns).
+    if (opts?.auto_generate && pe.image_prompt) {
+      data.auto_generate = true;
+    }
+
     if (!this._isCreatingNew && this._editingId !== "__new__") {
       data.id = this._editingId;
     }
@@ -294,6 +326,7 @@ class CountdownConfigCard extends HTMLElement {
     this._editingId = null;
     this._isCreatingNew = false;
     this._pendingEdits = {};
+    this._waitingForNewId = false;
     // Don't call _update() — sensor change will trigger re-render
   }
 
@@ -315,15 +348,18 @@ class CountdownConfigCard extends HTMLElement {
     const prompt = this._pendingEdits?.image_prompt;
     if (!prompt) return;
 
-    // For new countdowns: save first. We don't have a server-assigned ID yet.
-    // The user will need to click generate after saving.
+    // For new countdowns: save first with auto_generate flag so the server
+    // generates the image immediately after creating the countdown.
     if (this._isCreatingNew) {
-      this._doSave();
+      this._updateGenButton(true);
+      this._doSave({ auto_generate: true });
       return;
     }
 
     this._generatingIds.add(targetId);
-    this._update();
+    // Surgically update the button — do NOT call _update() here because
+    // it replaces the edit form innerHTML, overwriting this DOM patch.
+    this._updateGenButton(true);
 
     this._callRelay("generate_image", { id: targetId, prompt });
 
@@ -331,9 +367,21 @@ class CountdownConfigCard extends HTMLElement {
     setTimeout(() => {
       if (this._generatingIds.has(targetId)) {
         this._generatingIds.delete(targetId);
+        this._updateGenButton(false);
         this._update();
       }
     }, 120000);
+  }
+
+  _updateGenButton(isGenerating) {
+    const btn = this.shadowRoot?.querySelector(".cdc-gen-btn");
+    const status = this.shadowRoot?.querySelector(".cdc-gen-status");
+    if (btn) {
+      btn.disabled = isGenerating;
+    }
+    if (status) {
+      status.style.visibility = isGenerating ? "visible" : "hidden";
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -390,12 +438,14 @@ class CountdownConfigCard extends HTMLElement {
         </div>
         <div class="cdc-list"></div>
         <div class="cdc-edit-container"></div>
+        <div class="cdc-global-settings"></div>
       </div>
     `;
 
     this._els = {
       list: this.shadowRoot.querySelector(".cdc-list"),
       editContainer: this.shadowRoot.querySelector(".cdc-edit-container"),
+      globalSettings: this.shadowRoot.querySelector(".cdc-global-settings"),
     };
 
     this._domBuilt = true;
@@ -410,14 +460,6 @@ class CountdownConfigCard extends HTMLElement {
 
     const countdowns = this._getCountdowns();
 
-    // Check if any countdown that was generating has finished
-    for (const id of [...this._generatingIds]) {
-      const countdown = countdowns.find((c) => c.id === id);
-      if (countdown && !countdown.generating) {
-        this._generatingIds.delete(id);
-      }
-    }
-
     // Render the list
     this._els.list.innerHTML = this._renderList(countdowns);
 
@@ -429,6 +471,10 @@ class CountdownConfigCard extends HTMLElement {
     } else {
       this._els.editContainer.innerHTML = "";
     }
+
+    // Render global settings (rotation interval)
+    this._els.globalSettings.innerHTML = this._renderGlobalSettings();
+    this._attachGlobalSettingsListeners();
   }
 
   // ---------------------------------------------------------------------------
@@ -454,7 +500,10 @@ class CountdownConfigCard extends HTMLElement {
     const title = cdcEscapeHtml(countdown.title || "Untitled");
     const subtitle = cdcEscapeHtml(countdown.subtitle || "");
     const countdownText = cdcEscapeHtml(countdown.countdown_text || "");
-    const imgUrl = cdcEscapeHtml(countdown.image_url || "");
+    const rawImgUrl = countdown.image_url || "";
+    const imgUrl = cdcEscapeHtml(
+      rawImgUrl ? rawImgUrl + (countdown.image_version ? "?v=" + countdown.image_version : "") : ""
+    );
     const badgeClass = this._badgeClass(countdown);
     const badgeLabel = this._badgeLabel(countdown);
     const isGenerating = this._generatingIds.has(countdown.id);
@@ -543,6 +592,7 @@ class CountdownConfigCard extends HTMLElement {
     }
 
     const fontSize = style.font_size ?? 50;
+    const titleSize = style.title_size ?? 24;
     const color = style.color || "#ffd24a";
     const posY = style.position_y ?? 70;
     const shadow = style.text_shadow !== false;
@@ -552,13 +602,12 @@ class CountdownConfigCard extends HTMLElement {
     if (!isNew && this._editingId) {
       const countdown = this._getCountdownById(this._editingId);
       if (countdown?.image_url) {
-        bgStyle = ` style="display:block;" src="${cdcEscapeHtml(countdown.image_url)}"`;
+        const vUrl = countdown.image_url + (countdown.image_version ? "?v=" + countdown.image_version : "");
+        bgStyle = ` style="display:block;" src="${cdcEscapeHtml(vUrl)}"`;
       }
     }
 
-    const genBtnContent = isGenerating
-      ? `<span class="spinner"></span> Generating…`
-      : `&#9654; Generate Image`;
+    // genBtnContent removed — button text is static, status shown via .cdc-gen-status
 
     return `
       <div class="cdc-edit">
@@ -588,9 +637,14 @@ class CountdownConfigCard extends HTMLElement {
           <label>Text Style</label>
           <div class="cdc-style-row">
             <div class="cdc-style-item">
-              <label>Font Size</label>
+              <label>Countdown Size</label>
               <input type="range" min="20" max="80" value="${fontSize}" data-field="style.font_size" />
               <span class="cdc-style-font-val">${fontSize}</span>
+            </div>
+            <div class="cdc-style-item">
+              <label>Title Size</label>
+              <input type="range" min="10" max="40" value="${titleSize}" data-field="style.title_size" />
+              <span class="cdc-style-title-val">${titleSize}</span>
             </div>
             <div class="cdc-style-item">
               <label>Color</label>
@@ -598,7 +652,7 @@ class CountdownConfigCard extends HTMLElement {
             </div>
             <div class="cdc-style-item">
               <label>Position Y</label>
-              <input type="range" min="30" max="90" value="${posY}" data-field="style.position_y" />
+              <input type="range" min="5" max="90" value="${posY}" data-field="style.position_y" />
               <span class="cdc-style-pos-val">${posY}%</span>
             </div>
             <div class="cdc-style-item">
@@ -611,7 +665,7 @@ class CountdownConfigCard extends HTMLElement {
         <div class="cdc-preview">
           <img class="cdc-preview-bg"${bgStyle ? bgStyle : ' style="display:none;" src=""'} alt="" />
           <div class="cdc-preview-overlay">
-            <div class="cdc-preview-title">${cdcEscapeHtml(pe.title || "Title")}</div>
+            <div class="cdc-preview-title" style="font-size:${titleSize}px;">${cdcEscapeHtml(pe.title || "Title")}</div>
             <div class="cdc-preview-subtitle">${cdcEscapeHtml(pe.subtitle || "")}</div>
             <div class="cdc-preview-countdown" style="font-size:${fontSize}px; color:${color}; top:${posY}%; transform:translateY(-50%);">
               ${cdcEscapeHtml(this._previewCountdownText(pe.target_datetime))}
@@ -620,10 +674,11 @@ class CountdownConfigCard extends HTMLElement {
         </div>
 
         <div class="cdc-gen-row">
-          <button class="cdc-gen-btn" data-action="generate" ${isGenerating ? "disabled" : ""}>
-            ${genBtnContent}
+          <button class="cdc-gen-btn" data-action="generate" data-id="${cdcEscapeHtml(this._editingId || "")}" ${isGenerating ? "disabled" : ""}>
+            &#9654; Generate Image
           </button>
-          ${isNew ? `<span class="cdc-gen-note">Save first, then generate image</span>` : ""}
+          <span class="cdc-gen-status" style="visibility:${isGenerating ? "visible" : "hidden"};">Please wait\u2026</span>
+          ${isNew ? `<span class="cdc-gen-note">Will save and generate automatically</span>` : ""}
         </div>
 
         <div class="cdc-form-actions">
@@ -635,6 +690,39 @@ class CountdownConfigCard extends HTMLElement {
   }
 
   // ---------------------------------------------------------------------------
+  // Global settings (rotation interval)
+  // ---------------------------------------------------------------------------
+
+  _renderGlobalSettings() {
+    const s = this._hass?.states[this._config.status_entity];
+    const interval = s?.attributes?.rotation_interval_s ?? 15;
+    return `
+      <div class="cdc-global">
+        <div class="cdc-global-field">
+          <label>Slide interval: ${interval}s</label>
+          <input type="range" min="1" max="120" step="1" value="${interval}" class="cdc-rotation-slider" />
+        </div>
+      </div>
+    `;
+  }
+
+  _attachGlobalSettingsListeners() {
+    const slider = this._els.globalSettings?.querySelector(".cdc-rotation-slider");
+    if (!slider) return;
+    slider.addEventListener("input", (e) => {
+      const val = parseInt(e.target.value);
+      if (isNaN(val) || val < 1) return;
+      const label = this._els.globalSettings.querySelector(".cdc-global-field label");
+      if (label) label.textContent = `Slide interval: ${val}s`;
+    });
+    slider.addEventListener("change", (e) => {
+      const val = parseInt(e.target.value);
+      if (isNaN(val) || val < 1) return;
+      this._callRelay("set_rotation_interval", { seconds: val });
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // Form input listeners — attached after each edit form render
   // ---------------------------------------------------------------------------
 
@@ -643,7 +731,7 @@ class CountdownConfigCard extends HTMLElement {
     if (!editContainer) return;
 
     editContainer.querySelectorAll("[data-field]").forEach((input) => {
-      input.addEventListener("input", (e) => {
+      const handler = (e) => {
         const field = e.target.dataset.field;
         if (!this._pendingEdits.text_style) {
           this._pendingEdits.text_style = {};
@@ -666,7 +754,11 @@ class CountdownConfigCard extends HTMLElement {
 
         // Update preview without re-rendering the full card
         this._updatePreview();
-      });
+      };
+      // Listen to both input and change — datetime-local pickers fire change
+      // but not input on some browsers when using the picker UI.
+      input.addEventListener("input", handler);
+      input.addEventListener("change", handler);
     });
   }
 
@@ -1005,7 +1097,7 @@ class CountdownConfigCard extends HTMLElement {
       }
 
       .cdc-field textarea {
-        min-height: 60px;
+        min-height: 150px;
         resize: vertical;
       }
 
@@ -1072,10 +1164,11 @@ class CountdownConfigCard extends HTMLElement {
       .cdc-preview {
         position: relative;
         width: 100%;
+        max-width: 480px;
         aspect-ratio: 16 / 9;
         overflow: hidden;
         border-radius: 8px;
-        margin: 12px 0;
+        margin: 12px auto;
         background: #111;
       }
 
@@ -1136,6 +1229,13 @@ class CountdownConfigCard extends HTMLElement {
         margin-bottom: 4px;
       }
 
+      .cdc-gen-status {
+        font-size: 14px;
+        font-weight: 600;
+        color: #ff9800;
+        margin-left: 12px;
+      }
+
       .cdc-gen-note {
         font-size: 12px;
         color: var(--secondary-text-color, #888);
@@ -1177,6 +1277,32 @@ class CountdownConfigCard extends HTMLElement {
       }
 
       /* ---- Form action buttons ---- */
+
+      /* ---- Global settings ---- */
+
+      .cdc-global {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+      }
+
+      .cdc-global-field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .cdc-global-field label {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--secondary-text-color, #888);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .cdc-global-field input[type="range"] {
+        width: 100%;
+      }
 
       .cdc-form-actions {
         display: flex;

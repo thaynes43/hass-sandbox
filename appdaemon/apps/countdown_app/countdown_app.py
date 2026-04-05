@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -41,6 +42,7 @@ COMMAND_EVENT = "countdown_command"
 # Default text style applied to new countdowns
 _DEFAULT_TEXT_STYLE: Dict[str, Any] = {
     "font_size": 50,
+    "title_size": 24,
     "color": "#ffd24a",
     "position_y": 70,
     "text_shadow": True,
@@ -343,6 +345,7 @@ class CountdownApp(hass.Hass):
                 "countdowns": [self._serialize_countdown(c) for c in self._countdowns],
                 "visible_count": len(visible),
                 "active_index": self._active_index,
+                "rotation_interval_s": self._rotation_interval_s,
                 "friendly_name": "Countdown Status",
             },
         )
@@ -388,11 +391,13 @@ class CountdownApp(hass.Hass):
         elif cmd == "delete_countdown":
             self._handle_delete_countdown(payload)
         elif cmd == "generate_image":
-            self.create_task(self._handle_generate_image(payload))
+            self._handle_generate_image(payload)
         elif cmd == "update_style":
             self._handle_update_style(payload)
         elif cmd == "set_active":
             self._handle_set_active(payload)
+        elif cmd == "set_rotation_interval":
+            self._handle_set_rotation_interval(payload)
         else:
             self.log(f"Unknown command: {cmd!r}", level="WARNING")
 
@@ -448,6 +453,14 @@ class CountdownApp(hass.Hass):
                 level="INFO",
             )
 
+            # Auto-generate image if requested (new countdown from config card)
+            if payload.get("auto_generate") and new_countdown.get("image_prompt"):
+                self.log(
+                    f"Auto-generating image for new countdown {new_id!r}",
+                    level="INFO",
+                )
+                self._handle_generate_image({"id": new_id})
+
         self._save_state()
         self._publish_sensor()
 
@@ -502,8 +515,13 @@ class CountdownApp(hass.Hass):
         self._save_state()
         self._publish_sensor()
 
-    async def _handle_generate_image(self, payload: Dict[str, Any]) -> None:
-        """Generate a background image for a countdown using the configured AI provider."""
+    def _handle_generate_image(self, payload: Dict[str, Any]) -> None:
+        """Start background image generation for a countdown.
+
+        Validation and provider construction happen on the AppDaemon thread.
+        The actual API call runs on a background thread to avoid blocking
+        other apps.  Completion is scheduled back on the AD thread via run_in.
+        """
         countdown_id = payload.get("id", "")
         prompt = payload.get("prompt", "")
 
@@ -541,6 +559,11 @@ class CountdownApp(hass.Hass):
                 build_image_provider,
             )
             cfg = provider_config_from_appdaemon_args(self._args)
+            self.log(
+                f"Image provider config: size={cfg.size!r} model={cfg.model!r} "
+                f"provider={cfg.provider!r}",
+                level="INFO",
+            )
             provider = build_image_provider(cfg)
         except Exception as exc:
             self.log(
@@ -548,6 +571,20 @@ class CountdownApp(hass.Hass):
                 level="ERROR",
             )
             return
+
+        # Augment the user prompt with countdown context so the generated
+        # image leaves space for the text overlay and works at 16:9.
+        title = countdown.get("title", "")
+        subtitle = countdown.get("subtitle", "")
+        text_style = countdown.get("text_style") or {}
+        position_y = text_style.get("position_y", 70)
+
+        augmented_prompt = self._build_image_prompt(
+            user_prompt=prompt,
+            title=title,
+            subtitle=subtitle,
+            position_y=position_y,
+        )
 
         filename = f"{countdown['id']}.png"
         output_path = os.path.join(self._media_dir, filename)
@@ -558,41 +595,145 @@ class CountdownApp(hass.Hass):
 
         self.log(
             f"Generating image for countdown {countdown_id!r} "
-            f"title={countdown.get('title')!r} prompt={prompt!r} "
-            f"output={output_path!r}",
+            f"title={countdown.get('title')!r} "
+            f"output={output_path!r} augmented_prompt_len={len(augmented_prompt)}",
+            level="INFO",
+        )
+        self.log(
+            f"Augmented prompt: {augmented_prompt!r}",
             level="INFO",
         )
 
-        try:
-            result = provider.edit_image(
-                input_image_paths=[],
-                prompt=prompt,
-                output_image_path=output_path,
+        # Run the provider call on a background thread so we don't block
+        # the AppDaemon event loop (same pattern as dashboard_notify_app).
+        job = {
+            "countdown_id": countdown_id,
+            "prompt": augmented_prompt,
+            "output_path": output_path,
+            "filename": filename,
+        }
+
+        def _worker():
+            try:
+                result = provider.edit_image(
+                    input_image_paths=[],
+                    prompt=job["prompt"],
+                    output_image_path=job["output_path"],
+                )
+                self.run_in(
+                    self._complete_image_generation, 0,
+                    countdown_id=job["countdown_id"],
+                    filename=job["filename"],
+                    output_path=job["output_path"],
+                    success=True,
+                    result_keys=list(result.keys()) if isinstance(result, dict) else [],
+                )
+            except Exception as exc:
+                self.run_in(
+                    self._complete_image_generation, 0,
+                    countdown_id=job["countdown_id"],
+                    filename=job["filename"],
+                    output_path=job["output_path"],
+                    success=False,
+                    error=repr(exc),
+                )
+
+        thread_name = f"countdown_gen_{countdown_id[:16]}"
+        self.log(f"Starting generation thread '{thread_name}'", level="DEBUG")
+        t = threading.Thread(target=_worker, name=thread_name)
+        t.daemon = True
+        t.start()
+
+    def _complete_image_generation(self, kwargs: Any) -> None:
+        """Completion callback — runs on the AppDaemon thread after background generation."""
+        countdown_id = kwargs.get("countdown_id", "")
+        filename = kwargs.get("filename", "")
+        output_path = kwargs.get("output_path", "")
+        success = kwargs.get("success", False)
+
+        countdown: Optional[Dict[str, Any]] = None
+        for c in self._countdowns:
+            if c.get("id") == countdown_id:
+                countdown = c
+                break
+
+        if countdown is None:
+            self.log(
+                f"_complete_image_generation: countdown {countdown_id!r} no longer exists",
+                level="WARNING",
             )
+            return
+
+        if success:
             countdown["image_filename"] = filename
             countdown.pop("generating", None)
             self.log(
                 f"Image generated for countdown {countdown_id!r}: "
-                f"output={output_path!r} result_keys={list(result.keys()) if isinstance(result, dict) else 'n/a'}",
+                f"output={output_path!r} result_keys={kwargs.get('result_keys', [])}",
                 level="INFO",
             )
-            # Sync image to www directory
+            # Sync image to www directory (safe to call on AD thread)
+            self.log(
+                f"Calling shell_command/{self._image_sync_shell_command}",
+                level="INFO",
+            )
             try:
                 self.call_service(f"shell_command/{self._image_sync_shell_command}")
+                self.log("Shell command completed successfully", level="INFO")
             except Exception as sync_exc:
                 self.log(
                     f"Image sync shell command failed: {sync_exc!r}",
                     level="WARNING",
                 )
-        except Exception as exc:
+        else:
             countdown.pop("generating", None)
             self.log(
-                f"Image generation failed for countdown {countdown_id!r}: {exc!r}",
+                f"Image generation failed for countdown {countdown_id!r}: {kwargs.get('error', 'unknown')}",
                 level="ERROR",
             )
 
         self._save_state()
         self._publish_sensor()
+
+    # ------------------------------------------------------------------
+    # Prompt augmentation
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_image_prompt(
+        user_prompt: str,
+        title: str,
+        subtitle: str,
+        position_y: int,
+    ) -> str:
+        """Wrap the user's prompt with instructions for countdown card images.
+
+        Tells the AI to generate a 16:9 image that leaves clear space for
+        text overlay (title at top, countdown text at position_y%).
+        """
+        # Describe where text will be overlaid so the AI avoids busy detail there
+        top_pct = 15
+        overlay_band = f"{position_y - 10}%-{position_y + 10}%"
+
+        parts = [
+            "Generate a vivid, colorful background image in 16:9 landscape format "
+            "for a countdown card displayed on a wall-mounted smart home dashboard.",
+            "",
+            f"The image MUST leave visually clear space (darker, less detailed, "
+            f"or gradient-faded areas) in two regions where text will be overlaid:",
+            f"  1. The top ~{top_pct}% of the image — for the title"
+            + (f' "{title}"' if title else "")
+            + (f' and subtitle "{subtitle}"' if subtitle else ""),
+            f"  2. A horizontal band around the {overlay_band} vertical region — "
+            f"for a large bold countdown timer (e.g. '15D 5H 23M').",
+            "",
+            "DO NOT render any text, letters, numbers, words, or countdown timers "
+            "in the image itself. The text will be overlaid programmatically. "
+            "Only generate the background artwork.",
+            "",
+            f"Theme/subject from the user: {user_prompt}",
+        ]
+        return "\n".join(parts)
 
     def _handle_update_style(self, payload: Dict[str, Any]) -> None:
         """Update text_style fields for a specific countdown."""
@@ -641,4 +782,15 @@ class CountdownApp(hass.Hass):
             f"Active index set to {self._active_index}",
             level="DEBUG",
         )
+        self._publish_sensor()
+
+    def _handle_set_rotation_interval(self, payload: Dict[str, Any]) -> None:
+        """Update the rotation interval (seconds between countdown transitions)."""
+        seconds = payload.get("seconds")
+        if seconds is None:
+            self.log("set_rotation_interval: missing 'seconds'", level="WARNING")
+            return
+        seconds = max(1, min(120, int(seconds)))
+        self._rotation_interval_s = seconds
+        self.log(f"Rotation interval set to {seconds}s", level="INFO")
         self._publish_sensor()

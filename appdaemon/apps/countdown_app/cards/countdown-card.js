@@ -231,23 +231,27 @@ class CountdownCard extends HTMLElement {
     const textEl = layer.querySelector(".cd-countdown-text");
     const anchor = layer.querySelector(".cd-countdown-anchor");
 
-    // Background image
-    if (countdown.image_url) {
+    // Background image (append version for cache busting)
+    const imgSrc = countdown.image_url
+      ? countdown.image_url + (countdown.image_version ? "?v=" + countdown.image_version : "")
+      : "";
+    if (imgSrc) {
       bg.style.display = "";
-      if (bg.getAttribute("src") !== countdown.image_url) {
-        bg.src = countdown.image_url;
+      if (bg.getAttribute("src") !== imgSrc) {
+        bg.src = imgSrc;
       }
     } else {
       bg.removeAttribute("src");
       bg.style.display = "none";
     }
 
-    // Title / subtitle
-    title.textContent = countdown.title || "";
-    subtitle.textContent = countdown.subtitle || "";
-
     // Countdown text + style
     const style = countdown.text_style || {};
+
+    // Title / subtitle
+    title.textContent = countdown.title || "";
+    title.style.fontSize = (style.title_size || 24) + "px";
+    subtitle.textContent = countdown.subtitle || "";
     textEl.textContent = countdown.countdown_text || "";
     textEl.style.fontSize = (style.font_size || 50) + "px";
     textEl.style.color = style.color || "#ffd24a";
@@ -302,7 +306,9 @@ class CountdownCard extends HTMLElement {
     this._updateDots(visible.length, idx % visible.length);
 
     // Preload background before fading in
-    const imageUrl = countdown.image_url || "";
+    const imageUrl = countdown.image_url
+      ? countdown.image_url + (countdown.image_version ? "?v=" + countdown.image_version : "")
+      : "";
     const doFade = () => {
       this._fadeInProgress = true;
       inactiveEl.style.opacity = "1";
@@ -357,7 +363,10 @@ class CountdownCard extends HTMLElement {
 
   _startRotate() {
     this._stopRotate();
-    const interval = (this._config.auto_rotate_s || 15) * 1000;
+    // Read rotation interval from sensor attributes (set via config card slider)
+    const s = this._hass?.states[this._config.status_entity];
+    const sensorInterval = s?.attributes?.rotation_interval_s;
+    const interval = (sensorInterval ?? this._config.auto_rotate_s ?? 15) * 1000;
     this._rotateTimer = setInterval(() => this._rotateNext(), interval);
   }
 
@@ -391,55 +400,55 @@ class CountdownCard extends HTMLElement {
   _bindEvents() {
     const root = this.shadowRoot;
     let touchActive = false;
-    let touchCancelled = false;
+    let touchStartX = null;
     let touchStartY = null;
-
-    ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
-      root.addEventListener(
-        evt,
-        () => {
-          touchCancelled = true;
-        },
-        { passive: true }
-      );
-    });
+    let swipeLocked = false;
 
     root.addEventListener(
       "touchstart",
       (e) => {
         touchActive = true;
-        touchCancelled = false;
+        swipeLocked = false;
+        touchStartX = e.touches[0]?.clientX ?? null;
         touchStartY = e.touches[0]?.clientY ?? null;
       },
       { passive: true }
     );
 
-    root.addEventListener("touchend", (e) => {
-      if (touchCancelled) {
-        touchActive = false;
-        touchStartY = null;
-        return;
-      }
+    root.addEventListener(
+      "touchmove",
+      (e) => {
+        if (touchStartX == null) return;
+        const dx = (e.touches[0]?.clientX ?? 0) - touchStartX;
+        const dy = (e.touches[0]?.clientY ?? 0) - touchStartY;
+        if (!swipeLocked && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+          swipeLocked = true;
+        }
+        if (swipeLocked) e.preventDefault();
+      },
+      { passive: false }
+    );
 
-      // Check for vertical swipe
-      const endY = e.changedTouches[0]?.clientY;
-      if (touchStartY != null && endY != null) {
-        const dy = endY - touchStartY;
-        if (Math.abs(dy) > 40) {
-          // Swipe detected — navigate
-          touchStartY = null;
-          if (dy < 0) {
-            this._rotateNext();
-          } else {
-            this._rotatePrev();
-          }
-          setTimeout(() => {
-            touchActive = false;
-          }, 400);
+    root.addEventListener("touchend", (e) => {
+      const endX = e.changedTouches[0]?.clientX;
+
+      // Horizontal swipe detection
+      if (swipeLocked && touchStartX != null && endX != null) {
+        const dx = endX - touchStartX;
+        touchStartX = null;
+        touchStartY = null;
+        swipeLocked = false;
+        if (Math.abs(dx) > 40) {
+          // Swipe left = next, swipe right = prev (same as dashboard-notify)
+          if (dx < 0) this._rotateNext();
+          else this._rotatePrev();
+          setTimeout(() => { touchActive = false; }, 400);
           return;
         }
       }
+      touchStartX = null;
       touchStartY = null;
+      swipeLocked = false;
 
       // Tap — find action target
       const el = this._findTarget(e);
@@ -613,7 +622,6 @@ class CountdownCard extends HTMLElement {
 
       .cd-countdown-text.cd-now {
         animation: cd-pulse 1.5s ease-in-out infinite;
-        font-size: 64px !important;
       }
 
       @keyframes cd-pulse {

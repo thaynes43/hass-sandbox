@@ -505,6 +505,13 @@ class TestCommandRouting:
 
 
 class TestImageGeneration:
+    """Image generation runs on a background thread (same pattern as dashboard_notify).
+
+    _handle_generate_image starts the thread; _complete_image_generation runs
+    on the AD thread via run_in.  Tests call _handle_generate_image, join the
+    thread, then invoke the run_in callback that was captured.
+    """
+
     def _make_app_with_countdown(self, cd=None, tmpdir=None):
         td = tmpdir or tempfile.mkdtemp(prefix="cd_gen_")
         app = _make_app(tmpdir=td)
@@ -518,30 +525,50 @@ class TestImageGeneration:
         mock_provider.edit_image = MagicMock(return_value={"status": "ok"})
         return mock_provider
 
+    def _generate_and_complete(self, app, payload, mock_provider):
+        """Call _handle_generate_image, wait for the background thread to finish,
+        then invoke the run_in completion callback captured on app.run_in."""
+        import threading
+
+        with patch("providers.ai_providers.registry.provider_config_from_appdaemon_args"), \
+             patch("providers.ai_providers.registry.build_image_provider") as mock_build:
+            mock_build.return_value = mock_provider
+            app.run_in.reset_mock()
+            app._handle_generate_image(payload)
+
+        # Wait for the background generation thread to finish
+        for t in threading.enumerate():
+            if t.name.startswith("countdown_gen_"):
+                t.join(timeout=5)
+
+        # Invoke the run_in completion callback that the thread scheduled
+        if app.run_in.call_count > 0:
+            # Last run_in call is the completion callback
+            last_call = app.run_in.call_args_list[-1]
+            callback = last_call[0][0]  # first positional arg
+            kwargs = last_call[1]  # keyword args
+            callback(kwargs)
+
     def test_generate_image_calls_provider(self):
         app, _ = self._make_app_with_countdown()
         mock_provider = self._make_mock_provider()
 
-        with patch("providers.ai_providers.registry.provider_config_from_appdaemon_args") as mock_cfg, \
-             patch("providers.ai_providers.registry.build_image_provider") as mock_build:
-            mock_build.return_value = mock_provider
-
-            _run_async(app._handle_generate_image({"id": "gen-id", "prompt": "a beautiful sunset"}))
+        self._generate_and_complete(app, {"id": "gen-id", "prompt": "a beautiful sunset"}, mock_provider)
 
         mock_provider.edit_image.assert_called_once()
         call_kwargs = mock_provider.edit_image.call_args
-        assert call_kwargs[1]["prompt"] == "a beautiful sunset" or call_kwargs[0][1] == "a beautiful sunset" \
-               or "a beautiful sunset" in str(call_kwargs)
+        # The user prompt is augmented with countdown context; verify it's included
+        actual_prompt = call_kwargs[1]["prompt"]
+        assert "a beautiful sunset" in actual_prompt
+        # Verify augmentation adds layout instructions
+        assert "16:9" in actual_prompt
+        assert "DO NOT render any text" in actual_prompt
 
     def test_generate_image_sets_filename(self):
         app, _ = self._make_app_with_countdown()
         mock_provider = self._make_mock_provider()
 
-        with patch("providers.ai_providers.registry.provider_config_from_appdaemon_args"), \
-             patch("providers.ai_providers.registry.build_image_provider") as mock_build:
-            mock_build.return_value = mock_provider
-
-            _run_async(app._handle_generate_image({"id": "gen-id", "prompt": "test prompt"}))
+        self._generate_and_complete(app, {"id": "gen-id", "prompt": "test prompt"}, mock_provider)
 
         assert app._countdowns[0]["image_filename"] == "gen-id.png"
 
@@ -550,11 +577,7 @@ class TestImageGeneration:
         mock_provider = self._make_mock_provider()
         app.call_service.reset_mock()
 
-        with patch("providers.ai_providers.registry.provider_config_from_appdaemon_args"), \
-             patch("providers.ai_providers.registry.build_image_provider") as mock_build:
-            mock_build.return_value = mock_provider
-
-            _run_async(app._handle_generate_image({"id": "gen-id", "prompt": "test prompt"}))
+        self._generate_and_complete(app, {"id": "gen-id", "prompt": "test prompt"}, mock_provider)
 
         app.call_service.assert_called()
         service_calls = [str(c) for c in app.call_service.call_args_list]
@@ -562,28 +585,22 @@ class TestImageGeneration:
 
     def test_generate_image_sets_generating_flag(self):
         app, _ = self._make_app_with_countdown()
-        generating_states = []
 
-        def capture_publish():
-            state = app._countdowns[0].get("generating", False)
-            generating_states.append(state)
+        # Before generation, verify generating flag is set synchronously
+        mock_provider = self._make_mock_provider()
+        generating_before = []
 
         original_publish = app._publish_sensor
-        app._publish_sensor = MagicMock(side_effect=lambda: generating_states.append(
+        app._publish_sensor = MagicMock(side_effect=lambda: generating_before.append(
             app._countdowns[0].get("generating", False)
         ))
 
-        mock_provider = self._make_mock_provider()
+        self._generate_and_complete(app, {"id": "gen-id", "prompt": "test prompt"}, mock_provider)
 
-        with patch("providers.ai_providers.registry.provider_config_from_appdaemon_args"), \
-             patch("providers.ai_providers.registry.build_image_provider") as mock_build:
-            mock_build.return_value = mock_provider
-
-            _run_async(app._handle_generate_image({"id": "gen-id", "prompt": "test prompt"}))
-
-        # First publish call should have generating=True; last call should not
-        assert generating_states[0] is True
-        assert generating_states[-1] is not True
+        # First publish call (before thread) should have generating=True
+        assert generating_before[0] is True
+        # After completion callback, generating should be cleared
+        assert not app._countdowns[0].get("generating", False)
 
     def test_generate_image_handles_provider_error(self):
         app, _ = self._make_app_with_countdown()
@@ -591,11 +608,7 @@ class TestImageGeneration:
         mock_provider = MagicMock()
         mock_provider.edit_image = MagicMock(side_effect=RuntimeError("provider boom"))
 
-        with patch("providers.ai_providers.registry.provider_config_from_appdaemon_args"), \
-             patch("providers.ai_providers.registry.build_image_provider") as mock_build:
-            mock_build.return_value = mock_provider
-
-            _run_async(app._handle_generate_image({"id": "gen-id", "prompt": "test prompt"}))
+        self._generate_and_complete(app, {"id": "gen-id", "prompt": "test prompt"}, mock_provider)
 
         # generating flag should be cleared even on error
         assert not app._countdowns[0].get("generating", False)
@@ -609,7 +622,7 @@ class TestImageGeneration:
         app, _ = self._make_app_with_countdown()
         app.log.reset_mock()
 
-        _run_async(app._handle_generate_image({"prompt": "test prompt"}))
+        app._handle_generate_image({"prompt": "test prompt"})
 
         warning_calls = [
             c for c in app.log.call_args_list if c[1].get("level") == "WARNING"
@@ -622,7 +635,7 @@ class TestImageGeneration:
         )
         app.log.reset_mock()
 
-        _run_async(app._handle_generate_image({"id": "noprompt-id"}))
+        app._handle_generate_image({"id": "noprompt-id"})
 
         warning_calls = [
             c for c in app.log.call_args_list if c[1].get("level") == "WARNING"

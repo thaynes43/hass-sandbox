@@ -107,7 +107,7 @@ shell_command:
   countdown_sync_images: >-
     /bin/sh -c 'set -e;
     src="/media/countdown-app";
-    dest="/config/www/countdown-app";
+    dest="/config/www/countdown/images";
     mkdir -p "$dest";
     for f in "$dest"/*.png; do
       [ -f "$f" ] || continue;

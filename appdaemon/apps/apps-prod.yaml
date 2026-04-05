@@ -1147,7 +1147,7 @@ countdown_app:
   # Filesystem — media_fs_root resolved from MEDIA_FS_ROOT env var
   media_fs_root_env: MEDIA_FS_ROOT
   media_subdir: countdown-app
-  www_subdir: countdown-app
+  www_subdir: countdown/images
   # Shell command that copies generated images to /config/www/
   # Must be defined in configuration.yaml: shell_command.countdown_sync_images
   image_sync_shell_command: countdown_sync_images
