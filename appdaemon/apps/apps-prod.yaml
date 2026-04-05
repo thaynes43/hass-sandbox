@@ -1132,3 +1132,24 @@ media_dashboard_app:
   # Shell command that copies/rsyncs posters to /config/www/
   # Must be defined in configuration.yaml: shell_command.media_dashboard_sync_posters
   poster_sync_shell_command: media_dashboard_sync_posters
+
+# ---------------------------------------------------------------------------
+# Countdown app — multiple countdowns with AI-generated backgrounds
+# ---------------------------------------------------------------------------
+countdown_app:
+  module: countdown_app.countdown_app
+  class: CountdownApp
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  ai_provider_conf:
+    image: openai-default
+  # Filesystem — media_fs_root resolved from MEDIA_FS_ROOT env var
+  media_fs_root_env: MEDIA_FS_ROOT
+  media_subdir: countdown-app
+  www_subdir: countdown-app
+  # Shell command that copies generated images to /config/www/
+  # Must be defined in configuration.yaml: shell_command.countdown_sync_images
+  image_sync_shell_command: countdown_sync_images
+  rotation_interval_s: 15
+  countdown_refresh_s: 60

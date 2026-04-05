@@ -1,0 +1,3 @@
+type: custom:countdown-config-card
+status_entity: sensor.countdown_status
+relay_script: countdown_relay

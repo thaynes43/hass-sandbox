@@ -42,3 +42,21 @@ media_dashboard_app_dev:
   # Shell command that copies/rsyncs posters to /config/www/
   # Must be defined in configuration.yaml: shell_command.media_dashboard_sync_posters
   poster_sync_shell_command: media_dashboard_sync_posters
+
+# ---------------------------------------------------------------------------
+# Countdown app (dev)
+# ---------------------------------------------------------------------------
+countdown_app_dev:
+  module: countdown_app.countdown_app
+  class: CountdownApp
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  ai_provider_conf:
+    image: openai-default
+  # Filesystem — NFS mount
+  media_fs_root: /Volumes/cephfs-hdd/misc/hass-media
+  media_subdir: countdown-app
+  www_subdir: countdown-app
+  image_sync_shell_command: countdown_sync_images
+  rotation_interval_s: 15
+  countdown_refresh_s: 60
