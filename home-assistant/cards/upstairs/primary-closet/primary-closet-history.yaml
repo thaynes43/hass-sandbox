@@ -35,7 +35,7 @@ cards:
         - name: Sensors
           buttons_layout: inline
           group:
-            - entity: binary_sensor.upstairs_primary_closet_open_closed_sensor_window_door_is_open
+            - entity: binary_sensor.upstairs_primary_closet_open_closed_sensor_open
               name: Door
               icon: mdi:door
               show_name: true
@@ -141,7 +141,7 @@ cards:
 
   - type: history-graph
     entities:
-      - entity: binary_sensor.upstairs_primary_closet_open_closed_sensor_window_door_is_open
+      - entity: binary_sensor.upstairs_primary_closet_open_closed_sensor_open
         name: Door
       - entity: binary_sensor.upstairs_primary_closet_inovelli_presence_occupancy
         name: mmWave
@@ -302,4 +302,3 @@ cards:
     modules:
       - my_module
     show_header_toggle: false
-

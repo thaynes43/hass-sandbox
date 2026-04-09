@@ -56,7 +56,7 @@ cards:
 
       <p><strong>Bedroom</strong> {{ states('sensor.primary_bedroom_wave_plus_temperature') }}&deg;F, {{ states('sensor.primary_bedroom_wave_plus_carbon_dioxide') }} ppm CO2 &nbsp;•&nbsp; <strong>Bathroom</strong> {{ states('sensor.primary_bathroom_temperature') }}&deg;F, {{ states('sensor.primary_bathroom_humidity') }}% Hum, {{ states('sensor.primary_bathroom_vocs') }} ppb VOC</p>
 
-      <p><strong>Closet</strong> {{ 'Open' if is_state('binary_sensor.upstairs_primary_closet_open_closed_sensor_window_door_is_open', 'on') else 'Closed' }}, {{ states('sensor.upstairs_primary_closet_open_closed_sensor_battery_level') }}% Batt</p>
+      <p><strong>Closet</strong> {{ 'Open' if is_state('binary_sensor.upstairs_primary_closet_open_closed_sensor_open', 'on') else 'Closed' }}, {{ states('sensor.upstairs_primary_closet_open_closed_sensor_battery_level') }}% Batt</p>
   - type: grid
     columns: 3
     square: false
