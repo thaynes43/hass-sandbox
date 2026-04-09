@@ -1,44 +1,17 @@
 # Local dev app list (AppDaemon reads this via `appdaemon/appdaemon.yaml`).
 # Keep this file scoped to ONLY the app you're actively iterating on so local runs stay quiet.
 
-media_dashboard_app_dev:
-  module: media_dashboard_app.media_dashboard_app
-  class: MediaDashboardApp
+countdown_app_dev:
+  module: countdown_app.countdown_app
+  class: CountdownApp
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  # Tautulli — Plex Movies + Plex Shows
-  tautulli_url_env: TAUTULLI_URL
-  tautulli_api_key_env: TAUTULLI_API_KEY
-  # TMDb — in theaters + coming soon
-  tmdb_api_key_env: TMDB_API_KEY
-  # SerpApi — theater showtimes via Google
-  serpapi_api_key_env: SERPAPI_KEY
-  # MDbList — external ratings (IMDb, RT, Metacritic)
-  mdblist_api_key_env: MDBLIST_API_KEY
-  # Location (01886 Westford MA area)
-  location: "Westford, MA"
-  theaters:
-    - AMC Tyngsboro 12
-    - Showcase Cinema de Lux Lowell
-    - AMC Methuen 20
-    - Cinemark Rockingham Park and XD
-    - AMC Burlington Cinema 10
-  # Refresh cadences (seconds)
-  tautulli_refresh_interval: 7200    # 2 hours
-  tmdb_refresh_interval: 43200       # 12 hours
-  showtimes_refresh_interval: 86400  # 24 hours
-  # Filtering
-  max_items_per_category: 20
-  popularity_threshold: 5.0
-  vote_count_threshold: 50
-  stale_ttl_days: 7
-  # Filesystem — NFS mount: sudo mount -t nfs -o nfsvers=4,proto=tcp gasha01:/hdd-nfs-repl /mnt/cephfs-hdd
+  ai_provider_conf:
+    image: openai-default
+  # Filesystem — NFS mount
   media_fs_root: /Volumes/cephfs-hdd/misc/hass-media
-  poster_media_subdir: media-dashboard/posters
-  poster_www_subdir: media-dashboard/posters
-  preferences_file_subdir: media-dashboard
-  showtime_cache_subdir: media-dashboard
-  poster_width: 342
-  # Shell command that copies/rsyncs posters to /config/www/
-  # Must be defined in configuration.yaml: shell_command.media_dashboard_sync_posters
-  poster_sync_shell_command: media_dashboard_sync_posters
+  media_subdir: countdown-app
+  www_subdir: countdown/images
+  image_sync_shell_command: countdown_sync_images
+  rotation_interval_s: 15
+  countdown_refresh_s: 60

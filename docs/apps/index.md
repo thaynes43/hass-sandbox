@@ -16,6 +16,7 @@
 | **vestaboard_configuration_app** | Configuration bridge between Lovelace card and Vestaboard controller |
 | **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
 | **media_dashboard_app** | Media dashboard: Plex movies, Plex shows, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
+| **countdown_app** | Multiple countdowns with AI-generated backgrounds, auto-rotation, and text styling |
 
 ## Shared providers
 
@@ -58,6 +59,10 @@ health_checks (controller + checker_apps)
 media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi)
   └─ publishes sensor.media_dashboard_status + sensor.media_dashboard_detail
        └─ media-dashboard-card / media-dashboard-detail-card (reads sensors)
+
+countdown_app (standalone — generates images via ai_providers)
+  └─ publishes sensor.countdown_status
+       └─ countdown-card / countdown-config-card (reads sensor)
 ```
 
 !!! note "Per-app documentation"
