@@ -46,6 +46,17 @@ class CountdownCard extends HTMLElement {
     if (!firstSet && snap === this._lastSnapshot) return;
     this._lastSnapshot = snap;
 
+    // Start or restart rotation when hass is first set or interval changes
+    if (firstSet) {
+      this._startRotate();
+    } else {
+      const s = hass.states[this._config.status_entity];
+      const newInterval = s?.attributes?.rotation_interval_s;
+      if (newInterval != null && newInterval !== this._lastRotationInterval) {
+        this._startRotate();
+      }
+    }
+
     // Focus guard — skip re-render if an input has focus
     const active = this.shadowRoot?.activeElement;
     if (
@@ -75,7 +86,7 @@ class CountdownCard extends HTMLElement {
 
   connectedCallback() {
     super.connectedCallback?.();
-    this._startRotate();
+    // Rotation started from set hass() on first call (needs sensor data)
   }
 
   disconnectedCallback() {
@@ -95,6 +106,7 @@ class CountdownCard extends HTMLElement {
     return JSON.stringify({
       state: s.state,
       active: a.active_countdown?.id,
+      rotation_interval_s: a.rotation_interval_s,
       countdowns: (a.countdowns || []).map((c) => ({
         id: c.id,
         text: c.countdown_text,
@@ -367,6 +379,7 @@ class CountdownCard extends HTMLElement {
     const s = this._hass?.states[this._config.status_entity];
     const sensorInterval = s?.attributes?.rotation_interval_s;
     const interval = (sensorInterval ?? this._config.auto_rotate_s ?? 15) * 1000;
+    this._lastRotationInterval = sensorInterval;
     this._rotateTimer = setInterval(() => this._rotateNext(), interval);
   }
 
@@ -428,6 +441,13 @@ class CountdownCard extends HTMLElement {
       },
       { passive: false }
     );
+
+    root.addEventListener("touchcancel", () => {
+      touchActive = false;
+      touchStartX = null;
+      touchStartY = null;
+      swipeLocked = false;
+    });
 
     root.addEventListener("touchend", (e) => {
       const endX = e.changedTouches[0]?.clientX;

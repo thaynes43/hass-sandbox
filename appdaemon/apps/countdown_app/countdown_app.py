@@ -204,6 +204,9 @@ class CountdownApp(hass.Hass):
                 data = json.load(fh)
             self._countdowns: List[Dict[str, Any]] = list(data.get("countdowns", []))
             self._active_index: int = int(data.get("active_index", 0))
+            saved_interval = data.get("rotation_interval_s")
+            if saved_interval is not None:
+                self._rotation_interval_s = int(saved_interval)
             self.log(
                 f"State loaded from {state_file!r}: "
                 f"{len(self._countdowns)} countdowns, active_index={self._active_index}",
@@ -231,6 +234,7 @@ class CountdownApp(hass.Hass):
         data = {
             "countdowns": self._countdowns,
             "active_index": self._active_index,
+            "rotation_interval_s": self._rotation_interval_s,
         }
         try:
             with open(tmp_file, "w", encoding="utf-8") as fh:
@@ -662,6 +666,19 @@ class CountdownApp(hass.Hass):
                 f"_complete_image_generation: countdown {countdown_id!r} no longer exists",
                 level="WARNING",
             )
+            # Clean up orphaned image file
+            if success and output_path and os.path.isfile(output_path):
+                try:
+                    os.remove(output_path)
+                    self.log(
+                        f"Removed orphaned image file: {output_path!r}",
+                        level="INFO",
+                    )
+                except OSError as rm_exc:
+                    self.log(
+                        f"Failed to remove orphaned image: {rm_exc!r}",
+                        level="WARNING",
+                    )
             return
 
         if success:
@@ -794,3 +811,4 @@ class CountdownApp(hass.Hass):
         self._rotation_interval_s = seconds
         self.log(f"Rotation interval set to {seconds}s", level="INFO")
         self._publish_sensor()
+        self._save_state()

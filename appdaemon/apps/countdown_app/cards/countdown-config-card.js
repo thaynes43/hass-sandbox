@@ -498,8 +498,8 @@ class CountdownConfigCard extends HTMLElement {
   _renderListItem(countdown) {
     const id = cdcEscapeHtml(String(countdown.id || ""));
     const title = cdcEscapeHtml(countdown.title || "Untitled");
-    const subtitle = cdcEscapeHtml(countdown.subtitle || "");
-    const countdownText = cdcEscapeHtml(countdown.countdown_text || "");
+    const subtitle = countdown.subtitle || "";
+    const countdownText = countdown.countdown_text || "";
     const rawImgUrl = countdown.image_url || "";
     const imgUrl = cdcEscapeHtml(
       rawImgUrl ? rawImgUrl + (countdown.image_version ? "?v=" + countdown.image_version : "") : ""

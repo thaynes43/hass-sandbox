@@ -78,6 +78,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `weather_schedule` | `appdaemon/apps/vestaboard_apps/automations/weather_schedule/README.md` | Weather summary displayed on a daily schedule |
 | `health_checks` | `appdaemon/apps/health_checks/README.md` | System health monitoring: controller + network protocol checkers + dashboard cards |
 | `media_dashboard_app` | `appdaemon/apps/media_dashboard_app/README.md` | Media dashboard: Plex new arrivals, in-theaters, coming-soon with showtimes and thumbs up/down |
+| `countdown_app` | `appdaemon/apps/countdown_app/README.md` | Multiple countdowns with AI-generated backgrounds, auto-rotation, text styling |
 
 ### Providers
 
@@ -165,6 +166,9 @@ health_check_controller (listens for health_check_command events from all checke
   ├─ fan_health_checker/fans
   ├─ spa_health_checker/spa (depends on: cloud)
   └─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
+
+countdown_app
+  └─ depends on: ai_providers (image generation), ha_provisioner (relay script provisioning)
 ```
 
 ## When creating a new app or provider

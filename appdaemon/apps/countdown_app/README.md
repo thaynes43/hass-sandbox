@@ -91,7 +91,7 @@ appdaemon/apps/countdown_app/
 | `media_fs_root_env` | `MEDIA_FS_ROOT` | Env var for media filesystem root |
 | `media_fs_root` | `/media` | Direct media root path (dev override) |
 | `media_subdir` | `countdown-app` | Subdirectory under media root for images |
-| `www_subdir` | `countdown-app` | Subdirectory for `/local/` URL construction |
+| `www_subdir` | `countdown/images` | Subdirectory for `/local/` URL construction |
 | `image_sync_shell_command` | `countdown_sync_images` | Shell command to sync images to www |
 | `rotation_interval_s` | `15` | Seconds between auto-rotation ticks |
 | `countdown_refresh_s` | `60` | Seconds between countdown text refreshes |

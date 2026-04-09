@@ -26,6 +26,7 @@
                                      │  ├─ immich_fetcher │
                                      │  ├─ health_checks  │
                                      │  ├─ media_dashboard│
+                                     │  ├─ countdown_app  │
                                      │  └─ school_lunch_* │
                                      │                    │
                                      │  providers/        │
