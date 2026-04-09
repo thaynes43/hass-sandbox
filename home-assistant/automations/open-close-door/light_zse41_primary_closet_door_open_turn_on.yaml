@@ -1,14 +1,12 @@
 alias: "[Light] [ZSE41] : [Primary Closet] : [Door Open] : [Turn On]"
 description: ""
-triggers:
-  - trigger: state
-    entity_id:
-      - >-
-        binary_sensor.upstairs_primary_closet_open_closed_sensor_open
+trigger:
+  - platform: state
+    entity_id: binary_sensor.upstairs_primary_closet_open_closed_sensor_open
     from: null
     to: "on"
-conditions: []
-actions:
+condition: []
+action:
   - action: light.turn_on
     metadata: {}
     data: {}
