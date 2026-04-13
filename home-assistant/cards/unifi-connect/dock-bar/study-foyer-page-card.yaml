@@ -1,0 +1,326 @@
+type: vertical-stack
+cards:
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
+    content: |
+      ## Study & Foyer
+
+      <p><strong>Study</strong> {{ states('sensor.ecobee_study_sensor_temperature') | float(0) | round(0) }}&deg;F, Sonos {{ states('media_player.study') | title }}, Shades {{ states('cover.study_shades') | title }}</p>
+      <p><strong>Foyer</strong> Downstairs {{ states('sensor.downstairs_foyer_chaos_inovelli_presence_illuminance') }} lx, Upstairs {{ states('sensor.upstairs_foyer_chaos_inovelli_presence_illuminance') }} lx, Night Lights {{ states('light.downstairs_foyer_night_light') | title }}/{{ states('light.upstairs_foyer_night_light') | title }}</p>
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: light.foyer_chaos_light_switches
+        name: Foyer Chaos
+        icon: mdi:lightbulb-group
+        show_state: true
+        button_action:
+          tap_action:
+            action: toggle
+        tap_action:
+          action: more-info
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: cover.study_shades
+        name: Study Shades
+        show_state: true
+        rows: 1.719
+        card_layout: large-sub-buttons-grid
+        button_action:
+          tap_action:
+            action: more-info
+        sub_button:
+          main: []
+          bottom:
+            - entity: scene.laundry_gateway_study_tilt_open
+              name: Tilt Open
+              icon: mdi:blinds-horizontal
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_study_tilt_open
+            - entity: scene.laundry_gateway_study_open
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_study_open
+            - entity: scene.laundry_gateway_study_close
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: true
+              show_icon: true
+              show_state: false
+              tap_action:
+                action: call-service
+                service: scene.turn_on
+                target:
+                  entity_id: scene.laundry_gateway_study_close
+          bottom_layout: rows
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: vertical-stack
+            cards:
+              - type: heading
+                heading: Foyer
+                heading_style: subtitle
+              - type: grid
+                columns: 2
+                square: false
+                cards:
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: slider
+                    entity: light.downstairs_front_door_foyer_lights_inovelli_dimmer
+                    name: Main Lights
+                    icon: mdi:light-recessed
+                    show_state: true
+                    show_attribute: true
+                    attribute: brightness
+                    allow_light_slider_to_0: true
+                    tap_action:
+                      action: more-info
+                    button_action:
+                      tap_action:
+                        action: toggle
+                    slider_fill_orientation: left
+                    slider_value_position: right
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    entity: light.downstairs_foyer_chaos_inovelli_presence
+                    name: Chaos Light
+                    icon: mdi:lightbulb
+                    show_state: true
+                    tap_action:
+                      action: more-info
+                    button_action:
+                      tap_action:
+                        action: toggle
+                  - type: custom:bubble-card
+                    card_type: button
+                    button_type: name
+                    entity: light.downstairs_foyer_night_light
+                    name: Night Light
+                    icon: mdi:weather-night
+                    show_state: true
+                    tap_action:
+                      action: more-info
+                    button_action:
+                      tap_action:
+                        action: toggle
+          - type: heading
+            heading: Upstairs Foyer
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_foyer_lights
+                name: Main Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_staircase_foyer_lights_inovelli_dimmer
+                name: Staircase
+                icon: mdi:stairs
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.upstairs_foyer_chaos_inovelli_presence
+                name: Chaos Light
+                icon: mdi:lightbulb
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: light.upstairs_foyer_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Study
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_study_lights
+                name: Main Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.downstairs_study_bookshelf_inovelli_dimmer
+                name: Bookshelf Lights
+                icon: mdi:bookshelf
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: media-player
+                entity: media_player.study
+                name: Study Sonos
+                show_name: true
+                show_state: true
+                show_attribute: false
+                scrolling_effect: false
+                card_layout: normal
+                rows: 1
+                button_action:
+                  tap_action:
+                    action: more-info
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: fan.study_fan_fan
+                name: Ceiling Fan
+                icon: mdi:fan
+                show_state: true
+                show_attribute: true
+                attribute: percentage
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.study_fan_light
+                name: Fan Light
+                icon: mdi:lightbulb
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.1_3
+                name: Front Shade
+                show_state: true
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.2_3
+                name: Rear Shade
+                show_state: true

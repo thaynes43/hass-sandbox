@@ -1,0 +1,4 @@
+type: vertical-stack
+cards:
+  - type: custom:photo-frame-viewer-card
+  - type: custom:immich-fetcher-card

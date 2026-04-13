@@ -1,0 +1,125 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Climate Control
+icon: mdi:thermostat
+entity: climate.first_floor_ecobee
+show_state: true
+card_layout: large-2-rows
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#thermostat-popup"
+sub_button:
+  main:
+    - entity: sensor.first_floor_ecobee_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:home-floor-1
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+    - entity: sensor.first_floor_ecobee_target_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:target
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+    - entity: sensor.second_floor_ecobee_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:home-floor-2
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+    - entity: sensor.second_floor_ecobee_target_temperature
+      name: ""
+      show_state: true
+      show_name: false
+      show_icon: true
+      show_background: false
+      icon: mdi:target
+      tap_action:
+        action: navigate
+        navigation_path: "#thermostat-popup"
+  bottom: []
+slider_fill_orientation: left
+slider_value_position: right
+rows: 1.125
+tap_action:
+  action: navigate
+  navigation_path: "#thermostat-popup"
+styles: |-
+  ha-card {
+    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+    --bubble-sub-button-background-color: rgba(255, 255, 255, 0.05) !important;
+  }
+
+  .bubble-name,
+  .bubble-state,
+  .bubble-attribute {
+    color: rgba(240, 243, 255, 0.92) !important;
+  }
+
+  .bubble-name {
+    font-weight: 600 !important;
+    letter-spacing: 0.01em;
+    font-size: 0.96rem !important;
+  }
+
+  .bubble-state {
+    color: rgba(203, 214, 234, 0.8) !important;
+    text-transform: capitalize;
+    font-size: 0.79rem !important;
+    line-height: 1.1 !important;
+  }
+
+  .bubble-attribute {
+    color: rgba(203, 214, 234, 0.78) !important;
+    font-size: 0.83rem !important;
+  }
+
+  .bubble-icon,
+  .bubble-sub-button-icon {
+    color: rgba(245, 247, 255, 0.94) !important;
+  }
+
+  .bubble-sub-button-1 {
+    background: ${(() => {
+      const current = parseFloat(hass.states['sensor.first_floor_ecobee_temperature']?.state);
+      const target = parseFloat(hass.states['sensor.first_floor_ecobee_target_temperature']?.state);
+      if (!Number.isFinite(current) || !Number.isFinite(target)) return 'rgba(255, 255, 255, 0.08)';
+      if (current > target) return 'rgba(146, 88, 76, 0.42)';
+      if (current < target) return 'rgba(83, 112, 154, 0.42)';
+      return 'rgba(76, 119, 98, 0.42)';
+    })()} !important;
+  }
+
+  .bubble-sub-button-2 {
+    background: rgba(92, 106, 142, 0.32) !important;
+  }
+
+  .bubble-sub-button-3 {
+    background: ${(() => {
+      const current = parseFloat(hass.states['sensor.second_floor_ecobee_temperature']?.state);
+      const target = parseFloat(hass.states['sensor.second_floor_ecobee_target_temperature']?.state);
+      if (!Number.isFinite(current) || !Number.isFinite(target)) return 'rgba(255, 255, 255, 0.08)';
+      if (current > target) return 'rgba(146, 88, 76, 0.42)';
+      if (current < target) return 'rgba(83, 112, 154, 0.42)';
+      return 'rgba(76, 119, 98, 0.42)';
+    })()} !important;
+  }
+
+  .bubble-sub-button-4 {
+    background: rgba(104, 94, 140, 0.3) !important;
+  }

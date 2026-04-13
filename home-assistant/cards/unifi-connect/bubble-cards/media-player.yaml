@@ -1,0 +1,72 @@
+type: custom:bubble-card
+card_type: media-player
+sub_button:
+  bottom:
+    - width: 220
+      content_layout: icon-left
+      show_icon: true
+      tap_action:
+        action: navigate
+        navigation_path: /wall-display/music-assistant
+      name: Launch Music Assistant
+      show_name: true
+      icon: mdi:play-pause
+  main:
+    - name: Kitchen Sonos
+      show_background: true
+      width: 120
+      content_layout: icon-left
+      show_name: true
+      show_icon: false
+entity: media_player.kitchen
+name: Kitchen Sonos
+show_name: true
+force_icon: false
+show_state: false
+show_attribute: true
+attribute: friendly_name
+main_buttons_position: bottom
+rows: 2.406
+styles: |
+  ha-card {
+    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+    --bubble-sub-button-background-color: rgba(56, 73, 101, 0.32) !important;
+    --bubble-media-player-main-background-color: rgba(28, 29, 33, 0.32) !important;
+    --bubble-media-player-slider-background-color: rgba(255, 255, 255, 0.08) !important;
+  }
+
+  .bubble-name,
+  .bubble-state,
+  .bubble-attribute {
+    color: rgba(240, 243, 255, 0.92) !important;
+  }
+
+  .bubble-name {
+    font-weight: 600 !important;
+    letter-spacing: 0.01em;
+  }
+
+  .bubble-attribute {
+    color: rgba(203, 214, 234, 0.78) !important;
+    font-size: 0.83rem !important;
+  }
+
+  .bubble-icon,
+  .bubble-sub-button-icon {
+    color: rgba(245, 247, 255, 0.94) !important;
+  }
+
+  .bubble-range-fill,
+  .bubble-progress-fill,
+  .bubble-volume-fill {
+    background: rgba(121, 161, 232, 0.92) !important;
+  }
+
+  .bubble-button-background {
+    background: rgba(255, 255, 255, 0.05) !important;
+  }
+
+  .bubble-sub-button-1 {
+    background: rgba(76, 110, 151, 0.28) !important;
+  }
+scrolling_effect: false

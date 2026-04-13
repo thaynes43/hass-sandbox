@@ -1,0 +1,204 @@
+type: vertical-stack
+cards:
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
+    content: |
+      ## Shed
+
+      <p><strong>Climate</strong> {{ states('sensor.shed_temperature_sensor_air_temperature') | float(0) | round(0) }}&deg;F, {{ states('sensor.shed_temperature_sensor_humidity') | float(0) | round(0) }}% Hum</p>
+      <p><strong>Door</strong> {{ 'Open' if is_state('binary_sensor.shed_door_open_closed_sensor_window_door_is_open', 'on') else 'Closed' }}</p>
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: sensor
+            entity: sensor.upstairs_cloffice_fridge_power_switch_electric_consumption_w
+            name: E-Bike Consumption
+            icon: mdi:bike
+            graph: line
+            detail: 1
+            hours_to_show: 3
+            card_mod:
+              style: |
+                ha-card {
+                  margin-bottom: -6px;
+                  min-height: 160px !important;
+                  border-radius: 28px;
+                  border-bottom-left-radius: 0;
+                  border-bottom-right-radius: 0;
+                }
+          - type: tile
+            entity: switch.upstairs_cloffice_fridge_power_switch
+            name: E-Bike
+            hide_state: true
+            vertical: false
+            features:
+              - type: toggle
+            features_position: inline
+            card_mod:
+              style: |
+                ha-card {
+                  margin-top: 0;
+                  min-height: 46px !important;
+                  border-radius: 28px;
+                  border-top-left-radius: 0;
+                  border-top-right-radius: 0;
+                }
+                .content {
+                  display: none !important;
+                }
+                .features {
+                  padding-top: 2px !important;
+                  padding-bottom: 6px !important;
+                }
+      - type: vertical-stack
+        cards:
+          - type: sensor
+            entity: sensor.shed_mombike_power_switch_electric_consumption_w
+            name: Mom-Bike Consumption
+            icon: mdi:bike
+            graph: line
+            detail: 1
+            hours_to_show: 3
+            card_mod:
+              style: |
+                ha-card {
+                  margin-bottom: -6px;
+                  min-height: 160px !important;
+                  border-radius: 28px;
+                  border-bottom-left-radius: 0;
+                  border-bottom-right-radius: 0;
+                }
+          - type: tile
+            entity: switch.shed_mombike_power_switch
+            name: Mom-Bike
+            hide_state: true
+            vertical: false
+            features:
+              - type: toggle
+            features_position: inline
+            card_mod:
+              style: |
+                ha-card {
+                  margin-top: 0;
+                  min-height: 46px !important;
+                  border-radius: 28px;
+                  border-top-left-radius: 0;
+                  border-top-right-radius: 0;
+                }
+                .content {
+                  display: none !important;
+                }
+                .features {
+                  padding-top: 2px !important;
+                  padding-bottom: 6px !important;
+                }
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: tile
+            entity: switch.shed_exterior_lights_shelly_relay
+            name: Flowerbox Lights
+            icon: mdi:flower
+            vertical: false
+            features:
+              - type: toggle
+            features_position: inline
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 28px;
+                }
+          - type: tile
+            entity: binary_sensor.shed_door_open_closed_sensor_window_door_is_open
+            name: Door Open/Close
+            icon: mdi:door-sliding
+            vertical: false
+            features_position: inline
+            card_mod:
+              style: |
+                ha-card {
+                  border-radius: 28px;
+                }
+      - type: vertical-stack
+        cards:
+          - type: sensor
+            entity: sensor.shed_fan_power_switch_electric_consumption_w
+            name: Fan Consumption
+            icon: mdi:fan
+            graph: line
+            detail: 1
+            hours_to_show: 3
+            card_mod:
+              style: |
+                ha-card {
+                  margin-bottom: -6px;
+                  min-height: 160px !important;
+                  border-radius: 28px;
+                  border-bottom-left-radius: 0;
+                  border-bottom-right-radius: 0;
+                }
+          - type: tile
+            entity: switch.shed_fan_power_switch
+            name: Fan Power
+            hide_state: true
+            vertical: false
+            features:
+              - type: toggle
+            features_position: inline
+            card_mod:
+              style: |
+                ha-card {
+                  margin-top: 0;
+                  min-height: 46px !important;
+                  border-radius: 28px;
+                  border-top-left-radius: 0;
+                  border-top-right-radius: 0;
+                }
+                .content {
+                  display: none !important;
+                }
+                .features {
+                  padding-top: 2px !important;
+                  padding-bottom: 6px !important;
+                }

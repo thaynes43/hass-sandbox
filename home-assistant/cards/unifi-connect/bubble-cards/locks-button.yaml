@@ -1,0 +1,58 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+name: Locks
+icon: mdi:shield-lock
+entity: input_text.wall_display_entry_locks_status
+show_state: true
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#wall-display-locks"
+styles: |-
+  ha-card {
+    --bubble-main-background-color: ${(() => {
+      const state = (hass.states['input_text.wall_display_entry_locks_status']?.state || '').toLowerCase();
+      if (state.includes('all ok') || state.includes('locked') || state.includes('secure')) {
+        return 'rgba(40, 58, 60, 0.34)';
+      }
+      if (state.includes('pending') || state.includes('locking') || state.includes('unlocking')) {
+        return 'rgba(45, 53, 71, 0.36)';
+      }
+      return 'rgba(62, 46, 43, 0.38)';
+    })()} !important;
+  }
+
+  .bubble-name,
+  .bubble-state,
+  .bubble-attribute {
+    color: rgba(240, 243, 255, 0.92) !important;
+  }
+
+  .bubble-name {
+    font-weight: 600 !important;
+    letter-spacing: 0.01em;
+    font-size: 0.96rem !important;
+  }
+
+  .bubble-state {
+    color: ${(() => {
+      const state = (hass.states['input_text.wall_display_entry_locks_status']?.state || '').toLowerCase();
+      if (state.includes('all ok') || state.includes('locked') || state.includes('secure')) {
+        return 'rgba(203, 232, 214, 0.88)';
+      }
+      if (state.includes('pending') || state.includes('locking') || state.includes('unlocking')) {
+        return 'rgba(196, 212, 240, 0.86)';
+      }
+      return 'rgba(245, 208, 194, 0.9)';
+    })()} !important;
+    font-weight: 500 !important;
+    font-size: 0.79rem !important;
+    line-height: 1.1 !important;
+  }
+sub_button:
+  main: []
+  bottom: []
+grid_options:
+  columns: 6
+  rows: auto

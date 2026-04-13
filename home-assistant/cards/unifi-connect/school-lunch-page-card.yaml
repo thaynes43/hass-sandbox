@@ -1,0 +1,6 @@
+type: vertical-stack
+cards:
+  - type: custom:school-lunch-detail-card
+    status_entity: sensor.school_lunch_menu
+    selection_entity: input_text.school_lunch_selected_schools
+    relay_script: school_lunch_relay

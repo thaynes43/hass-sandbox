@@ -1,0 +1,338 @@
+type: vertical-stack
+cards:
+  - type: markdown
+    text_only: true
+    card_mod:
+      style: |
+        ha-card {
+          border-radius: 28px;
+          padding: 10px 18px 12px;
+          background: var(--ha-card-background, var(--card-background-color));
+          border: none;
+          box-shadow: none;
+        }
+        h2 {
+          margin: 0 0 8px;
+          color: var(--primary-text-color);
+          font-size: 1.15rem;
+          font-weight: 650;
+          letter-spacing: 0.01em;
+        }
+        p {
+          margin: 0;
+          color: var(--secondary-text-color);
+          line-height: 1.35;
+          font-size: 0.95rem;
+        }
+        p + p {
+          margin-top: 6px;
+        }
+        strong {
+          color: var(--primary-text-color);
+          font-weight: 600;
+        }
+    content: |
+      ## Bed, Bath, & Beyond
+
+      <p><strong>Laundry</strong> {{ states('sensor.laundry_room_wave_mini_temperature') | float(0) | round(0) }}&deg;F, {{ states('sensor.laundry_room_wave_mini_humidity') | float(0) | round(0) }}% Hum, {{ states('sensor.laundry_room_wave_mini_vocs') | float(0) | round(0) }} ppb VOC, Washer {{ 'Ready' if is_state('sensor.washer_current_status', 'end') else states('sensor.washer_current_status') | title }}, Dryer {{ 'Ready' if is_state('sensor.dryer_current_status', 'end') else states('sensor.dryer_current_status') | title }}</p>
+      <p><strong>White</strong> {{ states('sensor.ecobee_white_room_sensor_temperature') | float(0) | round(0) }}&deg;F, {{ 'Occupied' if is_state('binary_sensor.ecobee_white_room_sensor_occupancy', 'on') else 'Vacant' }}, Shades {{ states('cover.white_room_shades') | title }} &nbsp;•&nbsp; <strong>Bath</strong> {{ states('sensor.upstairs_kids_bathroom_fan_light_inovelli_on_off_temperature') | float(0) | round(0) }}&deg;F, {{ states('sensor.upstairs_kids_bathroom_fan_light_inovelli_on_off_humidity') | float(0) | round(0) }}% Hum, {{ 'Occupied' if is_state('binary_sensor.upstairs_kids_bathroom_vanity_inovelli_presence_occupancy', 'on') else 'Vacant' }}, Shade {{ states('cover.1_7') | title }}</p>
+  - type: grid
+    columns: 3
+    square: false
+    cards:
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.white_room
+        name: White Room Sonos
+        show_name: true
+        show_state: true
+        show_attribute: false
+        scrolling_effect: false
+        card_layout: normal
+        rows: 1
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: media-player
+        entity: media_player.kids_bathroom
+        name: Kids Bath Sonos
+        show_name: true
+        show_state: true
+        show_attribute: false
+        scrolling_effect: false
+        card_layout: normal
+        rows: 1
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: media_player.white_room_lg_tv
+        name: White Room TV
+        icon: mdi:television
+        show_state: true
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: sensor.washer_current_status
+        name: Washer
+        icon: mdi:washing-machine
+        show_state: true
+        button_action:
+          tap_action:
+            action: more-info
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: sensor.dryer_current_status
+        name: Dryer
+        icon: mdi:tumble-dryer
+        show_state: true
+        button_action:
+          tap_action:
+            action: more-info
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: Kids Bathroom
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_kids_bathroom_vanity_inovelli_presence
+                name: Vanity Lights
+                icon: mdi:lightbulb-group
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_kids_bathroom_fan_light_inovelli_on_off
+                name: Fan Light
+                icon: mdi:lightbulb
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_kids_bathroom_night_light
+                name: Night Light
+                icon: mdi:weather-night
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: cover.1_7
+                name: Kids Bathroom Shade
+                show_state: true
+                rows: 1.719
+                card_layout: large-sub-buttons-grid
+                button_action:
+                  tap_action:
+                    action: more-info
+                sub_button:
+                  main: []
+                  bottom:
+                    - entity: scene.laundry_gateway_2nd_floor_bath_tilt_open
+                      name: Tilt Open
+                      icon: mdi:blinds-horizontal
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_2nd_floor_bath_tilt_open
+                    - entity: scene.laundry_gateway_2nd_floor_bath_open
+                      name: Open
+                      icon: mdi:arrow-up-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_2nd_floor_bath_open
+                    - entity: scene.laundry_gateway_2nd_floor_bath_close
+                      name: Close
+                      icon: mdi:arrow-down-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_2nd_floor_bath_close
+                  bottom_layout: rows
+          - type: heading
+            heading: Laundry Room
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.upstairs_laundry_inovlli_presence
+                name: Laundry Lights
+                icon: mdi:light-recessed
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+      - type: vertical-stack
+        cards:
+          - type: heading
+            heading: White Room
+            heading_style: subtitle
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: light.white_room_fan_light
+                name: Fan Light
+                icon: mdi:lightbulb
+                show_state: true
+                show_attribute: true
+                attribute: brightness
+                allow_light_slider_to_0: true
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+                slider_fill_orientation: left
+                slider_value_position: right
+              - type: custom:bubble-card
+                card_type: button
+                button_type: slider
+                entity: fan.white_room_fan_fan
+                name: Ceiling Fan
+                icon: mdi:fan
+                show_state: true
+                show_attribute: true
+                attribute: percentage
+                tap_action:
+                  action: more-info
+                button_action:
+                  tap_action:
+                    action: toggle
+              - type: custom:bubble-card
+                card_type: button
+                button_type: name
+                entity: cover.white_room_shades
+                name: White Room Shades
+                show_state: true
+                rows: 1.719
+                card_layout: large-sub-buttons-grid
+                button_action:
+                  tap_action:
+                    action: more-info
+                sub_button:
+                  main: []
+                  bottom:
+                    - entity: scene.laundry_gateway_white_room_tilt_open
+                      name: Tilt Open
+                      icon: mdi:blinds-horizontal
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_white_room_tilt_open
+                    - entity: scene.laundry_gateway_white_room_open
+                      name: Open
+                      icon: mdi:arrow-up-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_white_room_open
+                    - entity: scene.laundry_gateway_white_room_close
+                      name: Close
+                      icon: mdi:arrow-down-bold
+                      show_name: true
+                      show_icon: true
+                      show_state: false
+                      tap_action:
+                        action: call-service
+                        service: scene.turn_on
+                        target:
+                          entity_id: scene.laundry_gateway_white_room_close
+                  bottom_layout: rows
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.1_9
+                name: White Room Shade 1
+                show_state: true
+              - type: custom:bubble-card
+                card_type: cover
+                entity: cover.2_6
+                name: White Room Shade 2
+                show_state: true

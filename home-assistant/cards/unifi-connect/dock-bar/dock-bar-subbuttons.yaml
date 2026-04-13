@@ -1,0 +1,227 @@
+type: custom:bubble-card
+card_type: sub-buttons
+sub_button:
+  main: []
+  bottom:
+    - name: Shed
+      icon: mdi:greenhouse
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#shed-popup"
+    - name: Front Yard
+      icon: mdi:post-lamp
+      show_name: true
+      fill_width: false
+      width: 8.33
+      custom_height: 72
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#front-yard-popup"
+    - name: Back Yard
+      icon: mdi:grass
+      show_name: true
+      fill_width: false
+      width: 8.34
+      custom_height: 72
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#back-yard-popup"
+    - name: Driveway & Garage
+      icon: mdi:road-variant
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#driveway-popup"
+    - name: Entrance
+      icon: mdi:coat-rack
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#entrance-popup"
+    - name: Kitchen & Dining
+      icon: mdi:countertop-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.34
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#kitchen-popup"
+    - name: Living Room
+      icon: mdi:sofa-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#livingroom-popup"
+    - name: Study & Foyer
+      icon: mdi:globe-model
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#study-foyer-popup"
+    - name: Primary
+      icon: mdi:bed-king-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#primary-popup"
+    - name: Cloffice
+      icon: mdi:desk
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.34
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#cloffice-popup"
+    - name: Kids Bedrooms
+      icon: mdi:bunk-bed-outline
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.33
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#kids-popup"
+    - name: Bed, Bath, & Beyond
+      icon: mdi:sleep
+      show_name: true
+      fill_width: false
+      custom_height: 72
+      width: 8.34
+      content_layout: icon-top
+      tap_action:
+        action: navigate
+        navigation_path: "#bbb-popup"
+rows: 1.5
+card_layout: large
+styles: |
+  .bubble-button-card-container {
+    background: rgba(28, 29, 33, 0.18) !important;
+    padding: 10px 14px 12px !important;
+  }
+
+  .card-content {
+    width: 100%;
+    margin: 0 !important;
+  }
+
+  .bubble-sub-button-container {
+    display: flex !important;
+    width: 100%;
+    align-items: stretch;
+    justify-content: space-between !important;
+    gap: 12px;
+    padding: 0 2px;
+  }
+
+  .bubble-sub-button {
+    min-width: unset !important;
+    border-radius: 22px !important;
+  }
+
+  .bubble-sub-button-icon {
+    --mdc-icon-size: 32px !important;
+    margin-bottom: 6px;
+  }
+
+  .bubble-name {
+    color: rgba(240, 243, 255, 0.9) !important;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .bubble-sub-button-1 {
+    background: rgba(76, 119, 98, 0.42) !important;
+  }
+
+  .bubble-sub-button-2 {
+    background: rgba(123, 105, 72, 0.4) !important;
+  }
+
+  .bubble-sub-button-3 {
+    background: rgba(72, 108, 96, 0.4) !important;
+  }
+
+  .bubble-sub-button-4 {
+    background: rgba(88, 101, 138, 0.4) !important;
+  }
+
+  .bubble-sub-button-5 {
+    background: rgba(120, 95, 82, 0.4) !important;
+  }
+
+  .bubble-sub-button-6 {
+    background: rgba(119, 108, 78, 0.4) !important;
+  }
+
+  .bubble-sub-button-7 {
+    background: rgba(92, 98, 133, 0.4) !important;
+  }
+
+  .bubble-sub-button-8 {
+    background: rgba(78, 102, 119, 0.4) !important;
+  }
+
+  .bubble-sub-button-9 {
+    background: rgba(112, 90, 116, 0.4) !important;
+  }
+
+  .bubble-sub-button-10 {
+    background: rgba(110, 99, 134, 0.4) !important;
+  }
+
+  .bubble-sub-button-11 {
+    background: rgba(83, 100, 127, 0.4) !important;
+  }
+
+  .bubble-sub-button-12 {
+    background: rgba(92, 100, 108, 0.4) !important;
+  }
+
+  .bubble-sub-button-1 .bubble-sub-button-icon,
+  .bubble-sub-button-2 .bubble-sub-button-icon,
+  .bubble-sub-button-3 .bubble-sub-button-icon,
+  .bubble-sub-button-4 .bubble-sub-button-icon,
+  .bubble-sub-button-5 .bubble-sub-button-icon,
+  .bubble-sub-button-6 .bubble-sub-button-icon,
+  .bubble-sub-button-7 .bubble-sub-button-icon,
+  .bubble-sub-button-8 .bubble-sub-button-icon,
+  .bubble-sub-button-9 .bubble-sub-button-icon,
+  .bubble-sub-button-10 .bubble-sub-button-icon,
+  .bubble-sub-button-11 .bubble-sub-button-icon,
+  .bubble-sub-button-12 .bubble-sub-button-icon {
+    color: rgba(245, 247, 255, 0.92) !important;
+  }
+grid_options:
+  columns: full

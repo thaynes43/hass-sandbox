@@ -1,0 +1,129 @@
+type: vertical-stack
+cards:
+  - type: custom:bubble-card
+    card_type: pop-up
+    hash: "#thermostat-popup"
+    button_type: name
+    width_desktop: 75vw
+    width_mobile: 90vw
+    show_header: true
+    name: Return To Dashboard
+    show_icon: true
+    icon: mdi:arrow-left
+    show_name: true
+    margin: 7px
+    scrolling_effect: false
+    tap_action:
+      action: navigate
+      navigation_path: "#"
+    button_action:
+      tap_action:
+        action: navigate
+        navigation_path: "#"
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: thermostat
+            entity: climate.first_floor_ecobee
+            name: First Floor
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - "off"
+                  - heat
+                  - cool
+                  - auto
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: tile
+                entity: sensor.first_floor_ecobee_temperature
+                name: Current Temp
+                icon: mdi:thermometer
+              - type: tile
+                entity: sensor.first_floor_ecobee_humidity
+                name: Humidity
+                icon: mdi:water-percent
+
+      - type: vertical-stack
+        cards:
+          - type: thermostat
+            entity: climate.second_floor_ecobee
+            name: Second Floor
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - "off"
+                  - heat
+                  - cool
+                  - auto
+          - type: grid
+            columns: 2
+            square: false
+            cards:
+              - type: tile
+                entity: sensor.second_floor_ecobee_temperature
+                name: Current Temp
+                icon: mdi:thermometer
+              - type: tile
+                entity: sensor.second_floor_ecobee_humidity
+                name: Humidity
+                icon: mdi:water-percent
+
+  - type: custom:bubble-card
+    card_type: separator
+    sub_button:
+      main: []
+      bottom: []
+    rows: "0.8"
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: binary_sensor.first_floor_ecobee_occupancy
+            name: First Floor Motion
+            icon: mdi:motion-sensor
+          - type: tile
+            entity: binary_sensor.ecobee_mudroom_sensor_occupancy
+            name: Mudroom Motion
+            icon: mdi:motion-sensor
+          - type: tile
+            entity: binary_sensor.ecobee_dining_room_sensor_occupancy
+            name: Dining Room Motion
+            icon: mdi:motion-sensor
+          - type: tile
+            entity: binary_sensor.ecobee_study_sensor_occupancy
+            name: Study Motion
+            icon: mdi:motion-sensor
+
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - type: tile
+            entity: binary_sensor.second_floor_ecobee_occupancy
+            name: Second Floor Motion
+            icon: mdi:motion-sensor
+          - type: tile
+            entity: binary_sensor.ecobee_pink_room_sensor_occupancy
+            name: Pink Room Motion
+            icon: mdi:motion-sensor
+          - type: tile
+            entity: binary_sensor.ecobee_white_room_sensor_occupancy
+            name: White Room Motion
+            icon: mdi:motion-sensor
+          - type: tile
+            entity: binary_sensor.ecobee_blue_room_sensor_occupancy
+            name: Blue Room Motion
+            icon: mdi:motion-sensor

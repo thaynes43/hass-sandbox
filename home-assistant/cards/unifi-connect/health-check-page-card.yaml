@@ -1,0 +1,6 @@
+type: vertical-stack
+cards:
+  - type: custom:health-check-detail-card
+    status_entity: sensor.health_check_status
+    heartbeat_entity: input_datetime.appdaemon_heartbeat
+    relay_script: health_check_relay

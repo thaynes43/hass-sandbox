@@ -1,0 +1,39 @@
+type: custom:bubble-card
+card_type: button
+button_type: name
+sub_button:
+  main: []
+  bottom: []
+tap_action:
+  action: navigate
+  navigation_path: /wall-display/cctv
+name: CCTV
+icon: mdi:cctv
+rows: 1
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: /wall-display/cctv
+styles: |-
+  ha-card {
+    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+  }
+
+  .bubble-name,
+  .bubble-state,
+  .bubble-attribute {
+    color: rgba(240, 243, 255, 0.92) !important;
+  }
+
+  .bubble-name {
+    font-weight: 600 !important;
+    letter-spacing: 0.01em;
+    font-size: 0.96rem !important;
+  }
+
+  .bubble-icon {
+    color: rgba(245, 247, 255, 0.94) !important;
+  }
+grid_options:
+  columns: 6
+  rows: 1
