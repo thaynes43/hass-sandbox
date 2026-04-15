@@ -42,12 +42,16 @@ zwave_battery_checker_dev:
   critical_threshold: 10
   health_dependencies:
     - checker_id: zwave
-  sensors:
-    - entity_id: sensor.front_door_lock_battery
-      name: Front Door Lock
+  entity_patterns:
+    - include: "sensor\\..*_battery_level$"
+    - exclude: ".*iphone.*"
+    - exclude: ".*ipad.*"
+    - exclude: ".*unifi_display.*"
 ```
 
-Each sensor becomes a named check. Status logic:
+`entity_patterns` is a list of regex rules evaluated in order against entity IDs (via `re.search`, so substring matching). `include` adds matches to the monitored set; `exclude` removes them. This lets broad-include rules auto-enroll new devices while still filtering out known noisy entities (e.g. mobile_app/companion phones and tablets that share the `_battery_level` suffix with Z-Wave sensors). Each matched entity becomes a check named after its friendly name.
+
+Status logic:
 - `level > warning_threshold` → ok
 - `warning_threshold >= level > critical_threshold` → warning
 - `level <= critical_threshold` → critical
