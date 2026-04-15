@@ -956,6 +956,9 @@ zwave_battery_checker:
     - checker_id: zwave
   entity_patterns:
     - include: "sensor\\..*_battery_level$"
+    - exclude: ".*iphone.*"
+    - exclude: ".*ipad.*"
+    - exclude: ".*unifi_display.*"
 
 shade_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
