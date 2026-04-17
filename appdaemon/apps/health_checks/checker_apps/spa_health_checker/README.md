@@ -65,7 +65,7 @@ spa_health_checker:
   staleness_entities:                          # Entities for staleness detection (OR logic — any fresh entity passes)
     - climate.westford_spa_thermostat_1
   staleness_threshold_s: 10800                 # Seconds before all entities are considered stale (3 hours)
-  repair_switch: switch.power_distribution_hi_density_hot_tub  # Smart switch for power cycle
+  repair_switch: switch.spa_intouch3_switch    # Z-Wave switch controlling spa power
   repair_recovery_wait_s: 300                  # Max seconds to wait for recovery after repair
   check_interval_s: 120                        # Check frequency (seconds)
   auto_repair_enabled_default: false           # Default auto-repair toggle state

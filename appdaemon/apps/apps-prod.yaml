@@ -1085,7 +1085,7 @@ spa_health_checker:
     - fan.westford_spa_pump_1
     - fan.westford_spa_pump_2
   staleness_threshold_s: 10800
-  repair_switch: switch.power_distribution_hi_density_hot_tub
+  repair_switch: switch.spa_intouch3_switch
   repair_recovery_wait_s: 300
   check_interval_s: 120
   auto_repair_enabled_default: false
