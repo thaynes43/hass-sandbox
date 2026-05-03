@@ -168,13 +168,32 @@ class ImmichClient:
         return None
 
     async def get_album_assets(self, album_id: str) -> List[Dict[str, Any]]:
-        """Return the asset list for a single album."""
-        data = await self._json_request("GET", f"/api/albums/{album_id}")
-        assets = data.get("assets", [])
+        """Return the asset list for a single album.
+
+        Uses ``POST /api/search/assets`` with ``albumIds`` filter.  The
+        previous ``GET /api/albums/{id}`` shape no longer includes
+        ``assets`` as of Immich v3.0.0 (see PR immich-app/immich#27835).
+        Paginates via ``nextPage`` so the full album is returned.
+        """
+        all_assets: List[Dict[str, Any]] = []
+        page = 1
+        while True:
+            body = {"albumIds": [album_id], "page": page, "size": 1000}
+            data = await self._json_request("POST", "/api/search/assets", json=body)
+            assets_section = data.get("assets", {}) if isinstance(data, dict) else {}
+            items = assets_section.get("items", []) if isinstance(assets_section, dict) else []
+            all_assets.extend(items)
+            next_page = assets_section.get("nextPage") if isinstance(assets_section, dict) else None
+            if not next_page:
+                break
+            try:
+                page = int(next_page)
+            except (TypeError, ValueError):
+                break
         logger.info(
-            "Retrieved %d assets from album %s", len(assets), album_id
+            "Retrieved %d assets from album %s", len(all_assets), album_id
         )
-        return assets
+        return all_assets
 
     # -- Search endpoints ----------------------------------------------------
 
