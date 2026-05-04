@@ -184,7 +184,7 @@ class ImmichClient:
             items = assets_section.get("items", []) if isinstance(assets_section, dict) else []
             all_assets.extend(items)
             next_page = assets_section.get("nextPage") if isinstance(assets_section, dict) else None
-            if not next_page:
+            if next_page is None:
                 break
             try:
                 page = int(next_page)
