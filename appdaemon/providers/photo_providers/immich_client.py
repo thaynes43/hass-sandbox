@@ -191,6 +191,11 @@ class ImmichClient:
             )
             return items
 
+        logger.info(
+            "Album %s: legacy response missing 'assets' (Immich v3?), "
+            "falling back to POST /api/search/assets",
+            album_id,
+        )
         all_assets: List[Dict[str, Any]] = []
         page = 1
         while True:
