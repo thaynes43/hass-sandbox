@@ -174,7 +174,7 @@ class SearchSelector(AssetSelector):
 
 
 # ---------------------------------------------------------------------------
-# AlbumSelector  (POST /api/search/assets with albumIds filter)
+# AlbumSelector  (GET /api/albums/{id} on v2; POST /api/search/assets fallback on v3)
 # ---------------------------------------------------------------------------
 
 class AlbumSelector(AssetSelector):
