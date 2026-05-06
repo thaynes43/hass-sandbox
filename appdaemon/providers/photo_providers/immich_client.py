@@ -170,11 +170,27 @@ class ImmichClient:
     async def get_album_assets(self, album_id: str) -> List[Dict[str, Any]]:
         """Return the asset list for a single album.
 
-        Uses ``POST /api/search/assets`` with ``albumIds`` filter.  The
-        previous ``GET /api/albums/{id}`` shape no longer includes
-        ``assets`` as of Immich v3.0.0 (see PR immich-app/immich#27835).
-        Paginates via ``nextPage`` so the full album is returned.
+        Tries the legacy ``GET /api/albums/{id}`` shape first because it
+        is the canonical path on Immich v2.x and avoids an extra
+        round-trip.  If the response omits ``assets`` (Immich v3.0.0
+        removed the field per PR immich-app/immich#27835) or the
+        endpoint itself returns 404, falls back to the paginated
+        ``POST /api/search/assets`` form with an ``albumIds`` filter.
         """
+        try:
+            legacy = await self._json_request("GET", f"/api/albums/{album_id}")
+        except aiohttp.ClientResponseError as exc:
+            if exc.status != 404:
+                raise
+            legacy = None
+
+        if isinstance(legacy, dict) and isinstance(legacy.get("assets"), list):
+            items = legacy["assets"]
+            logger.info(
+                "Retrieved %d assets from album %s (legacy)", len(items), album_id
+            )
+            return items
+
         all_assets: List[Dict[str, Any]] = []
         page = 1
         while True:
@@ -191,7 +207,7 @@ class ImmichClient:
             except (TypeError, ValueError):
                 break
         logger.info(
-            "Retrieved %d assets from album %s", len(all_assets), album_id
+            "Retrieved %d assets from album %s (search)", len(all_assets), album_id
         )
         return all_assets
 
