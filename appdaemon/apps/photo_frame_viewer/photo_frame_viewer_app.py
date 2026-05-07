@@ -937,7 +937,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self.log(
             f"PhotoFrameViewerApp: publish url={local_url!r} "
             f"label={label!r} gen={gen_id} reason={reason}",
-            level="DEBUG",
+            level="INFO",
         )
         self._last_published_local_url = local_url
         self._last_published_source_path = path
@@ -1032,7 +1032,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self._timer_handle = self.run_in(self._on_tick, interval)
         self.log(
             f"PhotoFrameViewerApp: scheduled tick in {interval:.1f}s reason={reason}",
-            level="DEBUG",
+            level="INFO",
         )
 
     def _sync_timer(self, *, reason: str) -> None:
@@ -1077,15 +1077,17 @@ class PhotoFrameViewerApp(hass.Hass):
             self.log(
                 f"PhotoFrameViewerApp: ignoring picker echo {new_label!r} "
                 f"(programmatic)",
-                level="DEBUG",
+                level="INFO",
             )
             return
+        prev_target = self._programmatic_target
         self._programmatic_target = None
 
         # Manual navigation while a pending gen is queued.
         if self._pending_gen_id is not None:
             self.log(
-                f"PhotoFrameViewerApp: manual nav to {new_label!r} (applying pending gen)",
+                f"PhotoFrameViewerApp: manual nav to {new_label!r} "
+                f"(applying pending gen, old={old_label!r}, expected_target={prev_target!r})",
                 level="INFO",
             )
             self._apply_pending_gen(reason="manual_nav")
@@ -1093,13 +1095,24 @@ class PhotoFrameViewerApp(hass.Hass):
                 self._schedule_next(reason="manual_nav")
             return
 
-        self.log(f"PhotoFrameViewerApp: manual nav to {new_label!r}", level="INFO")
+        self.log(
+            f"PhotoFrameViewerApp: manual nav to {new_label!r} "
+            f"(old={old_label!r}, expected_target={prev_target!r})",
+            level="INFO",
+        )
         self._publish_selected_local_url(new_label, reason="manual_nav")
         if self.reset_timer_on_manual_nav:
             self._schedule_next(reason="manual_nav")
 
     def _on_tick(self, kwargs: Any) -> None:
         self._timer_handle = None
+        current_at_entry = self._picker_value()
+        self.log(
+            f"PhotoFrameViewerApp: _on_tick fired interval={self._interval}s "
+            f"current={current_at_entry!r} pending={self._pending_gen_id} "
+            f"target={self._programmatic_target!r}",
+            level="INFO",
+        )
         if self._is_paused():
             self._cancel_timer()
             return
@@ -1121,9 +1134,8 @@ class PhotoFrameViewerApp(hass.Hass):
         # Compute next label locally instead of calling select_next and
         # waiting for the async state-change round-trip.  This avoids the
         # race where the echo event arrives after the debounce flag clears.
-        current = self._picker_value()
         try:
-            idx = opts.index(current)
+            idx = opts.index(current_at_entry)
         except ValueError:
             idx = -1
 
