@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
 
@@ -369,9 +370,9 @@ class TestPendingSwap:
 
         app._on_tick({})
 
-        # _on_tick should have set a programmatic target.
+        # _on_tick should have recorded a programmatic target.
         expected_next = opts[1]
-        assert app._programmatic_target == expected_next
+        assert expected_next in app._programmatic_targets
 
         # Simulate HA echoing the state change back (this is _on_picker_change).
         app.log.reset_mock()
@@ -388,7 +389,7 @@ class TestPendingSwap:
             f"Expected no 'manual nav' logs but got: {manual_nav_logs}"
         )
         # Target should be cleared after absorption.
-        assert app._programmatic_target is None
+        assert expected_next not in app._programmatic_targets
 
     def test_tick_with_pending_gen_does_not_double_advance(self):
         """_on_tick must return early after applying a pending gen swap.
@@ -409,7 +410,7 @@ class TestPendingSwap:
 
         # The pending gen should have been applied — first label selected.
         assert app._pending_gen_id is None, "Pending gen should be consumed"
-        assert app._programmatic_target == pending_labels[0]
+        assert pending_labels[0] in app._programmatic_targets
 
         # Crucially, _on_tick should NOT have also advanced to the next label.
         select_option_calls = [
@@ -432,9 +433,9 @@ class TestPendingSwap:
         assert len(opts) >= 3, "Need at least 3 picker options"
 
         # Simulate a tick that targets opts[1].
-        app._programmatic_target = opts[1]
+        app._mark_programmatic_target(opts[1])
 
-        # User navigates to opts[2] instead — different from the target.
+        # User navigates to opts[2] instead — different from any in-flight target.
         app.log.reset_mock()
         app._on_picker_change(
             _PICKER_ENTITY_ID, "state", opts[0], opts[2], {},
@@ -447,8 +448,136 @@ class TestPendingSwap:
         assert len(manual_nav_logs) == 1, (
             f"Expected 1 'manual nav' log but got: {manual_nav_logs}"
         )
-        # Target should be cleared even on mismatch.
-        assert app._programmatic_target is None
+        # The unmatched in-flight target stays — it will time out via TTL or
+        # be consumed when its real echo arrives.  Only matching echoes are
+        # removed.  This is the key behavioral difference from the old
+        # single-slot tracker, which cleared the target on any mismatch.
+        assert opts[1] in app._programmatic_targets
+
+    def test_out_of_order_echo_for_earlier_target_is_absorbed(self):
+        """Echoes that arrive after a newer publish must still be absorbed.
+
+        Regression for the rapid-skip cascade: under HA load, a second
+        select_option can land before the first call's state-change echo
+        arrives.  The old single-slot tracker overwrote the first target
+        with the second, causing the delayed echo for the first to be
+        misclassified as manual nav (which scheduled another tick and
+        compounded into a burst).  The multi-target absorber tracks both.
+        """
+        app = self._init_with_gen("3")
+        app._pending_gen_id = None
+        opts = app._picker_options()
+        assert len(opts) >= 3
+
+        # Two back-to-back programmatic publishes — both targets in flight.
+        app._mark_programmatic_target(opts[1])
+        app._mark_programmatic_target(opts[2])
+        assert opts[1] in app._programmatic_targets
+        assert opts[2] in app._programmatic_targets
+
+        # The DELAYED echo for the first publish arrives.
+        app.log.reset_mock()
+        app._on_picker_change(_PICKER_ENTITY_ID, "state", opts[0], opts[1], {})
+
+        # Must be absorbed — not logged as manual nav.
+        manual_nav_logs = [
+            c for c in app.log.call_args_list
+            if "manual nav" in str(c).lower()
+        ]
+        assert len(manual_nav_logs) == 0, (
+            f"Earlier echo should be absorbed; got: {manual_nav_logs}"
+        )
+        # Only the matching target is consumed; the other stays in flight.
+        assert opts[1] not in app._programmatic_targets
+        assert opts[2] in app._programmatic_targets
+
+        # The second echo then arrives in order — also absorbed.
+        app.log.reset_mock()
+        app._on_picker_change(_PICKER_ENTITY_ID, "state", opts[1], opts[2], {})
+        manual_nav_logs = [
+            c for c in app.log.call_args_list
+            if "manual nav" in str(c).lower()
+        ]
+        assert len(manual_nav_logs) == 0
+        assert opts[2] not in app._programmatic_targets
+
+    def test_stale_tick_is_ignored_via_epoch(self):
+        """A timer callback fired from a stale schedule must no-op.
+
+        Regression for stale-timer cascade: cancel_timer can race or
+        silently fail (the original code swallowed cancel exceptions and
+        only tracked the most recent handle, so prior un-cancelled timers
+        kept firing).  Each _schedule_next bumps _tick_epoch and stashes
+        the captured epoch in run_in kwargs; _on_tick bails when the
+        captured epoch no longer matches.
+        """
+        app = self._init_with_gen("3")
+        app._pending_gen_id = None
+        # Reset run_in / call_service to make assertions cleaner.
+        app.run_in.reset_mock()
+        app.call_service.reset_mock()
+
+        # Snapshot: scheduling a tick increments the epoch and records
+        # the value in run_in kwargs.
+        app._schedule_next(reason="test_initial")
+        assert app.run_in.call_count == 1
+        first_kwargs = app.run_in.call_args.kwargs
+        stale_epoch = first_kwargs.get("epoch")
+        assert isinstance(stale_epoch, int)
+
+        # A second schedule (e.g. from a manual_nav handler) bumps the
+        # epoch.  In production, cancel_timer may have failed silently;
+        # we don't simulate that here, but the epoch guard means it
+        # doesn't matter.
+        app._schedule_next(reason="test_second")
+        latest_epoch = app.run_in.call_args.kwargs.get("epoch")
+        assert latest_epoch > stale_epoch
+
+        # Now the stale timer fires with the OLD epoch.  It must no-op:
+        # no select_option call, no _schedule_next, no publish.
+        app.call_service.reset_mock()
+        app.run_in.reset_mock()
+        app._on_tick({"epoch": stale_epoch})
+
+        select_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args and c.args[0] == "input_select/select_option"
+        ]
+        assert select_calls == [], (
+            f"Stale tick must not call select_option; got {select_calls}"
+        )
+        assert app.run_in.call_count == 0, (
+            "Stale tick must not schedule another tick"
+        )
+
+    def test_programmatic_target_ttl_expires(self):
+        """A target older than the TTL must be treated as expired.
+
+        Without expiration, a missing echo (e.g. HA dropped the event)
+        would leave the entry forever and absorb a future legitimate
+        manual nav to that same label.
+        """
+        app = self._init_with_gen("3")
+        app._pending_gen_id = None
+        opts = app._picker_options()
+
+        # Mark a target, then jam its deadline into the past.
+        app._mark_programmatic_target(opts[1])
+        assert opts[1] in app._programmatic_targets
+        app._programmatic_targets[opts[1]] = time.monotonic() - 1.0
+
+        # The same label arriving now should NOT be absorbed.
+        app.log.reset_mock()
+        app._on_picker_change(_PICKER_ENTITY_ID, "state", opts[0], opts[1], {})
+        manual_nav_logs = [
+            c for c in app.log.call_args_list
+            if "manual nav" in str(c).lower()
+        ]
+        assert len(manual_nav_logs) == 1, (
+            f"Expired target should yield manual_nav; got {manual_nav_logs}"
+        )
+        # Expired entry pruned.
+        assert opts[1] not in app._programmatic_targets
 
     def test_batch_ready_event_triggers_poll(self):
         """The immich_fetcher_batch_ready event handler calls _poll_for_changes."""

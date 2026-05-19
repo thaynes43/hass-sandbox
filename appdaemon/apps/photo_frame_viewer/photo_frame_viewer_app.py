@@ -166,14 +166,25 @@ class PhotoFrameViewerApp(hass.Hass):
         # consumed when the staging flow captures it for the pending gen.
         self._staged_filter_name: str = ""
 
-        # Label we expect back from the next HA state-change echo after a
-        # programmatic picker update.  Cleared when the echo arrives so that
-        # we never confuse our own call_service round-trip with a real user
-        # navigation.  This replaces the old time-based debounce which was
-        # too fragile — HA can take >1 s to propagate state changes under
-        # load, causing the debounce window to expire and every auto-advance
-        # to be mis-classified as "manual nav".
-        self._programmatic_target: Optional[str] = None
+        # Labels we expect back from HA state-change echoes after programmatic
+        # picker updates.  Each entry maps label -> monotonic deadline.  An
+        # echo whose new_label is present in this dict is absorbed and the
+        # entry removed.  Multiple in-flight programmatic publishes can occur
+        # back-to-back (e.g. set_options + select_option during a gen swap,
+        # or stacked timers during a transient cascade) — a single-slot
+        # tracker would lose all but the latest target and misclassify
+        # earlier echoes as manual navigation.
+        self._programmatic_targets: dict[str, float] = {}
+
+        # Monotonically increasing epoch bumped by every _schedule_next.
+        # Each scheduled _on_tick captures the epoch at schedule time; on
+        # fire, the callback bails if its captured epoch no longer matches.
+        # Defeats stale-timer cascades when cancel_timer races or fails.
+        self._tick_epoch: int = 0
+        # TTL for programmatic echo absorption.  HA state-change round-trips
+        # under load have been observed at >1s; 5s gives generous headroom
+        # without persisting stale entries indefinitely.
+        self._programmatic_target_ttl_s: float = 5.0
 
         self.log(
             f"PhotoFrameViewerApp init "
@@ -912,7 +923,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         if pending_labels:
             first_label = pending_labels[0]
-            self._programmatic_target = first_label
+            self._mark_programmatic_target(first_label)
             self.call_service(
                 "input_select/select_option",
                 entity_id=self.picker_entity_id,
@@ -1029,9 +1040,12 @@ class PhotoFrameViewerApp(hass.Hass):
             return
         interval = self._interval_s()
         self._cancel_timer()
-        self._timer_handle = self.run_in(self._on_tick, interval)
+        self._tick_epoch += 1
+        epoch = self._tick_epoch
+        self._timer_handle = self.run_in(self._on_tick, interval, epoch=epoch)
         self.log(
-            f"PhotoFrameViewerApp: scheduled tick in {interval:.1f}s reason={reason}",
+            f"PhotoFrameViewerApp: scheduled tick in {interval:.1f}s "
+            f"reason={reason} epoch={epoch}",
             level="INFO",
         )
 
@@ -1044,6 +1058,30 @@ class PhotoFrameViewerApp(hass.Hass):
             )
             return
         self._schedule_next(reason=reason)
+
+    # ------------------------------------------------------------------
+    # Programmatic echo absorption
+    # ------------------------------------------------------------------
+
+    def _mark_programmatic_target(self, label: str) -> None:
+        """Record an in-flight programmatic picker target with a TTL."""
+        now = time.monotonic()
+        self._prune_programmatic_targets(now)
+        self._programmatic_targets[label] = now + self._programmatic_target_ttl_s
+
+    def _absorb_programmatic_echo(self, new_label: str) -> bool:
+        """If new_label matches a recent programmatic target, consume and return True."""
+        now = time.monotonic()
+        self._prune_programmatic_targets(now)
+        if new_label in self._programmatic_targets:
+            del self._programmatic_targets[new_label]
+            return True
+        return False
+
+    def _prune_programmatic_targets(self, now: float) -> None:
+        expired = [k for k, deadline in self._programmatic_targets.items() if deadline <= now]
+        for k in expired:
+            del self._programmatic_targets[k]
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -1072,22 +1110,25 @@ class PhotoFrameViewerApp(hass.Hass):
             return
 
         # Absorb async state-change events from our own programmatic calls.
-        if self._programmatic_target is not None and new_label == self._programmatic_target:
-            self._programmatic_target = None
+        # Multiple targets may be in flight simultaneously (rapid succession
+        # of select_option calls): match any of them, not just the most
+        # recent.  This prevents the single-slot overwrite bug that caused
+        # earlier echoes to be misclassified as manual nav whenever a later
+        # publish landed before the earlier echo arrived.
+        if self._absorb_programmatic_echo(new_label):
             self.log(
                 f"PhotoFrameViewerApp: ignoring picker echo {new_label!r} "
                 f"(programmatic)",
                 level="INFO",
             )
             return
-        prev_target = self._programmatic_target
-        self._programmatic_target = None
+        pending_targets = list(self._programmatic_targets.keys())
 
         # Manual navigation while a pending gen is queued.
         if self._pending_gen_id is not None:
             self.log(
                 f"PhotoFrameViewerApp: manual nav to {new_label!r} "
-                f"(applying pending gen, old={old_label!r}, expected_target={prev_target!r})",
+                f"(applying pending gen, old={old_label!r}, pending_targets={pending_targets!r})",
                 level="INFO",
             )
             self._apply_pending_gen(reason="manual_nav")
@@ -1097,7 +1138,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         self.log(
             f"PhotoFrameViewerApp: manual nav to {new_label!r} "
-            f"(old={old_label!r}, expected_target={prev_target!r})",
+            f"(old={old_label!r}, pending_targets={pending_targets!r})",
             level="INFO",
         )
         self._publish_selected_local_url(new_label, reason="manual_nav")
@@ -1105,12 +1146,28 @@ class PhotoFrameViewerApp(hass.Hass):
             self._schedule_next(reason="manual_nav")
 
     def _on_tick(self, kwargs: Any) -> None:
+        # Epoch guard: each _schedule_next bumps self._tick_epoch and stashes
+        # the captured epoch in the run_in kwargs.  If a stale timer (one
+        # that cancel_timer failed to remove) fires, its captured epoch will
+        # be less than the current epoch and we bail before doing any work
+        # or scheduling a new tick.  This terminates the rapid-skip cascade.
+        fired_epoch = None
+        if isinstance(kwargs, dict):
+            fired_epoch = kwargs.get("epoch")
+        if fired_epoch is not None and fired_epoch != self._tick_epoch:
+            self.log(
+                f"PhotoFrameViewerApp: ignoring stale tick "
+                f"fired_epoch={fired_epoch} current_epoch={self._tick_epoch}",
+                level="INFO",
+            )
+            return
         self._timer_handle = None
         current_at_entry = self._picker_value()
         self.log(
             f"PhotoFrameViewerApp: _on_tick fired interval={self._interval}s "
             f"current={current_at_entry!r} pending={self._pending_gen_id} "
-            f"target={self._programmatic_target!r}",
+            f"targets={list(self._programmatic_targets.keys())!r} "
+            f"epoch={self._tick_epoch}",
             level="INFO",
         )
         if self._is_paused():
@@ -1145,7 +1202,7 @@ class PhotoFrameViewerApp(hass.Hass):
             next_idx = min(idx + 1, len(opts) - 1)
         next_label = opts[next_idx]
 
-        self._programmatic_target = next_label
+        self._mark_programmatic_target(next_label)
         self.call_service(
             "input_select/select_option",
             entity_id=self.picker_entity_id,
