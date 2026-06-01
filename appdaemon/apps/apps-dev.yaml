@@ -7,7 +7,7 @@ countdown_app_dev:
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   ai_provider_conf:
-    image: openai-default
+    image: openai-countdown
   # Filesystem — NFS mount
   media_fs_root: /Volumes/cephfs-hdd/misc/hass-media
   media_subdir: countdown-app

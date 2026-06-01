@@ -1147,7 +1147,7 @@ countdown_app:
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   ai_provider_conf:
-    image: openai-default
+    image: openai-countdown
   # Filesystem — media_fs_root resolved from MEDIA_FS_ROOT env var
   media_fs_root_env: MEDIA_FS_ROOT
   media_subdir: countdown-app
