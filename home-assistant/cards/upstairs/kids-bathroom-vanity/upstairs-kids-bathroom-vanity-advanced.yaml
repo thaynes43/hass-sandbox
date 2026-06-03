@@ -1,35 +1,33 @@
-type: vertical-stack
-cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#upstairs-kids-bathroom-vanity-advanced"
-    button_type: name
-    width_desktop: 75vw
-    show_header: true
-    name: Return to Overview
-    show_icon: true
-    icon: mdi:arrow-left
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    sub_button:
-      main: []
-      bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: "#upstairs-kids-bathroom-vanity-history"
-    tap_action:
-      action: navigate
-      navigation_path: "#upstairs-kids-bathroom-vanity-history"
-    button_action:
+type: custom:bubble-card
+card_type: pop-up
+hash: "#upstairs-kids-bathroom-vanity-advanced"
+button_type: name
+width_desktop: 75vw
+show_header: true
+name: Return to Overview
+show_icon: true
+icon: mdi:arrow-left
+show_name: true
+margin: 7px
+scrolling_effect: false
+sub_button:
+  main: []
+  bottom:
+    - name: Back
+      icon: mdi:arrow-left
+      show_name: true
+      show_icon: true
       tap_action:
         action: navigate
         navigation_path: "#upstairs-kids-bathroom-vanity-history"
-
+tap_action:
+  action: navigate
+  navigation_path: "#upstairs-kids-bathroom-vanity-history"
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#upstairs-kids-bathroom-vanity-history"
+cards:
   - type: markdown
     content: |
       ## Upstairs Kids Bathroom Vanity - Sensors

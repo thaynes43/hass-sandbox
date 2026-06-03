@@ -1,27 +1,26 @@
-type: vertical-stack
+type: custom:bubble-card
+card_type: pop-up
+hash: "#basement-bathroom-history"
+button_type: name
+width_desktop: 75vw
+show_header: true
+name: Toggle Advanced Settings
+show_icon: true
+icon: mdi:tune-variant
+show_name: true
+margin: 7px
+scrolling_effect: false
+tap_action:
+  action: navigate
+  navigation_path: "#basement-bathroom-advanced"
+sub_button:
+  main: []
+  bottom: []
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#basement-bathroom-advanced"
 cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#basement-bathroom-history"
-    button_type: name
-    width_desktop: 75vw
-    show_header: true
-    name: Toggle Advanced Settings
-    show_icon: true
-    icon: mdi:tune-variant
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    tap_action:
-      action: navigate
-      navigation_path: "#basement-bathroom-advanced"
-    sub_button:
-      main: []
-      bottom: []
-    button_action:
-      tap_action:
-        action: navigate
-        navigation_path: "#basement-bathroom-advanced"
   - type: markdown
     content: |
       ## Basement Bathroom

@@ -1,25 +1,24 @@
-type: vertical-stack
+type: custom:bubble-card
+card_type: pop-up
+hash: "#front-yard-popup"
+button_type: name
+width_desktop: 75vw
+width_mobile: 90vw
+show_header: true
+name: Return To Dashboard
+show_icon: true
+icon: mdi:arrow-left
+show_name: true
+margin: 7px
+scrolling_effect: false
+tap_action:
+  action: navigate
+  navigation_path: "#"
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#"
 cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#front-yard-popup"
-    button_type: name
-    width_desktop: 75vw
-    width_mobile: 90vw
-    show_header: true
-    name: Return To Dashboard
-    show_icon: true
-    icon: mdi:arrow-left
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    tap_action:
-      action: navigate
-      navigation_path: "#"
-    button_action:
-      tap_action:
-        action: navigate
-        navigation_path: "#"
   - type: picture-elements
     image:
       media_content_id: media-source://image_upload/84e59d2652f1bc7c3d0a0eb0c9e89c19

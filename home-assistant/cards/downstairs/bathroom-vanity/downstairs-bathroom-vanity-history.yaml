@@ -1,28 +1,26 @@
-type: vertical-stack
+type: custom:bubble-card
+card_type: pop-up
+hash: "#downstairs-bathroom-vanity-history"
+button_type: name
+width_desktop: 75vw
+show_header: true
+name: Toggle Advanced Settings
+show_icon: true
+icon: mdi:tune-variant
+show_name: true
+margin: 7px
+scrolling_effect: false
+tap_action:
+  action: navigate
+  navigation_path: "#downstairs-bathroom-vanity-advanced"
+sub_button:
+  main: []
+  bottom: []
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#downstairs-bathroom-vanity-advanced"
 cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#downstairs-bathroom-vanity-history"
-    button_type: name
-    width_desktop: 75vw
-    show_header: true
-    name: Toggle Advanced Settings
-    show_icon: true
-    icon: mdi:tune-variant
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    tap_action:
-      action: navigate
-      navigation_path: "#downstairs-bathroom-vanity-advanced"
-    sub_button:
-      main: []
-      bottom: []
-    button_action:
-      tap_action:
-        action: navigate
-        navigation_path: "#downstairs-bathroom-vanity-advanced"
-
   - type: markdown
     content: |
       ## Downstairs Bathroom Vanity

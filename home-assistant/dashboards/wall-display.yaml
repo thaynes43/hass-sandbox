@@ -865,129 +865,127 @@ views:
         column_span: 4
       - type: grid
         cards:
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#photo-frame-settings'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: Photo Frame Settings
-                show_icon: true
-                icon: mdi:cog
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#photo-frame-settings'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: Photo Frame Settings
+            show_icon: true
+            icon: mdi:cog
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
-                slider_fill_orientation: left
-                slider_value_position: right
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            slider_fill_orientation: left
+            slider_value_position: right
+            cards:
               - type: custom:photo-frame-viewer-card
               - type: custom:immich-fetcher-card
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#wall-display-garage-doors'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: Wall Display - Return to Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#wall-display-garage-doors'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: Wall Display - Return to Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
-                styles: |-
-                  ha-card {
-                    --bubble-border-radius: 28px !important;
-                    --bubble-box-shadow:
-                      0 14px 40px rgba(0, 0, 0, 0.28),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
-                    --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
-                    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
-                    --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
-                    --bubble-sub-button-border-radius: 20px !important;
-                    --bubble-sub-button-background-color: rgba(255, 255, 255, 0.05) !important;
-                    backdrop-filter: blur(14px) saturate(1.2) !important;
-                    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
-                  }
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            styles: |-
+              ha-card {
+                --bubble-border-radius: 28px !important;
+                --bubble-box-shadow:
+                  0 14px 40px rgba(0, 0, 0, 0.28),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                  inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+                --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+                --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
+                --bubble-sub-button-border-radius: 20px !important;
+                --bubble-sub-button-background-color: rgba(255, 255, 255, 0.05) !important;
+                backdrop-filter: blur(14px) saturate(1.2) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+              }
 
-                  .bubble-button-card-container {
-                    background: rgba(28, 29, 33, 0.32) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-                    border-radius: 28px !important;
-                    box-shadow:
-                      0 14px 40px rgba(0, 0, 0, 0.28),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
-                    backdrop-filter: blur(14px) saturate(1.2) !important;
-                    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
-                    overflow: hidden;
-                  }
+              .bubble-button-card-container {
+                background: rgba(28, 29, 33, 0.32) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                border-radius: 28px !important;
+                box-shadow:
+                  0 14px 40px rgba(0, 0, 0, 0.28),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                  inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+                backdrop-filter: blur(14px) saturate(1.2) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+                overflow: hidden;
+              }
 
-                  .bubble-name,
-                  .bubble-state,
-                  .bubble-attribute {
-                    color: rgba(240, 243, 255, 0.92) !important;
-                    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
-                  }
+              .bubble-name,
+              .bubble-state,
+              .bubble-attribute {
+                color: rgba(240, 243, 255, 0.92) !important;
+                text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+              }
 
-                  .bubble-name {
-                    font-weight: 600 !important;
-                    letter-spacing: 0.01em;
-                  }
+              .bubble-name {
+                font-weight: 600 !important;
+                letter-spacing: 0.01em;
+              }
 
-                  .bubble-attribute {
-                    color: rgba(203, 214, 234, 0.78) !important;
-                    font-size: 0.83rem !important;
-                  }
+              .bubble-attribute {
+                color: rgba(203, 214, 234, 0.78) !important;
+                font-size: 0.83rem !important;
+              }
 
-                  .bubble-icon,
-                  .bubble-sub-button-icon {
-                    color: rgba(245, 247, 255, 0.94) !important;
-                  }
+              .bubble-icon,
+              .bubble-sub-button-icon {
+                color: rgba(245, 247, 255, 0.94) !important;
+              }
 
-                  .bubble-icon-container {
-                    background: rgba(255, 255, 255, 0.06) !important;
-                    box-shadow:
-                      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-                      0 8px 20px rgba(0, 0, 0, 0.16) !important;
-                  }
+              .bubble-icon-container {
+                background: rgba(255, 255, 255, 0.06) !important;
+                box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                  0 8px 20px rgba(0, 0, 0, 0.16) !important;
+              }
+            cards:
               - type: markdown
                 text_only: true
                 card_mod:
@@ -1335,94 +1333,93 @@ views:
                       -webkit-backdrop-filter: blur(14px) saturate(1.2);
                       overflow: hidden;
                     }
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#wall-display-locks'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: Wall Display - Return to Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#wall-display-locks'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: Wall Display - Return to Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
-                styles: |-
-                  ha-card {
-                    --bubble-border-radius: 28px !important;
-                    --bubble-box-shadow:
-                      0 14px 40px rgba(0, 0, 0, 0.28),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
-                    --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
-                    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
-                    --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
-                    --bubble-sub-button-border-radius: 20px !important;
-                    --bubble-sub-button-background-color: rgba(255, 255, 255, 0.05) !important;
-                    backdrop-filter: blur(14px) saturate(1.2) !important;
-                    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
-                  }
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            styles: |-
+              ha-card {
+                --bubble-border-radius: 28px !important;
+                --bubble-box-shadow:
+                  0 14px 40px rgba(0, 0, 0, 0.28),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                  inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+                --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+                --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
+                --bubble-sub-button-border-radius: 20px !important;
+                --bubble-sub-button-background-color: rgba(255, 255, 255, 0.05) !important;
+                backdrop-filter: blur(14px) saturate(1.2) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+              }
 
-                  .bubble-button-card-container {
-                    background: rgba(28, 29, 33, 0.32) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-                    border-radius: 28px !important;
-                    box-shadow:
-                      0 14px 40px rgba(0, 0, 0, 0.28),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
-                    backdrop-filter: blur(14px) saturate(1.2) !important;
-                    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
-                    overflow: hidden;
-                  }
+              .bubble-button-card-container {
+                background: rgba(28, 29, 33, 0.32) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                border-radius: 28px !important;
+                box-shadow:
+                  0 14px 40px rgba(0, 0, 0, 0.28),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                  inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+                backdrop-filter: blur(14px) saturate(1.2) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+                overflow: hidden;
+              }
 
-                  .bubble-name,
-                  .bubble-state,
-                  .bubble-attribute {
-                    color: rgba(240, 243, 255, 0.92) !important;
-                    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
-                  }
+              .bubble-name,
+              .bubble-state,
+              .bubble-attribute {
+                color: rgba(240, 243, 255, 0.92) !important;
+                text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+              }
 
-                  .bubble-name {
-                    font-weight: 600 !important;
-                    letter-spacing: 0.01em;
-                  }
+              .bubble-name {
+                font-weight: 600 !important;
+                letter-spacing: 0.01em;
+              }
 
-                  .bubble-attribute {
-                    color: rgba(203, 214, 234, 0.78) !important;
-                    font-size: 0.83rem !important;
-                  }
+              .bubble-attribute {
+                color: rgba(203, 214, 234, 0.78) !important;
+                font-size: 0.83rem !important;
+              }
 
-                  .bubble-icon,
-                  .bubble-sub-button-icon {
-                    color: rgba(245, 247, 255, 0.94) !important;
-                  }
+              .bubble-icon,
+              .bubble-sub-button-icon {
+                color: rgba(245, 247, 255, 0.94) !important;
+              }
 
-                  .bubble-icon-container {
-                    background: rgba(255, 255, 255, 0.06) !important;
-                    box-shadow:
-                      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-                      0 8px 20px rgba(0, 0, 0, 0.16) !important;
-                  }
+              .bubble-icon-container {
+                background: rgba(255, 255, 255, 0.06) !important;
+                box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                  0 8px 20px rgba(0, 0, 0, 0.16) !important;
+              }
+            cards:
               - type: markdown
                 text_only: true
                 card_mod:
@@ -2074,26 +2071,25 @@ views:
                               entity_id: input_select.mudroom_lock_pending
                               option: locking
                   bottom_layout: rows
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#skylight-calendar'
+            button_type: name
+            name: Family Calendar
+            icon: mdi:calendar
+            width_desktop: calc(100vw - var(--mdc-drawer-width, 0px) - 2vw)
+            margin_left_desktop: calc(var(--mdc-drawer-width, 0px) + 1vw)
+            margin_top_desktop: 1vh
+            width_mobile: 100vw
+            margin_left_mobile: 0px
+            margin_top_mobile: 0px
+            bg_opacity: 96
+            shadow_opacity: 20
+            show_header: true
+            sub_button:
+              main: []
+              bottom: []
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#skylight-calendar'
-                button_type: name
-                name: Family Calendar
-                icon: mdi:calendar
-                width_desktop: calc(100vw - var(--mdc-drawer-width, 0px) - 2vw)
-                margin_left_desktop: calc(var(--mdc-drawer-width, 0px) + 1vw)
-                margin_top_desktop: 1vh
-                width_mobile: 100vw
-                margin_left_mobile: 0px
-                margin_top_mobile: 0px
-                bg_opacity: 96
-                shadow_opacity: 20
-                show_header: true
-                sub_button:
-                  main: []
-                  bottom: []
               - type: custom:skylight-calendar-card
                 title: Family Calendar
                 entities:
@@ -2128,189 +2124,185 @@ views:
                       height: calc(98vh - 80px) !important; /* ~80px accounts for popup header */
                       overflow: auto !important;
                     }
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#vestaboard-popup'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: Return to Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#vestaboard-popup'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: Return to Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
-                slider_fill_orientation: left
-                slider_value_position: right
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            slider_fill_orientation: left
+            slider_value_position: right
+            cards:
               - type: custom:vestaboard-configuration-card
                 status_entity: sensor.vestaboard_configuration_status
                 relay_script: vestaboard_configuration_relay
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#school-lunch-popup'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: School Lunch Menu
-                show_icon: true
-                icon: mdi:calendar
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#school-lunch-popup'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: School Lunch Menu
+            show_icon: true
+            icon: mdi:calendar
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            cards:
               - type: custom:school-lunch-detail-card
                 status_entity: sensor.school_lunch_menu
                 selection_entity: input_text.school_lunch_selected_schools
                 relay_script: school_lunch_relay
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#health-check-popup'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: System Health
-                show_icon: true
-                icon: mdi:heart-pulse
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#health-check-popup'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: System Health
+            show_icon: true
+            icon: mdi:heart-pulse
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            cards:
               - type: custom:health-check-detail-card
                 status_entity: sensor.health_check_status
                 heartbeat_entity: input_datetime.appdaemon_heartbeat
                 relay_script: health_check_relay
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#thermostat-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            styles: |-
+              ha-card {
+                --bubble-border-radius: 28px !important;
+                --bubble-box-shadow:
+                  0 14px 40px rgba(0, 0, 0, 0.28),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                  inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+                --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
+                --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
+                backdrop-filter: blur(14px) saturate(1.2) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+              }
+
+              .bubble-button-card-container {
+                background: rgba(28, 29, 33, 0.32) !important;
+                border: 1px solid rgba(255, 255, 255, 0.14) !important;
+                border-radius: 28px !important;
+                box-shadow:
+                  0 14px 40px rgba(0, 0, 0, 0.28),
+                  inset 0 1px 0 rgba(255, 255, 255, 0.18),
+                  inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
+                backdrop-filter: blur(14px) saturate(1.2) !important;
+                -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
+                overflow: hidden;
+              }
+
+              .bubble-name,
+              .bubble-state,
+              .bubble-attribute {
+                color: rgba(240, 243, 255, 0.92) !important;
+                text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
+              }
+
+              .bubble-name {
+                font-weight: 600 !important;
+                letter-spacing: 0.01em;
+              }
+
+              .bubble-attribute {
+                color: rgba(203, 214, 234, 0.78) !important;
+                font-size: 0.83rem !important;
+              }
+
+              .bubble-icon,
+              .bubble-sub-button-icon {
+                color: rgba(245, 247, 255, 0.94) !important;
+              }
+
+              .bubble-icon-container {
+                background: rgba(255, 255, 255, 0.06) !important;
+                box-shadow:
+                  inset 0 1px 0 rgba(255, 255, 255, 0.12),
+                  0 8px 20px rgba(0, 0, 0, 0.16) !important;
+              }
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#thermostat-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
-                styles: |-
-                  ha-card {
-                    --bubble-border-radius: 28px !important;
-                    --bubble-box-shadow:
-                      0 14px 40px rgba(0, 0, 0, 0.28),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
-                    --bubble-border: 1px solid rgba(255, 255, 255, 0.14) !important;
-                    --bubble-main-background-color: rgba(28, 29, 33, 0.32) !important;
-                    --bubble-icon-background-color: rgba(255, 255, 255, 0.06) !important;
-                    backdrop-filter: blur(14px) saturate(1.2) !important;
-                    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
-                  }
-
-                  .bubble-button-card-container {
-                    background: rgba(28, 29, 33, 0.32) !important;
-                    border: 1px solid rgba(255, 255, 255, 0.14) !important;
-                    border-radius: 28px !important;
-                    box-shadow:
-                      0 14px 40px rgba(0, 0, 0, 0.28),
-                      inset 0 1px 0 rgba(255, 255, 255, 0.18),
-                      inset 0 0 18px rgba(255, 255, 255, 0.04) !important;
-                    backdrop-filter: blur(14px) saturate(1.2) !important;
-                    -webkit-backdrop-filter: blur(14px) saturate(1.2) !important;
-                    overflow: hidden;
-                  }
-
-                  .bubble-name,
-                  .bubble-state,
-                  .bubble-attribute {
-                    color: rgba(240, 243, 255, 0.92) !important;
-                    text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
-                  }
-
-                  .bubble-name {
-                    font-weight: 600 !important;
-                    letter-spacing: 0.01em;
-                  }
-
-                  .bubble-attribute {
-                    color: rgba(203, 214, 234, 0.78) !important;
-                    font-size: 0.83rem !important;
-                  }
-
-                  .bubble-icon,
-                  .bubble-sub-button-icon {
-                    color: rgba(245, 247, 255, 0.94) !important;
-                  }
-
-                  .bubble-icon-container {
-                    background: rgba(255, 255, 255, 0.06) !important;
-                    box-shadow:
-                      inset 0 1px 0 rgba(255, 255, 255, 0.12),
-                      0 8px 20px rgba(0, 0, 0, 0.16) !important;
-                  }
               - type: grid
                 columns: 2
                 square: false
@@ -2597,28 +2589,27 @@ views:
                               backdrop-filter: blur(14px) saturate(1.2);
                               -webkit-backdrop-filter: blur(14px) saturate(1.2);
                             }
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#shed-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#shed-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -2832,28 +2823,27 @@ views:
                               padding-top: 2px !important;
                               padding-bottom: 6px !important;
                             }
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#front-yard-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#front-yard-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: picture-elements
                 image:
                   media_content_id: media-source://image_upload/84e59d2652f1bc7c3d0a0eb0c9e89c19
@@ -3556,28 +3546,27 @@ views:
                       - {}
                       - media_content_type: app
                         media_content_id: media-source://image_upload
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#back-yard-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#back-yard-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -3684,28 +3673,27 @@ views:
                     button_action:
                       tap_action:
                         action: more-info
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#driveway-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#driveway-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -3861,28 +3849,27 @@ views:
                                 action: toggle
                             slider_fill_orientation: left
                             slider_value_position: right
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#bbb-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#bbb-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -4251,28 +4238,27 @@ views:
                             entity: cover.2_6
                             name: White Room Shade 2
                             show_state: true
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#entrance-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#entrance-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -4541,28 +4527,27 @@ views:
                             button_action:
                               tap_action:
                                 action: toggle
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#kids-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#kids-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -4903,28 +4888,27 @@ views:
                             entity: cover.2_7
                             name: Rear Shade
                             show_state: true
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#kitchen-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#kitchen-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -5296,28 +5280,27 @@ views:
                             entity: cover.2_2
                             name: Shade 2
                             show_state: true
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#livingroom-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#livingroom-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -5549,28 +5532,27 @@ views:
                     entity: cover.4
                     name: Side Shade 2
                     show_state: true
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#primary-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#primary-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -6133,28 +6115,27 @@ views:
                                 action: toggle
                             slider_fill_orientation: left
                             slider_value_position: right
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#cloffice-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#cloffice-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -6306,28 +6287,27 @@ views:
                             target:
                               entity_id: scene.upstairs_gateway_cloffice_close
                       bottom_layout: rows
-          - type: vertical-stack
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#study-foyer-popup'
+            button_type: name
+            width_desktop: 75vw
+            width_mobile: 90vw
+            show_header: true
+            name: Return To Dashboard
+            show_icon: true
+            icon: mdi:arrow-left
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
             cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#study-foyer-popup'
-                button_type: name
-                width_desktop: 75vw
-                width_mobile: 90vw
-                show_header: true
-                name: Return To Dashboard
-                show_icon: true
-                icon: mdi:arrow-left
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
-                  tap_action:
-                    action: navigate
-                    navigation_path: '#'
               - type: markdown
                 text_only: true
                 card_mod:
@@ -6666,72 +6646,70 @@ views:
                             entity: cover.2_3
                             name: Rear Shade
                             show_state: true
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#media-dashboard-popup'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: Media & Movies
-                show_icon: true
-                icon: mdi:movie-open-outline
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#media-dashboard-popup'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: Media & Movies
+            show_icon: true
+            icon: mdi:movie-open-outline
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            cards:
               - type: custom:media-dashboard-detail-card
                 status_entity: sensor.media_dashboard_status
                 detail_entity: sensor.media_dashboard_detail
                 relay_script: media_dashboard_relay
-          - type: vertical-stack
-            cards:
-              - type: custom:bubble-card
-                card_type: pop-up
-                hash: '#countdown-popup'
-                button_type: name
-                width_desktop: 75vw
-                show_header: true
-                name: Countdown Settings
-                show_icon: true
-                icon: mdi:timer-cog-outline
-                show_name: true
-                margin: 7px
-                scrolling_effect: false
-                sub_button:
-                  main: []
-                  bottom:
-                    - name: Back
-                      icon: mdi:arrow-left
-                      show_name: true
-                      show_icon: true
-                      tap_action:
-                        action: navigate
-                        navigation_path: '#'
-                tap_action:
-                  action: navigate
-                  navigation_path: '#'
-                button_action:
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#countdown-popup'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: Countdown Settings
+            show_icon: true
+            icon: mdi:timer-cog-outline
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
                   tap_action:
                     action: navigate
                     navigation_path: '#'
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            cards:
               - type: custom:countdown-config-card
                 status_entity: sensor.countdown_status
                 relay_script: countdown_relay

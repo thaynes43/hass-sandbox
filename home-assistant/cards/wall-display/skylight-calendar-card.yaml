@@ -1,23 +1,22 @@
-type: vertical-stack
+type: custom:bubble-card
+card_type: pop-up
+hash: "#skylight-calendar"
+button_type: name
+name: Family Calendar
+icon: mdi:calendar
+width_desktop: calc(100vw - var(--mdc-drawer-width, 0px) - 2vw)
+margin_left_desktop: calc(var(--mdc-drawer-width, 0px) + 1vw)
+margin_top_desktop: 1vh
+width_mobile: 100vw
+margin_left_mobile: 0px
+margin_top_mobile: 0px
+bg_opacity: 96
+shadow_opacity: 20
+show_header: true
+sub_button:
+  main: []
+  bottom: []
 cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#skylight-calendar"
-    button_type: name
-    name: Family Calendar
-    icon: mdi:calendar
-    width_desktop: calc(100vw - var(--mdc-drawer-width, 0px) - 2vw)
-    margin_left_desktop: calc(var(--mdc-drawer-width, 0px) + 1vw)
-    margin_top_desktop: 1vh
-    width_mobile: 100vw
-    margin_left_mobile: 0px
-    margin_top_mobile: 0px
-    bg_opacity: 96
-    shadow_opacity: 20
-    show_header: true
-    sub_button:
-      main: []
-      bottom: []
   - type: custom:skylight-calendar-card
     title: Family Calendar
     entities:

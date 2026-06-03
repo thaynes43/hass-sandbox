@@ -1,35 +1,33 @@
-type: vertical-stack
-cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#outdoors-backyard-advanced"
-    button_type: name
-    width_desktop: 75vw
-    show_header: true
-    name: Return to Overview
-    show_icon: true
-    icon: mdi:arrow-left
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    sub_button:
-      main: []
-      bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: "#outdoors-backyard-history"
-    tap_action:
-      action: navigate
-      navigation_path: "#outdoors-backyard-history"
-    button_action:
+type: custom:bubble-card
+card_type: pop-up
+hash: "#outdoors-backyard-advanced"
+button_type: name
+width_desktop: 75vw
+show_header: true
+name: Return to Overview
+show_icon: true
+icon: mdi:arrow-left
+show_name: true
+margin: 7px
+scrolling_effect: false
+sub_button:
+  main: []
+  bottom:
+    - name: Back
+      icon: mdi:arrow-left
+      show_name: true
+      show_icon: true
       tap_action:
         action: navigate
         navigation_path: "#outdoors-backyard-history"
-
+tap_action:
+  action: navigate
+  navigation_path: "#outdoors-backyard-history"
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#outdoors-backyard-history"
+cards:
   - type: markdown
     content: |
       ## Back Yard - Sensors

@@ -1,35 +1,33 @@
-type: vertical-stack
-cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#upstairs-primary-water-closet-advanced"
-    button_type: name
-    width_desktop: 75vw
-    show_header: true
-    name: Return to Overview
-    show_icon: true
-    icon: mdi:arrow-left
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    sub_button:
-      main: []
-      bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: "#upstairs-primary-water-closet-history"
-    tap_action:
-      action: navigate
-      navigation_path: "#upstairs-primary-water-closet-history"
-    button_action:
+type: custom:bubble-card
+card_type: pop-up
+hash: "#upstairs-primary-water-closet-advanced"
+button_type: name
+width_desktop: 75vw
+show_header: true
+name: Return to Overview
+show_icon: true
+icon: mdi:arrow-left
+show_name: true
+margin: 7px
+scrolling_effect: false
+sub_button:
+  main: []
+  bottom:
+    - name: Back
+      icon: mdi:arrow-left
+      show_name: true
+      show_icon: true
       tap_action:
         action: navigate
         navigation_path: "#upstairs-primary-water-closet-history"
-
+tap_action:
+  action: navigate
+  navigation_path: "#upstairs-primary-water-closet-history"
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#upstairs-primary-water-closet-history"
+cards:
   - type: markdown
     content: |
       ## Water Closet - Sensors

@@ -1,41 +1,40 @@
-type: vertical-stack
-cards:
-  - type: custom:bubble-card
-    card_type: pop-up
-    hash: "#kellie-vestaboard"
-    button_type: name
-    width_desktop: 75vw
-    show_header: true
-    name: Return to Dashboard
-    show_icon: true
-    icon: mdi:arrow-left
-    show_name: true
-    margin: 7px
-    scrolling_effect: false
-    open_action:
-      action: call-service
-      service: script.turn_on
-      target:
-        entity_id: script.vestaboard_editor_clear
-    sub_button:
-      main: []
-      bottom:
-        - name: Back
-          icon: mdi:arrow-left
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: "#"
-    tap_action:
-      action: navigate
-      navigation_path: "#"
-    button_action:
+type: custom:bubble-card
+card_type: pop-up
+hash: "#kellie-vestaboard"
+button_type: name
+width_desktop: 75vw
+show_header: true
+name: Return to Dashboard
+show_icon: true
+icon: mdi:arrow-left
+show_name: true
+margin: 7px
+scrolling_effect: false
+open_action:
+  action: call-service
+  service: script.turn_on
+  target:
+    entity_id: script.vestaboard_editor_clear
+sub_button:
+  main: []
+  bottom:
+    - name: Back
+      icon: mdi:arrow-left
+      show_name: true
+      show_icon: true
       tap_action:
         action: navigate
         navigation_path: "#"
-    slider_fill_orientation: left
-    slider_value_position: right
+tap_action:
+  action: navigate
+  navigation_path: "#"
+button_action:
+  tap_action:
+    action: navigate
+    navigation_path: "#"
+slider_fill_orientation: left
+slider_value_position: right
+cards:
   - type: markdown
     text_only: true
     card_mod:
