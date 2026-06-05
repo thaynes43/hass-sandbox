@@ -692,14 +692,15 @@ cielo_health_checker:
     - name: Movie Room
       ip: "192.168.50.102"
       entities:
-        - entity_id: binary_sensor.movie_room_breeze_status
-          healthy_state: "on"
+        # cielo_home first-party integration exposes the climate entity; it goes
+        # unavailable when the device/cloud connection drops. Empty healthy_state
+        # means "ok unless unavailable/unknown" (any valid HVAC mode is healthy).
+        - entity_id: climate.movie_room_breeze
           name: Status
     - name: Rumpus Room
       ip: "192.168.50.192"
       entities:
-        - entity_id: binary_sensor.rumpus_room_breeze_status
-          healthy_state: "on"
+        - entity_id: climate.rumpus_room_breeze
           name: Status
 
 vestaboard_health_checker:
