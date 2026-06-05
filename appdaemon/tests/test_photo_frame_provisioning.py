@@ -58,7 +58,7 @@ def _make_app(extra_args: dict | None = None) -> PhotoFrameViewerApp:
 
 def _run(coro):
     """Run a coroutine synchronously in a test context."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 class TestProvisionRelayScript:

@@ -57,7 +57,7 @@ class TestSyncCalendar:
         state = SyncState()
         desired = [_make_event("t1", "2026-01-08"), _make_event("t2", "2026-01-15")]
 
-        new_state = asyncio.get_event_loop().run_until_complete(
+        new_state = asyncio.run(
             sync_calendar(app, "calendar.test", desired, state, client)
         )
 
@@ -74,7 +74,7 @@ class TestSyncCalendar:
         state = SyncState(events={"t1_2026-01-08": "uid-1"})
         desired = [_make_event("t1", "2026-01-08")]
 
-        new_state = asyncio.get_event_loop().run_until_complete(
+        new_state = asyncio.run(
             sync_calendar(app, "calendar.test", desired, state, client)
         )
 
@@ -91,7 +91,7 @@ class TestSyncCalendar:
         state = SyncState(events={"old_task_2026-01-01": "uid-old"})
         desired = [_make_event("new_task", "2026-01-15")]
 
-        new_state = asyncio.get_event_loop().run_until_complete(
+        new_state = asyncio.run(
             sync_calendar(app, "calendar.test", desired, state, client)
         )
 
@@ -112,7 +112,7 @@ class TestSyncCalendar:
             _make_event("t2", "2026-01-15"),
         ]
 
-        new_state = asyncio.get_event_loop().run_until_complete(
+        new_state = asyncio.run(
             sync_calendar(app, "calendar.test", desired, state, client)
         )
 
@@ -132,7 +132,7 @@ class TestSyncCalendar:
         state = SyncState(events={"t1_old_2026-01-08": "uid-old"})
         desired = [_make_event("t1_new", "2026-01-08")]
 
-        new_state = asyncio.get_event_loop().run_until_complete(
+        new_state = asyncio.run(
             sync_calendar(app, "calendar.test", desired, state, client)
         )
 
