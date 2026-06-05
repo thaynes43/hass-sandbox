@@ -67,7 +67,7 @@ def _make_app(extra_args: dict | None = None, tmp_dir: str | None = None) -> Ves
 
 def _run(coro):
     """Run a coroutine synchronously in the test event loop."""
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def _make_mock_provisioner():
