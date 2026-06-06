@@ -87,7 +87,7 @@ appdaemon/apps/countdown_app/
 |-----|---------|-------------|
 | `ha_url` | (required) | Home Assistant base URL |
 | `ha_token_env` | (required) | Env var name for HA long-lived access token |
-| `ai_provider_conf.image` | `openai-default` | Image generation provider bundle |
+| `ai_provider_conf.image` | `openai-countdown` | Image generation provider bundle (uses `gpt-image-2`) |
 | `media_fs_root_env` | `MEDIA_FS_ROOT` | Env var for media filesystem root |
 | `media_fs_root` | `/media` | Direct media root path (dev override) |
 | `media_subdir` | `countdown-app` | Subdirectory under media root for images |

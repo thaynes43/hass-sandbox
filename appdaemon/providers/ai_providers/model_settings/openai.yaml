@@ -19,6 +19,12 @@ bundles:
     simple_text_model: gpt-5.2
     image_model: gpt-image-1.5
 
+  # Dedicated bundle for the countdown app's AI background generation.
+  # Scoped so the countdown app can adopt gpt-image-2 without affecting other
+  # apps that share openai-default (those use it for simple_text only).
+  openai-countdown:
+    image_model: gpt-image-2
+
   openai-pixel-art:
     multimodal_model: gpt-5.2
     multimodal_image_detail: auto

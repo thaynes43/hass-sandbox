@@ -17,7 +17,7 @@ from typing import Any, Optional, Tuple
 # Recommended models for bundle defaults (documented for loader/registry consistency)
 GEMINI_DEFAULT_MULTIMODAL = "gemini-2.5-flash"
 GEMINI_DEFAULT_IMAGE = "gemini-2.5-flash-image"
-OPENAI_IMAGE_CANDIDATES = frozenset({"gpt-image-1.5", "chatgpt-image-latest"})
+OPENAI_IMAGE_CANDIDATES = frozenset({"gpt-image-1.5", "gpt-image-2", "chatgpt-image-latest"})
 
 
 def validate_multimodal_model(provider: str, model: str) -> Tuple[bool, Optional[str]]:
