@@ -1071,20 +1071,19 @@ school_lunch_app:
 spa_health_checker:
   module: health_checks.checker_apps.spa_health_checker.spa_health_checker
   class: SpaHealthChecker
-  disable: true
   ha_url: !secret ha_url
   ha_token_env: TOKEN
   checker_id: spa
   checker_name: Spa
   gateway_host: "192.168.50.122"
   connection_entities:
-    - binary_sensor.westford_spa_overall_connection
+    - binary_sensor.back_yard_westford_spa_overall_connection
   staleness_entities:
-    - climate.westford_spa_thermostat_1
-    - light.westford_spa_light_1
-    - light.westford_spa_light_2
-    - fan.westford_spa_pump_1
-    - fan.westford_spa_pump_2
+    - climate.back_yard_westford_spa_thermostat_1
+    - light.back_yard_westford_spa_light_1
+    - light.back_yard_westford_spa_light_2
+    - fan.back_yard_westford_spa_pump_1
+    - fan.back_yard_westford_spa_pump_2
   staleness_threshold_s: 10800
   repair_switch: switch.spa_intouch3_switch
   repair_recovery_wait_s: 300
