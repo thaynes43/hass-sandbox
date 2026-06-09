@@ -235,7 +235,7 @@ Follow the pattern from `test_immich_fetcher.py`:
 
 #### README.md
 
-Follow the template from `.cursor/rules/appdaemon-documentation.mdc`. Include:
+Follow the template from `.agents/rules/appdaemon-documentation.md`. Include:
 - What the app does
 - Config reference (sid, menus, default_selected, ha_url, ha_token_env)
 - Provisioned entities (sensor, input_text, relay script)
@@ -253,7 +253,7 @@ Follow the template from `.cursor/rules/appdaemon-documentation.mdc`. Include:
 **Reference files to read (read-only):**
 - `appdaemon/apps/photo_frame_viewer/photo-display-card.js` — pattern for compact display card with navigation
 - `.claude/rules/custom-cards.md` — mandatory patterns
-- `.cursor/rules/custom-card-guidelines.mdc` — full detail
+- `.agents/rules/custom-card-guidelines.md` — full detail
 
 **Depends on:** Track A (sensor entity structure must be finalized first — the sensor attribute schema above is the contract)
 
@@ -314,7 +314,7 @@ window.customCards.push({
 - `appdaemon/apps/immich_fetcher/immich-fetcher-card.js` — pattern for tabbed UI with settings
 - `appdaemon/apps/photo_frame_viewer/photo-frame-viewer-card.js` — pattern for relay calls and complex state
 - `.claude/rules/custom-cards.md` — mandatory patterns
-- `.cursor/rules/custom-card-guidelines.mdc` — full detail
+- `.agents/rules/custom-card-guidelines.md` — full detail
 
 **Depends on:** Track A (sensor entity structure)
 
@@ -573,8 +573,8 @@ section. It contains the complete specification for the app module, config entri
 tests, and README.
 
 Also read these files before making any changes:
-- .cursor/rules/appdaemon-architecture.mdc (self-provisioning, relay script, async startup)
-- .cursor/rules/appdaemon-coding-guidelines.mdc (coding conventions)
+- .agents/rules/appdaemon-architecture.md (self-provisioning, relay script, async startup)
+- .agents/rules/appdaemon-coding-guidelines.md (coding conventions)
 - .agents/playbooks/ha-provisioner.md (provisioner API details)
 - appdaemon/providers/school_menu/client.py (provider you will use)
 - appdaemon/providers/school_menu/types.py (data types — note month is 0-indexed)
@@ -609,7 +609,7 @@ section. It contains the complete specification for school-lunch-card.js.
 
 Also read these files before making any changes:
 - .claude/rules/custom-cards.md (MANDATORY card patterns — touch dedup, shadow DOM, focus guard)
-- .cursor/rules/custom-card-guidelines.mdc (full detail on card patterns)
+- .agents/rules/custom-card-guidelines.md (full detail on card patterns)
 - appdaemon/apps/photo_frame_viewer/photo-display-card.js (reference card — study the snapshot
   pattern, touch/click dedup, and navigation)
 - appdaemon/apps/school_lunch_app/school_lunch_app.py (read to understand the sensor attribute
@@ -641,7 +641,7 @@ section. It contains the complete specification for school-lunch-detail-card.js.
 Also read these files before making any changes:
 - .claude/rules/custom-cards.md (MANDATORY card patterns — touch dedup, shadow DOM, focus guard,
   CRITICAL Android checkbox rule)
-- .cursor/rules/custom-card-guidelines.mdc (full detail on card patterns)
+- .agents/rules/custom-card-guidelines.md (full detail on card patterns)
 - appdaemon/apps/immich_fetcher/immich-fetcher-card.js (reference for tabbed UI + settings)
 - appdaemon/apps/photo_frame_viewer/photo-frame-viewer-card.js (reference for relay calls)
 - appdaemon/apps/school_lunch_app/school_lunch_app.py (read to understand the sensor attribute
@@ -710,8 +710,8 @@ Also read these rule files:
 - .claude/rules/appdaemon.md
 - .claude/rules/custom-cards.md
 - .claude/rules/security.md
-- .cursor/rules/appdaemon-architecture.mdc
-- .cursor/rules/custom-card-guidelines.mdc
+- .agents/rules/appdaemon-architecture.md
+- .agents/rules/custom-card-guidelines.md
 
 DO NOT modify any files. Your job is to READ and VERIFY only.
 

@@ -578,9 +578,9 @@ Read the full plan file before doing anything else. It contains architecture con
 detailed implementation instructions, test case tables, and a validation checklist.
 
 Also read these rule files before making any changes:
-- .cursor/rules/appdaemon-architecture.mdc
-- .cursor/rules/appdaemon-coding-guidelines.mdc
-- .cursor/rules/security-policy.mdc
+- .agents/rules/appdaemon-architecture.md
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/security-policy.md
 
 Work through all steps in the plan in order (Steps 1-6). After completing all code changes,
 run the full test suite and fix any failures before finishing:
@@ -600,9 +600,9 @@ You are a Validation Agent. Review the implementation described in the plan file
 Read the full plan file -- the "Validation checklist" section lists every requirement to verify.
 
 Also read these rule files:
-- .cursor/rules/appdaemon-architecture.mdc
-- .cursor/rules/appdaemon-coding-guidelines.mdc
-- .cursor/rules/security-policy.mdc
+- .agents/rules/appdaemon-architecture.md
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/security-policy.md
 
 DO NOT modify any files. Your job is to READ and VERIFY only.
 

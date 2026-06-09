@@ -1,8 +1,6 @@
----
-alwaysApply: true
----
-
 # Home Assistant Automation Project
+
+> **Applies to:** the entire repo — always applies.
 
 This project is a subset of Home Assistant scripts and automations as well as AppDaemon apps. It is important to know that Home Assistant and App Daemon are running in seperate docker containers but share a /media nfs mount so we can easily pass files between the two. 
 
@@ -12,11 +10,11 @@ The inovelli folder contains automations mainly driving inovelli smart presence 
 
 ## Development Environment
 
-Often agents struggle with powershell commands to carry out simple tasks. You may take advantage of wsl which is installed on the system. If working with AppDeamon you may run tests using the .venv-wsl virtual environment. If you must run python on windows you may use .venv know it is updated less frequently than the wsl virtual environment .venv-wsl and you may need to ask to user to install dependencies on windows to run commands. If you find yourself repeatedly running failed commands you may ask the user to provide additional tools. 
+Linux is the primary dev environment: use the `.venv` virtual environment at the repo root. On Windows you may use WSL with `.venv-wsl`. Full test commands and cross-platform details are in `.agents/rules/appdaemon-dev-environment.md`. If you find yourself repeatedly running failed commands you may ask the user to provide additional tools. 
 
 ## MCP Server
 
-You are running in an instance of cursor which is configured to use [ha-mcp](https://github.com/homeassistant-ai/ha-mcp). ha-mcp is configured in mcpServers as `home-assistant`. If it is unavalable ask the user to toggle the config to reload the tools. You may make tool calls using this to access what is running in the production smart home environment which we are developing new capabilites for.  
+Agents working in this repo are configured to use [ha-mcp](https://github.com/homeassistant-ai/ha-mcp), registered in MCP settings as `home-assistant`. If it is unavalable ask the user to toggle the config to reload the tools. You may make tool calls using this to access what is running in the production smart home environment which we are developing new capabilites for.  
 
 If you don't know the exact name of an entity or attribute make sure to use the tool calls to search what exists.
 
@@ -26,9 +24,9 @@ Try to keep calls to the MCP server at a minimum. Much of the context you will n
 
 AddDaemon has it's own rules that apply to the folders. It is recommended agents are familiar with it's documentation from [here](https://appdaemon.readthedocs.io/en/latest/) before programming the apps as they are not stadard python programs but plug-in to the AppDaemon docker which manages their execution. AppDaemon is also setup to run in the .venv or .venv-wsl directories of this repositories so we can test new apps and features before deploying them to the production server. Production deploys are automated via Docker image builds — merging to `main` triggers a GitHub Actions workflow that builds and pushes the image to GHCR, and Flux rolls the Kubernetes deployment.
 
-## Cursor mdc Rules
+## Rule files (`.agents/rules/`)
 
-Cursor .mdc rulesets in the project are often configured by globs since you do not need the same rules for AppDeamon development as you do Home Assistant. Sometimes you will be doing both at the same time and you should load the rules for each. Agents will often fail to load the rules even if they are editing files that match the globs so check before executing a prompt where the files will be and load the correct rules before making any changes. 
+The rulesets in `.agents/rules/` each declare their scope in an "Applies to" line at the top, since you do not need the same rules for AppDaemon development as you do Home Assistant. Sometimes you will be doing both at the same time and you should load the rules for each. Agents will often fail to load the rules even if they are editing files in scope, so check before executing a prompt where the files will be and read the matching rules before making any changes. 
 
 ## YAML formatting guidelines (repo)
 

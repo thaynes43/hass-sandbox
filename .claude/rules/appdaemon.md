@@ -1,14 +1,14 @@
 # AppDaemon rules
 
 When working in `appdaemon/`, read these for full detail:
-- `.cursor/rules/appdaemon-architecture.mdc` — system overview, folder structure, self-provisioning, relay script pattern, new app checklist
-- `.cursor/rules/appdaemon-coding-guidelines.mdc` — apps vs shared libs, AI offloading, dev/prod naming
-- `.cursor/rules/appdaemon-dev-environment.mdc` — venvs, test commands, cross-platform (Linux/WSL/Windows)
-- `.cursor/rules/appdaemon-documentation.mdc` — README requirements, documentation map, app dependency graph
-- `.cursor/rules/ai-provider-archetecture-guidelines.mdc` — capability bundles, model settings, prompt policy layering
-- `.cursor/rules/logging-standards.mdc` — log levels, required logging points, formatting conventions
-- `.cursor/rules/security-policy.mdc` — always applies; see also `.claude/rules/security.md`
-- `.cursor/rules/git-workflow.mdc` — branching, PRs, CI gates, commit conventions
+- `.agents/rules/appdaemon-architecture.md` — system overview, folder structure, self-provisioning, relay script pattern, new app checklist
+- `.agents/rules/appdaemon-coding-guidelines.md` — apps vs shared libs, AI offloading, dev/prod naming
+- `.agents/rules/appdaemon-dev-environment.md` — venvs, test commands, cross-platform (Linux/WSL/Windows)
+- `.agents/rules/appdaemon-documentation.md` — README requirements, documentation map, app dependency graph
+- `.agents/rules/ai-provider-architecture-guidelines.md` — capability bundles, model settings, prompt policy layering
+- `.agents/rules/logging-standards.md` — log levels, required logging points, formatting conventions
+- `.agents/rules/security-policy.md` — always applies; see also `.claude/rules/security.md`
+- `.agents/rules/git-workflow.md` — branching, PRs, CI gates, commit conventions
 
 ## Key decisions to know before coding
 
@@ -29,7 +29,7 @@ sys.path.append(str(Path(__file__).resolve().parents[2]))  # adds appdaemon/ roo
 Apps call `ha_provisioner` on startup to create all needed HA entities — never tell users to create helpers manually. Helpers, relay scripts: provisioned. Shell commands, Lovelace resources, `local_file` cameras: manual (document in app README).
 
 ### Relay script (card → AppDaemon)
-Cards call `hass.callService("script", "<app>_relay", { command, payload })`. Never use `fire_event` (requires admin). AppDaemon listens for `<app>_command` event. Full template in `.cursor/rules/appdaemon-architecture.mdc` §3.
+Cards call `hass.callService("script", "<app>_relay", { command, payload })`. Never use `fire_event` (requires admin). AppDaemon listens for `<app>_command` event. Full template in `.agents/rules/appdaemon-architecture.md` §3.
 
 ### Dev/prod app naming
 - Dev keys end in `_dev`; prod keys do not; prod entries always have `disable: true`

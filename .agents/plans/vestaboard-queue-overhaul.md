@@ -44,7 +44,7 @@ frame_queue.py (pure Python)      vestaboard_controller_app.py (_tick)
 - Import path `vestaboard_apps.vestaboard_controller.vestaboard_controller_app.VestaboardControllerApp` must NOT change
 - `_shared/frame_queue.py` must remain pure Python (no AppDaemon dependency)
 - Tests that patch `VestaboardClient` at the controller module path must still work
-- Card JS must follow `.cursor/rules/custom-card-guidelines.mdc` and card agent instructions at `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card-agent.md`
+- Card JS must follow `.agents/rules/custom-card-guidelines.md` and card agent instructions at `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card-agent.md`
 - Do NOT deploy to production. All changes stay in repo.
 - Do NOT commit. User will test first.
 
@@ -77,7 +77,7 @@ frame_queue.py (pure Python)      vestaboard_controller_app.py (_tick)
 ## Step 1 — README update (Track A)
 
 **Agent type:** Implementation Agent
-**Playbooks:** `.cursor/rules/appdaemon-documentation.mdc`
+**Playbooks:** `.agents/rules/appdaemon-documentation.md`
 **Files:** `appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md`
 
 ### What to change
@@ -128,15 +128,15 @@ frame_queue.py (pure Python)      vestaboard_controller_app.py (_tick)
 ## Step 2 — Tests + Queue implementation (Track B)
 
 **Agent type:** Implementation Agent (use Opus for complexity)
-**Playbooks:** `.cursor/rules/appdaemon-coding-guidelines.mdc`, `.cursor/rules/logging-standards.mdc`
+**Playbooks:** `.agents/rules/appdaemon-coding-guidelines.md`, `.agents/rules/logging-standards.md`
 **Files:**
 - `appdaemon/apps/vestaboard_apps/_shared/frame_queue.py`
 - `appdaemon/apps/vestaboard_apps/vestaboard_controller/vestaboard_controller_app.py`
 - `appdaemon/tests/test_vestaboard_controller_app.py`
 **Rule files to read first:**
-- `.cursor/rules/appdaemon-coding-guidelines.mdc`
-- `.cursor/rules/logging-standards.mdc`
-- `.cursor/rules/security-policy.mdc`
+- `.agents/rules/appdaemon-coding-guidelines.md`
+- `.agents/rules/logging-standards.md`
+- `.agents/rules/security-policy.md`
 
 ### frame_queue.py changes
 
@@ -269,7 +269,7 @@ source /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-r
 ## Step 3 — Status publisher + Card UI (Track C)
 
 **Agent type:** Implementation Agent (use Opus for card JS complexity)
-**Playbooks:** `.cursor/rules/custom-card-guidelines.mdc`, card agent instructions at `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card-agent.md`
+**Playbooks:** `.agents/rules/custom-card-guidelines.md`, card agent instructions at `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card-agent.md`
 **Files:**
 - `appdaemon/apps/vestaboard_apps/vestaboard_controller/status_publisher.py`
 - `appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card.js`
@@ -449,7 +449,7 @@ You are an Implementation Agent. Your task is fully described in the plan file a
 Read the full plan file before doing anything else. Focus on **Step 1 — README update (Track A)** only.
 
 Also read these rule files before making any changes:
-- .cursor/rules/appdaemon-documentation.mdc
+- .agents/rules/appdaemon-documentation.md
 
 Your scope is limited to this single file:
 - appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md
@@ -473,9 +473,9 @@ You are an Implementation Agent. Your task is fully described in the plan file a
 Read the full plan file before doing anything else. Focus on **Step 2 — Tests + Queue implementation (Track B)** only.
 
 Also read these rule files before making any changes:
-- .cursor/rules/appdaemon-coding-guidelines.mdc
-- .cursor/rules/logging-standards.mdc
-- .cursor/rules/security-policy.mdc
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/logging-standards.md
+- .agents/rules/security-policy.md
 
 Your scope is limited to these files:
 - appdaemon/apps/vestaboard_apps/_shared/frame_queue.py
@@ -507,7 +507,7 @@ verify that frame_queue.py has been updated by checking that `_next_non_expired`
 iterates `self._fallback` before `self._pending` (no `reversed()`).
 
 Also read these files before making any changes:
-- .cursor/rules/custom-card-guidelines.mdc
+- .agents/rules/custom-card-guidelines.md
 - appdaemon/apps/vestaboard_apps/vestaboard_configuration/vestaboard-configuration-card-agent.md
 - appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md (for new behavior description)
 
@@ -534,9 +534,9 @@ You are a Validation Agent. Review the implementation described in the plan file
 Read the full plan file — the "Step 4 — Validation" section lists every requirement to verify.
 
 Also read these rule files:
-- .cursor/rules/appdaemon-coding-guidelines.mdc
-- .cursor/rules/custom-card-guidelines.mdc
-- .cursor/rules/logging-standards.mdc
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/custom-card-guidelines.md
+- .agents/rules/logging-standards.md
 
 DO NOT modify any files. Your job is to READ and VERIFY only.
 

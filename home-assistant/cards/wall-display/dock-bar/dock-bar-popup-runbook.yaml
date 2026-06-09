@@ -5,7 +5,7 @@ scope: Repo-only Lovelace popup authoring for wall-display dock-bar popups
 
 references:
   scope_communication_rules:
-    - .cursor/rules/ha-change-scope-communication.mdc
+    - .agents/rules/ha-change-scope-communication.md
   style_playbook:
     - /Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/bubble-card-custom-style-playbook.md
   validated_examples:
@@ -18,7 +18,7 @@ references:
 
 guardrails:
   deployment_scope: repo only unless the user explicitly asks for live HA updates
-  completion_communication: first response line must use the exact scope phrase from ha-change-scope-communication.mdc, followed by the required copy-paste/reference bullets
+  completion_communication: first response line must use the exact scope phrase from ha-change-scope-communication.md, followed by the required copy-paste/reference bullets
   preserve_popup_shell: never replace or rewrite the seeded pop-up card at the top of a dock-bar popup file
   edit_boundary: remove the placeholder body only, then append the new layout below the existing popup shell
   status_deduplication:

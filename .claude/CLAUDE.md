@@ -8,9 +8,11 @@ A Home Assistant YAML sandbox + AppDaemon Python apps. HA YAML (automations, scr
 
 ## Agent file structure
 
+- `.agents/rules/` — detailed architecture and coding rules (canonical source, agent-agnostic)
 - `.agents/playbooks/` — shared playbooks (generic, usable by any AI agent)
-- `.cursor/rules/` — detailed architecture and coding rules (Cursor-formatted but content applies to all agents)
+- `.agents/plans/` — saved multi-session plans
 - `.claude/rules/` — Claude-specific rule files that index the above
+- `AGENTS.md` (repo root) — entry point for Codex and other agents that read AGENTS.md
 
 ## Commands
 
@@ -73,17 +75,19 @@ appdaemon/
 ├── secrets.yaml         # Local dev secrets (.gitignored)
 ├── requirements.txt
 ├── apps/
-│   ├── apps-prod.yaml   # All entries have disable: true; Docker build strips this and writes apps.yaml
+│   ├── apps-prod.yaml   # Entries normally have disable: true; Docker build strips this and writes apps.yaml
 │   ├── apps-dev.yaml    # Dev-only apps (keys must end in _dev); never deployed
-│   ├── detection_summary_app/
-│   ├── detection_summary_viewer/
-│   ├── door_notify/
-│   ├── immich_fetcher/
-│   └── photo_frame_viewer/
+│   └── <app packages>/  # calendar_from_schedule_app, countdown_app, dashboard_notify,
+│                        # detection_summary_app, detection_summary_viewer, door_notify,
+│                        # health_checks, immich_fetcher, media_dashboard_app,
+│                        # photo_frame_viewer, school_lunch_app, vestaboard_apps
 └── providers/           # Shared libraries (not AppDaemon apps)
     ├── ai_providers/    # LLM/image provider adapters (OpenAI, Gemini, Ollama, ComfyUI)
     ├── ha_provisioner/  # HA entity provisioning via REST API
+    ├── media_providers/ # Media dashboard API clients (Tautulli, TMDB, mdblist, SerpAPI)
     ├── photo_providers/ # Photo source provider (Immich; extensible)
+    ├── school_menu/     # School lunch menu API client (School Nutrition and Fitness)
+    ├── vestaboard/      # Vestaboard local API client + character grid encoding
     └── secrets.py       # resolve_secret() — env-var name → value at runtime
 ```
 
@@ -105,7 +109,7 @@ Apps must **not** require manual HA entity setup. On startup, apps call `ha_prov
 
 ### Relay script pattern (card → AppDaemon)
 
-All Lovelace card → AppDaemon communication must go through a relay HA script provisioned by the app, called via `hass.callService("script", "<app>_relay", { command, payload })`. Never use `fire_event` from cards — it requires admin. The script fires an `<app>_command` event that AppDaemon listens for. Full template in `.cursor/rules/appdaemon-architecture.mdc` §3.
+All Lovelace card → AppDaemon communication must go through a relay HA script provisioned by the app, called via `hass.callService("script", "<app>_relay", { command, payload })`. Never use `fire_event` from cards — it requires admin. The script fires an `<app>_command` event that AppDaemon listens for. Full template in `.agents/rules/appdaemon-architecture.md` §3.
 
 ### AI provider architecture
 
@@ -130,7 +134,7 @@ App YAML passes env var **names** (e.g. `api_key_env: OPENAI_API_KEY`, `ha_token
 ### Dev vs prod app naming
 
 - `apps-dev.yaml`: keys end in `_dev` (e.g. `detection_summary_app_dev`)
-- `apps-prod.yaml`: keys without `_dev` suffix; always have `disable: true`
+- `apps-prod.yaml`: keys without `_dev` suffix; normally have `disable: true` (omit it only when an app should also run locally)
 
 ## Key rules and conventions
 
@@ -168,7 +172,7 @@ Followed by: what needs copy-pasting into HA, and what was updated in the repo.
 
 ### App README required (required)
 
-Every new AppDaemon app **must** include a `README.md` in its package directory. See `.cursor/rules/appdaemon-documentation.mdc` for the full template. Also add the app to the documentation map and dependency graph in that file.
+Every new AppDaemon app **must** include a `README.md` in its package directory. See `.agents/rules/appdaemon-documentation.md` for the full template. Also add the app to the documentation map and dependency graph in that file.
 
 ### AppDaemon deploy communication (required)
 
@@ -210,5 +214,6 @@ When starting a task that matches one of these, read the playbook first:
 | `.agents/playbooks/ha-helpers.md` | Creating/updating HA helpers via MCP |
 | `.agents/playbooks/ha-dashboard.md` | Editing HA dashboard views/cards via MCP |
 | `.agents/playbooks/occupancy-based-lighting.md` | Adding/updating occupancy-based lighting zones |
+| `.agents/playbooks/cache-busting-playbook.md` | Bumping `?v=N` on a Lovelace JS resource after card updates (MCP workflow) |
 | `.agents/playbooks/multi-agent-plan.md` | Structuring large tasks across multiple agent sessions |
 | `.agents/playbooks/playbook-authoring-guide.md` | Writing a new playbook |

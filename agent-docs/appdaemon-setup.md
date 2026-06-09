@@ -63,4 +63,4 @@ See `agent-docs/appdaemon-testing.md` for mocking HA calls and testing patterns.
 
 - [AppDaemon docs](https://appdaemon.readthedocs.io/en/latest/)
 - [Writing AppDaemon Apps](https://appdaemon.readthedocs.io/en/latest/APPGUIDE.html)
-- `.cursor/rules/appdaemon-vs-ha-yaml.mdc` — AppDaemon vs HA YAML
+- `.agents/rules/appdaemon-vs-ha-yaml.md` — AppDaemon vs HA YAML

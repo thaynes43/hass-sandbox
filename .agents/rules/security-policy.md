@@ -1,8 +1,6 @@
----
-globs: appdaemon/**
-alwaysApply: true
----
 # Security policy (AppDaemon)
+
+> **Applies to:** `appdaemon/**` — always read before working in scope.
 
 This rule is **always applied** when working in `appdaemon/`. It defines mandatory security practices. Violations must be fixed before production deploy.
 

@@ -2,6 +2,8 @@
 
 Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon`) in Kubernetes. App code is baked into the image at build time. Deploys happen automatically when code merges to `main`.
 
+Before deploying to production, run the pre-deploy security audit: `.agents/playbooks/security-audit.md`.
+
 ## How deployment works
 
 1. Developer merges PR to `main` (or pushes directly for hotfixes)

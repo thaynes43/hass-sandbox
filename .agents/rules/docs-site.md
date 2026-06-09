@@ -1,10 +1,6 @@
----
-globs:
-  - docs/**
-  - mkdocs.yml
-alwaysApply: false
----
 # Documentation site standards (mkdocs-material)
+
+> **Applies to:** `docs/**`, `mkdocs.yml`
 
 The `docs/` directory is a human-facing documentation site published to GitHub Pages via mkdocs-material. It showcases the smart home system, explains features end-to-end, and serves as a polished reference for anyone browsing the repo. This is NOT agent-internal documentation (that lives in `agent-docs/`).
 

@@ -1,11 +1,8 @@
----
-globs: appdaemon/providers/ai_providers/**/*.py, appdaemon/apps/detection_summary_app/**/*.py
-description: AI provider architecture: capability bundles, model settings, prompt policy
-alwaysApply: false
----
 # AI Provider Architecture Guidelines
 
-This rule enforces the AI-provider architecture for AppDaemon apps that use LLM/image providers. It supplements `security-policy.mdc` and `appdaemon-coding-guidelines.mdc`.
+> **Applies to:** `appdaemon/providers/ai_providers/**/*.py`, `appdaemon/apps/detection_summary_app/**/*.py`
+
+This rule enforces the AI-provider architecture for AppDaemon apps that use LLM/image providers. It supplements `security-policy.md` and `appdaemon-coding-guidelines.md`.
 
 ## 1) Current architecture map
 

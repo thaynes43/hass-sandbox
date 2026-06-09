@@ -8,7 +8,7 @@ Scope:
 - Preserve the seeded popup shell at the top of each file. Replace only the placeholder body below it.
 
 References:
-- Home Assistant scope and copy/paste communication rules: `.cursor/rules/ha-change-scope-communication.mdc`
+- Home Assistant scope and copy/paste communication rules: `.agents/rules/ha-change-scope-communication.md`
 - Bubble style reference: [`bubble-card-custom-style-playbook.md`](/Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/bubble-cards/bubble-card-custom-style-playbook.md)
 - First worked example: [`primary-popup.yaml`](/Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/dock-bar/primary-popup.yaml)
 - Approved popup card library: [`dock-bar-approved-card-library.md`](/Users/thaynes/src/labspace/hass-sandbox/home-assistant/cards/wall-display/dock-bar/dock-bar-approved-card-library.md)
@@ -23,7 +23,7 @@ References:
 6. Prefer grouped entities over individual members when the grouped entity is clear and useful.
 7. If a grouped entity is unclear, err on the side of adding too much rather than hiding useful controls.
 8. Do not include camera feeds in dock-bar popups.
-9. Follow the response-scope format from `.cursor/rules/ha-change-scope-communication.mdc` when reporting completed work.
+9. Follow the response-scope format from `.agents/rules/ha-change-scope-communication.md` when reporting completed work.
 10. Do not duplicate markdown summary sensor data with extra read-only room cards below unless that status is uniquely important to act on or monitor.
 
 ## MCP Discovery Workflow

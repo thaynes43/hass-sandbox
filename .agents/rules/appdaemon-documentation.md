@@ -1,8 +1,6 @@
----
-globs: appdaemon/**
-alwaysApply: false
----
 # AppDaemon documentation standards
+
+> **Applies to:** `appdaemon/**`
 
 Every app and provider package must have a README.md. This rule defines what goes in each README and maintains a map of all documentation in the project.
 

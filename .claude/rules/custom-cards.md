@@ -1,6 +1,6 @@
 # Custom Lovelace card rules
 
-When working on `**/*.js` card files, read `.cursor/rules/custom-card-guidelines.mdc` for full detail.
+When working on `**/*.js` card files, read `.agents/rules/custom-card-guidelines.md` for full detail.
 
 ## Critical patterns
 

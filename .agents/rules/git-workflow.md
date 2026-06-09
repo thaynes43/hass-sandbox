@@ -1,8 +1,6 @@
----
-globs: appdaemon/**
-alwaysApply: false
----
 # Git workflow for AppDaemon development
+
+> **Applies to:** `appdaemon/**`
 
 ## Branch strategy
 

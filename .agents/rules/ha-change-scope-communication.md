@@ -1,8 +1,6 @@
----
-globs: home-assistant/**
-alwaysApply: false
----
 # Home Assistant changes: scope + copy/paste communication (required)
+
+> **Applies to:** `home-assistant/**`
 
 When making any change in this repo or in Home Assistant, you MUST clearly state the scope using **one** of the following exact phrases as the first line of the response:
 

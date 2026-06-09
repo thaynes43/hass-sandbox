@@ -45,10 +45,10 @@ jobs:
 
             1. **README coverage**: If a new app or provider was added under `appdaemon/apps/` or
                `appdaemon/providers/`, verify it has a README.md following the requirements in
-               `.cursor/rules/appdaemon-documentation.mdc`.
+               `.agents/rules/appdaemon-documentation.md`.
 
             2. **Documentation map**: If a new app/provider was added, check that
-               `.cursor/rules/appdaemon-documentation.mdc` was updated with the new entry
+               `.agents/rules/appdaemon-documentation.md` was updated with the new entry
                in the documentation map table.
 
             3. **Config sync**: If app behavior changed (new config keys, removed keys, changed
@@ -56,7 +56,7 @@ jobs:
 
             4. **Dependency graph**: If app dependencies changed (new imports, new event
                listeners/publishers), verify the dependency graph in
-               `.cursor/rules/appdaemon-documentation.mdc` was updated.
+               `.agents/rules/appdaemon-documentation.md` was updated.
 
             5. **YAML configs**: If a new app was added, verify entries exist in both
                `appdaemon/apps/apps-dev.yaml` and `appdaemon/apps/apps-prod.yaml`.

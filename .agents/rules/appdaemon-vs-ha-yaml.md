@@ -1,9 +1,6 @@
----
-description: How to use AppDaemon vs Home Assistant YAML; deploy procedure to production
-alwaysApply: true
----
-
 # AppDaemon vs Home Assistant YAML
+
+> **Applies to:** the entire repo — always applies.
 
 This rule guides when to use **AppDaemon** (Python apps) vs **Home Assistant YAML** (automations, scripts, helpers), and **how to deploy** AppDaemon changes to production.
 

@@ -1,10 +1,6 @@
----
-description: How to import night light automations from Home Assistant into the automations/night-lights folder
-globs:
-  - home-assistant/automations/night-lights/**
-alwaysApply: false
----
 # Night lights: import process
+
+> **Applies to:** `home-assistant/automations/night-lights/**`
 
 This rule describes how night light automations are imported from Home Assistant (via MCP) into the `automations/night-lights/` folder so they can be edited here and copy-pasted back into the HA UI.
 

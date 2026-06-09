@@ -1,10 +1,8 @@
----
-globs: appdaemon/**
-alwaysApply: false
----
 # AppDaemon architecture decisions
 
-This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.mdc` (coding conventions) and the deploy playbook (`.agents/playbooks/appdaemon-deploy.md`).
+> **Applies to:** `appdaemon/**`
+
+This ruleset captures major architectural decisions for AppDaemon apps in this project. It supplements `appdaemon-coding-guidelines.md` (coding conventions) and the deploy playbook (`.agents/playbooks/appdaemon-deploy.md`).
 
 ## 0) System overview: how it all fits together
 

@@ -1,11 +1,8 @@
----
-globs: appdaemon/**/*.py, appdaemon/tests/**
-description: How to run AppDaemon tests and interact with the development environment
-alwaysApply: false
----
 # AppDaemon development environment
 
-How to run tests, use venvs, and execute Python commands when iterating on `appdaemon/` code. For coding standards and architecture, see `appdaemon-coding-guidelines.mdc` and `appdaemon-architecture.mdc`.
+> **Applies to:** `appdaemon/**/*.py`, `appdaemon/tests/**`
+
+How to run tests, use venvs, and execute Python commands when iterating on `appdaemon/` code. For coding standards and architecture, see `appdaemon-coding-guidelines.md` and `appdaemon-architecture.md`.
 
 ## Detect the current OS first
 

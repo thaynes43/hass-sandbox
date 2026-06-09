@@ -270,10 +270,10 @@ Read the full plan file before doing anything else. It contains architecture con
 detailed implementation instructions, test case tables, and a validation checklist.
 
 Also read these rule files before making any changes:
-- .cursor/rules/appdaemon-coding-guidelines.mdc
-- .cursor/rules/logging-standards.mdc
-- .cursor/rules/custom-card-guidelines.mdc
-- .cursor/rules/security-policy.mdc
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/logging-standards.md
+- .agents/rules/custom-card-guidelines.md
+- .agents/rules/security-policy.md
 
 Work through all todos in the plan in order:
 1. Add remaining_ttl_s field to BoardFrame
@@ -305,10 +305,10 @@ You are a Validation Agent. Review the implementation described in the plan file
 Read the full plan file — the "Validation checklist" section lists every requirement to verify.
 
 Also read these rule files:
-- .cursor/rules/appdaemon-coding-guidelines.mdc
-- .cursor/rules/logging-standards.mdc
-- .cursor/rules/custom-card-guidelines.mdc
-- .cursor/rules/security-policy.mdc
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/logging-standards.md
+- .agents/rules/custom-card-guidelines.md
+- .agents/rules/security-policy.md
 
 DO NOT modify any files. Your job is to READ and VERIFY only.
 

@@ -26,9 +26,9 @@ Using the context above the plan will be based around these tasks. While plannin
 2. Build out the Vestaboard provider under /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/appdaemon/providers that apps can use to control the board
 3. Build out the vestaboard_controller_app under /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/appdaemon/apps/vestaboard_controller_app - this app is responsible for driving the board automations and switching what frames are shown when the user requestss
 4. Build out the vestaboard_configuration_app /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/appdaemon/apps/vestaboard_configuration_app that will be what the custom card interfaces against and allows a user to add more static frames or change configuration for the automations
-5. Build out the vestaboard_configuration_card.js which can live with appdaemon/apps/vestaboard_configuration_app. This is a feature rich custom card that supports all of the requirements listed above. Below you will see a refernce to the current configuration popup that uses custom:vestaboard-preview-card. This card is embedded in the dasboard and is a good example for how the characters can be laid out. We canot display the caracters in markdown or plain text on the custom card since the spacing between tiles needs to be the same. Lessons learned from past custom cards have been documented here /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/custom-card-guidelines.mdc. Know none were easy, this one is even harder, and it would be worth your time reviewing the .js files we have now.
+5. Build out the vestaboard_configuration_card.js which can live with appdaemon/apps/vestaboard_configuration_app. This is a feature rich custom card that supports all of the requirements listed above. Below you will see a refernce to the current configuration popup that uses custom:vestaboard-preview-card. This card is embedded in the dasboard and is a good example for how the characters can be laid out. We canot display the caracters in markdown or plain text on the custom card since the spacing between tiles needs to be the same. Lessons learned from past custom cards have been documented here .agents/rules/custom-card-guidelines.md. Know none were easy, this one is even harder, and it would be worth your time reviewing the .js files we have now.
 
-During these changes it is important to component test the requirements and add logging to diagnose production issues. When a user presses a button it should be logged. Make sure to add README.mds for every new Appdaemon app we create. Make sure to review /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/docs-site.mdc and update the documentation site after adding this app as well. 
+During these changes it is important to component test the requirements and add logging to diagnose production issues. When a user presses a button it should be logged. Make sure to add README.mds for every new Appdaemon app we create. Make sure to review .agents/rules/docs-site.md and update the documentation site after adding this app as well. 
 
 After making code changes but before anything gets committed make sure to run /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.agents/playbooks/security-audit.md - this is critical since we are adding a new API Token.
 
@@ -52,14 +52,14 @@ On top of that we should add a few new ones.
 
 ### Rules for Agents
 
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-architecture.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-documentation.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-vs-ha-yaml.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/docs-site.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-coding-guidelines.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-dev-environment.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/custom-card-guidelines.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/git-workflow.mdc
+- .agents/rules/appdaemon-architecture.md
+- .agents/rules/appdaemon-documentation.md
+- .agents/rules/appdaemon-vs-ha-yaml.md
+- .agents/rules/docs-site.md
+- .agents/rules/appdaemon-coding-guidelines.md
+- .agents/rules/appdaemon-dev-environment.md
+- .agents/rules/custom-card-guidelines.md
+- .agents/rules/git-workflow.md
 
 ### Card From Integration
 

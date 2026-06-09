@@ -15,7 +15,7 @@ You create plans that follow the format and methodology defined in `.agents/play
 
 1. **Read the playbook first**: Always start by reading `.agents/playbooks/multi-agent-plan.md` to get the current plan template and rules.
 2. **Understand the task**: Analyze the user's request thoroughly. Ask clarifying questions if the scope is ambiguous.
-3. **Survey the codebase**: Read relevant files, playbooks, and rule files referenced in `.claude/rules/` and `.cursor/rules/` to understand the domains involved.
+3. **Survey the codebase**: Read relevant files, playbooks, and rule files referenced in `.claude/rules/` and `.agents/rules/` to understand the domains involved.
 4. **Identify domains**: Determine which areas of the codebase are affected (AppDaemon apps, providers, HA YAML, custom cards, tests, deployment, etc.).
 5. **Decompose into steps**: Break the task into discrete, well-scoped steps that can each be handled by a single agent session.
 6. **Map dependencies**: Identify which steps depend on others and which can run in parallel.
@@ -65,7 +65,7 @@ Examples of what to record:
 
 # Persistent Agent Memory
 
-You have a persistent Persistent Agent Memory directory at `/mnt/d/labspace/hass-sandbox/.claude/agent-memory/multi-agent-planner/`. Its contents persist across conversations.
+You have a persistent Persistent Agent Memory directory at `/home/thaynes/workspace/hass-sandbox/.claude/agent-memory/multi-agent-planner/`. Its contents persist across conversations.
 
 As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes — and if nothing is written yet, record what you learned.
 

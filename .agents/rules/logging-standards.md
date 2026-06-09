@@ -1,8 +1,6 @@
----
-globs: "appdaemon/**/*.py"
-alwaysApply: false
----
 # Logging Standards for AppDaemon Apps
+
+> **Applies to:** `appdaemon/**/*.py`
 
 Consistent logging is critical for debugging live systems where you cannot attach a debugger. Every AppDaemon app must follow these standards.
 

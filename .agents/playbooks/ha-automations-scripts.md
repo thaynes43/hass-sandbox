@@ -148,4 +148,4 @@ This automation writes an aggregate lock status string to an `input_text` helper
 ### After creating (don't forget)
 
 - **Repo mirror**: always create/update the corresponding YAML file under `automations/` or `scripts/` so the repo stays in sync.
-- **Scope communication**: follow `ha-change-scope-communication.mdc` — use **Repo YAML & Live HA Updated** and list the entity_id under **Live HA entities updated**.
+- **Scope communication**: follow `ha-change-scope-communication.md` — use **Repo YAML & Live HA Updated** and list the entity_id under **Live HA entities updated**.

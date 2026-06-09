@@ -1,8 +1,6 @@
----
-globs: home-assistant/**
-alwaysApply: false
----
 ## Home Assistant: set settings on entities/devices (MCP)
+
+> **Applies to:** `home-assistant/**`
 
 ### Key concept: entity vs device settings
 

@@ -1,6 +1,6 @@
 # Documentation site rules
 
-When working in `docs/` or `mkdocs.yml`, read `.cursor/rules/docs-site.mdc` for full detail.
+When working in `docs/` or `mkdocs.yml`, read `.agents/rules/docs-site.md` for full detail.
 
 ## Key points
 
@@ -17,4 +17,4 @@ When working in `docs/` or `mkdocs.yml`, read `.cursor/rules/docs-site.mdc` for 
 - New feature or app → consider adding/updating a feature page in `docs/features/`
 - Changed architecture → update `docs/architecture/overview.md`
 - New app → update `docs/apps/index.md`
-- Always update the page map in `.cursor/rules/docs-site.mdc` when adding/removing pages
+- Always update the page map in `.agents/rules/docs-site.md` when adding/removing pages

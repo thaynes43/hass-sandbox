@@ -2,7 +2,7 @@
 
 ## Environment detection (IMPORTANT — read before generating test commands)
 
-Before generating test/run commands, detect the OS from the system environment info (platform, shell, OS version). The rules file `.cursor/rules/appdaemon-dev-environment.mdc` has full details, but the key points:
+Before generating test/run commands, detect the OS from the system environment info (platform, shell, OS version). The rules file `.agents/rules/appdaemon-dev-environment.md` has full details, but the key points:
 
 - **Linux (native or WSL)**: Run bash commands directly. Use `.venv/` venv.
   ```bash

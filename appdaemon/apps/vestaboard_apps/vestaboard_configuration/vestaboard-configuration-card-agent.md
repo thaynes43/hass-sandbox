@@ -7,7 +7,7 @@ This card is unusually coupled to Home Assistant sensor behavior and AppDaemon r
 ## First references to read
 
 1. Generic Home Assistant custom-card guidance:
-   - `.cursor/rules/custom-card-guidelines.mdc`
+   - `.agents/rules/custom-card-guidelines.md`
 2. Generic cache-busting / HA pod inspection playbook:
    - `.agents/playbooks/cache-busting-playbook.md`
 3. App-level READMEs:

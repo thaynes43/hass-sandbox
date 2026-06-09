@@ -1,6 +1,6 @@
 # Security rules (always apply in appdaemon/)
 
-Full policy: `.cursor/rules/security-policy.mdc`
+Full policy: `.agents/rules/security-policy.md`
 
 ## Mandatory rules
 

@@ -1,11 +1,6 @@
----
-globs:
-  - home-assistant/automations/switch-buttons/**
-  - home-assistant/blueprints/**
-  - agent-docs/button-mappings.md
-alwaysApply: false
----
 # Button mappings doc sync (required)
+
+> **Applies to:** `home-assistant/automations/switch-buttons/**`, `home-assistant/blueprints/**`, `agent-docs/button-mappings.md`
 
 Whenever you change **button behavior** for any smart switch / scene controller, you MUST update `agent-docs/button-mappings.md` in the same session.
 

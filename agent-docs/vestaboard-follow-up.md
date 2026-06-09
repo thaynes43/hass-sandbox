@@ -47,10 +47,10 @@ Unit tests and logging must be updated as changes are made for this plan. Any ti
 
 ## References 
 
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-architecture.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-dev-environment.mdc
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/appdaemon-coding-guidelines.mdc
+- .agents/rules/appdaemon-architecture.md
+- .agents/rules/appdaemon-dev-environment.md
+- .agents/rules/appdaemon-coding-guidelines.md
 
 For the front end agent this one is critical. Other agents don't need it:
 
-- /home/thaynes/workspace/hass-sandbox/.claude/worktrees/eager-stargazing-rivest/.cursor/rules/custom-card-guidelines.mdc
+- .agents/rules/custom-card-guidelines.md

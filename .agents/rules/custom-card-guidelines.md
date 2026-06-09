@@ -1,8 +1,6 @@
----
-globs: "**/*.js"
-alwaysApply: false
----
 # Custom Lovelace Card Guidelines
+
+> **Applies to:** `**/*.js`
 
 Guidelines for building custom Home Assistant Lovelace cards that work across all target devices:
 
@@ -28,7 +26,7 @@ _callRelay(command, data) {
 }
 ```
 
-See `appdaemon-architecture.mdc` §3 for the full relay script pattern.
+See `appdaemon-architecture.md` §3 for the full relay script pattern.
 
 ## 2) Touch + click event delegation
 

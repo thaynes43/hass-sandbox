@@ -222,7 +222,7 @@ your_automation_dev:
 
 ## Step 6: Write the README
 
-Every automation MUST have a `README.md` in its package directory. Follow the template in `.cursor/rules/appdaemon-documentation.mdc`. Required sections:
+Every automation MUST have a `README.md` in its package directory. Follow the template in `.agents/rules/appdaemon-documentation.md`. Required sections:
 
 1. Summary (what it does)
 2. How it works (step-by-step lifecycle)
@@ -247,7 +247,7 @@ Add tests in `appdaemon/tests/test_your_automation.py`. At minimum:
 
 ## Step 8: Update documentation map
 
-Add your automation to `.cursor/rules/appdaemon-documentation.mdc` in the vestaboard apps section.
+Add your automation to `.agents/rules/appdaemon-documentation.md` in the vestaboard apps section.
 
 ## Step 9: Verify
 

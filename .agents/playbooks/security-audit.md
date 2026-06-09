@@ -73,9 +73,9 @@ git log --all -- appdaemon/secrets.yaml appdaemon/.env
 
 Verify:
 
-- `security-policy.mdc` exists and has `alwaysApply: true`
-- `appdaemon-deploy-playbook.mdc` references the security audit
-- `appdaemon-coding-guidelines.mdc` references the security policy
+- `.agents/rules/security-policy.md` exists and is marked as always-applies for `appdaemon/**`
+- `.agents/playbooks/appdaemon-deploy.md` references the security audit
+- `.agents/rules/appdaemon-coding-guidelines.md` references the security policy
 - Provider imports in `apps/` use `from providers.`* paths (e.g., `from providers.ha_provisioner import HAProvisioner`)
 - `appdaemon/providers/secrets.py` exists with `resolve_secret()` utility
 - `appdaemon/.env.example` exists documenting required env vars

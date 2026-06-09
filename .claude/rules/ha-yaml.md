@@ -1,11 +1,12 @@
 # Home Assistant YAML rules
 
 When working in `home-assistant/`, read these for full detail:
-- `.cursor/rules/appdaemon-vs-ha-yaml.mdc` — when to use AppDaemon vs HA YAML, deploy procedure
-- `.cursor/rules/ha-change-scope-communication.mdc` — required communication protocol (always applies)
-- `.cursor/rules/button-mappings-doc-sync.mdc` — button mapping doc must stay in sync
-- `.cursor/rules/night-lights-import.mdc` — how to import night light automations from HA
-- `.cursor/rules/ha-entity-and-device-settings.mdc` — entity vs device registry, area assignment via MCP
+- `.agents/rules/hass.md` — project overview, YAML formatting, non-admin frontend rule (always applies)
+- `.agents/rules/appdaemon-vs-ha-yaml.md` — when to use AppDaemon vs HA YAML, deploy procedure
+- `.agents/rules/ha-change-scope-communication.md` — required communication protocol (always applies)
+- `.agents/rules/button-mappings-doc-sync.md` — button mapping doc must stay in sync
+- `.agents/rules/night-lights-import.md` — how to import night light automations from HA
+- `.agents/rules/ha-entity-and-device-settings.md` — entity vs device registry, area assignment via MCP
 
 ## Required: scope communication
 

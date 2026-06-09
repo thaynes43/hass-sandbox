@@ -241,5 +241,5 @@ After creating, also update:
 
 ## After creating or deleting (don't forget)
 
-- **Scope communication**: follow `ha-change-scope-communication.mdc` — use **Repo YAML & Live HA Updated** and list the entity_id under **Live HA entities updated**.
+- **Scope communication**: follow `ha-change-scope-communication.md` — use **Repo YAML & Live HA Updated** and list the entity_id under **Live HA entities updated**.
 - **No repo YAML for helpers**: we do not maintain helper definition YAML files. The MCP-created entity is the source of truth.

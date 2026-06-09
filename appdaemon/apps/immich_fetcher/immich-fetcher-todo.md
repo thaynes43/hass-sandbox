@@ -5,9 +5,9 @@
 - `appdaemon/apps/photo_frame_viewer/photo-frame-viewer-card.js` (photo frame display card — needs major rework)
 
 **Rules to follow:**
-- `.cursor/rules/custom-card-guidelines.mdc` — **read before every change**. Update it with any new cross-device pitfalls discovered during implementation.
-- `.cursor/rules/appdaemon-architecture.mdc` — relay script pattern, self-provisioning.
-- `.cursor/rules/hass.mdc` — non-admin frontend rule, deployment, HA/AppDaemon container separation.
+- `.agents/rules/custom-card-guidelines.md` — **read before every change**. Update it with any new cross-device pitfalls discovered during implementation.
+- `.agents/rules/appdaemon-architecture.md` — relay script pattern, self-provisioning.
+- `.agents/rules/hass.md` — non-admin frontend rule, deployment, HA/AppDaemon container separation.
 
 **Testing targets:**
 - Desktop browser (Chrome/Edge)
@@ -396,8 +396,8 @@ Each task should be implemented, tested, and cache-busted independently before m
 
 ## Reminders for the implementing agent
 
-- **Read `.cursor/rules/custom-card-guidelines.mdc` before starting.** It contains hard-won lessons about touch handling, `preventDefault`, input focus, and cache busting.
-- **Update `custom-card-guidelines.mdc`** with any new findings (e.g., drag-to-reorder touch patterns, `aspect-ratio` CSS quirks on Android webviews).
+- **Read `.agents/rules/custom-card-guidelines.md` before starting.** It contains hard-won lessons about touch handling, `preventDefault`, input focus, and cache busting.
+- **Update `custom-card-guidelines.md`** with any new findings (e.g., drag-to-reorder touch patterns, `aspect-ratio` CSS quirks on Android webviews).
 - **Never auto-save** structural changes (add/remove/reorder). Always use `_markDirty()` per custom-card-guidelines §4.
 - **Cache bust after every JS change** using MCP `ha_config_set_dashboard_resource`. Resource IDs are listed at the top of this document.
 - **Card JS files** are copied manually to `/config/www/photo-frame/` on the HA server (not part of the Docker image deploy).

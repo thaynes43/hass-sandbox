@@ -1,12 +1,10 @@
----
-globs: appdaemon/**
-alwaysApply: false
----
 # AppDaemon coding guidelines
+
+> **Applies to:** `appdaemon/**`
 
 ## Security policy
 
-The always-applied rule `security-policy.mdc` defines mandatory security practices:
+The always-applied rule `security-policy.md` defines mandatory security practices:
 
 - No credentials in app code; use `_env` keys and `providers.secrets.resolve_secret()`
 - All external HTTP calls in `appdaemon/providers/`, never in `appdaemon/apps/`

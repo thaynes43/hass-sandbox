@@ -100,8 +100,8 @@ Read the full plan file before doing anything else. It contains architecture con
 detailed implementation instructions, test case tables, and a validation checklist.
 
 Also read these rule files before making any changes:
-- .cursor/rules/<rule-1>.mdc
-- .cursor/rules/<rule-2>.mdc
+- .agents/rules/<rule-1>.md
+- .agents/rules/<rule-2>.md
 
 Work through all todos in the plan in order. After completing all code changes,
 run the full test suite and fix any failures before finishing:
@@ -121,7 +121,7 @@ You are a Validation Agent. Review the implementation described in the plan file
 Read the full plan file — the "Validation checklist" section lists every requirement to verify.
 
 Also read these rule files:
-- .cursor/rules/<rule-1>.mdc
+- .agents/rules/<rule-1>.md
 
 DO NOT modify any files. Your job is to READ and VERIFY only.
 
