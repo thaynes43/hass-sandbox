@@ -925,7 +925,9 @@ class ProtectHealthChecker(hass.Hass):
 
         except Exception as exc:
             self._repair_status = REPAIR_FAILED
-            self._repair_detail = f"Repair error: {exc}"
+            # Class name only — aiohttp errors stringify with the (secret)
+            # ha_url and repair_detail reaches the published sensor (S3).
+            self._repair_detail = f"Repair error: {type(exc).__name__}"
             self.log(f"Repair execution error: {exc!r}", level="ERROR")
             self._report_repair_status_only()
 
@@ -986,9 +988,17 @@ class ProtectHealthChecker(hass.Hass):
 
         if auto_enabled is not None:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            current = str(self.get_state(entity_id))
+            state = self.get_state(entity_id)
             desired = "on" if auto_enabled else "off"
-            if current != desired:
+            if state is None:
+                # Helper not provisioned (yet) — don't fire a service call
+                # that can only fail.
+                self.log(
+                    f"Auto-repair toggle {entity_id} not available — "
+                    "skipping update",
+                    level="WARNING",
+                )
+            elif str(state) != desired:
                 service = (
                     "input_boolean/turn_on"
                     if auto_enabled
