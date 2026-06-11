@@ -1114,6 +1114,10 @@ protect_health_checker:
   active_end: "23:00"
   active_tz: America/New_York
   check_interval_s: 300
+  # Hard-outage fast path: page when ~all event sensors are unavailable
+  # for longer than the grace period (UNVR down / auth failure).
+  availability_grace_s: 900
+  availability_critical_pct: 90
   # Auto-heal: reload the loaded unifiprotect config entry (max 1/hour),
   # then require a genuine post-reload event within 10 minutes.
   reload_cooldown_s: 3600

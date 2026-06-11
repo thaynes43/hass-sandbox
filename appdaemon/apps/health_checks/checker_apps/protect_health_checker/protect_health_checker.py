@@ -7,14 +7,27 @@ stop changing state entirely, with zero log errors.  All affected sensors
 keep an identical ``last_changed`` (the moment they were last re-registered).
 The proven fix is reloading the Protect config entry.
 
-Two checks on a configurable interval:
+Four checks on a configurable interval:
 
 1. **Sensor Discovery** — find all Protect event sensors (motion
-   device_class + ``*_detected`` smart detections) via the entity registry
-   (``integration_entities`` template), with a config-list override.
-2. **Event Stream** — the newest ``last_changed`` across all event sensors,
-   measured in *active-hours seconds* (overnight quiet doesn't count toward
-   staleness), must be younger than ``stale_after_s``.
+   device_class + ``*_detected`` smart detections + entry-sensor contact
+   channels) via the entity registry (``integration_entities`` template),
+   with a config-list override.  Devices that expose a door/moisture/tamper
+   channel are classified as entry sensors (USL); everything else is a
+   camera.
+2. **Sensor Availability** — the fast path for a hard integration outage
+   (auth failure, UNVR down): when essentially every event sensor is
+   ``unavailable`` for longer than a grace period, that is unambiguous —
+   no need to wait out the staleness threshold.  Partial unavailability
+   (e.g. the entry sensors dropping off overnight) is a warning.
+3. **Camera Events** — the newest ``last_changed`` across *available*
+   camera-group sensors, measured in *active-hours seconds* (overnight
+   quiet doesn't count toward staleness), must be younger than
+   ``stale_after_s``.  ``unavailable`` transitions are NOT events and are
+   excluded from freshness.
+4. **Entry Sensors** — availability of the USL entry-sensor group with a
+   last-event detail.  No freshness threshold: a door legitimately not
+   opening for hours must not page.
 
 Freeze handling is a small state machine: once frozen, the check stays
 critical until a *genuine* event arrives — one strictly newer than the
@@ -39,7 +52,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 # Add health_checks package root so we can import shared utilities
 _health_checks_root = str(Path(__file__).resolve().parents[2])
@@ -67,19 +80,46 @@ REPAIR_SUCCESS = "success"
 REPAIR_FAILED = "failed"
 
 DISCOVERY_CHECK = "Sensor Discovery"
-EVENT_STREAM_CHECK = "Event Stream"
+AVAILABILITY_CHECK = "Sensor Availability"
+CAMERA_EVENTS_CHECK = "Camera Events"
+ENTRY_SENSORS_CHECK = "Entry Sensors"
 
 REPAIR_POLL_INTERVAL_S = 30
 
-# Renders [["entity_id", "device_class", "last_changed_iso"], ...] for every
-# binary_sensor owned by the integration.  Validated against live HA.
+# A device exposing any of these channels is an entry sensor (USL), not a
+# camera — used to split event sensors into the two check groups.
+ENTRY_MARKER_CLASSES = ("door", "moisture", "tamper")
+
+UNAVAILABLE_STATES = ("unavailable", "unknown", "none", "")
+
+GROUP_CAMERA = "camera"
+GROUP_ENTRY = "entry"
+
+# Renders [["entity_id", "device_class", "state", "last_changed_iso",
+# "device_id"], ...] for every binary_sensor owned by the integration.
+# Validated against live HA.
 _DISCOVERY_TEMPLATE = (
     "{{% set ents = integration_entities('{domain}')"
     " | select('match', 'binary_sensor') | list %}}"
     '[{{% for e in ents %}}["{{{{ e }}}}", "{{{{ state_attr(e, \'device_class\') }}}}", '
-    '"{{{{ states[e].last_changed.isoformat() if states[e] else \'\' }}}}"]'
+    '"{{{{ states(e) }}}}", '
+    '"{{{{ states[e].last_changed.isoformat() if states[e] else \'\' }}}}", '
+    '"{{{{ device_id(e) or \'\' }}}}"]'
     '{{{{ "," if not loop.last }}}}{{% endfor %}}]'
 )
+
+
+class EventSensor(NamedTuple):
+    """One tracked Protect event sensor with its current state snapshot."""
+
+    entity_id: str
+    state: str
+    last_changed: Optional[datetime.datetime]
+    group: str  # GROUP_CAMERA or GROUP_ENTRY
+
+
+def _is_available(state: str) -> bool:
+    return str(state).lower() not in UNAVAILABLE_STATES
 
 
 def _parse_iso_utc(value: Any) -> Optional[datetime.datetime]:
@@ -180,6 +220,14 @@ class ProtectHealthChecker(hass.Hass):
             self._active_end = datetime.time(23, 0)
         self._tz = self._resolve_tz(args.get("active_tz", "America/New_York"))
 
+        # Availability fast path (hard integration outage)
+        self._availability_grace_s: int = int(
+            args.get("availability_grace_s", 900)
+        )
+        self._availability_critical_pct: int = int(
+            args.get("availability_critical_pct", 90)
+        )
+
         # Repair
         self._reload_cooldown_s: int = int(args.get("reload_cooldown_s", 3600))
         self._repair_settle_s: int = int(args.get("repair_settle_s", 60))
@@ -219,8 +267,17 @@ class ProtectHealthChecker(hass.Hass):
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
-        # Discovery cache: entity IDs from the last successful discovery
+        # Discovery caches from the last successful discovery:
+        # camera-group entity IDs (used for repair verification) and the
+        # entity_id → group map (used when discovery fails transiently).
         self._sensors: List[str] = []
+        self._sensor_groups: Dict[str, str] = {}
+
+        # Availability outage latch (see _check_availability) and
+        # first-observed-missing times for entities absent from the state
+        # machine (no last_changed to derive a dwell from).
+        self._availability_down: bool = False
+        self._missing_since: Dict[str, datetime.datetime] = {}
 
         self._admin: Optional[HaAdminClient] = None
 
@@ -369,7 +426,12 @@ class ProtectHealthChecker(hass.Hass):
     # ------------------------------------------------------------------
 
     def _register(self) -> None:
-        check_names = [DISCOVERY_CHECK, EVENT_STREAM_CHECK]
+        check_names = [
+            DISCOVERY_CHECK,
+            AVAILABILITY_CHECK,
+            CAMERA_EVENTS_CHECK,
+            ENTRY_SENSORS_CHECK,
+        ]
         payload: Dict[str, Any] = {
             "checker_id": self._checker_id,
             "checker_name": self._checker_name,
@@ -436,10 +498,27 @@ class ProtectHealthChecker(hass.Hass):
         await self._refresh_auto_repair_config()
 
         sensors, discovery_result = await self._discover_sensors()
-        event_result = self._check_event_stream(sensors)
-        results = [discovery_result, event_result]
+        availability_result = self._check_availability(sensors)
+        # Freshness only ever looks at AVAILABLE camera sensors: an
+        # unavailable transition refreshes last_changed without being an
+        # event, and entry-sensor activity must not mask a camera freeze.
+        camera_events = [
+            (s.entity_id, s.last_changed)
+            for s in sensors
+            if s.group == GROUP_CAMERA
+            and _is_available(s.state)
+            and s.last_changed is not None
+        ]
+        event_result = self._check_event_stream(camera_events)
+        entry_result = self._check_entry_sensors(sensors)
+        results = [
+            discovery_result,
+            availability_result,
+            event_result,
+            entry_result,
+        ]
 
-        # No cross-check: the two checks are independent failure domains.
+        # No cross-check: the checks are independent failure domains.
 
         if self._repair_status not in (REPAIR_IN_PROGRESS,):
             self._evaluate_auto_repair(results)
@@ -462,27 +541,41 @@ class ProtectHealthChecker(hass.Hass):
             level="INFO",
         )
 
+    async def _sensor_from_state(self, entity_id: str, group: str) -> EventSensor:
+        """Build an EventSensor from AppDaemon's state cache."""
+        try:
+            attrs = await self.get_state(entity_id, attribute="all")
+        except Exception as exc:
+            self.log(
+                f"get_state failed for {entity_id}: {exc!r}", level="WARNING"
+            )
+            attrs = None
+        if not attrs:
+            return EventSensor(entity_id, "unavailable", None, group)
+        return EventSensor(
+            entity_id,
+            str(attrs.get("state", "unavailable")),
+            _parse_iso_utc(attrs.get("last_changed")),
+            group,
+        )
+
     async def _discover_sensors(
         self,
-    ) -> Tuple[List[Tuple[str, Optional[datetime.datetime]]], Dict[str, str]]:
-        """Return [(entity_id, last_changed)] plus the discovery check result."""
+    ) -> Tuple[List[EventSensor], Dict[str, str]]:
+        """Return the tracked event sensors plus the discovery check result.
+
+        Classification: any Protect device exposing a door/moisture/tamper
+        channel is an entry sensor (USL); its motion and contact channels go
+        to the entry group.  Remaining motion + ``*_detected`` sensors are
+        cameras.
+        """
         if self._motion_entities:
-            sensors: List[Tuple[str, Optional[datetime.datetime]]] = []
-            for entity_id in self._motion_entities:
-                try:
-                    attrs = await self.get_state(entity_id, attribute="all")
-                except Exception as exc:
-                    self.log(
-                        f"get_state failed for {entity_id}: {exc!r}",
-                        level="WARNING",
-                    )
-                    attrs = None
-                last_changed = (
-                    _parse_iso_utc(attrs.get("last_changed")) if attrs else None
-                )
-                sensors.append((entity_id, last_changed))
-            self._sensors = [e for e, _ in sensors]
-            found = [s for s in sensors if s[1] is not None]
+            sensors = [
+                await self._sensor_from_state(entity_id, GROUP_CAMERA)
+                for entity_id in self._motion_entities
+            ]
+            self._remember_groups(sensors)
+            found = [s for s in sensors if s.last_changed is not None]
             if not found:
                 return sensors, {
                     "name": DISCOVERY_CHECK,
@@ -508,17 +601,41 @@ class ProtectHealthChecker(hass.Hass):
             template = _DISCOVERY_TEMPLATE.format(domain=self._integration_domain)
             rendered = await self._admin.render_template(template)
             rows = json.loads(rendered)
+
+            # First pass: devices with an entry-marker channel are USL
+            # entry sensors, not cameras.
+            entry_devices = {
+                str(row[4])
+                for row in rows
+                if str(row[1]) in ENTRY_MARKER_CLASSES and str(row[4])
+            }
+
             sensors = []
             for row in rows:
-                entity_id, device_class, last_changed = (
+                entity_id, device_class, state, last_changed, device_id = (
                     str(row[0]),
                     str(row[1]),
-                    row[2],
+                    str(row[2]),
+                    row[3],
+                    str(row[4]),
                 )
-                if device_class != "motion" and not entity_id.endswith("_detected"):
+                is_entry_device = bool(device_id) and device_id in entry_devices
+                if is_entry_device:
+                    # Entry sensors: motion + contact channels are events.
+                    if device_class not in ("motion", "door"):
+                        continue
+                    group = GROUP_ENTRY
+                elif device_class == "motion" or entity_id.endswith("_detected"):
+                    group = GROUP_CAMERA
+                else:
                     continue
-                sensors.append((entity_id, _parse_iso_utc(last_changed)))
-            self._sensors = [e for e, _ in sensors]
+                sensors.append(
+                    EventSensor(
+                        entity_id, state, _parse_iso_utc(last_changed), group
+                    )
+                )
+
+            self._remember_groups(sensors)
             if not sensors:
                 return sensors, {
                     "name": DISCOVERY_CHECK,
@@ -528,29 +645,23 @@ class ProtectHealthChecker(hass.Hass):
                         f"{self._integration_domain!r} — is the config entry loaded?"
                     ),
                 }
+            cameras = sum(1 for s in sensors if s.group == GROUP_CAMERA)
             return sensors, {
                 "name": DISCOVERY_CHECK,
                 "status": "ok",
-                "detail": f"{len(sensors)} event sensors discovered",
+                "detail": (
+                    f"{len(sensors)} event sensors discovered "
+                    f"({cameras} camera, {len(sensors) - cameras} entry)"
+                ),
             }
         except Exception as exc:
             self.log(f"Sensor discovery failed: {exc!r}", level="ERROR")
-            if self._sensors:
+            if self._sensor_groups:
                 # Fall back to the cached entity list with fresh state reads.
-                sensors = []
-                for entity_id in self._sensors:
-                    try:
-                        attrs = await self.get_state(entity_id, attribute="all")
-                    except Exception:
-                        attrs = None
-                    sensors.append(
-                        (
-                            entity_id,
-                            _parse_iso_utc(attrs.get("last_changed"))
-                            if attrs
-                            else None,
-                        )
-                    )
+                sensors = [
+                    await self._sensor_from_state(entity_id, group)
+                    for entity_id, group in self._sensor_groups.items()
+                ]
                 # Detail must not embed the exception — aiohttp errors
                 # stringify with the (secret) ha_url and the published
                 # sensor reaches the frontend (security rule S3).  The full
@@ -569,15 +680,199 @@ class ProtectHealthChecker(hass.Hass):
                 "detail": f"Discovery failed: {type(exc).__name__}",
             }
 
+    def _remember_groups(self, sensors: List[EventSensor]) -> None:
+        """Cache discovery results for fallback and repair verification."""
+        self._sensor_groups = {s.entity_id: s.group for s in sensors}
+        self._sensors = [
+            s.entity_id for s in sensors if s.group == GROUP_CAMERA
+        ]
+
+    # ------------------------------------------------------------------
+    # Checks
+    # ------------------------------------------------------------------
+
+    def _down_past_grace(
+        self, s: EventSensor, now_utc: datetime.datetime
+    ) -> bool:
+        """True when an unavailable sensor has been down past the grace.
+
+        ``last_changed`` is the transition moment.  Entities missing from
+        the state machine entirely (no timestamp) are timed from when we
+        first observed them missing — instant-down would bypass the grace
+        and false-page during a reload's unload window.
+        """
+        if _is_available(s.state):
+            self._missing_since.pop(s.entity_id, None)
+            return False
+        if s.last_changed is not None:
+            self._missing_since.pop(s.entity_id, None)
+            dwell = (now_utc - s.last_changed).total_seconds()
+        else:
+            first_seen = self._missing_since.setdefault(s.entity_id, now_utc)
+            dwell = (now_utc - first_seen).total_seconds()
+        return dwell > self._availability_grace_s
+
+    def _check_availability(
+        self, sensors: List[EventSensor]
+    ) -> Dict[str, str]:
+        """Fast path for a hard integration outage.
+
+        Detection is dwell-based: a sensor counts as down once it has been
+        unavailable longer than the grace period, so the brief unavailable
+        blip of a config-entry reload cannot trip this check.
+
+        Recovery is LATCHED on current state, not dwell: once an outage is
+        confirmed, a reload that re-registers everything (resetting every
+        ``last_changed``) must not read as recovery — only sensors actually
+        coming back available may clear the alert.  Without the latch a
+        failed heal would false-resolve the page and re-page every cycle
+        of the reload cooldown.
+        """
+        if not sensors:
+            return {
+                "name": AVAILABILITY_CHECK,
+                "status": "unknown",
+                "detail": "No event sensors to track",
+            }
+
+        now_utc = datetime.datetime.now(UTC)
+        unavailable_now = [s for s in sensors if not _is_available(s.state)]
+        down = [
+            s.entity_id for s in sensors if self._down_past_grace(s, now_utc)
+        ]
+
+        if self._availability_down:
+            unavail_pct = 100.0 * len(unavailable_now) / len(sensors)
+            if unavail_pct >= self._availability_critical_pct:
+                return {
+                    "name": AVAILABILITY_CHECK,
+                    "status": "critical",
+                    "detail": (
+                        f"{len(unavailable_now)}/{len(sensors)} event sensors "
+                        "unavailable — integration connection lost"
+                    ),
+                }
+            self._availability_down = False
+            self.log(
+                f"Availability outage cleared — "
+                f"{len(sensors) - len(unavailable_now)}/{len(sensors)} "
+                "sensors back",
+                level="INFO",
+            )
+
+        if not down:
+            return {
+                "name": AVAILABILITY_CHECK,
+                "status": "ok",
+                "detail": f"{len(sensors)} event sensors available",
+            }
+
+        down_pct = 100.0 * len(down) / len(sensors)
+        if down_pct >= self._availability_critical_pct:
+            self._availability_down = True
+            self.log(
+                f"Availability outage CONFIRMED: {len(down)}/{len(sensors)} "
+                f"event sensors unavailable for "
+                f">{_fmt_age(self._availability_grace_s)}",
+                level="WARNING",
+            )
+            return {
+                "name": AVAILABILITY_CHECK,
+                "status": "critical",
+                "detail": (
+                    f"{len(down)}/{len(sensors)} event sensors unavailable "
+                    f"for >{_fmt_age(self._availability_grace_s)} — "
+                    "integration connection lost?"
+                ),
+            }
+        sample = ", ".join(sorted(down)[:3])
+        return {
+            "name": AVAILABILITY_CHECK,
+            "status": "warning",
+            "detail": (
+                f"{len(down)}/{len(sensors)} event sensors unavailable "
+                f"for >{_fmt_age(self._availability_grace_s)} ({sample}"
+                f"{', …' if len(down) > 3 else ''})"
+            ),
+        }
+
+    def _check_entry_sensors(
+        self, sensors: List[EventSensor]
+    ) -> Dict[str, str]:
+        """Entry-sensor (USL) group: availability + last-event detail.
+
+        No freshness threshold — a door legitimately not opening for hours
+        must not page.  Unavailable entry sensors are a warning (the
+        whole-integration case is covered by Sensor Availability).
+        """
+        entry = [s for s in sensors if s.group == GROUP_ENTRY]
+        if not entry:
+            return {
+                "name": ENTRY_SENSORS_CHECK,
+                "status": "ok",
+                "detail": "No entry sensors discovered",
+            }
+
+        now_utc = datetime.datetime.now(UTC)
+        down = [
+            s.entity_id for s in entry if self._down_past_grace(s, now_utc)
+        ]
+
+        if down:
+            sample = ", ".join(sorted(down)[:3])
+            return {
+                "name": ENTRY_SENSORS_CHECK,
+                "status": "warning",
+                "detail": (
+                    f"{len(down)}/{len(entry)} entry-sensor channels "
+                    f"unavailable for >{_fmt_age(self._availability_grace_s)} "
+                    f"({sample}{', …' if len(down) > 3 else ''})"
+                ),
+            }
+
+        events = [
+            (s.entity_id, s.last_changed)
+            for s in entry
+            if _is_available(s.state) and s.last_changed is not None
+        ]
+        if not events:
+            return {
+                "name": ENTRY_SENSORS_CHECK,
+                "status": "ok",
+                "detail": f"{len(entry)} channels available",
+            }
+        newest_entity, newest_ts = max(events, key=lambda item: item[1])
+        age = max(0.0, (now_utc - newest_ts).total_seconds())
+        return {
+            "name": ENTRY_SENSORS_CHECK,
+            "status": "ok",
+            "detail": (
+                f"{len(entry)} channels available; newest event "
+                f"{_fmt_age(age)} ago ({newest_entity})"
+            ),
+        }
+
     def _check_event_stream(
         self, sensors: List[Tuple[str, Optional[datetime.datetime]]]
     ) -> Dict[str, str]:
+        """Camera-event freshness — expects available camera sensors only."""
         timestamped = [(e, ts) for e, ts in sensors if ts is not None]
         if not timestamped:
+            if self._frozen:
+                # Don't drop a firing freeze alert just because the camera
+                # sensors went unavailable on top of it.
+                return {
+                    "name": CAMERA_EVENTS_CHECK,
+                    "status": "critical",
+                    "detail": (
+                        "Event stream frozen — camera sensors currently "
+                        "unavailable (see Sensor Availability)"
+                    ),
+                }
             return {
-                "name": EVENT_STREAM_CHECK,
+                "name": CAMERA_EVENTS_CHECK,
                 "status": "unknown",
-                "detail": "No event sensors with timestamps available",
+                "detail": "No available camera sensors with timestamps",
             }
 
         newest_entity, newest_ts = max(timestamped, key=lambda item: item[1])
@@ -591,7 +886,7 @@ class ProtectHealthChecker(hass.Hass):
                 # mistake that for recovery.  _execute_repair owns recovery
                 # detection (its own settle baseline) while in progress.
                 return {
-                    "name": EVENT_STREAM_CHECK,
+                    "name": CAMERA_EVENTS_CHECK,
                     "status": "critical",
                     "detail": (
                         "Event stream frozen — reload in progress, "
@@ -611,7 +906,7 @@ class ProtectHealthChecker(hass.Hass):
                 )
                 self._unfreeze()
                 return {
-                    "name": EVENT_STREAM_CHECK,
+                    "name": CAMERA_EVENTS_CHECK,
                     "status": "ok",
                     "detail": f"Events resumed ({resumed[0]})",
                 }
@@ -627,7 +922,7 @@ class ProtectHealthChecker(hass.Hass):
             if self._repair_status == REPAIR_FAILED:
                 detail += " (auto-heal failed)"
             return {
-                "name": EVENT_STREAM_CHECK,
+                "name": CAMERA_EVENTS_CHECK,
                 "status": "critical",
                 "detail": detail,
             }
@@ -657,7 +952,7 @@ class ProtectHealthChecker(hass.Hass):
                 level="WARNING",
             )
             return {
-                "name": EVENT_STREAM_CHECK,
+                "name": CAMERA_EVENTS_CHECK,
                 "status": "critical",
                 "detail": (
                     f"No events for {_fmt_age(effective_age_s)} of active "
@@ -667,7 +962,7 @@ class ProtectHealthChecker(hass.Hass):
             }
 
         return {
-            "name": EVENT_STREAM_CHECK,
+            "name": CAMERA_EVENTS_CHECK,
             "status": "ok",
             "detail": (
                 f"Newest event {_fmt_age(wall_age_s)} ago ({newest_entity})"
@@ -716,14 +1011,22 @@ class ProtectHealthChecker(hass.Hass):
         return max(0.0, self._reload_cooldown_s - elapsed)
 
     def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
-        all_ok = all(r["status"] == "ok" for r in results)
         any_critical = any(r["status"] == "critical" for r in results)
 
-        if all_ok:
+        if not any_critical:
+            # Stand down once nothing is critical — warnings (e.g. an entry
+            # sensor offline for days) must not pin a stale PENDING/SUCCESS/
+            # FAILED state that would block auto-heal for the NEXT incident.
             if self._repair_status == REPAIR_PENDING:
-                self.log("All checks ok — cancelling pending auto-repair", level="INFO")
+                self.log(
+                    "No critical checks — cancelling pending auto-repair",
+                    level="INFO",
+                )
             if self._repair_status == REPAIR_FAILED:
-                self.log("All checks ok — clearing failed repair state", level="INFO")
+                self.log(
+                    "No critical checks — clearing failed repair state",
+                    level="INFO",
+                )
             if self._repair_status in (REPAIR_PENDING, REPAIR_SUCCESS, REPAIR_FAILED):
                 self._repair_status = REPAIR_IDLE
                 self._repair_detail = ""
@@ -731,11 +1034,9 @@ class ProtectHealthChecker(hass.Hass):
                 self._unhealthy_since = None
             return
 
-        if self._repair_status == REPAIR_SUCCESS:
-            return
-
-        if not any_critical:
-            return
+        # Still critical after a "successful" reload: the success was
+        # illusory (results here are computed post-repair).  Fall through to
+        # re-arm like FAILED — the reload cooldown paces the retry.
 
         enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
@@ -769,8 +1070,9 @@ class ProtectHealthChecker(hass.Hass):
                     level="INFO",
                 )
 
-        elif self._repair_status in (REPAIR_PENDING, REPAIR_FAILED):
-            # FAILED retries once the reload cooldown allows another attempt.
+        elif self._repair_status in (REPAIR_PENDING, REPAIR_FAILED, REPAIR_SUCCESS):
+            # FAILED (and illusory SUCCESS) retries once the reload cooldown
+            # allows another attempt.
             deadline = self._auto_repair_deadline or now
             deadline = self._apply_cooldown(deadline, now)
             if now >= deadline:
@@ -786,6 +1088,9 @@ class ProtectHealthChecker(hass.Hass):
                         f"{deadline.isoformat(timespec='seconds')}"
                     )
                 else:
+                    # An illusory SUCCESS (still critical) re-arms as a
+                    # plain pending repair.
+                    self._repair_status = REPAIR_PENDING
                     self._repair_detail = (
                         f"Auto-repair at {deadline.isoformat(timespec='seconds')}"
                     )
@@ -954,13 +1259,20 @@ class ProtectHealthChecker(hass.Hass):
     async def _any_event_after(
         self, baseline: datetime.datetime
     ) -> Optional[str]:
-        """Return the first sensor with a state change newer than baseline."""
+        """Return the first camera sensor with a genuine event after baseline.
+
+        Unavailable sensors are skipped: a transition INTO unavailable
+        updates ``last_changed`` without being an event, so counting it
+        would declare a failed reload successful.
+        """
         for entity_id in self._sensors:
             try:
                 attrs = await self.get_state(entity_id, attribute="all")
             except Exception:
                 continue
             if not attrs:
+                continue
+            if not _is_available(attrs.get("state", "unavailable")):
                 continue
             last_changed = _parse_iso_utc(attrs.get("last_changed"))
             if last_changed and last_changed > baseline:
