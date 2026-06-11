@@ -1939,3 +1939,364 @@ class TestDependencySystem:
         call_args = app.set_state.call_args
         attrs = call_args[1]["attributes"]
         assert attrs["checkers"]["standalone"]["is_dependency"] is False
+
+
+# ---------------------------------------------------------------------------
+# Tests — Alertmanager wiring (bridge integration)
+# ---------------------------------------------------------------------------
+
+from health_checks.shared.alertmanager_bridge import AlertmanagerBridge  # noqa: E402
+
+
+ALERTMANAGER_ARGS: Dict[str, Any] = {
+    "alertmanager_url": "http://alertmanager.test:9093",
+}
+
+
+def _last_created_coro(app: HealthCheckController):
+    """Return the coroutine passed to the most recent create_task call.
+
+    create_task is a MagicMock, so coroutines handed to it are never run;
+    the test grabs the latest one and drives it with _run().
+    """
+    return app.create_task.call_args_list[-1][0][0]
+
+
+def _close_created_coros(app: HealthCheckController) -> None:
+    """Close all coroutines handed to the mocked create_task.
+
+    Avoids 'coroutine was never awaited' warnings for syncs the test did
+    not explicitly run. close() is a no-op on already-finished coroutines.
+    """
+    for call in app.create_task.call_args_list:
+        obj = call[0][0]
+        if asyncio.iscoroutine(obj):
+            obj.close()
+
+
+class TestAlertmanagerWiring:
+    def _setup_bridge_app(self) -> tuple:
+        """Start a bridge-enabled app with a mocked Alertmanager client."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+        mock_client = AsyncMock()
+        app._alert_bridge._client = mock_client
+        return app, mock_client
+
+    # -- Bridge construction -------------------------------------------------
+
+    def test_no_url_no_bridge_and_repost_tick_noop(self):
+        """Without alertmanager_url the bridge is None and the repost tick
+        is a no-op (no task created)."""
+        app = _make_app()
+        app.initialize()
+
+        assert app._alert_bridge is None
+
+        app.create_task.reset_mock()
+        app._alert_repost_tick({})
+        app.create_task.assert_not_called()
+
+    def test_url_creates_bridge_and_schedules_repost_timer(self):
+        """With alertmanager_url the bridge is created and startup schedules
+        the repost timer at the default 120s interval."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+
+        assert isinstance(app._alert_bridge, AlertmanagerBridge)
+
+        repost_calls = [
+            c for c in app.run_every.call_args_list
+            if c[0][0] == app._alert_repost_tick
+        ]
+        assert len(repost_calls) == 1
+        assert repost_calls[0][0][1] == "now+120"
+        assert repost_calls[0][0][2] == 120
+
+        _close_created_coros(app)
+
+    def test_repost_tick_with_bridge_creates_task(self):
+        """With a bridge the repost tick schedules repost_active()."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        app.initialize()
+        app.create_task.reset_mock()
+
+        app._alert_repost_tick({})
+
+        app.create_task.assert_called_once()
+        _close_created_coros(app)
+
+    # -- Registration alerting config ----------------------------------------
+
+    def test_register_stores_alerting_config(self):
+        """The 'alerting' dict from the registration payload is stored."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+
+        alerting = {"enabled": True, "alertname": "ProtectEventStreamFrozen"}
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "protect",
+                "checker_name": "UniFi Protect",
+                "check_names": ["Event Stream"],
+                "alerting": alerting,
+            }),
+        }, {})
+
+        assert app._checkers["protect"]["alerting"] == alerting
+        _close_created_coros(app)
+
+    def test_register_alerting_defaults_to_empty_dict(self):
+        """Registering without an 'alerting' block defaults to {}."""
+        app = _make_app()
+        _startup(app)
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "zigbee",
+                "checker_name": "Zigbee",
+                "check_names": ["Bridge"],
+            }),
+        }, {})
+
+        assert app._checkers["zigbee"]["alerting"] == {}
+
+    # -- Publish → bridge sync ------------------------------------------------
+
+    def test_publish_status_posts_firing_then_resolve(self):
+        """A critical report posts a firing alert; an all-ok report posts a
+        resolve (endsAt) for the same alert identity."""
+        app, mock_client = self._setup_bridge_app()
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "checker_name": "Test",
+                "check_names": ["Check1"],
+            }),
+        }, {})
+
+        # Report critical, then drive the sync coroutine handed to create_task
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "Check1", "status": "critical", "detail": "down"},
+                ],
+            }),
+        }, {})
+        _run(_last_created_coro(app))
+
+        mock_client.post_alerts.assert_awaited_once()
+        alerts = mock_client.post_alerts.call_args[0][0]
+        assert len(alerts) == 1
+        firing = alerts[0]
+        assert firing["labels"]["severity"] == "critical"
+        assert firing["labels"]["checker"] == "test"
+        assert firing["labels"]["alertname"] == "TestUnhealthy"
+        assert firing["labels"]["source"] == "appdaemon-health-check"
+        assert "startsAt" in firing
+        assert "endsAt" not in firing
+        assert "down" in firing["annotations"]["description"]
+        assert "test" in app._alert_bridge.active_alerts
+
+        # Recovery: all-ok report → resolve post with endsAt
+        mock_client.post_alerts.reset_mock()
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "test",
+                "results": [
+                    {"name": "Check1", "status": "ok", "detail": "recovered"},
+                ],
+            }),
+        }, {})
+        _run(_last_created_coro(app))
+
+        mock_client.post_alerts.assert_awaited_once()
+        alerts = mock_client.post_alerts.call_args[0][0]
+        assert len(alerts) == 1
+        resolved = alerts[0]
+        assert resolved["labels"]["severity"] == "critical"
+        assert resolved["labels"]["checker"] == "test"
+        assert resolved["labels"]["alertname"] == "TestUnhealthy"
+        assert resolved.get("endsAt")
+        assert app._alert_bridge.active_alerts == {}
+
+        _close_created_coros(app)
+
+    # -- Dependency-resolved view feeds the bridge ----------------------------
+
+    def test_dependency_resolved_view_feeds_bridge(self):
+        """A checker masked to unknown by a critical dependency never alerts;
+        the dependency itself does."""
+        app, mock_client = self._setup_bridge_app()
+
+        # Broker, plus a dependent checker (all checks affected)
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "checker_name": "MQTT Broker",
+                "check_names": ["Broker Status"],
+            }),
+        }, {})
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "checker_name": "MQTT Lights",
+                "check_names": ["MQTT Status"],
+                "dependencies": [{"checker_id": "mqtt_broker"}],
+            }),
+        }, {})
+
+        # Broker goes critical → its own alert fires
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_broker",
+                "results": [
+                    {"name": "Broker Status", "status": "critical", "detail": "down"},
+                ],
+            }),
+        }, {})
+        _run(_last_created_coro(app))
+
+        mock_client.post_alerts.assert_awaited_once()
+        alerts = mock_client.post_alerts.call_args[0][0]
+        assert [a["labels"]["checker"] for a in alerts] == ["mqtt_broker"]
+        assert alerts[0]["labels"]["severity"] == "critical"
+
+        # Dependent reports critical internally, but the resolved view the
+        # bridge sees is unknown → no alert raised or resolved for it.
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps({
+                "checker_id": "mqtt_lights",
+                "results": [
+                    {"name": "MQTT Status", "status": "critical", "detail": "no mqtt"},
+                ],
+            }),
+        }, {})
+        _run(_last_created_coro(app))
+
+        # No new posts: broker alert just refreshed in place, dependent skipped
+        mock_client.post_alerts.assert_awaited_once()
+        assert "mqtt_broker" in app._alert_bridge.active_alerts
+        assert "mqtt_lights" not in app._alert_bridge.active_alerts
+
+        # Sanity: the published view really did mask the dependent to unknown
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["checkers"]["mqtt_lights"]["status"] == "unknown"
+
+        _close_created_coros(app)
+
+
+class TestEmptyResultsRepairReport:
+    """Repair-status-only reports (results=[]) must not wipe checker state.
+
+    This guards the headline regression of the Alertmanager feature: a
+    checker mid-repair fires report_status with results=[] several times;
+    if that reset the checker to ok, the bridge would post a false
+    [RESOLVED] for the firing critical alert and then re-fire (flapping).
+    """
+
+    def _report(self, app, checker_id, results, repair_state=None):
+        payload = {"checker_id": checker_id, "results": results}
+        if repair_state is not None:
+            payload["repair_state"] = repair_state
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps(payload),
+        }, {})
+
+    def test_empty_results_keeps_status_checks_and_alert(self):
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+        mock_client = AsyncMock()
+        app._alert_bridge._client = mock_client
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "protect",
+                "checker_name": "UniFi Protect",
+                "check_names": ["Event Stream"],
+                "supports_repair": True,
+            }),
+        }, {})
+
+        self._report(app, "protect", [
+            {"name": "Event Stream", "status": "critical", "detail": "frozen"},
+        ])
+        _run(_last_created_coro(app))  # drive the bridge sync
+
+        assert app._checkers["protect"]["status"] == "critical"
+        assert "protect" in app._alert_bridge.active_alerts
+        post_count_after_fire = mock_client.post_alerts.await_count
+        checks_before = [dict(c) for c in app._checkers["protect"]["checks"]]
+
+        # The mid-repair report: empty results + repair state
+        self._report(app, "protect", [], repair_state={
+            "status": "in_progress",
+            "detail": "Reloading Protect config entry...",
+        })
+        _run(_last_created_coro(app))
+
+        # Status and checks survive; repair state stored
+        assert app._checkers["protect"]["status"] == "critical"
+        assert app._checkers["protect"]["checks"] == checks_before
+        assert (
+            app._checkers["protect"]["repair_state"]["status"] == "in_progress"
+        )
+
+        # No resolve went out: the alert is still active and no posted
+        # alert carried endsAt
+        assert "protect" in app._alert_bridge.active_alerts
+        for call in mock_client.post_alerts.await_args_list[post_count_after_fire:]:
+            for alert in call[0][0]:
+                assert "endsAt" not in alert
+
+        _close_created_coros(app)
+
+    def test_full_ok_report_after_repair_resolves(self):
+        """The genuine recovery path still resolves: a FULL ok report after
+        the repair-only report clears the alert with endsAt."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+        mock_client = AsyncMock()
+        app._alert_bridge._client = mock_client
+
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": "protect",
+                "checker_name": "UniFi Protect",
+                "check_names": ["Event Stream"],
+                "supports_repair": True,
+            }),
+        }, {})
+        self._report(app, "protect", [
+            {"name": "Event Stream", "status": "critical", "detail": "frozen"},
+        ])
+        _run(_last_created_coro(app))
+        self._report(app, "protect", [], repair_state={"status": "success"})
+        _run(_last_created_coro(app))
+        assert "protect" in app._alert_bridge.active_alerts
+
+        self._report(app, "protect", [
+            {"name": "Event Stream", "status": "ok", "detail": "events resumed"},
+        ])
+        _run(_last_created_coro(app))
+
+        assert app._checkers["protect"]["status"] == "ok"
+        assert "protect" not in app._alert_bridge.active_alerts
+        resolved = mock_client.post_alerts.await_args_list[-1][0][0]
+        assert any("endsAt" in a for a in resolved)
+
+        _close_created_coros(app)
