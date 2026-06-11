@@ -68,6 +68,16 @@ Override the ImageScaleToTotalPixels node's megapixel target.
 |-----|------|---------|-------------|
 | `min_input_pixels` | `int \| null` | `null` | Log a warning when the input image's total pixel count (width × height) is below this threshold. Does not block generation. |
 
+## ComfyUIStatusClient
+
+`comfyui_status_client.py` is a lightweight read-only client, deliberately separate from the image-generation provider:
+
+- `await fetch_queue_remaining() -> int` — polls `GET /prompt` and returns `exec_info.queue_remaining` (queued + in-flight jobs)
+- All failures (unreachable, non-200, malformed payload) raise `ComfyUIStatusError`, so callers can map unreachability to a health status instead of crashing
+- ComfyUI's queue is in-memory: a restart resets the counter to 0
+
+Used by `apps/health_checks/checker_apps/imagegen_health_checker` to detect a dead or wedged ComfyUI instance (page-only watchdog — see its README).
+
 ## Notes
 
 - This provider is intended for local image editing workflows backed by a prepared ComfyUI workspace.
@@ -133,5 +143,6 @@ Open design questions that still need implementation work:
 ## Files
 
 - [comfyui_image_generation_provider.py](./comfyui_image_generation_provider.py)
+- [comfyui_status_client.py](./comfyui_status_client.py)
 - [workflows/02_qwen_Image_edit_subgraphed_API.json](./workflows/02_qwen_Image_edit_subgraphed_API.json)
 - [workflows/02_qwen_Image_edit_subgraphed_three_images_API.json](./workflows/02_qwen_Image_edit_subgraphed_three_images_API.json)

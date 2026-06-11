@@ -646,6 +646,11 @@ health_check_controller:
   heartbeat_interval_s: 60
   alert_history_max: 50
   alert_retention: "1:12:00:00"
+  # Mirror checker health into the cluster's Alertmanager (in-cluster svc,
+  # not a secret). Critical pages via Pushover; warning is UI-only.
+  # Re-post interval must stay below Alertmanager's resolve_timeout (5m).
+  alertmanager_url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
+  alertmanager_repost_interval_s: 120
 
 zigbee_health_checker:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
@@ -1092,6 +1097,47 @@ spa_health_checker:
   auto_repair_delay_min_default: 5
   health_dependencies:
     - checker_id: cloud
+
+protect_health_checker:
+  module: health_checks.checker_apps.protect_health_checker.protect_health_checker
+  class: ProtectHealthChecker
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: protect
+  checker_name: UniFi Protect
+  integration_domain: unifiprotect
+  # Newest event across ALL Protect motion/_detected sensors, counted in
+  # active-hours seconds (overnight quiet doesn't accumulate staleness).
+  stale_after_s: 10800
+  active_start: "08:00"
+  active_end: "23:00"
+  active_tz: America/New_York
+  check_interval_s: 300
+  # Auto-heal: reload the loaded unifiprotect config entry (max 1/hour),
+  # then require a genuine post-reload event within 10 minutes.
+  reload_cooldown_s: 3600
+  repair_settle_s: 60
+  repair_recovery_wait_s: 600
+  auto_repair_enabled_default: true
+  auto_repair_delay_min_default: 1
+  alerting:
+    alertname: ProtectEventStreamFrozen
+
+imagegen_health_checker:
+  module: health_checks.checker_apps.imagegen_health_checker.imagegen_health_checker
+  class: ImageGenHealthChecker
+  disable: true
+  checker_id: imagegen
+  checker_name: Image Gen
+  # In-cluster service URL (not a secret)
+  comfyui_url: http://comfyui.ai.svc.cluster.local:8188
+  check_interval_s: 120
+  queue_stuck_after_s: 1800
+  unreachable_after_s: 900
+  request_timeout_s: 10
+  alerting:
+    alertname: ImageGenQueueStuck
 
 media_dashboard_app:
   module: media_dashboard_app.media_dashboard_app

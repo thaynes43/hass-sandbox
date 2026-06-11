@@ -5,6 +5,14 @@ can detect when AppDaemon is offline, listens for checker registration and
 status reports via the HA event bus, and publishes aggregated health state
 to a virtual sensor for the custom Lovelace cards.
 
+When ``alertmanager_url`` is configured, the controller also mirrors
+checker health into the cluster's Alertmanager via
+:class:`health_checks.shared.alertmanager_bridge.AlertmanagerBridge`:
+one alert per non-ok checker, re-posted every
+``alertmanager_repost_interval_s`` (must stay under Alertmanager's
+``resolve_timeout``) and resolved with an immediate ``endsAt`` post when
+the checker recovers.
+
 Communication with checker apps is **event-only** (never ``get_app``),
 allowing the controller to run in production Kubernetes while new checkers
 are developed on a laptop.
@@ -26,7 +34,10 @@ sys.path.append(str(Path(__file__).resolve().parents[3]))
 
 import hassapi as hass
 
+from providers.alertmanager import AlertmanagerClient
 from providers.ha_provisioner import HAProvisioner
+
+from health_checks.shared.alertmanager_bridge import AlertmanagerBridge
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +93,24 @@ class HealthCheckController(hass.Hass):
         # Track last known repair status per checker for transition detection
         self._repair_statuses: Dict[str, str] = {}  # checker_id → last repair status
 
+        # Alertmanager bridge (optional — enabled when alertmanager_url is set)
+        self._alertmanager_url: str = str(args.get("alertmanager_url") or "")
+        self._alert_repost_interval_s: int = int(
+            args.get("alertmanager_repost_interval_s", 120)
+        )
+        self._alert_bridge: Optional[AlertmanagerBridge] = None
+        if self._alertmanager_url:
+            self._alert_bridge = AlertmanagerBridge(
+                AlertmanagerClient(self._alertmanager_url),
+                log_fn=self.log,
+            )
+
         self.log(
             f"HealthCheckController initialising: "
             f"heartbeat_interval={self._heartbeat_interval_s}s, "
             f"alert_history_max={self._alert_history_max}, "
-            f"alert_retention={self._alert_retention}",
+            f"alert_retention={self._alert_retention}, "
+            f"alertmanager={'enabled (' + self._alertmanager_url + ')' if self._alert_bridge else 'disabled'}",
             level="INFO",
         )
 
@@ -109,6 +133,14 @@ class HealthCheckController(hass.Hass):
 
         # Start heartbeat timer
         self.run_every(self._heartbeat_tick, "now", self._heartbeat_interval_s)
+
+        # Keep firing alerts alive in Alertmanager (re-post < resolve_timeout)
+        if self._alert_bridge is not None:
+            self.run_every(
+                self._alert_repost_tick,
+                f"now+{self._alert_repost_interval_s}",
+                self._alert_repost_interval_s,
+            )
 
         # Publish initial state
         self._publish_status()
@@ -194,6 +226,11 @@ class HealthCheckController(hass.Hass):
     # Heartbeat
     # ------------------------------------------------------------------
 
+    def _alert_repost_tick(self, kwargs: Any) -> None:
+        """Re-post firing alerts so they outlive Alertmanager's resolve_timeout."""
+        if self._alert_bridge is not None:
+            self.create_task(self._alert_bridge.repost_active())
+
     def _heartbeat_tick(self, kwargs: Any) -> None:
         """Update the heartbeat helper with the current timestamp."""
         now = datetime.datetime.now()
@@ -270,6 +307,7 @@ class HealthCheckController(hass.Hass):
             "supports_repair": bool(payload.get("supports_repair", False)),
             "repair_state": payload.get("repair_state"),
             "dependencies": payload.get("dependencies", []),
+            "alerting": payload.get("alerting") or {},
         }
 
         action = "Registered" if is_new else "Re-registered"
@@ -389,15 +427,24 @@ class HealthCheckController(hass.Hass):
                         "is_repair_event": True,
                     })
 
-        checker["checks"] = new_checks
-        checker["status"] = worst_status
-        checker["last_check"] = now_iso
-
-        self.log(
-            f"Status report from '{checker['name']}': {worst_status} "
-            f"({len(results)} checks)",
-            level="INFO",
-        )
+        # Repair-status-only reports (results=[]) must not wipe the checks
+        # list or reset the checker to ok — that would falsely resolve any
+        # Alertmanager alert mid-repair.  Only full reports replace state.
+        if results:
+            checker["checks"] = new_checks
+            checker["status"] = worst_status
+            checker["last_check"] = now_iso
+            self.log(
+                f"Status report from '{checker['name']}': {worst_status} "
+                f"({len(results)} checks)",
+                level="INFO",
+            )
+        else:
+            self.log(
+                f"Repair-state-only report from '{checker['name']}' "
+                f"(status stays {checker['status']})",
+                level="DEBUG",
+            )
         self._publish_status()
 
     def _handle_force_recheck(self, payload: dict) -> None:
@@ -505,9 +552,15 @@ class HealthCheckController(hass.Hass):
     def _resolve_dependencies(self, checker_id: str, checker: dict) -> dict:
         """Return a copy of checker with dependency-affected checks overridden.
 
-        When a dependency checker is not in an acceptable state (ok or warning),
-        the checks that depend on it are overridden to ``unknown`` in the
-        published view. The internal ``_checkers`` state is never modified here.
+        When a dependency checker is unhealthy (critical/degraded) or missing
+        entirely, the checks that depend on it are overridden to ``unknown``
+        in the published view. The internal ``_checkers`` state is never
+        modified here.
+
+        A dependency that is merely ``unknown`` (registered but not yet — or
+        no longer — reporting) does NOT mask its dependents: an unknown
+        dependency raises no alert itself, so masking would let a genuine
+        dependent failure go completely silent.
         """
         deps = checker.get("dependencies", [])
         if not deps:
@@ -521,7 +574,7 @@ class HealthCheckController(hass.Hass):
             dep_id = dep.get("checker_id", "")
             dep_checker = self._checkers.get(dep_id)
             # Treat missing dependency as unhealthy
-            if dep_checker is None or dep_checker["status"] not in ("ok", "warning"):
+            if dep_checker is None or dep_checker["status"] in ("critical", "degraded"):
                 dep_name = dep_checker["name"] if dep_checker else dep_id
                 affects = dep.get("affects_checks", [])
                 targets = set(affects) if affects else all_check_names
@@ -640,3 +693,18 @@ class HealthCheckController(hass.Hass):
             level="DEBUG",
         )
         self.set_state(SENSOR_ENTITY_ID, state=overall, attributes=attrs)
+
+        # Mirror the resolved view into Alertmanager.  Copies are taken so
+        # later state mutations can't race the async post.
+        if self._alert_bridge is not None:
+            snapshot = {
+                cid: {
+                    "name": c["name"],
+                    "status": c["status"],
+                    "checks": [dict(ch) for ch in c["checks"]],
+                    "alerting": c.get("alerting") or {},
+                    "repair_state": copy.deepcopy(c.get("repair_state")),
+                }
+                for cid, c in resolved.items()
+            }
+            self.create_task(self._alert_bridge.sync(snapshot))

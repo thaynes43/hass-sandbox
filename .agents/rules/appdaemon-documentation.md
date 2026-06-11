@@ -87,7 +87,8 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers/gemini` | `appdaemon/providers/ai_providers/gemini/README.md` | Google Gemini adapter (text, multimodal, image) |
 | `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal) |
 | `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image) |
-| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) |
+| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) |
+| `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
 | `media_providers` | `appdaemon/providers/media_providers/README.md` | HTTP clients and fetchers for Tautulli, TMDb, and MovieGlu |
@@ -147,6 +148,7 @@ vestaboard_controller (vestaboard_apps/vestaboard_controller)
 media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publishes sensors for compact and detail Lovelace cards)
 
 health_check_controller (listens for health_check_command events from all checkers)
+  │    — mirrors checker health → Alertmanager (providers/alertmanager) when alertmanager_url set
   ├─ cloud_checker/cloud (root dependency)
   │    └─ depended on by: cielo, lock_batteries
   ├─ mqtt_broker_checker/mqtt_broker (root dependency)
@@ -163,7 +165,9 @@ health_check_controller (listens for health_check_command events from all checke
   ├─ device_group_checker/cielo (depends on: cloud)
   ├─ fan_health_checker/fans
   ├─ spa_health_checker/spa (depends on: cloud)
-  └─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
+  ├─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
+  ├─ protect_health_checker/protect (uses ha_provisioner HaAdminClient for discovery + config-entry reload)
+  └─ imagegen_health_checker/imagegen (uses ai_providers/comfyui status client)
 
 countdown_app
   └─ depends on: ai_providers (image generation), ha_provisioner (relay script provisioning)
