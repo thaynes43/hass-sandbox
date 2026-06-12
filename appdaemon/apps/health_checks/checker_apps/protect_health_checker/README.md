@@ -7,21 +7,39 @@ Detects and auto-heals the silent UniFi Protect websocket freeze. The failure mo
 | Check | Method | Healthy When |
 |-------|--------|-------------|
 | Sensor Discovery | `integration_entities()` template rendered server-side via `HaAdminClient` (or the `motion_entities` config override) | At least one Protect event sensor found |
-| Event Stream | Newest `last_changed` across all event sensors, aged in **active-hours seconds** | Younger than `stale_after_s`, or (while frozen) a genuine post-freeze event has arrived |
+| Sensor Availability | Share of event sensors `unavailable` longer than `availability_grace_s` | Below `availability_critical_pct` (critical) and zero (ok); anything in between is a warning |
+| Camera Events | Newest `last_changed` across **available camera-group** sensors, aged in **active-hours seconds** | Younger than `stale_after_s`, or (while frozen) a genuine post-freeze event has arrived |
+| Entry Sensors | Availability of the USL entry-sensor group, with a last-event detail | All entry channels available (quiet doors never page) |
 
 ### Sensor Discovery
 
-Discovery renders a Jinja2 template against live HA that lists every `binary_sensor` owned by `integration_domain`, then keeps motion sensors (`device_class: motion`) and smart detections (entity IDs ending `_detected`). No entity list to maintain — new cameras are picked up automatically.
+Discovery renders a Jinja2 template against live HA that lists every `binary_sensor` owned by `integration_domain` (entity ID, device class, state, `last_changed`, device ID), then classifies by **device**: any Protect device that exposes a `door`/`moisture`/`tamper` channel is an **entry sensor** (USL) — its motion and contact channels join the entry group; everything else with `device_class: motion` or an `_detected` suffix is a **camera**. No entity list to maintain — new cameras are picked up automatically.
 
 - **ok** — N event sensors discovered
 - **warning** — template render failed but a cached sensor list from a previous cycle is available (falls back to per-entity `get_state`)
 - **critical** — no event sensors found (config entry not loaded?), or no `ha_url`/`ha_token_env` and no `motion_entities` override
 
-Setting `motion_entities` skips template discovery entirely and monitors exactly that list.
+Setting `motion_entities` skips template discovery entirely and monitors exactly that list (all treated as the camera group).
 
-### Event Stream — active-hours staleness
+### Sensor Availability — the hard-outage fast path
+
+The freeze the staleness check hunts is *silent*: sensors stay available but stop changing. A **hard** outage (UNVR down, auth failure like the 2026-06-11 401s) looks completely different — every entity flips to `unavailable` at once. Two properties make this its own check:
+
+- An `unavailable` transition **refreshes `last_changed` without being an event**, so the staleness clock restarts and would not fire for another `stale_after_s` (3h). The availability check pages in `availability_grace_s` (default 15m) instead.
+- A sensor counts as *down* only after it has been unavailable for longer than the grace period (its `last_changed` is the transition moment; entities missing from the state machine entirely are timed from first observation). The grace also absorbs the brief unavailable blip a config-entry reload causes, so auto-heal cannot trip its own alarm mid-repair.
+- Recovery is **latched**: once an outage is confirmed, only sensors actually coming back available clear it. A reload re-registers every entity and resets every `last_changed` — without the latch, a *failed* heal would reset the dwell clocks, false-resolve the page, and flap on every retry. (This is the availability-path analogue of the frozen-baseline rule below.)
+
+`availability_critical_pct` (default 90) of sensors down → **critical** (integration-level outage → pages, and auto-heal fires). Any smaller subset down → **warning** (e.g. the USL group dropping off overnight) — visible in Alertmanager/dashboard, no page.
+
+### Camera Events — active-hours staleness
 
 Overnight the house is quiet and some cameras legitimately see nothing for ~12 hours, so wall-clock staleness would false-positive every morning. Instead, the age of the newest event is measured as the **overlap between [newest event, now] and the daily active window** (`active_start`–`active_end` in `active_tz`, must not cross midnight). Overnight hours contribute zero staleness, and a freeze is only ever *declared* while the current time is inside the window. With the defaults (08:00–23:00, 3h threshold), a websocket that dies overnight is detected by ~11:00 the next morning.
+
+Freshness only ever considers **available camera-group** sensors: unavailable sensors are excluded (their `last_changed` is a transition, not an event), and entry-sensor activity cannot mask a camera freeze. If every camera sensor is unavailable the check reports `unknown` and Sensor Availability carries the alert — unless a freeze was already firing, in which case it stays critical so the page is not dropped mid-incident.
+
+### Entry Sensors
+
+The USL entry sensors (motion + contact channels) get their own line item: **ok** with a newest-event detail while available, **warning** when channels are unavailable past the grace period. There is deliberately no freshness threshold — a door that nobody opens for a day is normal and must never page.
 
 ## Frozen-Baseline State Machine
 
@@ -98,6 +116,8 @@ protect_health_checker:
   active_end: "23:00"                     # Daily active window end (default: 23:00; must not cross midnight)
   active_tz: America/New_York             # Timezone for the window (default: America/New_York)
   check_interval_s: 300                   # Check frequency (default: 300)
+  availability_grace_s: 900               # Unavailable dwell before a sensor counts as down (default: 900 = 15m)
+  availability_critical_pct: 90           # % of sensors down for availability critical (default: 90)
   reload_cooldown_s: 3600                 # Min seconds between auto-repair reloads (default: 3600)
   repair_settle_s: 60                     # Post-reload settle window; re-registration timestamps inside it don't count (default: 60)
   repair_recovery_wait_s: 600             # Max seconds to wait for a genuine event after reload (default: 600)

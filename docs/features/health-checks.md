@@ -27,7 +27,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Device groups | Cielo AC controllers, TP-Link plugs — related devices as one unit | `DeviceGroupChecker` |
 | Ceiling fans | Modern Forms fans with per-fan repair | `FanHealthChecker` |
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
-| Camera events | UniFi Protect motion/smart-detection stream — silent-freeze detection with config-entry reload auto-heal | `ProtectHealthChecker` |
+| Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
 
@@ -145,6 +145,8 @@ The two checkers that drove this integration show the two ends of the spectrum:
 
 **UniFi Protect** has a known failure mode where its websocket dies silently: camera entities keep updating, but every motion and smart-detection sensor stops changing state — with zero log errors. The checker detects the freeze (no events for hours *of active daytime*, so a quiet night never false-positives), reloads the Protect config entry automatically, and then waits for a *genuine* new event to prove the stream is really back — the reload itself re-registers every sensor with fresh timestamps, which would otherwise look like a recovery. Most freezes heal themselves this way; the page only goes out if the reload didn't work, and the alert keeps firing (annotated "auto-repair FAILED") until events actually resume.
 
+A second, harder failure mode gets its own fast path: when the UNVR connection is lost outright (a reboot, an auth failure), every Protect entity flips to `unavailable` at once. That transition refreshes the sensors' timestamps, so the staleness detector alone would wait hours — instead, a **Sensor Availability** check pages within ~15 minutes when essentially everything is unavailable, and the same config-entry reload auto-heal kicks in. The USL entry sensors (door contact/motion) are broken out as their own **Entry Sensors** line item: they warn when offline, but a door that nobody opens for hours never pages.
+
 **ComfyUI** is the opposite. A queue that stops moving — or an API that stops answering — is the classic symptom of the GPU falling off the PCI bus on the virtualization host, and only a host reboot fixes that. No automation can help, so this checker is deliberately page-only: it raises the alarm and stays out of the way. Its thresholds are tuned to the real workload — the first generation after a ComfyUI restart takes ~8.5 minutes of model loading, well under the 30-minute stuck threshold, so cold starts never page.
 
 ## Dashboard Experience
@@ -252,7 +254,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Printer | `RepairableDeviceChecker` | Entity state + IP ping | Yes — power cycle |
 | Vestaboard | `BasicDeviceChecker` | Controller + configuration status | No |
 | Cielo Home | `DeviceGroupChecker` | AC controller status + IP per room | No |
-| UniFi Protect | `ProtectHealthChecker` | Event sensor discovery + event-stream freshness in active hours | Yes — config entry reload |
+| UniFi Protect | `ProtectHealthChecker` | Sensor discovery + availability fast path + camera-event freshness in active hours + entry-sensor group | Yes — config entry reload |
 | Image Gen | `ImageGenHealthChecker` | ComfyUI API reachability + queue progress | No — page only |
 
 ## Related

@@ -28,8 +28,13 @@ sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root))
 
 from health_checks.checker_apps.protect_health_checker.protect_health_checker import (
+    AVAILABILITY_CHECK,
     DISCOVERY_CHECK,
-    EVENT_STREAM_CHECK,
+    CAMERA_EVENTS_CHECK,
+    ENTRY_SENSORS_CHECK,
+    EventSensor,
+    GROUP_CAMERA,
+    GROUP_ENTRY,
     ProtectHealthChecker,
     REPAIR_FAILED,
     REPAIR_IDLE,
@@ -396,7 +401,12 @@ class TestLifecycle:
         payload = json.loads(register_calls[0][1]["payload"])
         assert payload["supports_repair"] is True
         assert payload["checker_id"] == "protect"
-        assert payload["check_names"] == [DISCOVERY_CHECK, EVENT_STREAM_CHECK]
+        assert payload["check_names"] == [
+            DISCOVERY_CHECK,
+            AVAILABILITY_CHECK,
+            CAMERA_EVENTS_CHECK,
+            ENTRY_SENSORS_CHECK,
+        ]
         assert payload["alerting"] == alerting
         assert payload["repair_state"]["status"] == REPAIR_IDLE
 
@@ -434,7 +444,7 @@ class TestEventStream:
         ]
         result = app._check_event_stream(sensors)
         assert result["status"] == "ok"
-        assert result["name"] == EVENT_STREAM_CHECK
+        assert result["name"] == CAMERA_EVENTS_CHECK
         assert "driveway_motion" in result["detail"]
         assert app._frozen is False
 
@@ -488,7 +498,7 @@ class TestEventStream:
         _init_only(app)
         result = app._check_event_stream([])
         assert result["status"] == "unknown"
-        assert result["name"] == EVENT_STREAM_CHECK
+        assert result["name"] == CAMERA_EVENTS_CHECK
 
     def test_sensors_without_timestamps_unknown(self):
         app = _make_app()
@@ -595,25 +605,39 @@ class TestDiscovery:
         app = _make_app()
         _init_only(app)
         rows = [
-            ["binary_sensor.g4_doorbell_motion", "motion", self._recent_iso(10)],
+            # Camera channels
+            [
+                "binary_sensor.g4_doorbell_motion",
+                "motion", "off", self._recent_iso(10), "dev_cam1",
+            ],
             # Smart detections render device_class as the string "None"
             [
                 "binary_sensor.g4_doorbell_person_detected",
-                "None",
-                self._recent_iso(5),
+                "None", "off", self._recent_iso(5), "dev_cam1",
             ],
             # _detected wins even with a non-motion device_class
             [
                 "binary_sensor.backyard_doorbell_detected",
-                "occupancy",
-                self._recent_iso(7),
+                "occupancy", "off", self._recent_iso(7), "dev_cam2",
+            ],
+            # USL entry sensor: door channel marks the device as entry;
+            # its motion + door channels are entry events, tamper dropped
+            [
+                "binary_sensor.usl_kitchen_motion",
+                "motion", "off", self._recent_iso(20), "dev_usl1",
+            ],
+            [
+                "binary_sensor.usl_kitchen_contact",
+                "door", "off", self._recent_iso(3), "dev_usl1",
+            ],
+            [
+                "binary_sensor.usl_kitchen_tamper",
+                "tamper", "off", self._recent_iso(3), "dev_usl1",
             ],
             # All of these must be dropped:
-            ["binary_sensor.g4_doorbell_is_dark", "None", self._recent_iso(60)],
-            ["binary_sensor.front_gate_door", "door", self._recent_iso(3)],
-            ["binary_sensor.nvr_storage_problem", "problem", self._recent_iso(2)],
-            ["binary_sensor.garage_occupancy", "occupancy", self._recent_iso(1)],
-            ["binary_sensor.basement_moisture", "moisture", self._recent_iso(4)],
+            ["binary_sensor.g4_doorbell_is_dark", "None", "off", self._recent_iso(60), "dev_cam1"],
+            ["binary_sensor.nvr_storage_problem", "problem", "off", self._recent_iso(2), "dev_nvr"],
+            ["binary_sensor.garage_occupancy", "occupancy", "off", self._recent_iso(1), "dev_cam3"],
         ]
         admin = _make_mock_admin()
         admin.render_template = AsyncMock(return_value=json.dumps(rows))
@@ -621,19 +645,35 @@ class TestDiscovery:
 
         sensors, result = _run(app._discover_sensors())
 
-        ids = [e for e, _ in sensors]
-        assert ids == [
+        by_id = {s.entity_id: s for s in sensors}
+        assert set(by_id) == {
+            "binary_sensor.g4_doorbell_motion",
+            "binary_sensor.g4_doorbell_person_detected",
+            "binary_sensor.backyard_doorbell_detected",
+            "binary_sensor.usl_kitchen_motion",
+            "binary_sensor.usl_kitchen_contact",
+        }
+        # Device-based grouping: USL channels (incl. its motion) are entry
+        assert by_id["binary_sensor.usl_kitchen_motion"].group == GROUP_ENTRY
+        assert by_id["binary_sensor.usl_kitchen_contact"].group == GROUP_ENTRY
+        assert by_id["binary_sensor.g4_doorbell_motion"].group == GROUP_CAMERA
+        assert by_id["binary_sensor.backyard_doorbell_detected"].group == GROUP_CAMERA
+        assert result["status"] == "ok"
+        assert result["name"] == DISCOVERY_CHECK
+        assert "5 event sensors" in result["detail"]
+        assert "3 camera, 2 entry" in result["detail"]
+        # Caches: _sensors holds the CAMERA group; groups map holds all
+        assert app._sensors == [
             "binary_sensor.g4_doorbell_motion",
             "binary_sensor.g4_doorbell_person_detected",
             "binary_sensor.backyard_doorbell_detected",
         ]
-        assert result["status"] == "ok"
-        assert result["name"] == DISCOVERY_CHECK
-        assert "3 event sensors" in result["detail"]
-        # Cache populated with the kept entity ids
-        assert app._sensors == ids
+        assert app._sensor_groups["binary_sensor.usl_kitchen_contact"] == GROUP_ENTRY
         # Timestamps parsed to aware datetimes
-        assert all(ts is not None and ts.tzinfo is not None for _, ts in sensors)
+        assert all(
+            s.last_changed is not None and s.last_changed.tzinfo is not None
+            for s in sensors
+        )
         # Template targets the configured integration domain
         template = admin.render_template.call_args[0][0]
         assert "integration_entities('unifiprotect')" in template
@@ -657,16 +697,19 @@ class TestDiscovery:
             side_effect=RuntimeError("registry down")
         )
         app._admin = admin
-        app._sensors = ["binary_sensor.cached_motion"]
+        app._sensor_groups = {"binary_sensor.cached_motion": GROUP_CAMERA}
         recent = self._recent_iso(1)
-        app.get_state = AsyncMock(return_value={"last_changed": recent})
+        app.get_state = AsyncMock(
+            return_value={"state": "off", "last_changed": recent}
+        )
 
         sensors, result = _run(app._discover_sensors())
 
         assert result["status"] == "warning"
         assert "cached" in result["detail"]
-        assert [e for e, _ in sensors] == ["binary_sensor.cached_motion"]
-        assert sensors[0][1] == _parse_iso_utc(recent)
+        assert [s.entity_id for s in sensors] == ["binary_sensor.cached_motion"]
+        assert sensors[0].last_changed == _parse_iso_utc(recent)
+        assert sensors[0].group == GROUP_CAMERA
         app.get_state.assert_awaited_once_with(
             "binary_sensor.cached_motion", attribute="all"
         )
@@ -677,7 +720,7 @@ class TestDiscovery:
         admin = _make_mock_admin()
         admin.render_template = AsyncMock(side_effect=RuntimeError("boom"))
         app._admin = admin
-        app._sensors = []
+        app._sensor_groups = {}
         sensors, result = _run(app._discover_sensors())
         assert sensors == []
         assert result["status"] == "critical"
@@ -705,17 +748,21 @@ class TestDiscovery:
         admin = _make_mock_admin()
         app._admin = admin
         recent = self._recent_iso(1)
-        app.get_state = AsyncMock(return_value={"last_changed": recent})
+        app.get_state = AsyncMock(
+            return_value={"state": "off", "last_changed": recent}
+        )
 
         sensors, result = _run(app._discover_sensors())
 
         assert result["status"] == "ok"
         assert "2 configured event sensors" in result["detail"]
-        assert [e for e, _ in sensors] == [
+        assert [s.entity_id for s in sensors] == [
             "binary_sensor.cam_a_motion",
             "binary_sensor.cam_b_motion",
         ]
-        assert app._sensors == [e for e, _ in sensors]
+        # Override entities are all treated as the camera group
+        assert all(s.group == GROUP_CAMERA for s in sensors)
+        assert app._sensors == [s.entity_id for s in sensors]
         admin.render_template.assert_not_called()
         admin.list_config_entries.assert_not_called()
 
@@ -742,7 +789,7 @@ class TestDiscovery:
 CRITICAL_RESULTS = [
     {"name": DISCOVERY_CHECK, "status": "ok", "detail": "4 event sensors"},
     {
-        "name": EVENT_STREAM_CHECK,
+        "name": CAMERA_EVENTS_CHECK,
         "status": "critical",
         "detail": "No events for 4.0h of active hours",
     },
@@ -750,7 +797,7 @@ CRITICAL_RESULTS = [
 
 OK_RESULTS = [
     {"name": DISCOVERY_CHECK, "status": "ok", "detail": ""},
-    {"name": EVENT_STREAM_CHECK, "status": "ok", "detail": ""},
+    {"name": CAMERA_EVENTS_CHECK, "status": "ok", "detail": ""},
 ]
 
 
@@ -867,7 +914,7 @@ class TestAutoRepairStateMachine:
         app = self._prepped()
         results = [
             {"name": DISCOVERY_CHECK, "status": "warning", "detail": "cached"},
-            {"name": EVENT_STREAM_CHECK, "status": "ok", "detail": ""},
+            {"name": CAMERA_EVENTS_CHECK, "status": "ok", "detail": ""},
         ]
         app._evaluate_auto_repair(results)
         assert app._repair_status == REPAIR_IDLE
@@ -1139,14 +1186,16 @@ class TestAnyEventAfterReal:
         baseline = datetime.datetime.now(UTC)
         states = {
             "binary_sensor.a": {
+                "state": "off",
                 "last_changed": (
                     baseline - datetime.timedelta(seconds=30)
-                ).isoformat()
+                ).isoformat(),
             },
             "binary_sensor.b": {
+                "state": "off",
                 "last_changed": (
                     baseline + datetime.timedelta(seconds=30)
-                ).isoformat()
+                ).isoformat(),
             },
         }
         app = self._app_with_states(states)
@@ -1176,13 +1225,398 @@ class TestAnyEventAfterReal:
         states = {
             "binary_sensor.err": RuntimeError("HA hiccup"),
             "binary_sensor.gone": None,
-            "binary_sensor.bad": {"last_changed": "not-a-timestamp"},
+            "binary_sensor.bad": {"state": "off", "last_changed": "not-a-timestamp"},
+            "binary_sensor.unavail": {
+                # Post-baseline transition INTO unavailable is NOT an event
+                "state": "unavailable",
+                "last_changed": (
+                    baseline + datetime.timedelta(seconds=20)
+                ).isoformat(),
+            },
             "binary_sensor.good": {
+                "state": "on",
                 "last_changed": (
                     baseline + datetime.timedelta(seconds=10)
-                ).isoformat()
+                ).isoformat(),
             },
         }
         app = self._app_with_states(states)
 
         assert _run(app._any_event_after(baseline)) == "binary_sensor.good"
+
+
+# ---------------------------------------------------------------------------
+# Tests — Sensor Availability fast path + Entry Sensors line item
+# ---------------------------------------------------------------------------
+
+def _sensor(
+    entity_id: str,
+    group: str = GROUP_CAMERA,
+    state: str = "off",
+    age_s: float = 60,
+) -> EventSensor:
+    return EventSensor(
+        entity_id,
+        state,
+        datetime.datetime.now(UTC) - datetime.timedelta(seconds=age_s),
+        group,
+    )
+
+
+class TestAvailabilityCheck:
+    def test_all_available_is_ok(self):
+        app = _make_app()
+        _init_only(app)
+        sensors = [_sensor("binary_sensor.a"), _sensor("binary_sensor.b")]
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
+        assert result["name"] == AVAILABILITY_CHECK
+
+    def test_mass_unavailable_past_grace_is_critical(self):
+        """The 2026-06-11 outage: UNVR 401 -> every sensor unavailable.
+        After the grace period this must page WITHOUT waiting out the 3h
+        staleness threshold."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
+            for i in range(10)
+        ]
+        result = app._check_availability(sensors)
+        assert result["status"] == "critical"
+        assert "10/10" in result["detail"]
+        assert "connection lost" in result["detail"]
+
+    def test_mass_unavailable_within_grace_is_ok(self):
+        """A config-entry reload makes everything briefly unavailable —
+        the grace period must absorb it (no self-triggering mid-repair)."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=30)
+            for i in range(10)
+        ]
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
+
+    def test_partial_unavailable_is_warning(self):
+        """The 03:26 case: the USL subset drops while cameras keep working."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}") for i in range(8)
+        ] + [
+            _sensor(
+                f"binary_sensor.usl{i}",
+                group=GROUP_ENTRY,
+                state="unavailable",
+                age_s=7200,
+            )
+            for i in range(2)
+        ]
+        result = app._check_availability(sensors)
+        assert result["status"] == "warning"
+        assert "2/10" in result["detail"]
+        assert "binary_sensor.usl0" in result["detail"]
+
+    def test_unavailable_without_timestamp_respects_grace(self):
+        """Entities missing from the state machine entirely (reload unload
+        window) are timed from first observation — instant-down would
+        bypass the grace and false-page mid-repair."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            EventSensor(f"binary_sensor.cam{i}", "unavailable", None, GROUP_CAMERA)
+            for i in range(3)
+        ]
+        # First observation: grace clock starts now -> not down yet
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
+
+        # Backdate the first-seen times past the grace -> confirmed down
+        backdated = datetime.datetime.now(UTC) - datetime.timedelta(seconds=1000)
+        for entity_id in app._missing_since:
+            app._missing_since[entity_id] = backdated
+        result = app._check_availability(sensors)
+        assert result["status"] == "critical"
+
+    def test_latch_survives_reload_resetting_dwell_clocks(self):
+        """Finding from review: a reload re-registers everything, resetting
+        every last_changed. A FAILED heal must not false-resolve the page —
+        once confirmed, only sensors actually coming back clears it."""
+        app = _make_app()
+        _init_only(app)
+        # Confirmed outage (dwell past grace)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
+            for i in range(10)
+        ]
+        assert app._check_availability(sensors)["status"] == "critical"
+        assert app._availability_down is True
+
+        # Post-reload: still unavailable but with FRESH transition times
+        fresh = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=10)
+            for i in range(10)
+        ]
+        result = app._check_availability(fresh)
+        assert result["status"] == "critical"  # latched — no false resolve
+        assert app._availability_down is True
+
+        # Genuine recovery: sensors actually available again
+        recovered = [_sensor(f"binary_sensor.cam{i}") for i in range(10)]
+        result = app._check_availability(recovered)
+        assert result["status"] == "ok"
+        assert app._availability_down is False
+
+    def test_partial_recovery_holds_latch_at_warning_and_repages_on_relapse(self):
+        """Review finding: after a reload partially recovers (some sensors
+        back, the rest still down with FRESH timestamps), falling through to
+        the dwell path would read false-ok for a grace period and reset the
+        repair state. The latch must hold at warning until ALL sensors are
+        back — and a relapse during recovery must re-page instantly."""
+        app = _make_app()
+        _init_only(app)
+        # Confirmed outage
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
+            for i in range(10)
+        ]
+        assert app._check_availability(sensors)["status"] == "critical"
+
+        # Partial recovery: 2 back, 8 still down with fresh post-reload ts
+        partial = [_sensor(f"binary_sensor.cam{i}", age_s=10) for i in range(2)] + [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=10)
+            for i in range(2, 10)
+        ]
+        result = app._check_availability(partial)
+        assert result["status"] == "warning"  # NOT ok
+        assert "recovering" in result["detail"]
+        assert "8/10" in result["detail"]
+        assert app._availability_down is True  # latch held
+
+        # Relapse during recovery: instantly critical, no dwell re-wait
+        relapse = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=5)
+            for i in range(10)
+        ]
+        result = app._check_availability(relapse)
+        assert result["status"] == "critical"
+        assert app._availability_down is True
+
+        # Full recovery clears the latch
+        recovered = [_sensor(f"binary_sensor.cam{i}") for i in range(10)]
+        assert app._check_availability(recovered)["status"] == "ok"
+        assert app._availability_down is False
+
+    def test_no_sensors_unknown(self):
+        app = _make_app()
+        _init_only(app)
+        assert app._check_availability([])["status"] == "unknown"
+
+    def test_critical_pct_threshold_respected(self):
+        app = _make_app({"availability_critical_pct": 50})
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.up{i}") for i in range(4)
+        ] + [
+            _sensor(
+                f"binary_sensor.down{i}", state="unavailable", age_s=2000
+            )
+            for i in range(6)
+        ]
+        result = app._check_availability(sensors)
+        assert result["status"] == "critical"
+
+
+class TestEntrySensorsCheck:
+    def test_no_entry_sensors_is_ok(self):
+        app = _make_app()
+        _init_only(app)
+        sensors = [_sensor("binary_sensor.cam_motion")]
+        result = app._check_entry_sensors(sensors)
+        assert result["status"] == "ok"
+        assert "No entry sensors" in result["detail"]
+        assert result["name"] == ENTRY_SENSORS_CHECK
+
+    def test_available_entry_sensors_show_newest_event(self):
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor("binary_sensor.cam_motion"),
+            _sensor("binary_sensor.usl_motion", group=GROUP_ENTRY, age_s=300),
+            _sensor("binary_sensor.usl_contact", group=GROUP_ENTRY, age_s=7200),
+        ]
+        result = app._check_entry_sensors(sensors)
+        assert result["status"] == "ok"
+        assert "2 channels available" in result["detail"]
+        assert "binary_sensor.usl_motion" in result["detail"]
+
+    def test_quiet_entry_sensors_never_page(self):
+        """A door not opening for many hours is normal — must stay ok."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(
+                "binary_sensor.usl_contact",
+                group=GROUP_ENTRY,
+                age_s=60 * 60 * 30,  # 30h since last event, still online
+            )
+        ]
+        result = app._check_entry_sensors(sensors)
+        assert result["status"] == "ok"
+
+    def test_unavailable_entry_sensors_warn(self):
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(
+                "binary_sensor.usl_motion",
+                group=GROUP_ENTRY,
+                state="unavailable",
+                age_s=7200,
+            ),
+            _sensor("binary_sensor.usl_contact", group=GROUP_ENTRY),
+        ]
+        result = app._check_entry_sensors(sensors)
+        assert result["status"] == "warning"
+        assert "1/2" in result["detail"]
+
+
+class TestFrozenWithUnavailableSensors:
+    def test_frozen_stays_critical_when_cameras_go_unavailable(self):
+        """Freeze firing, then the integration dies on top of it: the empty
+        available-camera list must keep the check critical, not flip it to
+        unknown (which would resolve the page)."""
+        app = _make_app()
+        _init_only(app)
+        app._frozen = True
+        app._frozen_since = datetime.datetime.now(UTC) - datetime.timedelta(
+            hours=1
+        )
+        app._event_baseline = datetime.datetime.now(UTC)
+
+        result = app._check_event_stream([])
+
+        assert result["status"] == "critical"
+        assert "unavailable" in result["detail"]
+        assert app._frozen is True
+
+    def test_run_checks_reports_four_results_and_excludes_unavailable(self):
+        """End-to-end _run_checks: all sensors unavailable past grace ->
+        Availability critical, Camera Events unknown (no fresh-timestamp
+        false health), and the report carries all four checks."""
+        app = _make_app()
+        _init_only(app)
+        rows = [
+            [
+                f"binary_sensor.cam{i}_motion",
+                "motion",
+                "unavailable",
+                (
+                    datetime.datetime.now(UTC) - datetime.timedelta(seconds=1000)
+                ).isoformat(),
+                f"dev{i}",
+            ]
+            for i in range(5)
+        ]
+        admin = _make_mock_admin()
+        admin.render_template = AsyncMock(return_value=json.dumps(rows))
+        app._admin = admin
+        app.get_state = AsyncMock(return_value=None)
+
+        _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        assert len(report_calls) == 1
+        payload = json.loads(report_calls[0][1]["payload"])
+        by_name = {r["name"]: r for r in payload["results"]}
+        assert set(by_name) == {
+            DISCOVERY_CHECK,
+            AVAILABILITY_CHECK,
+            CAMERA_EVENTS_CHECK,
+            ENTRY_SENSORS_CHECK,
+        }
+        assert by_name[AVAILABILITY_CHECK]["status"] == "critical"
+        # The unavailable transitions refreshed last_changed, but they are
+        # NOT events — Camera Events must not report fresh health.
+        assert by_name[CAMERA_EVENTS_CHECK]["status"] == "unknown"
+        assert by_name[DISCOVERY_CHECK]["status"] == "ok"
+
+
+class TestRepairStandDownOnWarnings:
+    def test_chronic_warning_does_not_pin_success_state(self):
+        """A lingering warning (e.g. USL sensor offline for days) must not
+        leave repair stuck in SUCCESS — that guard would block auto-heal
+        for the NEXT freeze."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._repair_status = REPAIR_SUCCESS
+
+        warning_only = [
+            {"name": CAMERA_EVENTS_CHECK, "status": "ok", "detail": ""},
+            {"name": ENTRY_SENSORS_CHECK, "status": "warning", "detail": "1/2 down"},
+        ]
+        app._evaluate_auto_repair(warning_only)
+        assert app._repair_status == REPAIR_IDLE
+
+        # A new critical can now arm a repair again
+        critical = [
+            {"name": CAMERA_EVENTS_CHECK, "status": "critical", "detail": "frozen"},
+            {"name": ENTRY_SENSORS_CHECK, "status": "warning", "detail": "1/2 down"},
+        ]
+        app._evaluate_auto_repair(critical)
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_illusory_success_rearms_while_still_critical(self):
+        """If checks are STILL critical after a 'successful' reload, the
+        success was illusory — repair must re-arm (cooldown-paced), not pin
+        SUCCESS forever."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._repair_status = REPAIR_SUCCESS
+        app._last_reload_at = datetime.datetime.now()  # cooldown active
+
+        critical = [
+            {"name": AVAILABILITY_CHECK, "status": "critical", "detail": "down"},
+        ]
+        app._evaluate_auto_repair(critical)
+
+        # Re-armed as pending with a cooldown-pushed deadline
+        assert app._repair_status == REPAIR_PENDING
+        assert app._auto_repair_deadline is not None
+        assert app._auto_repair_deadline > datetime.datetime.now()
+
+        # Once the cooldown lapses, the next critical cycle starts the repair
+        app._last_reload_at = datetime.datetime.now() - datetime.timedelta(
+            seconds=app._reload_cooldown_s + 1
+        )
+        app._auto_repair_deadline = datetime.datetime.now() - datetime.timedelta(
+            seconds=1
+        )
+        with patch.object(app, "_start_repair") as start:
+            app._evaluate_auto_repair(critical)
+        start.assert_called_once()
+
+    def test_pending_cancelled_when_criticals_clear_despite_warning(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._repair_status = REPAIR_PENDING
+        app._auto_repair_deadline = datetime.datetime.now() + datetime.timedelta(
+            minutes=5
+        )
+        app._unhealthy_since = datetime.datetime.now()
+
+        app._evaluate_auto_repair(
+            [{"name": CAMERA_EVENTS_CHECK, "status": "warning", "detail": ""}]
+        )
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+        assert app._unhealthy_since is None
