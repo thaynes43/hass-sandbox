@@ -741,7 +741,13 @@ class ProtectHealthChecker(hass.Hass):
     def _update_device_maps_from_sensors(
         self, sensors: List[EventSensor]
     ) -> None:
-        """Device maps from tracked sensors only (override/fallback paths)."""
+        """Device maps from tracked sensors only (override/fallback paths).
+
+        Degraded liveness precision vs the template path: without the
+        non-event channels (e.g. is_dark), a camera whose every event
+        channel is disabled reads as dark here.  Acceptable — these paths
+        are transient (discovery failure) or explicitly configured.
+        """
         self._set_device_maps(
             [
                 (_sensor_device(s), s.state, s.last_changed)
@@ -807,8 +813,10 @@ class ProtectHealthChecker(hass.Hass):
                 continue
             since = self._device_dark_since.get(device_key)
             if since is None:
-                # Dark with no timestamp (entities gone entirely) — treat
-                # as just past the debounce.
+                # Dark with no timestamp (entities gone from the state
+                # machine entirely) — deliberately bypasses BOTH the
+                # debounce and the warn-window cap: complete disappearance
+                # is a harder failure than unavailable and stays visible.
                 out.append(device_key)
                 continue
             age = (now_utc - since).total_seconds()
@@ -869,6 +877,13 @@ class ProtectHealthChecker(hass.Hass):
         window of going dark.  Channels dead on a live device are disabled
         features, and devices dark since before the app started (or past
         the window) are expected downtime — both stay quiet, by design.
+
+        Deliberate trade-off: the warn window also bounds the recovery
+        latch, so an outage that lasts past the window and then only
+        PARTIALLY recovers releases the latch and reclassifies the
+        still-dark stragglers as expected-offline.  Accepting long
+        downtime as the new normal is the point — a >24h hardware failure
+        is expected to have been noticed via the page that started it.
         """
         if not sensors:
             return {
