@@ -27,7 +27,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Device groups | Cielo AC controllers, TP-Link plugs — related devices as one unit | `DeviceGroupChecker` |
 | Ceiling fans | Modern Forms fans with per-fan repair | `FanHealthChecker` |
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
-| Camera events | UniFi Protect motion/smart-detection stream — silent-freeze detection with config-entry reload auto-heal | `ProtectHealthChecker` |
+| Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
 

@@ -752,10 +752,24 @@ class ProtectHealthChecker(hass.Hass):
                         "unavailable — integration connection lost"
                     ),
                 }
+            if unavailable_now:
+                # Partial recovery: hold the latch at warning.  The
+                # still-down sensors carry fresh post-reload timestamps
+                # (dwell < grace), so falling through to the dwell path
+                # would read false-ok for a grace period — and a relapse
+                # during recovery must re-page instantly, not re-wait
+                # out the dwell.
+                return {
+                    "name": AVAILABILITY_CHECK,
+                    "status": "warning",
+                    "detail": (
+                        f"{len(unavailable_now)}/{len(sensors)} event "
+                        "sensors still unavailable (recovering)"
+                    ),
+                }
             self._availability_down = False
             self.log(
-                f"Availability outage cleared — "
-                f"{len(sensors) - len(unavailable_now)}/{len(sensors)} "
+                f"Availability outage cleared — all {len(sensors)} "
                 "sensors back",
                 level="INFO",
             )
@@ -782,7 +796,7 @@ class ProtectHealthChecker(hass.Hass):
                 "detail": (
                     f"{len(down)}/{len(sensors)} event sensors unavailable "
                     f"for >{_fmt_age(self._availability_grace_s)} — "
-                    "integration connection lost?"
+                    "integration connection lost"
                 ),
             }
         sample = ", ".join(sorted(down)[:3])

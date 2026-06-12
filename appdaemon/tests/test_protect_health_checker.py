@@ -1369,6 +1369,46 @@ class TestAvailabilityCheck:
         assert result["status"] == "ok"
         assert app._availability_down is False
 
+    def test_partial_recovery_holds_latch_at_warning_and_repages_on_relapse(self):
+        """Review finding: after a reload partially recovers (some sensors
+        back, the rest still down with FRESH timestamps), falling through to
+        the dwell path would read false-ok for a grace period and reset the
+        repair state. The latch must hold at warning until ALL sensors are
+        back — and a relapse during recovery must re-page instantly."""
+        app = _make_app()
+        _init_only(app)
+        # Confirmed outage
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
+            for i in range(10)
+        ]
+        assert app._check_availability(sensors)["status"] == "critical"
+
+        # Partial recovery: 2 back, 8 still down with fresh post-reload ts
+        partial = [_sensor(f"binary_sensor.cam{i}", age_s=10) for i in range(2)] + [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=10)
+            for i in range(2, 10)
+        ]
+        result = app._check_availability(partial)
+        assert result["status"] == "warning"  # NOT ok
+        assert "recovering" in result["detail"]
+        assert "8/10" in result["detail"]
+        assert app._availability_down is True  # latch held
+
+        # Relapse during recovery: instantly critical, no dwell re-wait
+        relapse = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=5)
+            for i in range(10)
+        ]
+        result = app._check_availability(relapse)
+        assert result["status"] == "critical"
+        assert app._availability_down is True
+
+        # Full recovery clears the latch
+        recovered = [_sensor(f"binary_sensor.cam{i}") for i in range(10)]
+        assert app._check_availability(recovered)["status"] == "ok"
+        assert app._availability_down is False
+
     def test_no_sensors_unknown(self):
         app = _make_app()
         _init_only(app)
