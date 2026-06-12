@@ -116,6 +116,12 @@ class EventSensor(NamedTuple):
     state: str
     last_changed: Optional[datetime.datetime]
     group: str  # GROUP_CAMERA or GROUP_ENTRY
+    device_id: str = ""  # registry device; empty → entity is its own device
+
+
+def _sensor_device(s: EventSensor) -> str:
+    """Device key for grouping — entities without a device stand alone."""
+    return s.device_id or s.entity_id
 
 
 def _is_available(state: str) -> bool:
@@ -227,6 +233,12 @@ class ProtectHealthChecker(hass.Hass):
         self._availability_critical_pct: int = int(
             args.get("availability_critical_pct", 90)
         )
+        # How long a freshly-offline device stays warning-worthy.  Past the
+        # window the downtime is accepted as expected (the wireless G6
+        # cameras live unplugged most of the year) and the warning clears.
+        self._availability_warn_window_s: int = int(
+            args.get("availability_warn_window_s", 86400)
+        )
 
         # Repair
         self._reload_cooldown_s: int = int(args.get("reload_cooldown_s", 3600))
@@ -278,6 +290,17 @@ class ProtectHealthChecker(hass.Hass):
         # machine (no last_changed to derive a dwell from).
         self._availability_down: bool = False
         self._missing_since: Dict[str, datetime.datetime] = {}
+
+        # Device-level view (rebuilt each discovery): liveness, when a dark
+        # device went dark, tracked entities per device, plus the set of
+        # devices this app instance has actually witnessed alive — only
+        # those may raise an offline warning (chronically-dark devices and
+        # disabled channels are expected and stay quiet).
+        self._device_live: Dict[str, bool] = {}
+        self._device_dark_since: Dict[str, Optional[datetime.datetime]] = {}
+        self._device_entities: Dict[str, List[str]] = {}
+        self._devices_seen_alive: set = set()
+        self._sensor_devices: Dict[str, str] = {}
 
         self._admin: Optional[HaAdminClient] = None
 
@@ -541,7 +564,9 @@ class ProtectHealthChecker(hass.Hass):
             level="INFO",
         )
 
-    async def _sensor_from_state(self, entity_id: str, group: str) -> EventSensor:
+    async def _sensor_from_state(
+        self, entity_id: str, group: str, device_id: str = ""
+    ) -> EventSensor:
         """Build an EventSensor from AppDaemon's state cache."""
         try:
             attrs = await self.get_state(entity_id, attribute="all")
@@ -551,12 +576,13 @@ class ProtectHealthChecker(hass.Hass):
             )
             attrs = None
         if not attrs:
-            return EventSensor(entity_id, "unavailable", None, group)
+            return EventSensor(entity_id, "unavailable", None, group, device_id)
         return EventSensor(
             entity_id,
             str(attrs.get("state", "unavailable")),
             _parse_iso_utc(attrs.get("last_changed")),
             group,
+            device_id,
         )
 
     async def _discover_sensors(
@@ -575,6 +601,7 @@ class ProtectHealthChecker(hass.Hass):
                 for entity_id in self._motion_entities
             ]
             self._remember_groups(sensors)
+            self._update_device_maps_from_sensors(sensors)
             found = [s for s in sensors if s.last_changed is not None]
             if not found:
                 return sensors, {
@@ -631,11 +658,25 @@ class ProtectHealthChecker(hass.Hass):
                     continue
                 sensors.append(
                     EventSensor(
-                        entity_id, state, _parse_iso_utc(last_changed), group
+                        entity_id,
+                        state,
+                        _parse_iso_utc(last_changed),
+                        group,
+                        device_id,
                     )
                 )
 
             self._remember_groups(sensors)
+            # Device liveness from ALL channels of the integration — a
+            # camera whose every event channel is disabled still proves it
+            # is online via e.g. its is_dark channel.
+            self._set_device_maps(
+                [
+                    (str(r[4]) or str(r[0]), str(r[2]), _parse_iso_utc(r[3]))
+                    for r in rows
+                ],
+                sensors,
+            )
             if not sensors:
                 return sensors, {
                     "name": DISCOVERY_CHECK,
@@ -659,9 +700,14 @@ class ProtectHealthChecker(hass.Hass):
             if self._sensor_groups:
                 # Fall back to the cached entity list with fresh state reads.
                 sensors = [
-                    await self._sensor_from_state(entity_id, group)
+                    await self._sensor_from_state(
+                        entity_id,
+                        group,
+                        self._sensor_devices.get(entity_id, ""),
+                    )
                     for entity_id, group in self._sensor_groups.items()
                 ]
+                self._update_device_maps_from_sensors(sensors)
                 # Detail must not embed the exception — aiohttp errors
                 # stringify with the (secret) ha_url and the published
                 # sensor reaches the frontend (security rule S3).  The full
@@ -683,9 +729,105 @@ class ProtectHealthChecker(hass.Hass):
     def _remember_groups(self, sensors: List[EventSensor]) -> None:
         """Cache discovery results for fallback and repair verification."""
         self._sensor_groups = {s.entity_id: s.group for s in sensors}
+        self._sensor_devices = {s.entity_id: s.device_id for s in sensors}
         self._sensors = [
             s.entity_id for s in sensors if s.group == GROUP_CAMERA
         ]
+
+    # ------------------------------------------------------------------
+    # Device-level view
+    # ------------------------------------------------------------------
+
+    def _update_device_maps_from_sensors(
+        self, sensors: List[EventSensor]
+    ) -> None:
+        """Device maps from tracked sensors only (override/fallback paths)."""
+        self._set_device_maps(
+            [
+                (_sensor_device(s), s.state, s.last_changed)
+                for s in sensors
+            ],
+            sensors,
+        )
+
+    def _set_device_maps(
+        self,
+        channel_rows: List[Tuple[str, str, Optional[datetime.datetime]]],
+        sensors: List[EventSensor],
+    ) -> None:
+        """Rebuild device liveness/dark-since maps.
+
+        ``channel_rows`` is (device_key, state, last_changed) for every
+        known channel — template discovery feeds ALL integration channels
+        so a device with only disabled event sensors still reads as live
+        via e.g. is_dark.  A dark device's ``dark_since`` is the newest
+        transition among its channels (≈ the moment it went offline).
+        """
+        tracked = {_sensor_device(s) for s in sensors}
+        live: Dict[str, bool] = {d: False for d in tracked}
+        dark_since: Dict[str, Optional[datetime.datetime]] = {}
+        for device_key, state, last_changed in channel_rows:
+            if device_key not in live:
+                continue
+            if _is_available(state):
+                live[device_key] = True
+            elif last_changed is not None:
+                prev = dark_since.get(device_key)
+                if prev is None or last_changed > prev:
+                    dark_since[device_key] = last_changed
+
+        self._device_live = live
+        self._device_dark_since = {
+            d: dark_since.get(d) for d, is_live in live.items() if not is_live
+        }
+        entities: Dict[str, List[str]] = {}
+        for s in sensors:
+            entities.setdefault(_sensor_device(s), []).append(s.entity_id)
+        self._device_entities = entities
+        self._devices_seen_alive |= {
+            d for d, is_live in live.items() if is_live
+        }
+
+    def _witnessed_offline_devices(
+        self, now_utc: datetime.datetime, min_age_s: float
+    ) -> List[str]:
+        """Fully-dark devices that this app instance witnessed alive.
+
+        The witnessed gate keeps expected downtime quiet: chronically-dark
+        devices (disabled features, wireless cameras unplugged since before
+        the last restart) never qualify.  ``min_age_s`` is the debounce —
+        the grace for the standalone warning, 0 for the recovery latch
+        (post-reload re-registration makes dark timestamps fresh, which
+        must not read as recovery).  Past ``availability_warn_window_s``
+        the downtime is accepted as expected and the device goes quiet.
+        """
+        out: List[str] = []
+        for device_key, is_live in self._device_live.items():
+            if is_live or device_key not in self._devices_seen_alive:
+                continue
+            since = self._device_dark_since.get(device_key)
+            if since is None:
+                # Dark with no timestamp (entities gone entirely) — treat
+                # as just past the debounce.
+                out.append(device_key)
+                continue
+            age = (now_utc - since).total_seconds()
+            if min_age_s < age <= self._availability_warn_window_s:
+                out.append(device_key)
+        return sorted(out)
+
+    def _eligible_offline_devices(
+        self, now_utc: datetime.datetime
+    ) -> List[str]:
+        """Warning-worthy offline devices (grace-debounced)."""
+        return self._witnessed_offline_devices(
+            now_utc, self._availability_grace_s
+        )
+
+    def _device_label(self, device_key: str) -> str:
+        """Human-readable handle for a device — its first tracked entity."""
+        entities = self._device_entities.get(device_key)
+        return sorted(entities)[0] if entities else device_key
 
     # ------------------------------------------------------------------
     # Checks
@@ -717,16 +859,16 @@ class ProtectHealthChecker(hass.Hass):
     ) -> Dict[str, str]:
         """Fast path for a hard integration outage.
 
-        Detection is dwell-based: a sensor counts as down once it has been
-        unavailable longer than the grace period, so the brief unavailable
-        blip of a config-entry reload cannot trip this check.
+        CRITICAL is percentage-based over ALL tracked sensors, dwell-gated
+        (the grace absorbs a reload's unavailable blip) and LATCHED on
+        sensors actually returning — a reload that re-registers everything
+        (resetting every ``last_changed``) must never read as recovery.
 
-        Recovery is LATCHED on current state, not dwell: once an outage is
-        confirmed, a reload that re-registers everything (resetting every
-        ``last_changed``) must not read as recovery — only sensors actually
-        coming back available may clear the alert.  Without the latch a
-        failed heal would false-resolve the page and re-page every cycle
-        of the reload cooldown.
+        WARNING is device-based and deliberately narrow: only a fully-dark
+        device that this app instance witnessed alive, within the warn
+        window of going dark.  Channels dead on a live device are disabled
+        features, and devices dark since before the app started (or past
+        the window) are expected downtime — both stay quiet, by design.
         """
         if not sensors:
             return {
@@ -740,6 +882,7 @@ class ProtectHealthChecker(hass.Hass):
         down = [
             s.entity_id for s in sensors if self._down_past_grace(s, now_utc)
         ]
+        eligible = self._eligible_offline_devices(now_utc)
 
         if self._availability_down:
             unavail_pct = 100.0 * len(unavailable_now) / len(sensors)
@@ -752,34 +895,27 @@ class ProtectHealthChecker(hass.Hass):
                         "unavailable — integration connection lost"
                     ),
                 }
-            if unavailable_now:
-                # Partial recovery: hold the latch at warning.  The
-                # still-down sensors carry fresh post-reload timestamps
-                # (dwell < grace), so falling through to the dwell path
-                # would read false-ok for a grace period — and a relapse
-                # during recovery must re-page instantly, not re-wait
-                # out the dwell.
+            # No grace floor here: still-down devices carry fresh
+            # post-reload timestamps, which must not read as recovery —
+            # and a relapse during recovery must re-page instantly.
+            # Devices dark since before the outage (never witnessed
+            # alive) don't hold the latch open.
+            recovering = self._witnessed_offline_devices(now_utc, 0.0)
+            if recovering:
+                labels = ", ".join(
+                    self._device_label(d) for d in recovering[:3]
+                )
                 return {
                     "name": AVAILABILITY_CHECK,
                     "status": "warning",
                     "detail": (
-                        f"{len(unavailable_now)}/{len(sensors)} event "
-                        "sensors still unavailable (recovering)"
+                        f"{len(recovering)} device(s) still offline "
+                        f"(recovering): {labels}"
+                        f"{', …' if len(recovering) > 3 else ''}"
                     ),
                 }
             self._availability_down = False
-            self.log(
-                f"Availability outage cleared — all {len(sensors)} "
-                "sensors back",
-                level="INFO",
-            )
-
-        if not down:
-            return {
-                "name": AVAILABILITY_CHECK,
-                "status": "ok",
-                "detail": f"{len(sensors)} event sensors available",
-            }
+            self.log("Availability outage cleared", level="INFO")
 
         down_pct = 100.0 * len(down) / len(sensors)
         if down_pct >= self._availability_critical_pct:
@@ -799,25 +935,43 @@ class ProtectHealthChecker(hass.Hass):
                     "integration connection lost"
                 ),
             }
-        sample = ", ".join(sorted(down)[:3])
+
+        if eligible:
+            labels = ", ".join(
+                self._device_label(d) for d in eligible[:3]
+            )
+            return {
+                "name": AVAILABILITY_CHECK,
+                "status": "warning",
+                "detail": (
+                    f"{len(eligible)} device(s) recently went offline: "
+                    f"{labels}{', …' if len(eligible) > 3 else ''}"
+                ),
+            }
+
+        available = len(sensors) - len(unavailable_now)
+        detail = f"{available}/{len(sensors)} event sensors available"
+        if unavailable_now:
+            detail += (
+                f" ({len(unavailable_now)} on disabled channels or "
+                "expected-offline devices)"
+            )
         return {
             "name": AVAILABILITY_CHECK,
-            "status": "warning",
-            "detail": (
-                f"{len(down)}/{len(sensors)} event sensors unavailable "
-                f"for >{_fmt_age(self._availability_grace_s)} ({sample}"
-                f"{', …' if len(down) > 3 else ''})"
-            ),
+            "status": "ok",
+            "detail": detail,
         }
 
     def _check_entry_sensors(
         self, sensors: List[EventSensor]
     ) -> Dict[str, str]:
-        """Entry-sensor (USL) group: availability + last-event detail.
+        """Entry-sensor (USL) group: device availability + last-event detail.
 
         No freshness threshold — a door legitimately not opening for hours
-        must not page.  Unavailable entry sensors are a warning (the
-        whole-integration case is covered by Sensor Availability).
+        must not page.  A fully-dark entry DEVICE is a persistent warning
+        (these are security sensors, never expected offline — no witnessed
+        gate, no warn window).  Channels dead on a live device are disabled
+        features (e.g. motion sensing off) and stay quiet.
         """
         entry = [s for s in sensors if s.group == GROUP_ENTRY]
         if not entry:
@@ -828,32 +982,46 @@ class ProtectHealthChecker(hass.Hass):
             }
 
         now_utc = datetime.datetime.now(UTC)
-        down = [
-            s.entity_id for s in entry if self._down_past_grace(s, now_utc)
-        ]
+        devices = sorted({_sensor_device(s) for s in entry})
+        dark = []
+        for device_key in devices:
+            if self._device_live.get(device_key, True):
+                continue
+            since = self._device_dark_since.get(device_key)
+            age = (
+                (now_utc - since).total_seconds()
+                if since is not None
+                else self._availability_grace_s + 1
+            )
+            if age > self._availability_grace_s:
+                dark.append(device_key)
 
-        if down:
-            sample = ", ".join(sorted(down)[:3])
+        if dark:
+            labels = ", ".join(self._device_label(d) for d in dark[:3])
             return {
                 "name": ENTRY_SENSORS_CHECK,
                 "status": "warning",
                 "detail": (
-                    f"{len(down)}/{len(entry)} entry-sensor channels "
-                    f"unavailable for >{_fmt_age(self._availability_grace_s)} "
-                    f"({sample}{', …' if len(down) > 3 else ''})"
+                    f"{len(dark)}/{len(devices)} entry sensors offline "
+                    f"({labels}{', …' if len(dark) > 3 else ''})"
                 ),
             }
 
+        live_channels = [s for s in entry if _is_available(s.state)]
+        disabled = len(entry) - len(live_channels)
+        base = f"{len(devices)} entry sensors online"
+        if disabled:
+            base += f" ({disabled} disabled channels)"
         events = [
             (s.entity_id, s.last_changed)
-            for s in entry
-            if _is_available(s.state) and s.last_changed is not None
+            for s in live_channels
+            if s.last_changed is not None
         ]
         if not events:
             return {
                 "name": ENTRY_SENSORS_CHECK,
                 "status": "ok",
-                "detail": f"{len(entry)} channels available",
+                "detail": base,
             }
         newest_entity, newest_ts = max(events, key=lambda item: item[1])
         age = max(0.0, (now_utc - newest_ts).total_seconds())
@@ -861,8 +1029,7 @@ class ProtectHealthChecker(hass.Hass):
             "name": ENTRY_SENSORS_CHECK,
             "status": "ok",
             "detail": (
-                f"{len(entry)} channels available; newest event "
-                f"{_fmt_age(age)} ago ({newest_entity})"
+                f"{base}; newest event {_fmt_age(age)} ago ({newest_entity})"
             ),
         }
 

@@ -1254,13 +1254,26 @@ def _sensor(
     group: str = GROUP_CAMERA,
     state: str = "off",
     age_s: float = 60,
+    device_id: str = "",
 ) -> EventSensor:
     return EventSensor(
         entity_id,
         state,
         datetime.datetime.now(UTC) - datetime.timedelta(seconds=age_s),
         group,
+        device_id,
     )
+
+
+def _prime(app, sensors, witnessed: bool = True) -> None:
+    """Build the device maps the checks consume.
+
+    With witnessed=True, dark devices are also marked as previously seen
+    alive (simulating a device that was up earlier in this app's lifetime).
+    """
+    app._update_device_maps_from_sensors(sensors)
+    if witnessed:
+        app._devices_seen_alive |= set(app._device_live)
 
 
 class TestAvailabilityCheck:
@@ -1299,8 +1312,10 @@ class TestAvailabilityCheck:
         result = app._check_availability(sensors)
         assert result["status"] == "ok"
 
-    def test_partial_unavailable_is_warning(self):
-        """The 03:26 case: the USL subset drops while cameras keep working."""
+    def test_partial_unavailable_warns_only_for_witnessed_devices(self):
+        """The 03:26 case: the USL subset drops while cameras keep working.
+        Warns because this app saw the devices alive earlier — chronic darks
+        (never witnessed) must NOT warn (separate test below)."""
         app = _make_app()
         _init_only(app)
         sensors = [
@@ -1314,10 +1329,75 @@ class TestAvailabilityCheck:
             )
             for i in range(2)
         ]
+        _prime(app, sensors, witnessed=True)
         result = app._check_availability(sensors)
         assert result["status"] == "warning"
-        assert "2/10" in result["detail"]
+        assert "2 device(s) recently went offline" in result["detail"]
         assert "binary_sensor.usl0" in result["detail"]
+
+    def test_chronic_dark_devices_never_warn(self):
+        """Devices dark since before this app started (wireless cameras
+        unplugged most of the year, disabled features) stay quiet — the ok
+        detail discloses them instead."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}") for i in range(8)
+        ] + [
+            _sensor(
+                "binary_sensor.kitchen_g6_motion",
+                state="unavailable",
+                age_s=86_400 * 3,
+            )
+        ]
+        _prime(app, sensors, witnessed=False)  # never seen alive
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
+        assert "8/9 event sensors available" in result["detail"]
+        assert "expected-offline" in result["detail"]
+
+    def test_disabled_channel_on_live_device_never_warns(self):
+        """A dead channel whose sibling on the SAME device is alive is a
+        disabled feature (USL motion off, audio detections off) — excluded
+        everywhere, even though it was 'witnessed' via the device."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor("binary_sensor.usl_motion", group=GROUP_ENTRY,
+                    state="unavailable", age_s=86_400 * 5, device_id="usl1"),
+            _sensor("binary_sensor.usl_contact", group=GROUP_ENTRY,
+                    device_id="usl1"),
+            _sensor("binary_sensor.side_yard_barking_detected",
+                    state="unavailable", age_s=86_400 * 5, device_id="cam1"),
+            _sensor("binary_sensor.side_yard_motion", device_id="cam1"),
+        ]
+        _prime(app, sensors, witnessed=True)
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
+        assert "2/4 event sensors available" in result["detail"]
+
+        entry = app._check_entry_sensors(sensors)
+        assert entry["status"] == "ok"
+        assert "1 entry sensors online" in entry["detail"]
+        assert "1 disabled channels" in entry["detail"]
+
+    def test_offline_warning_expires_after_warn_window(self):
+        """Past the warn window the downtime is accepted as expected (e.g.
+        a wireless camera brought back inside) and the warning clears."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}") for i in range(5)
+        ] + [
+            _sensor(
+                "binary_sensor.g6_vacation_motion",
+                state="unavailable",
+                age_s=app._availability_warn_window_s + 3600,
+            )
+        ]
+        _prime(app, sensors, witnessed=True)
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
 
     def test_unavailable_without_timestamp_respects_grace(self):
         """Entities missing from the state machine entirely (reload unload
@@ -1346,11 +1426,12 @@ class TestAvailabilityCheck:
         once confirmed, only sensors actually coming back clears it."""
         app = _make_app()
         _init_only(app)
-        # Confirmed outage (dwell past grace)
+        # Confirmed outage (dwell past grace); devices were seen alive
         sensors = [
             _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
             for i in range(10)
         ]
+        _prime(app, sensors, witnessed=True)
         assert app._check_availability(sensors)["status"] == "critical"
         assert app._availability_down is True
 
@@ -1359,12 +1440,14 @@ class TestAvailabilityCheck:
             _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=10)
             for i in range(10)
         ]
+        _prime(app, fresh, witnessed=True)
         result = app._check_availability(fresh)
         assert result["status"] == "critical"  # latched — no false resolve
         assert app._availability_down is True
 
         # Genuine recovery: sensors actually available again
         recovered = [_sensor(f"binary_sensor.cam{i}") for i in range(10)]
+        _prime(app, recovered)
         result = app._check_availability(recovered)
         assert result["status"] == "ok"
         assert app._availability_down is False
@@ -1377,11 +1460,12 @@ class TestAvailabilityCheck:
         back — and a relapse during recovery must re-page instantly."""
         app = _make_app()
         _init_only(app)
-        # Confirmed outage
+        # Confirmed outage; devices were seen alive earlier
         sensors = [
             _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
             for i in range(10)
         ]
+        _prime(app, sensors, witnessed=True)
         assert app._check_availability(sensors)["status"] == "critical"
 
         # Partial recovery: 2 back, 8 still down with fresh post-reload ts
@@ -1389,10 +1473,11 @@ class TestAvailabilityCheck:
             _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=10)
             for i in range(2, 10)
         ]
+        _prime(app, partial, witnessed=True)
         result = app._check_availability(partial)
         assert result["status"] == "warning"  # NOT ok
         assert "recovering" in result["detail"]
-        assert "8/10" in result["detail"]
+        assert "8 device(s) still offline" in result["detail"]
         assert app._availability_down is True  # latch held
 
         # Relapse during recovery: instantly critical, no dwell re-wait
@@ -1400,14 +1485,46 @@ class TestAvailabilityCheck:
             _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=5)
             for i in range(10)
         ]
+        _prime(app, relapse, witnessed=True)
         result = app._check_availability(relapse)
         assert result["status"] == "critical"
         assert app._availability_down is True
 
         # Full recovery clears the latch
         recovered = [_sensor(f"binary_sensor.cam{i}") for i in range(10)]
+        _prime(app, recovered)
         assert app._check_availability(recovered)["status"] == "ok"
         assert app._availability_down is False
+
+    def test_chronic_dark_device_does_not_hold_latch_open(self):
+        """Recovery from a real outage must complete even though a
+        chronically-dark device (never witnessed alive) is still dark —
+        otherwise the latch would hold a warning forever."""
+        app = _make_app()
+        _init_only(app)
+        chronic = _sensor(
+            "binary_sensor.kitchen_g6_motion",
+            state="unavailable",
+            age_s=86_400 * 3,
+        )
+        alive = [_sensor(f"binary_sensor.cam{i}") for i in range(9)]
+        # Outage: the 9 witnessed devices go dark (chronic was never alive)
+        _prime(app, alive + [chronic], witnessed=False)
+        app._devices_seen_alive |= {f"binary_sensor.cam{i}" for i in range(9)}
+        outage = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=1000)
+            for i in range(9)
+        ] + [chronic]
+        app._update_device_maps_from_sensors(outage)
+        assert app._check_availability(outage)["status"] == "critical"
+
+        # Recovery: witnessed devices return; chronic stays dark
+        recovered = alive + [chronic]
+        app._update_device_maps_from_sensors(recovered)
+        result = app._check_availability(recovered)
+        assert result["status"] == "ok"
+        assert app._availability_down is False
+        assert "expected-offline" in result["detail"]
 
     def test_no_sensors_unknown(self):
         app = _make_app()
@@ -1447,9 +1564,10 @@ class TestEntrySensorsCheck:
             _sensor("binary_sensor.usl_motion", group=GROUP_ENTRY, age_s=300),
             _sensor("binary_sensor.usl_contact", group=GROUP_ENTRY, age_s=7200),
         ]
+        _prime(app, sensors)
         result = app._check_entry_sensors(sensors)
         assert result["status"] == "ok"
-        assert "2 channels available" in result["detail"]
+        assert "2 entry sensors online" in result["detail"]
         assert "binary_sensor.usl_motion" in result["detail"]
 
     def test_quiet_entry_sensors_never_page(self):
@@ -1463,24 +1581,42 @@ class TestEntrySensorsCheck:
                 age_s=60 * 60 * 30,  # 30h since last event, still online
             )
         ]
+        _prime(app, sensors)
         result = app._check_entry_sensors(sensors)
         assert result["status"] == "ok"
 
-    def test_unavailable_entry_sensors_warn(self):
+    def test_fully_dark_entry_device_warns_persistently(self):
+        """A whole USL gone dark warns — no witnessed gate, no expiry
+        (security sensors are never expected offline). Chronic-dark
+        included deliberately."""
         app = _make_app()
         _init_only(app)
         sensors = [
             _sensor(
-                "binary_sensor.usl_motion",
+                "binary_sensor.usl_dead_motion",
                 group=GROUP_ENTRY,
                 state="unavailable",
-                age_s=7200,
+                age_s=86_400 * 9,  # dark for over a week — still warns
+                device_id="usl_dead",
             ),
-            _sensor("binary_sensor.usl_contact", group=GROUP_ENTRY),
+            _sensor(
+                "binary_sensor.usl_dead_contact",
+                group=GROUP_ENTRY,
+                state="unavailable",
+                age_s=86_400 * 9,
+                device_id="usl_dead",
+            ),
+            _sensor(
+                "binary_sensor.usl_ok_contact",
+                group=GROUP_ENTRY,
+                device_id="usl_ok",
+            ),
         ]
+        _prime(app, sensors, witnessed=False)
         result = app._check_entry_sensors(sensors)
         assert result["status"] == "warning"
-        assert "1/2" in result["detail"]
+        assert "1/2 entry sensors offline" in result["detail"]
+        assert "binary_sensor.usl_dead_contact" in result["detail"]
 
 
 class TestFrozenWithUnavailableSensors:
