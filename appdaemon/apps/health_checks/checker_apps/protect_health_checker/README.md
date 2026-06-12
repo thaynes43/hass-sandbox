@@ -7,7 +7,7 @@ Detects and auto-heals the silent UniFi Protect websocket freeze. The failure mo
 | Check | Method | Healthy When |
 |-------|--------|-------------|
 | Sensor Discovery | `integration_entities()` template rendered server-side via `HaAdminClient` (or the `motion_entities` config override) | At least one Protect event sensor found |
-| Sensor Availability | Share of event sensors `unavailable` longer than `availability_grace_s` | Below `availability_critical_pct` (critical) and zero (ok); anything in between is a warning |
+| Sensor Availability | Hard-outage percentage over all sensors + per-device offline tracking | Not in a confirmed outage, and no witnessed device went offline within the warn window |
 | Camera Events | Newest `last_changed` across **available camera-group** sensors, aged in **active-hours seconds** | Younger than `stale_after_s`, or (while frozen) a genuine post-freeze event has arrived |
 | Entry Sensors | Availability of the USL entry-sensor group, with a last-event detail | All entry channels available (quiet doors never page) |
 
@@ -29,7 +29,15 @@ The freeze the staleness check hunts is *silent*: sensors stay available but sto
 - A sensor counts as *down* only after it has been unavailable for longer than the grace period (its `last_changed` is the transition moment; entities missing from the state machine entirely are timed from first observation). The grace also absorbs the brief unavailable blip a config-entry reload causes, so auto-heal cannot trip its own alarm mid-repair.
 - Recovery is **latched**: once an outage is confirmed, only sensors actually coming back available clear it. A reload re-registers every entity and resets every `last_changed` — without the latch, a *failed* heal would reset the dwell clocks, false-resolve the page, and flap on every retry. (This is the availability-path analogue of the frozen-baseline rule below.)
 
-`availability_critical_pct` (default 90) of sensors down → **critical** (integration-level outage → pages, and auto-heal fires). Any smaller subset down → **warning** (e.g. the USL group dropping off overnight) — visible in Alertmanager/dashboard, no page.
+`availability_critical_pct` (default 90) of sensors down → **critical** (integration-level outage → pages, and auto-heal fires; percentage computed over ALL tracked sensors, so chronic darks can't mask it).
+
+**Warnings are deliberately narrow — expected downtime stays quiet.** In this house many Protect entities are *supposed* to be dead: features ship disabled (per-camera audio detections, USL motion sensing, medium-resolution channels), and the wireless G6 cameras live unplugged except on vacation. So a warning requires ALL of:
+
+1. the device is **fully dark** — a dead channel whose sibling on the same device is alive is a disabled feature, excluded everywhere (liveness is judged across *all* of the device's channels, including non-event ones like `is_dark`);
+2. the device was **witnessed alive by this app instance** — anything dark since before the last restart is the status quo, not an incident;
+3. the dark transition is **older than the grace** (debounce) but **inside `availability_warn_window_s`** (default 24h) — past the window the downtime is accepted as expected and the warning clears itself.
+
+The ok detail stays honest about what's excluded: `148/177 event sensors available (29 on disabled channels or expected-offline devices)`.
 
 ### Camera Events — active-hours staleness
 
@@ -39,7 +47,7 @@ Freshness only ever considers **available camera-group** sensors: unavailable se
 
 ### Entry Sensors
 
-The USL entry sensors (motion + contact channels) get their own line item: **ok** with a newest-event detail while available, **warning** when channels are unavailable past the grace period. There is deliberately no freshness threshold — a door that nobody opens for a day is normal and must never page.
+The USL entry sensors (motion + contact channels) get their own line item: **ok** with a newest-event detail while online, **warning** when a whole USL device is dark past the grace period. Unlike camera warnings this is **persistent** — no witnessed gate, no expiry — because entry sensors are security devices that are never expected offline (a dead battery should stay visible until fixed). Channels dead on a live device (e.g. motion sensing disabled) are excluded and disclosed in the detail. There is deliberately no freshness threshold — a door that nobody opens for a day is normal and must never page.
 
 ## Frozen-Baseline State Machine
 
@@ -118,6 +126,7 @@ protect_health_checker:
   check_interval_s: 300                   # Check frequency (default: 300)
   availability_grace_s: 900               # Unavailable dwell before a sensor counts as down (default: 900 = 15m)
   availability_critical_pct: 90           # % of sensors down for availability critical (default: 90)
+  availability_warn_window_s: 86400       # Offline-device warnings expire after this (default: 86400 = 24h)
   reload_cooldown_s: 3600                 # Min seconds between auto-repair reloads (default: 3600)
   repair_settle_s: 60                     # Post-reload settle window; re-registration timestamps inside it don't count (default: 60)
   repair_recovery_wait_s: 600             # Max seconds to wait for a genuine event after reload (default: 600)

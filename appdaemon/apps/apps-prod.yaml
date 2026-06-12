@@ -1118,6 +1118,9 @@ protect_health_checker:
   # for longer than the grace period (UNVR down / auth failure).
   availability_grace_s: 900
   availability_critical_pct: 90
+  # Offline-device warnings auto-expire after this window (wireless G6
+  # cameras live unplugged most of the year — expected downtime).
+  availability_warn_window_s: 86400
   # Auto-heal: reload the loaded unifiprotect config entry (max 1/hour),
   # then require a genuine post-reload event within 10 minutes.
   reload_cooldown_s: 3600
