@@ -1163,12 +1163,11 @@ media_dashboard_app:
   mdblist_api_key_env: MDBLIST_API_KEY
   # Location (01886 Westford MA area)
   location: "Westford, MA"
+  # Trimmed 2026-06-18 to the two theaters we actually use. Each theater =
+  # one SerpApi search per daily fetch, so fewer theaters = lower quota use.
   theaters:
-    - AMC Tyngsboro 12
-    - Showcase Cinema de Lux Lowell
-    - AMC Methuen 20
-    - Cinemark Rockingham Park and XD
-    - AMC Burlington Cinema 10
+    - Cinemark Rockingham Park and XD   # Cinemark, Salem NH
+    - AMC Methuen 20                    # AMC Loop, Methuen MA
   # Refresh cadences (seconds)
   tautulli_refresh_interval: 7200    # 2 hours
   tmdb_refresh_interval: 43200       # 12 hours
