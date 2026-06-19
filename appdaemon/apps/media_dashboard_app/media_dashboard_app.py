@@ -428,19 +428,41 @@ class MediaDashboardApp(hass.Hass):
             self._fetch_status["tmdb"] = "error"
             self._publish_sensor()
 
-    async def _refresh_showtimes(self) -> None:
-        """Fetch showtimes from SerpApi; retain cached version on failure."""
+    async def _refresh_showtimes(self, force: bool = False) -> None:
+        """Fetch showtimes from SerpApi; retain cached version on failure.
+
+        Daily-cache guard: each fetch costs one SerpApi search *per
+        configured theater*, and showtimes change at most once a day.  To
+        stay inside the SerpApi monthly quota across pod restarts and
+        dashboard "refresh" commands, skip the network fetch entirely when
+        the on-disk cache already holds today's date — unless ``force`` (an
+        explicit, user-initiated showtimes refresh) is set.  The cache lives
+        on the persistent /media volume, so the guard survives restarts and
+        caps automatic usage at one fetch per calendar day.
+        """
         self.log("Refreshing showtimes", level="DEBUG")
+
+        if not force:
+            today = datetime.date.today().isoformat()
+            cached = self._read_showtime_cache()
+            if cached is not None and cached.date == today:
+                self._apply_showtime_flags(cached)
+                self._fetch_status["serpapi"] = "ok"
+                self._publish_sensor()
+                self.log(
+                    f"Showtimes already cached for {today} "
+                    f"({len(cached.films)} films) — skipped SerpApi fetch",
+                    level="INFO",
+                )
+                return
+
         try:
             cache = await self._serpapi.fetch_showtimes()
 
             # Write cache to disk
             self._write_showtime_cache(cache)
 
-            # Update has_showtimes flags on in_theaters items
-            film_titles_lower = {t.lower() for t in cache.films.keys()}
-            for item in self._categories["in_theaters"]:
-                item.has_showtimes = item.title.lower() in film_titles_lower
+            self._apply_showtime_flags(cache)
 
             self._fetch_status["serpapi"] = "ok"
             self._publish_sensor()
@@ -455,6 +477,12 @@ class MediaDashboardApp(hass.Hass):
             )
             self._fetch_status["serpapi"] = "error"
             self._publish_sensor()
+
+    def _apply_showtime_flags(self, cache: ShowtimeCache) -> None:
+        """Set ``has_showtimes`` on in-theaters items from a ShowtimeCache."""
+        film_titles_lower = {t.lower() for t in cache.films.keys()}
+        for item in self._categories["in_theaters"]:
+            item.has_showtimes = item.title.lower() in film_titles_lower
 
     async def _refresh_all(self) -> None:
         """Run all three refreshes sequentially to avoid API rate limits."""
@@ -631,7 +659,9 @@ class MediaDashboardApp(hass.Hass):
             elif source == "tmdb":
                 self.create_task(self._refresh_tmdb())
             elif source == "showtimes":
-                self.create_task(self._refresh_showtimes())
+                # Explicit, user-initiated showtimes refresh bypasses the
+                # daily-cache guard (deliberate action, not an auto-refresh).
+                self.create_task(self._refresh_showtimes(force=True))
             else:
                 self.create_task(self._refresh_all())
         elif cmd == "get_detail":

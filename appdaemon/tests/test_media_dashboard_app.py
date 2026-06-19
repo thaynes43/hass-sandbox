@@ -810,6 +810,56 @@ class TestShowtimeCache:
         assert result["entries"] == []
         assert "too old" in result.get("note", "").lower()
 
+    # ----- Daily-cache guard (SerpApi quota protection) -----
+
+    def test_refresh_showtimes_skips_when_today_cached(self):
+        """A same-day on-disk cache skips the SerpApi fetch (restart-proof)."""
+        td = tempfile.mkdtemp(prefix="mda_guard_")
+        app = _make_app(tmpdir=td)
+        app._write_showtime_cache(
+            ShowtimeCache(date=datetime.date.today().isoformat(), films={})
+        )
+        app._serpapi.fetch_showtimes.reset_mock()
+
+        _run(app._refresh_showtimes())
+
+        app._serpapi.fetch_showtimes.assert_not_called()
+
+    def test_refresh_showtimes_fetches_when_cache_stale(self):
+        """A previous-day cache triggers a real fetch (one per calendar day)."""
+        td = tempfile.mkdtemp(prefix="mda_guard_stale_")
+        app = _make_app(tmpdir=td)
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        app._write_showtime_cache(ShowtimeCache(date=yesterday, films={}))
+        app._serpapi.fetch_showtimes.reset_mock()
+
+        _run(app._refresh_showtimes())
+
+        app._serpapi.fetch_showtimes.assert_called_once()
+
+    def test_refresh_showtimes_fetches_when_no_cache(self):
+        """No cache on disk → fetch."""
+        td = tempfile.mkdtemp(prefix="mda_guard_nocache_")
+        app = _make_app(tmpdir=td)
+        app._serpapi.fetch_showtimes.reset_mock()
+
+        _run(app._refresh_showtimes())
+
+        app._serpapi.fetch_showtimes.assert_called_once()
+
+    def test_refresh_showtimes_force_bypasses_guard(self):
+        """force=True fetches even when today's cache exists (manual refresh)."""
+        td = tempfile.mkdtemp(prefix="mda_guard_force_")
+        app = _make_app(tmpdir=td)
+        app._write_showtime_cache(
+            ShowtimeCache(date=datetime.date.today().isoformat(), films={})
+        )
+        app._serpapi.fetch_showtimes.reset_mock()
+
+        _run(app._refresh_showtimes(force=True))
+
+        app._serpapi.fetch_showtimes.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # Tests: Hidden eligible
