@@ -799,3 +799,111 @@ class TestFilterNameRecovery:
         )
         app.initialize()
         assert app._displaying_filter_name == "Florida"
+
+
+class TestInstanceOwnership:
+    """Regression: AppDaemon reloads (e.g. on each HA-websocket reconnect)
+    construct a NEW instance without tearing down the previous one's
+    self-rescheduling tick chain.  Multiple live instances then fight over the
+    shared input_select/sensor — each on its own generation — and the slideshow
+    "skips around".  The newest instance per prefix must be the sole driver;
+    older (zombie) instances must self-disable.
+    """
+
+    def test_newer_instance_takes_ownership_for_same_prefix(self):
+        app1 = _make_app(
+            picker_value="IMG_001.jpg",
+            picker_options=["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"],
+        )
+        app1.initialize()
+        assert app1._is_active_owner() is True
+
+        # Simulate an AppDaemon reload: brand-new instance, same prefix.
+        app2 = _make_app(
+            picker_value="IMG_001.jpg",
+            picker_options=["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"],
+        )
+        app2.initialize()
+
+        assert app2._instance_seq > app1._instance_seq
+        assert app2._is_active_owner() is True
+        # The older instance is now a zombie.
+        assert app1._is_active_owner() is False
+
+    def test_stale_instance_tick_does_not_drive_or_reschedule(self):
+        app1 = _make_app(
+            picker_value="IMG_002.jpg",
+            picker_options=["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"],
+        )
+        app1.initialize()
+        # New instance takes over ownership (the reload).
+        app2 = _make_app(
+            picker_value="IMG_002.jpg",
+            picker_options=["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"],
+        )
+        app2.initialize()
+
+        # Isolate the stale tick.
+        app1.call_service.reset_mock()
+        app1.run_in.reset_mock()
+        app1._timer_handle = "stale-handle"
+        app1.timer_running = MagicMock(return_value=True)
+        app1.cancel_timer = MagicMock()
+
+        # Pass the CURRENT epoch so the epoch guard passes — only the
+        # ownership guard can stop this tick.
+        app1._on_tick({"epoch": app1._tick_epoch})
+
+        select_calls = [
+            c for c in app1.call_service.call_args_list
+            if c.args and c.args[0] == "input_select/select_option"
+        ]
+        assert select_calls == [], "Stale instance must not drive the picker"
+
+        tick_reschedules = [
+            c for c in app1.run_in.call_args_list
+            if c.args and c.args[0] == app1._on_tick
+        ]
+        assert tick_reschedules == [], "Stale instance must not reschedule (chain must die)"
+
+    def test_active_instance_tick_still_drives(self):
+        app = _make_app(
+            picker_value="IMG_002.jpg",
+            picker_options=["IMG_001.jpg", "IMG_002.jpg", "IMG_003.jpg"],
+        )
+        app.initialize()
+        app._pending_gen_id = None  # ensure the normal advance path
+        app.call_service.reset_mock()
+
+        app._on_tick({"epoch": app._tick_epoch})
+
+        select_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args and c.args[0] == "input_select/select_option"
+        ]
+        assert len(select_calls) == 1, "Active instance must advance the slideshow"
+
+    def test_distinct_prefixes_are_both_owners(self):
+        app_a = _make_app(extra_args={"entity_prefix": "display_a"})
+        app_a.initialize()
+        app_b = _make_app(extra_args={"entity_prefix": "display_b"})
+        app_b.initialize()
+        # Different prefixes => independent displays => both remain owners.
+        assert app_a._is_active_owner() is True
+        assert app_b._is_active_owner() is True
+
+    def test_terminate_cancels_timers(self):
+        app = _make_app()
+        app.initialize()
+        app._timer_handle = "t1"
+        app._poll_handle = "p1"
+        app.timer_running = MagicMock(return_value=True)
+        app.cancel_timer = MagicMock()
+
+        app.terminate()
+
+        cancelled = [c.args[0] for c in app.cancel_timer.call_args_list]
+        assert "t1" in cancelled
+        assert "p1" in cancelled
+        assert app._timer_handle is None
+        assert app._poll_handle is None
