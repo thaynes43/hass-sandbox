@@ -79,6 +79,19 @@ class PhotoFrameViewerApp(hass.Hass):
         "pause_auto_resume_s": 600,
     }
 
+    # Process-global ownership, keyed by entity_prefix.  Every AppDaemon
+    # reload (notably on each HA-websocket reconnect) constructs a NEW
+    # instance, but the previous instance's self-rescheduling run_in() tick
+    # chain keeps it alive and driving.  Multiple live instances then fight
+    # over the one shared input_select/sensor — each on its own generation —
+    # which makes the slideshow "skip around".  The most-recently-initialized
+    # instance for a given prefix becomes the sole owner; older (zombie)
+    # instances detect they are no longer the owner and stop driving (and stop
+    # rescheduling, so their tick chains die).  Keyed by prefix so legitimate
+    # multi-display setups (distinct prefixes) each keep their own owner.
+    _instance_counter: int = 0
+    _active_by_prefix: dict[str, int] = {}
+
     # ------------------------------------------------------------------
     # Initialization
     # ------------------------------------------------------------------
@@ -108,6 +121,18 @@ class PhotoFrameViewerApp(hass.Hass):
 
         # Entity prefix — derives entity IDs for all provisioned entities.
         self._entity_prefix: str = self._derive_entity_prefix(cfg)
+
+        # Claim sole ownership for this prefix.  Any previously-constructed
+        # instance for the same prefix is now a zombie and will self-disable
+        # on its next callback (see _is_active_owner / the callback guards).
+        type(self)._instance_counter += 1
+        self._instance_seq: int = type(self)._instance_counter
+        type(self)._active_by_prefix[self._entity_prefix] = self._instance_seq
+        self.log(
+            f"PhotoFrameViewerApp: instance seq={self._instance_seq} "
+            f"claimed owner for prefix={self._entity_prefix!r}",
+            level="INFO",
+        )
 
         # State persistence directory
         state_dir_default = f"/media/photo-frame-viewer/{self._entity_prefix}"
@@ -229,6 +254,51 @@ class PhotoFrameViewerApp(hass.Hass):
         self._poll_for_changes(reason="init")
 
         self._sync_timer(reason="init")
+
+    # ------------------------------------------------------------------
+    # Ownership + teardown
+    # ------------------------------------------------------------------
+
+    def _is_active_owner(self) -> bool:
+        """True if this instance is the current owner for its prefix.
+
+        Stale (zombie) instances left over from AppDaemon reloads return
+        False and disable their drivers so only the newest instance drives
+        the shared input_select/sensor.
+        """
+        return (
+            getattr(self, "_instance_seq", -1)
+            == type(self)._active_by_prefix.get(self._entity_prefix)
+        )
+
+    def terminate(self) -> None:
+        """Cancel timers on reload/teardown so this instance stops driving.
+
+        AppDaemon calls this on reload.  Even when it doesn't (observed: some
+        reload paths re-init without terminating), the ownership guard in the
+        callbacks ensures a stale instance disables itself; cancelling here is
+        the clean path that stops the tick chain immediately.
+        """
+        for attr in (
+            "_timer_handle",
+            "_poll_handle",
+            "_periodic_handle",
+            "_pause_auto_resume_handle",
+        ):
+            handle = getattr(self, attr, None)
+            setattr(self, attr, None)
+            if handle is None:
+                continue
+            try:
+                if self.timer_running(handle):
+                    self.cancel_timer(handle)
+            except Exception:
+                pass
+        self.log(
+            f"PhotoFrameViewerApp: terminate() seq={getattr(self, '_instance_seq', None)} "
+            f"prefix={getattr(self, '_entity_prefix', None)!r}",
+            level="INFO",
+        )
 
     # ------------------------------------------------------------------
     # Entity prefix derivation
@@ -498,6 +568,8 @@ class PhotoFrameViewerApp(hass.Hass):
 
     def _on_command(self, event_name: str, data: dict, kwargs: Any) -> None:
         """Route relay commands from the dashboard card."""
+        if not self._is_active_owner():
+            return
         cmd = data.get("command")
         raw = data.get("payload", "{}")
         try:
@@ -574,6 +646,8 @@ class PhotoFrameViewerApp(hass.Hass):
     def _handle_pause_auto_resume(self, kwargs: Any) -> None:
         self._pause_auto_resume_handle = None
         self._pause_auto_resume_deadline = None
+        if not self._is_active_owner():
+            return
         if not self._paused:
             return
         self._set_paused(False, reason="auto_resume")
@@ -771,6 +845,8 @@ class PhotoFrameViewerApp(hass.Hass):
     def _on_stage_settled(self, kwargs: Any) -> None:
         """Called after the staging shell_command has had time to complete."""
         self._staging_in_progress = False
+        if not self._is_active_owner():
+            return
 
         gen_id = getattr(self, "_staging_gen_id", None)
         source_paths = getattr(self, "_staging_source_paths", [])
@@ -1035,6 +1111,9 @@ class PhotoFrameViewerApp(hass.Hass):
             pass
 
     def _schedule_next(self, *, reason: str) -> None:
+        if not self._is_active_owner():
+            self._cancel_timer()
+            return
         if self._is_paused():
             self._cancel_timer()
             return
@@ -1088,10 +1167,14 @@ class PhotoFrameViewerApp(hass.Hass):
     # ------------------------------------------------------------------
 
     def _poll_for_changes_cb(self, kwargs: Any) -> None:
+        if not self._is_active_owner():
+            return
         self._poll_for_changes(reason="poll")
 
     def _on_batch_ready(self, event_name: str, data: dict, kwargs: Any) -> None:
         """Fetcher wrote a new batch — poll for changes immediately."""
+        if not self._is_active_owner():
+            return
         # Stash the filter name from the event so we can publish it when the
         # viewer actually swaps to the new generation (avoiding title drift).
         batch_filter = str(data.get("filter", "") or "").strip()
@@ -1100,6 +1183,8 @@ class PhotoFrameViewerApp(hass.Hass):
         self._poll_for_changes(reason="batch_ready")
 
     def _on_picker_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
+        if not self._is_active_owner():
+            return
         new_label = str(new or "").strip()
         if not new_label:
             return
@@ -1146,6 +1231,19 @@ class PhotoFrameViewerApp(hass.Hass):
             self._schedule_next(reason="manual_nav")
 
     def _on_tick(self, kwargs: Any) -> None:
+        # Ownership guard: a stale instance left over from an AppDaemon reload
+        # must not drive the shared picker/sensor.  Bail WITHOUT rescheduling
+        # so its self-perpetuating tick chain dies out.
+        if not self._is_active_owner():
+            self.log(
+                f"PhotoFrameViewerApp: stale instance seq="
+                f"{getattr(self, '_instance_seq', None)} "
+                f"(active={type(self)._active_by_prefix.get(self._entity_prefix)}); "
+                f"stopping tick chain",
+                level="INFO",
+            )
+            self._cancel_timer()
+            return
         # Epoch guard: each _schedule_next bumps self._tick_epoch and stashes
         # the captured epoch in the run_in kwargs.  If a stale timer (one
         # that cancel_timer failed to remove) fires, its captured epoch will
