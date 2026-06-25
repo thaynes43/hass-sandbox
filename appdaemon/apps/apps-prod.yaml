@@ -651,6 +651,19 @@ health_check_controller:
   # Re-post interval must stay below Alertmanager's resolve_timeout (5m).
   alertmanager_url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
   alertmanager_repost_interval_s: 120
+  # For-duration gate: a checker must stay non-ok this long before its alert
+  # pages, so transient one-poll blips (e.g. a shade reporting 0% then 100%
+  # on the next poll) are suppressed. Promotion is confirmed on a later
+  # status report, so a single bad sample can never page. Most checkers poll
+  # every 300s, so critical=300 ≈ "two consecutive failing checks".
+  alert_for_seconds:
+    critical: 300   # ~5 min — sustained 0%/offline still pages; blips don't
+    warning: 600    # warnings are UI-only (don't page); quieter still
+  # Per-checker overrides (checker_id -> severity -> seconds). 0 = page now.
+  alert_for_overrides:
+    ups:            # power loss is time-sensitive — never debounce
+      critical: 0
+      warning: 0
 
 zigbee_health_checker:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker

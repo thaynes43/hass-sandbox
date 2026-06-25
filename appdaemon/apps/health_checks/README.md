@@ -148,6 +148,7 @@ Severity mapping (the cluster's Alertmanager routes only `severity=critical` to 
 
 Mechanics:
 
+- **For-duration gate (flap suppression)** — a checker that is non-ok for only a poll or two should not page. Each severity has a configurable `for` duration (`alert_for_seconds` on the controller, with per-checker `alert_for_overrides`). When a checker first goes non-ok the alert is held *pending* — nothing is posted — and only promoted to firing once it has stayed non-ok for `>= for` seconds, confirmed on a **later** status report (Prometheus `for:` semantics: a single-sample blip can never be promoted). If the checker recovers while pending, the alert is dropped silently (no page, no `[RESOLVED]` noise). `for=0` (the default when unconfigured) raises immediately. Most checkers poll every 300s, so `critical: 300` ≈ "two consecutive failing checks": a sustained 0%/offline still pages, a one-poll glitch does not.
 - **Label-set identity** — `alertname` + `severity` + `source=appdaemon-health-check` + `checker=<id>` identify the alert. If the labels change (e.g. a warning escalates to critical), the old alert is resolved and a new one raised; if only the failing-check details change, annotations are refreshed in place.
 - **Re-post keep-alive** — Alertmanager auto-resolves silent alerts after its `resolve_timeout` (5m in this cluster), so the controller re-posts all firing alerts every `alertmanager_repost_interval_s` (default 120s — must stay below the resolve_timeout).
 - **Immediate resolve** — on recovery the bridge sends one final post with `endsAt=now`, producing an immediate `[RESOLVED]` notification instead of waiting out the resolve_timeout.
@@ -204,6 +205,14 @@ health_check_controller:
   # Optional Alertmanager mirroring — omit alertmanager_url to disable
   alertmanager_url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
   alertmanager_repost_interval_s: 120  # Firing-alert re-post period; must stay < Alertmanager resolve_timeout (5m)
+  # For-duration gate (flap suppression) — omit for raise-immediately (for=0).
+  alert_for_seconds:           # how long a checker must stay non-ok before paging, by severity
+    critical: 300              # ~5 min; ≈ two consecutive failing checks at the default 300s poll
+    warning: 600               # warnings are UI-only; quieter still
+  alert_for_overrides:         # per-checker override: checker_id -> severity -> seconds (0 = page now)
+    ups:
+      critical: 0              # power loss is time-sensitive — never debounce
+      warning: 0
 ```
 
 ### NetworkProtocolChecker

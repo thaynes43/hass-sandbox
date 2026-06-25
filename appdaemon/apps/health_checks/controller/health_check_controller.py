@@ -98,11 +98,22 @@ class HealthCheckController(hass.Hass):
         self._alert_repost_interval_s: int = int(
             args.get("alertmanager_repost_interval_s", 120)
         )
+
+        # For-duration gate: how long a checker must stay non-ok before its
+        # alert pages, by severity, with optional per-checker overrides.
+        # Unset → 0 (raise immediately, the pre-gate behaviour).
+        alert_for_seconds: Dict[str, Any] = dict(args.get("alert_for_seconds") or {})
+        alert_for_overrides: Dict[str, Any] = dict(
+            args.get("alert_for_overrides") or {}
+        )
+
         self._alert_bridge: Optional[AlertmanagerBridge] = None
         if self._alertmanager_url:
             self._alert_bridge = AlertmanagerBridge(
                 AlertmanagerClient(self._alertmanager_url),
                 log_fn=self.log,
+                default_for_seconds=alert_for_seconds,
+                for_overrides=alert_for_overrides,
             )
 
         self.log(
@@ -110,7 +121,9 @@ class HealthCheckController(hass.Hass):
             f"heartbeat_interval={self._heartbeat_interval_s}s, "
             f"alert_history_max={self._alert_history_max}, "
             f"alert_retention={self._alert_retention}, "
-            f"alertmanager={'enabled (' + self._alertmanager_url + ')' if self._alert_bridge else 'disabled'}",
+            f"alertmanager={'enabled (' + self._alertmanager_url + ')' if self._alert_bridge else 'disabled'}, "
+            f"alert_for_seconds={alert_for_seconds or '{}'}, "
+            f"alert_for_overrides={alert_for_overrides or '{}'}",
             level="INFO",
         )
 

@@ -9,6 +9,7 @@ checker_id → {"name", "status", "checks", "alerting", "repair_state"}.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -56,6 +57,35 @@ def _run(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+def _make_gated_bridge(default_for_seconds, for_overrides=None):
+    """Bridge with a for-duration gate and a manually-advanceable clock.
+
+    Returns (bridge, client, log, advance) where ``advance(seconds)`` moves
+    the injected clock forward so the for-duration gate can be driven
+    deterministically.
+    """
+    client = MagicMock()
+    client.post_alerts = AsyncMock()
+    log = MagicMock()
+    clock = {"now": datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc)}
+
+    def now_fn():
+        return clock["now"]
+
+    bridge = AlertmanagerBridge(
+        client,
+        log_fn=log,
+        default_for_seconds=default_for_seconds,
+        for_overrides=for_overrides,
+        now_fn=now_fn,
+    )
+
+    def advance(seconds):
+        clock["now"] = clock["now"] + datetime.timedelta(seconds=seconds)
+
+    return bridge, client, log, advance
 
 
 def _checker(
@@ -433,3 +463,187 @@ class TestClientFailure:
         _run(bridge.repost_active())
 
         assert "spa" in bridge.active_alerts
+
+
+# ---------------------------------------------------------------------------
+# Tests — for-duration gate (flap suppression)
+# ---------------------------------------------------------------------------
+
+class TestForSecondsResolution:
+    def test_default_by_severity(self):
+        bridge, *_ = _make_gated_bridge({"critical": 300, "warning": 600})
+        assert bridge._for_seconds("spa", "critical") == 300
+        assert bridge._for_seconds("spa", "warning") == 600
+
+    def test_unconfigured_severity_is_zero(self):
+        bridge, *_ = _make_gated_bridge({"critical": 300})
+        assert bridge._for_seconds("spa", "warning") == 0
+
+    def test_bare_bridge_is_zero(self):
+        bridge, _client, _log = _make_bridge()
+        assert bridge._for_seconds("spa", "critical") == 0
+
+    def test_override_wins_over_default(self):
+        bridge, *_ = _make_gated_bridge(
+            {"critical": 300, "warning": 600},
+            for_overrides={"ups": {"critical": 0, "warning": 0}},
+        )
+        assert bridge._for_seconds("ups", "critical") == 0
+        assert bridge._for_seconds("ups", "warning") == 0
+        # A checker without an override still uses the default.
+        assert bridge._for_seconds("spa", "critical") == 300
+
+    def test_partial_override_falls_back_to_default(self):
+        bridge, *_ = _make_gated_bridge(
+            {"critical": 300, "warning": 600},
+            for_overrides={"ups": {"critical": 0}},
+        )
+        assert bridge._for_seconds("ups", "critical") == 0
+        # warning not overridden → default
+        assert bridge._for_seconds("ups", "warning") == 600
+
+    def test_non_numeric_config_coerces_to_zero(self):
+        bridge, *_ = _make_gated_bridge({"critical": "nope"})
+        assert bridge._for_seconds("spa", "critical") == 0
+
+
+class TestForDurationGate:
+    def test_blip_recovering_within_for_never_posts(self):
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+
+        _run(bridge.sync({"spa": _checker("critical")}))
+        # Withheld — pending, nothing posted yet.
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.pending_alerts
+        assert "spa" not in bridge.active_alerts
+
+        advance(60)
+        _run(bridge.sync({"spa": _checker("ok")}))
+
+        # Recovered before the for-threshold → suppressed entirely: no raise,
+        # and crucially no [RESOLVED] post either.
+        client.post_alerts.assert_not_awaited()
+        assert bridge.pending_alerts == {}
+        assert bridge.active_alerts == {}
+
+    def test_persisting_past_for_promotes_and_posts_once(self):
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+
+        _run(bridge.sync({"spa": _checker("critical")}))
+        client.post_alerts.assert_not_awaited()
+
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical")}))
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1
+        alert = batch[0]
+        assert alert["labels"]["severity"] == "critical"
+        assert alert["labels"]["checker"] == "spa"
+        assert alert.get("startsAt")
+        assert "endsAt" not in alert
+        assert "spa" in bridge.active_alerts
+        assert "spa" not in bridge.pending_alerts
+
+    def test_stays_pending_below_threshold_then_promotes(self):
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+
+        _run(bridge.sync({"spa": _checker("critical")}))      # t=0   pending
+        advance(200)
+        _run(bridge.sync({"spa": _checker("critical")}))      # t=200 still pending
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.pending_alerts
+
+        advance(100)                                          # t=300
+        _run(bridge.sync({"spa": _checker("critical")}))      # promote
+        client.post_alerts.assert_awaited_once()
+        assert "spa" in bridge.active_alerts
+
+    def test_for_zero_posts_immediately(self):
+        bridge, client, _log, _advance = _make_gated_bridge({"critical": 0})
+
+        _run(bridge.sync({"spa": _checker("critical")}))
+
+        client.post_alerts.assert_awaited_once()
+        assert "spa" in bridge.active_alerts
+        assert bridge.pending_alerts == {}
+
+    def test_per_checker_override_pages_now_while_others_wait(self):
+        bridge, client, _log, _advance = _make_gated_bridge(
+            {"critical": 300},
+            for_overrides={"ups": {"critical": 0}},
+        )
+
+        _run(
+            bridge.sync(
+                {
+                    "ups": _checker("critical", name="UPS"),
+                    "spa": _checker("critical"),
+                }
+            )
+        )
+
+        # UPS pages immediately; spa is withheld pending.
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1
+        assert batch[0]["labels"]["checker"] == "ups"
+        assert "ups" in bridge.active_alerts
+        assert "spa" in bridge.pending_alerts
+        assert "spa" not in bridge.active_alerts
+
+    def test_warning_uses_its_own_longer_for(self):
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+
+        _run(bridge.sync({"spa": _checker("warning")}))       # t=0   pending
+        advance(300)
+        _run(bridge.sync({"spa": _checker("warning")}))       # t=300 < 600 → pending
+        client.post_alerts.assert_not_awaited()
+
+        advance(300)                                          # t=600
+        _run(bridge.sync({"spa": _checker("warning")}))       # promote
+        client.post_alerts.assert_awaited_once()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+
+    def test_escalation_while_pending_uses_new_severity_for(self):
+        # Pending as warning (for=600); escalates to critical (for=300) after
+        # 300s → promotes immediately under the shorter critical threshold.
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+
+        _run(bridge.sync({"spa": _checker("warning")}))       # t=0 pending(warning)
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical")}))      # t=300, crit for=300
+
+        client.post_alerts.assert_awaited_once()
+        alert = _batches(client)[0][0]
+        assert alert["labels"]["severity"] == "critical"
+        assert "spa" in bridge.active_alerts
+        assert "spa" not in bridge.pending_alerts
+
+    def test_repost_ignores_pending_alerts(self):
+        bridge, client, _log, _advance = _make_gated_bridge({"critical": 300})
+        _run(bridge.sync({"spa": _checker("critical")}))      # pending only
+        client.post_alerts.reset_mock()
+
+        _run(bridge.repost_active())
+
+        # Nothing is active yet, so the keep-alive re-post does nothing.
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.pending_alerts
+
+    def test_disabled_alerting_drops_pending_without_post(self):
+        bridge, client, _log, _advance = _make_gated_bridge({"critical": 300})
+        _run(bridge.sync({"spa": _checker("critical")}))      # pending
+        assert "spa" in bridge.pending_alerts
+
+        _run(bridge.sync({"spa": _checker("critical", alerting={"enabled": False})}))
+
+        # desired becomes None → pending dropped, nothing posted.
+        client.post_alerts.assert_not_awaited()
+        assert bridge.pending_alerts == {}
+        assert bridge.active_alerts == {}
