@@ -1,0 +1,18 @@
+alias: >-
+  [Switch] [Inovelli Blue] : [Upstairs] [Foyer Chaos] : [Press or Hold] :
+  [Switch Mappings]
+description: ""
+use_blueprint:
+  path: starbuck93/z2m-v2-0-inovelli-blue-series-2-in-1-switch-dimmer.yaml
+  input:
+    switch: 807c49bb72c10b1811157ea726d162b3
+    config_single:
+      - action: light.turn_off
+        metadata: {}
+        data: {}
+        target:
+          entity_id:
+            - light.downstairs_kitchen_sink_inovelli_presence
+            - light.downstairs_kitchen_island_inovelli_dimmer
+            - light.downstairs_kitches_under_cabinet_inovelli_dimmer
+            - light.downstairs_kitchen_lights

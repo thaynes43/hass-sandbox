@@ -324,6 +324,23 @@ The following smart switches are currently configured for AUX companions (so you
 - **AUX count**: TODO (>= 1)
 - **AUX behavior**: TODO
 
+### Upstairs — Foyer Chaos — Inovelli (Presence)
+
+- **Type**: Inovelli Blue (presence)
+- **HA entity**: `light.upstairs_foyer_chaos_inovelli_presence`
+- **Source automation**: `automations/switch-buttons/inovelli-button-mapping/switch_inovelli_blue_upstairs_foyer_chaos_press_or_hold_switch_mappings.yaml`
+
+| Button | 1x | 2x | 3x | Notes |
+|---|---|---|---|---|
+| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
+| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Config | **Turn off downstairs kitchen lights** → `light.downstairs_kitchen_sink_inovelli_presence`, `light.downstairs_kitchen_island_inovelli_dimmer`, `light.downstairs_kitches_under_cabinet_inovelli_dimmer`, `light.downstairs_kitchen_lights` |  |  | Config 1x (the small "scene" button). Lets you kill the downstairs kitchen lights that aren't on motion control after everyone heads to bed. |
+
+**AUX companion switches (requirements)**
+
+- **AUX count**: TODO
+- **AUX behavior**: TODO
+
 ### Upstairs — Kids Vanity — Inovelli (Presence)
 
 - **Type**: Inovelli Blue (presence)
@@ -613,7 +630,6 @@ For each switch below, fill in desired behavior; then we’ll implement a matchi
 | `light.garage_interior_side_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
 | `light.upstairs_primary_hall_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
 | `light.upstairs_primary_bed_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  |  |  |  |
-| `light.upstairs_foyer_chaos_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  |  |  |  |
 | `light.upstairs_primary_bedroom_foyer_lights_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
 | `light.upstairs_blue_room_foyer_lights_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
 | `light.upstairs_pink_room_foyer_lights_inovelli_presence` | presence |  |  |  |  |  |  |  |  |  | `Aux Switch` | TODO (>= 1): count + what AUX does |
