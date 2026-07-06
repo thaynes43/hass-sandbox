@@ -166,6 +166,8 @@ health_check_controller (listens for health_check_command events from all checke
   ├─ fan_health_checker/fans
   ├─ spa_health_checker/spa (depends on: cloud)
   ├─ temp_humidity_checker/cigar_humidity (per-sensor deps: zwave, zigbee)
+  ├─ shade_gateway_checker/shade_gateway (supports_repair; cooperates with shade_batteries via
+  │    shared/check_utils.is_implausible_battery_drop — not a registered dependency)
   ├─ protect_health_checker/protect (uses ha_provisioner HaAdminClient for discovery + config-entry reload)
   └─ imagegen_health_checker/imagegen (uses ai_providers/comfyui status client)
 

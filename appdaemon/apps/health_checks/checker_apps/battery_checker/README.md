@@ -57,6 +57,45 @@ Status logic:
 - `level <= critical_threshold` → critical
 - Entity unavailable/unknown → critical
 
+#### Disconnect-aware guard (opt-in)
+
+Some battery sensors report a physically-impossible reading when the device
+loses its link to a hub/gateway rather than when the battery is actually low.
+Hunter Douglas PowerView G3 shades are the motivating case: on an RF/gateway
+disconnect the shade reports **0%**, and a flapping gateway makes it bounce
+`100% ↔ 0%` many times an hour. A real battery never loses 40+ percentage
+points between two consecutive readings, so treating that 0% as "critical low
+battery" produces false pages for a condition a human can't fix by charging.
+
+When `disconnect_aware: true`, an **implausible drop** — the last healthy
+reading was `>= disconnect_healthy_floor` and the current reading is
+`<= critical_threshold` — is reported as **warning** (UI-only, no page) with a
+`suspected gateway disconnect (was N%, now M%) — see Shade Gateway` detail,
+instead of `critical`. A genuine gradual decline (the last healthy reading was
+already below the floor) still pages `critical` as normal. The checker tracks
+the last healthy reading per entity, seeded from the current state at startup;
+a cold start never fabricates a baseline from a low reading.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `disconnect_aware` | `false` | Enable the guard. Off by default so unrelated battery groups are unchanged. |
+| `disconnect_healthy_floor` | `40` | The last-healthy reading must be at or above this (%) for a drop to `<= critical_threshold` to count as a suspected disconnect rather than a real low battery. |
+
+This only *suppresses the false low-battery page*; paging and remediation for
+the disconnect itself are owned by the dedicated
+[`shade_gateway_checker`](../shade_gateway_checker/README.md), which detects the
+disconnect, waits out a grace period, and auto power-cycles the gateway.
+`shade_battery_checker` sets `disconnect_aware: true`; the other battery groups
+leave it off.
+
+```yaml
+shade_battery_checker:
+  # ...
+  critical_threshold: 5
+  disconnect_aware: true
+  disconnect_healthy_floor: 40
+```
+
 ### UpsChecker (separate class)
 
 Monitors UPS devices with two check types per UPS:

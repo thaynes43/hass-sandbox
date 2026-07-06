@@ -29,6 +29,8 @@ This architecture means adding a new health check is often just a YAML config ch
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
 | Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
+| Batteries | Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with an opt-in guard that tells a real low battery from a gateway-disconnect 0% | `BatteryChecker` |
+| Motorized shades | PowerView G3 gateway RF-disconnect detection, with PoE port power-cycle repair | `ShadeGatewayChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
 
 ## How It Works
@@ -149,6 +151,8 @@ A second, harder failure mode gets its own fast path: when the UNVR connection i
 
 **ComfyUI** is the opposite. A queue that stops moving — or an API that stops answering — is the classic symptom of the GPU falling off the PCI bus on the virtualization host, and only a host reboot fixes that. No automation can help, so this checker is deliberately page-only: it raises the alarm and stays out of the way. Its thresholds are tuned to the real workload — the first generation after a ComfyUI restart takes ~8.5 minutes of model loading, well under the 30-minute stuck threshold, so cold starts never page.
 
+**PowerView shade gateway** is the pattern in its purest form, and it exists because of a real overnight incident. When a Hunter Douglas G3 gateway loses contact with a shade, the shade doesn't report "offline" — it reports **0% battery**, and a flapping gateway makes it bounce `100% ↔ 0%` for hours. The old battery checker read every 0% as a dying battery and paged four times before dawn for something no human could fix by charging. Now two checkers cooperate: `BatteryChecker` recognizes the physically-impossible drop (a healthy battery can't lose 40+ points between readings) and downgrades it to a silent warning instead of paging, while a dedicated `ShadeGatewayChecker` owns the disconnect itself. It tracks a gateway-wide "disconnect episode" that survives the flapping — a momentary bounce back to 100% doesn't count as recovery — and stays silent through a grace period (default two hours), because these outages usually self-heal. If the shades are still flapping when the grace expires, it power-cycles the one thing that helps — the PoE port feeding the primary gateway — waits for the shades to come back, and only pages if that single restart didn't hold. One overnight page storm becomes zero pages when it self-heals, or one actionable "gateway restarted" page when it doesn't.
+
 ## Dashboard Experience
 
 ### Compact Health Bar
@@ -256,6 +260,8 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Cielo Home | `DeviceGroupChecker` | AC controller status + IP per room | No |
 | UniFi Protect | `ProtectHealthChecker` | Sensor discovery + availability fast path + camera-event freshness in active hours + entry-sensor group | Yes — config entry reload |
 | Image Gen | `ImageGenHealthChecker` | ComfyUI API reachability + queue progress | No — page only |
+| Shade Batteries | `BatteryChecker` | PowerView shade battery levels; downgrades implausible drops to warning (disconnect-aware) so a gateway blip isn't a low-battery page | No |
+| Shade Gateway | `ShadeGatewayChecker` | Gateway RF-disconnect detection across all PowerView shades (implausible 0% flaps), gateway-wide episode tracking | Yes — PoE port 32 power-cycle |
 
 ## Related
 

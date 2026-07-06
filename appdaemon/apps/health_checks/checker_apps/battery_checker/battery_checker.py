@@ -15,6 +15,8 @@ if _health_checks_root not in sys.path:
 
 import hassapi as hass
 
+from shared.check_utils import is_implausible_battery_drop
+
 # Suffixes to strip from friendly_name for cleaner display names (case-insensitive)
 _BATTERY_SUFFIXES = [
     " battery level",
@@ -43,6 +45,21 @@ class BatteryChecker(hass.Hass):
         # Default thresholds (percentage)
         self._warning_threshold: float = float(args.get("warning_threshold", 20))
         self._critical_threshold: float = float(args.get("critical_threshold", 10))
+
+        # Disconnect-aware guard (opt-in): distinguishes a gateway/RF disconnect
+        # (implausible drop from a healthy baseline straight to ~0%) from a
+        # genuine gradual low battery. When enabled, an implausible drop is
+        # reported as "warning" (UI-only) instead of "critical" (pages), since
+        # a dedicated gateway checker (e.g. ShadeGatewayChecker) owns paging
+        # for the disconnect itself. Default False keeps all other battery
+        # groups' behavior unchanged.
+        self._disconnect_aware: bool = bool(args.get("disconnect_aware", False))
+        self._disconnect_healthy_floor: float = float(
+            args.get("disconnect_healthy_floor", 40)
+        )
+        # entity_id -> last reading seen above critical_threshold (only
+        # tracked/consulted when disconnect_aware is enabled).
+        self._last_good_value: Dict[str, float] = {}
 
         # Instance-level dependencies
         self._health_dependencies: List[dict] = list(
@@ -165,6 +182,18 @@ class BatteryChecker(hass.Hass):
 
             matched[entity_id] = display_name
 
+            # Seed disconnect-aware baseline from the current healthy state
+            # so a real implausible drop can be detected on the very first
+            # transition after startup (cold start never fabricates a
+            # baseline from a low reading — only a healthy one).
+            if self._disconnect_aware:
+                try:
+                    current_value = float(state_obj.get("state"))
+                except (TypeError, ValueError):
+                    current_value = None
+                if current_value is not None and current_value > self._critical_threshold:
+                    self._last_good_value[entity_id] = current_value
+
         self._entities = matched
 
         # Log discovered entities for validation
@@ -175,6 +204,14 @@ class BatteryChecker(hass.Hass):
         )
         for entity_id, display_name in sorted(self._entities.items()):
             self.log(f"  - {entity_id} ({display_name})", level="INFO")
+
+        if self._disconnect_aware:
+            self.log(
+                f"Disconnect-aware guard enabled for '{self._checker_id}': "
+                f"seeded {len(self._last_good_value)}/{len(self._entities)} "
+                f"healthy baselines (healthy_floor={self._disconnect_healthy_floor:.0f}%)",
+                level="INFO",
+            )
 
     # ------------------------------------------------------------------
     # Registration
@@ -287,7 +324,37 @@ class BatteryChecker(hass.Hass):
             return {"name": display_name, "status": "critical", "detail": f"non-numeric state: {state}"}
 
         if value <= self._critical_threshold:
-            return {"name": display_name, "status": "critical", "detail": f"{value:.0f}% (critical ≤{self._critical_threshold:.0f}%)"}
-        if value <= self._warning_threshold:
-            return {"name": display_name, "status": "warning", "detail": f"{value:.0f}% (warning ≤{self._warning_threshold:.0f}%)"}
-        return {"name": display_name, "status": "ok", "detail": f"{value:.0f}%"}
+            prev_good = self._last_good_value.get(entity_id)
+            if self._disconnect_aware and is_implausible_battery_drop(
+                prev_good, value, self._disconnect_healthy_floor, self._critical_threshold
+            ):
+                result = {
+                    "name": display_name,
+                    "status": "warning",
+                    "detail": (
+                        f"suspected gateway disconnect (was {prev_good:.0f}%, now "
+                        f"{value:.0f}%) — see Shade Gateway"
+                    ),
+                }
+            else:
+                result = {
+                    "name": display_name,
+                    "status": "critical",
+                    "detail": f"{value:.0f}% (critical ≤{self._critical_threshold:.0f}%)",
+                }
+        elif value <= self._warning_threshold:
+            result = {
+                "name": display_name,
+                "status": "warning",
+                "detail": f"{value:.0f}% (warning ≤{self._warning_threshold:.0f}%)",
+            }
+        else:
+            result = {"name": display_name, "status": "ok", "detail": f"{value:.0f}%"}
+
+        # Update the healthy baseline whenever we see a reading above the
+        # critical threshold, so the next implausible-drop check (in this
+        # cycle or a future one) has a fresh comparison point.
+        if self._disconnect_aware and value > self._critical_threshold:
+            self._last_good_value[entity_id] = value
+
+        return result

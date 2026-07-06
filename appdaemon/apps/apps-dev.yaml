@@ -15,3 +15,22 @@ countdown_app_dev:
   image_sync_shell_command: countdown_sync_images
   rotation_interval_s: 15
   countdown_refresh_s: 60
+
+shade_gateway_checker_dev:
+  module: health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker
+  class: ShadeGatewayChecker
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: shade_gateway_dev
+  checker_name: Shade Gateway (Dev)
+  check_interval_s: 300
+  entity_patterns:
+    - include: "sensor\\..*shade.*_battery$"
+  disconnect_low_threshold: 5
+  healthy_floor: 40
+  recovery_settle_s: 900
+  repair_button: button.switch_pro_max_48_poe_port_32_power_cycle
+  repair_settle_s: 180
+  repair_recovery_wait_s: 900
+  auto_repair_enabled_default: true
+  auto_repair_delay_min_default: 120

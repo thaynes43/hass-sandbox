@@ -20,6 +20,7 @@ from shared.check_utils import (
     apply_cross_check,
     apply_cross_check_per_device,
     http_check,
+    is_implausible_battery_drop,
     ping_check,
 )
 
@@ -283,3 +284,46 @@ class TestApplyCrossCheckPerDevice:
         assert results[0]["status"] == "critical"  # single check, unchanged
         assert results[1]["status"] == "ok"
         assert results[2]["status"] == "warning"  # downgraded (Duo has ok ping)
+
+
+# ---------------------------------------------------------------------------
+# is_implausible_battery_drop tests
+# ---------------------------------------------------------------------------
+
+class TestIsImplausibleBatteryDrop:
+    def test_impossible_drop_flagged(self):
+        """100% -> 0% is the PowerView disconnect signature: implausible."""
+        assert is_implausible_battery_drop(100, 0, healthy_floor=40, low_threshold=5) is True
+
+    def test_gradual_decline_not_flagged(self):
+        """8% -> 0% with a low prior baseline is a real dying battery, not a disconnect."""
+        assert is_implausible_battery_drop(8, 0, healthy_floor=40, low_threshold=5) is False
+
+    def test_no_baseline_not_flagged(self):
+        """No prior healthy reading (cold start) never counts as implausible."""
+        assert is_implausible_battery_drop(None, 0, healthy_floor=40, low_threshold=5) is False
+
+    def test_current_value_above_threshold_not_flagged(self):
+        """A current reading above low_threshold is never a 'drop to zero'."""
+        assert is_implausible_battery_drop(100, 25, healthy_floor=40, low_threshold=5) is False
+
+    def test_baseline_exactly_at_healthy_floor_flagged(self):
+        """Boundary: prev == healthy_floor counts as healthy (>=)."""
+        assert is_implausible_battery_drop(40, 5, healthy_floor=40, low_threshold=5) is True
+
+    def test_baseline_just_below_healthy_floor_not_flagged(self):
+        """Boundary: prev just under healthy_floor is treated as a low baseline."""
+        assert is_implausible_battery_drop(39, 5, healthy_floor=40, low_threshold=5) is False
+
+    def test_current_exactly_at_low_threshold_flagged(self):
+        """Boundary: curr == low_threshold counts as a zero-ish reading (<=)."""
+        assert is_implausible_battery_drop(100, 5, healthy_floor=40, low_threshold=5) is True
+
+    def test_current_just_above_low_threshold_not_flagged(self):
+        """Boundary: curr just over low_threshold is not zero-ish."""
+        assert is_implausible_battery_drop(100, 6, healthy_floor=40, low_threshold=5) is False
+
+    def test_mid_episode_re_drop_still_flagged(self):
+        """A shade that bounced back to 100% and drops again still qualifies —
+        this is what keeps a flapping episode alive rather than clearing it."""
+        assert is_implausible_battery_drop(100, 0, healthy_floor=40, low_threshold=5) is True
