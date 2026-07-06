@@ -209,10 +209,28 @@ class ShadeGatewayChecker(hass.Hass):
                 f"{self._checker_id} Health Auto Repair",
             )
             if created:
-                self.log(
-                    f"Provisioned input_boolean.{self._checker_id}_health_auto_repair",
-                    level="INFO",
-                )
+                entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
+                self.log(f"Provisioned {entity_id}", level="INFO")
+                # A freshly-created input_boolean defaults to "off", and
+                # _refresh_auto_repair_config reads that helper every cycle —
+                # so without seeding it here, auto_repair_enabled_default=True
+                # would be silently overridden to disabled. Turn it on at
+                # creation time (only when created) to honor the default
+                # without clobbering a later user choice.
+                if self._auto_repair_enabled_default:
+                    try:
+                        self.call_service(
+                            "input_boolean/turn_on", entity_id=entity_id
+                        )
+                        self.log(
+                            f"Auto-repair default-enabled via {entity_id}",
+                            level="INFO",
+                        )
+                    except Exception as exc:
+                        self.log(
+                            f"Failed to enable auto-repair default on {entity_id}: {exc!r}",
+                            level="ERROR",
+                        )
         except Exception as exc:
             self.log(f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR")
 

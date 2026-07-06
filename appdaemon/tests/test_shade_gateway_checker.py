@@ -179,6 +179,40 @@ class TestLifecycle:
         _startup(app, mock_prov)
         assert mock_prov.ensure_helper.call_count == 2
 
+    @staticmethod
+    def _turn_on_calls(app):
+        return [
+            c for c in app.call_service.call_args_list
+            if c.args[:1] == ("input_boolean/turn_on",)
+            and c.kwargs.get("entity_id")
+            == "input_boolean.shade_gateway_health_auto_repair"
+        ]
+
+    def test_provisioning_enables_auto_repair_default_when_created(self):
+        # A freshly-created input_boolean defaults to off; since the config
+        # default is enabled, provisioning must turn it on so the read-back
+        # in _refresh_auto_repair_config doesn't silently disable auto-repair.
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()
+        mock_prov.ensure_helper = AsyncMock(return_value=True)  # created
+        _startup(app, mock_prov)
+        assert len(self._turn_on_calls(app)) == 1
+
+    def test_provisioning_does_not_enable_when_helper_already_exists(self):
+        # ensure_helper returns False (already exists) — never clobber a
+        # user's later on/off choice by re-enabling on every startup.
+        app = _make_app()
+        mock_prov = _make_mock_provisioner()  # returns False
+        _startup(app, mock_prov)
+        assert self._turn_on_calls(app) == []
+
+    def test_provisioning_does_not_enable_when_default_disabled(self):
+        app = _make_app({"auto_repair_enabled_default": False})
+        mock_prov = _make_mock_provisioner()
+        mock_prov.ensure_helper = AsyncMock(return_value=True)  # created
+        _startup(app, mock_prov)
+        assert self._turn_on_calls(app) == []
+
     def test_startup_registers_with_supports_repair_and_alerting(self):
         app = _make_app()
         _startup(app)
