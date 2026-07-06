@@ -17,7 +17,7 @@ import asyncio
 import logging
 import sys
 import time
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import aiohttp
 
@@ -133,6 +133,31 @@ def apply_cross_check(results: List[Dict[str, str]]) -> None:
             if r["status"] == "critical":
                 r["status"] = "warning"
                 r["detail"] += " (partial failure)"
+
+
+def is_implausible_battery_drop(
+    prev_good_value: Optional[float],
+    curr_value: float,
+    healthy_floor: float,
+    low_threshold: float,
+) -> bool:
+    """Return True when *curr_value* looks like an RF/gateway disconnect, not a real battery drain.
+
+    A genuine battery drains gradually; a value that plunges from a healthy
+    baseline (``>= healthy_floor``) straight to at-or-below ``low_threshold``
+    in a single reading is the PowerView-style "0% when RF-unreachable"
+    signature, not a physically plausible discharge (real batteries never
+    lose 35+ percentage points between two consecutive readings).
+
+    ``prev_good_value=None`` (no healthy baseline observed yet — e.g. cold
+    start or a gradually-declining battery that was already below
+    ``healthy_floor``) never counts as implausible: there is nothing
+    trustworthy to compare against, so a low reading is treated as a
+    genuine low battery rather than a disconnect.
+    """
+    if prev_good_value is None:
+        return False
+    return curr_value <= low_threshold and prev_good_value >= healthy_floor
 
 
 def apply_cross_check_per_device(

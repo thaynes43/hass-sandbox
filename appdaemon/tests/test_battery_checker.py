@@ -612,3 +612,119 @@ class TestEventHandlers:
             if c[1].get("command") == "report_status"
         ]
         assert len(report_calls) == 1
+
+
+# ------------------------------------------------------------------
+# Disconnect-aware guard (Part B — gateway disconnect vs real low battery)
+# ------------------------------------------------------------------
+
+
+class TestDisconnectAware:
+    """disconnect_aware=true downgrades an implausible drop to warning;
+    a genuine gradual decline still pages critical; disconnect_aware=false
+    (the default) leaves existing battery groups' behavior unchanged."""
+
+    def _eval(self, app, entity_id, display_name, state_value):
+        app.get_state = MagicMock(return_value=state_value)
+        return app._evaluate_entity(entity_id, display_name)
+
+    def test_implausible_drop_downgraded_to_warning(self):
+        """100% -> 0% with disconnect_aware enabled is a suspected disconnect, not critical."""
+        app = _make_app({
+            "disconnect_aware": True,
+            "disconnect_healthy_floor": 40,
+            "critical_threshold": 5,
+            "warning_threshold": 25,
+        })
+        _init_only(app)
+        app._last_good_value["sensor.test_a"] = 100.0
+
+        result = self._eval(app, "sensor.test_a", "Device A", "0")
+
+        assert result["status"] == "warning"
+        assert "suspected gateway disconnect" in result["detail"]
+        assert "100" in result["detail"]
+        assert "0" in result["detail"]
+
+    def test_genuine_low_battery_still_critical(self):
+        """A gradual decline (no healthy baseline recorded) still pages critical
+        even with disconnect_aware enabled."""
+        app = _make_app({
+            "disconnect_aware": True,
+            "disconnect_healthy_floor": 40,
+            "critical_threshold": 5,
+            "warning_threshold": 25,
+        })
+        _init_only(app)
+        # No last_good_value recorded (cold start, or baseline was already low)
+        result = self._eval(app, "sensor.test_a", "Device A", "0")
+
+        assert result["status"] == "critical"
+        assert "suspected gateway disconnect" not in result["detail"]
+
+    def test_low_baseline_decline_still_critical(self):
+        """8% -> 0% (baseline already below healthy_floor) is a real dying
+        battery, not a disconnect — stays critical even with the guard on."""
+        app = _make_app({
+            "disconnect_aware": True,
+            "disconnect_healthy_floor": 40,
+            "critical_threshold": 5,
+            "warning_threshold": 25,
+        })
+        _init_only(app)
+        app._last_good_value["sensor.test_a"] = 8.0
+
+        result = self._eval(app, "sensor.test_a", "Device A", "0")
+
+        assert result["status"] == "critical"
+
+    def test_disconnect_aware_false_behavior_unchanged(self):
+        """With disconnect_aware disabled (the default), an implausible drop
+        still pages critical exactly like before this feature existed."""
+        app = _make_app({
+            "critical_threshold": 5,
+            "warning_threshold": 25,
+        })
+        _init_only(app)
+        # Even if last_good_value were somehow populated, the flag gates it off.
+        app._last_good_value["sensor.test_a"] = 100.0
+
+        result = self._eval(app, "sensor.test_a", "Device A", "0")
+
+        assert result["status"] == "critical"
+        assert "suspected gateway disconnect" not in result["detail"]
+
+    def test_last_good_value_updated_above_critical_threshold(self):
+        """A healthy reading should update the baseline for future comparisons."""
+        app = _make_app({"disconnect_aware": True, "critical_threshold": 5})
+        _init_only(app)
+
+        self._eval(app, "sensor.test_a", "Device A", "90")
+
+        assert app._last_good_value["sensor.test_a"] == 90.0
+
+    def test_last_good_value_not_updated_when_disconnect_aware_false(self):
+        """Baseline tracking is skipped entirely when the flag is off."""
+        app = _make_app({"critical_threshold": 5})
+        _init_only(app)
+
+        self._eval(app, "sensor.test_a", "Device A", "90")
+
+        assert "sensor.test_a" not in app._last_good_value
+
+    def test_discovery_seeds_last_good_value_from_healthy_state(self):
+        """At discovery, a currently-healthy entity seeds its baseline."""
+        app = _make_app({
+            "disconnect_aware": True,
+            "critical_threshold": 10,
+        })
+        _init_and_discover(app)
+
+        assert app._last_good_value["sensor.test_device_a_battery"] == 85.0
+        # Device B is at 15%, above critical_threshold(10) so it also seeds
+        assert app._last_good_value["sensor.test_device_b_battery"] == 15.0
+
+    def test_discovery_does_not_seed_when_disconnect_aware_false(self):
+        app = _make_app()
+        _init_and_discover(app)
+        assert app._last_good_value == {}

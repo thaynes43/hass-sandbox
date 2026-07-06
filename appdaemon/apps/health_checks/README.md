@@ -1,6 +1,6 @@
 # Health Checks
 
-System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, printers) with optional auto-repair capability, the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
+System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, printers) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
 
 ## Architecture
 
@@ -27,6 +27,10 @@ System health monitoring for the Home Assistant dashboard. Provides visibility i
 │  (supports_repair: true) │  + repair_state       │  - sensor               │
 │                          │                       │    .health_check_status │
 │  ◀── health_check_repair_spa ──                  │                         │
+├──────────────────────────┤                       │                         │
+│  ShadeGatewayChecker     │ ──────────────────▶   │  Mirrors to             │
+│  (supports_repair: true) │  + alerting            │  Alertmanager:          │
+│  ◀── health_check_repair_shade_gateway ──         │                         │
 ├──────────────────────────┤                       │                         │
 │  ProtectHealthChecker    │ ──────────────────▶   │  Mirrors to             │
 │  (supports_repair: true) │  + alerting           │  Alertmanager (when     │
@@ -102,6 +106,10 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 ### Temp/Humidity Checker
 
 `TempHumidityChecker` monitors environmental sensors with configurable warning and critical thresholds. Supports temperature, humidity, or both sensor types. Each sensor can have per-sensor threshold overrides and can declare a dependency on another checker. See `temp_humidity_checker/README.md` for details.
+
+### Shade Gateway Checker
+
+`ShadeGatewayChecker` owns gateway-wide RF-disconnect detection for all PowerView shade batteries, separate from the plain-threshold `shade_batteries` `BatteryChecker` instance. PowerView G3 shades report `0%` battery when they lose their RF link to the gateway, not only when the battery is genuinely dead — a disconnected gateway can cause every shade on it to flap `100% <-> 0%` many times over several hours. `ShadeGatewayChecker` detects the implausible-drop signature (a healthy reading collapsing straight to ~0%, which a real battery cannot do in one step) via `listen_state` on every shade battery sensor, models disconnects as a single gateway-level episode that survives mid-episode flap-backs to 100% (only sustained flap-free health clears it), and after a grace period auto-repairs by pressing a UniFi PoE power-cycle button on the port feeding the primary gateway — one restart attempt per episode, escalating to a critical page if that doesn't restore the shades. See `shade_gateway_checker/README.md` for full detail, and `battery_checker/README.md` for the cooperating `disconnect_aware` guard on the plain battery checker.
 
 ### Protect Health Checker
 
@@ -181,6 +189,8 @@ alerting:
 | `input_number.spa_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by SpaHealthChecker) |
 | `input_boolean.protect_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ProtectHealthChecker) |
 | `input_number.protect_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by ProtectHealthChecker) |
+| `input_boolean.shade_gateway_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ShadeGatewayChecker, default ON) |
+| `input_number.shade_gateway_health_auto_repair_delay` | Helper | Auto-repair grace period in minutes (provisioned by ShadeGatewayChecker, 15-360, default 120) |
 
 ## Associated Cards
 
@@ -345,6 +355,10 @@ health_checks/
 │   ├── protect_health_checker/
 │   │   ├── __init__.py
 │   │   └── protect_health_checker.py
+│   ├── shade_gateway_checker/
+│   │   ├── __init__.py
+│   │   ├── shade_gateway_checker.py
+│   │   └── README.md
 │   └── imagegen_health_checker/
 │       ├── __init__.py
 │       └── imagegen_health_checker.py

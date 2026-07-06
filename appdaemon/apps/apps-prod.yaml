@@ -664,6 +664,8 @@ health_check_controller:
     ups:            # power loss is time-sensitive — never debounce
       critical: 0
       warning: 0
+    shade_gateway:  # the checker itself enforces the auto-restart grace
+      critical: 0   # period internally — page immediately once it goes critical
 
 zigbee_health_checker:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
@@ -988,8 +990,36 @@ shade_battery_checker:
   check_interval_s: 300
   warning_threshold: 25
   critical_threshold: 5
+  # An implausible drop (was >=40%, now <=5%) is a suspected PowerView
+  # gateway/RF disconnect, not a real battery — downgrade to warning
+  # (UI-only) instead of paging. ShadeGatewayChecker owns paging for the
+  # disconnect itself; a genuine gradual decline still pages here.
+  disconnect_aware: true
+  disconnect_healthy_floor: 40
   entity_patterns:
     - include: "sensor\\..*shade.*_battery$"
+
+shade_gateway_checker:
+  module: health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker
+  class: ShadeGatewayChecker
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: shade_gateway
+  checker_name: Shade Gateway
+  check_interval_s: 300
+  entity_patterns:
+    - include: "sensor\\..*shade.*_battery$"
+  disconnect_low_threshold: 5
+  healthy_floor: 40
+  recovery_settle_s: 900
+  # Power-cycles the PoE port feeding the primary Upstairs-PowerView-G3
+  # gateway. Verified as the correct fix even for first-floor shades.
+  repair_button: button.switch_pro_max_48_poe_port_32_power_cycle
+  repair_settle_s: 180
+  repair_recovery_wait_s: 900
+  auto_repair_enabled_default: true
+  auto_repair_delay_min_default: 120
 
 lock_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
