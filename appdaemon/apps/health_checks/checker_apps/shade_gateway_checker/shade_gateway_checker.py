@@ -554,7 +554,7 @@ class ShadeGatewayChecker(hass.Hass):
 
         now = datetime.datetime.now()
         minutes = int((now - self._disconnect_since).total_seconds() // 60)
-        _, delay_min = self._read_auto_repair_config()
+        enabled, delay_min = self._read_auto_repair_config()
         deadline = self._disconnect_since + datetime.timedelta(minutes=delay_min)
         affected_names = sorted(
             self._entities.get(eid, eid) for eid in self._episode_affected
@@ -571,16 +571,31 @@ class ShadeGatewayChecker(hass.Hass):
             status = "critical"
             detail = f"{self._repair_detail}; affected: {affected_str}"
         elif now >= deadline:
+            # Past the grace deadline: page critical either way, but word it
+            # honestly — an auto-restart only actually fires when auto-repair
+            # is enabled; otherwise a human must power-cycle the gateway.
             status = "critical"
-            detail = (
-                f"Disconnected {minutes}m (past {delay_min}m auto-restart deadline); "
-                f"affected: {affected_str}"
-            )
-        else:
+            if enabled:
+                detail = (
+                    f"Disconnected {minutes}m (past {delay_min}m auto-restart "
+                    f"deadline); affected: {affected_str}"
+                )
+            else:
+                detail = (
+                    f"Disconnected {minutes}m — auto-restart disabled, manual "
+                    f"gateway power-cycle needed; affected: {affected_str}"
+                )
+        elif enabled:
             status = "warning"
             detail = (
                 f"Disconnected {minutes}m; auto-restart at "
                 f"{deadline.isoformat(timespec='seconds')}; affected: {affected_str}"
+            )
+        else:
+            status = "warning"
+            detail = (
+                f"Disconnected {minutes}m; auto-restart disabled "
+                f"(monitoring only); affected: {affected_str}"
             )
 
         return [{"name": "Gateway Link", "status": status, "detail": detail}]
