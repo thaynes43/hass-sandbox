@@ -668,6 +668,24 @@ def _drive_warning_firing(bridge, client, advance, checker_id="spa"):
 
 
 class TestEscalationGate:
+    def test_firing_warning_annotations_stay_fresh_while_escalation_pending(self):
+        """During a pending escalation the still-firing warning's annotations
+        refresh each sync, so reposts carry the current failing checks."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        _drive_warning_firing(bridge, client, advance)
+
+        checks = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout 9s"}
+        ]
+        _run(bridge.sync({"spa": _checker("critical", checks=checks)}))
+
+        assert "spa" in bridge.pending_alerts
+        active = bridge.active_alerts["spa"]
+        assert active["labels"]["severity"] == "warning"
+        assert active["annotations"]["description"] == "Gateway Ping: timeout 9s"
+
     def test_escalation_withheld_pending_while_warning_stays_firing(self):
         """A warning→critical escalation is withheld pending: no post, the
         warning keeps firing, and the checker enters pending_alerts."""

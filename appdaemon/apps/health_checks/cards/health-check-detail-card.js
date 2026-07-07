@@ -576,7 +576,11 @@ class HealthCheckDetailCard extends HTMLElement {
     let alertsHtml = "";
     for (const alert of allAlerts.slice(0, 20)) {
       let alertIconHtml;
-      if (alert.is_repair_event) {
+      if (alert.is_mute_event) {
+        const muteIcon =
+          alert.to_status === "muted" ? "mdi:bell-off" : "mdi:bell-ring-outline";
+        alertIconHtml = `<ha-icon icon="${muteIcon}" style="color:var(--hcd-muted-alert);--mdc-icon-size:14px;"></ha-icon>`;
+      } else if (alert.is_repair_event) {
         const repairColorMap = {
           in_progress: "var(--hcd-accent)",
           success: "var(--hcd-ok)",

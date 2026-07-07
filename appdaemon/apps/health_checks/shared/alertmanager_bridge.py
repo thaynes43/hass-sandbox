@@ -241,6 +241,9 @@ class AlertmanagerBridge:
                 if escalating and for_s > 0:
                     # Escalations go through the for-duration gate too — the
                     # currently-firing lower severity stays up meanwhile.
+                    # Keep its annotations fresh so Alertmanager/Grafana show
+                    # the current failing checks throughout the gate window.
+                    active["annotations"] = desired["annotations"]
                     if pending is None:
                         self._pending[checker_id] = {"desired": desired, "since": now}
                         self._log(
