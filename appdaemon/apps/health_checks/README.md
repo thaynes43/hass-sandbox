@@ -271,6 +271,7 @@ Any check can be disabled by omitting its config key (e.g., remove `radio_host` 
 | `clear_alert_history` | `{"checker_id": "optional"}` | Clear alert history for one or all checkers |
 | `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely |
 | `unmute_checker` | `{"checker_id": "spa"}` | Re-enable a checker's paging |
+| `record_note` | `{"checker_id": "spa", "note": "power-cycled gateway", "source": "shepherd"}` | Insert a triage note into the checker's alert history (audit trail for automation; `source` defaults to `agent`) |
 
 ## Sensor Attributes Schema
 
