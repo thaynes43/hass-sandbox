@@ -32,6 +32,25 @@ original raise-immediately behaviour.  Durations are resolved per checker via
 overrides in ``for_overrides`` (keyed by ``checker_id`` then severity); both
 are injected by the controller from its ``apps.yaml`` config.
 
+**Escalation gate.**  Severity *escalations* of an already-firing alert
+(warning → critical) go through the same for-duration gate: the firing
+warning stays up while the critical escalation is held pending, and only
+after the checker has stayed critical for ``>= for(critical)`` seconds is
+the warning resolved and the critical raised.  If the checker de-escalates
+while the escalation is pending, the pending escalation is dropped silently
+and the warning keeps firing — a warning↔critical flapper can never page.
+De-escalations (critical → warning) apply immediately, as does everything
+when ``for=0``.
+
+**Repair hold.**  A checker whose auto-repair is scheduled or running
+(``repair_state.status`` of ``pending`` / ``in_progress``) gets a chance to
+fix itself before anyone is paged: promotion of a pending *critical* alert
+is withheld while repair is active, up to ``repair_hold_cap_s`` total
+pending time (default 1800 s) so a stuck repair can never silence a real
+outage.  A failed repair releases the hold on the next report.  Checkers
+with ``for=0`` (explicit "page now" overrides) never enter the pending gate
+and are therefore never held.
+
 Alertmanager being down must never break health checking: every client
 call is wrapped; failures are logged and retried by the next sync or
 re-post tick.  An unsent "raise" stays in the active set so the re-post
@@ -58,6 +77,12 @@ SEVERITY_BY_STATUS = {
     "degraded": "warning",
     "warning": "warning",
 }
+
+# Rank used to distinguish escalations (gated) from de-escalations (immediate).
+_SEVERITY_RANK = {"warning": 1, "critical": 2}
+
+# Repair states during which a pending critical promotion is withheld.
+_REPAIR_ACTIVE_STATES = ("pending", "in_progress")
 
 SOURCE_LABEL = "appdaemon-health-check"
 
@@ -86,6 +111,7 @@ class AlertmanagerBridge:
         default_for_seconds: Optional[Dict[str, Any]] = None,
         for_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         now_fn: Optional[Callable[[], datetime.datetime]] = None,
+        repair_hold_cap_s: int = 1800,
     ) -> None:
         self._client = client
         self._log = log_fn or (lambda msg, level="INFO": None)
@@ -102,6 +128,12 @@ class AlertmanagerBridge:
         self._for_overrides: Dict[str, Dict[str, Any]] = {
             cid: dict(sev_map) for cid, sev_map in (for_overrides or {}).items()
         }
+        # Cap on how long an active repair may withhold a due critical
+        # promotion (total pending time, seconds).
+        try:
+            self._repair_hold_cap_s: int = max(0, int(repair_hold_cap_s))
+        except (TypeError, ValueError):
+            self._repair_hold_cap_s = 1800
         # Injectable clock so tests can drive the for-duration gate.
         self._now_fn: Callable[[], datetime.datetime] = now_fn or (
             lambda: datetime.datetime.now(datetime.timezone.utc)
@@ -184,29 +216,72 @@ class AlertmanagerBridge:
                 continue
 
             # desired is non-None — the checker is unhealthy.
-            if active is not None:
-                if active["labels"] != desired["labels"]:
-                    # Labels define alert identity — resolve the old one and
-                    # raise the new one (e.g. warning escalated to critical).
-                    to_post.append(self._resolved_copy(active))
-                    desired["startsAt"] = _utcnow_iso()
-                    self._active[checker_id] = desired
-                    to_post.append(dict(desired))
-                    self._log(
-                        f"Alert re-raised for checker '{checker_id}' with new "
-                        f"labels: severity={desired['labels'].get('severity')}",
-                        level="INFO",
-                    )
-                else:
-                    # Same identity — refresh annotations; the re-post timer
-                    # keeps the alert alive in Alertmanager.
-                    active["annotations"] = desired["annotations"]
-                continue
-
-            # Not yet firing — apply the for-duration gate before raising.
             severity = desired["labels"].get("severity", "")
             for_s = self._for_seconds(checker_id, severity)
 
+            if active is not None:
+                if active["labels"] == desired["labels"]:
+                    # Same identity — refresh annotations; the re-post timer
+                    # keeps the alert alive in Alertmanager.  Any pending
+                    # escalation is dropped: the checker fell back to the
+                    # severity that is already firing before promotion.
+                    active["annotations"] = desired["annotations"]
+                    if pending is not None:
+                        del self._pending[checker_id]
+                        self._log(
+                            f"Escalation dropped for checker '{checker_id}' — "
+                            f"returned to severity={severity} before promotion",
+                            level="INFO",
+                        )
+                    continue
+
+                escalating = _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(
+                    active["labels"].get("severity", ""), 0
+                )
+                if escalating and for_s > 0:
+                    # Escalations go through the for-duration gate too — the
+                    # currently-firing lower severity stays up meanwhile.
+                    if pending is None:
+                        self._pending[checker_id] = {"desired": desired, "since": now}
+                        self._log(
+                            f"Escalation pending for checker '{checker_id}': "
+                            f"severity={severity} — withholding until sustained "
+                            f"for {for_s}s",
+                            level="INFO",
+                        )
+                        continue
+                    pending["desired"] = desired
+                    if not self._promotion_due(
+                        checker_id, checker, pending, severity, for_s, now
+                    ):
+                        continue
+                    elapsed = (now - pending["since"]).total_seconds()
+                    del self._pending[checker_id]
+                    self._log(
+                        f"Escalation promoted for checker '{checker_id}' after "
+                        f"{elapsed:.0f}s sustained (for={for_s}s): "
+                        f"severity={severity}",
+                        level="INFO",
+                    )
+                elif pending is not None:
+                    # De-escalation (or identity change with for=0) applies
+                    # immediately — clear whatever escalation was pending.
+                    del self._pending[checker_id]
+
+                # Labels define alert identity — resolve the old one and
+                # raise the new one.
+                to_post.append(self._resolved_copy(active))
+                desired["startsAt"] = _utcnow_iso()
+                self._active[checker_id] = desired
+                to_post.append(dict(desired))
+                self._log(
+                    f"Alert re-raised for checker '{checker_id}' with new "
+                    f"labels: severity={desired['labels'].get('severity')}",
+                    level="INFO",
+                )
+                continue
+
+            # Not yet firing — apply the for-duration gate before raising.
             if pending is None:
                 if for_s <= 0:
                     desired["startsAt"] = _utcnow_iso()
@@ -229,10 +304,11 @@ class AlertmanagerBridge:
                 continue
 
             # Already pending — refresh the desired payload, keep the clock,
-            # and promote once it has been unhealthy for >= for_s.
+            # and promote once it has been unhealthy for >= for_s (and any
+            # active auto-repair has had its chance).
             pending["desired"] = desired
-            elapsed = (now - pending["since"]).total_seconds()
-            if elapsed >= for_s:
+            if self._promotion_due(checker_id, checker, pending, severity, for_s, now):
+                elapsed = (now - pending["since"]).total_seconds()
                 desired["startsAt"] = _utcnow_iso()
                 self._active[checker_id] = desired
                 del self._pending[checker_id]
@@ -262,6 +338,44 @@ class AlertmanagerBridge:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _promotion_due(
+        self,
+        checker_id: str,
+        checker: Dict[str, Any],
+        pending: Dict[str, Any],
+        severity: str,
+        for_s: int,
+        now: datetime.datetime,
+    ) -> bool:
+        """Return True when a pending alert should promote to firing.
+
+        The for-duration must have elapsed, and — for critical alerts — any
+        active auto-repair gets a chance to finish first: promotion is
+        withheld while ``repair_state.status`` is pending/in_progress, up to
+        ``repair_hold_cap_s`` total pending time.
+        """
+        elapsed = (now - pending["since"]).total_seconds()
+        if elapsed < for_s:
+            return False
+
+        if severity == "critical" and self._repair_hold_cap_s > 0:
+            repair_status = (checker.get("repair_state") or {}).get("status")
+            if (
+                repair_status in _REPAIR_ACTIVE_STATES
+                and elapsed < self._repair_hold_cap_s
+            ):
+                if not pending.get("repair_hold_logged"):
+                    pending["repair_hold_logged"] = True
+                    self._log(
+                        f"Repair hold for checker '{checker_id}' — critical "
+                        f"promotion withheld while auto-repair is "
+                        f"{repair_status} (cap {self._repair_hold_cap_s}s)",
+                        level="INFO",
+                    )
+                return False
+
+        return True
 
     def _build_desired(
         self, checker_id: str, checker: Dict[str, Any]

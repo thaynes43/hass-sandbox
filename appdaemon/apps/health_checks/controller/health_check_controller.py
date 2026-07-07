@@ -13,6 +13,13 @@ one alert per non-ok checker, re-posted every
 ``resolve_timeout``) and resolved with an immediate ``endsAt`` post when
 the checker recovers.
 
+Checkers can be **muted** from the Lovelace card (``mute_checker`` /
+``unmute_checker`` relay commands, optional ``duration_s``): a muted
+checker still reports status but never reaches Alertmanager, so it cannot
+page.  Mute state persists in ``input_text.health_check_mute_<checker_id>``
+helpers (lazily provisioned) and is restored when checkers re-register
+after a restart; timed mutes are lifted by the heartbeat tick.
+
 Communication with checker apps is **event-only** (never ``get_app``),
 allowing the controller to run in production Kubernetes while new checkers
 are developed on a laptop.
@@ -92,6 +99,11 @@ class HealthCheckController(hass.Hass):
         self._checkers: Dict[str, Dict[str, Any]] = {}
         # Track last known repair status per checker for transition detection
         self._repair_statuses: Dict[str, str] = {}  # checker_id → last repair status
+        # Muted checkers: checker_id → {"until": iso-str | None}.  Muted
+        # checkers never reach Alertmanager (no Pushover pages); state is
+        # persisted per checker in input_text.health_check_mute_<checker_id>
+        # and rebuilt on registration after a restart.
+        self._mutes: Dict[str, Dict[str, Any]] = {}
 
         # Alertmanager bridge (optional — enabled when alertmanager_url is set)
         self._alertmanager_url: str = str(args.get("alertmanager_url") or "")
@@ -107,6 +119,10 @@ class HealthCheckController(hass.Hass):
             args.get("alert_for_overrides") or {}
         )
 
+        # Cap on how long an active auto-repair may withhold a due critical
+        # promotion (see AlertmanagerBridge repair hold).
+        alert_repair_hold_cap_s = int(args.get("alert_repair_hold_cap_s", 1800))
+
         self._alert_bridge: Optional[AlertmanagerBridge] = None
         if self._alertmanager_url:
             self._alert_bridge = AlertmanagerBridge(
@@ -114,6 +130,7 @@ class HealthCheckController(hass.Hass):
                 log_fn=self.log,
                 default_for_seconds=alert_for_seconds,
                 for_overrides=alert_for_overrides,
+                repair_hold_cap_s=alert_repair_hold_cap_s,
             )
 
         self.log(
@@ -246,6 +263,11 @@ class HealthCheckController(hass.Hass):
 
     def _heartbeat_tick(self, kwargs: Any) -> None:
         """Update the heartbeat helper with the current timestamp."""
+        try:
+            self._expire_mutes()
+        except Exception as exc:
+            self.log(f"Mute expiry check failed: {exc!r}", level="ERROR")
+
         now = datetime.datetime.now()
         dt_str = now.strftime("%Y-%m-%d %H:%M:%S")
         try:
@@ -292,6 +314,10 @@ class HealthCheckController(hass.Hass):
             self._handle_update_repair_config(payload)
         elif cmd == "clear_alert_history":
             self._handle_clear_alert_history(payload)
+        elif cmd == "mute_checker":
+            self._handle_mute(payload)
+        elif cmd == "unmute_checker":
+            self._handle_unmute(payload)
         else:
             self.log(f"Unknown health_check_command: {cmd!r}", level="WARNING")
 
@@ -322,6 +348,18 @@ class HealthCheckController(hass.Hass):
             "dependencies": payload.get("dependencies", []),
             "alerting": payload.get("alerting") or {},
         }
+
+        # Rebuild persisted mute state (survives controller restarts).
+        persisted_mute = self._load_persisted_mute(checker_id)
+        if persisted_mute is not None:
+            self._mutes[checker_id] = persisted_mute
+            until = persisted_mute.get("until")
+            self.log(
+                f"Checker '{checker_id}' is muted "
+                f"({'until ' + until if until else 'indefinitely'}) — restored "
+                "from persisted state",
+                level="INFO",
+            )
 
         action = "Registered" if is_new else "Re-registered"
         self.log(
@@ -559,6 +597,158 @@ class HealthCheckController(hass.Hass):
         self._publish_status()
 
     # ------------------------------------------------------------------
+    # Muting (per-checker alert suppression)
+    # ------------------------------------------------------------------
+
+    def _mute_helper_entity(self, checker_id: str) -> str:
+        return f"input_text.health_check_mute_{checker_id}"
+
+    def _mute_helper_name(self, checker_id: str) -> str:
+        return f"Health Check Mute {checker_id.replace('_', ' ').title()}"
+
+    def _load_persisted_mute(self, checker_id: str) -> Optional[Dict[str, Any]]:
+        """Read the mute helper for a checker; None = not muted.
+
+        An expired or unparseable mute is treated as not muted.
+        """
+        try:
+            raw = self.get_state(self._mute_helper_entity(checker_id))
+        except Exception:
+            return None
+        if not raw or raw in ("unknown", "unavailable"):
+            return None
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(data, dict) or not data.get("muted"):
+            return None
+        until = data.get("until") or None
+        if until:
+            try:
+                if datetime.datetime.fromisoformat(until) <= datetime.datetime.now():
+                    return None  # expired while we were away
+            except (ValueError, TypeError):
+                until = None
+        return {"until": until}
+
+    def _record_mute_event(
+        self, checker_id: str, to_status: str, detail: str
+    ) -> None:
+        """Insert a mute/unmute transition into the checker's alert history."""
+        checker = self._checkers.get(checker_id)
+        if not checker:
+            return
+        checker["alert_history"].insert(0, {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "check": "Alerting",
+            "from_status": "unmuted" if to_status == "muted" else "muted",
+            "to_status": to_status,
+            "detail": detail,
+            "is_mute_event": True,
+        })
+
+    def _handle_mute(self, payload: dict) -> None:
+        """Mute a checker's alerts (optional duration_s; absent = indefinite)."""
+        checker_id = payload.get("checker_id", "")
+        if checker_id not in self._checkers:
+            self.log(
+                f"mute_checker for unknown checker: {checker_id!r}",
+                level="WARNING",
+            )
+            return
+
+        until: Optional[str] = None
+        duration_s = payload.get("duration_s")
+        if duration_s is not None:
+            try:
+                duration_s = int(duration_s)
+            except (TypeError, ValueError):
+                duration_s = 0
+            if duration_s > 0:
+                until = (
+                    datetime.datetime.now() + timedelta(seconds=duration_s)
+                ).isoformat(timespec="seconds")
+
+        self._mutes[checker_id] = {"until": until}
+        detail = f"muted until {until}" if until else "muted indefinitely"
+        self.log(f"Checker '{checker_id}' {detail}", level="INFO")
+        self._record_mute_event(checker_id, "muted", detail)
+        self._publish_status()
+        self.create_task(self._persist_mute(checker_id, True, until))
+
+    def _handle_unmute(self, payload: dict) -> None:
+        checker_id = payload.get("checker_id", "")
+        if checker_id not in self._checkers:
+            self.log(
+                f"unmute_checker for unknown checker: {checker_id!r}",
+                level="WARNING",
+            )
+            return
+        self._unmute(checker_id, reason="unmuted from UI")
+
+    def _unmute(self, checker_id: str, reason: str) -> None:
+        """Shared unmute path for UI commands and expiry."""
+        if checker_id not in self._mutes:
+            return
+        del self._mutes[checker_id]
+        self.log(f"Checker '{checker_id}' unmuted ({reason})", level="INFO")
+        self._record_mute_event(checker_id, "unmuted", reason)
+        self._publish_status()
+        self.create_task(self._persist_mute(checker_id, False, None))
+
+    def _expire_mutes(self) -> None:
+        """Lift any timed mutes whose expiry has passed."""
+        now = datetime.datetime.now()
+        expired = []
+        for cid, mute in self._mutes.items():
+            until = mute.get("until")
+            if not until:
+                continue
+            try:
+                if datetime.datetime.fromisoformat(until) <= now:
+                    expired.append(cid)
+            except (ValueError, TypeError):
+                expired.append(cid)  # unparseable expiry — fail open (unmute)
+        for cid in expired:
+            self._unmute(cid, reason="mute expired")
+
+    async def _persist_mute(
+        self, checker_id: str, muted: bool, until: Optional[str]
+    ) -> None:
+        """Write mute state to the checker's input_text helper (lazily provisioned)."""
+        entity_id = self._mute_helper_entity(checker_id)
+        value = json.dumps({"muted": muted, "until": until})
+
+        ha_url = self.args.get("ha_url")
+        ha_token_env = self.args.get("ha_token_env")
+        if ha_url and ha_token_env:
+            try:
+                prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
+                created = await prov.ensure_helper(
+                    "input_text",
+                    self._mute_helper_name(checker_id),
+                    max=255,
+                )
+                if created:
+                    self.log(f"Provisioned mute helper {entity_id}", level="INFO")
+            except Exception as exc:
+                self.log(
+                    f"Failed to provision mute helper {entity_id}: {exc!r}",
+                    level="ERROR",
+                )
+        try:
+            await self.call_service(
+                "input_text/set_value", entity_id=entity_id, value=value
+            )
+        except Exception as exc:
+            self.log(
+                f"Failed to persist mute state to {entity_id}: {exc!r} — "
+                "mute is active in memory but won't survive a restart",
+                level="ERROR",
+            )
+
+    # ------------------------------------------------------------------
     # Dependency resolution
     # ------------------------------------------------------------------
 
@@ -625,7 +815,9 @@ class HealthCheckController(hass.Hass):
     # Sensor publication
     # ------------------------------------------------------------------
 
-    def _checker_attrs(self, c: dict, is_dependency: bool = False) -> dict:
+    def _checker_attrs(
+        self, checker_id: str, c: dict, is_dependency: bool = False
+    ) -> dict:
         """Extract the attributes to publish for a single checker.
 
         For checkers with many checks, only non-ok checks are included
@@ -659,6 +851,8 @@ class HealthCheckController(hass.Hass):
             "supports_repair": c.get("supports_repair", False),
             "repair_state": c.get("repair_state"),
             "is_dependency": is_dependency,
+            "muted": checker_id in self._mutes,
+            "muted_until": self._mutes.get(checker_id, {}).get("until"),
         }
 
     def _publish_status(self) -> None:
@@ -693,7 +887,7 @@ class HealthCheckController(hass.Hass):
 
         attrs = {
             "checkers": {
-                cid: self._checker_attrs(c, is_dependency=(cid in dep_ids))
+                cid: self._checker_attrs(cid, c, is_dependency=(cid in dep_ids))
                 for cid, c in resolved.items()
             },
             "last_updated": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -708,14 +902,20 @@ class HealthCheckController(hass.Hass):
         self.set_state(SENSOR_ENTITY_ID, state=overall, attributes=attrs)
 
         # Mirror the resolved view into Alertmanager.  Copies are taken so
-        # later state mutations can't race the async post.
+        # later state mutations can't race the async post.  Muted checkers
+        # are passed with alerting disabled — the bridge resolves any firing
+        # alert and drops pendings, so no Pushover pages while muted.
         if self._alert_bridge is not None:
             snapshot = {
                 cid: {
                     "name": c["name"],
                     "status": c["status"],
                     "checks": [dict(ch) for ch in c["checks"]],
-                    "alerting": c.get("alerting") or {},
+                    "alerting": (
+                        {**(c.get("alerting") or {}), "enabled": False}
+                        if cid in self._mutes
+                        else c.get("alerting") or {}
+                    ),
                     "repair_state": copy.deepcopy(c.get("repair_state")),
                 }
                 for cid, c in resolved.items()

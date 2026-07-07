@@ -9,7 +9,9 @@
  *   input_datetime.appdaemon_heartbeat   — last heartbeat timestamp
  *
  * Sends commands via relay script:
- *   force_recheck — triggers all checkers to run immediately
+ *   force_recheck  — triggers all checkers to run immediately
+ *   mute_checker   — suppresses Pushover paging for a checker (optional duration_s)
+ *   unmute_checker — re-enables Pushover paging for a checker
  *
  * Mandatory patterns:
  *   - Shadow DOM
@@ -492,12 +494,25 @@ class HealthCheckDetailCard extends HTMLElement {
       const wasExplicitlyExpanded = this._expandedCheckers.has(checkerId);
       const expandedClass = wasExplicitlyExpanded ? "expanded" : "";
 
+      // Muted indicator for the header row (shown next to the status badge).
+      const isMuted = checker.muted === true || checker.muted === "true";
+      const mutedIndicatorHtml = isMuted
+        ? `<span class="muted-indicator" title="Alerts muted">
+            <ha-icon icon="mdi:bell-off" style="--mdc-icon-size:14px;"></ha-icon>
+            <span class="muted-chip">MUTED</span>
+          </span>`
+        : "";
+
+      // Alerting (paging mute) controls — shown in every checker.
+      const alertingHtml = this._buildAlertingHtml(checkerId, checker);
+
       html += `
         <div class="section checker-block ${expandedClass}" data-checker-id="${hcdEscapeHtml(checkerId)}">
           <div class="section-header checker-toggle" data-action="toggle_checker" data-checker="${hcdEscapeHtml(checkerId)}">
             <span class="section-icon">${iconHtml}</span>
             <span class="section-title">${hcdEscapeHtml(checker.name || checkerId)}</span>
             <span class="header-summary">${hcdEscapeHtml(summaryText)}</span>
+            ${mutedIndicatorHtml}
             <span class="section-badge badge-${effectiveStatus}">${label}</span>
             <span class="chevron"><ha-icon icon="mdi:chevron-down" style="--mdc-icon-size:18px;"></ha-icon></span>
           </div>
@@ -516,6 +531,7 @@ class HealthCheckDetailCard extends HTMLElement {
               ${checksHtml}
             </div>
             ${repairHtml}
+            ${alertingHtml}
           </div>
         </div>
       `;
@@ -737,6 +753,53 @@ class HealthCheckDetailCard extends HTMLElement {
     `;
   }
 
+  // ---------------------------------------------------------------------------
+  // Alerting (paging mute) UI builder — shown for every checker
+  // ---------------------------------------------------------------------------
+
+  _buildAlertingHtml(checkerId, checker) {
+    const isMuted = checker.muted === true || checker.muted === "true";
+    const mutedUntil = checker.muted_until;
+    const cid = hcdEscapeHtml(checkerId);
+
+    let bodyHtml;
+    if (isMuted) {
+      const statusText = mutedUntil
+        ? `Alerts muted until ${this._formatTimestamp(mutedUntil)}`
+        : "Alerts muted";
+      bodyHtml = `
+        <span class="alerting-status">
+          <ha-icon icon="mdi:bell-off" style="--mdc-icon-size:14px;color:var(--hcd-muted-alert);"></ha-icon>
+          <span>${hcdEscapeHtml(statusText)}</span>
+        </span>
+        <button class="alerting-btn alerting-unmute-btn" data-action="unmute_checker" data-checker="${cid}">
+          <ha-icon icon="mdi:bell-ring-outline" style="--mdc-icon-size:14px;"></ha-icon> Unmute
+        </button>
+      `;
+    } else {
+      bodyHtml = `
+        <span class="alerting-label">Paging</span>
+        <button class="alerting-btn" data-action="mute_checker" data-checker="${cid}" data-duration="86400">
+          Mute 1d
+        </button>
+        <button class="alerting-btn" data-action="mute_checker" data-checker="${cid}" data-duration="604800">
+          Mute 7d
+        </button>
+        <button class="alerting-btn" data-action="mute_checker" data-checker="${cid}">
+          <ha-icon icon="mdi:bell-off-outline" style="--mdc-icon-size:14px;"></ha-icon> Mute
+        </button>
+      `;
+    }
+
+    return `
+      <div class="alerting-section">
+        <div class="alerting-controls">
+          ${bodyHtml}
+        </div>
+      </div>
+    `;
+  }
+
   _repairStatusIcon(status) {
     switch (status) {
       case "in_progress":
@@ -791,6 +854,16 @@ class HealthCheckDetailCard extends HTMLElement {
         this._callRelay("start_repair", { checker_id: el.dataset.checker });
       } else if (action === "cancel_repair") {
         this._callRelay("cancel_repair", { checker_id: el.dataset.checker });
+      } else if (action === "mute_checker") {
+        const payload = { checker_id: el.dataset.checker };
+        const durationRaw = el.dataset.duration;
+        if (durationRaw != null && durationRaw !== "") {
+          const durationS = parseInt(durationRaw, 10);
+          if (!isNaN(durationS)) payload.duration_s = durationS;
+        }
+        this._callRelay("mute_checker", payload);
+      } else if (action === "unmute_checker") {
+        this._callRelay("unmute_checker", { checker_id: el.dataset.checker });
       } else if (action === "toggle_auto_repair") {
         const checker_id = el.dataset.checker;
         const auto_repair_enabled = el.checked;
@@ -895,6 +968,7 @@ class HealthCheckDetailCard extends HTMLElement {
         --hcd-critical: #ef5350;
         --hcd-degraded: #ff9800;
         --hcd-unknown: #9e9e9e;
+        --hcd-muted-alert: #a99fd0;
         display: block;
       }
 
@@ -964,6 +1038,26 @@ class HealthCheckDetailCard extends HTMLElement {
       .badge-unknown {
         background: rgba(158, 158, 158, 0.18);
         color: var(--hcd-unknown);
+      }
+
+      /* Muted (paging suppressed) header indicator */
+      .muted-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        flex-shrink: 0;
+        color: var(--hcd-muted-alert);
+      }
+
+      .muted-chip {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 3px 8px;
+        border-radius: 6px;
+        background: color-mix(in srgb, var(--hcd-muted-alert) 20%, transparent);
+        color: var(--hcd-muted-alert);
       }
 
       .section-body {
@@ -1298,6 +1392,74 @@ class HealthCheckDetailCard extends HTMLElement {
       .repair-delay-input:focus {
         outline: 1px solid var(--hcd-accent);
         border-color: var(--hcd-accent);
+      }
+
+      /* Alerting (paging mute) section */
+      .alerting-section {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid var(--hcd-border);
+      }
+
+      .alerting-controls {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        flex-wrap: wrap;
+      }
+
+      .alerting-label {
+        font-size: 12px;
+        color: var(--hcd-muted);
+        font-weight: 500;
+        margin-right: 4px;
+      }
+
+      .alerting-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--hcd-muted-alert);
+        margin-right: 4px;
+      }
+
+      .alerting-btn {
+        all: unset;
+        cursor: pointer;
+        padding: 4px 10px;
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--hcd-muted-alert) 12%, transparent);
+        border: 1px solid color-mix(in srgb, var(--hcd-muted-alert) 30%, transparent);
+        color: var(--hcd-muted-alert);
+        font-size: 11px;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        transition: background 120ms ease, border-color 120ms ease;
+      }
+
+      .alerting-btn:hover {
+        background: color-mix(in srgb, var(--hcd-muted-alert) 22%, transparent);
+        border-color: color-mix(in srgb, var(--hcd-muted-alert) 45%, transparent);
+      }
+
+      .alerting-btn:active {
+        opacity: 0.7;
+      }
+
+      .alerting-unmute-btn {
+        color: var(--hcd-accent);
+        background: rgba(255, 255, 255, 0.06);
+        border-color: var(--hcd-border);
+      }
+
+      .alerting-unmute-btn:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
       }
 
       /* Per-device repair rows */

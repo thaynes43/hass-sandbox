@@ -141,6 +141,18 @@ Each alert carries the failing check details in its description, so the notifica
 
 Checkers can customize their alert name in config (e.g. `ProtectEventStreamFrozen`, `ImageGenQueueStuck`) or opt out of alerting entirely.
 
+### Smarter Than a Tripwire
+
+A page that fires on every momentary blip trains you to ignore it, so the paging path is deliberately patient:
+
+- **Debounce.** A checker has to stay unhealthy for a sustained window — not just a single poll — before it pages. A transient blip that clears on the next check never reaches the phone.
+- **Escalation is gated too.** When something that's already warning gets worse and goes critical, the critical page is held for that same sustained window instead of firing instantly. A checker that flaps between warning and critical keeps its quiet warning and never pages, while a real, sustained escalation still promotes to a page. De-escalations — critical easing back to warning — apply immediately.
+- **Repair gets first crack.** If a checker supports auto-repair and a repair is scheduled or running, the critical page is withheld while the repair does its thing — capped at 30 minutes so a stuck repair can never permanently mask a real outage. Most self-healing failures resolve inside that window with no page at all; only a repair that fails or times out escalates to the phone.
+
+### Muting a Checker
+
+Sometimes you already know about a problem and don't want to be paged about it — a camera is unplugged for the season, or you're mid-maintenance on the spa. Every checker in the detail popup has an **Alerting** row with **Mute 1d**, **Mute 7d**, and indefinite **Mute** buttons (and **Unmute** to lift it). A muted checker keeps running and still shows its true status on the dashboard — with a **MUTED** badge in its header — but it won't page while muted. Timed mutes lift themselves automatically when they expire, and a mute survives an AppDaemon restart, so a 7-day mute really lasts 7 days.
+
 ### Auto-Heal First, Page If That Fails
 
 The two checkers that drove this integration show the two ends of the spectrum:
@@ -173,6 +185,7 @@ The detail card provides a full breakdown:
 - **Force Re-check** button to trigger all checkers immediately
 - **Clear History** button to dismiss resolved alerts
 - **Repair controls** for repair-capable checkers (manual trigger, cancel pending repair, auto-repair toggle, delay setting)
+- **Mute controls** on every checker's Alerting row — silence its paging for a day, a week, or indefinitely (a MUTED badge and one-tap Unmute show while active)
 
 ## Extending the System
 

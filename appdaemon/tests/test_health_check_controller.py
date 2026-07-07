@@ -2300,3 +2300,209 @@ class TestEmptyResultsRepairReport:
         assert any("endsAt" in a for a in resolved)
 
         _close_created_coros(app)
+
+
+# ---------------------------------------------------------------------------
+# Tests — Per-checker mute (alert suppression)
+# ---------------------------------------------------------------------------
+
+class TestMute:
+    def _register(self, app, checker_id="spa", name="Spa", checks=("Ping",)):
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": checker_id,
+                "checker_name": name,
+                "check_names": list(checks),
+            }),
+        }, {})
+
+    def _mute(self, app, checker_id="spa", **extra):
+        payload = {"checker_id": checker_id}
+        payload.update(extra)
+        app._on_command("health_check_command", {
+            "command": "mute_checker",
+            "payload": json.dumps(payload),
+        }, {})
+
+    # -- mute_checker ---------------------------------------------------------
+
+    def test_mute_marks_muted_and_records_history(self):
+        """mute_checker (no duration) marks the checker muted with muted_until
+        None and inserts an is_mute_event alert-history entry (to_status muted)."""
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+        app.set_state.reset_mock()
+
+        self._mute(app)
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        spa = attrs["checkers"]["spa"]
+        assert spa["muted"] is True
+        assert spa["muted_until"] is None
+
+        entry = app._checkers["spa"]["alert_history"][0]
+        assert entry["is_mute_event"] is True
+        assert entry["to_status"] == "muted"
+
+        _close_created_coros(app)
+
+    def test_mute_with_duration_sets_future_until(self):
+        """mute_checker with duration_s=3600 sets muted_until ~1h ahead (ISO)."""
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+
+        before = datetime.datetime.now()
+        self._mute(app, duration_s=3600)
+
+        until = app._mutes["spa"]["until"]
+        assert isinstance(until, str)
+        parsed = datetime.datetime.fromisoformat(until)
+        delta = (parsed - before).total_seconds()
+        assert 3540 <= delta <= 3660
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["checkers"]["spa"]["muted_until"] == until
+
+        _close_created_coros(app)
+
+    def test_muted_checker_snapshot_disables_alerting(self):
+        """While muted, the snapshot handed to the bridge sync has the checker's
+        alerting disabled (enabled=False) so it can never page."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+        self._register(app)
+        # Capture the snapshot passed to the bridge instead of running a real sync.
+        app._alert_bridge.sync = MagicMock()
+
+        self._mute(app)
+
+        app._alert_bridge.sync.assert_called()
+        snapshot = app._alert_bridge.sync.call_args[0][0]
+        assert snapshot["spa"]["alerting"] == {"enabled": False}
+
+        _close_created_coros(app)
+
+    # -- unmute_checker -------------------------------------------------------
+
+    def test_unmute_clears_mute_and_records_history(self):
+        """unmute_checker clears the mute (muted=False) and records an
+        is_mute_event history entry with to_status unmuted."""
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+        self._mute(app)
+        app.set_state.reset_mock()
+
+        app._on_command("health_check_command", {
+            "command": "unmute_checker",
+            "payload": json.dumps({"checker_id": "spa"}),
+        }, {})
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["checkers"]["spa"]["muted"] is False
+
+        entry = app._checkers["spa"]["alert_history"][0]
+        assert entry["is_mute_event"] is True
+        assert entry["to_status"] == "unmuted"
+
+        _close_created_coros(app)
+
+    # -- expiry ---------------------------------------------------------------
+
+    def test_expire_mutes_lifts_past_mute(self):
+        """_expire_mutes lifts a mute whose until timestamp is in the past."""
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+
+        past = (
+            datetime.datetime.now() - datetime.timedelta(seconds=5)
+        ).isoformat(timespec="seconds")
+        app._mutes["spa"] = {"until": past}
+
+        app._expire_mutes()
+
+        assert "spa" not in app._mutes
+
+        _close_created_coros(app)
+
+    # -- persisted mute rebuild on registration -------------------------------
+
+    def test_register_restores_persisted_indefinite_mute(self):
+        """A persisted '{"muted": true, "until": null}' helper makes the checker
+        muted in published attrs as soon as it registers."""
+        app = _make_app()
+        _startup(app)
+        app.get_state = MagicMock(return_value='{"muted": true, "until": null}')
+
+        self._register(app)
+
+        assert "spa" in app._mutes
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["checkers"]["spa"]["muted"] is True
+
+        _close_created_coros(app)
+
+    def test_register_ignores_expired_persisted_mute(self):
+        """A persisted mute whose until is in the past is NOT restored."""
+        app = _make_app()
+        _startup(app)
+        past = (
+            datetime.datetime.now() - datetime.timedelta(seconds=5)
+        ).isoformat(timespec="seconds")
+        app.get_state = MagicMock(
+            return_value=json.dumps({"muted": True, "until": past})
+        )
+
+        self._register(app)
+
+        assert "spa" not in app._mutes
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["checkers"]["spa"]["muted"] is False
+
+        _close_created_coros(app)
+
+    # -- error handling -------------------------------------------------------
+
+    def test_mute_unknown_checker_warns_and_stores_nothing(self):
+        """mute_checker for an unregistered checker logs a warning and does not
+        crash or store a mute."""
+        app = _make_app()
+        _startup(app)
+
+        self._mute(app, checker_id="nope")
+
+        app.log.assert_any_call(
+            "mute_checker for unknown checker: 'nope'",
+            level="WARNING",
+        )
+        assert app._mutes == {}
+
+        _close_created_coros(app)
+
+    # -- persistence ----------------------------------------------------------
+
+    def test_persist_mute_writes_helper_and_value(self):
+        """_persist_mute provisions the input_text helper and writes the JSON
+        mute state via input_text/set_value."""
+        app = _make_app()
+        app.call_service = AsyncMock()
+        mock_prov = _make_mock_provisioner()
+
+        with patch(
+            "health_checks.controller.health_check_controller.HAProvisioner",
+            return_value=mock_prov,
+        ):
+            _run(app._persist_mute("spa", True, None))
+
+        mock_prov.ensure_helper.assert_awaited_once_with(
+            "input_text", "Health Check Mute Spa", max=255
+        )
+        app.call_service.assert_awaited_once_with(
+            "input_text/set_value",
+            entity_id="input_text.health_check_mute_spa",
+            value=json.dumps({"muted": True, "until": None}),
+        )
