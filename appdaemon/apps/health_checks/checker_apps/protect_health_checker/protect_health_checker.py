@@ -230,6 +230,17 @@ class ProtectHealthChecker(hass.Hass):
         self._availability_grace_s: int = int(
             args.get("availability_grace_s", 900)
         )
+        # Dwell before a mass-unavailability reads as a confirmed outage
+        # (the CRITICAL fast path).  Deliberately much shorter than
+        # availability_grace_s (which debounces per-device offline
+        # warnings): it only needs to absorb a config-entry reload's
+        # unavailable blip (~30-60s), and every extra second here delays
+        # auto-repair — the 2026-07-07 incident paged because a 900s grace
+        # kept the checker "ok" through a total outage while the battery
+        # checker's 300s gate expired first.
+        self._availability_outage_grace_s: int = int(
+            args.get("availability_outage_grace_s", 180)
+        )
         self._availability_critical_pct: int = int(
             args.get("availability_critical_pct", 90)
         )
@@ -860,7 +871,7 @@ class ProtectHealthChecker(hass.Hass):
         else:
             first_seen = self._missing_since.setdefault(s.entity_id, now_utc)
             dwell = (now_utc - first_seen).total_seconds()
-        return dwell > self._availability_grace_s
+        return dwell > self._availability_outage_grace_s
 
     def _check_availability(
         self, sensors: List[EventSensor]
@@ -938,7 +949,7 @@ class ProtectHealthChecker(hass.Hass):
             self.log(
                 f"Availability outage CONFIRMED: {len(down)}/{len(sensors)} "
                 f"event sensors unavailable for "
-                f">{_fmt_age(self._availability_grace_s)}",
+                f">{_fmt_age(self._availability_outage_grace_s)}",
                 level="WARNING",
             )
             return {
@@ -946,7 +957,7 @@ class ProtectHealthChecker(hass.Hass):
                 "status": "critical",
                 "detail": (
                     f"{len(down)}/{len(sensors)} event sensors unavailable "
-                    f"for >{_fmt_age(self._availability_grace_s)} — "
+                    f"for >{_fmt_age(self._availability_outage_grace_s)} — "
                     "integration connection lost"
                 ),
             }

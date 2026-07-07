@@ -1312,6 +1312,31 @@ class TestAvailabilityCheck:
         result = app._check_availability(sensors)
         assert result["status"] == "ok"
 
+    def test_outage_confirms_after_outage_grace_not_device_grace(self):
+        """The 2026-07-07 page: a total outage must confirm on the SHORT
+        outage grace (default 180s), not the 900s per-device warning grace
+        — otherwise the battery checker's 300s gate pages for a Protect
+        outage before auto-repair ever arms."""
+        app = _make_app()
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=300)
+            for i in range(10)
+        ]
+        result = app._check_availability(sensors)
+        assert result["status"] == "critical"
+        assert "connection lost" in result["detail"]
+
+    def test_outage_grace_configurable(self):
+        app = _make_app({"availability_outage_grace_s": 600})
+        _init_only(app)
+        sensors = [
+            _sensor(f"binary_sensor.cam{i}", state="unavailable", age_s=300)
+            for i in range(10)
+        ]
+        result = app._check_availability(sensors)
+        assert result["status"] == "ok"
+
     def test_partial_unavailable_warns_only_for_witnessed_devices(self):
         """The 03:26 case: the USL subset drops while cameras keep working.
         Warns because this app saw the devices alive earlier — chronic darks
