@@ -674,6 +674,12 @@ health_check_controller:
       warning: 0
     shade_gateway:  # the checker itself enforces the auto-restart grace
       critical: 0   # period internally — page immediately once it goes critical
+    protect_batteries:
+      # Longer than protect's outage confirmation (outage_grace 180s +
+      # one 300s poll): a Protect outage flips protect critical first,
+      # which dependency-masks these batteries before they can page.
+      # Real battery drain is gradual — 10 min of latency is free.
+      critical: 600
 
 zigbee_health_checker:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
@@ -1067,6 +1073,11 @@ protect_battery_checker:
   entity_patterns:
     - include: "sensor\\..*usl_entry_battery.*"
     - include: "sensor\\..*_usl_entry_battery$"
+  # USL battery entities ride the Protect integration: when Protect is
+  # down they all read unavailable at once — that's Protect's outage to
+  # report (and auto-repair), not a battery incident (2026-07-07 page).
+  health_dependencies:
+    - checker_id: protect
 
 zigbee_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker
@@ -1165,8 +1176,13 @@ protect_health_checker:
   active_end: "23:00"
   active_tz: America/New_York
   check_interval_s: 300
-  # Hard-outage fast path: page when ~all event sensors are unavailable
-  # for longer than the grace period (UNVR down / auth failure).
+  # Hard-outage fast path: go critical when ~all event sensors are
+  # unavailable past the outage grace (UNVR down / auth failure / websocket
+  # drop). Short on purpose: it only needs to absorb a reload blip, and
+  # going critical is what arms auto-repair (config-entry reload) — the
+  # repair hold then keeps Pushover quiet while the reload runs.
+  availability_outage_grace_s: 180
+  # Per-device offline warnings keep the longer debounce.
   availability_grace_s: 900
   availability_critical_pct: 90
   # Offline-device warnings auto-expire after this window (wireless G6

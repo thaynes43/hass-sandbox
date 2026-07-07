@@ -25,7 +25,7 @@ Setting `motion_entities` skips template discovery entirely and monitors exactly
 
 The freeze the staleness check hunts is *silent*: sensors stay available but stop changing. A **hard** outage (UNVR down, auth failure like the 2026-06-11 401s) looks completely different — every entity flips to `unavailable` at once. Two properties make this its own check:
 
-- An `unavailable` transition **refreshes `last_changed` without being an event**, so the staleness clock restarts and would not fire for another `stale_after_s` (3h). The availability check pages in `availability_grace_s` (default 15m) instead.
+- An `unavailable` transition **refreshes `last_changed` without being an event**, so the staleness clock restarts and would not fire for another `stale_after_s` (3h). The availability check goes critical in `availability_outage_grace_s` (default 3m) instead, arming auto-repair.
 - A sensor counts as *down* only after it has been unavailable for longer than the grace period (its `last_changed` is the transition moment; entities missing from the state machine entirely are timed from first observation). The grace also absorbs the brief unavailable blip a config-entry reload causes, so auto-heal cannot trip its own alarm mid-repair.
 - Recovery is **latched**: once an outage is confirmed, only sensors actually coming back available clear it. A reload re-registers every entity and resets every `last_changed` — without the latch, a *failed* heal would reset the dwell clocks, false-resolve the page, and flap on every retry. (This is the availability-path analogue of the frozen-baseline rule below.)
 
@@ -124,7 +124,8 @@ protect_health_checker:
   active_end: "23:00"                     # Daily active window end (default: 23:00; must not cross midnight)
   active_tz: America/New_York             # Timezone for the window (default: America/New_York)
   check_interval_s: 300                   # Check frequency (default: 300)
-  availability_grace_s: 900               # Unavailable dwell before a sensor counts as down (default: 900 = 15m)
+  availability_outage_grace_s: 180        # Dwell before mass-unavailability confirms as a critical outage (default: 180 = 3m; absorbs a reload blip, arms auto-repair fast)
+  availability_grace_s: 900               # Dwell before a per-device offline WARNING (default: 900 = 15m)
   availability_critical_pct: 90           # % of sensors down for availability critical (default: 90)
   availability_warn_window_s: 86400       # Offline-device warnings expire after this (default: 86400 = 24h)
   reload_cooldown_s: 3600                 # Min seconds between auto-repair reloads (default: 3600)
