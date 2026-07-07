@@ -175,7 +175,9 @@ class ImmichClient:
         round-trip.  If the response omits ``assets`` (Immich v3.0.0
         removed the field per PR immich-app/immich#27835) or the
         endpoint itself returns 404, falls back to the paginated
-        ``POST /api/search/assets`` form with an ``albumIds`` filter.
+        ``POST /api/search/metadata`` form with an ``albumIds`` filter
+        (v3.0.0 also removed ``POST /api/search/assets``; metadata search
+        returns the same ``assets.items``/``assets.nextPage`` shape).
         """
         try:
             legacy = await self._json_request("GET", f"/api/albums/{album_id}")
@@ -193,14 +195,14 @@ class ImmichClient:
 
         logger.info(
             "Album %s: legacy response missing 'assets' (Immich v3?), "
-            "falling back to POST /api/search/assets",
+            "falling back to POST /api/search/metadata",
             album_id,
         )
         all_assets: List[Dict[str, Any]] = []
         page = 1
         while True:
             body = {"albumIds": [album_id], "page": page, "size": 1000}
-            data = await self._json_request("POST", "/api/search/assets", json=body)
+            data = await self._json_request("POST", "/api/search/metadata", json=body)
             assets_section = data.get("assets", {}) if isinstance(data, dict) else {}
             items = assets_section.get("items", []) if isinstance(assets_section, dict) else []
             all_assets.extend(items)

@@ -4,7 +4,7 @@ Currently exercises ``get_album_assets`` because it owns the version
 fallback added for Immich v3.0.0.  On v2.x we read ``assets`` directly
 from ``GET /api/albums/{id}``; on v3 (PR immich-app/immich#27835 removed
 ``AlbumResponseDto.assets``) we fall back to paginated
-``POST /api/search/assets``.
+``POST /api/search/metadata``.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ class TestGetAlbumAssets:
         assert client._json_request.await_count == 2
         first, second = client._json_request.await_args_list
         assert first.args == ("GET", "/api/albums/alb-2")
-        assert second.args == ("POST", "/api/search/assets")
+        assert second.args == ("POST", "/api/search/metadata")
         assert second.kwargs["json"] == {
             "albumIds": ["alb-2"],
             "page": 1,
