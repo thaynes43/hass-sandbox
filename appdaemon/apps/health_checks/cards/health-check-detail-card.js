@@ -576,7 +576,9 @@ class HealthCheckDetailCard extends HTMLElement {
     let alertsHtml = "";
     for (const alert of allAlerts.slice(0, 20)) {
       let alertIconHtml;
-      if (alert.is_mute_event) {
+      if (alert.is_note_event) {
+        alertIconHtml = `<ha-icon icon="mdi:robot-outline" style="color:var(--hcd-accent);--mdc-icon-size:14px;"></ha-icon>`;
+      } else if (alert.is_mute_event) {
         const muteIcon =
           alert.to_status === "muted" ? "mdi:bell-off" : "mdi:bell-ring-outline";
         alertIconHtml = `<ha-icon icon="${muteIcon}" style="color:var(--hcd-muted-alert);--mdc-icon-size:14px;"></ha-icon>`;
@@ -597,12 +599,17 @@ class HealthCheckDetailCard extends HTMLElement {
       if (prevDuration != null && prevDuration > 0) {
         transitionDetail = ` (was ${hcdEscapeHtml(alert.from_status)} for ${this._formatDurationCompact(prevDuration)})`;
       }
+      // Note events carry their content in `detail`; a "agent → note"
+      // transition would be noise, so show the note text instead.
+      const transitionHtml = alert.is_note_event
+        ? hcdEscapeHtml(alert.detail || "")
+        : `${hcdEscapeHtml(alert.from_status)} → ${hcdEscapeHtml(alert.to_status)}${transitionDetail}`;
       alertsHtml += `
         <div class="alert-row">
           <span class="alert-icon">${alertIconHtml}</span>
           <span class="alert-time">${hcdEscapeHtml(this._formatTimestamp(alert.timestamp))}</span>
           <span class="alert-source"><span class="alert-checker">${hcdEscapeHtml(alert.checker_name)}</span> <span class="alert-arrow">→</span> ${hcdEscapeHtml(alert.check)}</span>
-          <span class="alert-transition">${hcdEscapeHtml(alert.from_status)} → ${hcdEscapeHtml(alert.to_status)}${transitionDetail}</span>
+          <span class="alert-transition">${transitionHtml}</span>
         </div>
       `;
     }
@@ -1206,6 +1213,9 @@ class HealthCheckDetailCard extends HTMLElement {
         color: var(--hcd-muted);
         font-size: 10px;
         white-space: nowrap;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       .empty-state {

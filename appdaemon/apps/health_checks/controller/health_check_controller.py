@@ -318,6 +318,8 @@ class HealthCheckController(hass.Hass):
             self._handle_mute(payload)
         elif cmd == "unmute_checker":
             self._handle_unmute(payload)
+        elif cmd == "record_note":
+            self._handle_record_note(payload)
         else:
             self.log(f"Unknown health_check_command: {cmd!r}", level="WARNING")
 
@@ -594,6 +596,45 @@ class HealthCheckController(hass.Hass):
             for c in self._checkers.values():
                 c["alert_history"] = []
             self.log("Cleared all alert history", level="INFO")
+        self._publish_status()
+
+    def _handle_record_note(self, payload: dict) -> None:
+        """Insert a triage note into a checker's alert history.
+
+        Lets automation (e.g. a triage agent) leave an audit trail visible
+        in the detail card: ``{checker_id, note, source?}``.  Notes ride the
+        normal alert-history retention/cap.
+        """
+        checker_id = payload.get("checker_id", "")
+        checker = self._checkers.get(checker_id)
+        if not checker:
+            self.log(
+                f"record_note for unknown checker: {checker_id!r}",
+                level="WARNING",
+            )
+            return
+        note = str(payload.get("note", "")).strip()
+        if not note:
+            self.log("record_note with empty note — ignored", level="WARNING")
+            return
+        # Cap note length to protect the sensor's ~16 KB attribute budget.
+        if len(note) > 280:
+            note = note[:279] + "…"
+        source = str(payload.get("source", "") or "agent").strip() or "agent"
+
+        checker["alert_history"].insert(0, {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "check": source,
+            "from_status": source,
+            "to_status": "note",
+            "detail": note,
+            "is_note_event": True,
+        })
+        checker["alert_history"] = checker["alert_history"][: self._alert_history_max]
+        self.log(
+            f"Note recorded for checker '{checker_id}' from '{source}': {note}",
+            level="INFO",
+        )
         self._publish_status()
 
     # ------------------------------------------------------------------

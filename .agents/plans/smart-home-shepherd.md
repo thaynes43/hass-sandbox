@@ -99,3 +99,25 @@ annotates + remediates; phase 2: once trusted, delay the Pushover route).
 3. Which remediations beyond `start_repair` are pre-authorized? (e.g. is the
    shepherd allowed to port-cycle the PowerView gateway via the UniFi MCP
    path, or only via the checker's built-in repair?)
+
+## Status & decisions (2026-07-06)
+
+- **Scope: prereqs-only for now.** Tom chose to land the hass-sandbox-side
+  prerequisites and hold on the cluster build. No shepherd deployment yet.
+- **Shipped in hass-sandbox:**
+  - The `record_note` relay command (`script.health_check_relay` →
+    `health_check_command` → controller `_handle_record_note`) — shepherd
+    actions land in the checker's alert history as a `note` event, same shape
+    as repair/mute events.
+  - `agent-docs/shepherd-runbooks/` — a format `README.md` (sanctioned-action
+    ladder, guardrails, universal preconditions) plus one runbook each for
+    the top pagers: `spa`, `shade_gateway`, `protect`, `protect_batteries`,
+    `shade_batteries`, `fans`. Remediation is restricted to the relay commands
+    `force_recheck` / `start_repair` / `record_note` (plus explicitly
+    whitelisted repair switches); guardrails encoded: max 2 attempts per
+    checker per 6h, never mute, never kubectl writes.
+- **Alertmanager paging routes stay untouched** until real triage exists — no
+  Phase-2 page-delay wiring yet; criticals still page immediately.
+- **Phase-1 cluster build (sibling deployment, CronJob poller, ExternalSecret
+  with a scoped HA token + Anthropic key) awaits design review** and answers
+  to the open questions above.

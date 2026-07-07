@@ -2506,3 +2506,90 @@ class TestMute:
             entity_id="input_text.health_check_mute_spa",
             value=json.dumps({"muted": True, "until": None}),
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests — record_note (triage audit trail)
+# ---------------------------------------------------------------------------
+
+class TestRecordNote:
+    def _register(self, app, checker_id="spa", name="Spa", checks=("Ping",)):
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": checker_id,
+                "checker_name": name,
+                "check_names": list(checks),
+            }),
+        }, {})
+
+    def _note(self, app, **payload):
+        app._on_command("health_check_command", {
+            "command": "record_note",
+            "payload": json.dumps(payload),
+        }, {})
+
+    def test_note_inserted_into_history_and_published(self):
+        """record_note inserts an is_note_event entry with the note in detail
+        and the source in check/from_status, then republishes the sensor."""
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+        app.set_state.reset_mock()
+
+        self._note(app, checker_id="spa", note="restarted repair", source="shepherd")
+
+        entry = app._checkers["spa"]["alert_history"][0]
+        assert entry["is_note_event"] is True
+        assert entry["detail"] == "restarted repair"
+        assert entry["check"] == "shepherd"
+        assert entry["to_status"] == "note"
+        app.set_state.assert_called()
+        _close_created_coros(app)
+
+    def test_note_source_defaults_to_agent(self):
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+
+        self._note(app, checker_id="spa", note="checked logs")
+
+        assert app._checkers["spa"]["alert_history"][0]["check"] == "agent"
+        _close_created_coros(app)
+
+    def test_long_note_truncated_to_280(self):
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+
+        self._note(app, checker_id="spa", note="x" * 500)
+
+        detail = app._checkers["spa"]["alert_history"][0]["detail"]
+        assert len(detail) == 280
+        assert detail.endswith("…")
+        _close_created_coros(app)
+
+    def test_unknown_checker_warns_without_crash(self):
+        app = _make_app()
+        _startup(app)
+
+        self._note(app, checker_id="nope", note="hello")
+
+        warnings = [
+            c for c in app.log.call_args_list
+            if c.kwargs.get("level") == "WARNING"
+            and "record_note" in str(c.args[0])
+        ]
+        assert warnings
+        _close_created_coros(app)
+
+    def test_empty_note_ignored(self):
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+        before = len(app._checkers["spa"]["alert_history"])
+
+        self._note(app, checker_id="spa", note="   ")
+
+        assert len(app._checkers["spa"]["alert_history"]) == before
+        _close_created_coros(app)
