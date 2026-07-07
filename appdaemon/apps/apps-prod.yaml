@@ -656,9 +656,17 @@ health_check_controller:
   # on the next poll) are suppressed. Promotion is confirmed on a later
   # status report, so a single bad sample can never page. Most checkers poll
   # every 300s, so critical=300 ≈ "two consecutive failing checks".
+  # The gate also applies to severity escalations (warning -> critical): the
+  # warning alert stays up while the critical must sustain for its own
+  # duration before paging — a warning<->critical flapper can never page.
   alert_for_seconds:
     critical: 300   # ~5 min — sustained 0%/offline still pages; blips don't
     warning: 600    # warnings are UI-only (don't page); quieter still
+  # Give auto-repair a chance before paging: while a checker's repair is
+  # pending/in-progress, a due critical promotion is withheld up to this many
+  # seconds of total pending time. 0 disables the hold. Checkers with a
+  # for=0 override (ups, shade_gateway) never enter the gate, so never hold.
+  alert_repair_hold_cap_s: 1800
   # Per-checker overrides (checker_id -> severity -> seconds). 0 = page now.
   alert_for_overrides:
     ups:            # power loss is time-sensitive — never debounce

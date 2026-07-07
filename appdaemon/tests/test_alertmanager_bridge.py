@@ -59,12 +59,14 @@ def _run(coro):
         loop.close()
 
 
-def _make_gated_bridge(default_for_seconds, for_overrides=None):
+def _make_gated_bridge(default_for_seconds, for_overrides=None, repair_hold_cap_s=1800):
     """Bridge with a for-duration gate and a manually-advanceable clock.
 
     Returns (bridge, client, log, advance) where ``advance(seconds)`` moves
     the injected clock forward so the for-duration gate can be driven
-    deterministically.
+    deterministically.  ``repair_hold_cap_s`` (default 1800, matching the
+    bridge default) controls how long an active auto-repair may withhold a
+    due critical promotion — pass 0 to disable the hold entirely.
     """
     client = MagicMock()
     client.post_alerts = AsyncMock()
@@ -80,6 +82,7 @@ def _make_gated_bridge(default_for_seconds, for_overrides=None):
         default_for_seconds=default_for_seconds,
         for_overrides=for_overrides,
         now_fn=now_fn,
+        repair_hold_cap_s=repair_hold_cap_s,
     )
 
     def advance(seconds):
@@ -647,3 +650,292 @@ class TestForDurationGate:
         client.post_alerts.assert_not_awaited()
         assert bridge.pending_alerts == {}
         assert bridge.active_alerts == {}
+
+
+# ---------------------------------------------------------------------------
+# Tests — Escalation for-duration gate (warning firing → critical)
+# ---------------------------------------------------------------------------
+
+def _drive_warning_firing(bridge, client, advance, checker_id="spa"):
+    """Drive ``checker_id`` to a firing warning alert.
+
+    Assumes a warning for-gate of 600s (the value used by every escalation
+    test below): pending on the first sync, promoted to firing after 600s.
+    """
+    _run(bridge.sync({checker_id: _checker("warning")}))   # t=0   pending
+    advance(600)
+    _run(bridge.sync({checker_id: _checker("warning")}))   # t=600 promote
+
+
+class TestEscalationGate:
+    def test_firing_warning_annotations_stay_fresh_while_escalation_pending(self):
+        """During a pending escalation the still-firing warning's annotations
+        refresh each sync, so reposts carry the current failing checks."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        _drive_warning_firing(bridge, client, advance)
+
+        checks = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout 9s"}
+        ]
+        _run(bridge.sync({"spa": _checker("critical", checks=checks)}))
+
+        assert "spa" in bridge.pending_alerts
+        active = bridge.active_alerts["spa"]
+        assert active["labels"]["severity"] == "warning"
+        assert active["annotations"]["description"] == "Gateway Ping: timeout 9s"
+
+    def test_escalation_withheld_pending_while_warning_stays_firing(self):
+        """A warning→critical escalation is withheld pending: no post, the
+        warning keeps firing, and the checker enters pending_alerts."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        _drive_warning_firing(bridge, client, advance)
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("critical")}))
+
+        client.post_alerts.assert_not_awaited()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+        assert "spa" in bridge.pending_alerts
+
+    def test_escalation_promotes_after_threshold_resolving_warning(self):
+        """Once the critical escalation is sustained for its for-duration the
+        warning is resolved and the critical raised in one 2-alert batch."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        _drive_warning_firing(bridge, client, advance)
+
+        _run(bridge.sync({"spa": _checker("critical")}))      # escalation pending
+        client.post_alerts.reset_mock()
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical")}))      # promote
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 2
+        resolved, fresh = batch
+        # Resolved copy of the firing warning.
+        assert resolved["labels"]["severity"] == "warning"
+        assert resolved.get("endsAt")
+        # Fresh critical — still firing, new startsAt, no endsAt.
+        assert fresh["labels"]["severity"] == "critical"
+        assert fresh.get("startsAt")
+        assert "endsAt" not in fresh
+
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+        assert bridge.pending_alerts == {}
+
+    def test_de_escalation_before_threshold_drops_pending_and_new_window(self):
+        """De-escalating back to warning before promotion drops the pending
+        escalation with no post; a later critical opens a NEW pending window
+        (a short advance under threshold does not promote)."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        _drive_warning_firing(bridge, client, advance)
+        client.post_alerts.reset_mock()
+
+        # Escalate to critical → pending.
+        _run(bridge.sync({"spa": _checker("critical")}))
+        assert "spa" in bridge.pending_alerts
+
+        # Fall back to warning before the threshold → pending dropped.
+        _run(bridge.sync({"spa": _checker("warning")}))
+        client.post_alerts.assert_not_awaited()
+        assert "spa" not in bridge.pending_alerts
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+
+        # Re-escalate → brand-new pending window; a short advance under the
+        # critical for-duration must not promote.
+        _run(bridge.sync({"spa": _checker("critical")}))
+        assert "spa" in bridge.pending_alerts
+        advance(200)
+        _run(bridge.sync({"spa": _checker("critical")}))
+
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.pending_alerts
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+
+    def test_de_escalation_is_immediate_no_pending(self):
+        """critical firing → warning applies immediately: one 2-alert batch
+        (resolve critical + raise warning), no pending phase."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        # Promote to a firing critical first.
+        _run(bridge.sync({"spa": _checker("critical")}))      # pending
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical")}))      # firing critical
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("warning")}))
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 2
+        resolved, fresh = batch
+        assert resolved["labels"]["severity"] == "critical"
+        assert resolved.get("endsAt")
+        assert fresh["labels"]["severity"] == "warning"
+        assert "endsAt" not in fresh
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+        assert "spa" not in bridge.pending_alerts
+
+    def test_recovery_while_escalation_pending_resolves_only_warning(self):
+        """A checker that recovers to ok while a critical escalation is pending
+        posts a single resolve for the firing warning; pending and active clear."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        _drive_warning_firing(bridge, client, advance)
+
+        _run(bridge.sync({"spa": _checker("critical")}))      # escalation pending
+        assert "spa" in bridge.pending_alerts
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("ok")}))
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1
+        resolved = batch[0]
+        assert resolved["labels"]["severity"] == "warning"
+        assert resolved.get("endsAt")
+        assert bridge.pending_alerts == {}
+        assert bridge.active_alerts == {}
+
+    # Bullet 6 (bare bridge / for=0: warning→critical re-raises immediately) is
+    # covered by TestEscalation.test_warning_to_critical_resolves_old_and_raises
+    # _new_in_one_batch above — intentionally not duplicated here.
+
+
+# ---------------------------------------------------------------------------
+# Tests — Repair hold (withhold critical promotion while auto-repair runs)
+# ---------------------------------------------------------------------------
+
+class TestRepairHold:
+    def test_critical_held_while_repair_in_progress(self):
+        """A due critical promotion is withheld while auto-repair is
+        in_progress: still pending, nothing posted, past the for-threshold."""
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+        rc = {"status": "in_progress"}
+
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # pending
+        assert "spa" in bridge.pending_alerts
+        client.post_alerts.assert_not_awaited()
+
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # held
+
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.pending_alerts
+        assert "spa" not in bridge.active_alerts
+
+    def test_hold_released_once_cap_reached(self):
+        """Once total pending time reaches repair_hold_cap_s (1800s default) the
+        critical promotes even though repair is still in_progress."""
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+        rc = {"status": "in_progress"}
+
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # t=0 pending
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # t=300 held
+        client.post_alerts.assert_not_awaited()
+
+        advance(1500)  # total pending elapsed = 1800 == cap
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # promote
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1
+        assert batch[0]["labels"]["severity"] == "critical"
+        assert "spa" in bridge.active_alerts
+        assert "spa" not in bridge.pending_alerts
+
+    def test_failed_repair_releases_hold_at_threshold(self):
+        """A repair that fails releases the hold: the critical promotes at the
+        for-threshold on the report where repair status becomes failed."""
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+
+        _run(
+            bridge.sync(
+                {"spa": _checker("critical", repair_state={"status": "pending"})}
+            )
+        )  # pending
+        advance(300)
+        _run(
+            bridge.sync(
+                {"spa": _checker("critical", repair_state={"status": "failed"})}
+            )
+        )  # promote — repair no longer active
+
+        client.post_alerts.assert_awaited_once()
+        assert "spa" in bridge.active_alerts
+        assert "spa" not in bridge.pending_alerts
+
+    def test_warning_is_not_held_by_repair(self):
+        """The repair hold only applies to critical: a warning promotes on
+        schedule even while repair is in_progress."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300, "warning": 600}
+        )
+        rc = {"status": "in_progress"}
+
+        _run(bridge.sync({"spa": _checker("warning", repair_state=rc)}))  # pending
+        advance(600)
+        _run(bridge.sync({"spa": _checker("warning", repair_state=rc)}))  # promote
+
+        client.post_alerts.assert_awaited_once()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+        assert "spa" not in bridge.pending_alerts
+
+    def test_recovery_while_held_never_posts(self):
+        """A checker held by an active repair that then recovers to ok never
+        pages: no post at all, pending cleared."""
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+        rc = {"status": "in_progress"}
+
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # pending
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # held
+        _run(bridge.sync({"spa": _checker("ok")}))                         # recover
+
+        client.post_alerts.assert_not_awaited()
+        assert bridge.pending_alerts == {}
+        assert bridge.active_alerts == {}
+
+    def test_cap_zero_disables_hold(self):
+        """repair_hold_cap_s=0 disables the hold entirely: the critical
+        promotes at the for-threshold even with repair in_progress."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300}, repair_hold_cap_s=0
+        )
+        rc = {"status": "in_progress"}
+
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # pending
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # promote
+
+        client.post_alerts.assert_awaited_once()
+        assert "spa" in bridge.active_alerts
+        assert "spa" not in bridge.pending_alerts
+
+    def test_for_zero_override_raises_immediately_despite_repair(self):
+        """A checker with a for=0 override never enters the pending gate, so it
+        can never be held — it raises immediately even with repair in_progress."""
+        bridge, client, _log, _advance = _make_gated_bridge(
+            {"critical": 300}, for_overrides={"x": {"critical": 0}}
+        )
+        rc = {"status": "in_progress"}
+
+        _run(bridge.sync({"x": _checker("critical", repair_state=rc)}))
+
+        client.post_alerts.assert_awaited_once()
+        assert "x" in bridge.active_alerts
+        assert "x" not in bridge.pending_alerts

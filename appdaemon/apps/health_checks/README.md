@@ -157,7 +157,9 @@ Severity mapping (the cluster's Alertmanager routes only `severity=critical` to 
 Mechanics:
 
 - **For-duration gate (flap suppression)** — a checker that is non-ok for only a poll or two should not page. Each severity has a configurable `for` duration (`alert_for_seconds` on the controller, with per-checker `alert_for_overrides`). When a checker first goes non-ok the alert is held *pending* — nothing is posted — and only promoted to firing once it has stayed non-ok for `>= for` seconds, confirmed on a **later** status report (Prometheus `for:` semantics: a single-sample blip can never be promoted). If the checker recovers while pending, the alert is dropped silently (no page, no `[RESOLVED]` noise). `for=0` (the default when unconfigured) raises immediately. Most checkers poll every 300s, so `critical: 300` ≈ "two consecutive failing checks": a sustained 0%/offline still pages, a one-poll glitch does not.
-- **Label-set identity** — `alertname` + `severity` + `source=appdaemon-health-check` + `checker=<id>` identify the alert. If the labels change (e.g. a warning escalates to critical), the old alert is resolved and a new one raised; if only the failing-check details change, annotations are refreshed in place.
+- **Escalation gate** — a *severity escalation* of an already-firing alert (warning → critical) goes through the same for-duration gate instead of paging immediately: the firing warning stays up while the critical escalation is held *pending*, and only after the checker has stayed critical for `>= for(critical)` seconds is the warning resolved and the critical raised. If the checker de-escalates — or falls back to the severity already firing — while the escalation is pending, the pending escalation is dropped silently and the warning keeps firing, so a warning↔critical flapper can never page. De-escalations (critical → warning) apply immediately, as does everything when `for=0`.
+- **Repair hold** — while a repair-capable checker's auto-repair is scheduled or running (`repair_state.status` of `pending`/`in_progress`), a *due* critical promotion is withheld so auto-repair gets a chance to fix the problem before anyone is paged — up to `alert_repair_hold_cap_s` total pending time (default 1800s) so a stuck repair can never permanently silence a real outage. A failed repair releases the hold on the next report. Checkers with `for=0` (explicit "page now" overrides) never enter the pending gate and are therefore never held.
+- **Label-set identity** — `alertname` + `severity` + `source=appdaemon-health-check` + `checker=<id>` identify the alert. If the labels change, the old alert is resolved and a new one raised; if only the failing-check details change, annotations are refreshed in place. A severity change that *escalates* (warning → critical) is held by the escalation gate above first; de-escalations swap immediately.
 - **Re-post keep-alive** — Alertmanager auto-resolves silent alerts after its `resolve_timeout` (5m in this cluster), so the controller re-posts all firing alerts every `alertmanager_repost_interval_s` (default 120s — must stay below the resolve_timeout).
 - **Immediate resolve** — on recovery the bridge sends one final post with `endsAt=now`, producing an immediate `[RESOLVED]` notification instead of waiting out the resolve_timeout.
 - **Fail-open** — Alertmanager being down never breaks health checking: failed posts are logged and retried by the next sync or re-post tick. An unsent raise stays in the active set so the re-post loop delivers it; an unsent resolve falls back to the resolve_timeout.
@@ -170,6 +172,16 @@ alerting:
   enabled: true                        # default true
   alertname: ProtectEventStreamFrozen  # default <CheckerName>Unhealthy (e.g. ImageGenUnhealthy)
 ```
+
+### Per-Checker Mute
+
+Any checker's paging can be silenced on demand from the detail card — useful during planned maintenance or a known-but-unactionable outage. The detail card shows an **Alerting** row for every checker with **Mute 1d**, **Mute 7d**, and **Mute** (indefinite) buttons, an **Unmute** button while muted, and a **MUTED** chip in the checker's header. These fire the `mute_checker` / `unmute_checker` relay commands.
+
+A muted checker still runs its checks and reports status to the sensor — the card renders it normally, just with the MUTED chip — but its Alertmanager alert is suppressed: `_publish_status` passes the checker to the bridge with `alerting.enabled=false`, so the bridge resolves any firing alert and drops any pending one. Nothing pages while muted. Unmuting restores alerting; if the checker is still unhealthy the alert re-raises (back through the for-duration gate) on the next report.
+
+- **Timed vs indefinite** — `mute_checker` takes an optional `duration_s`; absent means mute indefinitely. Timed mutes are lifted automatically by the heartbeat tick once their expiry passes.
+- **Persistence** — mute state is stored per checker in a lazily-provisioned `input_text.health_check_mute_<checker_id>` helper (JSON `{"muted", "until"}`), so it survives an AppDaemon restart and is restored when the checker re-registers. An expired mute found on restart is treated as unmuted.
+- **Audit trail** — mute and unmute are recorded in the checker's `alert_history` as `Alerting` events, and each checker's sensor attributes expose `muted` (bool) and `muted_until` (ISO timestamp or `null`).
 
 ## Dependencies
 
@@ -185,6 +197,7 @@ alerting:
 | `input_datetime.appdaemon_heartbeat` | Helper | Controller heartbeat timestamp |
 | `script.health_check_relay` | Script | Card → AppDaemon command relay |
 | `sensor.health_check_status` | Virtual sensor | Aggregated health status (via `set_state`) |
+| `input_text.health_check_mute_<checker_id>` | Helper | Per-checker mute state as JSON (lazily provisioned on first mute) |
 | `input_boolean.spa_health_auto_repair` | Helper | Auto-repair toggle (provisioned by SpaHealthChecker) |
 | `input_number.spa_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by SpaHealthChecker) |
 | `input_boolean.protect_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ProtectHealthChecker) |
@@ -197,7 +210,7 @@ alerting:
 | Card | File | Purpose |
 |------|------|---------|
 | `health-check-card` | `cards/health-check-card.js` | Compact summary bar for wall-display |
-| `health-check-detail-card` | `cards/health-check-detail-card.js` | Full detail popup with alert history |
+| `health-check-detail-card` | `cards/health-check-detail-card.js` | Full detail popup with alert history, repair controls, and per-checker mute (Alerting row) |
 
 ## Configuration Reference
 
@@ -223,6 +236,9 @@ health_check_controller:
     ups:
       critical: 0              # power loss is time-sensitive — never debounce
       warning: 0
+  # Repair hold — a scheduled/running auto-repair withholds a due critical page
+  # (up to this many total pending seconds) so it can fix the problem first.
+  alert_repair_hold_cap_s: 1800  # default 1800s (30 min); 0 disables the hold
 ```
 
 ### NetworkProtocolChecker
@@ -253,6 +269,8 @@ Any check can be disabled by omitting its config key (e.g., remove `radio_host` 
 | `start_repair` | `{"checker_id": "spa"}` | Trigger manual repair for a specific checker |
 | `update_repair_config` | `{"checker_id": "spa", "auto_repair_enabled": true, "auto_repair_delay_min": 5}` | Update auto-repair settings |
 | `clear_alert_history` | `{"checker_id": "optional"}` | Clear alert history for one or all checkers |
+| `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely |
+| `unmute_checker` | `{"checker_id": "spa"}` | Re-enable a checker's paging |
 
 ## Sensor Attributes Schema
 
@@ -290,7 +308,9 @@ Any check can be disabled by omitting its config key (e.g., remove `radio_host` 
         }
       ],
       "supports_repair": false,
-      "repair_state": null
+      "repair_state": null,
+      "muted": false,
+      "muted_until": null
     }
   },
   "last_updated": "2026-03-19T20:00:00",
