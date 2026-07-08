@@ -55,7 +55,15 @@ Status logic:
 - `level > warning_threshold` → ok
 - `warning_threshold >= level > critical_threshold` → warning
 - `level <= critical_threshold` → critical
-- Entity unavailable/unknown → critical
+- Entity unavailable / unknown / missing / unreadable → **unknown** (never
+  critical). A missing reading is *no data*, not a low battery, so it never
+  pages: an integration/connectivity blip that drops a whole battery group
+  at once would otherwise false-page as dead batteries (the entity goes
+  straight to `unavailable` without ever reporting a low percentage). A
+  genuine battery drains gradually and trips the warning/critical numeric
+  thresholds *before* the device drops off; a device that goes straight to
+  unavailable is a connectivity failure owned by that integration's own
+  health checker.
 
 #### Disconnect-aware guard (opt-in)
 

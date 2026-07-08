@@ -303,25 +303,43 @@ class BatteryChecker(hass.Hass):
         ok_count = sum(1 for r in results if r["status"] == "ok")
         warn_count = sum(1 for r in results if r["status"] == "warning")
         crit_count = sum(1 for r in results if r["status"] == "critical")
+        unknown_count = sum(1 for r in results if r["status"] == "unknown")
         self.log(
-            f"Check complete: {ok_count} ok, {warn_count} warning, {crit_count} critical",
-            level="INFO" if crit_count == 0 and warn_count == 0 else "WARNING",
+            f"Check complete: {ok_count} ok, {warn_count} warning, "
+            f"{crit_count} critical, {unknown_count} unknown",
+            level="INFO"
+            if crit_count == 0 and warn_count == 0 and unknown_count == 0
+            else "WARNING",
         )
 
     def _evaluate_entity(self, entity_id: str, display_name: str) -> Dict[str, str]:
-        """Evaluate a single battery entity. Returns a result dict."""
+        """Evaluate a single battery entity. Returns a result dict.
+
+        A missing / unavailable / unreadable reading is *no data*, not a low
+        battery, so it reports ``unknown`` (which never pages) rather than
+        ``critical``.  Treating "no reading" as a critical low battery
+        false-pages whenever the underlying integration hiccups and drops a
+        whole battery group at once — observed twice with the UniFi Protect
+        USL sensors (2026-07-07/08), where the battery *and* contact entities
+        of each device went ``unavailable`` at the same instant.  A genuine
+        battery drains gradually and trips the numeric warning/critical
+        thresholds below *before* the device ever goes unavailable, so real
+        low batteries are still caught; a device that goes straight to
+        unavailable is a connectivity/integration failure owned by that
+        integration's own health checker.
+        """
         try:
             state = self.get_state(entity_id)
         except Exception as exc:
-            return {"name": display_name, "status": "critical", "detail": f"error reading state: {exc}"}
+            return {"name": display_name, "status": "unknown", "detail": f"error reading state: {exc}"}
 
         if state is None or str(state) in ("unavailable", "unknown"):
-            return {"name": display_name, "status": "critical", "detail": f"state: {state or 'not found'}"}
+            return {"name": display_name, "status": "unknown", "detail": f"state: {state or 'not found'}"}
 
         try:
             value = float(state)
         except (ValueError, TypeError):
-            return {"name": display_name, "status": "critical", "detail": f"non-numeric state: {state}"}
+            return {"name": display_name, "status": "unknown", "detail": f"non-numeric state: {state}"}
 
         if value <= self._critical_threshold:
             prev_good = self._last_good_value.get(entity_id)
