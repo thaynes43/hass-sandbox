@@ -387,41 +387,67 @@ class TestThresholdEvaluation:
         result = self._eval(app, "sensor.test_a", "Device A", "21")
         assert result["status"] == "ok"
 
-    def test_unavailable_state(self):
+    def test_unavailable_state_is_unknown_not_critical(self):
+        # A missing reading is 'no data', not a low battery — must never page.
         app = _make_app()
         _init_only(app)
         result = self._eval(app, "sensor.test_a", "Device A", "unavailable")
-        assert result["status"] == "critical"
+        assert result["status"] == "unknown"
         assert "unavailable" in result["detail"]
 
-    def test_unknown_state(self):
+    def test_unknown_state_is_unknown_not_critical(self):
         app = _make_app()
         _init_only(app)
         result = self._eval(app, "sensor.test_a", "Device A", "unknown")
-        assert result["status"] == "critical"
+        assert result["status"] == "unknown"
         assert "unknown" in result["detail"]
 
-    def test_none_state(self):
+    def test_none_state_is_unknown_not_critical(self):
         app = _make_app()
         _init_only(app)
         result = self._eval(app, "sensor.test_a", "Device A", None)
-        assert result["status"] == "critical"
+        assert result["status"] == "unknown"
         assert "not found" in result["detail"]
 
-    def test_non_numeric_state(self):
+    def test_non_numeric_state_is_unknown_not_critical(self):
         app = _make_app()
         _init_only(app)
         result = self._eval(app, "sensor.test_a", "Device A", "error")
-        assert result["status"] == "critical"
+        assert result["status"] == "unknown"
         assert "non-numeric" in result["detail"]
 
-    def test_exception_reading_state(self):
+    def test_exception_reading_state_is_unknown_not_critical(self):
         app = _make_app()
         _init_only(app)
         app.get_state = MagicMock(side_effect=RuntimeError("connection lost"))
         result = app._evaluate_entity("sensor.test_a", "Device A")
-        assert result["status"] == "critical"
+        assert result["status"] == "unknown"
         assert "error reading state" in result["detail"]
+
+    def test_genuine_low_battery_still_critical(self):
+        # The numeric path is unchanged: a real low reading still pages.
+        app = _make_app()
+        _init_only(app)
+        result = self._eval(app, "sensor.test_a", "Device A", "5")
+        assert result["status"] == "critical"
+
+    def test_whole_group_unavailable_never_pages(self):
+        # The 2026-07-08 incident: an integration blip drops every entity in
+        # the group to 'unavailable' at once. None may be 'critical', or the
+        # for-duration gate would eventually page for a non-battery outage.
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+        app.get_state = MagicMock(return_value="unavailable")
+        app._run_checks()
+        report = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ][0]
+        results = json.loads(report[1]["payload"])["results"]
+        assert results, "expected at least one battery result"
+        assert all(r["status"] == "unknown" for r in results)
+        assert not any(r["status"] == "critical" for r in results)
 
     def test_float_state_parsed(self):
         app = _make_app()
@@ -475,7 +501,7 @@ class TestRunChecks:
         payload = json.loads(report_calls[0][1]["payload"])
         results = payload["results"]
         assert results[0]["status"] == "ok"
-        assert results[1]["status"] == "critical"
+        assert results[1]["status"] == "unknown"
 
     def test_logs_warning_when_issues_found(self):
         app = _make_app()
