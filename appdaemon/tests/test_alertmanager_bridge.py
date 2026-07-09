@@ -858,6 +858,48 @@ class TestRepairHold:
         assert "spa" in bridge.active_alerts
         assert "spa" not in bridge.pending_alerts
 
+    def test_success_holds_then_recovery_suppresses_no_page(self):
+        """The 2026-07-09 race: repair reports success one report before the
+        checker's recovered (ok) status lands.  The hold must cover ``success``
+        so the pending critical is not promoted on the stale critical snapshot
+        — then the recovered report suppresses it with no page."""
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+
+        _run(bridge.sync({
+            "spa": _checker("critical", repair_state={"status": "in_progress"})
+        }))  # pending
+        advance(300)
+        # Repair flips to success, but the checker snapshot is still the stale
+        # 'critical' (its ok status rides the next report).  Must NOT promote.
+        _run(bridge.sync({
+            "spa": _checker("critical", repair_state={"status": "success"})
+        }))
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.pending_alerts
+        assert "spa" not in bridge.active_alerts
+
+        # Next report: checker actually recovered → pending dropped, no page.
+        _run(bridge.sync({"spa": _checker("ok")}))
+        client.post_alerts.assert_not_awaited()
+        assert bridge.pending_alerts == {}
+        assert bridge.active_alerts == {}
+
+    def test_illusory_success_still_pages_at_cap(self):
+        """A success that doesn't actually recover (checker stays critical)
+        must not be held forever — the cap still forces the page."""
+        bridge, client, _log, advance = _make_gated_bridge({"critical": 300})
+        rc = {"status": "success"}
+
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # pending
+        advance(300)
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # held
+        client.post_alerts.assert_not_awaited()
+
+        advance(1500)  # total pending == cap (1800s)
+        _run(bridge.sync({"spa": _checker("critical", repair_state=rc)}))  # promote
+        client.post_alerts.assert_awaited_once()
+        assert "spa" in bridge.active_alerts
+
     def test_failed_repair_releases_hold_at_threshold(self):
         """A repair that fails releases the hold: the critical promotes at the
         for-threshold on the report where repair status becomes failed."""

@@ -42,14 +42,18 @@ and the warning keeps firing — a warning↔critical flapper can never page.
 De-escalations (critical → warning) apply immediately, as does everything
 when ``for=0``.
 
-**Repair hold.**  A checker whose auto-repair is scheduled or running
-(``repair_state.status`` of ``pending`` / ``in_progress``) gets a chance to
-fix itself before anyone is paged: promotion of a pending *critical* alert
-is withheld while repair is active, up to ``repair_hold_cap_s`` total
-pending time (default 1800 s) so a stuck repair can never silence a real
-outage.  A failed repair releases the hold on the next report.  Checkers
-with ``for=0`` (explicit "page now" overrides) never enter the pending gate
-and are therefore never held.
+**Repair hold.**  A checker whose auto-repair is scheduled, running, or
+just-succeeded (``repair_state.status`` of ``pending`` / ``in_progress`` /
+``success``) gets a chance to fix itself before anyone is paged: promotion
+of a pending *critical* alert is withheld while repair is active, up to
+``repair_hold_cap_s`` total pending time (default 1800 s) so a stuck repair
+can never silence a real outage.  ``success`` is held to bridge the
+recovery-propagation gap — a repair reports success one status report before
+the checker's recovered (ok) status lands, and promoting on the stale
+critical snapshot in that window false-pages for an already-fixed problem.
+A *failed* repair releases the hold on the next report (page — human help is
+needed).  Checkers with ``for=0`` (explicit "page now" overrides) never
+enter the pending gate and are therefore never held.
 
 Alertmanager being down must never break health checking: every client
 call is wrapped; failures are logged and retried by the next sync or
@@ -82,7 +86,16 @@ SEVERITY_BY_STATUS = {
 _SEVERITY_RANK = {"warning": 1, "critical": 2}
 
 # Repair states during which a pending critical promotion is withheld.
-_REPAIR_ACTIVE_STATES = ("pending", "in_progress")
+# ``success`` is held too, to bridge the recovery-propagation gap: when a
+# repair reports success the checker has just recovered, but its recovered
+# (ok) status rides the *next* status report.  Promoting on the stale
+# critical snapshot in that window false-pages for a problem auto-repair
+# already fixed — observed 2026-07-09, where a UniFi Protect reload succeeded
+# and the page fired 23 ms later, only to resolve on the next poll ~3 min on.
+# An illusory success (checker still critical) simply re-arms repair
+# (success -> pending/in_progress), so it stays held; ``repair_hold_cap_s``
+# still forces promotion if a real recovery never lands.
+_REPAIR_HOLD_STATES = ("pending", "in_progress", "success")
 
 SOURCE_LABEL = "appdaemon-health-check"
 
@@ -355,8 +368,10 @@ class AlertmanagerBridge:
 
         The for-duration must have elapsed, and — for critical alerts — any
         active auto-repair gets a chance to finish first: promotion is
-        withheld while ``repair_state.status`` is pending/in_progress, up to
-        ``repair_hold_cap_s`` total pending time.
+        withheld while ``repair_state.status`` is pending/in_progress/success
+        (the last to let a just-succeeded repair's recovery propagate before
+        promoting on a stale snapshot), up to ``repair_hold_cap_s`` total
+        pending time.
         """
         elapsed = (now - pending["since"]).total_seconds()
         if elapsed < for_s:
@@ -365,7 +380,7 @@ class AlertmanagerBridge:
         if severity == "critical" and self._repair_hold_cap_s > 0:
             repair_status = (checker.get("repair_state") or {}).get("status")
             if (
-                repair_status in _REPAIR_ACTIVE_STATES
+                repair_status in _REPAIR_HOLD_STATES
                 and elapsed < self._repair_hold_cap_s
             ):
                 if not pending.get("repair_hold_logged"):
