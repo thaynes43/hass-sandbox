@@ -75,6 +75,11 @@ class BasicDeviceChecker(hass.Hass):
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 180))
 
+        # Repair events pending delivery to the controller — drained into the
+        # next report_status payload by _build_report_payload (edge events,
+        # delivered once). Only populated by repair-capable subclasses.
+        self._pending_repair_events: List[Dict[str, Any]] = []
+
         self.log(
             f"BasicDeviceChecker initialising: id={self._checker_id}, "
             f"name={self._checker_name}, ping={self._ping_host}, "
@@ -191,11 +196,20 @@ class BasicDeviceChecker(hass.Hass):
         return results
 
     def _build_report_payload(self, results: List[Dict[str, str]]) -> Dict[str, Any]:
-        """Build the report_status payload. Subclasses can extend to add repair_state."""
-        return {
+        """Build the report_status payload. Subclasses can extend to add repair_state.
+
+        Drains any pending repair_events buffered by a repair-capable
+        subclass so they ride along on the very next report_status call —
+        these are one-shot edge events and must never be sent twice.
+        """
+        payload: Dict[str, Any] = {
             "checker_id": self._checker_id,
             "results": results,
         }
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
+        return payload
 
     async def _check_ping(self) -> Dict[str, str]:
         try:

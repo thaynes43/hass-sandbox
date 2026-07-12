@@ -107,6 +107,11 @@ class SpaHealthChecker(hass.Hass):
         self._unhealthy_since: Optional[datetime.datetime] = None
         self._repair_task: Optional[asyncio.Task] = None
 
+        # Repair-conclusion events awaiting delivery to the controller
+        # (drained into the next report_status payload — see
+        # _record_repair_event / _drain_pending_repair_events).
+        self._pending_repair_events: List[Dict[str, Any]] = []
+
         # Cached auto-repair config (updated each async check cycle)
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
@@ -326,6 +331,7 @@ class SpaHealthChecker(hass.Hass):
             "results": results,
             "repair_state": self._build_repair_state(),
         }
+        self._drain_pending_repair_events(payload)
         self.fire_event(
             "health_check_command",
             command="report_status",
@@ -553,6 +559,28 @@ class SpaHealthChecker(hass.Hass):
     # Repair execution
     # ------------------------------------------------------------------
 
+    def _record_repair_event(
+        self,
+        result: str,
+        duration_s: Optional[float] = None,
+        device: Optional[str] = None,
+    ) -> None:
+        """Buffer a repair-conclusion event for delivery on the next
+        report_status payload (see _drain_pending_repair_events)."""
+        event: Dict[str, Any] = {"result": result}
+        if duration_s is not None:
+            event["duration_s"] = duration_s
+        if device:
+            event["device"] = device
+        self._pending_repair_events.append(event)
+
+    def _drain_pending_repair_events(self, payload: Dict[str, Any]) -> None:
+        """Attach any buffered repair_events to a report_status payload and
+        clear the buffer so each event is delivered exactly once."""
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
+
     def _start_repair(self) -> None:
         """Initiate a repair (power cycle)."""
         if self._repair_status == REPAIR_IN_PROGRESS:
@@ -629,6 +657,7 @@ class SpaHealthChecker(hass.Hass):
                         f"Recovered after {elapsed}s"
                     )
                     self._unhealthy_since = None
+                    self._record_repair_event("success", duration_s=elapsed)
                     self.log(
                         f"Repair successful — recovered after {elapsed}s",
                         level="INFO",
@@ -645,6 +674,9 @@ class SpaHealthChecker(hass.Hass):
             self._repair_detail = (
                 f"Did not recover after {self._repair_recovery_wait_s}s"
             )
+            self._record_repair_event(
+                "failed", duration_s=self._repair_recovery_wait_s
+            )
             self.log(
                 f"Repair failed — no recovery after {self._repair_recovery_wait_s}s",
                 level="WARNING",
@@ -654,6 +686,7 @@ class SpaHealthChecker(hass.Hass):
         except Exception as exc:
             self._repair_status = REPAIR_FAILED
             self._repair_detail = f"Repair error: {exc}"
+            self._record_repair_event("failed")
             self.log(f"Repair execution error: {exc!r}", level="ERROR")
             self._report_repair_status_only()
 
@@ -670,14 +703,16 @@ class SpaHealthChecker(hass.Hass):
 
     def _report_repair_status_only(self) -> None:
         """Fire a status report with current repair state (no new check results)."""
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": [],
+            "repair_state": self._build_repair_state(),
+        }
+        self._drain_pending_repair_events(payload)
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": [],
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(payload),
         )
 
     # ------------------------------------------------------------------

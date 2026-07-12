@@ -270,6 +270,103 @@ class TestRepairExecution:
         assert app._repair_status == REPAIR_FAILED
 
 
+class TestRepairEvents:
+    """repair_events must be drained exactly once into the report_status
+    payload that carries the repair's conclusion, and never duplicated on
+    later reports."""
+
+    @staticmethod
+    def _report_payloads(app) -> list[dict]:
+        return [
+            json.loads(c[1]["payload"])
+            for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+
+    def test_successful_repair_emits_repair_event(self):
+        app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Ping", "status": "ok", "detail": "3ms"},
+            {"name": "Status", "status": "ok", "detail": "idle"},
+        ])
+
+        _run(app._execute_repair())
+
+        payloads = self._report_payloads(app)
+        # The final report (repair conclusion) must carry exactly one event.
+        # Recovery is detected on the first poll (REPAIR_POLL_INTERVAL_S=5s).
+        final = payloads[-1]
+        assert final["repair_events"] == [
+            {"result": "success", "duration_s": 5},
+        ]
+        # Buffer is drained — nothing left pending.
+        assert app._pending_repair_events == []
+
+    def test_repair_timeout_emits_failed_event_with_wait_budget(self):
+        app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Ping", "status": "critical", "detail": "timeout"},
+        ])
+
+        _run(app._execute_repair())
+
+        payloads = self._report_payloads(app)
+        final = payloads[-1]
+        assert final["repair_events"] == [
+            {"result": "failed", "duration_s": 10},
+        ]
+        assert app._pending_repair_events == []
+
+    def test_repair_error_emits_failed_event_without_duration(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app.call_service = MagicMock(side_effect=Exception("fail"))
+
+        _run(app._execute_repair())
+
+        payloads = self._report_payloads(app)
+        final = payloads[-1]
+        assert final["repair_events"] == [{"result": "failed"}]
+        assert "duration_s" not in final["repair_events"][0]
+        assert app._pending_repair_events == []
+
+    def test_repair_event_not_repeated_on_next_report(self):
+        """The event is a one-shot edge event — later reports must not
+        carry it again."""
+        app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Ping", "status": "ok", "detail": "3ms"},
+            {"name": "Status", "status": "ok", "detail": "idle"},
+        ])
+        _run(app._execute_repair())
+
+        # Subsequent regular report_status payload must not repeat the event.
+        payload = app._build_report_payload([
+            {"name": "Ping", "status": "ok", "detail": "3ms"},
+        ])
+        assert "repair_events" not in payload
+
+    def test_regular_report_has_no_repair_events_when_none_pending(self):
+        app = _make_app()
+        _init_only(app)
+
+        payload = app._build_report_payload([
+            {"name": "Ping", "status": "ok", "detail": "3ms"},
+        ])
+        assert "repair_events" not in payload
+        assert payload["repair_state"]["status"] == REPAIR_IDLE
+
+
 class TestReportPayload:
     def test_includes_repair_state(self):
         app = _make_app()

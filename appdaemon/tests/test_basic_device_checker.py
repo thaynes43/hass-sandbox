@@ -218,3 +218,34 @@ class TestRunChecks:
         ]
         payload = json.loads(report_calls[0][1]["payload"])
         assert len(payload["results"]) == 2
+
+
+class TestPendingRepairEventsDrain:
+    """BasicDeviceChecker itself never populates _pending_repair_events (it
+    has no repair support), but it owns the drain logic that
+    RepairableDeviceChecker relies on — verify it directly here."""
+
+    def test_no_repair_events_key_when_buffer_empty(self):
+        app = _make_app()
+        _init_only(app)
+        payload = app._build_report_payload([
+            {"name": "Ping", "status": "ok", "detail": "3ms"},
+        ])
+        assert "repair_events" not in payload
+
+    def test_drains_and_clears_pending_repair_events(self):
+        app = _make_app()
+        _init_only(app)
+        app._pending_repair_events.append(
+            {"result": "success", "duration_s": 12}
+        )
+
+        payload = app._build_report_payload([])
+        assert payload["repair_events"] == [
+            {"result": "success", "duration_s": 12}
+        ]
+        assert app._pending_repair_events == []
+
+        # Next payload build must not repeat the drained event.
+        payload2 = app._build_report_payload([])
+        assert "repair_events" not in payload2

@@ -51,6 +51,11 @@ class UpsChecker(hass.Hass):
                 "load_critical": float(dev_cfg.get("load_critical", 100)),
             })
 
+        # Last successfully-parsed numeric reading per entity_id, used to
+        # build the metrics payload in _run_checks without an extra
+        # get_state() call (the check methods already read + parse it).
+        self._last_metric_value: Dict[str, float] = {}
+
         self.log(
             f"UpsChecker initializing: id={self._checker_id}, "
             f"devices={len(self._devices)}, interval={self._check_interval_s}s",
@@ -149,6 +154,7 @@ class UpsChecker(hass.Hass):
     def _run_checks(self) -> None:
         """Execute all configured checks and report results."""
         results: List[Dict[str, str]] = []
+        metrics: List[Dict[str, Any]] = []
 
         for device in self._devices:
             batt_status, batt_detail = self._check_battery(device)
@@ -157,6 +163,14 @@ class UpsChecker(hass.Hass):
                 "status": batt_status,
                 "detail": batt_detail,
             })
+            batt_value = self._last_metric_value.get(device["battery_entity"])
+            if batt_value is not None:
+                metrics.append({
+                    "name": "battery_percent",
+                    "value": batt_value,
+                    "type": "gauge",
+                    "labels": {"device": device["name"]},
+                })
 
             load_status, load_detail = self._check_load(device)
             results.append({
@@ -164,14 +178,26 @@ class UpsChecker(hass.Hass):
                 "status": load_status,
                 "detail": load_detail,
             })
+            load_value = self._last_metric_value.get(device["load_entity"])
+            if load_value is not None:
+                metrics.append({
+                    "name": "load_percent",
+                    "value": load_value,
+                    "type": "gauge",
+                    "labels": {"device": device["name"]},
+                })
+
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": results,
+        }
+        if metrics:
+            payload["metrics"] = metrics
 
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": results,
-            }),
+            payload=json.dumps(payload),
         )
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
@@ -185,6 +211,9 @@ class UpsChecker(hass.Hass):
     def _check_battery(self, device: Dict[str, Any]) -> tuple:
         """Check battery charge level (low = bad). Returns (status, detail)."""
         entity_id = device["battery_entity"]
+        # Clear any prior reading so a currently-unavailable/non-numeric
+        # state never leaves a stale value behind for the metrics payload.
+        self._last_metric_value.pop(entity_id, None)
 
         try:
             state = self.get_state(entity_id)
@@ -198,6 +227,8 @@ class UpsChecker(hass.Hass):
             value = float(state)
         except (ValueError, TypeError):
             return ("critical", f"non-numeric state: {state}")
+
+        self._last_metric_value[entity_id] = value
 
         warn = device.get("battery_warning", 90)
         crit = device.get("battery_critical", 50)
@@ -211,6 +242,9 @@ class UpsChecker(hass.Hass):
     def _check_load(self, device: Dict[str, Any]) -> tuple:
         """Check load utilization (high = bad). Returns (status, detail)."""
         entity_id = device["load_entity"]
+        # Clear any prior reading so a currently-unavailable/non-numeric
+        # state never leaves a stale value behind for the metrics payload.
+        self._last_metric_value.pop(entity_id, None)
 
         try:
             state = self.get_state(entity_id)
@@ -224,6 +258,8 @@ class UpsChecker(hass.Hass):
             value = float(state)
         except (ValueError, TypeError):
             return ("critical", f"non-numeric state: {state}")
+
+        self._last_metric_value[entity_id] = value
 
         warn = device.get("load_warning", 90)
         crit = device.get("load_critical", 100)

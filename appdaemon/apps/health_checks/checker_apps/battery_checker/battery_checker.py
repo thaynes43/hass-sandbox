@@ -285,19 +285,34 @@ class BatteryChecker(hass.Hass):
 
     def _run_checks(self) -> None:
         """Execute all configured checks and report results."""
-        results: List[Dict[str, str]] = []
+        results: List[Dict[str, Any]] = []
+        metrics: List[Dict[str, Any]] = []
 
         for entity_id, display_name in sorted(self._entities.items()):
             result = self._evaluate_entity(entity_id, display_name)
+            # Internal-only key used to populate the metrics payload below;
+            # never sent as part of a check's "results" entry.
+            metric_value = result.pop("_metric_value", None)
             results.append(result)
+            if metric_value is not None:
+                metrics.append({
+                    "name": "battery_percent",
+                    "value": metric_value,
+                    "type": "gauge",
+                    "labels": {"device": display_name},
+                })
+
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": results,
+        }
+        if metrics:
+            payload["metrics"] = metrics
 
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": results,
-            }),
+            payload=json.dumps(payload),
         )
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
@@ -312,7 +327,7 @@ class BatteryChecker(hass.Hass):
             else "WARNING",
         )
 
-    def _evaluate_entity(self, entity_id: str, display_name: str) -> Dict[str, str]:
+    def _evaluate_entity(self, entity_id: str, display_name: str) -> Dict[str, Any]:
         """Evaluate a single battery entity. Returns a result dict.
 
         A missing / unavailable / unreadable reading is *no data*, not a low
@@ -374,5 +389,9 @@ class BatteryChecker(hass.Hass):
         # cycle or a future one) has a fresh comparison point.
         if self._disconnect_aware and value > self._critical_threshold:
             self._last_good_value[entity_id] = value
+
+        # Stash the raw numeric reading for the metrics payload (popped by
+        # _run_checks before the result is sent as part of "results").
+        result["_metric_value"] = value
 
         return result

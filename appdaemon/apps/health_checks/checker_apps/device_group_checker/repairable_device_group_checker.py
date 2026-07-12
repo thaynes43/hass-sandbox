@@ -102,6 +102,10 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
+        # Repair events pending delivery to the controller (drained into the
+        # next report_status payload — see _drain_repair_events()).
+        self._pending_repair_events: List[Dict[str, Any]] = []
+
     async def _async_startup(self) -> None:
         await self._provision_repair_helpers()
         await self._refresh_auto_repair_config()
@@ -224,7 +228,16 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
     def _build_report_payload(self, results: List[Dict[str, str]]) -> Dict[str, Any]:
         payload = super()._build_report_payload(results)
         payload["repair_state"] = self._build_repair_state()
+        events = self._drain_repair_events()
+        if events:
+            payload["repair_events"] = events
         return payload
+
+    def _drain_repair_events(self) -> List[Dict[str, Any]]:
+        """Return and clear pending repair-conclusion events (once-only delivery)."""
+        events = self._pending_repair_events
+        self._pending_repair_events = []
+        return events
 
     # ------------------------------------------------------------------
     # Repair event handler
@@ -438,6 +451,10 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
             dr["status"] = REPAIR_FAILED
             dr["detail"] = "No repair switch configured"
             self._repair_status = self._aggregate_repair_status()
+            self._pending_repair_events.append({
+                "result": "failed",
+                "device": dev_name,
+            })
             self._report_repair_status_only()
             return
 
@@ -472,6 +489,11 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
                         f"{dev_name} repair successful — recovered after {elapsed}s",
                         level="INFO",
                     )
+                    self._pending_repair_events.append({
+                        "result": "success",
+                        "duration_s": elapsed,
+                        "device": dev_name,
+                    })
                     self._report_repair_status_only()
                     return
 
@@ -491,6 +513,11 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
                 f"{self._repair_recovery_wait_s}s",
                 level="WARNING",
             )
+            self._pending_repair_events.append({
+                "result": "failed",
+                "duration_s": self._repair_recovery_wait_s,
+                "device": dev_name,
+            })
             self._report_repair_status_only()
 
         except Exception as exc:
@@ -498,18 +525,26 @@ class RepairableDeviceGroupChecker(DeviceGroupChecker):
             dr["detail"] = f"Repair error: {exc}"
             self._repair_status = self._aggregate_repair_status()
             self.log(f"Repair error for {dev_name}: {exc!r}", level="ERROR")
+            self._pending_repair_events.append({
+                "result": "failed",
+                "device": dev_name,
+            })
             self._report_repair_status_only()
 
     def _report_repair_status_only(self) -> None:
         """Fire a status report with current repair state (no new check results)."""
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": [],
+            "repair_state": self._build_repair_state(),
+        }
+        events = self._drain_repair_events()
+        if events:
+            payload["repair_events"] = events
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": [],
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(payload),
         )
 
     # ------------------------------------------------------------------

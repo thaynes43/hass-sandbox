@@ -198,11 +198,11 @@ class RepairableDeviceChecker(BasicDeviceChecker):
         )
 
     def _build_report_payload(self, results: List[Dict[str, str]]) -> Dict[str, Any]:
-        return {
-            "checker_id": self._checker_id,
-            "results": results,
-            "repair_state": self._build_repair_state(),
-        }
+        # Extend the base payload (which also drains any pending
+        # repair_events) with repair_state.
+        payload = super()._build_report_payload(results)
+        payload["repair_state"] = self._build_repair_state()
+        return payload
 
     # ------------------------------------------------------------------
     # Repair event handler
@@ -351,6 +351,10 @@ class RepairableDeviceChecker(BasicDeviceChecker):
                         f"Repair successful — recovered after {elapsed}s",
                         level="INFO",
                     )
+                    self._pending_repair_events.append({
+                        "result": "success",
+                        "duration_s": elapsed,
+                    })
                     self._report_repair_status_only()
                     return
 
@@ -366,23 +370,28 @@ class RepairableDeviceChecker(BasicDeviceChecker):
                 f"Repair failed — no recovery after {self._repair_recovery_wait_s}s",
                 level="WARNING",
             )
+            self._pending_repair_events.append({
+                "result": "failed",
+                "duration_s": self._repair_recovery_wait_s,
+            })
             self._report_repair_status_only()
 
         except Exception as exc:
             self._repair_status = REPAIR_FAILED
             self._repair_detail = f"Repair error: {exc}"
             self.log(f"Repair error: {exc!r}", level="ERROR")
+            # Duration is genuinely unknown here — the failure can occur at
+            # any point in the sequence, so duration_s is omitted.
+            self._pending_repair_events.append({"result": "failed"})
             self._report_repair_status_only()
 
     def _report_repair_status_only(self) -> None:
+        # Route through _build_report_payload so any repair_event queued for
+        # this conclusion (see _execute_repair) is delivered immediately.
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": [],
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(self._build_report_payload([])),
         )
 
     # ------------------------------------------------------------------

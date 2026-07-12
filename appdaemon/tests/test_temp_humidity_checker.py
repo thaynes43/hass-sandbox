@@ -594,3 +594,151 @@ class TestEdgeCases:
         app.get_state = MagicMock(return_value="65")
         status, _ = app._evaluate_sensor(app._sensors[0])
         assert status == "ok"
+
+
+# ------------------------------------------------------------------
+# Metrics emission
+# ------------------------------------------------------------------
+
+
+class TestMetricsEmission:
+    def test_humidity_sensor_emits_humidity_percent_metric(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="65.0")
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" in payload
+        # 3 humidity sensors, one metric each
+        assert len(payload["metrics"]) == 3
+        m = payload["metrics"][0]
+        assert m["name"] == "humidity_percent"
+        assert m["value"] == 65.0
+        assert m["type"] == "gauge"
+        assert m["labels"] == {"sensor": "Cigar Sensor 01"}
+
+    def test_temperature_sensor_emits_temperature_fahrenheit_metric(self):
+        app = _make_app({
+            "sensors": [
+                {
+                    "entity_id": "sensor.temp_01",
+                    "name": "Temp 01",
+                    "type": "temperature",
+                },
+            ],
+        })
+        _init_only(app)
+        app.get_state = MagicMock(return_value="65.0")
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert payload["metrics"] == [
+            {
+                "name": "temperature_fahrenheit",
+                "value": 65.0,
+                "type": "gauge",
+                "labels": {"sensor": "Temp 01"},
+            }
+        ]
+
+    def test_both_type_sensor_emits_both_metrics(self):
+        app = _make_app({
+            "sensors": [
+                {
+                    "entity_id": "sensor.both_01",
+                    "name": "Both 01",
+                    "type": "both",
+                },
+            ],
+        })
+        _init_only(app)
+        app.get_state = MagicMock(return_value="65.0")
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        names = {m["name"] for m in payload["metrics"]}
+        assert names == {"temperature_fahrenheit", "humidity_percent"}
+        for m in payload["metrics"]:
+            assert m["value"] == 65.0
+            assert m["type"] == "gauge"
+            assert m["labels"] == {"sensor": "Both 01"}
+
+    def test_unavailable_sensor_emits_no_metric(self):
+        """Unavailable/unknown/non-numeric readings must not produce a metric entry."""
+        app = _make_app()
+        _init_only(app)
+        # Sensor 1: ok, Sensor 2: unavailable, Sensor 3: warning
+        app.get_state = MagicMock(side_effect=["65.0", "unavailable", "61.0"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        # Only 2 of the 3 sensors produced a valid numeric reading
+        assert len(payload["metrics"]) == 2
+        sensor_names = {m["labels"]["sensor"] for m in payload["metrics"]}
+        assert sensor_names == {"Cigar Sensor 01", "Aqara W100 01"}
+
+    def test_all_sensors_unavailable_omits_metrics_key(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="unavailable")
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+    def test_metrics_omitted_when_no_sensors(self):
+        app = _make_app({"sensors": []})
+        _init_only(app)
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+    def test_evaluate_sensor_with_value_returns_none_on_error(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="unavailable")
+        status, detail, value = app._evaluate_sensor_with_value(app._sensors[0])
+        assert status == "critical"
+        assert value is None
+
+    def test_evaluate_sensor_with_value_returns_numeric_value(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="65.0")
+        status, detail, value = app._evaluate_sensor_with_value(app._sensors[0])
+        assert status == "ok"
+        assert value == 65.0
+
+    def test_evaluate_sensor_backward_compatible_two_tuple(self):
+        """_evaluate_sensor must keep returning a plain (status, detail) tuple."""
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="65.0")
+        result = app._evaluate_sensor(app._sensors[0])
+        assert len(result) == 2

@@ -118,6 +118,10 @@ class FanHealthChecker(hass.Hass):
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
+        # Repair completion events awaiting delivery to the controller.
+        # Drained into the next report_status payload (once-only delivery).
+        self._pending_repair_events: List[Dict[str, Any]] = []
+
         self.log(
             f"FanHealthChecker initialising: id={self._checker_id}, "
             f"fans={[f['name'] for f in self._fans]}, "
@@ -306,6 +310,9 @@ class FanHealthChecker(hass.Hass):
             "results": results,
             "repair_state": self._build_repair_state(),
         }
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
         self.fire_event(
             "health_check_command",
             command="report_status",
@@ -724,6 +731,11 @@ class FanHealthChecker(hass.Hass):
                         f"{fan_name} repair successful — recovered after {elapsed}s",
                         level="INFO",
                     )
+                    self._pending_repair_events.append({
+                        "result": "success",
+                        "duration_s": elapsed,
+                        "device": fan_name,
+                    })
                     self._report_repair_status_only()
                     return
 
@@ -742,6 +754,11 @@ class FanHealthChecker(hass.Hass):
                 f"{self._repair_recovery_wait_s}s",
                 level="WARNING",
             )
+            self._pending_repair_events.append({
+                "result": "failed",
+                "duration_s": self._repair_recovery_wait_s,
+                "device": fan_name,
+            })
             self._report_repair_status_only()
 
         except Exception as exc:
@@ -762,14 +779,18 @@ class FanHealthChecker(hass.Hass):
 
     def _report_repair_status_only(self) -> None:
         """Fire a status report with current repair state (no new check results)."""
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": [],
+            "repair_state": self._build_repair_state(),
+        }
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": [],
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(payload),
         )
 
     # ------------------------------------------------------------------

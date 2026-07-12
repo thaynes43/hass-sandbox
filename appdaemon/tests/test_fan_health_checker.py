@@ -630,6 +630,138 @@ class TestStateCache:
         assert PINK_ENTITY in entities
 
 
+class TestRepairEvents:
+    def test_success_emits_repair_event_with_elapsed_duration(self):
+        app = _make_app()
+        _init_only(app)
+
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "ok", "detail": "on"},
+                {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+                {"name": "Blue Room State", "status": "ok", "detail": "off"},
+                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+        with patch.object(fhc_module, "REPAIR_POLL_INTERVAL_S", 5):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        # Find the report_status call that carried the repair_events payload
+        carrying_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+            and "repair_events" in json.loads(c[1]["payload"])
+        ]
+        assert len(carrying_calls) == 1
+        payload = json.loads(carrying_calls[0][1]["payload"])
+        assert payload["repair_events"] == [
+            {"result": "success", "duration_s": 5, "device": "Pink Room"}
+        ]
+
+        # Buffer must be drained after delivery
+        assert app._pending_repair_events == []
+
+    def test_timeout_emits_failed_repair_event_with_wait_budget(self):
+        app = _make_app({"repair_recovery_wait_s": 10})
+        _init_only(app)
+
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+                {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+                {"name": "Blue Room State", "status": "ok", "detail": "off"},
+                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+
+        _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        carrying_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+            and "repair_events" in json.loads(c[1]["payload"])
+        ]
+        assert len(carrying_calls) == 1
+        payload = json.loads(carrying_calls[0][1]["payload"])
+        assert payload["repair_events"] == [
+            {"result": "failed", "duration_s": 10, "device": "Pink Room"}
+        ]
+        assert app._pending_repair_events == []
+
+    def test_repair_event_delivered_promptly_on_concluding_report(self):
+        """The report fired immediately when the repair concludes must carry
+        the event — not some later, unrelated report."""
+        app = _make_app()
+        _init_only(app)
+
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "ok", "detail": "on"},
+                {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+                {"name": "Blue Room State", "status": "ok", "detail": "off"},
+                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+        with patch.object(fhc_module, "REPAIR_POLL_INTERVAL_S", 5):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        # The very last report_status call is the one that reports the
+        # concluding (SUCCESS) repair state, and it must carry the event.
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        last_payload = json.loads(report_calls[-1][1]["payload"])
+        assert last_payload["repair_events"] == [
+            {"result": "success", "duration_s": 5, "device": "Pink Room"}
+        ]
+
+    def test_repair_event_not_repeated_on_next_regular_report(self):
+        """Once drained, a repair_events entry must never appear again on a
+        subsequent, unrelated report_status payload."""
+        app = _make_app()
+        _init_only(app)
+
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "ok", "detail": "on"},
+                {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+                {"name": "Blue Room State", "status": "ok", "detail": "off"},
+                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+        with patch.object(fhc_module, "REPAIR_POLL_INTERVAL_S", 5):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        app.fire_event.reset_mock()
+
+        app.get_state = AsyncMock(return_value="on")
+        with patch(
+            "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ):
+            _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        assert len(report_calls) == 1
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "repair_events" not in payload
+
+    def test_no_repair_events_key_when_buffer_empty(self):
+        app = _make_app()
+        _init_only(app)
+
+        app._report_repair_status_only()
+
+        call = app.fire_event.call_args_list[-1]
+        payload = json.loads(call[1]["payload"])
+        assert "repair_events" not in payload
+
+
 class TestStateRestore:
     def test_restore_on_reapplies_speed_and_direction(self):
         app = _make_app()
