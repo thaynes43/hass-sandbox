@@ -477,6 +477,95 @@ class TestRunChecks:
 
 
 # ---------------------------------------------------------------------------
+# Tests — Custom metrics (queue_remaining gauge)
+# ---------------------------------------------------------------------------
+
+class TestMetricsReporting:
+    def test_report_includes_queue_remaining_gauge_when_reachable(self):
+        app = _make_app()
+        _init_only(app)
+        _mock_client(app, return_value=7)
+
+        _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert payload["metrics"] == [
+            {"name": "queue_remaining", "value": 7, "type": "gauge"}
+        ]
+
+    def test_report_includes_queue_remaining_gauge_when_empty(self):
+        app = _make_app()
+        _init_only(app)
+        _mock_client(app, return_value=0)
+
+        _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert payload["metrics"] == [
+            {"name": "queue_remaining", "value": 0, "type": "gauge"}
+        ]
+
+    def test_report_omits_metrics_when_unreachable(self):
+        """Queue depth is unknown while the endpoint is down — skip the
+        metric rather than reporting a stale/misleading value."""
+        app = _make_app()
+        _init_only(app)
+        _mock_client(app, side_effect=ComfyUIStatusError("connection refused"))
+
+        _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+    def test_report_omits_metrics_when_not_configured(self):
+        app = _make_app({"comfyui_url": ""})
+        _init_only(app)
+
+        _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+    def test_stale_metric_not_carried_into_next_unreachable_poll(self):
+        """A good reading followed by a failure must not resurface the old
+        value — the metric should be dropped, not stuck at the last-known
+        depth."""
+        app = _make_app()
+        _init_only(app)
+        client = _mock_client(app, return_value=5)
+        _run(app._run_checks())
+
+        client.fetch_queue_remaining = AsyncMock(
+            side_effect=ComfyUIStatusError("timeout")
+        )
+        app.fire_event.reset_mock()
+        _run(app._run_checks())
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+
+# ---------------------------------------------------------------------------
 # Tests — Restart seeding (detection state carried across AppDaemon restarts)
 # ---------------------------------------------------------------------------
 

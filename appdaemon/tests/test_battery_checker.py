@@ -543,6 +543,87 @@ class TestRunChecks:
 
 
 # ------------------------------------------------------------------
+# Metrics (battery_percent gauge per device)
+# ------------------------------------------------------------------
+
+
+class TestMetrics:
+    def test_metrics_emitted_for_numeric_readings(self):
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+        # device_a=85 (ok), device_b=15 (warning) — both numeric
+        app.get_state = MagicMock(side_effect=["85", "15"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        metrics = payload["metrics"]
+        assert len(metrics) == 2
+        by_device = {m["labels"]["device"]: m for m in metrics}
+        assert by_device["Test Device A"]["name"] == "battery_percent"
+        assert by_device["Test Device A"]["value"] == 85.0
+        assert by_device["Test Device A"]["type"] == "gauge"
+        assert by_device["Test Device B"]["value"] == 15.0
+
+    def test_metrics_skip_unavailable_reading(self):
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+        # device_a=85 (ok), device_b=unavailable (skipped from metrics)
+        app.get_state = MagicMock(side_effect=["85", "unavailable"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        metrics = payload["metrics"]
+        assert len(metrics) == 1
+        assert metrics[0]["labels"]["device"] == "Test Device A"
+
+    def test_metrics_key_omitted_when_all_unavailable(self):
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+        app.get_state = MagicMock(return_value="unavailable")
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+    def test_metrics_internal_key_not_leaked_into_results(self):
+        app = _make_app()
+        _startup(app)
+        app.fire_event.reset_mock()
+        app.get_state = MagicMock(side_effect=["85", "15"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        for result in payload["results"]:
+            assert "_metric_value" not in result
+
+    def test_evaluate_entity_stashes_metric_value(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="42")
+        result = app._evaluate_entity("sensor.test_a", "Device A")
+        assert result["_metric_value"] == 42.0
+
+
+# ------------------------------------------------------------------
 # Lifecycle
 # ------------------------------------------------------------------
 

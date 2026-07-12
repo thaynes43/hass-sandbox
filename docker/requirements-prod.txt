@@ -4,3 +4,5 @@ python-dotenv>=1.0
 # IANA timezone data for zoneinfo (protect_health_checker active-hours
 # math) — guarantees ZoneInfo works even if the base image lacks tzdata.
 tzdata>=2024.1
+# Prometheus metrics exposition served by the health-check controller.
+prometheus-client>=0.20

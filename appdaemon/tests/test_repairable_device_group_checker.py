@@ -138,6 +138,15 @@ def _init_only(app: RepairableDeviceGroupChecker) -> None:
     app.initialize()
 
 
+def _last_report_payload(app: RepairableDeviceGroupChecker) -> dict:
+    """Return the JSON payload of the most recent report_status fire_event call."""
+    calls = [
+        c for c in app.fire_event.call_args_list
+        if c[1].get("command") == "report_status"
+    ]
+    return json.loads(calls[-1][1]["payload"])
+
+
 # ---------------------------------------------------------------------------
 # Tests — Lifecycle
 # ---------------------------------------------------------------------------
@@ -586,3 +595,151 @@ class TestCachedAutoRepairConfig:
         app._evaluate_auto_repair(results)
 
         assert app._device_repair_states["Movie Room"]["status"] == REPAIR_IDLE
+
+
+# ---------------------------------------------------------------------------
+# Tests — repair_events (once-only delivery to the controller)
+# ---------------------------------------------------------------------------
+
+class TestRepairEvents:
+    def test_success_queues_event_with_duration_and_device(self):
+        app = _make_app({"repair_recovery_wait_s": 5, "repair_off_duration_s": 0})
+        _init_only(app)
+
+        app._run_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Movie Room Status", "status": "ok", "detail": "on"},
+                {"name": "Movie Room Ping", "status": "ok", "detail": "3ms"},
+            ]
+        )
+
+        with patch(
+            "health_checks.checker_apps.device_group_checker"
+            ".repairable_device_group_checker.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        # Delivered once, drained back to empty after the concluding report
+        assert app._pending_repair_events == []
+
+        payload = _last_report_payload(app)
+        assert payload["repair_events"] == [
+            {"result": "success", "duration_s": 5, "device": "Movie Room"}
+        ]
+
+    def test_timeout_failure_queues_event_with_wait_budget(self):
+        app = _make_app({"repair_recovery_wait_s": 5, "repair_off_duration_s": 0})
+        _init_only(app)
+
+        app._run_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Movie Room Status", "status": "critical", "detail": "off"},
+                {"name": "Movie Room Ping", "status": "critical", "detail": "timeout"},
+            ]
+        )
+
+        with patch(
+            "health_checks.checker_apps.device_group_checker"
+            ".repairable_device_group_checker.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._pending_repair_events == []
+
+        payload = _last_report_payload(app)
+        assert payload["repair_events"] == [
+            {"result": "failed", "duration_s": 5, "device": "Movie Room"}
+        ]
+
+    def test_no_switch_configured_queues_failed_event_without_duration(self):
+        devices_no_switch = [
+            {
+                "name": "Movie Room",
+                "entities": [
+                    {
+                        "entity_id": "binary_sensor.movie_room_breeze_status",
+                        "healthy_state": "on",
+                        "name": "Status",
+                    }
+                ],
+            }
+        ]
+        app = _make_app({"devices": devices_no_switch, "repair_switch": ""})
+        _init_only(app)
+
+        _run(app._execute_device_repair(app._devices[0]))
+
+        assert app._pending_repair_events == []
+        payload = _last_report_payload(app)
+        assert payload["repair_events"] == [
+            {"result": "failed", "device": "Movie Room"}
+        ]
+        assert "duration_s" not in payload["repair_events"][0]
+
+    def test_repair_error_queues_failed_event_without_duration(self):
+        app = _make_app()
+        _init_only(app)
+        app.call_service = MagicMock(side_effect=Exception("Service unavailable"))
+
+        _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._pending_repair_events == []
+        payload = _last_report_payload(app)
+        assert payload["repair_events"] == [
+            {"result": "failed", "device": "Movie Room"}
+        ]
+        assert "duration_s" not in payload["repair_events"][0]
+
+    def test_repair_event_not_repeated_on_subsequent_report(self):
+        """A concluded repair event is delivered once — a later report must not
+        repeat it (would double-count in the exporter)."""
+        app = _make_app({"repair_recovery_wait_s": 5, "repair_off_duration_s": 0})
+        _init_only(app)
+
+        app._run_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Movie Room Status", "status": "ok", "detail": "on"},
+                {"name": "Movie Room Ping", "status": "ok", "detail": "3ms"},
+            ]
+        )
+
+        with patch(
+            "health_checks.checker_apps.device_group_checker"
+            ".repairable_device_group_checker.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        # A subsequent regular report must not carry the already-delivered event
+        payload = app._build_report_payload(
+            [
+                {"name": "Movie Room Status", "status": "ok", "detail": "on"},
+                {"name": "Movie Room Ping", "status": "ok", "detail": "3ms"},
+            ]
+        )
+        assert "repair_events" not in payload
+
+    def test_report_payload_omits_repair_events_when_none_pending(self):
+        app = _make_app()
+        _init_only(app)
+
+        payload = app._build_report_payload([])
+
+        assert "repair_events" not in payload
+
+    def test_drain_repair_events_clears_buffer(self):
+        app = _make_app()
+        _init_only(app)
+        app._pending_repair_events.append(
+            {"result": "success", "duration_s": 12, "device": "Movie Room"}
+        )
+
+        drained = app._drain_repair_events()
+
+        assert drained == [
+            {"result": "success", "duration_s": 12, "device": "Movie Room"}
+        ]
+        assert app._pending_repair_events == []
+        assert app._drain_repair_events() == []

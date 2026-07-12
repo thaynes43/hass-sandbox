@@ -43,6 +43,7 @@ import hassapi as hass
 
 from providers.alertmanager import AlertmanagerClient
 from providers.ha_provisioner import HAProvisioner
+from providers.metrics import get_metrics, prometheus_available, start_metrics_server
 
 from health_checks.shared.alertmanager_bridge import AlertmanagerBridge
 
@@ -123,6 +124,13 @@ class HealthCheckController(hass.Hass):
         # promotion (see AlertmanagerBridge repair hold).
         alert_repair_hold_cap_s = int(args.get("alert_repair_hold_cap_s", 1800))
 
+        # Prometheus metrics exposition (generic across all checkers).
+        self._metrics_enabled: bool = bool(
+            args.get("metrics_enabled", True)
+        ) and prometheus_available()
+        self._metrics_port: int = int(args.get("metrics_port", 9100))
+        self._metrics = get_metrics()
+
         self._alert_bridge: Optional[AlertmanagerBridge] = None
         if self._alertmanager_url:
             self._alert_bridge = AlertmanagerBridge(
@@ -157,6 +165,14 @@ class HealthCheckController(hass.Hass):
     async def _async_startup(self) -> None:
         """Provision entities, register listeners, start heartbeat."""
         await self._provision_entities()
+
+        # Start the Prometheus exposition server (once per process).
+        if self._metrics_enabled:
+            started = start_metrics_server(self._metrics_port)
+            self.log(
+                f"Prometheus metrics {'enabled on :' + str(self._metrics_port) if started else 'unavailable'}",
+                level="INFO",
+            )
 
         # Listen for commands from checkers and from the relay script
         self.listen_event(self._on_command, "health_check_command")
@@ -498,7 +514,49 @@ class HealthCheckController(hass.Hass):
                 f"(status stays {checker['status']})",
                 level="DEBUG",
             )
+
+        # Forward explicit metric payloads (repair completions + domain values)
+        # to the exporter. Processed for both full and repair-only reports.
+        if self._metrics_enabled:
+            self._ingest_reported_metrics(checker_id, payload)
+
         self._publish_status()
+
+    def _ingest_reported_metrics(self, checker_id: str, payload: dict) -> None:
+        """Feed the exporter from a checker's optional ``repair_events`` and
+        ``metrics`` payload fields (see the checker→controller protocol)."""
+        for ev in payload.get("repair_events") or []:
+            try:
+                self._metrics.record_repair_event(
+                    checker_id,
+                    result=ev.get("result", ""),
+                    duration_s=ev.get("duration_s"),
+                    device=str(ev.get("device", "") or ""),
+                )
+            except Exception as exc:
+                self.log(f"repair_event metric failed: {exc!r}", level="WARNING")
+        for m in payload.get("metrics") or []:
+            try:
+                self._metrics.record_custom(
+                    checker_id,
+                    name=m["name"],
+                    value=m["value"],
+                    metric_type=m.get("type", "gauge"),
+                    labels=m.get("labels") or {},
+                )
+            except Exception as exc:
+                self.log(f"custom metric failed: {exc!r}", level="WARNING")
+
+    def _alert_severity_counts(
+        self, alerts: Optional[Dict[str, Dict[str, Any]]]
+    ) -> Dict[str, int]:
+        """Count alerts by severity from a bridge active/pending mapping."""
+        counts: Dict[str, int] = {}
+        for a in (alerts or {}).values():
+            sev = ((a or {}).get("labels") or {}).get("severity", "")
+            if sev:
+                counts[sev] = counts.get(sev, 0) + 1
+        return counts
 
     def _handle_force_recheck(self, payload: dict) -> None:
         """Forward a force-recheck request to all checkers."""
@@ -941,6 +999,16 @@ class HealthCheckController(hass.Hass):
             level="DEBUG",
         )
         self.set_state(SENSOR_ENTITY_ID, state=overall, attributes=attrs)
+
+        # Mirror the resolved snapshot into Prometheus base gauges.
+        if self._metrics_enabled:
+            firing = pending = None
+            if self._alert_bridge is not None:
+                firing = self._alert_severity_counts(self._alert_bridge.active_alerts)
+                pending = self._alert_severity_counts(self._alert_bridge.pending_alerts)
+            self._metrics.update_snapshot(
+                resolved, set(self._mutes.keys()), firing, pending
+            )
 
         # Mirror the resolved view into Alertmanager.  Copies are taken so
         # later state mutations can't race the async post.  Muted checkers

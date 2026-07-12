@@ -528,6 +528,159 @@ class TestRepairExecution:
 
 
 # ---------------------------------------------------------------------------
+# Tests — repair_events emission (metrics instrumentation)
+# ---------------------------------------------------------------------------
+
+class TestRepairEventsEmission:
+    def _report_status_payloads(self, app: SpaHealthChecker) -> list[dict]:
+        return [
+            json.loads(c[1]["payload"])
+            for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+
+    def test_success_emits_repair_event_on_immediate_report(self):
+        """A successful repair should carry a success repair_event on the
+        report_status call that fires immediately upon recovery."""
+        app = _make_app({"repair_recovery_wait_s": 10})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Gateway Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+
+        _run(app._execute_repair())
+
+        payloads = self._report_status_payloads(app)
+        assert len(payloads) >= 1
+        last = payloads[-1]
+        assert "repair_events" in last
+        assert len(last["repair_events"]) == 1
+        ev = last["repair_events"][0]
+        assert ev["result"] == "success"
+        assert ev["duration_s"] == 5  # first poll tick at REPAIR_POLL_INTERVAL_S
+        assert "device" not in ev  # single repair_switch — whole-checker repair
+
+        # Buffer must be drained (not repeated on the next report)
+        assert app._pending_repair_events == []
+
+    def test_timeout_emits_failed_repair_event_with_wait_budget(self):
+        """A repair that times out should emit a failed event whose
+        duration_s is the configured recovery-wait budget."""
+        app = _make_app({"repair_recovery_wait_s": 10})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
+            ]
+        )
+
+        _run(app._execute_repair())
+
+        payloads = self._report_status_payloads(app)
+        last = payloads[-1]
+        assert "repair_events" in last
+        ev = last["repair_events"][0]
+        assert ev["result"] == "failed"
+        assert ev["duration_s"] == 10
+        assert app._pending_repair_events == []
+
+    def test_exception_emits_failed_repair_event_without_duration(self):
+        """A repair aborted by an exception should emit a failed event with
+        no duration_s (genuinely unknown elapsed/timeout budget)."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app.call_service = MagicMock(side_effect=Exception("Service unavailable"))
+
+        _run(app._execute_repair())
+
+        payloads = self._report_status_payloads(app)
+        last = payloads[-1]
+        assert "repair_events" in last
+        ev = last["repair_events"][0]
+        assert ev["result"] == "failed"
+        assert "duration_s" not in ev
+        assert app._pending_repair_events == []
+
+    def test_repair_event_not_repeated_on_subsequent_report(self):
+        """Once drained, a repair_event must not reappear on the next
+        report_status payload (edge-event semantics — no double counting)."""
+        app = _make_app({"repair_recovery_wait_s": 10})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._run_health_checks_only = AsyncMock(
+            return_value=[{"name": "Gateway Ping", "status": "ok", "detail": "5ms"}]
+        )
+        _run(app._execute_repair())
+
+        # A subsequent status-only report should carry no repair_events.
+        app.fire_event.reset_mock()
+        app._report_repair_status_only()
+        payloads = self._report_status_payloads(app)
+        assert len(payloads) == 1
+        assert "repair_events" not in payloads[0]
+
+    def test_run_checks_drains_pending_repair_event(self):
+        """If a repair_event is buffered when _run_checks fires its regular
+        report, that report must carry it (drain happens everywhere)."""
+        app = _make_app()
+        _init_only(app)
+        app._pending_repair_events = [{"result": "success", "duration_s": 42}]
+
+        app.get_state = MagicMock(side_effect=["off", "15"])
+
+        async def mock_checks():
+            app._check_gateway_ping = AsyncMock(
+                return_value={"name": "Gateway Ping", "status": "ok", "detail": "5ms"}
+            )
+            app._check_connection_entity = AsyncMock(
+                return_value={"name": "Overall Connection", "status": "ok", "detail": "connected"}
+            )
+            app._check_staleness = AsyncMock(
+                return_value={"name": "Staleness", "status": "ok", "detail": "fresh"}
+            )
+            await app._run_checks()
+
+        _run(mock_checks())
+
+        payloads = self._report_status_payloads(app)
+        last = payloads[-1]
+        assert last["repair_events"] == [{"result": "success", "duration_s": 42}]
+        assert app._pending_repair_events == []
+
+    def test_no_repair_events_key_when_buffer_empty(self):
+        """report_status payloads should omit repair_events entirely when
+        nothing is pending (no empty-list noise)."""
+        app = _make_app()
+        _init_only(app)
+
+        app.get_state = MagicMock(side_effect=["off", "15"])
+
+        async def mock_checks():
+            app._check_gateway_ping = AsyncMock(
+                return_value={"name": "Gateway Ping", "status": "ok", "detail": "5ms"}
+            )
+            app._check_connection_entity = AsyncMock(
+                return_value={"name": "Overall Connection", "status": "ok", "detail": "connected"}
+            )
+            app._check_staleness = AsyncMock(
+                return_value={"name": "Staleness", "status": "ok", "detail": "fresh"}
+            )
+            await app._run_checks()
+
+        _run(mock_checks())
+
+        payloads = self._report_status_payloads(app)
+        assert "repair_events" not in payloads[-1]
+
+
+# ---------------------------------------------------------------------------
 # Tests — Repair config updates
 # ---------------------------------------------------------------------------
 

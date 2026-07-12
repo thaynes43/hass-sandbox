@@ -183,12 +183,40 @@ A muted checker still runs its checks and reports status to the sensor — the c
 - **Persistence** — mute state is stored per checker in a lazily-provisioned `input_text.health_check_mute_<checker_id>` helper (JSON `{"muted", "until"}`), so it survives an AppDaemon restart and is restored when the checker re-registers. An expired mute found on restart is treated as unmuted.
 - **Audit trail** — mute and unmute are recorded in the checker's `alert_history` as `Alerting` events, and each checker's sensor attributes expose `muted` (bool) and `muted_until` (ISO timestamp or `null`).
 
+### Prometheus Metrics
+
+The controller exposes Prometheus metrics on a dedicated port (default `9100`, `/metrics`), scraped by a `ServiceMonitor` in the cluster. Because every checker reports through the controller, **base metrics are emitted for all checkers with zero per-checker code** — the controller mirrors its resolved (dependency- and mute-aware) snapshot into gauges on every `_publish_status()`. The exporter lives in `providers/metrics` and runs its exposition server in a daemon thread, isolated from AppDaemon's asyncio loop; it degrades to a no-op if `prometheus-client` is missing or `metrics_enabled: false`.
+
+**Base metrics** (all prefixed `appdaemon_health_`):
+
+| Metric | Type | Labels | Meaning |
+|--------|------|--------|---------|
+| `checker_status` | gauge | `checker_id` | Aggregate status as a severity int (`ok=0, warning=1, degraded=2, critical=3, unknown=-1`) |
+| `check_status` | gauge | `checker_id, check` | Per-check status (same severity encoding) |
+| `checks` | gauge | `checker_id, kind` | Check counts (`kind=total\|ok\|non_ok`) |
+| `checker_last_report_timestamp_seconds` | gauge | `checker_id` | Unix time of last report (freshness) |
+| `check_state_entered_timestamp_seconds` | gauge | `checker_id, check` | When the check entered its current state (time-in-state) |
+| `checker_supports_repair` / `checker_auto_repair_enabled` / `checker_muted` | gauge | `checker_id` | Repair capability / auto-repair toggle / mute flags |
+| `alerts_firing` / `alerts_pending` | gauge | `severity` | Firing / for-gated pending Alertmanager alerts by severity |
+| `controller_up` | gauge | — | 1 while the controller runs |
+| `repairs_total` | counter | `checker_id, device, result` | Repair completions (`result=success\|failed`) |
+| `repair_recovery_duration_seconds` | histogram | `checker_id, result` | Recovery time from repair start to recovery |
+
+**Checker-emitted metrics (opt-in protocol).** A checker adds richness by including two optional fields on its `report_status` payload; the controller (`_ingest_reported_metrics`) forwards them to the exporter — no controller changes needed for new metrics:
+
+- `repair_events`: `[{ "result": "success"|"failed", "duration_s"?: float, "device"?: str }]` — a one-shot edge event emitted when a repair concludes (feeds `repairs_total` + the recovery histogram). Repair-capable checkers buffer these in `self._pending_repair_events` and drain them into the next report exactly once.
+- `metrics`: `[{ "name": snake_case, "value": number, "type"?: "gauge"|"counter"|"histogram", "labels"?: {...} }]` — arbitrary domain values, exposed as `appdaemon_health_custom_<name>` with a `checker_id` label plus any supplied labels. Current emitters: `temp_humidity` (`temperature_fahrenheit`, `humidity_percent`), `battery`/`ups` (`battery_percent`, …), `imagegen` (`queue_remaining`).
+
+Keep custom names unit-suffixed and labels low, stable cardinality (never timestamps / free-text / unbounded ids).
+
 ## Dependencies
 
 - `providers/ha_provisioner` — creates HA helpers and scripts on startup; `HaAdminClient` gives ProtectHealthChecker entity discovery and config-entry reload
 - `providers/alertmanager` — posts/resolves alerts in the cluster Alertmanager (controller, when `alertmanager_url` is set)
+- `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`)
+- `prometheus-client` — metrics exposition (controller)
 
 ## Self-Provisioned Entities
 
@@ -225,6 +253,8 @@ health_check_controller:
   heartbeat_interval_s: 60       # Heartbeat update frequency (seconds)
   alert_history_max: 50          # Max alerts retained per checker
   alert_retention: "1:12:00:00"  # TTL for alert history entries (DD:HH:MM:SS or HH:MM:SS)
+  metrics_enabled: true          # Expose Prometheus metrics (default true)
+  metrics_port: 9100             # /metrics exposition port (scraped by ServiceMonitor)
   # Optional Alertmanager mirroring — omit alertmanager_url to disable
   alertmanager_url: http://kube-prometheus-stack-alertmanager.observability.svc.cluster.local:9093
   alertmanager_repost_interval_s: 120  # Firing-alert re-post period; must stay < Alertmanager resolve_timeout (5m)

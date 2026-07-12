@@ -285,6 +285,10 @@ class ProtectHealthChecker(hass.Hass):
         self._last_reload_at: Optional[datetime.datetime] = None
         self._unhealthy_since: Optional[datetime.datetime] = None
         self._repair_task: Optional[asyncio.Task] = None
+        # Repair-conclusion events awaiting delivery to the controller —
+        # drained into the next report_status payload (see
+        # _drain_repair_events).  Consumed exactly once; never re-queued.
+        self._pending_repair_events: List[Dict[str, Any]] = []
 
         # Cached auto-repair config (refreshed each check cycle)
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
@@ -562,6 +566,7 @@ class ProtectHealthChecker(hass.Hass):
             "results": results,
             "repair_state": self._build_repair_state(),
         }
+        self._drain_repair_events(payload)
         self.fire_event(
             "health_check_command",
             command="report_status",
@@ -1365,6 +1370,7 @@ class ProtectHealthChecker(hass.Hass):
                     f"No loaded {self._integration_domain!r} config entry found"
                 )
                 self.log(self._repair_detail, level="ERROR")
+                self._record_repair_event(REPAIR_FAILED)
                 self._report_repair_status_only()
                 return
 
@@ -1417,6 +1423,7 @@ class ProtectHealthChecker(hass.Hass):
                         f"Repair successful — {self._repair_detail}",
                         level="INFO",
                     )
+                    self._record_repair_event(REPAIR_SUCCESS, duration_s=elapsed)
                     self._report_repair_status_only()
                     return
 
@@ -1433,6 +1440,9 @@ class ProtectHealthChecker(hass.Hass):
                 f"Repair failed — {self._repair_detail}; alert stays firing",
                 level="WARNING",
             )
+            self._record_repair_event(
+                REPAIR_FAILED, duration_s=self._repair_recovery_wait_s
+            )
             self._report_repair_status_only()
 
         except Exception as exc:
@@ -1441,6 +1451,7 @@ class ProtectHealthChecker(hass.Hass):
             # ha_url and repair_detail reaches the published sensor (S3).
             self._repair_detail = f"Repair error: {type(exc).__name__}"
             self.log(f"Repair execution error: {exc!r}", level="ERROR")
+            self._record_repair_event(REPAIR_FAILED)
             self._report_repair_status_only()
 
     async def _find_loaded_entry(self) -> Tuple[Optional[str], Optional[str]]:
@@ -1486,15 +1497,36 @@ class ProtectHealthChecker(hass.Hass):
                 return entity_id
         return None
 
+    def _record_repair_event(
+        self, result: str, duration_s: Optional[float] = None
+    ) -> None:
+        """Queue a repair-conclusion event for delivery on the next report.
+
+        Whole-checker repair (a single config-entry reload) — ``device`` is
+        never set.  Drained exactly once by ``_drain_repair_events``.
+        """
+        event: Dict[str, Any] = {"result": result}
+        if duration_s is not None:
+            event["duration_s"] = duration_s
+        self._pending_repair_events.append(event)
+
+    def _drain_repair_events(self, payload: Dict[str, Any]) -> None:
+        """Attach any queued repair-conclusion events to ``payload`` and clear."""
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
+
     def _report_repair_status_only(self) -> None:
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": [],
+            "repair_state": self._build_repair_state(),
+        }
+        self._drain_repair_events(payload)
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": [],
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(payload),
         )
 
     # ------------------------------------------------------------------

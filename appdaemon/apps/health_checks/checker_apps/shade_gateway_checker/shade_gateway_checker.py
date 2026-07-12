@@ -138,6 +138,11 @@ class ShadeGatewayChecker(hass.Hass):
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
+        # Repair events for the metrics exporter, buffered here and drained
+        # into the very next report_status payload (once-only delivery — a
+        # repair conclusion must never be reported twice).
+        self._pending_repair_events: List[Dict[str, Any]] = []
+
         self.log(
             f"ShadeGatewayChecker initializing: id={self._checker_id}, "
             f"disconnect_low_threshold={self._disconnect_low_threshold:.0f}%, "
@@ -549,6 +554,9 @@ class ShadeGatewayChecker(hass.Hass):
             "results": results,
             "repair_state": self._build_repair_state(),
         }
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
         self.fire_event(
             "health_check_command",
             command="report_status",
@@ -769,6 +777,9 @@ class ShadeGatewayChecker(hass.Hass):
                     self._last_zero_time = None
                     self._episode_affected = {}
                     self._repair_attempted_this_episode = False
+                    self._pending_repair_events.append(
+                        {"result": "success", "duration_s": elapsed}
+                    )
                     self.log(
                         f"Shade gateway repair succeeded — recovered after {elapsed}s",
                         level="INFO",
@@ -788,6 +799,9 @@ class ShadeGatewayChecker(hass.Hass):
                 f"Gateway power-cycle did not restore shades after "
                 f"{self._repair_recovery_wait_s}s — manual intervention needed"
             )
+            self._pending_repair_events.append(
+                {"result": "failed", "duration_s": self._repair_recovery_wait_s}
+            )
             self.log(
                 f"Shade gateway repair failed — no recovery after "
                 f"{self._repair_recovery_wait_s}s",
@@ -798,6 +812,10 @@ class ShadeGatewayChecker(hass.Hass):
         except Exception as exc:
             self._repair_status = REPAIR_FAILED
             self._repair_detail = f"Repair error: {exc}"
+            # Duration is genuinely unknown here — the failure can happen at
+            # any point (e.g. the button/press service call itself throwing),
+            # so it's not comparable to the timeout budget above.
+            self._pending_repair_events.append({"result": "failed"})
             self.log(f"Repair execution error: {exc!r}", level="ERROR")
             self._report_repair_status_only()
 
@@ -864,14 +882,18 @@ class ShadeGatewayChecker(hass.Hass):
 
     def _report_repair_status_only(self) -> None:
         """Fire a status report with current repair state (no new check results)."""
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": [],
+            "repair_state": self._build_repair_state(),
+        }
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": [],
-                "repair_state": self._build_repair_state(),
-            }),
+            payload=json.dumps(payload),
         )
 
     def _build_repair_state(self) -> Dict[str, Any]:

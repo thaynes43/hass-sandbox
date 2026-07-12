@@ -180,22 +180,35 @@ class TempHumidityChecker(hass.Hass):
     def _run_checks(self) -> None:
         """Execute all configured checks and report results."""
         results: List[Dict[str, str]] = []
+        metrics: List[Dict[str, Any]] = []
 
         for sensor in self._sensors:
-            status, detail = self._evaluate_sensor(sensor)
+            status, detail, value = self._evaluate_sensor_with_value(sensor)
             results.append({
                 "name": sensor["name"],
                 "status": status,
                 "detail": detail,
             })
+            if value is not None:
+                for metric_name in self._metric_names_for_type(sensor["type"]):
+                    metrics.append({
+                        "name": metric_name,
+                        "value": value,
+                        "type": "gauge",
+                        "labels": {"sensor": sensor["name"]},
+                    })
+
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": results,
+        }
+        if metrics:
+            payload["metrics"] = metrics
 
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": results,
-            }),
+            payload=json.dumps(payload),
         )
 
         ok_count = sum(1 for r in results if r["status"] == "ok")
@@ -206,37 +219,60 @@ class TempHumidityChecker(hass.Hass):
             level="INFO" if crit_count == 0 and warn_count == 0 else "WARNING",
         )
 
+    @staticmethod
+    def _metric_names_for_type(sensor_type: str) -> List[str]:
+        """Map a sensor's configured type to the custom metric name(s) to emit."""
+        if sensor_type == "temperature":
+            return ["temperature_fahrenheit"]
+        elif sensor_type == "humidity":
+            return ["humidity_percent"]
+        else:
+            # "both" — the single raw reading is evaluated against both
+            # threshold sets, so report it under both metric names.
+            return ["temperature_fahrenheit", "humidity_percent"]
+
     def _evaluate_sensor(self, sensor: Dict[str, Any]) -> tuple:
         """Evaluate a single sensor. Returns (status, detail)."""
+        status, detail, _value = self._evaluate_sensor_with_value(sensor)
+        return (status, detail)
+
+    def _evaluate_sensor_with_value(self, sensor: Dict[str, Any]) -> tuple:
+        """Evaluate a single sensor. Returns (status, detail, value).
+
+        ``value`` is the parsed numeric reading, or ``None`` if the state
+        was unavailable/unknown/non-numeric (i.e. no reading to report).
+        """
         entity_id = sensor["entity_id"]
 
         try:
             state = self.get_state(entity_id)
         except Exception as exc:
-            return ("critical", f"error reading state: {exc}")
+            return ("critical", f"error reading state: {exc}", None)
 
         if state is None or state in ("unavailable", "unknown"):
-            return ("critical", f"state: {state or 'not found'}")
+            return ("critical", f"state: {state or 'not found'}", None)
 
         try:
             value = float(state)
         except (ValueError, TypeError):
-            return ("critical", f"non-numeric state: {state}")
+            return ("critical", f"non-numeric state: {state}", None)
 
         sensor_type = sensor["type"]
 
         if sensor_type == "humidity":
-            return self._check_range(
+            status, detail = self._check_range(
                 value, "humidity",
                 sensor["humidity_low_warning"], sensor["humidity_high_warning"],
                 sensor["humidity_low_critical"], sensor["humidity_high_critical"],
             )
+            return (status, detail, value)
         elif sensor_type == "temperature":
-            return self._check_range(
+            status, detail = self._check_range(
                 value, "temperature",
                 sensor["temp_low_warning"], sensor["temp_high_warning"],
                 sensor["temp_low_critical"], sensor["temp_high_critical"],
             )
+            return (status, detail, value)
         else:
             # "both" — check both and return worst status
             temp_status, temp_detail = self._check_range(
@@ -251,8 +287,8 @@ class TempHumidityChecker(hass.Hass):
             )
             severity = {"ok": 0, "warning": 1, "critical": 2}
             if severity.get(temp_status, 0) >= severity.get(hum_status, 0):
-                return (temp_status, temp_detail)
-            return (hum_status, hum_detail)
+                return (temp_status, temp_detail, value)
+            return (hum_status, hum_detail, value)
 
     def _check_range(
         self, value: float, metric: str,

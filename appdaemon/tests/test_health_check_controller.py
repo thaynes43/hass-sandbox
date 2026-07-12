@@ -44,6 +44,8 @@ DEFAULT_ARGS: Dict[str, Any] = {
     "heartbeat_interval_s": 60,
     "alert_history_max": 50,
     "alert_retention": "1:12:00:00",
+    # Keep unit tests hermetic — no exposition server / port bind.
+    "metrics_enabled": False,
 }
 
 
@@ -2593,3 +2595,86 @@ class TestRecordNote:
 
         assert len(app._checkers["spa"]["alert_history"]) == before
         _close_created_coros(app)
+
+
+# ---------------------------------------------------------------------------
+# Tests — Prometheus metrics ingest (report_status → exporter)
+# ---------------------------------------------------------------------------
+
+class TestMetricsIngest:
+    def _register(self, app, checker_id="fans", checks=("Pink Ping",)):
+        app._on_command("health_check_command", {
+            "command": "register_checker",
+            "payload": json.dumps({
+                "checker_id": checker_id,
+                "checker_name": checker_id.title(),
+                "check_names": list(checks),
+                "supports_repair": True,
+            }),
+        }, {})
+
+    def _report(self, app, checker_id, payload_extra):
+        payload = {"checker_id": checker_id, "results": [], **payload_extra}
+        app._on_command("health_check_command", {
+            "command": "report_status",
+            "payload": json.dumps(payload),
+        }, {})
+
+    def test_repair_events_forwarded_to_exporter(self):
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+        app._metrics_enabled = True
+        app._metrics = MagicMock()
+
+        self._report(app, "fans", {"repair_events": [
+            {"result": "success", "duration_s": 18.0, "device": "Pink Room"},
+            {"result": "failed", "device": "Blue Room"},
+        ]})
+
+        assert app._metrics.record_repair_event.call_count == 2
+        first = app._metrics.record_repair_event.call_args_list[0]
+        assert first.kwargs["result"] == "success"
+        assert first.kwargs["duration_s"] == 18.0
+        assert first.kwargs["device"] == "Pink Room"
+
+    def test_custom_metrics_forwarded_to_exporter(self):
+        app = _make_app()
+        _startup(app)
+        self._register(app, checker_id="cigars", checks=("Humidity",))
+        app._metrics_enabled = True
+        app._metrics = MagicMock()
+
+        self._report(app, "cigars", {"metrics": [
+            {"name": "humidity_percent", "value": 64.0,
+             "type": "gauge", "labels": {"sensor": "jar1"}},
+        ]})
+
+        app._metrics.record_custom.assert_called_once()
+        kw = app._metrics.record_custom.call_args.kwargs
+        assert kw["name"] == "humidity_percent"
+        assert kw["value"] == 64.0
+        assert kw["labels"] == {"sensor": "jar1"}
+
+    def test_no_ingest_when_metrics_disabled(self):
+        app = _make_app()  # DEFAULT_ARGS has metrics_enabled=False
+        _startup(app)
+        self._register(app)
+        app._metrics = MagicMock()
+        # _metrics_enabled stays False from init
+        self._report(app, "fans", {"repair_events": [
+            {"result": "success", "duration_s": 5.0, "device": "X"},
+        ]})
+        app._metrics.record_repair_event.assert_not_called()
+
+    def test_malformed_metric_payload_does_not_raise(self):
+        app = _make_app()
+        _startup(app)
+        self._register(app)
+        app._metrics_enabled = True
+        app._metrics = MagicMock()
+        # missing "name" key → controller logs and continues
+        self._report(app, "fans", {"metrics": [{"value": 1.0}]})
+        # repair_events not a list → ignored
+        self._report(app, "fans", {"repair_events": None})
+        assert app._checkers["fans"]["status"] in ("unknown", "ok", "critical")

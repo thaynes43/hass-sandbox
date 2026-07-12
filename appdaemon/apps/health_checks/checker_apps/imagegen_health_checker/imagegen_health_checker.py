@@ -84,6 +84,11 @@ class ImageGenHealthChecker(hass.Hass):
         self._queue_unchanged_since: Optional[datetime.datetime] = None
         self._unreachable_since: Optional[datetime.datetime] = None
 
+        # Metrics: the queue depth freshly read on the current poll cycle
+        # only — cleared whenever it can't be determined (unreachable or
+        # unconfigured) so a stale reading is never reported as current.
+        self._metric_queue_remaining: Optional[int] = None
+
         self._client: Optional[ComfyUIStatusClient] = None
         if self._comfyui_url:
             self._client = ComfyUIStatusClient(
@@ -256,6 +261,17 @@ class ImageGenHealthChecker(hass.Hass):
             "checker_id": self._checker_id,
             "results": results,
         }
+
+        # Domain metric: ComfyUI queue depth, when freshly read this cycle.
+        if self._metric_queue_remaining is not None:
+            payload["metrics"] = [
+                {
+                    "name": "queue_remaining",
+                    "value": self._metric_queue_remaining,
+                    "type": "gauge",
+                }
+            ]
+
         self.fire_event(
             "health_check_command",
             command="report_status",
@@ -271,6 +287,8 @@ class ImageGenHealthChecker(hass.Hass):
 
     async def _poll_comfyui(self) -> List[Dict[str, str]]:
         now = datetime.datetime.now()
+        # Reset each cycle — only a fresh, successful read below sets it.
+        self._metric_queue_remaining = None
 
         if self._client is None:
             return [
@@ -297,6 +315,7 @@ class ImageGenHealthChecker(hass.Hass):
                 level="INFO",
             )
         self._unreachable_since = None
+        self._metric_queue_remaining = remaining
 
         # Only a DECREASE (a job finished) or an empty queue counts as
         # progress.  Increases are producer activity — during a GPU wedge

@@ -11,3 +11,5 @@ coverage>=7.0
 ruamel.yaml>=0.18
 # Model settings YAML loading
 pyyaml>=6.0
+# Prometheus metrics exposition (health-check controller)
+prometheus-client>=0.20

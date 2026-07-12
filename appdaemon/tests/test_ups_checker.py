@@ -498,3 +498,102 @@ class TestEdgeCases:
         assert dev["battery_critical"] == 50.0
         assert dev["load_warning"] == 90.0
         assert dev["load_critical"] == 100.0
+
+
+# ------------------------------------------------------------------
+# Metrics (battery_percent + load_percent gauges per device)
+# ------------------------------------------------------------------
+
+
+class TestMetrics:
+    def test_metrics_emitted_for_battery_and_load(self):
+        app = _make_app()
+        _init_only(app)
+        # battery=95, load=50
+        app.get_state = MagicMock(side_effect=["95", "50"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        metrics = payload["metrics"]
+        assert len(metrics) == 2
+        by_name = {m["name"]: m for m in metrics}
+        assert by_name["battery_percent"]["value"] == 95.0
+        assert by_name["battery_percent"]["type"] == "gauge"
+        assert by_name["battery_percent"]["labels"] == {"device": "UPS A"}
+        assert by_name["load_percent"]["value"] == 50.0
+        assert by_name["load_percent"]["labels"] == {"device": "UPS A"}
+
+    def test_metrics_emitted_for_multiple_devices(self):
+        app = _make_app({
+            "ups_devices": [
+                {
+                    "name": "UPS A",
+                    "battery_entity": "sensor.ups_a_battery",
+                    "load_entity": "sensor.ups_a_load",
+                },
+                {
+                    "name": "UPS B",
+                    "battery_entity": "sensor.ups_b_battery",
+                    "load_entity": "sensor.ups_b_load",
+                },
+            ],
+        })
+        _init_only(app)
+        app.get_state = MagicMock(side_effect=["95", "50", "40", "99"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        metrics = payload["metrics"]
+        assert len(metrics) == 4
+        devices = {m["labels"]["device"] for m in metrics}
+        assert devices == {"UPS A", "UPS B"}
+
+    def test_metrics_skip_unavailable_reading(self):
+        app = _make_app()
+        _init_only(app)
+        # battery unavailable (skipped), load=50 (included)
+        app.get_state = MagicMock(side_effect=["unavailable", "50"])
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        metrics = payload["metrics"]
+        assert len(metrics) == 1
+        assert metrics[0]["name"] == "load_percent"
+
+    def test_metrics_key_omitted_when_all_unavailable(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="unavailable")
+        app._run_checks()
+
+        report_calls = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ]
+        payload = json.loads(report_calls[0][1]["payload"])
+        assert "metrics" not in payload
+
+    def test_stale_value_cleared_when_reading_goes_unavailable(self):
+        """A prior good reading must not leak into metrics once the sensor
+        goes unavailable on a later cycle."""
+        app = _make_app()
+        _init_only(app)
+        app.get_state = MagicMock(return_value="95")
+        app._check_battery(app._devices[0])
+        assert app._last_metric_value["sensor.ups_a_battery"] == 95.0
+
+        app.get_state = MagicMock(return_value="unavailable")
+        app._check_battery(app._devices[0])
+        assert "sensor.ups_a_battery" not in app._last_metric_value

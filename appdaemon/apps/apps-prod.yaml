@@ -646,6 +646,9 @@ health_check_controller:
   heartbeat_interval_s: 60
   alert_history_max: 50
   alert_retention: "1:12:00:00"
+  # Prometheus metrics exposition — scraped by a ServiceMonitor (port 9100).
+  metrics_enabled: true
+  metrics_port: 9100
   # Mirror checker health into the cluster's Alertmanager (in-cluster svc,
   # not a secret). Critical pages via Pushover; warning is UI-only.
   # Re-post interval must stay below Alertmanager's resolve_timeout (5m).

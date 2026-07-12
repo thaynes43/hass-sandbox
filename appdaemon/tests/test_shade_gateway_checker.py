@@ -706,6 +706,150 @@ class TestRepairExecution:
 
 
 # ---------------------------------------------------------------------------
+# Tests — repair_events (metrics exporter payload field)
+# ---------------------------------------------------------------------------
+
+def _report_status_payloads(app) -> list[dict]:
+    """Extract every report_status payload (decoded) fired by the app, in order."""
+    return [
+        json.loads(c[1]["payload"])
+        for c in app.fire_event.call_args_list
+        if c[1].get("command") == "report_status"
+    ]
+
+
+class TestRepairEvents:
+    def test_execute_repair_success_emits_repair_event_with_duration(self):
+        app = _make_app({"repair_settle_s": 1, "repair_recovery_wait_s": 1})
+        _init_only(app)
+        app._entities = {"sensor.a": "A"}
+        app._current_value = {"sensor.a": 100.0}
+        app._last_zero_time = None
+        app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=130)
+        app._episode_affected = {"sensor.a": datetime.datetime.now()}
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        with patch(
+            "health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        with_events = [p for p in payloads if p.get("repair_events")]
+        assert len(with_events) == 1
+        events = with_events[0]["repair_events"]
+        assert events == [{"result": "success", "duration_s": 1}]
+        # Buffer must be cleared after being drained into the payload.
+        assert app._pending_repair_events == []
+
+    def test_execute_repair_timeout_emits_repair_event_with_wait_budget(self):
+        app = _make_app({"repair_settle_s": 1, "repair_recovery_wait_s": 1})
+        _init_only(app)
+        app._entities = {"sensor.a": "A"}
+        app._current_value = {"sensor.a": 2.0}  # never recovers
+        app._episode_affected = {"sensor.a": datetime.datetime.now()}
+        app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=130)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._repair_attempted_this_episode = True
+
+        with patch(
+            "health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        with_events = [p for p in payloads if p.get("repair_events")]
+        assert len(with_events) == 1
+        events = with_events[0]["repair_events"]
+        assert events == [{"result": "failed", "duration_s": 1}]
+        assert app._pending_repair_events == []
+
+    def test_execute_repair_error_emits_repair_event_without_duration(self):
+        """An exception (e.g. the button/press service call throwing) is a
+        genuine repair conclusion, but the duration isn't the timeout budget
+        — it's genuinely unknown, so duration_s must be omitted."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app.call_service = MagicMock(side_effect=Exception("Service unavailable"))
+
+        _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        with_events = [p for p in payloads if p.get("repair_events")]
+        assert len(with_events) == 1
+        events = with_events[0]["repair_events"]
+        assert events == [{"result": "failed"}]
+        assert "duration_s" not in events[0]
+        assert app._pending_repair_events == []
+
+    def test_repair_event_delivered_once_not_repeated_on_next_report(self):
+        """Repair events are edge-triggered — once drained into a report,
+        the next report_status payload must NOT repeat it."""
+        app = _make_app()
+        _init_only(app)
+        app._pending_repair_events.append({"result": "success", "duration_s": 42})
+
+        app._report_repair_status_only()
+        app._report_repair_status_only()
+
+        payloads = _report_status_payloads(app)
+        assert len(payloads) == 2
+        assert payloads[0].get("repair_events") == [
+            {"result": "success", "duration_s": 42}
+        ]
+        assert "repair_events" not in payloads[1]
+
+    def test_run_checks_drains_pending_repair_events(self):
+        app = _make_app()
+        _init_and_discover(app)
+        app._pending_repair_events.append({"result": "failed", "duration_s": 900})
+
+        _run(app._run_checks())
+
+        payloads = _report_status_payloads(app)
+        assert len(payloads) == 1
+        assert payloads[0]["repair_events"] == [
+            {"result": "failed", "duration_s": 900}
+        ]
+        assert app._pending_repair_events == []
+
+    def test_run_checks_omits_repair_events_key_when_no_pending_events(self):
+        app = _make_app()
+        _init_and_discover(app)
+
+        _run(app._run_checks())
+
+        payloads = _report_status_payloads(app)
+        assert len(payloads) == 1
+        assert "repair_events" not in payloads[0]
+
+    def test_no_device_key_for_whole_checker_repair(self):
+        """This checker repairs the gateway as a whole (not per-shade), so
+        repair_events must never carry a 'device' key."""
+        app = _make_app({"repair_settle_s": 1, "repair_recovery_wait_s": 1})
+        _init_only(app)
+        app._entities = {"sensor.a": "A"}
+        app._current_value = {"sensor.a": 100.0}
+        app._last_zero_time = None
+        app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=130)
+        app._episode_affected = {"sensor.a": datetime.datetime.now()}
+        app._repair_status = REPAIR_IN_PROGRESS
+
+        with patch(
+            "health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        events = [p["repair_events"] for p in payloads if p.get("repair_events")][0]
+        assert "device" not in events[0]
+
+
+# ---------------------------------------------------------------------------
 # Tests — Cancel repair and config updates
 # ---------------------------------------------------------------------------
 

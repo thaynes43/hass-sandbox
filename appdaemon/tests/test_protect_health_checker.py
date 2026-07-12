@@ -1781,3 +1781,131 @@ class TestRepairStandDownOnWarnings:
         assert app._repair_status == REPAIR_IDLE
         assert app._auto_repair_deadline is None
         assert app._unhealthy_since is None
+
+
+# ---------------------------------------------------------------------------
+# Tests — repair_events payload draining
+# ---------------------------------------------------------------------------
+
+
+def _report_status_payloads(app: ProtectHealthChecker) -> list[dict]:
+    """All report_status payloads fired so far, decoded, in call order."""
+    return [
+        json.loads(c[1]["payload"])
+        for c in app.fire_event.call_args_list
+        if c[1].get("command") == "report_status"
+    ]
+
+
+class TestRepairEvents:
+    def test_execute_repair_success_emits_repair_event_with_duration(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_recovery_wait_s = 0.05
+        app._repair_status = REPAIR_IN_PROGRESS
+        admin = _make_mock_admin()
+        admin.list_config_entries = AsyncMock(
+            return_value=[IGNORED_ENTRY, LOADED_ENTRY]
+        )
+        app._admin = admin
+        app._any_event_after = AsyncMock(
+            return_value="binary_sensor.driveway_motion"
+        )
+
+        with patch(MOD_PATH + ".REPAIR_POLL_INTERVAL_S", 0.01):
+            _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        # The interim "reloaded; waiting" report must not carry an event.
+        assert "repair_events" not in payloads[0]
+        final = payloads[-1]
+        assert final["repair_events"] == [
+            {"result": REPAIR_SUCCESS, "duration_s": pytest.approx(0.01)}
+        ]
+        assert "device" not in final["repair_events"][0]
+        # Drained — nothing left buffered for the next report.
+        assert app._pending_repair_events == []
+
+    def test_execute_repair_no_loaded_entry_emits_failed_event_no_duration(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        admin = _make_mock_admin()
+        admin.list_config_entries = AsyncMock(return_value=[IGNORED_ENTRY])
+        app._admin = admin
+
+        _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        assert len(payloads) == 1
+        assert payloads[0]["repair_events"] == [{"result": REPAIR_FAILED}]
+        assert app._pending_repair_events == []
+
+    def test_execute_repair_timeout_emits_failed_event_with_duration(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_recovery_wait_s = 0.03
+        app._repair_status = REPAIR_IN_PROGRESS
+        admin = _make_mock_admin()
+        admin.list_config_entries = AsyncMock(
+            return_value=[IGNORED_ENTRY, LOADED_ENTRY]
+        )
+        app._admin = admin
+        app._any_event_after = AsyncMock(return_value=None)
+
+        with patch(MOD_PATH + ".REPAIR_POLL_INTERVAL_S", 0.01):
+            _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        final = payloads[-1]
+        assert final["repair_events"] == [
+            {"result": REPAIR_FAILED, "duration_s": pytest.approx(0.03)}
+        ]
+        assert app._pending_repair_events == []
+
+    def test_execute_repair_error_emits_failed_event_no_duration(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        admin = _make_mock_admin()
+        admin.list_config_entries = AsyncMock(return_value=[LOADED_ENTRY])
+        admin.reload_config_entry = AsyncMock(
+            side_effect=RuntimeError("HA returned 500")
+        )
+        app._admin = admin
+
+        _run(app._execute_repair())
+
+        payloads = _report_status_payloads(app)
+        assert len(payloads) == 1
+        assert payloads[0]["repair_events"] == [{"result": REPAIR_FAILED}]
+        assert app._pending_repair_events == []
+
+    def test_pending_repair_events_drained_into_run_checks_report(self):
+        """A repair_event queued between cycles rides the next regular
+        report_status payload alongside the four check results."""
+        app = _make_app()
+        _init_only(app)
+        app._admin = _make_mock_admin()
+        app.get_state = AsyncMock(return_value=None)
+        app._record_repair_event(REPAIR_SUCCESS, duration_s=42)
+
+        _run(app._run_checks())
+
+        payloads = _report_status_payloads(app)
+        assert len(payloads) == 1
+        assert payloads[0]["repair_events"] == [
+            {"result": REPAIR_SUCCESS, "duration_s": 42}
+        ]
+        assert len(payloads[0]["results"]) == 4
+        assert app._pending_repair_events == []
+
+    def test_report_repair_status_only_omits_key_when_no_pending_events(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IDLE
+
+        app._report_repair_status_only()
+
+        payloads = _report_status_payloads(app)
+        assert "repair_events" not in payloads[0]
