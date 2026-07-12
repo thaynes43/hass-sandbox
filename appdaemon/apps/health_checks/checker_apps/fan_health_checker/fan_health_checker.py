@@ -48,6 +48,9 @@ REPAIR_FAILED = "failed"
 
 REPAIR_POLL_INTERVAL_S = 5
 
+# Delay between fan restore commands so the just-rebooted fan accepts each one
+RESTORE_STEP_DELAY_S = 1
+
 
 class FanHealthChecker(hass.Hass):
     """Health checker for Modern Forms ceiling fans with per-fan repair."""
@@ -80,6 +83,20 @@ class FanHealthChecker(hass.Hass):
         self._auto_repair_delay_min_default: int = int(
             args.get("auto_repair_delay_min_default", 5)
         )
+        # Re-apply the fan's pre-repair on/off + speed + direction after a
+        # successful repair (the power-cycle reboots the fan to its hardware
+        # default). Enabled by default; set false to disable.
+        self._restore_state_enabled: bool = bool(
+            args.get("restore_state_enabled", True)
+        )
+
+        # Last-known-good fan state cache (entity_id -> {state, percentage,
+        # direction}), kept fresh by a state listener and seeded from HA on
+        # startup. Used to restore a fan after its repair power-cycle.
+        self._fan_state_cache: Dict[str, Dict[str, Any]] = {}
+        self._entity_to_fan: Dict[str, str] = {
+            fan["entity_id"]: fan["name"] for fan in self._fans
+        }
 
         # Per-fan repair state
         self._fan_repair_states: Dict[str, Dict[str, Any]] = {
@@ -116,6 +133,8 @@ class FanHealthChecker(hass.Hass):
     async def _async_startup(self) -> None:
         await self._provision_entities()
         await self._refresh_auto_repair_config()
+        await self._seed_state_cache()
+        self._register_state_listeners()
         self._register()
 
         self.listen_event(
@@ -455,6 +474,145 @@ class FanHealthChecker(hass.Hass):
             )
 
     # ------------------------------------------------------------------
+    # State cache / restore
+    # ------------------------------------------------------------------
+
+    async def _seed_state_cache(self) -> None:
+        """Seed the last-known-good cache from current HA state on startup.
+
+        Reading fresh from HA covers the case where a fan changed state while
+        AppDaemon was down. Fans that are ``unavailable`` at startup are left
+        unseeded; the state listener populates them once they report a good
+        state.
+        """
+        for fan in self._fans:
+            entity_id = fan["entity_id"]
+            try:
+                full = await self.get_state(entity_id, attribute="all")
+            except Exception as exc:
+                self.log(
+                    f"Failed to seed state cache for {fan['name']}: {exc!r}",
+                    level="WARNING",
+                )
+                continue
+
+            cached = self._extract_good_state(full)
+            if cached is None:
+                state = full.get("state") if isinstance(full, dict) else full
+                self.log(
+                    f"{fan['name']} is '{state}' at startup — cache will seed "
+                    f"once it reports a good state",
+                    level="INFO",
+                )
+                continue
+
+            self._fan_state_cache[entity_id] = cached
+            self.log(
+                f"Seeded state cache for {fan['name']}: {cached}", level="INFO"
+            )
+
+    def _register_state_listeners(self) -> None:
+        for fan in self._fans:
+            self.listen_state(
+                self._on_fan_state_change, fan["entity_id"], attribute="all"
+            )
+        self.log(
+            f"Registered state listeners for {len(self._fans)} fans",
+            level="INFO",
+        )
+
+    @staticmethod
+    def _extract_good_state(full: Any) -> Optional[Dict[str, Any]]:
+        """Return {state, percentage, direction} from a full state dict, or
+        None if the fan is not in a good (on/off) state."""
+        if not isinstance(full, dict):
+            return None
+        state = full.get("state")
+        if state not in ("on", "off"):
+            return None
+        attrs = full.get("attributes") or {}
+        return {
+            "state": state,
+            "percentage": attrs.get("percentage"),
+            "direction": attrs.get("direction"),
+        }
+
+    def _on_fan_state_change(
+        self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any
+    ) -> None:
+        """Cache a fan's last-known-good on/off + speed + direction.
+
+        Skipped while that fan is being repaired so the power-cycle's transient
+        states never overwrite the pre-repair value we need to restore.
+        """
+        fan_name = self._entity_to_fan.get(entity)
+        if not fan_name:
+            return
+        if (
+            self._fan_repair_states.get(fan_name, {}).get("status")
+            == REPAIR_IN_PROGRESS
+        ):
+            return
+        cached = self._extract_good_state(new)
+        if cached is None:
+            return
+        self._fan_state_cache[entity] = cached
+
+    async def _restore_fan_state(self, fan: dict) -> None:
+        """Re-apply the cached on/off + speed + direction after a repair.
+
+        The power-cycle reboots the physical fan to its hardware default even
+        when HA still shows stale state, so we push the last-known-good values
+        back to the device.
+        """
+        if not self._restore_state_enabled:
+            return
+
+        entity_id = fan["entity_id"]
+        cached = self._fan_state_cache.get(entity_id)
+        if not cached or cached.get("state") not in ("on", "off"):
+            self.log(
+                f"No cached state for {fan['name']} — skipping restore",
+                level="INFO",
+            )
+            return
+
+        desired = cached["state"]
+        try:
+            if desired == "off":
+                self.call_service("fan/turn_off", entity_id=entity_id)
+                self.log(f"Restored {fan['name']} to off", level="INFO")
+                return
+
+            pct = cached.get("percentage")
+            direction = cached.get("direction")
+            self.call_service("fan/turn_on", entity_id=entity_id)
+            if isinstance(pct, (int, float)) and pct > 0:
+                await asyncio.sleep(RESTORE_STEP_DELAY_S)
+                self.call_service(
+                    "fan/set_percentage",
+                    entity_id=entity_id,
+                    percentage=int(pct),
+                )
+            if direction in ("forward", "reverse"):
+                await asyncio.sleep(RESTORE_STEP_DELAY_S)
+                self.call_service(
+                    "fan/set_direction",
+                    entity_id=entity_id,
+                    direction=direction,
+                )
+            self.log(
+                f"Restored {fan['name']} to on "
+                f"(speed={pct}%, direction={direction})",
+                level="INFO",
+            )
+        except Exception as exc:
+            self.log(
+                f"Failed to restore state for {fan['name']}: {exc!r}",
+                level="ERROR",
+            )
+
+    # ------------------------------------------------------------------
     # Repair execution
     # ------------------------------------------------------------------
 
@@ -552,6 +710,13 @@ class FanHealthChecker(hass.Hass):
 
                 results = await self._run_health_checks_only()
                 if self._check_single_fan_results(fan, results):
+                    # Restore state while still IN_PROGRESS so the listener stays
+                    # frozen and our restore commands are the ones that seed the
+                    # cache afterward.
+                    fr["detail"] = f"Recovered after {elapsed}s — restoring state"
+                    self._report_repair_status_only()
+                    await self._restore_fan_state(fan)
+
                     fr["status"] = REPAIR_SUCCESS
                     fr["detail"] = f"Recovered after {elapsed}s"
                     self._repair_status = self._aggregate_repair_status()
