@@ -29,6 +29,18 @@ Each fan independently tracks its own repair state. When auto-repair triggers:
 
 The "Repair" button resets all `failed` fan states and repairs all currently-failing fans sequentially.
 
+### State Restore After Repair
+
+The repair script cuts mains power to the fan, which **reboots the Modern Forms controller back to its hardware default** — the physical fan can come back off or at the wrong speed. Because the Modern Forms integration keeps serving stale last-known state while the fan's Wi-Fi is down (most repairs are triggered by the **IP ping** failing, not by entity unavailability), HA never sends a corrective command, so the physical fan ends up out of sync with what the user wanted.
+
+To fix this, the checker keeps a **last-known-good state cache** and replays it after every successful repair:
+
+1. **Capture (event-based)** — a `listen_state(..., attribute="all")` listener caches each fan's `state` (on/off), `percentage` (speed), and `direction` (forward/reverse) whenever it reports a good state. Caching is **frozen while that fan is being repaired** so the power-cycle's transient states never overwrite the value we need.
+2. **Seed on startup** — the cache is seeded fresh from current HA state on startup, so state a fan changed to while AppDaemon was down is picked up. A fan that is `unavailable` at startup is left unseeded until the listener sees it report a good state.
+3. **Restore** — once a repair recovers the fan, the cached values are pushed back to the device (`fan.turn_on` → `fan.set_percentage` → `fan.set_direction`, or `fan.turn_off`), forcing the physical fan to match the intended state.
+
+Restore is on by default; set `restore_state_enabled: false` to disable it. If no good state has ever been cached for a fan (e.g. it was unavailable across an AppDaemon restart and then repaired before reporting), restore is skipped and logged.
+
 ### Safety Rules
 
 - Each fan uses a different zen32 controller — repairs run independently
@@ -56,6 +68,7 @@ fan_health_checker:
   repair_recovery_wait_s: 300                        # Max wait for recovery after repair
   auto_repair_enabled_default: false                 # Default auto-repair toggle
   auto_repair_delay_min_default: 5                   # Default minutes before auto-repair
+  restore_state_enabled: true                        # Re-apply on/off + speed + direction after repair
   repair_script: script.zen32_hard_reset             # HA script entity for repair
   fans:
     - name: Pink Room                                # Display name

@@ -26,6 +26,7 @@ _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root))
 
+from health_checks.checker_apps.fan_health_checker import fan_health_checker as fhc_module
 from health_checks.checker_apps.fan_health_checker.fan_health_checker import (
     FanHealthChecker,
     REPAIR_FAILED,
@@ -34,6 +35,16 @@ from health_checks.checker_apps.fan_health_checker.fan_health_checker import (
     REPAIR_PENDING,
     REPAIR_SUCCESS,
 )
+
+
+def _full_state(state: str, percentage=None, direction=None) -> dict:
+    """Build a full HA state dict as returned by get_state(attribute='all')."""
+    attrs: Dict[str, Any] = {}
+    if percentage is not None:
+        attrs["percentage"] = percentage
+    if direction is not None:
+        attrs["direction"] = direction
+    return {"entity_id": "fan.x", "state": state, "attributes": attrs}
 
 
 # ---------------------------------------------------------------------------
@@ -523,3 +534,180 @@ class TestRepairCommandHandler:
 
         calls = [c[0][0] for c in app.call_service.call_args_list]
         assert "input_boolean/turn_on" in calls
+
+
+# ---------------------------------------------------------------------------
+# Tests — State cache + restore
+# ---------------------------------------------------------------------------
+
+PINK_ENTITY = "fan.pink_room_fan_fan"
+
+
+class TestStateCache:
+    def test_listener_caches_good_on_state(self):
+        app = _make_app()
+        _init_only(app)
+        app._on_fan_state_change(
+            PINK_ENTITY, "all", None, _full_state("on", 33, "forward"), {}
+        )
+        assert app._fan_state_cache[PINK_ENTITY] == {
+            "state": "on",
+            "percentage": 33,
+            "direction": "forward",
+        }
+
+    def test_listener_caches_off_state(self):
+        app = _make_app()
+        _init_only(app)
+        app._on_fan_state_change(
+            PINK_ENTITY, "all", None, _full_state("off", 0, "forward"), {}
+        )
+        assert app._fan_state_cache[PINK_ENTITY]["state"] == "off"
+
+    def test_listener_ignores_unavailable(self):
+        app = _make_app()
+        _init_only(app)
+        # Seed a good value first
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "on", "percentage": 66, "direction": "reverse",
+        }
+        app._on_fan_state_change(
+            PINK_ENTITY, "all", None, _full_state("unavailable"), {}
+        )
+        # Good value must be preserved, not overwritten
+        assert app._fan_state_cache[PINK_ENTITY]["percentage"] == 66
+
+    def test_listener_frozen_during_repair(self):
+        app = _make_app()
+        _init_only(app)
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "on", "percentage": 33, "direction": "forward",
+        }
+        app._fan_repair_states["Pink Room"]["status"] = REPAIR_IN_PROGRESS
+        # A transient post-reboot default arrives mid-repair
+        app._on_fan_state_change(
+            PINK_ENTITY, "all", None, _full_state("on", 100, "forward"), {}
+        )
+        # Pre-repair value must be preserved
+        assert app._fan_state_cache[PINK_ENTITY]["percentage"] == 33
+
+    def test_listener_ignores_unknown_entity(self):
+        app = _make_app()
+        _init_only(app)
+        app._on_fan_state_change(
+            "fan.not_a_tracked_fan", "all", None, _full_state("on", 50), {}
+        )
+        assert "fan.not_a_tracked_fan" not in app._fan_state_cache
+
+    def test_seed_state_cache_from_ha(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(return_value=_full_state("on", 66, "reverse"))
+        _run(app._seed_state_cache())
+        assert app._fan_state_cache[PINK_ENTITY] == {
+            "state": "on",
+            "percentage": 66,
+            "direction": "reverse",
+        }
+
+    def test_seed_state_cache_skips_unavailable(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(return_value=_full_state("unavailable"))
+        _run(app._seed_state_cache())
+        assert PINK_ENTITY not in app._fan_state_cache
+
+    def test_startup_registers_state_listeners(self):
+        app = _make_app()
+        _startup(app)
+        ls_calls = [
+            c for c in app.listen_state.call_args_list
+            if c[1].get("attribute") == "all"
+        ]
+        # One listener per fan (2 sample fans)
+        assert len(ls_calls) == 2
+        entities = {c[0][1] for c in ls_calls}
+        assert PINK_ENTITY in entities
+
+
+class TestStateRestore:
+    def test_restore_on_reapplies_speed_and_direction(self):
+        app = _make_app()
+        _init_only(app)
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "on", "percentage": 66, "direction": "reverse",
+        }
+        with patch.object(fhc_module, "RESTORE_STEP_DELAY_S", 0):
+            _run(app._restore_fan_state(SAMPLE_FANS[0]))
+
+        calls = app.call_service.call_args_list
+        services = [c[0][0] for c in calls]
+        assert "fan/turn_on" in services
+        pct_call = next(c for c in calls if c[0][0] == "fan/set_percentage")
+        assert pct_call[1]["percentage"] == 66
+        dir_call = next(c for c in calls if c[0][0] == "fan/set_direction")
+        assert dir_call[1]["direction"] == "reverse"
+
+    def test_restore_off_turns_off(self):
+        app = _make_app()
+        _init_only(app)
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "off", "percentage": 0, "direction": "forward",
+        }
+        with patch.object(fhc_module, "RESTORE_STEP_DELAY_S", 0):
+            _run(app._restore_fan_state(SAMPLE_FANS[0]))
+
+        services = [c[0][0] for c in app.call_service.call_args_list]
+        assert services == ["fan/turn_off"]
+
+    def test_restore_skips_when_no_cache(self):
+        app = _make_app()
+        _init_only(app)
+        _run(app._restore_fan_state(SAMPLE_FANS[0]))
+        app.call_service.assert_not_called()
+
+    def test_restore_noop_when_disabled(self):
+        app = _make_app({"restore_state_enabled": False})
+        _init_only(app)
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "on", "percentage": 66, "direction": "reverse",
+        }
+        _run(app._restore_fan_state(SAMPLE_FANS[0]))
+        app.call_service.assert_not_called()
+
+    def test_restore_on_without_percentage(self):
+        """Fan cached as on with no percentage (e.g. preset) → turn_on only."""
+        app = _make_app()
+        _init_only(app)
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "on", "percentage": None, "direction": None,
+        }
+        with patch.object(fhc_module, "RESTORE_STEP_DELAY_S", 0):
+            _run(app._restore_fan_state(SAMPLE_FANS[0]))
+        services = [c[0][0] for c in app.call_service.call_args_list]
+        assert services == ["fan/turn_on"]
+
+    def test_execute_repair_restores_state_on_recovery(self):
+        app = _make_app()
+        _init_only(app)
+        app._fan_state_cache[PINK_ENTITY] = {
+            "state": "on", "percentage": 33, "direction": "forward",
+        }
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "ok", "detail": "on"},
+                {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+                {"name": "Blue Room State", "status": "ok", "detail": "off"},
+                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+        with patch.object(fhc_module, "RESTORE_STEP_DELAY_S", 0), \
+             patch.object(fhc_module, "REPAIR_POLL_INTERVAL_S", 1):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        services = [c[0][0] for c in app.call_service.call_args_list]
+        # Repair script called, then state restored
+        assert "script/zen32_hard_reset" in services
+        assert "fan/turn_on" in services
+        assert "fan/set_percentage" in services
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_SUCCESS
