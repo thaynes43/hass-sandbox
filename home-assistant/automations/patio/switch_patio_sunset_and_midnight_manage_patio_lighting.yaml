@@ -1,0 +1,35 @@
+alias: "[Switch] : [Patio] : [Sunset and Midnight] : [Manage Patio Lighting]"
+description: >
+  Turn Patio Lighting on at sunset and off at midnight. Extend by adding
+  entity_ids to BOTH the sunset_on and midnight_off branches. Uses
+  homeassistant.turn_on/off so switch and light domain entities can be mixed in
+  the same list.
+mode: single
+trigger:
+  - platform: sun
+    event: sunset
+    id: sunset_on
+  - platform: time
+    at: "00:00:00"
+    id: midnight_off
+condition: []
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: sunset_on
+        sequence:
+          - action: homeassistant.turn_on
+            target:
+              entity_id:
+                - switch.back_yard_retaining_wall_lights_relay
+            data: {}
+      - conditions:
+          - condition: trigger
+            id: midnight_off
+        sequence:
+          - action: homeassistant.turn_off
+            target:
+              entity_id:
+                - switch.back_yard_retaining_wall_lights_relay
+            data: {}
