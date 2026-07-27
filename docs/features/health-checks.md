@@ -31,6 +31,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
 | Batteries | Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with an opt-in guard that tells a real low battery from a gateway-disconnect 0% | `BatteryChecker` |
 | Motorized shades | PowerView G3 gateway RF-disconnect detection, with PoE port power-cycle repair | `ShadeGatewayChecker` |
+| AC mains | Z-Wave range extenders on battery backup — pages when wall power drops, before the backup battery runs flat | `AcMainsChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
 
 ## How It Works

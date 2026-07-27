@@ -34,3 +34,17 @@ shade_gateway_checker_dev:
   repair_recovery_wait_s: 900
   auto_repair_enabled_default: true
   auto_repair_delay_min_default: 120
+
+ac_mains_checker_dev:
+  module: health_checks.checker_apps.ac_mains_checker.ac_mains_checker
+  class: AcMainsChecker
+  checker_id: ac_mains_dev
+  checker_name: AC Mains (Dev)
+  check_interval_s: 300
+  disconnected_status: critical
+  health_dependencies:
+    - checker_id: zwave
+  entity_patterns:
+    - include: "binary_sensor\\..*_ac_mains_disconnected$"
+    - exclude: ".*qsensor.*"
+    - exclude: ".*shed_indoor_motion_sensor.*"

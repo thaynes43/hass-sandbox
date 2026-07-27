@@ -675,6 +675,8 @@ health_check_controller:
     ups:            # power loss is time-sensitive — never debounce
       critical: 0
       warning: 0
+    ac_mains:       # also power loss, but Z-Wave notification reports can
+      critical: 120 # flap — ~2 min still pages a real breaker trip fast
     shade_gateway:  # the checker itself enforces the auto-restart grace
       critical: 0   # period internally — page immediately once it goes critical
     protect_batteries:
@@ -981,6 +983,26 @@ exterior_lights_checker:
     - exclude: ".*front_yard_lamp_post_hue_edison.*"
     - exclude: ".*outdoor_hue_string_lights_01.*"
     - exclude: ".*night_light.*"
+
+ac_mains_checker:
+  module: health_checks.checker_apps.ac_mains_checker.ac_mains_checker
+  class: AcMainsChecker
+  disable: true
+  checker_id: ac_mains
+  checker_name: AC Mains
+  check_interval_s: 300
+  disconnected_status: critical
+  health_dependencies:
+    - checker_id: zwave
+  entity_patterns:
+    # Anchored on _disconnected$ so the paired _ac_mains_re_connected sensor
+    # never becomes its own check.
+    - include: "binary_sensor\\..*_ac_mains_disconnected$"
+    # Battery-only Z-Wave devices expose this sensor too and report "on"
+    # permanently (they have no AC mains to lose). Excluded or they alert
+    # forever — see ac_mains_checker/README.md.
+    - exclude: ".*qsensor.*"
+    - exclude: ".*shed_indoor_motion_sensor.*"
 
 zwave_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker

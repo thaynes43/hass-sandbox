@@ -119,6 +119,10 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `ImageGenHealthChecker` watches the ComfyUI image-generation service by polling `GET /prompt` (`exec_info.queue_remaining`) via `ComfyUIStatusClient`. Two checks: **API Reachable** is a warning while the endpoint is unreachable, escalating to critical after `unreachable_after_s`; **Queue Progress** goes critical when the queue counter stays > 0 without any movement for `queue_stuck_after_s`. A wedged ComfyUI is the canonical symptom of the GPU falling off the PCI bus on the Proxmox host — only a host reboot fixes that — so this checker is **page-only**: no repair support. The 30-minute stuck threshold sits safely above the ~8.5-minute cold-start generation, and ComfyUI's in-memory queue resets to 0 on restart, which simply reads as healthy.
 
+### AC Mains Checker
+
+`AcMainsChecker` watches `binary_sensor.<device>_ac_mains_disconnected` on mains-powered Z-Wave devices with battery backup (Zooz ZAC38 range extenders) so that **loss of wall power pages immediately** rather than surfacing days later as a dead node. When mains drops, a ZAC38 transparently falls back to its internal battery and keeps routing — nothing looks broken until the battery runs flat and the node dies. That is exactly what happened to `shed_extender` on 2026-07-21: a blown breaker went unnoticed for five days, and was only discovered by accident when an unrelated Z-Wave restart flushed a stale battery reading. `on` → `critical` (default, configurable via `disconnected_status`), `off` → ok, and `unavailable` → **unknown** rather than critical, since a vanished node is a Z-Wave connectivity failure owned by the `zwave` checker (declared as a `health_dependency`, so Z-Wave outages mask these checks instead of paging the whole fleet at once). Unlike battery sensors these entities carry no `device_class`, so include/exclude patterns are the only selector — and the excludes are load-bearing, because **battery-only Z-Wave devices expose the same sensor and report `on` permanently** (they have no mains to lose). Three such devices are excluded on this install; see `ac_mains_checker/README.md` for the list and the `node_status` (`alive` = mains, `asleep` = battery) test for classifying new ones.
+
 ### Dependency System
 
 Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker is unhealthy (`critical`/`degraded`) or missing entirely, the affected checks are overridden to `unknown` with detail `"dependency unavailable"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down. A dependency that is merely `unknown` (registered but not reporting) does **not** mask its dependents: an unknown dependency raises no Alertmanager alert of its own, so masking would let a genuine dependent failure go completely silent.
@@ -369,6 +373,10 @@ health_checks/
 │   └── health_check_controller.py
 ├── checker_apps/
 │   ├── __init__.py
+│   ├── ac_mains_checker/
+│   │   ├── __init__.py
+│   │   ├── ac_mains_checker.py
+│   │   └── README.md
 │   ├── network_protocol_checker/
 │   │   ├── __init__.py
 │   │   ├── network_protocol_checker.py
