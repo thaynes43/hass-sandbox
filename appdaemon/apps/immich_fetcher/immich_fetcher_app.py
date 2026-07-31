@@ -325,6 +325,9 @@ class ImmichFetcherApp(hass.Hass):
             ),
             "active_filter_index": self._displaying_filter_index,
             "empty_filters": json.dumps(sorted(self._empty_filter_names)),
+            "paused_filters": json.dumps(
+                [f.name for f in self._config.filters if f.paused]
+            ),
             "last_fetch": self._last_fetch or "",
             "last_fetch_count": self._last_fetch_count,
             "last_fetch_filter": self._last_fetch_filter or "",
@@ -390,7 +393,8 @@ class ImmichFetcherApp(hass.Hass):
     # ------------------------------------------------------------------
 
     async def _do_fetch(
-        self, *, advance: bool = True, _skip_count: int = 0,
+        self, *, advance: bool = True, respect_paused: bool = True,
+        _skip_count: int = 0,
     ) -> None:
         if self._status == "fetching":
             self.log("Fetch already in progress, skipping", level="DEBUG")
@@ -400,6 +404,19 @@ class ImmichFetcherApp(hass.Hass):
             self.log("No filters configured, skipping fetch", level="WARNING")
             return
 
+        idx = self._active_filter_index % len(self._config.filters)
+        if respect_paused:
+            unpaused_idx = self._next_unpaused_index(idx)
+            if unpaused_idx is None:
+                self.log(
+                    "All filters are paused; skipping fetch",
+                    level="INFO",
+                )
+                self._publish_sensor()
+                return
+            idx = unpaused_idx
+            self._active_filter_index = idx
+
         try:
             await self._refresh_caches_if_stale(reason="before_fetch")
         except Exception as exc:
@@ -408,7 +425,6 @@ class ImmichFetcherApp(hass.Hass):
                 level="WARNING",
             )
 
-        idx = self._active_filter_index % len(self._config.filters)
         pf = self._config.filters[idx]
 
         self.log(
@@ -430,8 +446,8 @@ class ImmichFetcherApp(hass.Hass):
                 self._status = "idle"
                 self._advance_filter_index()
                 self._publish_sensor()
-                # Auto-retry next filter (bounded to avoid infinite loop)
-                if _skip_count < len(self._config.filters) - 1:
+                # Auto-retry next unpaused filter (bounded to avoid infinite loop)
+                if _skip_count < self._unpaused_filter_count() - 1:
                     self.log(
                         "Skipping to next filter",
                         level="INFO",
@@ -482,6 +498,18 @@ class ImmichFetcherApp(hass.Hass):
             self._active_filter_index = (
                 (self._active_filter_index + 1) % len(self._config.filters)
             )
+
+    def _next_unpaused_index(self, start: int) -> Optional[int]:
+        """First unpaused filter index at or after ``start`` (wrapping), or None."""
+        n = len(self._config.filters)
+        for offset in range(n):
+            idx = (start + offset) % n
+            if not self._config.filters[idx].paused:
+                return idx
+        return None
+
+    def _unpaused_filter_count(self) -> int:
+        return sum(1 for f in self._config.filters if not f.paused)
 
     async def _select_assets(self, pf: PhotoFilter) -> List[str]:
         """Use the photo provider to get asset IDs matching the filter."""
@@ -568,6 +596,15 @@ class ImmichFetcherApp(hass.Hass):
                     f"Filters reordered: {old_names} -> {new_names}", level="INFO"
                 )
 
+        old_paused = {f.name for f in self._config.filters if f.paused}
+        new_paused = {f.name for f in new_cfg.filters if f.paused}
+        newly_paused = new_paused - old_paused
+        resumed = old_paused - new_paused
+        if newly_paused:
+            self.log(f"Filters paused: {sorted(newly_paused)}", level="INFO")
+        if resumed:
+            self.log(f"Filters resumed: {sorted(resumed)}", level="INFO")
+
         old_aliases = set(self._config.location_aliases.keys())
         new_aliases = set(new_cfg.location_aliases.keys())
         added_aliases = new_aliases - old_aliases
@@ -626,6 +663,26 @@ class ImmichFetcherApp(hass.Hass):
         self._publish_sensor()
         self.log("Config updated successfully", level="INFO")
 
+        # If the filter on display is paused and this save changed pause state,
+        # don't leave its photos up until the next timer tick — fetch the next
+        # unpaused filter right away.
+        filters = self._config.filters
+        displaying_paused = bool(
+            filters and filters[self._displaying_filter_index].paused
+        )
+        if (
+            displaying_paused
+            and (newly_paused or resumed)
+            and self._unpaused_filter_count() > 0
+        ):
+            self.log(
+                f"Displaying filter "
+                f"'{filters[self._displaying_filter_index].name}' is paused; "
+                "fetching next unpaused filter now",
+                level="INFO",
+            )
+            self.create_task(self._do_fetch())
+
     def _handle_sync_filter(self, data: dict) -> None:
         """Sync a specific filter (fetch with it immediately)."""
         if not self._config.filters:
@@ -660,9 +717,15 @@ class ImmichFetcherApp(hass.Hass):
                 )
 
         self._active_filter_index = idx
+        if self._config.filters[idx].paused:
+            self.log(
+                f"Filter '{resolved_name}' is paused; explicit sync fetches it anyway",
+                level="INFO",
+            )
         self.log(
             f"Sync requested for filter '{resolved_name}' (index={idx})",
             level="INFO",
         )
         self._publish_sensor()
-        self.create_task(self._do_fetch(advance=False))
+        # Explicit sync overrides pause — the user asked for this exact filter
+        self.create_task(self._do_fetch(advance=False, respect_paused=False))

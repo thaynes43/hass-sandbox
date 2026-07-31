@@ -83,6 +83,9 @@ class PhotoFilter:
     selection: Literal["all_photos", "search", "album"]
     randomize: bool = True
 
+    # Paused filters stay configured but are skipped by the fetch rotation
+    paused: bool = False
+
     # Search params
     search_query: Optional[str] = None
     search_pool_size: int = 250
@@ -159,6 +162,8 @@ class PhotoFilter:
         d: dict = {"name": self.name, "selection": self.selection}
         if self.randomize is not True:
             d["randomize"] = self.randomize
+        if self.paused:
+            d["paused"] = self.paused
         if self.search_query:
             d["search_query"] = self.search_query
         if self.selection == "search" and self.search_pool_size != 250:
@@ -185,6 +190,7 @@ class PhotoFilter:
             name=data["name"],
             selection=data["selection"],
             randomize=data.get("randomize", True),
+            paused=data.get("paused", False),
             search_query=data.get("search_query"),
             search_pool_size=data.get("search_pool_size", 250),
             album_name=data.get("album_name"),

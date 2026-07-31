@@ -138,6 +138,27 @@ class TestPhotoFilterSerialisation:
         assert d["selection"] == "all_photos"
         assert "randomize" not in d or d["randomize"] is True
 
+    def test_paused_omitted_when_false(self):
+        pf = PhotoFilter(name="Min", selection="all_photos")
+        assert "paused" not in pf.to_dict()
+
+    def test_paused_round_trip(self):
+        pf = PhotoFilter(name="Paused", selection="all_photos", paused=True)
+        d = pf.to_dict()
+        assert d["paused"] is True
+        restored = PhotoFilter.from_dict(d)
+        assert restored.paused is True
+
+    def test_paused_defaults_false_from_dict(self):
+        restored = PhotoFilter.from_dict({"name": "X", "selection": "all_photos"})
+        assert restored.paused is False
+
+    def test_paused_filter_still_validates(self):
+        pf = PhotoFilter(
+            name="Paused", selection="search", search_query="q", paused=True
+        )
+        pf.validate()
+
 
 # ---------------------------------------------------------------------------
 # PhotoMetadata

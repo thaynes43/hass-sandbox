@@ -8,7 +8,7 @@ Periodically fetches photos from an [Immich](https://immich.app/) photo library 
 2. Connects to the Immich API, caches people and album metadata.
 3. Runs a fetch cycle on a configurable interval (default 60 min).
 4. Each cycle applies the active filter (all_photos, search, or album), downloads photos, and writes them to `output_dir`.
-5. Rotates through configured filters automatically; skips empty filters gracefully.
+5. Rotates through configured filters automatically; skips empty filters gracefully. Filters can be paused from the card (`paused: true`) — the rotation skips them until resumed, so a collection of filters can be kept configured with only some enabled. An explicit per-filter "fetch now" still works on a paused filter. If every filter is paused, the cycle idles without fetching. When a config save pauses the filter currently on display (or resumes one while the display sits on a paused filter), the app immediately fetches the next unpaused filter instead of waiting for the timer.
 6. Publishes status (last fetch, next fetch, active filter, people/albums available) via a virtual sensor.
 
 ## Dependencies
@@ -26,7 +26,7 @@ Periodically fetches photos from an [Immich](https://immich.app/) photo library 
 
 ## Associated card
 
-`immich-fetcher-card.js` — Lovelace card for filter editing, manual refresh, metadata viewing.
+`immich-fetcher-card.js` — Lovelace card for filter editing (including per-filter pause/resume), manual refresh, metadata viewing.
 
 ## Config (apps.yaml)
 
