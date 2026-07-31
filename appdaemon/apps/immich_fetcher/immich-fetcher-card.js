@@ -18,6 +18,7 @@ function defaultFilter() {
     name: "New Filter",
     selection: "all_photos",
     randomize: true,
+    paused: false,
     search_query: "",
     search_pool_size: 250,
     album_name: "",
@@ -201,6 +202,7 @@ class ImmichFetcherCard extends HTMLElement {
       filters: this._filters.map((f) => {
         const out = { ...f };
         if (out.people && out.people.length === 0) delete out.people;
+        if (!out.paused) delete out.paused;
         if (!out.location) delete out.location;
         if (!out.taken_after) delete out.taken_after;
         if (!out.taken_before) delete out.taken_before;
@@ -341,22 +343,26 @@ class ImmichFetcherCard extends HTMLElement {
       .map((f, i) => {
         const isActive = i === activeIdx;
         const isEmpty = emptyFilters.has(f.name);
+        const isPaused = !!f.paused;
         const isExpanded = i === this._expandedFilterIdx;
         const badge = SELECTION_TYPES.find((t) => t.value === f.selection)?.label || f.selection;
         let statusIcon = "";
         if (isActive) {
           statusIcon = '<ha-icon icon="mdi:play-circle" class="active-indicator" title="Currently displaying"></ha-icon>';
+        } else if (isPaused) {
+          statusIcon = '<ha-icon icon="mdi:pause-circle" class="paused-indicator" title="Paused — fetcher skips this filter"></ha-icon>';
         } else if (isEmpty) {
           statusIcon = '<ha-icon icon="mdi:alert-circle" class="empty-indicator" title="Filter returned no images"></ha-icon>';
         }
         return `
-          <div class="filter-item ${isExpanded ? "expanded" : ""} ${isActive ? "active" : ""} ${isEmpty && !isActive ? "empty" : ""}">
+          <div class="filter-item ${isExpanded ? "expanded" : ""} ${isActive ? "active" : ""} ${isPaused ? "paused" : ""} ${isEmpty && !isActive && !isPaused ? "empty" : ""}">
             <div class="filter-header">
               <div class="filter-header-left" data-action="toggle-filter" data-idx="${i}">
                 ${statusIcon}
                 <span class="filter-name">${this._escapeHtml(f.name)}</span>
                 <span class="filter-badge">${badge}</span>
                 ${f.randomize ? '<span class="filter-badge badge-random">Random</span>' : ""}
+                ${isPaused ? '<span class="filter-badge badge-paused">Paused</span>' : ""}
               </div>
               <div class="filter-header-right">
                 <button class="btn-icon sync-filter-btn" data-action="sync-filter" data-idx="${i}" title="Fetch with this filter now">
@@ -367,6 +373,9 @@ class ImmichFetcherCard extends HTMLElement {
                 </button>
                 <button class="btn-icon" data-action="move-filter-down" data-idx="${i}" title="Move down" ${i === this._filters.length - 1 ? "disabled" : ""}>
                   <ha-icon icon="mdi:chevron-down"></ha-icon>
+                </button>
+                <button class="btn-icon pause-filter-btn ${isPaused ? "resumable" : ""}" data-action="toggle-pause" data-idx="${i}" title="${isPaused ? "Resume filter" : "Pause filter (fetcher will skip it)"}">
+                  <ha-icon icon="${isPaused ? "mdi:play" : "mdi:pause"}"></ha-icon>
                 </button>
                 <button class="btn-icon btn-danger" data-action="remove-filter" data-idx="${i}" title="Remove filter">
                   <ha-icon icon="mdi:delete"></ha-icon>
@@ -774,6 +783,13 @@ class ImmichFetcherCard extends HTMLElement {
         this._filters.splice(i, 1);
         if (this._expandedFilterIdx >= this._filters.length) this._expandedFilterIdx = -1;
         if (this._expandedFilterIdx === i) this._expandedFilterIdx = -1;
+        this._markDirty();
+        break;
+      }
+
+      case "toggle-pause": {
+        const i = idx();
+        this._filters[i].paused = !this._filters[i].paused;
         this._markDirty();
         break;
       }
@@ -1186,8 +1202,22 @@ class ImmichFetcherCard extends HTMLElement {
         flex-shrink: 0;
       }
 
+      .paused-indicator {
+        --mdc-icon-size: 16px;
+        color: var(--ifc-on-surface-secondary);
+        flex-shrink: 0;
+      }
+
       .filter-item.empty .filter-name {
         opacity: 0.6;
+      }
+
+      .filter-item.paused .filter-name {
+        opacity: 0.5;
+      }
+
+      .filter-item.paused .filter-badge:not(.badge-paused) {
+        opacity: 0.5;
       }
 
       .filter-name {
@@ -1212,6 +1242,11 @@ class ImmichFetcherCard extends HTMLElement {
       .badge-random {
         background: color-mix(in srgb, var(--ifc-success) 15%, transparent);
         color: var(--ifc-success);
+      }
+
+      .badge-paused {
+        background: color-mix(in srgb, var(--ifc-on-surface-secondary) 15%, transparent);
+        color: var(--ifc-on-surface-secondary);
       }
 
       .filter-header-right {
@@ -1632,6 +1667,11 @@ class ImmichFetcherCard extends HTMLElement {
       }
       .sync-filter-btn:hover {
         opacity: 1;
+      }
+
+      /* Resume state stands out so paused filters are easy to re-enable */
+      .pause-filter-btn.resumable {
+        color: var(--ifc-primary);
       }
 
       .actions-row {

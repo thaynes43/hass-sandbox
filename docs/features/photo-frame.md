@@ -12,7 +12,7 @@ Two AppDaemon apps work together:
 
 ### Immich Fetcher
 
-The `immich_fetcher` app periodically queries the Immich API and downloads a batch of photos to the shared `/media/` NFS mount. It supports filtering by album, date range, and other criteria.
+The `immich_fetcher` app periodically queries the Immich API and downloads a batch of photos to the shared `/media/` NFS mount. It supports filtering by album, date range, and other criteria. Filters rotate automatically each fetch cycle, and individual filters can be paused from the dashboard card — paused filters stay configured but are skipped until resumed, making it easy to keep a library of filters and switch between them.
 
 ### Photo Frame Viewer
 
