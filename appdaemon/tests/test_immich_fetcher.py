@@ -1468,6 +1468,99 @@ class TestPausedFilters:
             assert filters_parsed[1]["paused"] is True
             assert "paused" not in filters_parsed[0]
 
+    def test_pausing_displaying_filter_triggers_immediate_fetch(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = self._paused_app(td, [
+                {"name": "A", "selection": "all_photos"},
+                {"name": "B", "selection": "all_photos"},
+            ])
+            app._displaying_filter_index = 0
+            app.create_task.reset_mock()
+
+            app._handle_update_config({
+                "filters": [
+                    {"name": "A", "selection": "all_photos", "paused": True},
+                    {"name": "B", "selection": "all_photos"},
+                ],
+            })
+
+            assert app.create_task.called
+
+    def test_pausing_non_displaying_filter_no_immediate_fetch(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = self._paused_app(td, [
+                {"name": "A", "selection": "all_photos"},
+                {"name": "B", "selection": "all_photos"},
+            ])
+            app._displaying_filter_index = 0
+            app.create_task.reset_mock()
+
+            app._handle_update_config({
+                "filters": [
+                    {"name": "A", "selection": "all_photos"},
+                    {"name": "B", "selection": "all_photos", "paused": True},
+                ],
+            })
+
+            app.create_task.assert_not_called()
+
+    def test_pausing_all_filters_no_immediate_fetch(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = self._paused_app(td, [
+                {"name": "A", "selection": "all_photos"},
+                {"name": "B", "selection": "all_photos"},
+            ])
+            app._displaying_filter_index = 0
+            app.create_task.reset_mock()
+
+            app._handle_update_config({
+                "filters": [
+                    {"name": "A", "selection": "all_photos", "paused": True},
+                    {"name": "B", "selection": "all_photos", "paused": True},
+                ],
+            })
+
+            app.create_task.assert_not_called()
+
+    def test_unrelated_save_with_displaying_paused_no_refetch(self):
+        """A save that doesn't touch pause state must not re-trigger a fetch."""
+        with tempfile.TemporaryDirectory() as td:
+            app = self._paused_app(td, [
+                {"name": "A", "selection": "all_photos", "paused": True},
+                {"name": "B", "selection": "all_photos"},
+            ])
+            app._displaying_filter_index = 0
+            app.create_task.reset_mock()
+
+            app._handle_update_config({
+                "filters": [
+                    {"name": "A", "selection": "all_photos", "paused": True},
+                    {"name": "B", "selection": "all_photos"},
+                ],
+                "num_photos": 25,
+            })
+
+            app.create_task.assert_not_called()
+
+    def test_resuming_filter_while_displaying_paused_triggers_fetch(self):
+        """Resuming any filter while the display sits on a paused one refetches."""
+        with tempfile.TemporaryDirectory() as td:
+            app = self._paused_app(td, [
+                {"name": "A", "selection": "all_photos", "paused": True},
+                {"name": "B", "selection": "all_photos", "paused": True},
+            ])
+            app._displaying_filter_index = 0
+            app.create_task.reset_mock()
+
+            app._handle_update_config({
+                "filters": [
+                    {"name": "A", "selection": "all_photos", "paused": True},
+                    {"name": "B", "selection": "all_photos"},
+                ],
+            })
+
+            assert app.create_task.called
+
     def test_update_config_logs_pause_resume(self):
         with tempfile.TemporaryDirectory() as td:
             out_dir = os.path.join(td, "photos")

@@ -663,6 +663,26 @@ class ImmichFetcherApp(hass.Hass):
         self._publish_sensor()
         self.log("Config updated successfully", level="INFO")
 
+        # If the filter on display is paused and this save changed pause state,
+        # don't leave its photos up until the next timer tick — fetch the next
+        # unpaused filter right away.
+        filters = self._config.filters
+        displaying_paused = bool(
+            filters and filters[self._displaying_filter_index].paused
+        )
+        if (
+            displaying_paused
+            and (newly_paused or resumed)
+            and self._unpaused_filter_count() > 0
+        ):
+            self.log(
+                f"Displaying filter "
+                f"'{filters[self._displaying_filter_index].name}' is paused; "
+                "fetching next unpaused filter now",
+                level="INFO",
+            )
+            self.create_task(self._do_fetch())
+
     def _handle_sync_filter(self, data: dict) -> None:
         """Sync a specific filter (fetch with it immediately)."""
         if not self._config.filters:
