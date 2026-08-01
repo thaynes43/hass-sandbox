@@ -1,12 +1,15 @@
 alias: "[Switch] : [Back Yard] : [Slider Opens] : [Turn On Spotlight]"
-description: ""
+description: >-
+  Turn on the back yard spotlight when the kitchen slider opens after dark.
+  Turn-off is owned solely by the [All Clear 5m] automation, which requires a
+  sustained all-clear - this automation must not race it with an
+  instantaneous check.
 mode: single
 trigger:
-  - platform: device
-    type: opened
-    device_id: 548726b7acac331d3495a5474991d5f7
+  - platform: state
     entity_id: binary_sensor.kitchen_slider_usl_entry_contact
-    domain: binary_sensor
+    from: "off"
+    to: "on"
 condition:
   - condition: state
     entity_id: sun.sun
@@ -16,18 +19,3 @@ action:
     target:
       entity_id: light.downstairs_kitchen_back_yard_spotlight
     data: {}
-  - delay:
-      hours: 0
-      minutes: 5
-      seconds: 0
-      milliseconds: 0
-  - if:
-      - condition: state
-        entity_id: binary_sensor.backyard_all_clear
-        state:
-          - "on"
-    then:
-      - action: light.turn_off
-        target:
-          entity_id: light.downstairs_kitchen_back_yard_spotlight
-        data: {}

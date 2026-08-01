@@ -1,5 +1,8 @@
 alias: "[Switch] : [Back Yard] : [Camera Detects Person or Animal] : [Turn On Spotlight]"
-description: ""
+description: >-
+  Turn on the back yard spotlight when the AI Pro or Shed PTZ camera detects a
+  person or animal after dark. Uses entity_id state triggers (device triggers
+  went stale when the PTZ was re-adopted and silently stopped firing).
 mode: single
 trigger:
   - platform: state
@@ -10,6 +13,9 @@ trigger:
     to: "on"
   - platform: state
     entity_id: binary_sensor.shed_g5_ptz_person_detected
+    to: "on"
+  - platform: state
+    entity_id: binary_sensor.shed_g5_ptz_animal_detected
     to: "on"
 condition:
   - condition: state
