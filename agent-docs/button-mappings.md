@@ -317,7 +317,7 @@ The following smart switches are currently configured for AUX companions (so you
 |---|---|---|---|---|
 | Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
 | Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
-| Config |  | **Toggle hold** |  |  |
+| Config |  | **Toggle hold** |  | Hold also pauses/resumes the garage occupancy automations (`automation.light_inovelli_garage_motion_detected_or_door_opened_lights_on`, `automation.light_inovelli_garage_motion_cleared_lights_off`) |
 
 **AUX companion switches (requirements)**
 

@@ -23,7 +23,7 @@ button_action:
 cards:
   - type: markdown
     content: |
-      ## Garage Interior Mudroom
+      ## Garage
 
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -34,7 +34,46 @@ cards:
           buttons_layout: inline
           group:
             - entity: binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy
-              name: mmWave
+              name: mmWave Mudroom
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: binary_sensor.garage_interior_side_inovelli_presence_occupancy
+              name: mmWave Side
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: binary_sensor.usl_entry_contact_2
+              name: Side Door
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+        - name: Garage Doors
+          buttons_layout: inline
+          group:
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Tesla
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              show_icon: true
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Wagoneer
               show_name: true
               show_state: true
               show_last_changed: false
@@ -54,19 +93,15 @@ cards:
               content_layout: icon-top
               custom_height: 60
               scrolling_effect: false
-        - name: Config Drop Down
-          buttons_layout: inline
-          group:
-            - entity: input_select.garage_interior_mudroom_mmwave_normal_mode
-              sub_button_type: select
-              name: mmWave Mode
-              icon: mdi:motion-sensor
+            - entity: light.garage_interior_side_inovelli_presence
+              name: Side
               show_name: true
               show_state: true
-              show_attribute: false
-              scrolling_effect: false
-              content_layout: icon-left
+              show_last_changed: false
+              show_icon: true
+              content_layout: icon-top
               custom_height: 60
+              scrolling_effect: false
       bottom_layout: rows
     rows: 3.45
     modules:
@@ -76,37 +111,131 @@ cards:
   - type: history-graph
     entities:
       - entity: binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy
-        name: mmWave
+        name: mmWave Mudroom
+      - entity: binary_sensor.garage_interior_side_inovelli_presence_occupancy
+        name: mmWave Side
+      - entity: binary_sensor.usl_entry_contact_2
+        name: Side Door
+      - entity: cover.ratgdov25i_4a0325_door
+        name: Tesla Door
+      - entity: cover.ratgdov25i_dbfa50_door
+        name: Wagoneer Door
       - entity: light.garage_interior_mudroom_inovelli_presence
-        name: Mudroom
+        name: Mudroom Light
+      - entity: light.garage_interior_side_inovelli_presence
+        name: Side Light
     hours_to_show: 1
     grid_options:
       columns: full
 
   - type: markdown
-    content: |
-      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
-      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
-      {% set s = 'garage_interior_mudroom_inovelli_presence' %}
-      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
-      {% if led1 == manual %}{% set hold_label = 'Manual Hold' %}
-      {% elif led1 == auto %}{% set hold_label = 'Auto Hold' %}
-      {% else %}{% set hold_label = 'Clear' %}{% endif %}
-      {% set mmwave_mode = states('select.' ~ s ~ '_mmwavecontrolwireddevice') %}
-      {% if mmwave_mode in ['unknown', 'unavailable'] %}{% set mmwave_mode = '—' %}{% endif %}
-      {% set on_vals = namespace(out='') %}{% for i in range(1,8) %}
+    content: >
+      {% set s = 'garage_interior_mudroom_inovelli_presence' %} {% set manual =
+      states('input_text.inovelli_manual_hold') | int(85) %} {% set auto =
+      states('input_text.inovelli_auto_hold') | int(0) %} {% set led1 =
+      states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+
+      {% if led1 == manual %}
+        {% set hold_label = 'Manual Hold' %}
+      {% elif led1 == auto %}
+        {% set hold_label = 'Auto Hold' %}
+      {% else %}
+        {% set hold_label = 'Clear' %}
+      {% endif %}
+
+      {% set mmwave_mode =
+      states('select.garage_interior_mudroom_inovelli_presence_mmwavecontrolwireddevice')
+      %} {% if mmwave_mode in ['unknown', 'unavailable'] %}
+        {% set mmwave_mode = '—' %}
+      {% endif %}
+
+      {% set on_vals = namespace(out='') %} {% for i in range(1,8) %}
         {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenon') %}
         {% set on_vals.out = on_vals.out ~ ('， ' if i > 1 else '') ~ v %}
       {% endfor %}
-      {% set off_vals = namespace(out='') %}{% for i in range(1,8) %}
+
+      {% set off_vals = namespace(out='') %} {% for i in range(1,8) %}
         {% set v = states('number.' ~ s ~ '_defaultled' ~ i ~ 'colorwhenoff') %}
         {% set off_vals.out = off_vals.out ~ ('， ' if i > 1 else '') ~ v %}
       {% endfor %}
 
-      Manual/Auto Hold: {{ hold_label }}
-      mmWave Mode: {{ mmwave_mode }}
-      LED ON Colors (1–7): {{ on_vals.out }}
-      LED OFF Colors (1–7): {{ off_vals.out }}
+      <ha-icon icon="mdi:lock-check"></ha-icon> **Manual/Auto Hold:** {{
+      hold_label }}
+
+      <ha-icon icon="mdi:motion-sensor"></ha-icon> **mmWave Mode:** {{
+      mmwave_mode }}
+
+      <ha-icon icon="mdi:palette"></ha-icon> **LED ON Colors (1–7):** {{
+      on_vals.out }}
+
+      <ha-icon icon="mdi:palette-outline"></ha-icon> **LED OFF Colors (1–7):**
+      {{ off_vals.out }}
+
+      {% set auto_delay_raw = states('input_select.garage_occupancy_off_delay') %}
+      {% set auto_delay_td = as_timedelta(auto_delay_raw) if auto_delay_raw not in ['unknown','unavailable',''] else none %}
+      {% set auto_delay_s = (auto_delay_td.total_seconds() | float(0)) if auto_delay_td is not none else none %}
+
+      {% set hold_time_s = states('number.garage_interior_mudroom_inovelli_presence_mmwaveholdtime') | float(0) %}
+      {% set stay_life_raw = states('number.garage_interior_mudroom_inovelli_presence_mmwavestaylife') | float(0) %}
+      {% set stay_life_s = stay_life_raw / 20 %}
+      {% set mmwave_delay_s = hold_time_s + stay_life_s %}
+
+      {% set total_s = (mmwave_delay_s + auto_delay_s) if auto_delay_s is not none else none %}
+
+      <ha-icon icon="mdi:timer-outline"></ha-icon> **Automation Delay:** {{ auto_delay_raw if auto_delay_raw not in ['unknown','unavailable',''] else '—' }}{% if auto_delay_s is not none %} (≈{{ auto_delay_s | round(1) }}s){% endif %}
+
+      <ha-icon icon="mdi:timer-sand"></ha-icon> **Switch Clear Delay:** {{ hold_time_s | round(1) }} + ({{ stay_life_raw | round(0) }} / 20) ≈ {{ mmwave_delay_s | round(1) }}s
+
+      <ha-icon icon="mdi:progress-clock"></ha-icon> **Total Off Delay:** ≈ {{ mmwave_delay_s | round(1) }}s + {{ (auto_delay_s | round(1)) if auto_delay_s is not none else '—' }}s{% if total_s is not none %} = {{ total_s | round(1) }}s{% endif %}
+
+      <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** the occupancy sensor won’t report **off** until the switch’s mmWave clear delay elapses. The automation delay then starts *after* that.
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Automations
+          buttons_layout: inline
+          group:
+            - entity: automation.light_inovelli_garage_motion_detected_or_door_opened_lights_on
+              name: Motion/Door Turns On Lights
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              show_last_updated: false
+              content_layout: icon-top
+              custom_height: 60
+            - entity: automation.light_inovelli_garage_motion_cleared_lights_off
+              name: No Motion Turns Off Lights
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Config Drop Down
+          buttons_layout: inline
+          group:
+            - entity: input_select.garage_interior_mudroom_mmwave_normal_mode
+              sub_button_type: select
+              name: mmWave Control Mode
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:format-list-bulleted
+              content_layout: icon-left
+              custom_height: 60
+            - entity: input_select.garage_occupancy_off_delay
+              sub_button_type: select
+              name: Zone Off Delay
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:format-list-bulleted
+              content_layout: icon-left
+              custom_height: 60
+      bottom_layout: rows
+    bottom_layout: rows
+    rows: "2.4"
 
   - type: custom:mod-card
     card:
@@ -141,6 +270,11 @@ cards:
                   normal_mode_input_select: input_select.garage_interior_mudroom_mmwave_normal_mode
                   hold_color: input_text.inovelli_manual_hold
                   prev_led_color_helper: input_text.garage_mudroom_door_led_color
+                  automation_entity_ids:
+                    - >-
+                      automation.light_inovelli_garage_motion_detected_or_door_opened_lights_on
+                    - >-
+                      automation.light_inovelli_garage_motion_cleared_lights_off
               entity: script.inovelli_toggle_mmwave_hold_led_indicator
               show_state: false
               show_name: true
@@ -161,6 +295,11 @@ cards:
                   switch_name: garage_interior_mudroom_inovelli_presence
                   hold_color: input_text.inovelli_auto_hold
                   prev_led_color_helper: input_text.garage_mudroom_door_led_color
+                  automation_entity_ids:
+                    - >-
+                      automation.light_inovelli_garage_motion_detected_or_door_opened_lights_on
+                    - >-
+                      automation.light_inovelli_garage_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
               scrolling_effect: false
@@ -180,6 +319,11 @@ cards:
                   normal_mode_input_select: input_select.garage_interior_mudroom_mmwave_normal_mode
                   hold_color: input_text.inovelli_auto_hold
                   prev_led_color_helper: input_text.garage_mudroom_door_led_color
+                  automation_entity_ids:
+                    - >-
+                      automation.light_inovelli_garage_motion_detected_or_door_opened_lights_on
+                    - >-
+                      automation.light_inovelli_garage_motion_cleared_lights_off
               content_layout: icon-top
               custom_height: 80
             - entity: script.inovelli_set_led_1_7_color_from_input_text

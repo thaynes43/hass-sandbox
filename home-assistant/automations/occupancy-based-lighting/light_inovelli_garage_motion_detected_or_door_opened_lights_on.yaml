@@ -1,0 +1,35 @@
+alias: "[Light] [Inovelli] : [Garage] : [Motion Detected or Door Opened] : [Lights On]"
+description: >-
+  Turn on the garage interior lights when either garage mmWave switch detects
+  presence, the garage side door opens (UniFi Protect contact sensor), or
+  either garage door opens. The Schlage side/mudroom locks only report
+  lock state (no open/closed), so they cannot be triggers.
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy
+      - binary_sensor.garage_interior_side_inovelli_presence_occupancy
+    from: null
+    to: "on"
+  - trigger: state
+    entity_id:
+      - binary_sensor.usl_entry_contact_2
+    from: "off"
+    to: "on"
+  - trigger: state
+    entity_id:
+      - cover.ratgdov25i_4a0325_door
+      - cover.ratgdov25i_dbfa50_door
+    from: closed
+    to:
+      - opening
+      - open
+conditions: []
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data:
+      brightness_pct: 100
+    target:
+      entity_id: light.garage_interior_lights
+mode: single
