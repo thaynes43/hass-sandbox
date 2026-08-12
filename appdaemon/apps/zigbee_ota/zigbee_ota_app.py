@@ -123,12 +123,16 @@ class ZigbeeOtaOrchestrator(hass.Hass):
 
     async def _tick(self, kwargs: dict[str, Any]) -> None:
         try:
-            snapshot = await self.get_state("update", attribute="all")
+            # Domain queries can't combine with attribute="all" in AppDaemon,
+            # so take the full state dump and filter to update.* ourselves.
+            snapshot = await self.get_state() or {}
             if isinstance(snapshot, dict):
                 self._coordinator.refresh_entities(
                     {
-                        entity_id: (payload or {})
+                        entity_id: payload
                         for entity_id, payload in snapshot.items()
+                        if entity_id.startswith("update.")
+                        and isinstance(payload, dict)
                     }
                 )
             if await self._paused():
