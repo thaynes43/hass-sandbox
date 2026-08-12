@@ -77,6 +77,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `health_checks` | `appdaemon/apps/health_checks/README.md` | System health monitoring: controller + network protocol checkers + dashboard cards |
 | `media_dashboard_app` | `appdaemon/apps/media_dashboard_app/README.md` | Media dashboard: Plex new arrivals, in-theaters, coming-soon with showtimes and thumbs up/down |
 | `countdown_app` | `appdaemon/apps/countdown_app/README.md` | Multiple countdowns with AI-generated backgrounds, auto-rotation, text styling |
+| `zigbee_ota` | `appdaemon/apps/zigbee_ota/README.md` | Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry |
 
 ### Providers
 
@@ -173,6 +174,9 @@ health_check_controller (listens for health_check_command events from all checke
 
 countdown_app
   └─ depends on: ai_providers (image generation), ha_provisioner (relay script provisioning)
+
+zigbee_ota (standalone — MQTT + HASS plugins only)
+  └─ publishes sensor.zigbee_ota_orchestrator
 ```
 
 ## When creating a new app or provider

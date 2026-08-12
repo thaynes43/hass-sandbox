@@ -1279,3 +1279,24 @@ countdown_app:
   image_sync_shell_command: countdown_sync_images
   rotation_interval_s: 15
   countdown_refresh_s: 60
+
+# ---------------------------------------------------------------------------
+# Zigbee OTA orchestrator — sequential Zigbee2MQTT firmware rollout
+# ---------------------------------------------------------------------------
+zigbee_ota_updater:
+  module: zigbee_ota.zigbee_ota_app
+  class: ZigbeeOtaOrchestrator
+  disable: true
+  # Only Hue devices for now; widen the glob to roll out other Z2M firmware.
+  include_globs:
+    - "update.*hue*"
+  scan_interval_s: 120
+  # Failed attempts back off 15min -> 30min -> ... capped at 6h; a device that
+  # comes back online retries within online_retry_grace_s instead.
+  retry_base_s: 900
+  retry_max_s: 21600
+  online_retry_grace_s: 60
+  # Hue bulbs take 45-90min; warn (stalled flag) after 45min without progress,
+  # give up on the attempt after 4h without a terminal response.
+  progress_stall_s: 2700
+  update_timeout_s: 14400
