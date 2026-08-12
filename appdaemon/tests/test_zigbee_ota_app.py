@@ -67,8 +67,13 @@ def _make_app(
     snapshot = update_snapshot if update_snapshot is not None else {}
 
     async def fake_get_state(entity: str | None = None, **kwargs: Any) -> Any:
-        if entity == "update":
-            return snapshot
+        if entity is None:
+            # Full state dump: include non-update noise to prove filtering.
+            return {
+                **snapshot,
+                "light.some_light": {"state": "on", "attributes": {}},
+                "sensor.bad_payload": None,
+            }
         return pause_state
 
     app.get_state = MagicMock(side_effect=fake_get_state)
