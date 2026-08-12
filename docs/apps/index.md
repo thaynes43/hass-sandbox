@@ -17,6 +17,7 @@
 | **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
 | **media_dashboard_app** | Media dashboard: Plex movies, Plex shows, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
 | **countdown_app** | Multiple countdowns with AI-generated backgrounds, auto-rotation, and text styling |
+| **zigbee_ota** | Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry |
 
 ## Shared providers
 
@@ -63,6 +64,9 @@ media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi)
 countdown_app (standalone — generates images via ai_providers)
   └─ publishes sensor.countdown_status
        └─ countdown-card / countdown-config-card (reads sensor)
+
+zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin)
+  └─ publishes sensor.zigbee_ota_orchestrator
 ```
 
 !!! note "Per-app documentation"
