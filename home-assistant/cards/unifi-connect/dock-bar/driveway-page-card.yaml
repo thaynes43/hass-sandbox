@@ -34,7 +34,7 @@ cards:
     content: |
       ## Driveway & Garage
 
-      <p><strong>Driveway</strong> Lights {{ states('light.garage_driveway_inovelli_dimmer') | title }}, {{ 'Motion' if is_state('binary_sensor.driveway_ai_pro_motion', 'on') else 'Idle' }}, {{ 'Dark' if is_state('binary_sensor.driveway_ai_pro_is_dark', 'on') else 'Daylight' }}</p>
+      <p><strong>Driveway</strong> Lights {{ states('light.garage_driveway_inovelli_dimmer') | title }}, {{ 'Motion' if is_state('binary_sensor.driveway_g6_pro_bullet_motion', 'on') else 'Idle' }}, {{ 'Dark' if is_state('binary_sensor.driveway_g6_pro_bullet_is_dark', 'on') else 'Daylight' }}</p>
       <p><strong>Garage</strong> Tesla {{ states('cover.ratgdov25i_4a0325_door') | title }}, Wagoneer {{ states('cover.ratgdov25i_dbfa50_door') | title }}, Side Door {{ states('lock.side_door_lock') | title }}</p>
   - type: grid
     columns: 2

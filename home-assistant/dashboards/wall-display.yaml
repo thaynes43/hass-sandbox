@@ -3731,9 +3731,9 @@ views:
 
                   <p><strong>Driveway</strong> Lights {{
                   states('light.garage_driveway_inovelli_dimmer') | title }}, {{
-                  'Motion' if is_state('binary_sensor.driveway_ai_pro_motion',
+                  'Motion' if is_state('binary_sensor.driveway_g6_pro_bullet_motion',
                   'on') else 'Idle' }}, {{ 'Dark' if
-                  is_state('binary_sensor.driveway_ai_pro_is_dark', 'on') else
+                  is_state('binary_sensor.driveway_g6_pro_bullet_is_dark', 'on') else
                   'Daylight' }}</p>
 
                   <p><strong>Garage</strong> Tesla {{
@@ -6751,8 +6751,8 @@ views:
         column_span: 3
         cards:
           - type: picture-entity
-            entity: camera.driveway_ai_pro_medium_resolution_channel
-            camera_image: camera.driveway_ai_pro_medium_resolution_channel
+            entity: camera.driveway_g6_pro_bullet_high_resolution_channel
+            camera_image: camera.driveway_g6_pro_bullet_high_resolution_channel
             camera_view: live
             show_name: false
             show_state: false

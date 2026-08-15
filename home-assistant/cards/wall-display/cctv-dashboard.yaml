@@ -11,8 +11,8 @@ sections:
     column_span: 3
     cards:
       - type: picture-entity
-        entity: camera.driveway_ai_pro_medium_resolution_channel
-        camera_image: camera.driveway_ai_pro_medium_resolution_channel
+        entity: camera.driveway_g6_pro_bullet_high_resolution_channel
+        camera_image: camera.driveway_g6_pro_bullet_high_resolution_channel
         camera_view: live
         show_name: false
         show_state: false
