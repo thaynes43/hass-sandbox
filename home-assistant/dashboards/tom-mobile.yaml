@@ -138,14 +138,14 @@ views:
           tap_action:
             action: navigate
             navigation_path: '#tom-pool-heat'
-        - entity: climate.haynes_res_pool
+        - entity: water_heater.haynes_res_pool
           name: Set
           icon: mdi:thermostat
           show_name: true
           show_icon: true
           show_state: false
           show_attribute: true
-          attribute: target_temp_low
+          attribute: temperature
           tap_action:
             action: navigate
             navigation_path: '#tom-pool-heat'
@@ -843,8 +843,8 @@ views:
           style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
         content: '## Pool Heat
 
-          **Water:** {{ states(''sensor.haynes_res_pool_last_temp'') }}°  |  **Set point:** {{ state_attr(''climate.haynes_res_pool'',
-          ''target_temp_low'') }}°  |  **Heater:** {{ state_attr(''climate.haynes_res_pool'', ''hvac_action'')
+          **Water:** {{ states(''sensor.haynes_res_pool_last_temp'') }}°  |  **Set point:** {{ state_attr(''water_heater.haynes_res_pool'',
+          ''temperature'') | int }}°  |  **Heater:** {{ state_attr(''water_heater.haynes_res_pool'', ''heating_status'')
           }}
 
 
@@ -853,12 +853,10 @@ views:
 
           '
       - type: thermostat
-        entity: climate.haynes_res_pool
+        entity: water_heater.haynes_res_pool
         grid_options:
           columns: 12
           rows: 5
-        features:
-        - type: climate-hvac-modes
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-primary-bedroom'

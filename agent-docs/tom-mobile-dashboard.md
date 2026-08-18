@@ -55,10 +55,17 @@ if Kellie Mobile's versions get improved, consider porting the improvements here
   SAm, Party Mode, Caribbean, Sunset, Romance, American, Royal, White, Red, Blue, Green, Magenta.
   Color buttons call `light.turn_on` with `effect:`. Active effect is highlighted (the `effect`
   attribute only persists while on).
-- Heat: `climate.haynes_res_pool` is `heat_cool`; the **heating set point is `target_temp_low`**
-  (integration quirk — `target_temp_high` is the pool max temp, mirrored by
-  `number.haynes_res_pool_max_temperature`). Water temp: `sensor.haynes_res_pool_last_temp`.
-  Pump: `binary_sensor.haynes_res_vsf` + `sensor.haynes_res_vsf_rpm`.
+- Heat — **the integration exposes the pool body twice; use the `water_heater` entity for
+  thermostat UI**:
+  - `water_heater.haynes_res_pool` — single set point (`temperature` attr), operation_list
+    `[off, UltraTemp]`, `heating_status` attr. Renders as a single heat-style dial in the
+    `thermostat` card. This is what Tom Mobile, the wall display, and unifi-connect all use.
+  - `climate.haynes_res_pool` — only hvac_mode is `heat_cool` with dual set points
+    (`target_temp_low` = heat set point, `target_temp_high` mirrors the pool max temp /
+    `number.haynes_res_pool_max_temperature`). A thermostat card on this entity shows a confusing
+    heat/cool dual-handle UI — avoid. (The seed originally used it; fixed 2026-08-17.)
+- Water temp: `sensor.haynes_res_pool_last_temp`. Pump: `binary_sensor.haynes_res_vsf` +
+  `sensor.haynes_res_vsf_rpm`.
 
 ### Bike chargers (Z-Wave Zooz plugs in the shed)
 - Switches: `switch.shed_ebike_power_switch`, `switch.shed_mombike_power_switch`.
