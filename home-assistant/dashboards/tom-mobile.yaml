@@ -507,6 +507,18 @@ views:
       slider_fill_orientation: left
       slider_value_position: right
     - type: custom:bubble-card
+      card_type: separator
+      name: Health Checks
+      icon: mdi:check-decagram
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:health-check-card
+      status_entity: sensor.health_check_status
+      heartbeat_entity: input_datetime.appdaemon_heartbeat
+      navigation_path: '#health-check-popup'
+      stale_threshold_s: 180
+    - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-pool-lights'
       button_type: name
@@ -1654,3 +1666,37 @@ views:
         camera_view: live
         show_state: false
         show_name: false
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#health-check-popup'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: System Health
+      show_icon: true
+      icon: mdi:heart-pulse
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: custom:health-check-detail-card
+        status_entity: sensor.health_check_status
+        heartbeat_entity: input_datetime.appdaemon_heartbeat
+        relay_script: health_check_relay

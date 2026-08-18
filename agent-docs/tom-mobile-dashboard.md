@@ -21,6 +21,7 @@ iterating on it.
 | Bedroom | Primary Bedroom scene card (ported from Kellie Mobile) → `#tom-primary-bedroom` |
 | Climate | Climate Control card w/ 68°/72° presets (ported) → `#tom-climate-control` |
 | Doors & Locks | Locks card → `#tom-locks`, Garage Doors card → `#tom-garage-doors` |
+| Health Checks | `custom:health-check-card` → `#health-check-popup` (`custom:health-check-detail-card`, relay `health_check_relay`) — same as wall-display/unifi-connect (`home-assistant/cards/wall-display/health-check-{card,popup}.yaml`) |
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).
@@ -127,6 +128,6 @@ if Kellie Mobile's versions get improved, consider porting the improvements here
 ## Backlog / iteration ideas
 
 - Tom-specific `input_text.tom_entry_locks_status` if the status line should differ from Kellie's.
-- Consider a Snapshot Info section (weather/calendar) and the health-check card like Kellie's.
+- Consider a Snapshot Info section (weather/calendar) like Kellie's.
 - Pool: `switch.haynes_res_pool_high` (high-speed pump) could join the pool popup.
 - Docs site: add a `docs/features/` page once the dashboard stabilizes.
