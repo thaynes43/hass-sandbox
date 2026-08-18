@@ -1,0 +1,1658 @@
+# Tom Mobile dashboard (url_path: tom-mobile) — repo backup of the storage-mode dashboard.
+# Source of truth is the live HA dashboard; regenerate/apply via MCP (see agent-docs/tom-mobile-dashboard.md).
+views:
+- type: sections
+  max_columns: 1
+  icon: mdi:cellphone
+  cards: []
+  header:
+    card:
+      type: markdown
+      text_only: true
+      content: '# Welcome Tom! 🛠️'
+  sections:
+  - type: grid
+    cards:
+    - type: custom:bubble-card
+      card_type: separator
+      name: Outdoors
+      icon: mdi:pine-tree
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Outdoor Lights
+      icon: mdi:outdoor-lamp
+      entity: light.downstairs_kitchen_back_yard_spotlight
+      card_layout: large-sub-buttons-grid
+      button_action:
+        tap_action:
+          action: none
+      sub_button:
+        main: []
+        bottom:
+        - entity: light.front_yard_hue_calla_lights
+          name: Calla
+          icon: mdi:flower
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        - entity: light.front_yard_hue_lily_lights
+          name: Lily
+          icon: mdi:flower-tulip
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        - entity: light.downstairs_kitchen_back_yard_spotlight
+          name: Floodlight
+          icon: mdi:spotlight-beam
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        - entity: automation.switch_back_yard_slider_opens_turn_on_spotlight
+          name: Flood Hold
+          icon: mdi:hand-back-left
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: downstairs_kitchen_back_yard_spotlight
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
+              automation_entity_ids:
+              - automation.switch_back_yard_slider_opens_turn_on_spotlight
+              - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+              - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4\
+        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    return hass.states['light.front_yard_hue_calla_lights']?.state === 'on'\n  \
+        \    ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2\
+        \ {\n  background-color: ${(() => {\n    return hass.states['light.front_yard_hue_lily_lights']?.state\
+        \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return hass.states['light.downstairs_kitchen_back_yard_spotlight']?.state\
+        \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n${subButtonIcon[3].setAttribute(\"icon\", hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
+        \ === 'off' ? 'mdi:lock' : 'mdi:hand-back-left')}\n.bubble-sub-button-4 {\n  background-color:\
+        \ ${(() => {\n    return hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
+        \ === 'off'\n      ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
+      rows: 1.719
+      slider_fill_orientation: left
+      slider_value_position: right
+    - type: custom:bubble-card
+      card_type: separator
+      name: Pool
+      icon: mdi:pool
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Pool
+      icon: mdi:pool
+      entity: light.haynes_res_pool_lights
+      card_layout: large-sub-buttons-grid
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-pool-lights'
+      sub_button:
+        main: []
+        bottom:
+        - entity: light.haynes_res_pool_lights
+          name: Lights
+          icon: mdi:lightbulb
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        - entity: light.haynes_res_pool_lights
+          name: Color
+          icon: mdi:palette
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-pool-lights'
+        - entity: sensor.haynes_res_pool_last_temp
+          name: Water
+          icon: mdi:thermometer-water
+          show_name: true
+          show_icon: true
+          show_state: true
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-pool-heat'
+        - entity: climate.haynes_res_pool
+          name: Set
+          icon: mdi:thermostat
+          show_name: true
+          show_icon: true
+          show_state: false
+          show_attribute: true
+          attribute: target_temp_low
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-pool-heat'
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4\
+        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    return hass.states['light.haynes_res_pool_lights']?.state === 'on'\n      ?\
+        \ 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
+      rows: 1.719
+      slider_fill_orientation: left
+      slider_value_position: right
+    - type: custom:bubble-card
+      card_type: separator
+      name: Bike Chargers
+      icon: mdi:ev-station
+      sub_button:
+        main: []
+        bottom: []
+    - type: grid
+      columns: 2
+      square: false
+      cards:
+      - type: custom:bubble-card
+        card_type: button
+        button_type: switch
+        entity: switch.shed_ebike_power_switch
+        name: E-Bike
+        icon: mdi:bicycle-electric
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: toggle
+        sub_button:
+          main:
+          - entity: binary_sensor.e_bike_charging
+            name: Charging
+            icon: mdi:power-plug-off
+            show_name: false
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: more-info
+          - entity: sensor.shed_ebike_power_switch_electric_consumption_w
+            name: Draw
+            show_name: false
+            show_icon: false
+            show_state: true
+            tap_action:
+              action: more-info
+          bottom: []
+        styles: "${subButtonIcon[0].setAttribute(\"icon\", (() => {\n  const charging = hass.states['binary_sensor.e_bike_charging']?.state\
+          \ === 'on';\n  const on = hass.states['switch.shed_ebike_power_switch']?.state === 'on';\n \
+          \ if (charging) return 'mdi:battery-charging';\n  if (on) return 'mdi:battery-check';\n  return\
+          \ 'mdi:power-plug-off';\n})())}\n@keyframes chargePulse {\n  0% { filter: brightness(1); }\n\
+          \  50% { filter: brightness(1.25); }\n  100% { filter: brightness(1); }\n}\n.bubble-sub-button-1\
+          \ {\n  transition: background-color 200ms ease;\n  background-color: ${(() => {\n    const charging\
+          \ = hass.states['binary_sensor.e_bike_charging']?.state === 'on';\n    const on = hass.states['switch.shed_ebike_power_switch']?.state\
+          \ === 'on';\n    if (charging) return 'rgba(76, 175, 80, 0.35)';\n    if (on) return 'rgba(var(--rgb-accent-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  return hass.states['binary_sensor.e_bike_charging']?.state === 'on'\n      ? 'chargePulse\
+          \ 1.2s ease-in-out infinite' : 'none';\n  })()} !important;\n}"
+      - type: custom:bubble-card
+        card_type: button
+        button_type: switch
+        entity: switch.shed_mombike_power_switch
+        name: Mom Bike
+        icon: mdi:bicycle
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: toggle
+        sub_button:
+          main:
+          - entity: binary_sensor.mom_bike_charging
+            name: Charging
+            icon: mdi:power-plug-off
+            show_name: false
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: more-info
+          - entity: sensor.shed_mombike_power_switch_electric_consumption_w
+            name: Draw
+            show_name: false
+            show_icon: false
+            show_state: true
+            tap_action:
+              action: more-info
+          bottom: []
+        styles: "${subButtonIcon[0].setAttribute(\"icon\", (() => {\n  const charging = hass.states['binary_sensor.mom_bike_charging']?.state\
+          \ === 'on';\n  const on = hass.states['switch.shed_mombike_power_switch']?.state === 'on';\n\
+          \  if (charging) return 'mdi:battery-charging';\n  if (on) return 'mdi:battery-check';\n  return\
+          \ 'mdi:power-plug-off';\n})())}\n@keyframes chargePulse {\n  0% { filter: brightness(1); }\n\
+          \  50% { filter: brightness(1.25); }\n  100% { filter: brightness(1); }\n}\n.bubble-sub-button-1\
+          \ {\n  transition: background-color 200ms ease;\n  background-color: ${(() => {\n    const charging\
+          \ = hass.states['binary_sensor.mom_bike_charging']?.state === 'on';\n    const on = hass.states['switch.shed_mombike_power_switch']?.state\
+          \ === 'on';\n    if (charging) return 'rgba(76, 175, 80, 0.35)';\n    if (on) return 'rgba(var(--rgb-accent-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  return hass.states['binary_sensor.mom_bike_charging']?.state === 'on'\n      ? 'chargePulse\
+          \ 1.2s ease-in-out infinite' : 'none';\n  })()} !important;\n}"
+    - type: custom:bubble-card
+      card_type: separator
+      name: First Floor
+      icon: mdi:home-floor-1
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: switch
+      entity: light.first_floor_chaos_lights
+      name: First Floor Lights
+      icon: mdi:countertop
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: toggle
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: separator
+      name: Bedroom
+      icon: mdi:bed-king-outline
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Primary Bedroom
+      icon: mdi:bed-king-outline
+      entity: light.upstairs_primary_bed_lights
+      show_state: true
+      rows: 1.719
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-primary-bedroom'
+      sub_button:
+        main: []
+        bottom:
+        - name: Sleep
+          icon: mdi:moon-waning-crescent
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: call-service
+            service: script.turn_on
+            target:
+              entity_id: script.kellie_mobile_primary_bedroom_sleep
+        - name: Bedtime
+          icon: mdi:bed-clock
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: call-service
+            service: script.turn_on
+            target:
+              entity_id: script.kellie_mobile_primary_bedroom_bedtime
+        - name: Relaxed
+          icon: mdi:sofa-outline
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: call-service
+            service: script.turn_on
+            target:
+              entity_id: script.kellie_mobile_primary_bedroom_relaxed
+        - name: Focused
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: call-service
+            service: script.turn_on
+            target:
+              entity_id: script.kellie_mobile_primary_bedroom_focused
+        bottom_layout: rows
+      slider_fill_orientation: left
+      slider_value_position: right
+      light_slider_type: brightness
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4\
+        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    const active = 'rgba(var(--rgb-accent-color), 0.45)';\n    const inactive =\
+        \ 'rgba(0,0,0,0.22)';\n    const bed = hass.states['light.upstairs_primary_bed_lights']?.state;\n\
+        \    const night = hass.states['light.upstairs_primary_nightstand_lights']?.state;\n    return\
+        \ (bed === 'off' && night === 'off') ? active : inactive;\n  })()} !important;\n}\n.bubble-sub-button-2\
+        \ {\n  background-color: ${(() => {\n    const active = 'rgba(var(--rgb-accent-color), 0.45)';\n\
+        \    const inactive = 'rgba(0,0,0,0.22)';\n    const bed = hass.states['light.upstairs_primary_bed_lights']?.state;\n\
+        \    const nightEnt = hass.states['light.upstairs_primary_nightstand_lights'];\n    const night\
+        \ = nightEnt?.state;\n    const b = nightEnt?.attributes?.brightness;\n    const pct = b == null\
+        \ ? 0 : (b / 255) * 100;\n    return (bed === 'off' && night === 'on' && pct <= 30) ? active :\
+        \ inactive;\n  })()} !important;\n}\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n\
+        \    const active = 'rgba(var(--rgb-accent-color), 0.45)';\n    const inactive = 'rgba(0,0,0,0.22)';\n\
+        \    const bedEnt = hass.states['light.upstairs_primary_bed_lights'];\n    const bed = bedEnt?.state;\n\
+        \    const b = bedEnt?.attributes?.brightness;\n    const pct = b == null ? 0 : (b / 255) * 100;\n\
+        \    if (bed !== 'on') return inactive;\n    return pct <= 40 ? active : inactive;\n  })()} !important;\n\
+        }\n.bubble-sub-button-4 {\n  background-color: ${(() => {\n    const active = 'rgba(var(--rgb-accent-color),\
+        \ 0.45)';\n    const inactive = 'rgba(0,0,0,0.22)';\n    const bedEnt = hass.states['light.upstairs_primary_bed_lights'];\n\
+        \    const bed = bedEnt?.state;\n    const b = bedEnt?.attributes?.brightness;\n    const pct\
+        \ = b == null ? 0 : (b / 255) * 100;\n    if (bed !== 'on') return inactive;\n    return pct >\
+        \ 40 ? active : inactive;\n  })()} !important;\n}"
+      card_layout: large-sub-buttons-grid
+    - type: custom:bubble-card
+      card_type: separator
+      name: Climate
+      icon: mdi:thermostat
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Climate Control
+      icon: mdi:thermostat
+      entity: climate.first_floor_ecobee
+      show_state: true
+      card_layout: large-sub-buttons-grid
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-climate-control'
+      sub_button:
+        main: []
+        bottom:
+        - entity: climate.first_floor_ecobee
+          name: 68°
+          show_name: true
+          show_state: false
+          show_icon: true
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.first_floor_ecobee
+            data:
+              temperature: 68
+          icon: mdi:home-floor-1
+        - entity: climate.first_floor_ecobee
+          name: 72°
+          show_name: true
+          show_state: false
+          show_icon: true
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.first_floor_ecobee
+            data:
+              temperature: 72
+          icon: mdi:home-floor-1
+        - entity: climate.second_floor_ecobee
+          name: 68°
+          show_name: true
+          show_state: false
+          show_icon: true
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.second_floor_ecobee
+            data:
+              temperature: 68
+          icon: mdi:home-floor-2
+        - entity: climate.second_floor_ecobee
+          name: 72°
+          show_name: true
+          show_state: false
+          show_icon: true
+          tap_action:
+            action: call-service
+            service: climate.set_temperature
+            target:
+              entity_id: climate.second_floor_ecobee
+            data:
+              temperature: 72
+          icon: mdi:home-floor-2
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4\
+        \ {\n  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    const t = hass.states['climate.first_floor_ecobee']?.attributes?.temperature;\n\
+        \    const active = Math.round((t ?? -999));\n    return active === 68 ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color:\
+        \ ${(() => {\n    const t = hass.states['climate.first_floor_ecobee']?.attributes?.temperature;\n\
+        \    const active = Math.round((t ?? -999));\n    return active === 72 ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-3 {\n  background-color:\
+        \ ${(() => {\n    const t = hass.states['climate.second_floor_ecobee']?.attributes?.temperature;\n\
+        \    const active = Math.round((t ?? -999));\n    return active === 68 ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-4 {\n  background-color:\
+        \ ${(() => {\n    const t = hass.states['climate.second_floor_ecobee']?.attributes?.temperature;\n\
+        \    const active = Math.round((t ?? -999));\n    return active === 72 ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
+      rows: 1.719
+      slider_fill_orientation: left
+      slider_value_position: right
+    - type: custom:bubble-card
+      card_type: separator
+      name: Doors & Locks
+      icon: mdi:shield-lock
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Locks
+      icon: mdi:shield-lock
+      entity: input_text.kellie_entry_locks_status
+      show_state: true
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-locks'
+      rows: 1
+      slider_fill_orientation: left
+      slider_value_position: right
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Garage Doors
+      icon: mdi:garage
+      entity: cover.ratgdov25i_dbfa50_door
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-garage-doors'
+      sub_button:
+        main:
+        - entity: cover.ratgdov25i_4a0325_door
+          name: Tesla
+          show_name: true
+          show_icon: false
+          show_state: true
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-garage-doors'
+        - entity: cover.ratgdov25i_dbfa50_door
+          name: Wagoneer
+          show_name: true
+          show_state: true
+          show_icon: false
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-garage-doors'
+        bottom: []
+        bottom_layout: rows
+      rows: 1
+      slider_fill_orientation: left
+      slider_value_position: right
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-pool-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      slider_fill_orientation: left
+      slider_value_position: right
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Pool Lights
+
+          Pick a color or light show (Pentair IntelliCenter).'
+      - type: custom:bubble-card
+        card_type: button
+        button_type: switch
+        entity: light.haynes_res_pool_lights
+        name: Pool Lights
+        icon: mdi:pool
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: toggle
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 3.45
+        sub_button:
+          main: []
+          bottom:
+          - name: Light Shows
+            buttons_layout: inline
+            group:
+            - entity: light.haynes_res_pool_lights
+              name: SAm
+              icon: mdi:auto-fix
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: SAm
+            - entity: light.haynes_res_pool_lights
+              name: Party Mode
+              icon: mdi:party-popper
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Party Mode
+            - entity: light.haynes_res_pool_lights
+              name: Caribbean
+              icon: mdi:palm-tree
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Caribbean
+            - entity: light.haynes_res_pool_lights
+              name: Sunset
+              icon: mdi:weather-sunset
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Sunset
+          - name: More Shows
+            buttons_layout: inline
+            group:
+            - entity: light.haynes_res_pool_lights
+              name: Romance
+              icon: mdi:heart
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Romance
+            - entity: light.haynes_res_pool_lights
+              name: American
+              icon: mdi:flag-variant
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: American
+            - entity: light.haynes_res_pool_lights
+              name: Royal
+              icon: mdi:crown
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Royal
+            - entity: light.haynes_res_pool_lights
+              name: White
+              icon: mdi:circle-outline
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: White
+          - name: Solid Colors
+            buttons_layout: inline
+            group:
+            - entity: light.haynes_res_pool_lights
+              name: Red
+              icon: mdi:circle
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Red
+            - entity: light.haynes_res_pool_lights
+              name: Blue
+              icon: mdi:circle
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Blue
+            - entity: light.haynes_res_pool_lights
+              name: Green
+              icon: mdi:circle
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Green
+            - entity: light.haynes_res_pool_lights
+              name: Magenta
+              icon: mdi:circle
+              show_name: true
+              show_icon: true
+              show_state: false
+              content_layout: icon-top
+              custom_height: 60
+              scrolling_effect: false
+              tap_action:
+                action: perform-action
+                perform_action: light.turn_on
+                target:
+                  entity_id: light.haynes_res_pool_lights
+                data:
+                  effect: Magenta
+          bottom_layout: rows
+        styles: ".bubble-sub-button-1 {\n  background-color: ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n\
+          \    return (l?.state === 'on' && l?.attributes?.effect === 'SAm')\n      ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Party Mode')\n      ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-3 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Caribbean')\n      ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-4 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Sunset')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-5 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Romance')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'American')\n      ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Royal')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-8 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'White')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-9 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Red')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-10 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Blue')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-11 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Green')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-12 {\n  background-color:\
+          \ ${(() => {\n    const l = hass.states['light.haynes_res_pool_lights'];\n    return (l?.state\
+          \ === 'on' && l?.attributes?.effect === 'Magenta')\n      ? 'rgba(var(--rgb-accent-color), 0.45)'\
+          \ : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-pool-heat'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      slider_fill_orientation: left
+      slider_value_position: right
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Pool Heat
+
+          **Water:** {{ states(''sensor.haynes_res_pool_last_temp'') }}°  |  **Set point:** {{ state_attr(''climate.haynes_res_pool'',
+          ''target_temp_low'') }}°  |  **Heater:** {{ state_attr(''climate.haynes_res_pool'', ''hvac_action'')
+          }}
+
+
+          **Pump:** {% if is_state(''binary_sensor.haynes_res_vsf'', ''on'') %}running ({{ states(''sensor.haynes_res_vsf_rpm'')
+          }} rpm){% else %}off{% endif %}
+
+          '
+      - type: thermostat
+        entity: climate.haynes_res_pool
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-primary-bedroom'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      slider_fill_orientation: left
+      slider_value_position: right
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Primary Bedroom
+
+          '
+      - type: grid
+        columns: 1
+        square: false
+        cards:
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: fan.primary_bedroom_fan_fan
+          name: Fan
+          icon: mdi:fan
+          show_state: true
+          show_attribute: true
+          attribute: percentage
+          tap_action:
+            action: toggle
+          sub_button:
+            main: []
+            bottom: []
+          slider_fill_orientation: left
+          slider_value_position: right
+          button_action:
+            tap_action:
+              action: more-info
+        - type: custom:bubble-card
+          card_type: cover
+          entity: cover.primary_bedroom_shades
+          name: Shades
+          show_state: true
+        - type: custom:bubble-card
+          card_type: media-player
+          entity: media_player.primary_bedroom
+          name: TV / Speaker
+          show_state: true
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '### Light Zones
+
+          '
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_bed_lights
+          name: Recessed Lights
+          icon: mdi:light-recessed
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+          sub_button:
+            main: []
+            bottom: []
+          slider_fill_orientation: left
+          slider_value_position: right
+          light_slider_type: brightness
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_nook_lights
+          name: Nook Lights
+          icon: mdi:ceiling-light
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_nightstand_lights
+          name: Nightstands
+          icon: mdi:lamp
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_hall_lights
+          name: Hallway Lights
+          icon: mdi:light-recessed
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_closet_lights
+          name: Closet
+          icon: mdi:hanger
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '### Nightstands
+
+          '
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_bed_nightstand_hue_bulb_tom
+          name: Tom
+          icon: mdi:lamp-outline
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+        - type: custom:bubble-card
+          card_type: button
+          button_type: slider
+          entity: light.upstairs_primary_bed_nightstand_hue_bulb_kellie
+          name: Kellie
+          icon: mdi:lamp-outline
+          show_state: true
+          show_attribute: true
+          attribute: brightness
+          allow_light_slider_to_0: true
+          tap_action:
+            action: more-info
+          button_action:
+            tap_action:
+              action: toggle
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-climate-control'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      slider_fill_orientation: left
+      slider_value_position: right
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Climate Control
+
+          '
+      - type: thermostat
+        entity: climate.first_floor_ecobee
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+      - type: thermostat
+        entity: climate.second_floor_ecobee
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+      - type: thermostat
+        entity: climate.rumpus_room_breeze
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+      - type: thermostat
+        entity: climate.movie_room_breeze
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-locks'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      slider_fill_orientation: left
+      slider_value_position: right
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Entry Status
+
+          **Locks:** {{ states(''input_text.kellie_entry_locks_status'') }}
+
+
+          {% set slider = ''binary_sensor.kitchen_slider_usl_entry_contact'' %}
+
+          {% set garage_side = ''binary_sensor.usl_entry_contact_2'' %}
+
+          {% set bulkhead = ''binary_sensor.usl_entry_contact'' %}
+
+          **Slider:** {% if is_state(slider,''on'') %}Open{% else %}Closed{% endif %}
+
+          **Garage Side Door:** {% if is_state(garage_side,''on'') %}Open{% else %}Closed{% endif %}
+
+          **Bulkhead Door:** {% if is_state(bulkhead,''on'') %}Open{% else %}Closed{% endif %}
+
+          '
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '{% set e = ''lock.front_door_lock'' %}
+
+          {% set p = ''input_select.front_door_lock_pending'' %}
+
+          **Front Door:** {% if is_state(p, ''locking'') %}Locking...{% elif is_state(p, ''unlocking'')
+          %}Unlocking...{% elif is_state(p, ''error'') %}Error ({{ states(e) | title }}){% else %}{{ states(e)
+          | title }} {{ as_local(states[e].last_changed).strftime(''%I:%M %p on %m/%d'') }}{% endif %}
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 1.3
+        styles: "@keyframes lockMovePulse {\n  0% { filter: brightness(1); transform: scale(1); }\n  50%\
+          \ { filter: brightness(1.18); transform: scale(1.015); }\n  100% { filter: brightness(1); transform:\
+          \ scale(1); }\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+          \ 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const p = hass.states['input_select.front_door_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.front_door_lock']?.state;\n    if (p === 'unlocking') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    if (p === 'locking') return 'rgba(0,0,0,0.22)';\n    if (p\
+          \ === 'error') return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'unlocked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.front_door_lock_pending']?.state;\n    return p === 'unlocking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}\n.bubble-sub-button-2\
+          \ {\n  background-color: ${(() => {\n    const p = hass.states['input_select.front_door_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.front_door_lock']?.state;\n    if (p === 'locking') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    if (p === 'unlocking') return 'rgba(0,0,0,0.22)';\n    if\
+          \ (p === 'error') return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'locked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.front_door_lock_pending']?.state;\n    return p === 'locking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}"
+        sub_button:
+          main: []
+          bottom:
+          - name: Front Door
+            buttons_layout: inline
+            group:
+            - entity: lock.front_door_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.front_door_lock_pending
+                  option: unlocking
+            - entity: lock.front_door_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.front_door_lock_pending
+                  option: locking
+          bottom_layout: rows
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '{% set e = ''lock.side_door_lock'' %}
+
+          {% set p = ''input_select.side_door_lock_pending'' %}
+
+          **Side Door:** {% if is_state(p, ''locking'') %}Locking...{% elif is_state(p, ''unlocking'')
+          %}Unlocking...{% elif is_state(p, ''error'') %}Error ({{ states(e) | title }}){% else %}{{ states(e)
+          | title }} {{ as_local(states[e].last_changed).strftime(''%I:%M %p on %m/%d'') }}{% endif %}
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 1.3
+        styles: "@keyframes lockMovePulse {\n  0% { filter: brightness(1); transform: scale(1); }\n  50%\
+          \ { filter: brightness(1.18); transform: scale(1.015); }\n  100% { filter: brightness(1); transform:\
+          \ scale(1); }\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+          \ 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const p = hass.states['input_select.side_door_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.side_door_lock']?.state;\n    if (p === 'unlocking') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    if (p === 'locking') return 'rgba(0,0,0,0.22)';\n    if (p\
+          \ === 'error') return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'unlocked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.side_door_lock_pending']?.state;\n    return p === 'unlocking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}\n.bubble-sub-button-2\
+          \ {\n  background-color: ${(() => {\n    const p = hass.states['input_select.side_door_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.side_door_lock']?.state;\n    if (p === 'locking') return 'rgba(0,\
+          \ 180, 255, 0.28)';\n    if (p === 'unlocking') return 'rgba(0,0,0,0.22)';\n    if (p === 'error')\
+          \ return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'locked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.side_door_lock_pending']?.state;\n    return p === 'locking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}"
+        sub_button:
+          main: []
+          bottom:
+          - name: Side Door
+            buttons_layout: inline
+            group:
+            - entity: lock.side_door_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.side_door_lock_pending
+                  option: unlocking
+            - entity: lock.side_door_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.side_door_lock_pending
+                  option: locking
+          bottom_layout: rows
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '{% set e = ''lock.bulkhead_lock'' %}
+
+          {% set p = ''input_select.bulkhead_lock_pending'' %}
+
+          **Bulkhead:** {% if is_state(p, ''locking'') %}Locking...{% elif is_state(p, ''unlocking'')
+          %}Unlocking...{% elif is_state(p, ''error'') %}Error ({{ states(e) | title }}){% else %}{{ states(e)
+          | title }} {{ as_local(states[e].last_changed).strftime(''%I:%M %p on %m/%d'') }}{% endif %}
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 1.3
+        styles: "@keyframes lockMovePulse {\n  0% { filter: brightness(1); transform: scale(1); }\n  50%\
+          \ { filter: brightness(1.18); transform: scale(1.015); }\n  100% { filter: brightness(1); transform:\
+          \ scale(1); }\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+          \ 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const p = hass.states['input_select.bulkhead_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.bulkhead_lock']?.state;\n    if (p === 'unlocking') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    if (p === 'locking') return 'rgba(0,0,0,0.22)';\n    if (p\
+          \ === 'error') return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'unlocked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.bulkhead_lock_pending']?.state;\n    return p === 'unlocking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}\n.bubble-sub-button-2\
+          \ {\n  background-color: ${(() => {\n    const p = hass.states['input_select.bulkhead_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.bulkhead_lock']?.state;\n    if (p === 'locking') return 'rgba(0,\
+          \ 180, 255, 0.28)';\n    if (p === 'unlocking') return 'rgba(0,0,0,0.22)';\n    if (p === 'error')\
+          \ return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'locked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.bulkhead_lock_pending']?.state;\n    return p === 'locking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}"
+        sub_button:
+          main: []
+          bottom:
+          - name: Bulkhead
+            buttons_layout: inline
+            group:
+            - entity: lock.bulkhead_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.bulkhead_lock_pending
+                  option: unlocking
+            - entity: lock.bulkhead_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.bulkhead_lock_pending
+                  option: locking
+          bottom_layout: rows
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '{% set e = ''lock.mudroom_door_lock'' %}
+
+          {% set p = ''input_select.mudroom_lock_pending'' %}
+
+          **Mudroom:** {% if is_state(p, ''locking'') %}Locking...{% elif is_state(p, ''unlocking'') %}Unlocking...{%
+          elif is_state(p, ''error'') %}Error ({{ states(e) | title }}){% else %}{{ states(e) | title
+          }} {{ as_local(states[e].last_changed).strftime(''%I:%M %p on %m/%d'') }}{% endif %}
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 1.3
+        styles: "@keyframes lockMovePulse {\n  0% { filter: brightness(1); transform: scale(1); }\n  50%\
+          \ { filter: brightness(1.18); transform: scale(1.015); }\n  100% { filter: brightness(1); transform:\
+          \ scale(1); }\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+          \ 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const p = hass.states['input_select.mudroom_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.mudroom_door_lock']?.state;\n    if (p === 'unlocking') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    if (p === 'locking') return 'rgba(0,0,0,0.22)';\n    if (p\
+          \ === 'error') return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'unlocked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.mudroom_lock_pending']?.state;\n    return p === 'unlocking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}\n.bubble-sub-button-2\
+          \ {\n  background-color: ${(() => {\n    const p = hass.states['input_select.mudroom_lock_pending']?.state;\n\
+          \    const s = hass.states['lock.mudroom_door_lock']?.state;\n    if (p === 'locking') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    if (p === 'unlocking') return 'rgba(0,0,0,0.22)';\n    if\
+          \ (p === 'error') return 'rgba(255, 179, 0, 0.28)';\n    if (s === 'locked') return 'rgba(var(--rgb-primary-color),\
+          \ 0.35)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation: ${(() => {\n  \
+          \  const p = hass.states['input_select.mudroom_lock_pending']?.state;\n    return p === 'locking'\
+          \ ? 'lockMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n}"
+        sub_button:
+          main: []
+          bottom:
+          - name: Mudroom
+            buttons_layout: inline
+            group:
+            - entity: lock.mudroom_door_lock
+              icon: mdi:lock-open-variant
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.mudroom_lock_pending
+                  option: unlocking
+            - entity: lock.mudroom_door_lock
+              icon: mdi:lock
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: input_select.select_option
+                data:
+                  entity_id: input_select.mudroom_lock_pending
+                  option: locking
+          bottom_layout: rows
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-garage-doors'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      slider_fill_orientation: left
+      slider_value_position: right
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: 'ha-card { background: none; box-shadow: none; border: none; }'
+        content: '{% set d = ''cover.ratgdov25i_4a0325_door'' %}
+
+          **Tesla Garage Door:** {% if is_state(d, ''closed'') %}Closed {{ as_local(states[d].last_changed).strftime(''%I:%M
+          %p on %m/%d'') }}{% elif is_state(d, ''open'') %}Open for {{ relative_time(states[d].last_changed)
+          }}{% else %}{{ states(d) }}{% endif %}
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 1.3
+        sub_button:
+          main: []
+          bottom:
+          - name: Tesla Garage Door
+            buttons_layout: inline
+            group:
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.close_cover
+                target:
+                  entity_id: cover.ratgdov25i_4a0325_door
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Stop
+              icon: mdi:stop
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.stop_cover
+                target:
+                  entity_id: cover.ratgdov25i_4a0325_door
+            - entity: cover.ratgdov25i_4a0325_door
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.open_cover
+                target:
+                  entity_id: cover.ratgdov25i_4a0325_door
+          bottom_layout: rows
+        styles: "@keyframes garageMovePulse {\n  0% { filter: brightness(1); }\n  50% { filter: brightness(1.18);\
+          \ }\n  100% { filter: brightness(1); }\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+          \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
+          \ ${(() => {\n    const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;\n    if (s ===\
+          \ 'closed') return 'rgba(var(--rgb-primary-color), 0.35)';\n    if (s === 'closing') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation:\
+          \ ${(() => {\n    const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;\n    return\
+          \ s === 'closing' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n\
+          }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;\n\
+          \    if (s === 'open') return 'rgba(var(--rgb-primary-color), 0.35)';\n    if (s === 'opening')\
+          \ return 'rgba(0, 180, 255, 0.28)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n \
+          \ animation: ${(() => {\n    const s = hass.states['cover.ratgdov25i_4a0325_door']?.state;\n\
+          \    return s === 'opening' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()}\
+          \ !important;\n}\n.bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n\
+          }\n"
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: 'ha-card { background: none; box-shadow: none; border: none; }'
+        content: '{% set d = ''cover.ratgdov25i_dbfa50_door'' %}
+
+          **Wagoneer Garage Door:** {% if is_state(d, ''closed'') %}Closed {{ as_local(states[d].last_changed).strftime(''%I:%M
+          %p on %m/%d'') }}{% elif is_state(d, ''open'') %}Open for {{ relative_time(states[d].last_changed)
+          }}{% else %}{{ states(d) }}{% endif %}
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        show_header_toggle: false
+        rows: 1.3
+        sub_button:
+          main: []
+          bottom:
+          - name: Wagoneer Garage Door
+            buttons_layout: inline
+            group:
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Close
+              icon: mdi:arrow-down-bold
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.close_cover
+                target:
+                  entity_id: cover.ratgdov25i_dbfa50_door
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Stop
+              icon: mdi:stop
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.stop_cover
+                target:
+                  entity_id: cover.ratgdov25i_dbfa50_door
+            - entity: cover.ratgdov25i_dbfa50_door
+              name: Open
+              icon: mdi:arrow-up-bold
+              show_name: false
+              show_state: false
+              show_icon: true
+              scrolling_effect: false
+              content_layout: icon-top
+              custom_height: 60
+              tap_action:
+                action: call-service
+                service: cover.open_cover
+                target:
+                  entity_id: cover.ratgdov25i_dbfa50_door
+          bottom_layout: rows
+        styles: "@keyframes garageMovePulse {\n  0% { filter: brightness(1); }\n  50% { filter: brightness(1.18);\
+          \ }\n  100% { filter: brightness(1); }\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+          \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
+          \ ${(() => {\n    const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;\n    if (s ===\
+          \ 'closed') return 'rgba(var(--rgb-primary-color), 0.35)';\n    if (s === 'closing') return\
+          \ 'rgba(0, 180, 255, 0.28)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  animation:\
+          \ ${(() => {\n    const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;\n    return\
+          \ s === 'closing' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()} !important;\n\
+          }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;\n\
+          \    if (s === 'open') return 'rgba(var(--rgb-primary-color), 0.35)';\n    if (s === 'opening')\
+          \ return 'rgba(0, 180, 255, 0.28)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n \
+          \ animation: ${(() => {\n    const s = hass.states['cover.ratgdov25i_dbfa50_door']?.state;\n\
+          \    return s === 'opening' ? 'garageMovePulse 1.1s ease-in-out infinite' : 'none';\n  })()}\
+          \ !important;\n}\n.bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n\
+          }\n"
+      - type: picture-entity
+        entity: camera.garage_g5_dome_medium_resolution_channel
+        camera_view: live
+        show_state: false
+        show_name: false
