@@ -1,23 +1,63 @@
 alias: "[Switch] : [Back Yard] : [All Clear 5m] : [Turn Off Spotlight]"
 description: >-
-  Turn the back yard spotlight off once the yard has been all-clear for 5
-  minutes. TWO triggers are mandatory. The all-clear edge alone only covers
-  camera-driven turn-ons: when the slider, the Inovelli paddle or a dashboard
-  turns the spotlight on while backyard_all_clear is ALREADY steadily on, no
-  further all-clear edge ever occurs and the light stranded on all night
-  (observed 2026-08-24 00:52 UTC, stuck 1.7h). The 'spotlight on for 5m'
-  trigger is that missing re-fire edge. The sustained-all-clear condition (4m,
-  deliberately under the 5m trigger so it can never race it) stops the re-fire
-  path killing the light while someone is still out back - backyard_all_clear
-  watches only the two camera motion sensors and flaps during bursty
-  detections. The sun gate is an OR because a bare 'after sunset' condition
-  evaluates against TODAY's sunset and is false again from local midnight until
-  the next sunset, which silently blocked every turn-off between midnight and
-  dusk.
+  Turn the back yard spotlight off once the yard has been genuinely clear for 5
+  minutes, with a hard 45-minute max-on cap as a backstop. Five things are
+  load-bearing.
+
+  (1) binary_sensor.backyard_all_clear now watches motion AND person/animal on
+  both back yard cameras (Back Yard AI Pro + Shed G5 PTZ). It used to watch the
+  two motion sensors ONLY, so it read "clear" while a person was standing in the
+  yard - observed 2026-08-24 00:19:48-00:21:15Z, five false clears during one
+  continuous person detection, and 38.1h of false-clear time over 30 days. It is
+  a Template Helper config entry (01K8CNJM0WD8JCHSN9Y87TTG5V), NOT repo YAML, so
+  that half of this fix lives only in HA .storage - see
+  home-assistant/helpers/backyard_all_clear.yaml for the documented source.
+
+  (2) The 'spotlight on for 5m' trigger is a MANDATORY re-fire edge. The slider,
+  the Inovelli paddle and the dashboard all turn the light on without touching
+  backyard_all_clear; if it was already steadily on there is no later all-clear
+  edge, and the light stranded on for 1.7h (2026-08-24 00:52 UTC). DO NOT REMOVE.
+
+  (3) The time_pattern sweeper is the only edge-independent trigger HA offers.
+  State triggers never fire for a state that was already held when the trigger
+  attached, which is exactly how the light stranded 1h49m on 2026-08-24 after an
+  automation reload. The sweeper re-evaluates from the wall clock every 5
+  minutes, so it carries the 45m cap and also rescues a reload, an HA restart,
+  a hold release, and the moment the sun gate opens - none of which mint a state
+  edge.
+
+  (4) The sustained-all-clear condition is 4m, deliberately UNDER the 5m
+  triggers so it can never race the trigger that just fired. It is also what
+  makes the sweeper safe: UniFi self-clears a smart detect at a ~5 minute event
+  ceiling, so a person standing in the yard produces brief all-clear blips. Each
+  blip resets all_clear's last_changed, so the 4m sustained requirement fails
+  and a sweeper tick landing inside that gap cannot kill the light.
+
+  (5) The light must have been on for 5m before ANY turn-off. Without that floor
+  the sweeper would kill a light that was turned on seconds ago. It also closes
+  a pre-existing hole where an all-clear edge from 5 minutes ago could turn off a
+  light that had only just been switched on.
+
+  The sun gate is an OR because a bare 'after sunset' condition evaluates against
+  TODAY's sunset and is false again from local midnight until the next sunset,
+  which silently blocked every turn-off between midnight and dusk. The cap is
+  deliberately NOT sun gated - a cap with a gate is not a cap - but it IS fully
+  suppressed by a manual/auto hold, because a hold turns this whole automation
+  off. To keep the light on past 45 minutes on purpose, use the hold.
 mode: single
+trace:
+  stored_traces: 30
+variables:
+  # Captured when the run starts, BEFORE the turn-off resets last_changed.
+  # This is the only way to tell a cap force-off from a normal turn-off after
+  # the fact, and it keeps the logbook step off the safety path.
+  on_seconds: >-
+    {% set s = states.light.downstairs_kitchen_back_yard_spotlight %}{{
+    ((now() - s.last_changed).total_seconds() | int) if s is not none else 0 }}
 triggers:
-  # Fast path: the cameras went quiet and stayed quiet. Covers every turn-on
-  # driven by [Camera Detects Person or Animal].
+  # Fast path: the yard went clear and stayed clear. Now that all_clear includes
+  # person/animal, a person clearing mints this edge too, so no separate
+  # smart-detect trigger is needed.
   - trigger: state
     entity_id: binary_sensor.backyard_all_clear
     to: "on"
@@ -39,36 +79,97 @@ triggers:
       minutes: 5
       seconds: 0
     id: spotlight_on_5m
+  # Edge-independent sweeper. Carries the 45m cap and rescues every state that
+  # has no surviving edge: automation reload, HA restart, hold release, and the
+  # sun gate opening at sunset+1h.
+  - trigger: time_pattern
+    minutes: "/5"
+    id: sweep_5m
 conditions:
-  # Skip no-op runs against an already-dark light.
+  # Minimum on-time floor, applies to BOTH paths. The sweeper is untriggered, so
+  # this condition IS the floor rather than just a race guard - it must be the
+  # full 5 minutes, matching the house convention. It passes for the
+  # spotlight_on_5m trigger by event-loop latency (the trigger fires at
+  # last_changed+5m+delta, and the condition tests utcnow()-5m > last_changed);
+  # if that ever loses the race, the sweeper re-catches it within 5 minutes.
   - condition: state
     entity_id: light.downstairs_kitchen_back_yard_spotlight
     state: "on"
-  # Sustained all-clear. backyard_all_clear flaps constantly during bursty
-  # detections, so an instantaneous check here would let the re-fire trigger
-  # kill the light while someone is still outside. 4m rather than 5m so this
-  # can never race the 5m all_clear_5m trigger that just fired.
-  - condition: state
-    entity_id: binary_sensor.backyard_all_clear
-    state: "on"
     for:
       hours: 0
-      minutes: 4
+      minutes: 5
       seconds: 0
-  # Night gate. `after: sunset` on its own resolves against TODAY's sunset, so
-  # it flips back to false at local midnight and blocked auto-off for the whole
-  # 00:00 -> sunset+1h window. The `before: sunrise` branch covers the
-  # after-midnight half of the night.
   - condition: or
     conditions:
-      - condition: sun
-        after: sunset
-        after_offset: "01:00:00"
-      - condition: sun
-        before: sunrise
+      # ---------- NORMAL PATH: the yard is actually clear ----------
+      - condition: and
+        conditions:
+          # Sustained all-clear. backyard_all_clear flaps during bursty
+          # detections, so an instantaneous check would let the re-fire trigger
+          # or a sweeper tick kill the light while someone is still outside.
+          # 4m rather than 5m so this can never race the 5m trigger that fired.
+          - condition: state
+            entity_id: binary_sensor.backyard_all_clear
+            state: "on"
+            for:
+              hours: 0
+              minutes: 4
+              seconds: 0
+          # Night gate. `after: sunset` on its own resolves against TODAY's
+          # sunset, so it flips back to false at local midnight and blocked
+          # auto-off for the whole 00:00 -> sunset+1h window. The
+          # `before: sunrise` branch covers the after-midnight half of the night.
+          - condition: or
+            conditions:
+              - condition: sun
+                after: sunset
+                after_offset: "01:00:00"
+              - condition: sun
+                before: sunrise
+      # ---------- SAFETY CAP: 45 minutes, no exceptions ----------
+      # Reached only via the sweeper, so it force-offs 45:00-50:00 after the
+      # light's last state change. Deliberately not sun gated and deliberately
+      # independent of every sensor, so a stuck smart detect, an unavailable
+      # camera or a stalled normal path can never strand the light again.
+      # A hold still suppresses it, because a hold turns this automation off.
+      - condition: state
+        entity_id: light.downstairs_kitchen_back_yard_spotlight
+        state: "on"
+        for:
+          hours: 0
+          minutes: 45
+          seconds: 0
 actions:
+  # The safety action goes FIRST and unconditionally. Nothing cosmetic is
+  # allowed to sit in front of it - a failing step aborts the rest of the
+  # sequence, and this branch exists to work when conditions are degraded.
   - action: light.turn_off
     metadata: {}
     target:
       entity_id: light.downstairs_kitchen_back_yard_spotlight
     data: {}
+  # Mark abnormal (late) turn-offs in the light's own logbook, which recorder
+  # retains for 30 days. This is the incident signal: it fires when the cap
+  # force-offs and when the normal path stalled long enough for the cap to win.
+  - if:
+      - condition: template
+        value_template: "{{ on_seconds | int(0) >= 2700 }}"
+    then:
+      - action: logbook.log
+        continue_on_error: true
+        data:
+          name: Back Yard Spotlight
+          entity_id: light.downstairs_kitchen_back_yard_spotlight
+          message: >-
+            forced off by the 45m max-on cap after {{ (on_seconds | int(0) //
+            60) }}m on. Either a smart detect is stuck on, a camera is
+            unavailable, or the normal all-clear path stalled. Backyard All
+            Clear read {{ states("binary_sensor.backyard_all_clear") }}; still
+            detecting: {{ expand("binary_sensor.back_yard_ai_pro_motion",
+            "binary_sensor.g5_ptz_motion",
+            "binary_sensor.back_yard_ai_pro_person_detected",
+            "binary_sensor.back_yard_ai_pro_animal_detected",
+            "binary_sensor.shed_g5_ptz_person_detected",
+            "binary_sensor.shed_g5_ptz_animal_detected") |
+            selectattr("state", "eq", "on") | map(attribute="name") | list |
+            join(", ") or "nothing" }}.
