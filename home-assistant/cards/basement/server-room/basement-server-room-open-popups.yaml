@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.basement_server_room_lights
 name: Server Room
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:server
 button_action:
   tap_action:
     action: navigate

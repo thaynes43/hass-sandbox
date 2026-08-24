@@ -6,4 +6,4 @@ sub_button:
   bottom: []
 entity: script.clear_hold_on_all_inovelli_presence_controlled_switches
 name: Clear Motion Controlled Lighting Hold
-icon: mdi:lock-open
+icon: mdi:lock-open-variant

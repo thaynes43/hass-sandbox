@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.upstairs_primary_closet_lights
 name: Primary Closet
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:wardrobe-outline
 button_action:
   tap_action:
     action: navigate

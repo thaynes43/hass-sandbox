@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.basement_staircase_lights
 name: Staircase
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:stairs
 button_action:
   tap_action:
     action: navigate

@@ -160,7 +160,7 @@ cards:
       {{ hold_label }}{% if upper_hold != lower_hold %} (Upper={{ upper_hold }},
       Lower={{ lower_hold }}){% endif %}
 
-      <ha-icon icon="mdi:motion-sensor-outline"></ha-icon> **mmWave Mode
+      <ha-icon icon="mdi:motion-sensor"></ha-icon> **mmWave Mode
       (devices):** Upper={{ mmwave_upper }}, Lower={{ mmwave_lower }}
 
       <ha-icon icon="mdi:palette"></ha-icon> **LED ON Colors (1–7):** {{

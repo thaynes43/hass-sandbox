@@ -4,7 +4,7 @@ button_type: state
 sub_button:
   main: []
   bottom: []
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:bookshelf
 name: Hallway
 entity: light.basement_hall_lights
 button_action:

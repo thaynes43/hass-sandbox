@@ -5,7 +5,7 @@ sub_button:
   main: []
   bottom: []
 name: Primary Bathroom
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:shower
 button_action:
   tap_action:
     action: navigate

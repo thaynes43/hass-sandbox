@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.upstairs_primary_water_closet_inovelli_presence
 name: Water Closet
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:paper-roll-outline
 button_action:
   tap_action:
     action: navigate

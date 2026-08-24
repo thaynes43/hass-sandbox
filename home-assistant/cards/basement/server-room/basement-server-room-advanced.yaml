@@ -61,7 +61,7 @@ cards:
           group:
             - entity: sensor.basement_server_room_aqara_fp2_03_light_sensor
               name: FP2 Lux
-              icon: mdi:brightness-5
+              icon: mdi:brightness-6
               show_name: true
               show_state: true
               show_icon: true

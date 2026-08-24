@@ -5,7 +5,7 @@ sub_button:
   main: []
   bottom: []
 name: Rumpus Room
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:party-popper
 button_action:
   tap_action:
     action: navigate
