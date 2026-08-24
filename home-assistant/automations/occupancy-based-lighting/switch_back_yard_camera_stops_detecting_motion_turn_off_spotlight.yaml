@@ -1,18 +1,74 @@
 alias: "[Switch] : [Back Yard] : [All Clear 5m] : [Turn Off Spotlight]"
-description: ""
+description: >-
+  Turn the back yard spotlight off once the yard has been all-clear for 5
+  minutes. TWO triggers are mandatory. The all-clear edge alone only covers
+  camera-driven turn-ons: when the slider, the Inovelli paddle or a dashboard
+  turns the spotlight on while backyard_all_clear is ALREADY steadily on, no
+  further all-clear edge ever occurs and the light stranded on all night
+  (observed 2026-08-24 00:52 UTC, stuck 1.7h). The 'spotlight on for 5m'
+  trigger is that missing re-fire edge. The sustained-all-clear condition (4m,
+  deliberately under the 5m trigger so it can never race it) stops the re-fire
+  path killing the light while someone is still out back - backyard_all_clear
+  watches only the two camera motion sensors and flaps during bursty
+  detections. The sun gate is an OR because a bare 'after sunset' condition
+  evaluates against TODAY's sunset and is false again from local midnight until
+  the next sunset, which silently blocked every turn-off between midnight and
+  dusk.
 mode: single
-trigger:
-  - platform: state
+triggers:
+  # Fast path: the cameras went quiet and stayed quiet. Covers every turn-on
+  # driven by [Camera Detects Person or Animal].
+  - trigger: state
     entity_id: binary_sensor.backyard_all_clear
     to: "on"
     for:
+      hours: 0
       minutes: 5
-condition:
-  - condition: sun
-    after: sunset
-    after_offset: "01:00:00"
-action:
+      seconds: 0
+    id: all_clear_5m
+  # MANDATORY re-fire edge. The slider, the Inovelli paddle and the dashboard
+  # all turn the spotlight on without touching backyard_all_clear. If it was
+  # already on at that moment there is no later all-clear edge, so without this
+  # trigger nothing ever re-evaluates and the light stays on until someone
+  # notices it.
+  - trigger: state
+    entity_id: light.downstairs_kitchen_back_yard_spotlight
+    to: "on"
+    for:
+      hours: 0
+      minutes: 5
+      seconds: 0
+    id: spotlight_on_5m
+conditions:
+  # Skip no-op runs against an already-dark light.
+  - condition: state
+    entity_id: light.downstairs_kitchen_back_yard_spotlight
+    state: "on"
+  # Sustained all-clear. backyard_all_clear flaps constantly during bursty
+  # detections, so an instantaneous check here would let the re-fire trigger
+  # kill the light while someone is still outside. 4m rather than 5m so this
+  # can never race the 5m all_clear_5m trigger that just fired.
+  - condition: state
+    entity_id: binary_sensor.backyard_all_clear
+    state: "on"
+    for:
+      hours: 0
+      minutes: 4
+      seconds: 0
+  # Night gate. `after: sunset` on its own resolves against TODAY's sunset, so
+  # it flips back to false at local midnight and blocked auto-off for the whole
+  # 00:00 -> sunset+1h window. The `before: sunrise` branch covers the
+  # after-midnight half of the night.
+  - condition: or
+    conditions:
+      - condition: sun
+        after: sunset
+        after_offset: "01:00:00"
+      - condition: sun
+        before: sunrise
+actions:
   - action: light.turn_off
+    metadata: {}
     target:
       entity_id: light.downstairs_kitchen_back_yard_spotlight
     data: {}

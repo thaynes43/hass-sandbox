@@ -58,7 +58,7 @@ cards:
               content_layout: icon-top
               custom_height: 60
             - entity: binary_sensor.backyard_all_clear
-              name: All Clear
+              name: All Clear (motion)
               icon: mdi:motion-sensor-off
               show_name: true
               show_state: true
@@ -84,7 +84,7 @@ cards:
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-            - entity: light.westford_spa_light_1
+            - entity: light.back_yard_westford_spa_light_1
               name: Spa Lights
               icon: mdi:hot-tub
               show_name: true
@@ -131,17 +131,39 @@ cards:
     rows: 3.4
     show_header_toggle: false
 
+  - type: markdown
+    content: |-
+      {% set spot = "light.downstairs_kitchen_back_yard_spotlight" %}{% set clear = "binary_sensor.backyard_all_clear" %}{% set auto_off = "automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight" %}{% set s = "downstairs_kitchen_back_yard_spotlight" %}{% set manual = states("input_text.inovelli_manual_hold") | int(85) %}{% set auto = states("input_text.inovelli_auto_hold") | int(0) %}{% set led1 = states("number." ~ s ~ "_defaultled1colorwhenon") | int(-1) %}{% set on_hold = led1 in [manual, auto] %}{% set detects = expand("binary_sensor.back_yard_ai_pro_person_detected", "binary_sensor.back_yard_ai_pro_animal_detected", "binary_sensor.shed_g5_ptz_person_detected", "binary_sensor.shed_g5_ptz_animal_detected") | selectattr("state", "eq", "on") | map(attribute="name") | list %}{% set armed = [as_timestamp(states[spot].last_changed), as_timestamp(states[clear].last_changed)] | max %}{% set eta = armed + 300 %}
+
+      <ha-icon icon="mdi:spotlight-beam"></ha-icon> **Spotlight:** {{ "On" if is_state(spot, "on") else "Off" }} - {{ relative_time(states[spot].last_changed) }}
+
+      <ha-icon icon="mdi:motion-sensor-off"></ha-icon> **All Clear:** {{ states(clear) }} - {{ relative_time(states[clear].last_changed) }}. Tracks camera **motion only** (AI Pro + Shed PTZ), not person/animal, so it can read clear while a smart detect is still active.
+
+      <ha-icon icon="mdi:cctv"></ha-icon> **Smart detects now:** {{ detects | join(", ") if detects else "none on either camera" }}
+
+      <ha-icon icon="mdi:timer-off-outline"></ha-icon> **Auto-off:** {% if is_state(auto_off, "off") %}automation is disabled{% elif on_hold %}blocked - switch is on hold{% elif not is_state(spot, "on") %}nothing to do, light is already off{% elif not is_state(clear, "on") %}waiting for the yard to go clear{% elif eta > as_timestamp(now()) %}in about {{ ((eta - as_timestamp(now())) / 60) | round(0) | int }} min{% else %}due now{% endif %}
+
+      Auto-off runs from 1 hour after sunset until sunrise, 5 minutes after the later of "spotlight turned on" and "yard went all clear" - so a slider or paddle turn-on is always re-checked.
+
   - type: history-graph
     entities:
       - entity: binary_sensor.kitchen_slider_usl_entry_contact
         name: Slider
       - entity: binary_sensor.back_yard_ai_pro_person_detected
-        name: Person
+        name: AI Pro Person
       - entity: binary_sensor.back_yard_ai_pro_animal_detected
-        name: Animal
+        name: AI Pro Animal
+      - entity: binary_sensor.shed_g5_ptz_person_detected
+        name: PTZ Person
+      - entity: binary_sensor.shed_g5_ptz_animal_detected
+        name: PTZ Animal
+      - entity: binary_sensor.back_yard_ai_pro_motion
+        name: AI Pro Motion
+      - entity: binary_sensor.g5_ptz_motion
+        name: PTZ Motion
       - entity: binary_sensor.backyard_all_clear
         name: All Clear
-      - entity: light.westford_spa_light_1
+      - entity: light.back_yard_westford_spa_light_1
         name: Spa Lights
       - entity: light.downstairs_kitchen_back_yard_spotlight
         name: Spotlight
