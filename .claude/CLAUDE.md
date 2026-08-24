@@ -187,6 +187,14 @@ Always create PRs as **draft** (`gh pr create --draft`). Claude Code Review, Age
 
 Any change to switch button behavior in `home-assistant/automations/switch-buttons/**` or related blueprints **must** also update `agent-docs/button-mappings.md` in the same session.
 
+### Helpers are never mirrored into repo YAML (required)
+
+Helpers (`input_*`, `timer`, `counter`, template sensors, …) are UI/config-entry managed and
+cannot be created or edited from YAML, so a repo copy is not copy/paste-able and provides no
+value. Create and edit them live via `ha_config_set_helper` on the HA MCP server. Never add
+files under `home-assistant/helpers/**` — it is legacy generic-pattern reference only. Helper
+documentation (entry_ids, gotchas) belongs in `agent-docs/`, not as YAML under `home-assistant/`.
+
 ### Night light imports
 
 When importing night light automations from HA: one file per automation, filename = entity_id minus `automation.` prefix + `.yaml`, strip the `id` field (HA assigns new id on paste).
