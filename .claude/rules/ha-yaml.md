@@ -18,6 +18,20 @@ Then list: what needs copy-pasting, what was updated in repo, and (if live updat
 
 Dependent changes (helpers + automations + scripts + button mappings) must be applied as a set or not at all.
 
+## Required: never mirror helpers into the repo
+
+Helpers (`input_*`, `timer`, `counter`, template sensors, …) are UI/config-entry managed and
+**cannot be created or edited from YAML**. A YAML copy is not copy/paste-able into the UI, so
+it provides zero value and immediately goes stale.
+
+- **Do not** add helper definitions or per-instance mirrors under `home-assistant/helpers/**`.
+  That directory is legacy reference (generic `zone_name_*` patterns) — do not extend it.
+- **Do** create/update helpers live via `ha_config_set_helper` on the HA MCP server.
+- If a helper needs documenting (entry_id, gotchas), put prose in `agent-docs/`, never a
+  fake YAML file under `home-assistant/`.
+
+Full rule: `.agents/rules/hass.md` §Helpers.
+
 ## Required: button mapping doc sync
 
 Any change to `home-assistant/automations/switch-buttons/**` or related blueprints must update `agent-docs/button-mappings.md` in the same session.
