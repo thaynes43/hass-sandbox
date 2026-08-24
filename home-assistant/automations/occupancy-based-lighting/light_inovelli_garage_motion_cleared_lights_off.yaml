@@ -1,0 +1,111 @@
+alias: "[Light] [Inovelli] : [Garage] : [Motion Cleared] : [Lights Off]"
+description: >-
+  Turn off the garage interior lights once the 5-minute minimum-on floor has
+  expired AND both garage mmWave switches plus the G5 Dome camera report clear,
+  after the configurable zone off delay. The floor
+  (timer.garage_interior_lights_floor) is armed by the lights-on automation and
+  is a hard gate: nothing turns the lights off while it is active. Door-closed
+  triggers cover the case where a door opening turned the lights on but nobody
+  entered. The timer.finished and dome-clear triggers are mandatory re-fire
+  edges - without them the lights can strand on.
+triggers:
+  - trigger: template
+    value_template: |
+      {{
+        is_state('binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.garage_interior_side_inovelli_presence_occupancy', 'off')
+      }}
+  # A dome clear must re-fire, or the lights strand on when the camera is the
+  # last hold input to release.
+  - trigger: state
+    entity_id:
+      - binary_sensor.g5_dome_motion
+      - binary_sensor.garage_g5_dome_person_detected
+    from: "on"
+    to: "off"
+  # Floor expiry must re-fire: if both sensors cleared while the floor was still
+  # running, the run aborted at the floor gate and no later edge exists.
+  - trigger: event
+    event_type: timer.finished
+    event_data:
+      entity_id: timer.garage_interior_lights_floor
+  - trigger: state
+    entity_id:
+      - binary_sensor.usl_entry_contact_2
+    from: "on"
+    to: "off"
+  - trigger: state
+    entity_id:
+      - cover.ratgdov25i_4a0325_door
+      - cover.ratgdov25i_dbfa50_door
+    to: closed
+conditions: []
+actions:
+  # Skip no-op runs against already-dark lights.
+  - condition: state
+    entity_id: light.garage_interior_lights
+    state: "on"
+  - condition: template
+    value_template: |
+      {# Only run when hold is clear #}
+      {% set s = 'garage_interior_mudroom_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
+  # THE HARD FLOOR - nothing turns the lights off while this timer is active.
+  - condition: state
+    entity_id: timer.garage_interior_lights_floor
+    state: idle
+  # Both mmWave clear. Fails closed on `unavailable` (a Zigbee dropout blocks
+  # the turn-off) - matches the previous is_state() behaviour.
+  - condition: state
+    entity_id:
+      - binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy
+      - binary_sensor.garage_interior_side_inovelli_presence_occupancy
+    state: "off"
+  # Dome hold. `not` is deliberate so an unavailable / rebooting camera CANNOT
+  # strand the lights on. This asymmetry vs the mmWave check is intentional.
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.g5_dome_motion
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.garage_g5_dome_person_detected
+        state: "on"
+  - delay: >-
+      {% set raw = states('input_select.garage_occupancy_off_delay') %}
+      {% set d = raw | replace('"','') | replace("'","") | trim %}
+      {{ d if d not in ['unknown','unavailable',''] else '00:02:00' }}
+  # Re-check everything after the grace period.
+  - condition: state
+    entity_id: timer.garage_interior_lights_floor
+    state: idle
+  - condition: state
+    entity_id:
+      - binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy
+      - binary_sensor.garage_interior_side_inovelli_presence_occupancy
+    state: "off"
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.g5_dome_motion
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.garage_g5_dome_person_detected
+        state: "on"
+  - condition: template
+    value_template: |
+      {# Re-check hold state after the delay #}
+      {% set s = 'garage_interior_mudroom_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id: light.garage_interior_lights
+    data: {}
+mode: restart

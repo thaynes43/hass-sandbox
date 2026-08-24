@@ -1,0 +1,75 @@
+alias: "[Light] [Inovelli] : [Garage] : [Motion Detected or Door Opened] : [Lights On]"
+description: >-
+  Turn on the garage interior lights when either garage mmWave switch detects
+  presence, the G5 Dome camera detects a person, the garage side door opens
+  (UniFi Protect contact sensor), or either garage door opens. Also arms the
+  5-minute minimum-on floor (timer.garage_interior_lights_floor) on ANY turn-on
+  of the light group - including a bare paddle press - so the lights are
+  guaranteed to stay on at least 5 minutes regardless of what the sensors
+  report. mode is queued because the 'armed' trigger is fired by this
+  automation's own light.turn_on, which can block on the Zigbee group ack. The
+  Schlage side/mudroom locks only report lock state (no open/closed), so they
+  cannot be triggers.
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.garage_interior_mudroom_inovelli_presence_occupancy
+      - binary_sensor.garage_interior_side_inovelli_presence_occupancy
+    from: null
+    to: "on"
+    id: presence
+  # G5 Dome only - the G6 Instant is deliberately excluded. `from: "off"` (not
+  # null) so a UniFi Protect reconnect (unavailable -> on) cannot light the garage.
+  - trigger: state
+    entity_id: binary_sensor.garage_g5_dome_person_detected
+    from: "off"
+    to: "on"
+    id: presence
+  - trigger: state
+    entity_id:
+      - binary_sensor.usl_entry_contact_2
+    from: "off"
+    to: "on"
+    id: entry
+  - trigger: state
+    entity_id:
+      - cover.ratgdov25i_4a0325_door
+      - cover.ratgdov25i_dbfa50_door
+    from: closed
+    to:
+      - opening
+      - open
+    id: entry
+  # Arms the floor for ANY turn-on, including a bare paddle press.
+  - trigger: state
+    entity_id: light.garage_interior_lights
+    from: "off"
+    to: "on"
+    id: armed
+conditions: []
+actions:
+  - if:
+      - condition: trigger
+        id:
+          - presence
+          - armed
+    then:
+      - action: timer.start
+        metadata: {}
+        target:
+          entity_id: timer.garage_interior_lights_floor
+        data: {}
+  - if:
+      - condition: trigger
+        id:
+          - presence
+          - entry
+    then:
+      - action: light.turn_on
+        metadata: {}
+        data:
+          brightness_pct: 100
+        target:
+          entity_id: light.garage_interior_lights
+mode: queued
+max: 10
