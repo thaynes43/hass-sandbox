@@ -10,4 +10,4 @@ button_action:
   tap_action:
     action: navigate
     navigation_path: "#rumpus-room-history"
-entity: light.basement_rumpus_room_lamp
+entity: light.basement_rumpus_room_lights

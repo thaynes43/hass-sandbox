@@ -4,9 +4,9 @@ button_type: state
 sub_button:
   main: []
   bottom: []
-entity: light.garage_interior_mudroom_inovelli_presence
+entity: light.garage_interior_lights
 name: Garage
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:garage
 button_action:
   tap_action:
     action: navigate
@@ -14,3 +14,6 @@ button_action:
 grid_options:
   columns: 6
   rows: auto
+slider_fill_orientation: left
+slider_value_position: right
+light_slider_type: brightness

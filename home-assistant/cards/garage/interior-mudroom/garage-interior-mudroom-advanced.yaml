@@ -30,7 +30,17 @@ button_action:
 cards:
   - type: markdown
     content: |
-      ## Garage Interior Mudroom - Sensors
+      ## Garage - Sensors
+
+  - type: markdown
+    content: |
+      ### Room behavior
+
+      - **Mudroom** carries the load; **Side** (back yard door) reads **0 W** by design.
+      - **Firmware Local Control**: **Disabled** on both — HA owns turn-off, not the switch.
+      - **Min-On Floor**: 5 min from every turn-on; while *active* nothing turns the lights off.
+      - Turn-off needs both mmWave clear, **G5 Dome** clear, floor *idle*, no hold — then the **Zone Off Delay**.
+      - **Side** is outside the hold/LED machinery by design: parameters here, no hold buttons.
 
   - type: custom:bubble-card
     card_type: sub-buttons
@@ -38,38 +48,76 @@ cards:
     sub_button:
       main: []
       bottom:
-        - name: Light + Power
+        - name: Lux
           buttons_layout: inline
           group:
             - entity: sensor.garage_interior_mudroom_inovelli_presence_illuminance
-              name: Lux
+              name: Mudroom Lux
               icon: mdi:brightness-6
               show_name: true
               show_state: true
               show_icon: true
               content_layout: icon-top
               custom_height: 60
+            - entity: sensor.garage_interior_side_inovelli_presence_illuminance
+              name: Side Lux
+              icon: mdi:brightness-6
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Power
+          buttons_layout: inline
+          group:
             - entity: sensor.garage_interior_mudroom_inovelli_presence_power
-              name: Power
+              name: Mudroom Power
               icon: mdi:flash
               show_name: true
               show_state: true
               show_icon: true
               content_layout: icon-top
               custom_height: 60
-        - name: State + Temp
+            - entity: sensor.garage_interior_side_inovelli_presence_power
+              name: Side Power
+              icon: mdi:flash
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Overheat
           buttons_layout: inline
           group:
             - entity: sensor.garage_interior_mudroom_inovelli_presence_overheat
-              name: Overheat
+              name: Mudroom Overheat
               icon: mdi:thermometer-alert
               show_name: true
               show_state: true
               show_icon: true
               content_layout: icon-top
               custom_height: 60
+            - entity: sensor.garage_interior_side_inovelli_presence_overheat
+              name: Side Overheat
+              icon: mdi:thermometer-alert
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+        - name: Switch Temp
+          buttons_layout: inline
+          group:
             - entity: sensor.garage_interior_mudroom_inovelli_presence_internaltemperature
-              name: Temp
+              name: Mudroom Temp
+              icon: mdi:thermometer
+              show_name: true
+              show_state: true
+              show_icon: true
+              content_layout: icon-top
+              custom_height: 60
+            - entity: sensor.garage_interior_side_inovelli_presence_internaltemperature
+              name: Side Temp
               icon: mdi:thermometer
               show_name: true
               show_state: true
@@ -77,7 +125,45 @@ cards:
               content_layout: icon-top
               custom_height: 60
       bottom_layout: rows
-    rows: 2.4
+    rows: 4.5
+
+  - type: markdown
+    content: |
+      ## HA Timing
+
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: markdown
+        content: >-
+          **Min-On Floor**
+
+
+          A hard gate: while `timer.garage_interior_lights_floor` is **active**
+          nothing turns the lights off.
+
+          Armed for **5 minutes** on every off→on of the group and on every
+          mmWave presence trigger, so walking back in restarts it rather than
+          stacking another 5 minutes.
+      - type: markdown
+        content: >-
+          **Zone Off Delay**
+
+
+          The grace period the off automation waits *after* every gate has
+          cleared, before it actually turns the group off.
+
+          Shared by the whole garage zone (`input_select.garage_occupancy_off_delay`
+          — no per-switch infix). Every gate is re-checked when it elapses.
+      - type: entities
+        entities:
+          - entity: timer.garage_interior_lights_floor
+            name: Min-On Floor
+      - type: entities
+        entities:
+          - entity: input_select.garage_occupancy_off_delay
+            name: Zone Off Delay
 
   - type: markdown
     content: |
@@ -89,7 +175,7 @@ cards:
     sub_button:
       main: []
       bottom:
-        - name: Inovelli mmWave — Detection
+        - name: Mudroom mmWave — Detection
           buttons_layout: inline
           group:
             - entity: select.garage_interior_mudroom_inovelli_presence_mmwavedetectsensitivity
@@ -108,7 +194,7 @@ cards:
               show_state: true
               content_layout: icon-left
               custom_height: 60
-        - name: Switch Modes
+        - name: Mudroom Switch Modes
           buttons_layout: inline
           group:
             - entity: select.garage_interior_mudroom_inovelli_presence_outputmode
@@ -139,12 +225,90 @@ cards:
               double_tap_action:
                 action: none
               sub_button_type: default
+            - entity: select.garage_interior_mudroom_inovelli_presence_mmwavecontrolwireddevice
+              icon: mdi:motion-sensor
+              show_icon: true
+              show_state: true
+              show_name: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+              hold_action:
+                action: more-info
+              double_tap_action:
+                action: none
+              sub_button_type: default
+        - name: Side mmWave — Detection
+          buttons_layout: inline
+          group:
+            - entity: select.garage_interior_side_inovelli_presence_mmwavedetectsensitivity
+              sub_button_type: select
+              name: Sensitivity
+              icon: mdi:radar
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+            - entity: select.garage_interior_side_inovelli_presence_mmwavedetecttrigger
+              sub_button_type: select
+              name: Trigger Delay
+              icon: mdi:timer-outline
+              show_name: false
+              show_state: true
+              content_layout: icon-left
+              custom_height: 60
+        - name: Side Switch Modes
+          buttons_layout: inline
+          group:
+            - entity: select.garage_interior_side_inovelli_presence_outputmode
+              icon: mdi:light-switch
+              show_icon: true
+              show_state: true
+              show_name: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+              hold_action:
+                action: none
+              double_tap_action:
+                action: none
+              sub_button_type: default
+            - entity: select.garage_interior_side_inovelli_presence_smartbulbmode
+              icon: mdi:lightbulb-outline
+              show_icon: true
+              show_state: true
+              show_name: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+              hold_action:
+                action: none
+              double_tap_action:
+                action: none
+              sub_button_type: default
+            - entity: select.garage_interior_side_inovelli_presence_mmwavecontrolwireddevice
+              icon: mdi:motion-sensor
+              show_icon: true
+              show_state: true
+              show_name: false
+              content_layout: icon-left
+              custom_height: 60
+              tap_action:
+                action: none
+              hold_action:
+                action: more-info
+              double_tap_action:
+                action: none
+              sub_button_type: default
       bottom_layout: rows
-    rows: 2.4
+    rows: 4.5
 
   - type: markdown
     content: |
-      #### mmWave Clear Timing
+      #### Mudroom mmWave Clear Timing
   - type: grid
     columns: 2
     square: false
@@ -154,8 +318,9 @@ cards:
           **MmWave Hold Time**
 
 
-          How long the **load stays ON** after the switch stops detecting
-          presence.
+          With Firmware Local Control **Disabled** this no longer drives the
+          load — it now only governs how long the switch keeps **reporting
+          occupancy** after presence stops.
 
           Value is in **seconds** (e.g. **5 = 5s**). Default is **10s**.
       - type: markdown
@@ -205,7 +370,7 @@ cards:
 
   - type: markdown
     content: |
-      #### mmWave Trigger Boundary (cm)
+      #### Mudroom mmWave Trigger Boundary (cm)
   - type: grid
     columns: 2
     square: false
@@ -297,7 +462,7 @@ cards:
 
   - type: markdown
     content: >-
-      **MQTT Commands**    <small>
+      #### Mudroom MQTT Commands    <small>
 
       Last command: {% set s =
       states('sensor.garage_interior_mudroom_inovelli_presence_mmwave_control_commands')
@@ -309,7 +474,7 @@ cards:
     sub_button:
       main: []
       bottom:
-        - name: mmWave Commands
+        - name: Mudroom mmWave Commands
           buttons_layout: inline
           group:
             - name: Set Interference
@@ -363,6 +528,234 @@ cards:
                 target: {}
                 data:
                   device: garage_interior_mudroom_inovelli_presence
+                  command: reset_mmwave_module
+      bottom_layout: inline
+    rows: 1.625
+    modules:
+      - my_module
+
+  - type: markdown
+    content: |
+      #### Side mmWave Clear Timing
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: markdown
+        content: >-
+          **MmWave Hold Time**
+
+
+          With Firmware Local Control **Disabled** this no longer drives the
+          load — it now only governs how long the switch keeps **reporting
+          occupancy** after presence stops.
+
+          Value is in **seconds** (e.g. **5 = 5s**). Default is **10s**.
+      - type: markdown
+        content: >-
+          **MmWave Stay Life**
+
+
+          How long the “stay” area lingers after motion stops (affects how
+          quickly the switch reports **cleared**).
+
+          Default is **300** (≈15s). Lower values can be sub-second
+          (e.g. **1 ≈ 50ms**, **20 ≈ 1s**).
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwaveholdtime
+        name: Hold Time (s)
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+        features_position: inline
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwavestaylife
+        name: Stay Life
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+        features_position: inline
+      - type: entities
+        entities:
+          - entity: number.garage_interior_side_inovelli_presence_mmwaveholdtime
+            name: Hold Time (s)
+      - type: entities
+        entities:
+          - entity: number.garage_interior_side_inovelli_presence_mmwavestaylife
+            name: Stay Life
+
+  - type: markdown
+    content: |
+      #### Side mmWave Trigger Boundary (cm)
+  - type: grid
+    columns: 2
+    square: false
+    cards:
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwavedepthmin
+        name: Depth Min
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwavedepthmax
+        name: Depth Max
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwavewidthmin
+        name: Width Left
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwavewidthmax
+        name: Width Right
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwaveheightmin
+        name: Height Floor
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+      - type: tile
+        entity: number.garage_interior_side_inovelli_presence_mmwaveheightmax
+        name: Height Ceiling
+        vertical: false
+        hide_state: true
+        tap_action:
+          action: none
+        hold_action:
+          action: more-info
+        features:
+          - type: numeric-input
+            style: buttons
+          - type: numeric-input
+        features_position: bottom
+
+  - type: markdown
+    content: >-
+      #### Side MQTT Commands    <small>
+
+      Last command: {% set s =
+      states('sensor.garage_interior_side_inovelli_presence_mmwave_control_commands')
+      %} {{ s if s not in ['unknown','unavailable',''] else '—' }} </small>
+
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    show_header_toggle: false
+    sub_button:
+      main: []
+      bottom:
+        - name: Side mmWave Commands
+          buttons_layout: inline
+          group:
+            - name: Set Interference
+              icon: mdi:shield-outline
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: garage_interior_side_inovelli_presence
+                  command: set_interference
+            - name: Clear Interference
+              icon: mdi:shield-off-outline
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: garage_interior_side_inovelli_presence
+                  command: clear_interference
+            - name: Reset Area
+              icon: mdi:crop-free
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: garage_interior_side_inovelli_presence
+                  command: reset_detection_area
+            - name: Reset Module
+              icon: mdi:restart-alert
+              show_state: false
+              show_name: true
+              content_layout: icon-top
+              custom_height: 80
+              tap_action:
+                action: perform-action
+                perform_action: script.inovelli_mmwave_control
+                target: {}
+                data:
+                  device: garage_interior_side_inovelli_presence
                   command: reset_mmwave_module
       bottom_layout: inline
     rows: 1.625
