@@ -69,7 +69,7 @@ cards:
               custom_height: 60
             - entity: sensor.basement_bathroom_night_light_illuminance
               name: Night Light
-              icon: mdi:brightness-5
+              icon: mdi:brightness-6
               show_name: true
               show_state: true
               show_icon: true

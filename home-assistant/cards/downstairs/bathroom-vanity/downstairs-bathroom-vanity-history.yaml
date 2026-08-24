@@ -48,7 +48,7 @@ cards:
             - entity: input_select.downstairs_bathroom_vanity_mmwave_normal_mode
               sub_button_type: select
               name: mmWave Mode
-              icon: mdi:motion-sensor
+              icon: mdi:format-list-bulleted
               show_name: true
               show_state: true
               show_attribute: false

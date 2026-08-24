@@ -230,7 +230,7 @@ cards:
               show_name: true
               show_last_changed: false
               show_state: true
-              icon: mdi:format-list-bulleted
+              icon: mdi:timer-outline
               content_layout: icon-left
               custom_height: 60
       bottom_layout: rows

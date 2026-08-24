@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.upstairs_laundry_inovlli_presence
 name: Laundry Room
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:washing-machine
 button_action:
   tap_action:
     action: navigate

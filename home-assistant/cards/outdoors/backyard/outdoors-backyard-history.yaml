@@ -252,7 +252,7 @@ cards:
               scrolling_effect: false
             - entity: script.inovelli_clear_mmwave_hold_restore_led_indicator
               name: Clear Auto Hold
-              icon: mdi:lock-open
+              icon: mdi:lock-open-variant
               show_name: true
               show_state: false
               tap_action:

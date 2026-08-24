@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.upstairs_kids_bathroom_vanity_inovelli_presence
 name: Kids Bathroom
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:bathtub-outline
 button_action:
   tap_action:
     action: navigate

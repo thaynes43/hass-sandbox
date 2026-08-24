@@ -10,4 +10,4 @@ button_action:
     navigation_path: "#movie-room-history"
 entity: light.basement_movie_room_lights
 name: Movie Room
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:television

@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.downstairs_bathroom_vanity_inovelli_presence
 name: Bathroom Vanity
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:vanity-light
 button_action:
   tap_action:
     action: navigate

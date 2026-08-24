@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.downstairs_mudroom_lights
 name: Mudroom
-icon: mdi:clipboard-text-clock-outline
+icon: mdi:coat-rack
 button_action:
   tap_action:
     action: navigate

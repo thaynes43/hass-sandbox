@@ -6,7 +6,7 @@ sub_button:
   bottom: []
 entity: light.upstairs_primary_hall_lights
 name: Primary Hall
-icon: mdi:hallway
+icon: mdi:door-open
 button_action:
   tap_action:
     action: navigate
