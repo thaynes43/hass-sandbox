@@ -1,0 +1,95 @@
+# Backyard All Clear — binary_sensor.backyard_all_clear
+#
+# NOTE: Helpers are managed in the HA UI in your setup; this file is
+# copy/paste-able-equivalent documentation, NOT a file HA reads.
+#
+# !! READ THIS BEFORE EDITING !!
+# This sensor is a **Template Helper config entry**, not YAML. It does NOT live
+# in configuration.yaml — that file contains no `template:` key at all, and this
+# repo does not track configuration.yaml or packages/ either. The only copy of
+# the real template is inside HA's .storage:
+#
+#   entry_id : 01K8CNJM0WD8JCHSN9Y87TTG5V
+#   file     : /config/.storage/core.config_entries
+#   registry : /config/.storage/core.entity_registry (icon override lives here)
+#
+# Edit it via Settings > Devices & Services > Helpers > "Backyard All Clear" >
+# Configure, or programmatically:
+#
+#   ha_config_set_helper(helper_type="template", action="update",
+#                        helper_id="01K8CNJM0WD8JCHSN9Y87TTG5V",
+#                        config={"state": "<jinja>"})
+#
+# The options flow auto-reloads (options_flow_reloads = True), so there is NO
+# ha_check_config run, NO template.reload, and NO restart involved. Never
+# hand-edit .storage. Never send `name` on update — it is rejected, and a
+# rename would mint a new unique_id and break every consumer below.
+#
+# Stored options are exactly: name, state, template_type. Do NOT add
+# `device_class` (it would invert on/off display semantics on the dashboards)
+# and do NOT add an `availability` template — that would make the sensor itself
+# go unavailable when a camera drops, which makes the automation's
+# `state: "on" for: 4m` condition false and re-introduces the stranding bug
+# through the back door.
+#
+# ---------------------------------------------------------------------------
+# CURRENT (2026-08-24) — motion AND person/animal on both back yard cameras.
+# The gate must stay in sync with the turn-on automation
+# "[Switch] : [Back Yard] : [Camera Detects Person or Animal]" (id 1761335099799)
+# so that anything which can turn the spotlight ON can also hold it on.
+#
+# ENTITY-NAMING TRAP: the Shed G5 PTZ mixes prefixes on ONE device —
+#   motion        = binary_sensor.g5_ptz_motion            (NO "shed_" prefix)
+#   smart detects = binary_sensor.shed_g5_ptz_*_detected   (WITH "shed_" prefix)
+# binary_sensor.g5_ptz_person_detected and binary_sensor.shed_g5_ptz_motion do
+# NOT exist. expand() drops unknown entity_ids SILENTLY, so a typo produces a
+# template that looks fine and quietly ignores half the cameras. Always verify
+# before saving — this must print 6:
+#
+#   {{ expand(<the six ids below>) | map(attribute='entity_id') | list | count }}
+#
+# Verified = 6 at 2026-08-24T03:35Z.
+template:
+  - binary_sensor:
+      - name: Backyard All Clear
+        # icon mdi:motion-sensor-off is an entity-registry override, not part
+        # of the helper options.
+        state: >-
+          {{ expand(
+               'binary_sensor.back_yard_ai_pro_motion',
+               'binary_sensor.g5_ptz_motion',
+               'binary_sensor.back_yard_ai_pro_person_detected',
+               'binary_sensor.back_yard_ai_pro_animal_detected',
+               'binary_sensor.shed_g5_ptz_person_detected',
+               'binary_sensor.shed_g5_ptz_animal_detected'
+             ) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+
+# ---------------------------------------------------------------------------
+# PREVIOUS (rollback value, verbatim) — motion ONLY. This was the defect:
+# it reported "clear" while a person was standing in the yard. Observed
+# 2026-08-24 00:19:48-00:21:15Z, five false clears during one continuous person
+# detection; 38.1h of false-clear time over 30 days.
+#
+#   {{ is_state('binary_sensor.back_yard_ai_pro_motion', 'off')
+#                and is_state('binary_sensor.g5_ptz_motion', 'off') }}
+#
+# Note the old form used is_state(x, 'off'), which returns False for an
+# `unavailable` camera and therefore pinned all_clear to 'off' and blocked
+# turn-off indefinitely during an NVR restart. The new selectattr('state','eq',
+# 'on') form treats unavailable as "not detecting" and fails OPEN instead; the
+# 45-minute max-on cap in the off-automation is the backstop.
+#
+# ---------------------------------------------------------------------------
+# CONSUMERS (verified complete 2026-08-24) — 7 references, 3 artifacts:
+#   1. automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+#      (id 1761335423032) — the all_clear_5m trigger and the 4m sustained condition
+#   2-4. dashboard "dashboard-debug", view 0 "Occupancy", section 6, the bubble
+#      pop-up hash "#outdoors-backyard-history" — sub-button label, markdown
+#      status card, and history-graph trace
+#      (repo mirror: home-assistant/cards/outdoors/backyard/outdoors-backyard-history.yaml)
+#   5. same dashboard, pop-up hash "#outdoors-backyard-advanced" — sub-button label
+#      (repo mirror: home-assistant/cards/outdoors/backyard/outdoors-backyard-advanced.yaml)
+#   6. dashboard "haynes-home", view "Outside" (index 4), badges[2] — an entity
+#      badge named "All Clear". THIS BADGE HAS NO REPO MIRROR.
+#   7. /config/.storage/core.restore_state — cached value, not a consumer.
+# AppDaemon, scripts and scenes reference it ZERO times.
