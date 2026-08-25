@@ -7,17 +7,48 @@ Monitors Modern Forms ceiling fans connected via the Modern Forms integration. A
 | Check | Method | Healthy When |
 |-------|--------|-------------|
 | `{name} State` | `get_state(entity_id)` | Not `unavailable`/`unknown`/`None` |
-| `{name} Ping` | ICMP ping to fan IP | Responds within timeout |
+| `{name} Ping` | ICMP ping to fan IP (3 attempts) | Any attempt responds within timeout |
+
+The ping check retries up to 3 times per cycle — Modern Forms fans are ESP
+devices in Wi-Fi power-save and routinely drop a single ping, so one miss never
+counts as a failure.
 
 ## Repair
 
 Supports per-fan repair via a configurable HA script (default: `script.zen32_hard_reset`). The script power-cycles the fan's zen32 scene controller and optionally toggles the fan entity if still unavailable.
 
+### Auto-Repair Trigger (per-fan grace)
+
+Auto-repair only ever fires for a fan whose **entity is down** (State check
+critical — `unavailable`/`unknown`). A ping-only miss while HA can still reach
+the fan is a transient warning and never justifies power-cycling a possibly
+running fan.
+
+Each fan accrues its **own** unhealthy timer toward the auto-repair delay. One
+long-failed fan can never fast-track an immediate repair of another fan that
+only just went down — every fan serves the full configured delay from the
+moment *it* went unhealthy. Timers update on every check cycle, including
+while a repair is running, so a fan that recovers mid-repair never keeps a
+stale timer.
+
+**Systemic outage guard**: if *every* fan is entity-down at once, that points
+at HA, the integration, or the Wi-Fi network — not at individual fans.
+Auto-repair is suspended (timers cleared, WARNING logged) until the signature
+clears; the fans that are still down afterwards then serve a fresh grace
+period.
+
+**Busy repair script**: the repair script is `mode: single` with a long
+cooldown tail — a `turn_on` while it runs is silently dropped by HA. The
+checker waits for the script to be free (up to ~11 min) before invoking it;
+if it stays busy the attempt is marked failed with detail "Repair script
+busy" instead of pretending a power-cycle happened.
+
 ### Per-Fan Repair Tracking
 
 Each fan independently tracks its own repair state. When auto-repair triggers:
 
-1. Find the first failing fan with repair status `idle`
+1. Find the entity-down fan with repair status `idle` that has been unhealthy
+   the longest past its delay
 2. Call the repair script with that fan's zen32 entities
 3. Poll for recovery every ~5s for up to `repair_recovery_wait_s`
 4. On success, move to the next failing fan on the next check cycle
@@ -27,11 +58,11 @@ Each fan independently tracks its own repair state. When auto-repair triggers:
 
 ### Manual Repair
 
-The "Repair" button resets all `failed` fan states and repairs all currently-failing fans sequentially.
+The "Repair" button resets all `failed` fan states and repairs all currently **entity-down** fans sequentially. The same repair-worthiness rule as auto-repair applies: a fan that is reachable by HA but missing pings never gets power-cycled, even manually.
 
 ### State Restore After Repair
 
-The repair script cuts mains power to the fan, which **reboots the Modern Forms controller back to its hardware default** — the physical fan can come back off or at the wrong speed. Because the Modern Forms integration keeps serving stale last-known state while the fan's Wi-Fi is down (most repairs are triggered by the **IP ping** failing, not by entity unavailability), HA never sends a corrective command, so the physical fan ends up out of sync with what the user wanted.
+The repair script cuts mains power to the fan, which **reboots the Modern Forms controller back to its hardware default** — the physical fan can come back off or at the wrong speed. Because the Modern Forms integration keeps serving stale last-known state while the fan's Wi-Fi is down, HA never sends a corrective command, so the physical fan ends up out of sync with what the user wanted.
 
 To fix this, the checker keeps a **last-known-good state cache** and replays it after every successful repair:
 
