@@ -3,11 +3,16 @@
 Performs two checks per fan on a configurable interval:
 
 1. **Entity State** — verify the fan entity is not unavailable/unknown
-2. **IP Ping** — ICMP ping the fan's IP address
+2. **IP Ping** — ICMP ping the fan's IP address (retried; ESP fans in
+   Wi-Fi power-save routinely drop a single ping)
 
 All fans are reported as a single checker to avoid dashboard clutter.
 Supports per-fan repair via a configurable HA script (e.g. zen32_hard_reset).
 Each fan gets one auto-repair attempt before being marked failed.
+
+Auto-repair fires only for an entity-down fan (State check critical) and each
+fan accrues its own grace period — one long-failed fan never fast-tracks a
+power-cycle of another fan that merely blipped.
 
 Communication with the controller is event-only (never ``get_app``).
 """
@@ -19,6 +24,7 @@ import datetime
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -50,6 +56,15 @@ REPAIR_POLL_INTERVAL_S = 5
 
 # Delay between fan restore commands so the just-rebooted fan accepts each one
 RESTORE_STEP_DELAY_S = 1
+
+# Ping attempts per check cycle — ESP fans in Wi-Fi power-save often drop a
+# single ping, so one miss must never count as a failure
+PING_ATTEMPTS = 3
+
+# Max wait for the repair script (mode: single, with a long cooldown tail) to
+# be free before giving up — a turn_on while it runs is silently dropped, and
+# the fan would burn its one repair attempt without any power-cycle happening
+SCRIPT_BUSY_WAIT_S = 660
 
 
 class FanHealthChecker(hass.Hass):
@@ -108,9 +123,20 @@ class FanHealthChecker(hass.Hass):
             for fan in self._fans
         }
 
+        # Per-fan unhealthy tracking: when each fan's entity first went down
+        # (None = healthy). Each fan accrues its own auto-repair grace period
+        # so one long-failed fan can never fast-track a repair of another fan
+        # that only just blipped.
+        self._fan_unhealthy_since: Dict[str, Optional[datetime.datetime]] = {
+            fan["name"]: None for fan in self._fans
+        }
+
+        # True while ALL fans are entity-down at once (systemic outage
+        # signature) — auto-repair is suspended for the duration
+        self._systemic_outage: bool = False
+
         # Global repair tracking
         self._repair_status: str = REPAIR_IDLE
-        self._unhealthy_since: Optional[datetime.datetime] = None
         self._auto_repair_deadline: Optional[datetime.datetime] = None
         self._repair_task: Optional[asyncio.Task] = None
 
@@ -294,6 +320,12 @@ class FanHealthChecker(hass.Hass):
         # Auto-reset fan repair states for fans that recovered naturally
         self._reset_recovered_fans(results)
 
+        # Per-fan unhealthy timers must track every cycle — even while a
+        # repair is active — otherwise a fan that recovers mid-repair keeps a
+        # stale timer and a later blip would get an instant grace-less
+        # power-cycle.
+        self._update_fan_unhealthy_timers(results)
+
         # Evaluate auto-repair (skip if any repair is in progress)
         if not self._is_any_repair_active():
             self._evaluate_auto_repair(results)
@@ -347,7 +379,9 @@ class FanHealthChecker(hass.Hass):
     async def _check_fan_ping(self, fan: dict) -> Dict[str, str]:
         name = f"{fan['name']} Ping"
         try:
-            result = await ping_check(fan["ip"])
+            # Modern Forms fans are ESP devices in Wi-Fi power-save; a single
+            # 2s ping routinely misses. Retry before calling it a failure.
+            result = await ping_check(fan["ip"], attempts=PING_ATTEMPTS)
             return {
                 "name": name,
                 "status": result["status"],
@@ -362,19 +396,6 @@ class FanHealthChecker(hass.Hass):
     # ------------------------------------------------------------------
     # Fan failure helpers
     # ------------------------------------------------------------------
-
-    def _get_failing_fans(
-        self, results: List[Dict[str, str]]
-    ) -> List[Dict[str, str]]:
-        """Return fan configs whose checks are failing."""
-        failing = []
-        for fan in self._fans:
-            fan_results = [
-                r for r in results if r["name"].startswith(fan["name"])
-            ]
-            if any(r["status"] != "ok" for r in fan_results):
-                failing.append(fan)
-        return failing
 
     def _check_single_fan_results(
         self, fan: dict, results: List[Dict[str, str]]
@@ -429,54 +450,128 @@ class FanHealthChecker(hass.Hass):
         """Return cached auto-repair config (sync-safe)."""
         return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
 
-    def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
-        failing_fans = self._get_failing_fans(results)
-        all_ok = len(failing_fans) == 0
+    def _is_fan_repair_worthy(
+        self, fan: dict, results: List[Dict[str, str]]
+    ) -> bool:
+        """Return True if *fan* warrants a power-cycle repair.
 
-        # If all fans ok, cancel pending and reset
-        if all_ok:
-            if self._repair_status == REPAIR_PENDING:
-                self.log("All fans ok — cancelling pending auto-repair", level="INFO")
-            self._repair_status = REPAIR_IDLE
-            self._auto_repair_deadline = None
-            self._unhealthy_since = None
-            return
+        Only an entity-down fan (State check critical — unavailable/unknown)
+        justifies cutting power. A ping-only miss while HA can still reach
+        the fan is a transient warning, never a reason to power-cycle a
+        possibly-running fan.
+        """
+        state_name = f"{fan['name']} State"
+        return any(
+            r["name"] == state_name and r["status"] == "critical"
+            for r in results
+        )
 
-        # Only count fans that haven't already been attempted
-        repairable = [
-            f for f in failing_fans
-            if self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
+    def _update_fan_unhealthy_timers(
+        self, results: List[Dict[str, str]]
+    ) -> None:
+        """Update per-fan unhealthy timers from raw check results.
+
+        A fan accrues time toward its own auto-repair deadline only while its
+        entity is down. This keeps one long-failed fan from fast-tracking
+        repairs of other fans that blip. Runs every check cycle, including
+        while a repair is active.
+        """
+        now = datetime.datetime.now()
+        repair_worthy = [
+            f for f in self._fans if self._is_fan_repair_worthy(f, results)
         ]
 
-        # If no repairable fans left, just stay in current state
-        if not repairable:
+        # Systemic-outage signature: every fan entity-down at once points at
+        # HA, the integration, or the Wi-Fi network — not at individual fans.
+        # Power-cycling them all one by one would be wrong (and useless), so
+        # suspend the timers until the signature clears.
+        if len(self._fans) > 1 and len(repair_worthy) == len(self._fans):
+            if not self._systemic_outage:
+                self._systemic_outage = True
+                self.log(
+                    f"All {len(self._fans)} fans entity-down — systemic "
+                    "outage signature, auto-repair suspended",
+                    level="WARNING",
+                )
+            for name in self._fan_unhealthy_since:
+                self._fan_unhealthy_since[name] = None
+            return
+        if self._systemic_outage:
+            self._systemic_outage = False
+            self.log(
+                "Systemic outage signature cleared — auto-repair resumed",
+                level="INFO",
+            )
+
+        for fan in self._fans:
+            name = fan["name"]
+            if self._is_fan_repair_worthy(fan, results):
+                if self._fan_unhealthy_since[name] is None:
+                    self._fan_unhealthy_since[name] = now
+                    self.log(
+                        f"{name} entity down — auto-repair grace timer started",
+                        level="INFO",
+                    )
+            else:
+                self._fan_unhealthy_since[name] = None
+
+    def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
+        now = datetime.datetime.now()
+
+        # Candidates: entity-down fans that haven't already been attempted
+        candidates = [
+            f for f in self._fans
+            if self._fan_unhealthy_since[f["name"]] is not None
+            and self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
+        ]
+
+        if not candidates:
+            # Nothing repair-worthy (healthy, ping-only blips, or already
+            # attempted) — clear any pending countdown
+            if self._repair_status == REPAIR_PENDING:
+                self.log(
+                    "No repair-worthy fans — cancelling pending auto-repair",
+                    level="INFO",
+                )
+                self._repair_status = REPAIR_IDLE
+                self._auto_repair_deadline = None
             return
 
         enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
-            if self._unhealthy_since is None:
-                self._unhealthy_since = datetime.datetime.now()
+            # Clear any countdown started before the toggle was switched off —
+            # otherwise reports keep advertising a pending repair (with a
+            # stale deadline) that can never fire.
+            if self._repair_status == REPAIR_PENDING:
+                self.log(
+                    "Auto-repair disabled — cancelling pending auto-repair",
+                    level="INFO",
+                )
+                self._repair_status = REPAIR_IDLE
+                self._auto_repair_deadline = None
             return
 
-        now = datetime.datetime.now()
-
-        if self._unhealthy_since is None:
-            self._unhealthy_since = now
-
-        deadline = self._unhealthy_since + datetime.timedelta(minutes=delay_min)
+        # Oldest-unhealthy fan first; each fan's own timer gates its repair
+        candidates.sort(key=lambda f: self._fan_unhealthy_since[f["name"]])
+        fan = candidates[0]
+        deadline = self._fan_unhealthy_since[fan["name"]] + datetime.timedelta(
+            minutes=delay_min
+        )
 
         if now >= deadline:
-            # Start repairing the first repairable fan
             self.log(
-                f"Auto-repair triggered — starting with {repairable[0]['name']}",
+                f"Auto-repair triggered — starting with {fan['name']} "
+                f"(entity down since "
+                f"{self._fan_unhealthy_since[fan['name']].isoformat(timespec='seconds')})",
                 level="INFO",
             )
-            self._start_fan_repair(repairable[0])
+            self._start_fan_repair(fan)
         else:
             self._repair_status = REPAIR_PENDING
             self._auto_repair_deadline = deadline
             self.log(
-                f"Repair pending — deadline {deadline.isoformat(timespec='seconds')}",
+                f"Repair pending for {fan['name']} — deadline "
+                f"{deadline.isoformat(timespec='seconds')}",
                 level="INFO",
             )
 
@@ -656,13 +751,17 @@ class FanHealthChecker(hass.Hass):
         self._repair_task = self.create_task(self._execute_fan_repair(fan))
 
     async def _repair_all_failing(self) -> None:
-        """Repair all currently-failing fans sequentially."""
+        """Repair all currently entity-down fans sequentially.
+
+        Same repair-worthiness rule as auto-repair: only a fan whose entity is
+        down gets power-cycled — a ping-only blip never does, even manually.
+        """
         # Run a fresh check to get current state
         results = await self._run_health_checks_only()
-        failing = self._get_failing_fans(results)
         repairable = [
-            f for f in failing
-            if self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
+            f for f in self._fans
+            if self._is_fan_repair_worthy(f, results)
+            and self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
         ]
 
         if not repairable:
@@ -691,29 +790,56 @@ class FanHealthChecker(hass.Hass):
         self._report_repair_status_only()
 
         try:
-            # Parse repair script entity ID (e.g. "script.zen32_hard_reset")
-            script_domain, script_name = self._repair_script.split(".", 1)
-            service_call = f"{script_domain}/{script_name}"
+            # The repair script is mode: single with a long cooldown tail — a
+            # turn_on while it is still running is silently dropped and the
+            # fan would burn its one attempt without any power-cycle. Wait
+            # for the script to be free first.
+            if not await self._wait_for_repair_script_free(fr):
+                fr["status"] = REPAIR_FAILED
+                fr["detail"] = "Repair script busy — no power-cycle attempted"
+                self._repair_status = self._aggregate_repair_status()
+                self.log(
+                    f"{fan_name} repair aborted — {self._repair_script} still "
+                    f"busy after {SCRIPT_BUSY_WAIT_S}s",
+                    level="WARNING",
+                )
+                self._pending_repair_events.append({
+                    "result": "failed",
+                    "duration_s": 0,
+                    "device": fan_name,
+                })
+                self._report_repair_status_only()
+                return
 
             self.log(
                 f"Calling {self._repair_script} for {fan_name}", level="INFO"
             )
+            # script/turn_on is fire-and-forget: calling the script as its own
+            # service (script/<name>) blocks until the script finishes, and
+            # zen32_hard_reset ends with a long lockout delay — the WS request
+            # would always hit AppDaemon's 60s timeout and log a warning.
             self.call_service(
-                service_call,
-                power_switch_entity=fan["power_switch"],
-                relay_control_select_entity=fan["relay_control"],
-                scene_control_select_entity=fan["scene_control"],
-                unavailable_fan_entity=fan["entity_id"],
+                "script/turn_on",
+                entity_id=self._repair_script,
+                variables={
+                    "power_switch_entity": fan["power_switch"],
+                    "relay_control_select_entity": fan["relay_control"],
+                    "scene_control_select_entity": fan["scene_control"],
+                    "unavailable_fan_entity": fan["entity_id"],
+                },
             )
 
             fr["detail"] = "Waiting for recovery..."
             self._report_repair_status_only()
 
-            # Poll for recovery
+            # Poll for recovery. Elapsed is measured on the monotonic clock —
+            # each poll also runs the health checks (with ping retries), so
+            # summing sleep intervals would badly under-count wall time.
+            start_mono = time.monotonic()
             elapsed = 0
             while elapsed < self._repair_recovery_wait_s:
                 await asyncio.sleep(REPAIR_POLL_INTERVAL_S)
-                elapsed += REPAIR_POLL_INTERVAL_S
+                elapsed = int(time.monotonic() - start_mono)
 
                 results = await self._run_health_checks_only()
                 if self._check_single_fan_results(fan, results):
@@ -767,6 +893,35 @@ class FanHealthChecker(hass.Hass):
             self._repair_status = self._aggregate_repair_status()
             self.log(f"Repair error for {fan_name}: {exc!r}", level="ERROR")
             self._report_repair_status_only()
+
+    async def _wait_for_repair_script_free(self, fr: Dict[str, Any]) -> bool:
+        """Wait until the repair script entity is not running ('on').
+
+        Returns True when free, False if still busy after SCRIPT_BUSY_WAIT_S.
+        Errors reading the script state are treated as free — a transient WS
+        hiccup must not block a repair.
+        """
+        elapsed = 0
+        while True:
+            try:
+                state = await self.get_state(self._repair_script)
+            except Exception as exc:
+                self.log(
+                    f"Could not read {self._repair_script} state: {exc!r} — "
+                    "assuming free",
+                    level="WARNING",
+                )
+                return True
+            if str(state) != "on":
+                return True
+            if elapsed >= SCRIPT_BUSY_WAIT_S:
+                return False
+            fr["detail"] = (
+                f"Waiting for repair script to be free... "
+                f"{elapsed}s/{SCRIPT_BUSY_WAIT_S}s"
+            )
+            await asyncio.sleep(REPAIR_POLL_INTERVAL_S)
+            elapsed += REPAIR_POLL_INTERVAL_S
 
     async def _run_health_checks_only(self) -> List[Dict[str, str]]:
         """Run all health checks without reporting to controller."""
@@ -838,11 +993,16 @@ class FanHealthChecker(hass.Hass):
     # ------------------------------------------------------------------
 
     def _aggregate_repair_status(self) -> str:
-        """Derive top-level repair status from per-fan states."""
+        """Derive top-level repair status from per-fan states.
+
+        Per-fan states never hold PENDING (the grace countdown is global), so
+        the global flag must be consulted or the card countdown and the
+        controller's pending paging-hold would never see it.
+        """
         statuses = [s["status"] for s in self._fan_repair_states.values()]
         if REPAIR_IN_PROGRESS in statuses:
             return REPAIR_IN_PROGRESS
-        if REPAIR_PENDING in statuses:
+        if REPAIR_PENDING in statuses or self._repair_status == REPAIR_PENDING:
             return REPAIR_PENDING
         if REPAIR_FAILED in statuses:
             return REPAIR_FAILED

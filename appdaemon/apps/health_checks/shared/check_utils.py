@@ -24,19 +24,50 @@ import aiohttp
 logger = logging.getLogger(__name__)
 
 
-async def ping_check(host: str, timeout_s: int = 2) -> Dict[str, str]:
-    """ICMP-ping *host* once and return a status dict.
+async def ping_check(
+    host: str,
+    timeout_s: int = 2,
+    attempts: int = 1,
+    retry_delay_s: float = 0.5,
+) -> Dict[str, str]:
+    """ICMP-ping *host* and return a status dict.
 
     Uses the system ``ping`` command.  Detects macOS (``-t``) vs
     Linux (``-W``) for the timeout flag so it works both in local dev
     and in the production Kubernetes container.
 
+    ``attempts`` > 1 retries after a miss (with ``retry_delay_s`` between
+    tries) and returns ok on the first success — useful for IoT devices in
+    Wi-Fi power-save that routinely drop a single ping.  The failure detail
+    reports the attempt count when more than one was made.
+
     Returns::
 
         {"status": "ok", "detail": "2.1ms"}
         {"status": "critical", "detail": "timeout"}
+        {"status": "critical", "detail": "timeout (3 attempts)"}
         {"status": "critical", "detail": "ping failed: <error>"}
     """
+    attempts = max(1, int(attempts))
+    last_result: Dict[str, str] = {"status": "critical", "detail": "timeout"}
+
+    for attempt in range(attempts):
+        if attempt > 0:
+            await asyncio.sleep(retry_delay_s)
+        last_result = await _ping_once(host, timeout_s)
+        if last_result["status"] == "ok":
+            return last_result
+
+    if attempts > 1:
+        last_result = {
+            "status": last_result["status"],
+            "detail": f"{last_result['detail']} ({attempts} attempts)",
+        }
+    return last_result
+
+
+async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
+    """Single ICMP ping — see ``ping_check``."""
     if sys.platform == "darwin":
         timeout_flag = "-t"
     else:

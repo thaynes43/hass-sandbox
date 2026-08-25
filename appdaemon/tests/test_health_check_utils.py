@@ -109,6 +109,49 @@ class TestPingCheck:
             assert "-W" in args
             assert "3" in args
 
+    def test_retry_recovers_after_miss(self):
+        """attempts>1: a miss followed by a success yields ok."""
+        procs = [
+            _make_process(returncode=1, stderr=b"Request timeout"),
+            _make_process(returncode=0),
+        ]
+        with patch(
+            "shared.check_utils.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            side_effect=procs,
+        ) as mock_exec:
+            result = _run(
+                ping_check("flaky.local", timeout_s=2, attempts=3, retry_delay_s=0)
+            )
+        assert result["status"] == "ok"
+        assert mock_exec.call_count == 2  # stopped at first success
+
+    def test_retry_exhausted_reports_attempts(self):
+        """attempts>1: all misses yields critical with attempt count."""
+        proc = _make_process(returncode=1, stderr=b"Request timeout")
+        with patch(
+            "shared.check_utils.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=proc,
+        ) as mock_exec:
+            result = _run(
+                ping_check("dead.local", timeout_s=2, attempts=3, retry_delay_s=0)
+            )
+        assert result["status"] == "critical"
+        assert result["detail"] == "timeout (3 attempts)"
+        assert mock_exec.call_count == 3
+
+    def test_single_attempt_detail_unchanged(self):
+        """Default attempts=1 keeps the original failure detail format."""
+        proc = _make_process(returncode=1, stderr=b"Request timeout")
+        with patch(
+            "shared.check_utils.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=proc,
+        ):
+            result = _run(ping_check("dead.local", timeout_s=2))
+        assert result["detail"] == "timeout"
+
 
 # ---------------------------------------------------------------------------
 # http_check tests

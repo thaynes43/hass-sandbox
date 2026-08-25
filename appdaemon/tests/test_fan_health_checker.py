@@ -70,6 +70,15 @@ SAMPLE_FANS = [
     },
 ]
 
+THIRD_FAN = {
+    "name": "White Room",
+    "entity_id": "fan.white_room_fan_fan",
+    "ip": "192.168.50.187",
+    "power_switch": "switch.upstairs_white_room_scene_controller",
+    "relay_control": "select.upstairs_white_room_scene_controller_relay_control",
+    "scene_control": "select.upstairs_white_room_scene_controller_scene_control_relay",
+}
+
 DEFAULT_ARGS: Dict[str, Any] = {
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
@@ -239,10 +248,16 @@ class TestChecks:
             "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
             new_callable=AsyncMock,
             return_value={"status": "ok", "detail": "3ms"},
-        ):
+        ) as mock_ping:
             result = _run(app._check_fan_ping(SAMPLE_FANS[0]))
         assert result["status"] == "ok"
         assert result["name"] == "Pink Room Ping"
+        # Pin the retry wiring — a silent revert to single-attempt pings
+        # reintroduces the false-warning noise from ESP power-save misses
+        mock_ping.assert_awaited_once_with(
+            SAMPLE_FANS[0]["ip"], attempts=fhc_module.PING_ATTEMPTS
+        )
+        assert fhc_module.PING_ATTEMPTS >= 2
 
     def test_fan_ping_critical(self):
         app = _make_app()
@@ -328,7 +343,9 @@ class TestAutoRepair:
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=10)
+        )
         app.create_task = MagicMock()
 
         results = [
@@ -347,7 +364,9 @@ class TestAutoRepair:
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        old = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        app._fan_unhealthy_since["Pink Room"] = old
+        app._fan_unhealthy_since["Blue Room"] = old
         app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
         app.create_task = MagicMock()
 
@@ -375,16 +394,19 @@ class TestAutoRepair:
             {"name": "Blue Room State", "status": "ok", "detail": "off"},
             {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
         ]
+        app._update_fan_unhealthy_timers(results)
         app._evaluate_auto_repair(results)
 
+        # Timer still accrues while disabled so enabling later has history
         assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
-        assert app._unhealthy_since is not None
+        assert app._fan_unhealthy_since["Pink Room"] is not None
+        assert app._fan_unhealthy_since["Blue Room"] is None
 
     def test_all_ok_cancels_pending(self):
         app = _make_app()
         _init_only(app)
         app._repair_status = REPAIR_PENDING
-        app._unhealthy_since = datetime.datetime.now()
+        app._fan_unhealthy_since["Pink Room"] = datetime.datetime.now()
         app._auto_repair_deadline = datetime.datetime.now()
 
         results = [
@@ -393,11 +415,274 @@ class TestAutoRepair:
             {"name": "Blue Room State", "status": "ok", "detail": "off"},
             {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
         ]
+        app._update_fan_unhealthy_timers(results)
         app._evaluate_auto_repair(results)
 
         assert app._repair_status == REPAIR_IDLE
-        assert app._unhealthy_since is None
+        assert app._fan_unhealthy_since["Pink Room"] is None
         assert app._auto_repair_deadline is None
+
+    def test_ping_only_failure_never_triggers_repair(self):
+        """A missed ping with the entity still reachable must not power-cycle.
+
+        Regression: single-packet ping misses (ESP Wi-Fi power-save) were
+        treated as failures and triggered hard resets of running fans.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "ok", "detail": "on"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        # Evaluate repeatedly — even sustained ping-only failure never repairs
+        for _ in range(3):
+            app._update_fan_unhealthy_timers(results)
+            app._evaluate_auto_repair(results)
+
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert app._fan_unhealthy_since["Pink Room"] is None
+        app.create_task.assert_not_called()
+
+    def test_second_fan_gets_own_grace_period(self):
+        """A newly-failing fan must serve its own delay even when another fan
+        has been down long past the deadline.
+
+        Regression: a single global unhealthy timer let one long-down fan
+        fast-track immediate hard resets of any other fan that blipped.
+        """
+        # Third healthy fan so two-down doesn't look like a systemic outage
+        app = _make_app({"fans": SAMPLE_FANS + [THIRD_FAN]})
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        # Pink Room down for 30 min, repair already attempted and failed
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+        app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            {"name": "White Room State", "status": "ok", "detail": "on"},
+            {"name": "White Room Ping", "status": "ok", "detail": "3ms"},
+        ]
+        app._update_fan_unhealthy_timers(results)
+        app._evaluate_auto_repair(results)
+
+        # Blue Room just failed — pending its own 5-min grace, NOT repaired
+        assert app._fan_repair_states["Blue Room"]["status"] == REPAIR_IDLE
+        assert app._repair_status == REPAIR_PENDING
+        assert app._fan_unhealthy_since["Blue Room"] is not None
+        expected_deadline = app._fan_unhealthy_since["Blue Room"] + datetime.timedelta(
+            minutes=5
+        )
+        assert app._auto_repair_deadline == expected_deadline
+        app.create_task.assert_not_called()
+
+    def test_fan_recovery_resets_grace_timer(self):
+        """A fan that recovers clears its timer; a later failure restarts it."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=10)
+        )
+        app.create_task = MagicMock()
+
+        ok_results = [
+            {"name": "Pink Room State", "status": "ok", "detail": "on"},
+            {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(ok_results)
+        app._evaluate_auto_repair(ok_results)
+        assert app._fan_unhealthy_since["Pink Room"] is None
+
+        bad_results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(bad_results)
+        app._evaluate_auto_repair(bad_results)
+        # Fresh timer → pending, not repaired
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert app._repair_status == REPAIR_PENDING
+        app.create_task.assert_not_called()
+
+    def test_auto_repair_picks_oldest_unhealthy_candidate_first(self):
+        """Ordering must follow unhealthy-since, not config order."""
+        app = _make_app({"fans": SAMPLE_FANS + [THIRD_FAN]})
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        now = datetime.datetime.now()
+        # Blue (config-second) down 30 min — past its deadline; Pink
+        # (config-first) blipped 1 min ago — grace not elapsed.
+        app._fan_unhealthy_since["Blue Room"] = now - datetime.timedelta(minutes=30)
+        app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=1)
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+            {"name": "Blue Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Blue Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "White Room State", "status": "ok", "detail": "on"},
+            {"name": "White Room Ping", "status": "ok", "detail": "3ms"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._fan_repair_states["Blue Room"]["status"] == REPAIR_IN_PROGRESS
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+
+    def test_disable_while_pending_clears_countdown(self):
+        """Turning auto-repair off mid-countdown must clear the pending state
+        so reports stop advertising a repair that can never fire."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(results)
+        app._evaluate_auto_repair(results)
+        assert app._repair_status == REPAIR_PENDING
+        assert app._auto_repair_deadline is not None
+
+        app._cached_auto_repair_enabled = False
+        app._update_fan_unhealthy_timers(results)
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+        # Timer keeps accruing so re-enabling computes from actual downtime
+        assert app._fan_unhealthy_since["Pink Room"] is not None
+        app.create_task.assert_not_called()
+
+    def test_all_fans_down_suspends_auto_repair(self):
+        """All fans entity-down at once is a systemic outage signature —
+        no fan should be power-cycled and timers stay cleared."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        all_down = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Blue Room Ping", "status": "critical", "detail": "timeout"},
+        ]
+        for _ in range(3):
+            app._update_fan_unhealthy_timers(all_down)
+            app._evaluate_auto_repair(all_down)
+
+        assert app._systemic_outage is True
+        assert all(t is None for t in app._fan_unhealthy_since.values())
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert app._fan_repair_states["Blue Room"]["status"] == REPAIR_IDLE
+        app.create_task.assert_not_called()
+
+        # Partial recovery: Blue back, Pink still down → fresh grace for Pink
+        partial = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(partial)
+        app._evaluate_auto_repair(partial)
+
+        assert app._systemic_outage is False
+        assert app._fan_unhealthy_since["Pink Room"] is not None
+        # Fresh timer → pending, not an instant repair
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert app._repair_status == REPAIR_PENDING
+        app.create_task.assert_not_called()
+
+    def test_unhealthy_timers_update_while_repair_active(self):
+        """Timers must track every cycle even while a repair is in progress —
+        a fan that recovers mid-repair must not keep a stale timer that
+        fast-tracks a later grace-less power-cycle."""
+        app = _make_app()
+        _init_only(app)
+        app._fan_repair_states["Pink Room"]["status"] = REPAIR_IN_PROGRESS
+        app._fan_unhealthy_since["Blue Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+        app.get_state = AsyncMock(return_value="on")
+
+        with patch(
+            "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ):
+            _run(app._run_checks())
+
+        # Blue recovered during Pink's repair — its stale timer is cleared
+        assert app._fan_unhealthy_since["Blue Room"] is None
+
+    def test_aggregate_status_reports_global_pending(self):
+        """The pending countdown is global (per-fan states never hold it);
+        the aggregate must surface it or the card countdown and the
+        controller's pending paging-hold never engage."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_PENDING
+
+        assert app._aggregate_repair_status() == REPAIR_PENDING
+        assert app._build_repair_state()["status"] == REPAIR_PENDING
+
+    def test_run_checks_evaluates_repair_on_raw_statuses(self):
+        """Auto-repair must see RAW statuses: an entity-down/ping-ok fan's
+        State check is critical when evaluated, even though the per-device
+        cross-check downgrades it to warning for reporting. Pins the
+        evaluate-before-cross-check ordering in _run_checks."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_delay_min = 5
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=10)
+        )
+        app.create_task = MagicMock()
+
+        async def fake_get_state(entity_id=None, *a, **kw):
+            if entity_id == PINK_ENTITY:
+                return "unavailable"
+            return "on"  # helpers: auto-repair toggle reads as enabled
+
+        app.get_state = AsyncMock(side_effect=fake_get_state)
+        with patch(
+            "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ):
+            _run(app._run_checks())
+
+        # Repair started — evaluate saw the raw critical State check (the
+        # cross-check downgrade to warning applies to reporting only)
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IN_PROGRESS
 
 
 # ---------------------------------------------------------------------------
@@ -421,13 +706,16 @@ class TestRepairExecution:
 
         _run(app._execute_fan_repair(SAMPLE_FANS[0]))
 
-        # Verify script was called with correct entities
+        # Verify script was invoked fire-and-forget with correct variables
         app.call_service.assert_called_once_with(
-            "script/zen32_hard_reset",
-            power_switch_entity="switch.upstairs_pink_room_scene_controller",
-            relay_control_select_entity="select.upstairs_pink_room_scene_controller_relay_control",
-            scene_control_select_entity="select.upstairs_pink_room_scene_controller_scene_control_relay",
-            unavailable_fan_entity="fan.pink_room_fan_fan",
+            "script/turn_on",
+            entity_id="script.zen32_hard_reset",
+            variables={
+                "power_switch_entity": "switch.upstairs_pink_room_scene_controller",
+                "relay_control_select_entity": "select.upstairs_pink_room_scene_controller_relay_control",
+                "scene_control_select_entity": "select.upstairs_pink_room_scene_controller_scene_control_relay",
+                "unavailable_fan_entity": "fan.pink_room_fan_fan",
+            },
         )
         assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_SUCCESS
 
@@ -458,6 +746,61 @@ class TestRepairExecution:
 
         assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
         assert "error" in app._fan_repair_states["Pink Room"]["detail"].lower()
+
+    def test_manual_repair_skips_ping_only_failing_fan(self):
+        """The manual Repair button power-cycles only entity-down fans — a
+        ping-only blip never earns a power cycle, even manually."""
+        app = _make_app()
+        _init_only(app)
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+                {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+                {"name": "Blue Room State", "status": "ok", "detail": "on"},
+                {"name": "Blue Room Ping", "status": "critical", "detail": "timeout"},
+            ]
+        )
+        app._execute_fan_repair = AsyncMock()
+
+        _run(app._repair_all_failing())
+
+        app._execute_fan_repair.assert_awaited_once_with(SAMPLE_FANS[0])
+
+    def test_repair_aborts_when_script_busy(self):
+        """The repair script is mode:single — turn_on while it runs is
+        silently dropped. The attempt must fail honestly, not pretend a
+        power-cycle happened and burn the fan's one attempt."""
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(return_value="on")  # script busy
+
+        with patch.object(fhc_module, "SCRIPT_BUSY_WAIT_S", 0):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
+        assert "busy" in app._fan_repair_states["Pink Room"]["detail"].lower()
+        services = [c[0][0] for c in app.call_service.call_args_list]
+        assert "script/turn_on" not in services
+
+    def test_repair_waits_then_proceeds_when_script_frees(self):
+        """A busy script that frees within the wait window → repair proceeds."""
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(side_effect=["on", "off"])
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Pink Room State", "status": "ok", "detail": "on"},
+                {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+                {"name": "Blue Room State", "status": "ok", "detail": "off"},
+                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+        with patch.object(fhc_module, "REPAIR_POLL_INTERVAL_S", 0):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        services = [c[0][0] for c in app.call_service.call_args_list]
+        assert "script/turn_on" in services
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_SUCCESS
 
     def test_manual_repair_resets_failed_states(self):
         app = _make_app()
@@ -838,8 +1181,8 @@ class TestStateRestore:
             _run(app._execute_fan_repair(SAMPLE_FANS[0]))
 
         services = [c[0][0] for c in app.call_service.call_args_list]
-        # Repair script called, then state restored
-        assert "script/zen32_hard_reset" in services
+        # Repair script called (via script/turn_on), then state restored
+        assert "script/turn_on" in services
         assert "fan/turn_on" in services
         assert "fan/set_percentage" in services
         assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_SUCCESS
