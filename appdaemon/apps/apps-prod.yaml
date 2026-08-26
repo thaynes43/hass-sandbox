@@ -1045,6 +1045,20 @@ shade_gateway_checker:
   disconnect_low_threshold: 5
   healthy_floor: 40
   recovery_settle_s: 900
+  # Direct gateway probes: ping both G3 gateways every cycle, plus the REST
+  # API on the primary (GET /home/shades). The gateway alert — and the PoE
+  # auto-restart below — require gateway-level evidence: a confirmed probe
+  # outage (2 consecutive failures) or >=2 shades dropping together. A
+  # single shade showing the 0% disconnect signature is a shade battery/RF
+  # fault (2026-08-26: First Floor Bathroom at -89 dBm), surfaced under
+  # Shade Batteries — we never PoE-cycle the gateway for one dead shade.
+  gateways:
+    - name: Upstairs
+      host: 192.168.0.153
+      api: true
+    - name: Downstairs
+      host: 192.168.0.210
+  min_shades_for_gateway: 2
   # Power-cycles the PoE port feeding the primary Upstairs-PowerView-G3
   # gateway. Verified as the correct fix even for first-floor shades.
   repair_button: button.switch_pro_max_48_poe_port_32_power_cycle

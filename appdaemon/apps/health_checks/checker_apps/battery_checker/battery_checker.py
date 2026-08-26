@@ -447,8 +447,8 @@ class BatteryChecker(hass.Hass):
                     "name": display_name,
                     "status": "warning",
                     "detail": (
-                        f"suspected gateway disconnect (was {prev_good:.0f}%, now "
-                        f"{value:.0f}%) — see Shade Gateway"
+                        f"shade unreachable (was {prev_good:.0f}%, now "
+                        f"{value:.0f}%) — dead battery or RF fault"
                     ),
                 }
             else:

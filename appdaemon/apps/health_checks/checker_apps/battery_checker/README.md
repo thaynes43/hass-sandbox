@@ -78,7 +78,7 @@ battery" produces false pages for a condition a human can't fix by charging.
 When `disconnect_aware: true`, an **implausible drop** — the last healthy
 reading was `>= disconnect_healthy_floor` and the current reading is
 `<= critical_threshold` — is reported as **warning** (UI-only, no page) with a
-`suspected gateway disconnect (was N%, now M%) — see Shade Gateway` detail,
+`shade unreachable (was N%, now M%) — dead battery or RF fault` detail,
 instead of `critical`. A genuine gradual decline (the last healthy reading was
 already below the floor) still pages `critical` as normal. The checker tracks
 the last healthy reading per entity, seeded from the current state at startup;
@@ -90,12 +90,14 @@ a cold start never fabricates a baseline from a low reading.
 | `disconnect_healthy_floor` | `40` | The last-healthy reading must be at or above this (%) for a drop to count as a suspected disconnect rather than a real low battery. |
 | `disconnect_low_threshold` | `critical_threshold` | Only readings at/below this (%) can be attributed to a disconnect. Set it below `critical_threshold` when the integration reports discrete bands and only the bottom band is an RF artifact — on G3 (`100/50/20/0`) a `20` is always a genuine measurement, so `shade_batteries` keys this at `5`. |
 
-This only *suppresses the false low-battery page*; paging and remediation for
-the disconnect itself are owned by the dedicated
-[`shade_gateway_checker`](../shade_gateway_checker/README.md), which detects the
-disconnect, waits out a grace period, and auto power-cycles the gateway.
-`shade_battery_checker` sets `disconnect_aware: true`; the other battery groups
-leave it off.
+The per-shade warning here is the canonical surface for a single unreachable
+shade (dead battery or RF fault). Paging and remediation for an actual
+*gateway* outage are owned by the dedicated
+[`shade_gateway_checker`](../shade_gateway_checker/README.md), which probes the
+gateways directly (ping + REST API) and only power-cycles the PoE port on
+gateway-level evidence — a confirmed probe failure or multiple shades dropping
+together. `shade_battery_checker` sets `disconnect_aware: true`; the other
+battery groups leave it off.
 
 ```yaml
 shade_battery_checker:

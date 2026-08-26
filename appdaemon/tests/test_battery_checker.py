@@ -750,7 +750,7 @@ class TestDisconnectAware:
         result = self._eval(app, "sensor.test_a", "Device A", "0")
 
         assert result["status"] == "warning"
-        assert "suspected gateway disconnect" in result["detail"]
+        assert "shade unreachable" in result["detail"]
         assert "100" in result["detail"]
         assert "0" in result["detail"]
 
@@ -768,7 +768,7 @@ class TestDisconnectAware:
         result = self._eval(app, "sensor.test_a", "Device A", "0")
 
         assert result["status"] == "critical"
-        assert "suspected gateway disconnect" not in result["detail"]
+        assert "shade unreachable" not in result["detail"]
 
     def test_low_baseline_decline_still_critical(self):
         """8% -> 0% (baseline already below healthy_floor) is a real dying
@@ -800,7 +800,7 @@ class TestDisconnectAware:
         result = self._eval(app, "sensor.test_a", "Device A", "0")
 
         assert result["status"] == "critical"
-        assert "suspected gateway disconnect" not in result["detail"]
+        assert "shade unreachable" not in result["detail"]
 
     def test_last_good_value_updated_above_critical_threshold(self):
         """A healthy reading should update the baseline for future comparisons."""
@@ -953,7 +953,7 @@ class TestDisconnectLowThreshold:
         result = self._eval(app, "sensor.test_a", "Device A", "20")
 
         assert result["status"] == "critical"
-        assert "suspected gateway disconnect" not in result["detail"]
+        assert "shade unreachable" not in result["detail"]
 
     def test_zero_from_healthy_baseline_still_downgraded(self):
         """100 -> 0 remains a suspected disconnect (warning, no page)."""
@@ -964,7 +964,7 @@ class TestDisconnectLowThreshold:
         result = self._eval(app, "sensor.test_a", "Device A", "0")
 
         assert result["status"] == "warning"
-        assert "suspected gateway disconnect" in result["detail"]
+        assert "shade unreachable" in result["detail"]
 
     def test_band_50_is_warning(self):
         app = _make_app(dict(self.G3_ARGS))

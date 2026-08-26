@@ -95,25 +95,60 @@ startup never fabricates an episode; an episode requires an *observed*
 healthy -> low transition via `listen_state` (or a seeded healthy baseline
 followed by an observed drop).
 
+## Gateway Attribution (2026-08-26)
+
+The gateway alert and the PoE auto-restart require **gateway-level evidence**;
+the battery-drop signature alone is not enough:
+
+- **Direct probes**: every configured gateway (`gateways:` list) is ICMP-pinged
+  each check cycle, and gateways flagged `api: true` also get a REST probe
+  (`GET http://<host>/home/shades`). One failed probe reports `warning`;
+  `probe_fail_confirm` (default 2) consecutive failures report `critical` and
+  start the repair clock (`_probe_down_since`). The debounce matters because
+  this checker carries a `for=0` alert override — an undebounced blip would
+  page instantly.
+- **Multi-shade corroboration**: a battery-drop episode counts as
+  gateway-attributed only when `min_shades_for_gateway` (default 2) distinct
+  shades contribute qualifying drops. This catches the RF-side-dead case where
+  the API still answers.
+- **Single-shade episode**: reported as `Gateway Link: ok` with a
+  `"gateway healthy; N shade(s) RF-disconnected (...) — see Shade Batteries"`
+  detail. The BatteryChecker's disconnect-aware guard owns surfacing that
+  shade (`shade unreachable — dead battery or RF fault` warning). No page, and
+  **never** a PoE power-cycle — rebooting the gateway for one dead shade blips
+  every other shade for nothing (incident: First Floor Bathroom at -89 dBm,
+  2026-08-26).
+
 ## Status Reporting
 
-Single aggregate check, `Gateway Link`:
+Aggregate check `Gateway Link`, plus one `"<name> Ping"` check per configured
+gateway and `"<name> API"` for gateways with `api: true`:
 
 | Condition | Status | Notes |
 |---|---|---|
 | No active episode | `ok` | `"<n> shade batteries reporting normally"` |
-| Episode active, within grace | `warning` | UI-only, no page. `"Disconnected {m}m; auto-restart at {iso}; affected: ..."` |
-| Episode active, past grace, repair `in_progress` | `critical` | Pages `ShadeGatewayDisconnected`. |
-| Episode active, past grace, auto-repair disabled or not yet triggered | `critical` | `"Disconnected {m}m (past {delay}m auto-restart deadline); affected: ..."` |
+| Episode active, single shade (not gateway-attributed) | `ok` | `"gateway healthy; ... — see Shade Batteries"` |
+| Episode active (≥2 shades), within grace | `warning` | UI-only, no page. `"Disconnected {m}m; auto-restart at {iso}; affected: ..."` |
+| Episode active (≥2 shades), past grace, repair `in_progress` | `critical` | Pages `ShadeGatewayDisconnected`. |
+| Episode active (≥2 shades), past grace, auto-repair disabled or not yet triggered | `critical` | `"Disconnected {m}m (past {delay}m auto-restart deadline); affected: ..."` |
 | Repair `failed` (timed out) | `critical` | `"Gateway power-cycle did not restore shades after {N}s — manual intervention needed"` — the human escalation page. |
+| Probe failing (1 consecutive) | `warning` | `"timeout (1/2 probes — confirming)"` |
+| Probe failing (≥`probe_fail_confirm` consecutive) | `critical` | Pages — the gateway itself is unreachable. |
 
 `repair_state` is included on every report (same shape as `SpaHealthChecker`).
 
 ## Repair Behavior
 
-1. At the auto-repair deadline (`disconnect_since + auto_repair_delay_min`),
+0. Auto-repair is **hard-gated on gateway attribution**: the repair clock
+   (`_gateway_unhealthy_since()`) only runs for a confirmed probe outage or a
+   ≥`min_shades_for_gateway` episode. A single-shade episode never schedules
+   auto-repair, and a pending countdown is cancelled if attribution drops to
+   single-shade. Manual repair via the card remains available regardless.
+1. At the auto-repair deadline (`gateway_unhealthy_since + auto_repair_delay_min`),
    `button.press` is called on the configured `repair_button` — a UniFi PoE
    port power-cycle button that restarts the primary PowerView gateway.
+   (Probe-attributed recovery additionally requires the probes to pass again
+   before the repair is declared successful.)
 2. Waits `repair_settle_s` (default 180s) for the gateway to reboot and
    shades to re-associate.
 3. Polls every 5s, up to a total of `repair_recovery_wait_s` (default 900s)
@@ -155,6 +190,14 @@ shade_gateway_checker:
   disconnect_low_threshold: 5          # % at/below which a reading is "zero-ish"
   healthy_floor: 40                    # % a baseline must be at/above to make a drop "implausible"
   recovery_settle_s: 900               # flap-free seconds required to clear an episode (ambient, no repair)
+  gateways:                            # direct probes; every host is pinged, api: true adds GET /home/shades
+    - name: Upstairs
+      host: 192.168.0.153
+      api: true                        # G3 REST API only answers on the primary
+    - name: Downstairs
+      host: 192.168.0.210
+  min_shades_for_gateway: 2            # battery-drop episodes need >=N shades to count as gateway evidence
+  probe_fail_confirm: 2                # consecutive probe failures before critical + repair clock
   repair_button: button.switch_pro_max_48_poe_port_32_power_cycle
   repair_settle_s: 180                 # wait after button press before polling; also the post-repair flap-free bar
   repair_recovery_wait_s: 900          # total elapsed budget (from button press) to confirm recovery
