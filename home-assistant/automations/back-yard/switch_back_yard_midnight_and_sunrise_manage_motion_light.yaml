@@ -1,0 +1,32 @@
+alias: "[Switch] : [Back Yard] : [Midnight and Sunrise] : [Manage Motion Light]"
+description: >
+  Turn the backyard motion light relay on at midnight and off at sunrise.
+mode: single
+trigger:
+  - platform: time
+    at: "00:00:00"
+    id: midnight_on
+  - platform: sun
+    event: sunrise
+    id: sunrise_off
+condition: []
+action:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: midnight_on
+        sequence:
+          - action: switch.turn_on
+            target:
+              entity_id:
+                - switch.back_yard_backyard_motion_light_relay
+            data: {}
+      - conditions:
+          - condition: trigger
+            id: sunrise_off
+        sequence:
+          - action: switch.turn_off
+            target:
+              entity_id:
+                - switch.back_yard_backyard_motion_light_relay
+            data: {}

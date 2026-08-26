@@ -75,19 +75,30 @@ views:
               - automation.switch_back_yard_slider_opens_turn_on_spotlight
               - automation.switch_back_yard_camera_detects_motion_turn_on_lights
               - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+        - entity: switch.back_yard_backyard_motion_light_relay
+          name: Motion
+          icon: mdi:motion-sensor
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
         bottom_layout: rows
-      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4\
-        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n  background-color:\
-        \ ${(() => {\n    return hass.states['light.front_yard_hue_calla_lights']?.state === 'on'\n  \
-        \    ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2\
-        \ {\n  background-color: ${(() => {\n    return hass.states['light.front_yard_hue_lily_lights']?.state\
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
+        .bubble-sub-button-5 {\n  transition: background-color 200ms ease;\n}\n.bubble-sub-button-1 {\n\
+        \  background-color: ${(() => {\n    return hass.states['light.front_yard_hue_calla_lights']?.state\
+        \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-2 {\n  background-color: ${(() => {\n    return hass.states['light.front_yard_hue_lily_lights']?.state\
         \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
         }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return hass.states['light.downstairs_kitchen_back_yard_spotlight']?.state\
         \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
         }\n${subButtonIcon[3].setAttribute(\"icon\", hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
         \ === 'off' ? 'mdi:lock' : 'mdi:hand-back-left')}\n.bubble-sub-button-4 {\n  background-color:\
         \ ${(() => {\n    return hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
-        \ === 'off'\n      ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
+        \ === 'off'\n      ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n\
+        .bubble-sub-button-5 {\n  background-color: ${(() => {\n    return hass.states['switch.back_yard_backyard_motion_light_relay']?.state\
+        \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }"
       rows: 1.719
       slider_fill_orientation: left
       slider_value_position: right

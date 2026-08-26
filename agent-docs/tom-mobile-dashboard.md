@@ -14,7 +14,7 @@ iterating on it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight toggles + Flood Hold |
+| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 | First Floor | "First Floor Lights" toggle (`light.first_floor_chaos_lights`) |
@@ -32,6 +32,11 @@ if Kellie Mobile's versions get improved, consider porting the improvements here
 - Front yard: `light.front_yard_hue_calla_lights`, `light.front_yard_hue_lily_lights` (Hue groups).
 - Backyard floodlight ("spotlight" elsewhere): `light.downstairs_kitchen_back_yard_spotlight`
   (Inovelli Blue dimmer).
+- **Motion**: `switch.back_yard_backyard_motion_light_relay` (Shelly 1 Mini Gen4) — powers the
+  backyard motion-sensing fixture. Plain toggle sub-button (`.bubble-sub-button-5`, accent tint
+  when on). Scheduled by
+  `automation.switch_back_yard_midnight_and_sunrise_manage_motion_light` (on at midnight, off at
+  sunrise; repo copy under `home-assistant/automations/back-yard/`).
 - **Flood Hold**: there is NO hold input_boolean. Manual hold = the three backyard occupancy
   automations disabled + switch LED set to the manual-hold color. The toggle calls
   `script.inovelli_toggle_mmwave_hold_led_indicator` with:
