@@ -57,9 +57,31 @@ class BatteryChecker(hass.Hass):
         self._disconnect_healthy_floor: float = float(
             args.get("disconnect_healthy_floor", 40)
         )
+        # Only readings at/below this value can be attributed to a disconnect
+        # rather than a real measurement. Defaults to critical_threshold (the
+        # original behavior). Set lower than critical_threshold when the
+        # integration reports discrete bands and only its bottom band can be
+        # an RF artifact — e.g. PowerView G3 reports 100/50/20/0 and maps
+        # RF-unreachable to 0, so a 20 is always a genuine measurement.
+        self._disconnect_low_threshold: float = float(
+            args.get("disconnect_low_threshold", self._critical_threshold)
+        )
         # entity_id -> last reading seen above critical_threshold (only
         # tracked/consulted when disconnect_aware is enabled).
         self._last_good_value: Dict[str, float] = {}
+
+        # Optional daily refresh sweep. Some integrations (PowerView G3) never
+        # re-measure battery on their own: the coordinator poll serves the
+        # hub's cached value forever, and only homeassistant.update_entity on
+        # the sensor triggers a real re-measure (shade.refresh_battery()).
+        # When set (e.g. "12:30:00"), all discovered entities get an explicit
+        # update_entity sweep once a day, in small staggered batches so the
+        # hub's radio queue is never flooded.
+        self._refresh_time: str = str(args.get("refresh_time") or "")
+        self._refresh_batch_size: int = int(args.get("refresh_batch_size", 6))
+        self._refresh_batch_spacing_s: int = int(
+            args.get("refresh_batch_spacing_s", 20)
+        )
 
         # Instance-level dependencies
         self._health_dependencies: List[dict] = list(
@@ -116,6 +138,16 @@ class BatteryChecker(hass.Hass):
 
         # Run first check after a short delay, then start periodic timer
         self.run_in(self._first_check, 5)
+
+        if self._refresh_time:
+            self.run_daily(self._refresh_tick, self._refresh_time)
+            self.log(
+                f"Daily battery refresh sweep scheduled at {self._refresh_time} "
+                f"for '{self._checker_id}' "
+                f"(batch={self._refresh_batch_size}, "
+                f"spacing={self._refresh_batch_spacing_s}s)",
+                level="INFO",
+            )
 
         self.log(
             f"BatteryChecker '{self._checker_name}' started with "
@@ -280,6 +312,53 @@ class BatteryChecker(hass.Hass):
         self._run_checks()
 
     # ------------------------------------------------------------------
+    # Daily battery refresh sweep
+    # ------------------------------------------------------------------
+
+    def _refresh_tick(self, kwargs: Any) -> None:
+        """Force the integration to re-measure every discovered battery.
+
+        Fans the entities out into staggered batches of
+        ``homeassistant.update_entity`` calls; the integration serializes the
+        actual radio traffic behind its own lock, the stagger just keeps the
+        request queue shallow.
+        """
+        entity_ids = sorted(self._entities)
+        if not entity_ids:
+            return
+
+        batches = [
+            entity_ids[i : i + self._refresh_batch_size]
+            for i in range(0, len(entity_ids), self._refresh_batch_size)
+        ]
+        self.log(
+            f"Battery refresh sweep for '{self._checker_id}': "
+            f"{len(entity_ids)} entities in {len(batches)} batches",
+            level="INFO",
+        )
+        for idx, batch in enumerate(batches):
+            self.run_in(
+                self._refresh_batch,
+                idx * self._refresh_batch_spacing_s,
+                entity_ids=batch,
+            )
+
+    def _refresh_batch(self, kwargs: Any) -> None:
+        """Issue one update_entity call for a batch of entities."""
+        entity_ids = kwargs.get("entity_ids") or []
+        if not entity_ids:
+            return
+        try:
+            self.call_service(
+                "homeassistant/update_entity", entity_id=entity_ids
+            )
+        except Exception as exc:
+            self.log(
+                f"Battery refresh batch failed for {entity_ids}: {exc}",
+                level="WARNING",
+            )
+
+    # ------------------------------------------------------------------
     # Check execution
     # ------------------------------------------------------------------
 
@@ -359,7 +438,10 @@ class BatteryChecker(hass.Hass):
         if value <= self._critical_threshold:
             prev_good = self._last_good_value.get(entity_id)
             if self._disconnect_aware and is_implausible_battery_drop(
-                prev_good, value, self._disconnect_healthy_floor, self._critical_threshold
+                prev_good,
+                value,
+                self._disconnect_healthy_floor,
+                self._disconnect_low_threshold,
             ):
                 result = {
                     "name": display_name,

@@ -89,6 +89,7 @@ def _make_app(extra_args: dict | None = None) -> BatteryChecker:
     app.fire_event = MagicMock()
     app.run_in = MagicMock()
     app.run_every = MagicMock()
+    app.run_daily = MagicMock()
     app.log = MagicMock()
     app.create_task = MagicMock()
 
@@ -835,3 +836,169 @@ class TestDisconnectAware:
         app = _make_app()
         _init_and_discover(app)
         assert app._last_good_value == {}
+
+
+# ------------------------------------------------------------------
+# Daily refresh sweep
+# ------------------------------------------------------------------
+
+
+class TestRefreshSweep:
+    """refresh_time schedules a daily homeassistant.update_entity sweep so
+    integrations that never re-measure battery on their own (PowerView G3)
+    produce fresh readings instead of serving a stale cached band forever."""
+
+    def test_refresh_time_schedules_daily(self):
+        app = _make_app({"refresh_time": "12:30:00"})
+        _startup(app)
+        app.run_daily.assert_called_once()
+        cb, when = app.run_daily.call_args[0][:2]
+        assert cb == app._refresh_tick
+        assert when == "12:30:00"
+
+    def test_no_refresh_time_no_schedule(self):
+        app = _make_app()
+        _startup(app)
+        app.run_daily.assert_not_called()
+
+    def test_refresh_tick_batches_and_staggers(self):
+        app = _make_app({
+            "refresh_time": "12:30:00",
+            "refresh_batch_size": 2,
+            "refresh_batch_spacing_s": 20,
+        })
+        _init_only(app)
+        app._entities = {
+            "sensor.a_battery": "A",
+            "sensor.b_battery": "B",
+            "sensor.c_battery": "C",
+            "sensor.d_battery": "D",
+            "sensor.e_battery": "E",
+        }
+        app.run_in.reset_mock()  # drop initialize()'s startup run_in call
+
+        app._refresh_tick({})
+
+        assert app.run_in.call_count == 3
+        calls = app.run_in.call_args_list
+        # Batches are sorted entity_ids chunked by 2, staggered 20s apart
+        assert calls[0][0][1] == 0
+        assert calls[0][1]["entity_ids"] == ["sensor.a_battery", "sensor.b_battery"]
+        assert calls[1][0][1] == 20
+        assert calls[1][1]["entity_ids"] == ["sensor.c_battery", "sensor.d_battery"]
+        assert calls[2][0][1] == 40
+        assert calls[2][1]["entity_ids"] == ["sensor.e_battery"]
+
+    def test_refresh_tick_no_entities_is_noop(self):
+        app = _make_app({"refresh_time": "12:30:00"})
+        _init_only(app)
+        app._entities = {}
+        app.run_in.reset_mock()  # drop initialize()'s startup run_in call
+        app._refresh_tick({})
+        app.run_in.assert_not_called()
+
+    def test_refresh_batch_calls_update_entity(self):
+        app = _make_app({"refresh_time": "12:30:00"})
+        _init_only(app)
+
+        app._refresh_batch({"entity_ids": ["sensor.a_battery", "sensor.b_battery"]})
+
+        app.call_service.assert_called_once_with(
+            "homeassistant/update_entity",
+            entity_id=["sensor.a_battery", "sensor.b_battery"],
+        )
+
+    def test_refresh_batch_service_error_is_swallowed(self):
+        app = _make_app({"refresh_time": "12:30:00"})
+        _init_only(app)
+        app.call_service = MagicMock(side_effect=RuntimeError("hub down"))
+
+        app._refresh_batch({"entity_ids": ["sensor.a_battery"]})  # must not raise
+
+    def test_refresh_batch_empty_is_noop(self):
+        app = _make_app({"refresh_time": "12:30:00"})
+        _init_only(app)
+        app._refresh_batch({"entity_ids": []})
+        app.call_service.assert_not_called()
+
+
+# ------------------------------------------------------------------
+# disconnect_low_threshold (discrete-band integrations, e.g. PowerView G3)
+# ------------------------------------------------------------------
+
+
+class TestDisconnectLowThreshold:
+    """With critical_threshold raised onto a real reporting band (G3's 20),
+    only readings at/below disconnect_low_threshold may be attributed to a
+    disconnect — a 20 is a genuine measurement and must page critical."""
+
+    G3_ARGS = {
+        "disconnect_aware": True,
+        "disconnect_healthy_floor": 40,
+        "disconnect_low_threshold": 5,
+        "critical_threshold": 20,
+        "warning_threshold": 50,
+    }
+
+    def _eval(self, app, entity_id, display_name, state_value):
+        app.get_state = MagicMock(return_value=state_value)
+        return app._evaluate_entity(entity_id, display_name)
+
+    def test_band_20_is_genuine_critical_even_from_healthy_baseline(self):
+        """100 -> 20 is a real measurement (not an RF artifact) and pages."""
+        app = _make_app(dict(self.G3_ARGS))
+        _init_only(app)
+        app._last_good_value["sensor.test_a"] = 100.0
+
+        result = self._eval(app, "sensor.test_a", "Device A", "20")
+
+        assert result["status"] == "critical"
+        assert "suspected gateway disconnect" not in result["detail"]
+
+    def test_zero_from_healthy_baseline_still_downgraded(self):
+        """100 -> 0 remains a suspected disconnect (warning, no page)."""
+        app = _make_app(dict(self.G3_ARGS))
+        _init_only(app)
+        app._last_good_value["sensor.test_a"] = 100.0
+
+        result = self._eval(app, "sensor.test_a", "Device A", "0")
+
+        assert result["status"] == "warning"
+        assert "suspected gateway disconnect" in result["detail"]
+
+    def test_band_50_is_warning(self):
+        app = _make_app(dict(self.G3_ARGS))
+        _init_only(app)
+
+        result = self._eval(app, "sensor.test_a", "Device A", "50")
+
+        assert result["status"] == "warning"
+        assert "warning" in result["detail"]
+
+    def test_band_100_is_ok(self):
+        app = _make_app(dict(self.G3_ARGS))
+        _init_only(app)
+
+        result = self._eval(app, "sensor.test_a", "Device A", "100")
+
+        assert result["status"] == "ok"
+
+    def test_50_to_20_decline_is_critical(self):
+        """The genuine G3 decline path: 50-band baseline dropping to 20."""
+        app = _make_app(dict(self.G3_ARGS))
+        _init_only(app)
+        app._last_good_value["sensor.test_a"] = 50.0
+
+        result = self._eval(app, "sensor.test_a", "Device A", "20")
+
+        assert result["status"] == "critical"
+
+    def test_default_low_threshold_falls_back_to_critical_threshold(self):
+        """Without disconnect_low_threshold the guard keys off
+        critical_threshold exactly as before this option existed."""
+        app = _make_app({
+            "disconnect_aware": True,
+            "critical_threshold": 5,
+        })
+        _init_only(app)
+        assert app._disconnect_low_threshold == 5.0

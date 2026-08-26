@@ -1007,14 +1007,27 @@ shade_battery_checker:
   checker_id: shade_batteries
   checker_name: Shade Batteries
   check_interval_s: 300
-  warning_threshold: 25
-  critical_threshold: 5
+  # PowerView G3 reports battery in four discrete bands: 100 (51-100%),
+  # 50 (21-50%), 20 (<=20%), 0 (dead). Thresholds sit on the bands:
+  # 50 -> warning (recharge in the coming weeks), 20 -> critical (charge
+  # now — on G3 a 20 is always a real measurement, never an RF artifact).
+  warning_threshold: 50
+  critical_threshold: 20
   # An implausible drop (was >=40%, now <=5%) is a suspected PowerView
   # gateway/RF disconnect, not a real battery — downgrade to warning
   # (UI-only) instead of paging. ShadeGatewayChecker owns paging for the
-  # disconnect itself; a genuine gradual decline still pages here.
+  # disconnect itself; a genuine gradual decline still pages here. Only a
+  # 0 can be a disconnect artifact on G3 (RF-unreachable maps to 0), so
+  # the disconnect guard is keyed at <=5, NOT at critical_threshold.
   disconnect_aware: true
   disconnect_healthy_floor: 40
+  disconnect_low_threshold: 5
+  # G3 hubs never re-measure battery on their own; the HA integration only
+  # calls shade.refresh_battery() when homeassistant.update_entity hits the
+  # sensor. Without this sweep every shade serves a stale cached band —
+  # observed 2026-08-26: 90 days of nothing but 100s, then the First Floor
+  # Bathroom shade cliff-dropped straight to 0 with zero warning.
+  refresh_time: "12:30:00"
   entity_patterns:
     - include: "sensor\\..*shade.*_battery$"
 
