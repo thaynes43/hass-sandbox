@@ -47,13 +47,19 @@ busy" instead of pretending a power-cycle happened.
 
 Each fan independently tracks its own repair state. When auto-repair triggers:
 
-1. Find the entity-down fan with repair status `idle` that has been unhealthy
-   the longest past its delay
+1. Find the entity-down fan whose repair is due soonest (first attempts are
+   due at their grace deadline; failed fans at their scheduled backoff retry)
 2. Call the repair script with that fan's zen32 entities
 3. Poll for recovery every ~5s for up to `repair_recovery_wait_s`
 4. On success, move to the next failing fan on the next check cycle
-5. On timeout, mark that fan `failed` and move to the next
-6. Each fan gets ONE auto-repair attempt — no auto-retry after failure
+5. On timeout, mark that fan `failed` and schedule its next retry
+6. **CrashLoopBackOff retries** — a failed repair never ends the episode:
+   the n-th failure schedules retry n+1 after `delay × 2^(n-1)` minutes
+   (5m → 10m → 20m → …), capped at `repair_backoff_max_min` (default 6h).
+   The attempt counter resets on recovery or manual repair. While a failed
+   fan is *not* entity-down, its scheduled retry keeps sliding to at least
+   one delay out — a stale schedule can never fire the instant the entity
+   blips down again.
 7. A fan's `failed` state resets to `idle` if its checks go green naturally
 
 ### Manual Repair
@@ -76,7 +82,8 @@ Restore is on by default; set `restore_state_enabled: false` to disable it. If n
 
 - Each fan uses a different zen32 controller — repairs run independently
 - Only `unavailable`/`unknown` states trigger repair (a fan that is `off` is healthy)
-- After failure, stays `failed` — no auto-retry
+- After failure, retries continue on the capped exponential backoff schedule —
+  never more often than the schedule allows, but never stopping entirely
 
 ## Self-Provisioned Entities
 
@@ -99,6 +106,7 @@ fan_health_checker:
   repair_recovery_wait_s: 300                        # Max wait for recovery after repair
   auto_repair_enabled_default: false                 # Default auto-repair toggle
   auto_repair_delay_min_default: 5                   # Default minutes before auto-repair
+  repair_backoff_max_min: 360                        # Backoff cap for repair retries (minutes)
   restore_state_enabled: true                        # Re-apply on/off + speed + direction after repair
   repair_script: script.zen32_hard_reset             # HA script entity for repair
   fans:

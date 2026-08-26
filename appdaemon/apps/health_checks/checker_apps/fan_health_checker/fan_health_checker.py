@@ -8,11 +8,14 @@ Performs two checks per fan on a configurable interval:
 
 All fans are reported as a single checker to avoid dashboard clutter.
 Supports per-fan repair via a configurable HA script (e.g. zen32_hard_reset).
-Each fan gets one auto-repair attempt before being marked failed.
 
 Auto-repair fires only for an entity-down fan (State check critical) and each
 fan accrues its own grace period — one long-failed fan never fast-tracks a
 power-cycle of another fan that merely blipped.
+
+Failed repairs retry with CrashLoopBackOff semantics: never stop, delay
+doubling per failure (delay × 2^(n-1)) capped at ``repair_backoff_max_min``.
+The counter resets on recovery or manual repair.
 
 Communication with the controller is event-only (never ``get_app``).
 """
@@ -113,12 +116,21 @@ class FanHealthChecker(hass.Hass):
             fan["entity_id"]: fan["name"] for fan in self._fans
         }
 
+        # CrashLoopBackOff cap for per-fan repair retries: the n-th failure
+        # schedules retry n+1 after delay × 2^(n-1) minutes, capped here
+        # (default 6h). Attempts reset on recovery or manual repair.
+        self._repair_backoff_max_min: int = int(
+            args.get("repair_backoff_max_min", 360)
+        )
+
         # Per-fan repair state
         self._fan_repair_states: Dict[str, Dict[str, Any]] = {
             fan["name"]: {
                 "status": REPAIR_IDLE,
                 "detail": "",
                 "last_repair_attempt": None,
+                "attempts": 0,
+                "next_retry_at": None,
             }
             for fan in self._fans
         }
@@ -139,6 +151,9 @@ class FanHealthChecker(hass.Hass):
         self._repair_status: str = REPAIR_IDLE
         self._auto_repair_deadline: Optional[datetime.datetime] = None
         self._repair_task: Optional[asyncio.Task] = None
+        # Set synchronously when a manual repair-all is scheduled so the
+        # auto-repair evaluator can't race in before the task starts
+        self._manual_repair_starting: bool = False
 
         # Cached auto-repair config (updated each async check cycle)
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
@@ -407,7 +422,7 @@ class FanHealthChecker(hass.Hass):
         return all(r["status"] == "ok" for r in fan_results)
 
     def _is_any_repair_active(self) -> bool:
-        return any(
+        return self._manual_repair_starting or any(
             s["status"] == REPAIR_IN_PROGRESS
             for s in self._fan_repair_states.values()
         )
@@ -424,6 +439,8 @@ class FanHealthChecker(hass.Hass):
                     )
                     fr["status"] = REPAIR_IDLE
                     fr["detail"] = ""
+                    fr["attempts"] = 0
+                    fr["next_retry_at"] = None
 
     # ------------------------------------------------------------------
     # Auto-repair logic
@@ -495,6 +512,7 @@ class FanHealthChecker(hass.Hass):
                 )
             for name in self._fan_unhealthy_since:
                 self._fan_unhealthy_since[name] = None
+                self._floor_stale_backoff(name, now)
             return
         if self._systemic_outage:
             self._systemic_outage = False
@@ -506,6 +524,13 @@ class FanHealthChecker(hass.Hass):
         for fan in self._fans:
             name = fan["name"]
             if self._is_fan_repair_worthy(fan, results):
+                # A success relapse (entity down again before a fully-clean
+                # cycle) starts a fresh episode instead of trapping in
+                # SUCCESS forever (attempts were already reset on success)
+                fr = self._fan_repair_states[name]
+                if fr["status"] == REPAIR_SUCCESS:
+                    fr["status"] = REPAIR_IDLE
+                    fr["detail"] = ""
                 if self._fan_unhealthy_since[name] is None:
                     self._fan_unhealthy_since[name] = now
                     self.log(
@@ -514,20 +539,53 @@ class FanHealthChecker(hass.Hass):
                     )
             else:
                 self._fan_unhealthy_since[name] = None
+                self._floor_stale_backoff(name, now)
+
+    def _floor_stale_backoff(self, name: str, now: datetime.datetime) -> None:
+        """Slide a FAILED fan's retry forward while it is not repair-worthy.
+
+        While a fan's entity is reachable (or a systemic outage suspends
+        timers), its scheduled backoff retry keeps sliding to at least
+        delay_min from now. This way a stale retry time can never fire the
+        instant the entity blips down again — the fan always gets at least
+        one full delay of sustained entity-down first — while the attempt
+        ladder is preserved (only full recovery resets it).
+        """
+        fr = self._fan_repair_states[name]
+        if fr["status"] != REPAIR_FAILED or not fr["next_retry_at"]:
+            return
+        _, delay_min = self._read_auto_repair_config()
+        floor = now + datetime.timedelta(minutes=delay_min)
+        if fr["next_retry_at"] < floor:
+            fr["next_retry_at"] = floor
 
     def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
         now = datetime.datetime.now()
+        enabled, delay_min = self._read_auto_repair_config()
 
-        # Candidates: entity-down fans that haven't already been attempted
-        candidates = [
-            f for f in self._fans
-            if self._fan_unhealthy_since[f["name"]] is not None
-            and self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
-        ]
+        # Candidates with their due time: entity-down fans that are either
+        # awaiting a first attempt (due = their grace deadline) or in a
+        # CrashLoopBackOff retry window after a failed attempt (due = the
+        # scheduled retry). A failed repair never ends the episode.
+        candidates: List[tuple] = []
+        for f in self._fans:
+            name = f["name"]
+            if self._fan_unhealthy_since[name] is None:
+                continue
+            fr = self._fan_repair_states[name]
+            if fr["status"] == REPAIR_IDLE:
+                due = self._fan_unhealthy_since[name] + datetime.timedelta(
+                    minutes=delay_min
+                )
+            elif fr["status"] == REPAIR_FAILED and fr["next_retry_at"]:
+                due = fr["next_retry_at"]
+            else:
+                continue
+            candidates.append((due, f))
 
         if not candidates:
-            # Nothing repair-worthy (healthy, ping-only blips, or already
-            # attempted) — clear any pending countdown
+            # Nothing repair-worthy (healthy, ping-only blips, or repair
+            # already running) — clear any pending countdown
             if self._repair_status == REPAIR_PENDING:
                 self.log(
                     "No repair-worthy fans — cancelling pending auto-repair",
@@ -537,7 +595,6 @@ class FanHealthChecker(hass.Hass):
                 self._auto_repair_deadline = None
             return
 
-        enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
             # Clear any countdown started before the toggle was switched off —
             # otherwise reports keep advertising a pending repair (with a
@@ -551,29 +608,36 @@ class FanHealthChecker(hass.Hass):
                 self._auto_repair_deadline = None
             return
 
-        # Oldest-unhealthy fan first; each fan's own timer gates its repair
-        candidates.sort(key=lambda f: self._fan_unhealthy_since[f["name"]])
-        fan = candidates[0]
-        deadline = self._fan_unhealthy_since[fan["name"]] + datetime.timedelta(
-            minutes=delay_min
-        )
+        # Earliest-due fan first (first attempts and backoff retries compete
+        # on equal terms)
+        candidates.sort(key=lambda t: t[0])
+        due, fan = candidates[0]
+        fr = self._fan_repair_states[fan["name"]]
 
-        if now >= deadline:
+        if now >= due:
+            attempt_no = fr["attempts"] + 1
             self.log(
                 f"Auto-repair triggered — starting with {fan['name']} "
-                f"(entity down since "
+                f"(attempt {attempt_no}, entity down since "
                 f"{self._fan_unhealthy_since[fan['name']].isoformat(timespec='seconds')})",
                 level="INFO",
             )
             self._start_fan_repair(fan)
-        else:
+        elif fr["status"] == REPAIR_IDLE:
+            # Pre-first-attempt grace countdown — cancellable pending
             self._repair_status = REPAIR_PENDING
-            self._auto_repair_deadline = deadline
+            self._auto_repair_deadline = due
             self.log(
                 f"Repair pending for {fan['name']} — deadline "
-                f"{deadline.isoformat(timespec='seconds')}",
+                f"{due.isoformat(timespec='seconds')}",
                 level="INFO",
             )
+        elif self._repair_status == REPAIR_PENDING:
+            # Waiting on a failed fan's backoff — not a cancellable
+            # pre-attempt countdown (the per-fan detail carries the retry
+            # time), so don't advertise pending
+            self._repair_status = REPAIR_IDLE
+            self._auto_repair_deadline = None
 
     # ------------------------------------------------------------------
     # State cache / restore
@@ -724,12 +788,16 @@ class FanHealthChecker(hass.Hass):
             self.log("Repair already in progress — ignoring", level="WARNING")
             return
 
-        # Reset failed states so they can be retried
+        # Reset failed states so they can be retried (fresh backoff episode)
         for fr in self._fan_repair_states.values():
             if fr["status"] == REPAIR_FAILED:
                 fr["status"] = REPAIR_IDLE
                 fr["detail"] = ""
+                fr["attempts"] = 0
+                fr["next_retry_at"] = None
 
+        # Block the auto-repair evaluator synchronously until the task runs
+        self._manual_repair_starting = True
         self._repair_task = self.create_task(self._repair_all_failing())
 
     def _start_fan_repair(self, fan: dict) -> None:
@@ -756,20 +824,23 @@ class FanHealthChecker(hass.Hass):
         Same repair-worthiness rule as auto-repair: only a fan whose entity is
         down gets power-cycled — a ping-only blip never does, even manually.
         """
-        # Run a fresh check to get current state
-        results = await self._run_health_checks_only()
-        repairable = [
-            f for f in self._fans
-            if self._is_fan_repair_worthy(f, results)
-            and self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
-        ]
+        try:
+            # Run a fresh check to get current state
+            results = await self._run_health_checks_only()
+            repairable = [
+                f for f in self._fans
+                if self._is_fan_repair_worthy(f, results)
+                and self._fan_repair_states[f["name"]]["status"] == REPAIR_IDLE
+            ]
 
-        if not repairable:
-            self.log("No fans to repair", level="INFO")
-            return
+            if not repairable:
+                self.log("No fans to repair", level="INFO")
+                return
 
-        for fan in repairable:
-            await self._execute_fan_repair(fan)
+            for fan in repairable:
+                await self._execute_fan_repair(fan)
+        finally:
+            self._manual_repair_starting = False
 
     async def _execute_fan_repair(self, fan: dict) -> None:
         """Call the repair script for a single fan and poll for recovery."""
@@ -792,11 +863,12 @@ class FanHealthChecker(hass.Hass):
         try:
             # The repair script is mode: single with a long cooldown tail — a
             # turn_on while it is still running is silently dropped and the
-            # fan would burn its one attempt without any power-cycle. Wait
-            # for the script to be free first.
+            # fan would burn the attempt without any power-cycle. Wait for
+            # the script to be free first.
             if not await self._wait_for_repair_script_free(fr):
-                fr["status"] = REPAIR_FAILED
-                fr["detail"] = "Repair script busy — no power-cycle attempted"
+                self._register_fan_repair_failure(
+                    fan_name, "Repair script busy — no power-cycle attempted"
+                )
                 self._repair_status = self._aggregate_repair_status()
                 self.log(
                     f"{fan_name} repair aborted — {self._repair_script} still "
@@ -852,6 +924,8 @@ class FanHealthChecker(hass.Hass):
 
                     fr["status"] = REPAIR_SUCCESS
                     fr["detail"] = f"Recovered after {elapsed}s"
+                    fr["attempts"] = 0
+                    fr["next_retry_at"] = None
                     self._repair_status = self._aggregate_repair_status()
                     self.log(
                         f"{fan_name} repair successful — recovered after {elapsed}s",
@@ -869,15 +943,17 @@ class FanHealthChecker(hass.Hass):
                     f"Waiting for recovery... {elapsed}s/{self._repair_recovery_wait_s}s"
                 )
 
-            # Timeout
-            fr["status"] = REPAIR_FAILED
-            fr["detail"] = (
-                f"Did not recover after {self._repair_recovery_wait_s}s"
+            # Timeout — schedule the next backoff retry
+            self._register_fan_repair_failure(
+                fan_name,
+                f"Did not recover after {self._repair_recovery_wait_s}s",
             )
             self._repair_status = self._aggregate_repair_status()
             self.log(
                 f"{fan_name} repair failed — no recovery after "
-                f"{self._repair_recovery_wait_s}s",
+                f"{self._repair_recovery_wait_s}s (attempt {fr['attempts']}; "
+                f"next retry at "
+                f"{fr['next_retry_at'].isoformat(timespec='seconds')})",
                 level="WARNING",
             )
             self._pending_repair_events.append({
@@ -888,11 +964,33 @@ class FanHealthChecker(hass.Hass):
             self._report_repair_status_only()
 
         except Exception as exc:
-            fr["status"] = REPAIR_FAILED
-            fr["detail"] = f"Repair error: {exc}"
+            self._register_fan_repair_failure(fan_name, f"Repair error: {exc}")
             self._repair_status = self._aggregate_repair_status()
             self.log(f"Repair error for {fan_name}: {exc!r}", level="ERROR")
             self._report_repair_status_only()
+
+    def _register_fan_repair_failure(self, fan_name: str, detail: str) -> None:
+        """Mark a fan's repair failed and schedule its next backoff retry.
+
+        CrashLoopBackOff semantics: the episode never ends on failure. The
+        n-th failure schedules retry n+1 after delay × 2^(n-1) minutes,
+        capped at repair_backoff_max_min. Reset on recovery/manual repair.
+        """
+        fr = self._fan_repair_states[fan_name]
+        fr["attempts"] += 1
+        _, delay_min = self._read_auto_repair_config()
+        backoff_min = min(
+            delay_min * (2 ** (fr["attempts"] - 1)),
+            self._repair_backoff_max_min,
+        )
+        fr["next_retry_at"] = datetime.datetime.now() + datetime.timedelta(
+            minutes=backoff_min
+        )
+        fr["status"] = REPAIR_FAILED
+        fr["detail"] = (
+            f"{detail} (attempt {fr['attempts']}; retry at "
+            f"{fr['next_retry_at'].strftime('%H:%M')})"
+        )
 
     async def _wait_for_repair_script_free(self, fr: Dict[str, Any]) -> bool:
         """Wait until the repair script entity is not running ('on').
@@ -1057,6 +1155,12 @@ class FanHealthChecker(hass.Hass):
                     "status": fr["status"],
                     "detail": fr["detail"],
                     "last_repair_attempt": fr["last_repair_attempt"],
+                    "attempts": fr["attempts"],
+                    "next_retry_at": (
+                        fr["next_retry_at"].isoformat(timespec="seconds")
+                        if fr["next_retry_at"]
+                        else None
+                    ),
                 }
                 for name, fr in self._fan_repair_states.items()
             },
