@@ -107,6 +107,21 @@ class SpaHealthChecker(hass.Hass):
         self._unhealthy_since: Optional[datetime.datetime] = None
         self._repair_task: Optional[asyncio.Task] = None
 
+        # How long to hold power off during a repair cycle. 10s proved too
+        # short for a wedged in.touch3 (2026-08-26: 10s cut failed, 60s cut
+        # recovered it), so default to a full minute.
+        self._repair_power_off_s: int = int(args.get("repair_power_off_s", 60))
+
+        # CrashLoopBackOff-style retry: a failed repair never ends the
+        # episode. Each failure schedules the next attempt at
+        # delay × 2^(n-1) minutes, capped here (default 6h). Attempts reset
+        # on full recovery or manual repair.
+        self._repair_backoff_max_min: int = int(
+            args.get("repair_backoff_max_min", 360)
+        )
+        self._repair_attempts: int = 0
+        self._next_retry_at: Optional[datetime.datetime] = None
+
         # Repair-conclusion events awaiting delivery to the controller
         # (drained into the next report_status payload — see
         # _record_repair_event / _drain_pending_repair_events).
@@ -275,6 +290,14 @@ class SpaHealthChecker(hass.Hass):
         action = data.get("action", "")
         if action == "start_repair":
             self.log("Manual repair requested", level="INFO")
+            if self._repair_status == REPAIR_IN_PROGRESS:
+                # _start_repair would ignore the request — don't let an
+                # ignored tap wipe the backoff ladder mid-repair
+                self.log("Repair already in progress — ignoring", level="WARNING")
+                return
+            # Manual repair starts a fresh backoff episode
+            self._repair_attempts = 0
+            self._next_retry_at = None
             self._start_repair()
         elif action == "cancel_repair":
             self._cancel_repair()
@@ -510,14 +533,30 @@ class SpaHealthChecker(hass.Hass):
                 self._repair_detail = ""
                 self._auto_repair_deadline = None
                 self._unhealthy_since = None
+                self._repair_attempts = 0
+                self._next_retry_at = None
             return
 
-        # Don't trigger auto-repair from "success" state (waiting for checks to clear)
+        # A success relapse (critical again before an all-ok cycle) starts a
+        # fresh episode instead of trapping in SUCCESS forever (attempts were
+        # already reset on success); fall through to the normal grace path.
         if self._repair_status == REPAIR_SUCCESS:
-            return
+            self._repair_status = REPAIR_IDLE
+            self._repair_detail = ""
 
         # Only trigger on actual critical (after cross-check, partial failures are warning)
         if not any_critical:
+            # A non-critical interlude suspends the FAILED backoff clock:
+            # keep the scheduled retry at least delay_min out so a later
+            # return to critical must be sustained before a stale retry can
+            # fire — never an instant power-cycle off an hours-old schedule.
+            if self._repair_status == REPAIR_FAILED and self._next_retry_at:
+                _, delay_min = self._read_auto_repair_config()
+                floor = datetime.datetime.now() + datetime.timedelta(
+                    minutes=delay_min
+                )
+                if self._next_retry_at < floor:
+                    self._next_retry_at = floor
             return
 
         enabled, delay_min = self._read_auto_repair_config()
@@ -553,6 +592,18 @@ class SpaHealthChecker(hass.Hass):
             # Check if deadline has been reached
             if self._auto_repair_deadline and now >= self._auto_repair_deadline:
                 self.log("Auto-repair deadline reached — starting repair", level="INFO")
+                self._start_repair()
+
+        elif self._repair_status == REPAIR_FAILED:
+            # CrashLoopBackOff retry: a failed repair never ends the episode —
+            # retry once the scheduled backoff expires. (No _next_retry_at
+            # means the failure was unrepairable, e.g. no switch configured.)
+            if self._next_retry_at and now >= self._next_retry_at:
+                self.log(
+                    f"Repair backoff expired (attempt {self._repair_attempts} "
+                    "failed) — retrying repair",
+                    level="INFO",
+                )
                 self._start_repair()
 
     # ------------------------------------------------------------------
@@ -630,7 +681,7 @@ class SpaHealthChecker(hass.Hass):
                 entity_id=self._repair_switch,
             )
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(self._repair_power_off_s)
 
             # Turn on
             self.log(f"Turning on {self._repair_switch}", level="INFO")
@@ -657,6 +708,8 @@ class SpaHealthChecker(hass.Hass):
                         f"Recovered after {elapsed}s"
                     )
                     self._unhealthy_since = None
+                    self._repair_attempts = 0
+                    self._next_retry_at = None
                     self._record_repair_event("success", duration_s=elapsed)
                     self.log(
                         f"Repair successful — recovered after {elapsed}s",
@@ -669,26 +722,50 @@ class SpaHealthChecker(hass.Hass):
                     f"Waiting for recovery... {elapsed}s/{self._repair_recovery_wait_s}s"
                 )
 
-            # Timed out — repair failed
-            self._repair_status = REPAIR_FAILED
-            self._repair_detail = (
+            # Timed out — repair failed; schedule the next backoff retry
+            self._register_repair_failure(
                 f"Did not recover after {self._repair_recovery_wait_s}s"
             )
             self._record_repair_event(
                 "failed", duration_s=self._repair_recovery_wait_s
             )
             self.log(
-                f"Repair failed — no recovery after {self._repair_recovery_wait_s}s",
+                f"Repair failed — no recovery after "
+                f"{self._repair_recovery_wait_s}s (attempt "
+                f"{self._repair_attempts}; next retry at "
+                f"{self._next_retry_at.isoformat(timespec='seconds')})",
                 level="WARNING",
             )
             self._report_repair_status_only()
 
         except Exception as exc:
-            self._repair_status = REPAIR_FAILED
-            self._repair_detail = f"Repair error: {exc}"
+            self._register_repair_failure(f"Repair error: {exc}")
             self._record_repair_event("failed")
             self.log(f"Repair execution error: {exc!r}", level="ERROR")
             self._report_repair_status_only()
+
+    def _register_repair_failure(self, detail: str) -> None:
+        """Mark the repair failed and schedule the next retry.
+
+        CrashLoopBackOff semantics: the episode never ends on failure. The
+        n-th failure schedules retry n+1 after delay × 2^(n-1) minutes,
+        capped at repair_backoff_max_min. The counter resets only on full
+        recovery or a manual repair.
+        """
+        self._repair_attempts += 1
+        _, delay_min = self._read_auto_repair_config()
+        backoff_min = min(
+            delay_min * (2 ** (self._repair_attempts - 1)),
+            self._repair_backoff_max_min,
+        )
+        self._next_retry_at = datetime.datetime.now() + datetime.timedelta(
+            minutes=backoff_min
+        )
+        self._repair_status = REPAIR_FAILED
+        self._repair_detail = (
+            f"{detail} (attempt {self._repair_attempts}; retry at "
+            f"{self._next_retry_at.strftime('%H:%M')})"
+        )
 
     async def _run_health_checks_only(self) -> List[Dict[str, str]]:
         """Run all health checks and return results (without reporting)."""
@@ -771,4 +848,10 @@ class SpaHealthChecker(hass.Hass):
                 else None
             ),
             "last_repair_attempt": self._last_repair_attempt,
+            "repair_attempts": self._repair_attempts,
+            "next_retry_at": (
+                self._next_retry_at.isoformat(timespec="seconds")
+                if self._next_retry_at
+                else None
+            ),
         }

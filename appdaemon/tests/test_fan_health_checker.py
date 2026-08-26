@@ -643,6 +643,249 @@ class TestAutoRepair:
         # Blue recovered during Pink's repair — its stale timer is cleared
         assert app._fan_unhealthy_since["Blue Room"] is None
 
+    def test_failed_fan_waits_for_backoff(self):
+        """A failed fan must not retry before its scheduled backoff — and a
+        backoff wait is NOT advertised as a cancellable pending countdown
+        (the per-fan detail carries the retry time instead)."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        retry_at = datetime.datetime.now() + datetime.timedelta(minutes=10)
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+        app._fan_repair_states["Pink Room"].update(
+            {"status": REPAIR_FAILED, "attempts": 1, "next_retry_at": retry_at}
+        )
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
+        assert app._repair_status != REPAIR_PENDING
+        assert app._auto_repair_deadline is None
+        app.create_task.assert_not_called()
+
+    def test_stale_backoff_cannot_fire_instantly_on_reblip(self):
+        """Regression: a FAILED fan with a long-past retry recovers its
+        entity (ping still bad, so no full reset), then blips down again —
+        the stale schedule must NOT fire instantly; the ladder is kept."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(hours=3)
+        )
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 2,
+                "next_retry_at": datetime.datetime.now()
+                - datetime.timedelta(hours=2),
+            }
+        )
+        app.create_task = MagicMock()
+
+        # Partial recovery: entity back, ping still failing
+        partial = [
+            {"name": "Pink Room State", "status": "ok", "detail": "off"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(partial)
+        app._evaluate_auto_repair(partial)
+        app.create_task.assert_not_called()
+
+        # Entity blips down again — stale retry must not fire immediately
+        reblip = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(reblip)
+        app._evaluate_auto_repair(reblip)
+
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["attempts"] == 2  # ladder preserved
+        app.create_task.assert_not_called()
+
+    def test_success_relapse_starts_fresh_episode(self):
+        """A fan stuck in SUCCESS whose entity dies again (before a fully
+        clean cycle) must start a fresh episode, not trap forever."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._fan_repair_states["Pink Room"]["status"] = REPAIR_SUCCESS
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._update_fan_unhealthy_timers(results)
+        app._evaluate_auto_repair(results)
+
+        # Demoted to a fresh IDLE episode with the grace countdown pending
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert app._repair_status == REPAIR_PENDING
+        app.create_task.assert_not_called()
+
+    def test_disabled_blocks_due_fan_retry(self):
+        """Disabling auto-repair mid-backoff must block a due retry."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 5
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 1,
+                "next_retry_at": datetime.datetime.now()
+                - datetime.timedelta(seconds=1),
+            }
+        )
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
+        app.create_task.assert_not_called()
+
+    def test_failed_fan_retries_after_backoff_expires(self):
+        """CrashLoopBackOff: an entity-down failed fan retries once its
+        backoff expires — a failed repair never ends the episode."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 1,
+                "next_retry_at": datetime.datetime.now()
+                - datetime.timedelta(seconds=1),
+            }
+        )
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IN_PROGRESS
+        app.create_task.assert_called_once()
+
+    def test_fan_backoff_doubles_and_caps(self):
+        """Per-fan backoff: delay × 2^(n-1) minutes, capped at
+        repair_backoff_max_min."""
+        app = _make_app({"repair_backoff_max_min": 20})
+        _init_only(app)
+        app._cached_auto_repair_delay_min = 5
+
+        expected_minutes = [5, 10, 20, 20]  # doubles then caps at 20
+        for n, expected in enumerate(expected_minutes, start=1):
+            before = datetime.datetime.now()
+            app._register_fan_repair_failure("Pink Room", "Did not recover")
+            fr = app._fan_repair_states["Pink Room"]
+            assert fr["attempts"] == n
+            assert fr["status"] == REPAIR_FAILED
+            delta_min = (fr["next_retry_at"] - before).total_seconds() / 60
+            assert abs(delta_min - expected) < 0.1, (
+                f"attempt {n}: expected ~{expected}m, got {delta_min:.2f}m"
+            )
+            assert f"attempt {n}" in fr["detail"]
+        # Other fans untouched
+        assert app._fan_repair_states["Blue Room"]["attempts"] == 0
+
+    def test_fan_recovery_resets_backoff_counter(self):
+        """Natural recovery ends the fan's episode: counter and schedule reset."""
+        app = _make_app()
+        _init_only(app)
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 3,
+                "next_retry_at": datetime.datetime.now(),
+            }
+        )
+
+        results = [
+            {"name": "Pink Room State", "status": "ok", "detail": "on"},
+            {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+            {"name": "Blue Room State", "status": "ok", "detail": "off"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+        ]
+        app._reset_recovered_fans(results)
+
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_IDLE
+        assert fr["attempts"] == 0
+        assert fr["next_retry_at"] is None
+
+    def test_earliest_due_wins_between_first_attempt_and_retry(self):
+        """A backoff retry due now must not be starved by a newer IDLE fan
+        whose grace deadline is later (and vice versa — due times compete)."""
+        app = _make_app({"fans": SAMPLE_FANS + [THIRD_FAN]})
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        now = datetime.datetime.now()
+        # Pink: failed, retry became due 1 min ago
+        app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=60)
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 1,
+                "next_retry_at": now - datetime.timedelta(minutes=1),
+            }
+        )
+        # Blue: idle, entity down 2 min — grace deadline still 3 min away
+        app._fan_unhealthy_since["Blue Room"] = now - datetime.timedelta(minutes=2)
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+            {"name": "Blue Room State", "status": "critical", "detail": "unavailable"},
+            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+            {"name": "White Room State", "status": "ok", "detail": "on"},
+            {"name": "White Room Ping", "status": "ok", "detail": "3ms"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IN_PROGRESS
+        assert app._fan_repair_states["Blue Room"]["status"] == REPAIR_IDLE
+
     def test_aggregate_status_reports_global_pending(self):
         """The pending countdown is global (per-fan states never hold it);
         the aggregate must surface it or the card countdown and the
@@ -734,8 +977,15 @@ class TestRepairExecution:
 
         _run(app._execute_fan_repair(SAMPLE_FANS[0]))
 
-        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
-        assert "Did not recover" in app._fan_repair_states["Pink Room"]["detail"]
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert "Did not recover" in fr["detail"]
+        # Failure must schedule a backoff retry (terminal-FAILED mutant fails)
+        assert fr["attempts"] == 1
+        delta_min = (
+            fr["next_retry_at"] - datetime.datetime.now()
+        ).total_seconds() / 60
+        assert abs(delta_min - app._cached_auto_repair_delay_min) < 0.5
 
     def test_execute_fan_repair_error(self):
         app = _make_app()
@@ -744,8 +994,11 @@ class TestRepairExecution:
 
         _run(app._execute_fan_repair(SAMPLE_FANS[0]))
 
-        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
-        assert "error" in app._fan_repair_states["Pink Room"]["detail"].lower()
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert "error" in fr["detail"].lower()
+        assert fr["attempts"] == 1
+        assert fr["next_retry_at"] is not None
 
     def test_manual_repair_skips_ping_only_failing_fan(self):
         """The manual Repair button power-cycles only entity-down fans — a
@@ -777,8 +1030,11 @@ class TestRepairExecution:
         with patch.object(fhc_module, "SCRIPT_BUSY_WAIT_S", 0):
             _run(app._execute_fan_repair(SAMPLE_FANS[0]))
 
-        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
-        assert "busy" in app._fan_repair_states["Pink Room"]["detail"].lower()
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert "busy" in fr["detail"].lower()
+        assert fr["attempts"] == 1
+        assert fr["next_retry_at"] is not None
         services = [c[0][0] for c in app.call_service.call_args_list]
         assert "script/turn_on" not in services
 

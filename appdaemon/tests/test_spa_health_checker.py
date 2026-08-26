@@ -54,6 +54,7 @@ DEFAULT_ARGS: Dict[str, Any] = {
     "staleness_threshold_s": 300,
     "repair_switch": "switch.power_distribution_hi_density_hot_tub",
     "repair_recovery_wait_s": 300,
+    "repair_power_off_s": 1,  # keep _execute_repair tests fast
     "check_interval_s": 120,
     "auto_repair_enabled_default": False,
     "auto_repair_delay_min_default": 15,
@@ -379,14 +380,17 @@ class TestRepairStateMachine:
 
         assert app._repair_status == REPAIR_IN_PROGRESS
 
-    def test_failed_stays_failed_no_auto_retry(self):
-        """Failed repair should NOT auto-retry."""
+    def test_failed_waits_for_backoff_before_retry(self):
+        """A failed repair must not retry before its scheduled backoff."""
         app = _make_app()
         _init_only(app)
         app._repair_status = REPAIR_FAILED
         app._repair_detail = "Did not recover"
+        app._repair_attempts = 1
+        app._next_retry_at = datetime.datetime.now() + datetime.timedelta(minutes=5)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -394,6 +398,183 @@ class TestRepairStateMachine:
         app._evaluate_auto_repair(results)
 
         assert app._repair_status == REPAIR_FAILED
+        app.create_task.assert_not_called()
+
+    def test_failed_retries_after_backoff_expires(self):
+        """CrashLoopBackOff: once the backoff expires and checks are still
+        critical, the repair retries — a failed repair never ends the episode."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_attempts = 1
+        app._next_retry_at = datetime.datetime.now() - datetime.timedelta(seconds=1)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_IN_PROGRESS
+        app.create_task.assert_called_once()
+
+    def test_failed_without_schedule_never_retries(self):
+        """FAILED with no next_retry_at (unrepairable, e.g. no switch
+        configured) must stay failed."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._next_retry_at = None
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_FAILED
+        app.create_task.assert_not_called()
+
+    def test_backoff_doubles_per_failure_and_caps(self):
+        """Backoff schedule: delay × 2^(n-1) minutes, capped at
+        repair_backoff_max_min."""
+        app = _make_app({"repair_backoff_max_min": 60})
+        _init_only(app)
+        app._cached_auto_repair_delay_min = 15
+
+        expected_minutes = [15, 30, 60, 60, 60]  # doubles then caps at 60
+        for n, expected in enumerate(expected_minutes, start=1):
+            before = datetime.datetime.now()
+            app._register_repair_failure("Did not recover")
+            assert app._repair_attempts == n
+            assert app._repair_status == REPAIR_FAILED
+            delta_min = (app._next_retry_at - before).total_seconds() / 60
+            assert abs(delta_min - expected) < 0.1, (
+                f"attempt {n}: expected ~{expected}m, got {delta_min:.2f}m"
+            )
+            assert f"attempt {n}" in app._repair_detail
+
+    def test_recovery_resets_backoff_counter(self):
+        """Full recovery ends the episode: attempts and retry schedule reset."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_attempts = 3
+        app._next_retry_at = datetime.datetime.now()
+
+        results = [
+            {"name": "Gateway Ping", "status": "ok", "detail": ""},
+            {"name": "Overall Connection", "status": "ok", "detail": ""},
+            {"name": "Staleness", "status": "ok", "detail": ""},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._repair_attempts == 0
+        assert app._next_retry_at is None
+
+    def test_warning_interlude_slides_failed_backoff(self):
+        """A non-critical interlude suspends the FAILED backoff clock: a
+        stale retry keeps sliding forward so it can never fire the instant
+        critical resumes. The attempt ladder is preserved."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_attempts = 2
+        app._next_retry_at = datetime.datetime.now() - datetime.timedelta(hours=2)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 15
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Gateway Ping", "status": "ok", "detail": "5ms"},
+            {"name": "Overall Connection", "status": "warning", "detail": ""},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_attempts == 2  # ladder preserved
+        delta_min = (
+            app._next_retry_at - datetime.datetime.now()
+        ).total_seconds() / 60
+        assert delta_min > 14  # slid to at least delay_min out
+        app.create_task.assert_not_called()
+
+    def test_success_relapse_starts_fresh_episode(self):
+        """SUCCESS followed by critical (before an all-ok cycle) must start
+        a fresh episode, not trap in SUCCESS forever."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_SUCCESS
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 15
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        # Demoted into a fresh grace-gated episode
+        assert app._repair_status == REPAIR_PENDING
+        assert app._unhealthy_since is not None
+        app.create_task.assert_not_called()
+
+    def test_failed_due_retry_blocked_when_disabled(self):
+        """Disabling auto-repair mid-backoff must block a due retry."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_attempts = 1
+        app._next_retry_at = datetime.datetime.now() - datetime.timedelta(seconds=1)
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 15
+        app.create_task = MagicMock()
+
+        results = [
+            {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
+        ]
+        app._evaluate_auto_repair(results)
+
+        assert app._repair_status == REPAIR_FAILED
+        app.create_task.assert_not_called()
+
+    def test_manual_repair_ignored_mid_repair_keeps_ladder(self):
+        """A manual repair tap during an in-flight repair is ignored and
+        must NOT wipe the backoff counters."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._repair_attempts = 3
+        retry_at = datetime.datetime.now() + datetime.timedelta(hours=1)
+        app._next_retry_at = retry_at
+        app.create_task = MagicMock()
+
+        app._on_repair_command(
+            "health_check_repair_spa", {"action": "start_repair"}, None
+        )
+
+        assert app._repair_attempts == 3
+        assert app._next_retry_at == retry_at
+        app.create_task.assert_not_called()
+
+    def test_manual_repair_resets_backoff_counter(self):
+        """Manual repair starts a fresh backoff episode."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._repair_attempts = 4
+        app._next_retry_at = datetime.datetime.now() + datetime.timedelta(hours=2)
+        app.create_task = MagicMock()
+
+        app._on_repair_command("health_check_repair_spa", {"action": "start_repair"}, None)
+
+        assert app._repair_attempts == 0
+        assert app._repair_status == REPAIR_IN_PROGRESS
 
     def test_failed_clears_when_checks_recover(self):
         """REPAIR_FAILED should reset to IDLE when all checks pass."""
@@ -513,6 +694,12 @@ class TestRepairExecution:
 
         assert app._repair_status == REPAIR_FAILED
         assert "Did not recover" in app._repair_detail
+        # Failure must schedule a backoff retry (terminal-FAILED mutant fails)
+        assert app._repair_attempts == 1
+        delta_min = (
+            app._next_retry_at - datetime.datetime.now()
+        ).total_seconds() / 60
+        assert abs(delta_min - app._cached_auto_repair_delay_min) < 0.5
 
     def test_execute_repair_error_handling(self):
         """Errors during repair should set status to failed."""
@@ -525,6 +712,33 @@ class TestRepairExecution:
 
         assert app._repair_status == REPAIR_FAILED
         assert "error" in app._repair_detail.lower()
+        assert app._repair_attempts == 1
+        assert app._next_retry_at is not None
+
+    def test_power_off_default_is_60(self):
+        """Default power-off hold is 60s (10s proved too short for a wedged
+        in.touch3)."""
+        app = _make_app()
+        del app.args["repair_power_off_s"]
+        _init_only(app)
+        assert app._repair_power_off_s == 60
+
+    def test_power_off_hold_used_in_execute(self):
+        """_execute_repair holds power off for repair_power_off_s."""
+        app = _make_app({"repair_power_off_s": 37, "repair_recovery_wait_s": 10})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._run_health_checks_only = AsyncMock(
+            return_value=[
+                {"name": "Gateway Ping", "status": "ok", "detail": "5ms"},
+            ]
+        )
+        with patch(
+            "health_checks.checker_apps.spa_health_checker.spa_health_checker.asyncio.sleep",
+            new_callable=AsyncMock,
+        ) as mock_sleep:
+            _run(app._execute_repair())
+        assert 37 in [c[0][0] for c in mock_sleep.call_args_list]
 
 
 # ---------------------------------------------------------------------------
