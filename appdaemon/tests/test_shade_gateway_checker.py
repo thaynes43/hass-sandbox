@@ -499,7 +499,10 @@ class TestGraceAndResults:
         _init_and_discover(app)
         app._cached_auto_repair_delay_min = 120
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
-        app._episode_affected = {"sensor.test_shade_a_battery": datetime.datetime.now()}
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
 
         results = app._build_results()
 
@@ -512,6 +515,10 @@ class TestGraceAndResults:
         _init_and_discover(app)
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
 
         results = app._build_results()
 
@@ -522,6 +529,10 @@ class TestGraceAndResults:
         app = _make_app()
         _init_and_discover(app)
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
         app._repair_status = REPAIR_FAILED
         app._repair_detail = "Gateway power-cycle did not restore shades after 900s — manual intervention needed"
 
@@ -536,6 +547,10 @@ class TestGraceAndResults:
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 120
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=5)
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
 
         app._evaluate_auto_repair()
 
@@ -549,6 +564,10 @@ class TestGraceAndResults:
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
 
         app._evaluate_auto_repair()
 
@@ -586,6 +605,10 @@ class TestGraceAndResults:
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=30)
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
         app._repair_status = REPAIR_FAILED
         app._repair_attempted_this_episode = True
 
@@ -601,6 +624,10 @@ class TestGraceAndResults:
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=30)
+        app._episode_affected = {
+            "sensor.test_shade_a_battery": datetime.datetime.now(),
+            "sensor.test_shade_b_battery": datetime.datetime.now(),
+        }  # >=2 shades: gateway-attributed (single-shade never escalates)
         app._repair_status = REPAIR_SUCCESS
 
         app._evaluate_auto_repair()
@@ -931,3 +958,286 @@ class TestCancelAndConfig:
         assert state["auto_repair_delay_min"] == 120
         assert state["auto_repair_deadline"] is None
         assert "last_repair_attempt" in state
+
+
+# ---------------------------------------------------------------------------
+# Tests — Gateway attribution (probes + multi-shade requirement)
+# ---------------------------------------------------------------------------
+
+GATEWAYS_ARGS = {
+    "gateways": [
+        {"name": "Upstairs", "host": "192.168.0.153", "api": True},
+        {"name": "Downstairs", "host": "192.168.0.210"},
+    ],
+    "min_shades_for_gateway": 2,
+    "probe_fail_confirm": 2,
+}
+
+_CHECKER_MOD = "health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker"
+
+
+def _start_episode(app, *entity_ids, minutes_ago: int = 0) -> None:
+    """Drive qualifying drops through _process_reading for the given shades,
+    then optionally backdate the episode start."""
+    for eid in entity_ids:
+        app._last_good_value[eid] = 100.0
+        app._process_reading(eid, "0")
+    if minutes_ago:
+        backdated = datetime.datetime.now() - datetime.timedelta(minutes=minutes_ago)
+        app._disconnect_since = backdated
+
+
+class TestGatewayAttribution:
+    def test_single_shade_episode_not_attributed(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        _start_episode(app, "sensor.test_shade_a_battery")
+
+        assert app._disconnect_since is not None
+        assert app._gateway_attributed() is False
+        assert app._gateway_unhealthy_since() is None
+
+    def test_two_shade_episode_is_attributed(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        _start_episode(
+            app, "sensor.test_shade_a_battery", "sensor.test_shade_b_battery"
+        )
+
+        assert app._gateway_attributed() is True
+        assert app._gateway_unhealthy_since() == app._disconnect_since
+
+    def test_confirmed_probe_outage_is_attributed_without_shades(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._probe_down_since = datetime.datetime.now()
+
+        assert app._gateway_attributed() is True
+        assert app._gateway_unhealthy_since() == app._probe_down_since
+
+    def test_single_shade_episode_reports_ok_with_pointer(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._entities = {"sensor.test_shade_a_battery": "Test Shade A"}
+        _start_episode(app, "sensor.test_shade_a_battery", minutes_ago=200)
+
+        results = app._build_results()
+
+        assert results[0]["name"] == "Gateway Link"
+        assert results[0]["status"] == "ok"
+        assert "see Shade Batteries" in results[0]["detail"]
+        assert "Test Shade A" in results[0]["detail"]
+
+    def test_two_shade_episode_past_deadline_reports_critical(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._entities = {
+            "sensor.test_shade_a_battery": "Test Shade A",
+            "sensor.test_shade_b_battery": "Test Shade B",
+        }
+        _start_episode(
+            app,
+            "sensor.test_shade_a_battery",
+            "sensor.test_shade_b_battery",
+            minutes_ago=200,
+        )
+
+        results = app._build_results()
+
+        assert results[0]["status"] == "critical"
+
+    def test_single_shade_never_starts_auto_repair(self):
+        """The PoE cycle must never fire for one dead shade — even hours past
+        the grace deadline with auto-repair enabled."""
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 120
+        _start_episode(app, "sensor.test_shade_a_battery", minutes_ago=300)
+        app._start_repair = MagicMock()
+
+        app._evaluate_auto_repair()
+
+        app._start_repair.assert_not_called()
+        assert app._repair_status == REPAIR_IDLE
+
+    def test_single_shade_cancels_pending_countdown(self):
+        """A countdown scheduled while attribution held must cancel when the
+        episode drops back to single-shade."""
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 120
+        _start_episode(app, "sensor.test_shade_a_battery")
+        app._repair_status = REPAIR_PENDING
+        app._repair_detail = "Auto-restart at ..."
+
+        app._evaluate_auto_repair()
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+
+    def test_two_shade_episode_past_deadline_starts_repair(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 120
+        _start_episode(
+            app,
+            "sensor.test_shade_a_battery",
+            "sensor.test_shade_b_battery",
+            minutes_ago=200,
+        )
+        app._start_repair = MagicMock()
+
+        app._evaluate_auto_repair()
+
+        app._start_repair.assert_called_once()
+
+    def test_probe_outage_past_deadline_starts_repair_without_shades(self):
+        """An unreachable gateway (confirmed probes) drives the PoE cycle even
+        when no battery sensor ever showed the drop signature."""
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 120
+        app._probe_down_since = datetime.datetime.now() - datetime.timedelta(
+            minutes=200
+        )
+        app._start_repair = MagicMock()
+
+        app._evaluate_auto_repair()
+
+        app._start_repair.assert_called_once()
+
+    def test_recovery_not_confirmed_while_probes_down(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        app._probe_down_since = datetime.datetime.now()
+
+        assert app._provisional_recovery_confirmed() is False
+
+
+class TestGatewayProbes:
+    def _probe(self, app):
+        return _run(app._probe_gateways())
+
+    def test_no_gateways_configured_returns_empty(self):
+        app = _make_app()  # DEFAULT_ARGS has no gateways
+        _init_only(app)
+        assert self._probe(app) == []
+        assert app._probe_down_since is None
+
+    def test_all_probes_ok(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        with patch(
+            f"{_CHECKER_MOD}.ping_check",
+            AsyncMock(return_value={"status": "ok", "detail": "2.1ms"}),
+        ), patch(
+            f"{_CHECKER_MOD}.http_check",
+            AsyncMock(return_value={"status": "ok", "detail": "200 OK"}),
+        ):
+            results = self._probe(app)
+
+        names = {r["name"]: r["status"] for r in results}
+        assert names == {
+            "Upstairs Ping": "ok",
+            "Upstairs API": "ok",
+            "Downstairs Ping": "ok",
+        }
+        assert app._probe_down_since is None
+
+    def test_first_failure_is_warning_not_critical(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        with patch(
+            f"{_CHECKER_MOD}.ping_check",
+            AsyncMock(return_value={"status": "critical", "detail": "timeout"}),
+        ), patch(
+            f"{_CHECKER_MOD}.http_check",
+            AsyncMock(return_value={"status": "ok", "detail": "200 OK"}),
+        ):
+            results = self._probe(app)
+
+        ping_results = [r for r in results if r["name"].endswith("Ping")]
+        assert all(r["status"] == "warning" for r in ping_results)
+        assert app._probe_down_since is None
+
+    def test_second_consecutive_failure_is_critical_and_starts_clock(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        with patch(
+            f"{_CHECKER_MOD}.ping_check",
+            AsyncMock(return_value={"status": "critical", "detail": "timeout"}),
+        ), patch(
+            f"{_CHECKER_MOD}.http_check",
+            AsyncMock(return_value={"status": "ok", "detail": "200 OK"}),
+        ):
+            self._probe(app)
+            results = self._probe(app)
+
+        ping_results = [r for r in results if r["name"].endswith("Ping")]
+        assert all(r["status"] == "critical" for r in ping_results)
+        assert app._probe_down_since is not None
+
+    def test_recovery_clears_streaks_and_clock(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        fail = AsyncMock(return_value={"status": "critical", "detail": "timeout"})
+        ok = AsyncMock(return_value={"status": "ok", "detail": "1.0ms"})
+        api_ok = AsyncMock(return_value={"status": "ok", "detail": "200 OK"})
+        with patch(f"{_CHECKER_MOD}.ping_check", fail), patch(
+            f"{_CHECKER_MOD}.http_check", api_ok
+        ):
+            self._probe(app)
+            self._probe(app)
+        assert app._probe_down_since is not None
+
+        with patch(f"{_CHECKER_MOD}.ping_check", ok), patch(
+            f"{_CHECKER_MOD}.http_check", api_ok
+        ):
+            results = self._probe(app)
+
+        assert all(r["status"] == "ok" for r in results)
+        assert app._probe_down_since is None
+        assert all(v == 0 for v in app._probe_fail_streak.values())
+
+    def test_registration_includes_probe_checks(self):
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+
+        app._register()
+
+        payload = json.loads(app.fire_event.call_args[1]["payload"])
+        assert payload["check_names"] == [
+            "Gateway Link",
+            "Upstairs Ping",
+            "Upstairs API",
+            "Downstairs Ping",
+        ]
+
+    def test_probe_recovery_resets_one_restart_guard(self):
+        """A probe-only outage has no shade episode; when the probes recover,
+        the one-restart-per-episode guard must reset so a future outage can
+        auto-repair again."""
+        app = _make_app(dict(GATEWAYS_ARGS))
+        _init_only(app)
+        fail = AsyncMock(return_value={"status": "critical", "detail": "timeout"})
+        ok = AsyncMock(return_value={"status": "ok", "detail": "1.0ms"})
+        api_ok = AsyncMock(return_value={"status": "ok", "detail": "200 OK"})
+
+        with patch(f"{_CHECKER_MOD}.ping_check", fail), patch(
+            f"{_CHECKER_MOD}.http_check", api_ok
+        ):
+            _run(app._probe_gateways())
+            _run(app._probe_gateways())
+        app._repair_attempted_this_episode = True  # a repair ran and failed
+
+        with patch(f"{_CHECKER_MOD}.ping_check", ok), patch(
+            f"{_CHECKER_MOD}.http_check", api_ok
+        ):
+            _run(app._probe_gateways())
+
+        assert app._probe_down_since is None
+        assert app._repair_attempted_this_episode is False

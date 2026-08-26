@@ -6,12 +6,17 @@ with several genuinely-healthy multi-minute gaps, then self-healed) through
 the real ShadeGatewayChecker and the disconnect-aware BatteryChecker, under a
 controlled clock.
 
-Guards the two behaviours the whole feature exists to guarantee:
+Guards the behaviours the whole feature exists to guarantee:
   1. BatteryChecker with disconnect_aware=True never pages "low battery" on
      the disconnect artifacts (old behaviour paged on every 0% reading).
-  2. ShadeGatewayChecker stays silent through self-healing flaps and only
-     escalates (critical page + one port-32 power-cycle) once a disconnect
-     genuinely persists past the auto-restart grace deadline.
+  2. ShadeGatewayChecker never escalates (no page, no PoE power-cycle) for a
+     single-shade fault — the recorded incident WAS a single shade with
+     marginal RF, and the gateway was healthy the whole time (2026-08-26
+     attribution rule).
+  3. The gateway-wide variant of the same timeline (>=2 shades in lockstep)
+     stays silent through self-healing flaps and escalates (critical page +
+     one port-32 power-cycle) only once the disconnect persists past the
+     auto-restart grace deadline.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ sys.path.insert(0, str(_repo_root))
 import health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker as sgc  # noqa: E402
 from health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker import (  # noqa: E402
     ShadeGatewayChecker,
+    REPAIR_IDLE,
     REPAIR_IN_PROGRESS,
 )
 from health_checks.checker_apps.battery_checker.battery_checker import (  # noqa: E402
@@ -170,8 +176,15 @@ def _make_sgc():
     return app
 
 
-def _simulate_gateway():
-    """Replay the timeline through ShadeGatewayChecker; return observed facts."""
+def _simulate_gateway(shades=(SHADE,)):
+    """Replay the timeline through ShadeGatewayChecker; return observed facts.
+
+    ``shades`` — entity_ids that receive each recorded reading. The default
+    single-shade replay reproduces the 2026-07-06 incident exactly as
+    recorded; passing two shades synthesizes the gateway-wide variant of the
+    same timeline (every shade flapping in lockstep, which is what an actual
+    gateway outage looks like).
+    """
     app = _make_sgc()
     clock = {"now": EVENTS[0][0] - datetime.timedelta(minutes=5)}
     fake_dt = types.SimpleNamespace(
@@ -201,7 +214,8 @@ def _simulate_gateway():
             clock["now"] = t
             while ev_i < len(EVENTS) and EVENTS[ev_i][0] <= t:
                 clock["now"] = EVENTS[ev_i][0]
-                app._process_reading(SHADE, str(EVENTS[ev_i][1]))
+                for eid in shades:
+                    app._process_reading(eid, str(EVENTS[ev_i][1]))
                 clock["now"] = t
                 ev_i += 1
 
@@ -280,39 +294,58 @@ class TestRealIncidentReplayBatteryChecker:
 
 
 class TestRealIncidentReplayGateway:
-    def test_stays_silent_during_self_healing_then_restarts_once(self):
+    def test_single_shade_incident_never_restarts_gateway(self):
+        """2026-08-26 attribution rule: the recorded incident was a SINGLE
+        shade (First Floor Bathroom, marginal RF at -89 dBm) — the gateway
+        was healthy the whole time, so replaying it must produce NO gateway
+        page and NO PoE power-cycle. This is the regression test for 'we
+        don't PoE-cycle the gateway for dead shades'."""
         r = _simulate_gateway()
 
-        # The early intermittent flaps self-heal (genuine multi-minute healthy
-        # gaps) and must NOT trigger a restart or a page on their own.
+        # The early intermittent flaps still self-heal as episodes.
         assert r["self_healed_episodes"] >= 2, (
             f"expected the early transient flaps to self-heal; "
             f"got {r['self_healed_episodes']} self-healed episodes"
         )
 
-        # The sustained disconnect eventually crosses the 2h grace deadline
-        # and triggers exactly one auto power-cycle of the PoE port.
-        assert r["restart_at"] is not None, "expected an auto-restart once the disconnect persisted past grace"
+        # Single-shade evidence is never gateway-attributed: no critical
+        # page, no restart, repair machine never armed.
+        assert r["restart_at"] is None, (
+            "gateway was power-cycled for a single-shade fault"
+        )
+        assert r["first_critical"] is None, (
+            "checker paged critical for a single-shade fault"
+        )
+        assert r["repair_status"] == REPAIR_IDLE
+        assert r["repair_attempted"] is False
 
-        # No critical page is emitted before that restart — silence during grace.
+    def test_gateway_wide_variant_restarts_once_after_grace(self):
+        """The same timeline hitting TWO shades in lockstep IS a gateway
+        outage — the grace ladder and one-restart escalation must behave
+        exactly as originally designed."""
+        r = _simulate_gateway(
+            shades=(SHADE, "sensor.test_shade_b_battery")
+        )
+
+        # The sustained disconnect crosses the 2h grace deadline and triggers
+        # exactly one auto power-cycle of the PoE port, with silence (no
+        # critical page) before the restart.
+        assert r["restart_at"] is not None, (
+            "expected an auto-restart once the multi-shade disconnect "
+            "persisted past grace"
+        )
         assert r["first_critical"] == r["restart_at"], (
             "checker paged critical before the auto-restart deadline"
         )
-
-        # The escalation ran through the real decision path: _start_repair
-        # moved the state machine to in_progress and armed the one-restart
-        # -per-episode guard. (The button/press mechanics of _execute_repair
-        # are covered directly in test_shade_gateway_checker.py.)
         assert r["repair_status"] == REPAIR_IN_PROGRESS
         assert r["repair_attempted"] is True
 
-    def test_restart_lands_after_two_hours_of_sustained_disconnect(self):
-        r = _simulate_gateway()
-        # The sustained episode began ~06:20-06:36 UTC; a 120-min grace puts the
-        # restart in the ~08:20-08:40 UTC window. Assert a generous band so the
-        # test is robust to minor timing/step changes but still proves the grace
-        # was honoured (not an immediate page, not a missed escalation).
-        assert r["restart_at"] is not None
+        # The sustained episode began ~06:20-06:36 UTC; a 120-min grace puts
+        # the restart in the ~08:20-08:40 UTC window. Assert a generous band
+        # so the test is robust to minor timing/step changes but still proves
+        # the grace was honoured.
         lo = datetime.datetime(2026, 7, 6, 8, 0, 0)
         hi = datetime.datetime(2026, 7, 6, 9, 0, 0)
-        assert lo <= r["restart_at"] <= hi, f"restart at {r['restart_at']} outside expected grace window"
+        assert lo <= r["restart_at"] <= hi, (
+            f"restart at {r['restart_at']} outside expected grace window"
+        )

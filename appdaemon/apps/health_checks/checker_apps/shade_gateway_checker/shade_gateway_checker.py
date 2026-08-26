@@ -8,14 +8,26 @@ generic :class:`~health_checks.checker_apps.battery_checker.battery_checker.Batt
 has no way to tell that apart from a genuine dying battery, so it pages on
 every 0% reading — even though the shades self-heal with no intervention.
 
-This checker owns the disconnect concern **gateway-wide** (all shades, not
-per-entity): it watches every shade battery sensor for the implausible-drop
-signature (a healthy baseline collapsing straight to ~0%), tracks a single
-gateway-level "disconnect episode" that survives mid-episode flap-backs to
-100%, and after a grace period auto-repairs by power-cycling the PoE port
-that feeds the primary gateway. One auto-restart per episode — if that
-doesn't restore the shades, it escalates to a critical page instead of
-retrying forever.
+This checker owns the **gateway** concern — and only the gateway. It probes
+every configured gateway directly (ICMP ping, plus the G3 REST API on the
+primary), and it watches every shade battery sensor for the implausible-drop
+signature (a healthy baseline collapsing straight to ~0%) as corroborating
+RF-side evidence, tracked as a "disconnect episode" that survives mid-episode
+flap-backs to 100%.
+
+**Attribution rule (2026-08-26):** the gateway alert — and the PoE power-cycle
+auto-repair — require *gateway-level* evidence: a confirmed probe outage
+(``probe_fail_confirm`` consecutive ping/API failures), or at least
+``min_shades_for_gateway`` distinct shades dropping in the same episode. A
+single shade showing the disconnect signature is a shade battery/RF fault
+(seen: First Floor Bathroom at -89 dBm), surfaced under **Shade Batteries**
+via the BatteryChecker's disconnect-aware guard — the gateway tile stays
+green and we never power-cycle the gateway for one dead shade.
+
+After the grace period a gateway-attributed outage auto-repairs by
+power-cycling the PoE port that feeds the primary gateway. One auto-restart
+per episode — if that doesn't restore things, it escalates to a critical page
+instead of retrying forever.
 
 Communication with the controller is event-only (never ``get_app``), same
 as every other checker in this package.
@@ -45,7 +57,7 @@ if _appdaemon_root not in sys.path:
 import hassapi as hass
 
 from providers.ha_provisioner import HAProvisioner
-from shared.check_utils import is_implausible_battery_drop
+from shared.check_utils import http_check, is_implausible_battery_drop, ping_check
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +110,22 @@ class ShadeGatewayChecker(hass.Hass):
         )
         self._healthy_floor: float = float(args.get("healthy_floor", 40))
         self._recovery_settle_s: int = int(args.get("recovery_settle_s", 900))
+
+        # Direct gateway probes: [{name, host, api: bool, ...}, ...]. Every
+        # gateway gets an ICMP ping check; api: true adds a REST API check
+        # (GET /home/shades). A single failed probe reports warning; only
+        # probe_fail_confirm consecutive failures report critical and start
+        # the repair clock — this checker carries a for=0 alert override, so
+        # an undebounced blip would page the phone instantly.
+        self._gateways: List[Dict[str, Any]] = list(args.get("gateways", []))
+        self._min_shades_for_gateway: int = int(
+            args.get("min_shades_for_gateway", 2)
+        )
+        self._probe_fail_confirm: int = int(args.get("probe_fail_confirm", 2))
+        # check name ("Upstairs Ping") -> consecutive failure count
+        self._probe_fail_streak: Dict[str, int] = {}
+        # Set while a confirmed probe outage is ongoing (repair clock).
+        self._probe_down_since: Optional[datetime.datetime] = None
 
         # Repair (power-cycle the PoE port feeding the primary gateway)
         self._repair_button: str = args.get("repair_button", "")
@@ -363,11 +391,20 @@ class ShadeGatewayChecker(hass.Hass):
     # Registration
     # ------------------------------------------------------------------
 
+    def _probe_check_names(self) -> List[str]:
+        names: List[str] = []
+        for gw in self._gateways:
+            gw_name = gw.get("name") or gw.get("host", "gateway")
+            names.append(f"{gw_name} Ping")
+            if gw.get("api"):
+                names.append(f"{gw_name} API")
+        return names
+
     def _register(self) -> None:
         payload: Dict[str, Any] = {
             "checker_id": self._checker_id,
             "checker_name": self._checker_name,
-            "check_names": ["Gateway Link"],
+            "check_names": ["Gateway Link"] + self._probe_check_names(),
             "supports_repair": True,
             "repair_state": self._build_repair_state(),
             "alerting": {"alertname": "ShadeGatewayDisconnected"},
@@ -535,15 +572,125 @@ class ShadeGatewayChecker(hass.Hass):
         self._repair_attempted_this_episode = False
 
     # ------------------------------------------------------------------
+    # Direct gateway probes + attribution
+    # ------------------------------------------------------------------
+
+    async def _probe_gateways(self) -> List[Dict[str, str]]:
+        """Ping every configured gateway (+ REST API where flagged) and
+        return debounced probe check results.
+
+        Maintains ``_probe_down_since``: set when any probe reaches
+        ``probe_fail_confirm`` consecutive failures (the repair clock for a
+        probe-attributed outage), cleared when all probes pass again.
+        """
+        if not self._gateways:
+            return []
+
+        results: List[Dict[str, str]] = []
+        any_confirmed_down = False
+
+        for gw in self._gateways:
+            gw_name = gw.get("name") or gw.get("host", "gateway")
+            host = str(gw.get("host", ""))
+
+            checks: List[tuple[str, Dict[str, str]]] = [
+                (f"{gw_name} Ping", await ping_check(host, timeout_s=3, attempts=2))
+            ]
+            if gw.get("api"):
+                checks.append(
+                    (
+                        f"{gw_name} API",
+                        await http_check(f"http://{host}/home/shades", timeout_s=5),
+                    )
+                )
+
+            for check_name, raw in checks:
+                if raw["status"] == "ok":
+                    self._probe_fail_streak[check_name] = 0
+                    results.append(
+                        {"name": check_name, "status": "ok", "detail": raw["detail"]}
+                    )
+                    continue
+
+                streak = self._probe_fail_streak.get(check_name, 0) + 1
+                self._probe_fail_streak[check_name] = streak
+                if streak >= self._probe_fail_confirm:
+                    any_confirmed_down = True
+                    results.append(
+                        {
+                            "name": check_name,
+                            "status": "critical",
+                            "detail": f"{raw['detail']} ({streak} consecutive probes)",
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "name": check_name,
+                            "status": "warning",
+                            "detail": (
+                                f"{raw['detail']} "
+                                f"({streak}/{self._probe_fail_confirm} probes — confirming)"
+                            ),
+                        }
+                    )
+                self.log(
+                    f"Gateway probe {check_name} failed "
+                    f"({streak} consecutive): {raw['detail']}",
+                    level="WARNING",
+                )
+
+        if any_confirmed_down:
+            if self._probe_down_since is None:
+                self._probe_down_since = datetime.datetime.now()
+                self.log(
+                    "Gateway probe outage confirmed — repair clock started",
+                    level="WARNING",
+                )
+        elif self._probe_down_since is not None:
+            self.log("Gateway probes healthy again", level="INFO")
+            self._probe_down_since = None
+            # A probe-only outage has no shade episode to clear the
+            # one-restart-per-episode guard via _clear_episode — reset it
+            # here so a future, separate outage can auto-repair again.
+            if self._disconnect_since is None:
+                self._repair_attempted_this_episode = False
+
+        return results
+
+    def _gateway_attributed(self) -> bool:
+        """True only with gateway-level evidence: a confirmed probe outage,
+        or at least ``min_shades_for_gateway`` distinct shades showing the
+        disconnect signature in the current episode. A single-shade episode
+        is a shade fault (owned by Shade Batteries), never the gateway's."""
+        if self._probe_down_since is not None:
+            return True
+        return len(self._episode_affected) >= self._min_shades_for_gateway
+
+    def _gateway_unhealthy_since(self) -> Optional[datetime.datetime]:
+        """Earliest gateway-attributed unhealthy timestamp, or None when the
+        gateway is healthy (including when only a single shade is down)."""
+        candidates: List[datetime.datetime] = []
+        if self._probe_down_since is not None:
+            candidates.append(self._probe_down_since)
+        if (
+            self._disconnect_since is not None
+            and len(self._episode_affected) >= self._min_shades_for_gateway
+        ):
+            candidates.append(self._disconnect_since)
+        return min(candidates) if candidates else None
+
+    # ------------------------------------------------------------------
     # Check execution
     # ------------------------------------------------------------------
 
     async def _run_checks(self) -> None:
-        """Recompute recovery, build results, drive auto-repair, and report."""
+        """Probe gateways, recompute recovery, drive auto-repair, and report."""
         await self._refresh_auto_repair_config()
+        probe_results = await self._probe_gateways()
         self._recompute_recovery()
 
-        results = self._build_results()
+        results = self._build_results() + probe_results
 
         # Evaluate auto-repair logic (skip if repair is already in progress)
         if self._repair_status != REPAIR_IN_PROGRESS:
@@ -563,9 +710,17 @@ class ShadeGatewayChecker(hass.Hass):
             payload=json.dumps(payload),
         )
 
+        statuses = [r["status"] for r in results]
+        worst = (
+            "critical"
+            if "critical" in statuses
+            else "warning"
+            if "warning" in statuses
+            else "ok"
+        )
         self.log(
-            f"Check cycle complete for '{self._checker_name}': {results[0]['status']}",
-            level="INFO" if results[0]["status"] == "ok" else "WARNING",
+            f"Check cycle complete for '{self._checker_name}': {worst}",
+            level="INFO" if worst == "ok" else "WARNING",
         )
 
     def _build_results(self) -> List[Dict[str, str]]:
@@ -575,6 +730,26 @@ class ShadeGatewayChecker(hass.Hass):
                     "name": "Gateway Link",
                     "status": "ok",
                     "detail": f"{len(self._entities)} shade batteries reporting normally",
+                }
+            ]
+
+        if not self._gateway_attributed():
+            # Single-shade disconnect signature with gateways probing healthy:
+            # a shade battery/RF fault, not a gateway outage. Shade Batteries
+            # owns surfacing it; the gateway tile stays green and no PoE
+            # power-cycle is ever scheduled for it.
+            affected_names = sorted(
+                self._entities.get(eid, eid) for eid in self._episode_affected
+            )
+            return [
+                {
+                    "name": "Gateway Link",
+                    "status": "ok",
+                    "detail": (
+                        f"gateway healthy; {len(affected_names)} shade(s) "
+                        f"RF-disconnected ({', '.join(affected_names)}) — "
+                        f"see Shade Batteries"
+                    ),
                 }
             ]
 
@@ -661,11 +836,20 @@ class ShadeGatewayChecker(hass.Hass):
         attempts until the episode fully clears (manual repair via the card
         is unaffected — it always calls ``_start_repair`` directly).
         """
-        episode_active = self._disconnect_since is not None
+        # The repair clock only runs for a gateway-attributed outage — a
+        # confirmed probe failure or a multi-shade episode. A single-shade
+        # episode never schedules (and cancels any pending) auto-repair:
+        # PoE-cycling the gateway for one dead shade blips every other shade
+        # for nothing.
+        unhealthy_since = self._gateway_unhealthy_since()
+        episode_active = unhealthy_since is not None
 
         if not episode_active:
             if self._repair_status == REPAIR_PENDING:
-                self.log("Episode cleared — cancelling pending auto-repair", level="INFO")
+                self.log(
+                    "No gateway-attributed outage — cancelling pending auto-repair",
+                    level="INFO",
+                )
             if self._repair_status in (REPAIR_PENDING, REPAIR_SUCCESS, REPAIR_FAILED):
                 self._repair_status = REPAIR_IDLE
                 self._repair_detail = ""
@@ -688,7 +872,7 @@ class ShadeGatewayChecker(hass.Hass):
             return
 
         now = datetime.datetime.now()
-        deadline = self._disconnect_since + datetime.timedelta(minutes=delay_min)
+        deadline = unhealthy_since + datetime.timedelta(minutes=delay_min)
 
         if self._repair_status == REPAIR_IDLE:
             if now >= deadline:
@@ -831,6 +1015,11 @@ class ShadeGatewayChecker(hass.Hass):
         clean for ``repair_settle_s`` is good evidence the fix worked; we
         don't need to wait out the full ambient flap-suppression window.
         """
+        if self._probe_down_since is not None:
+            # Probes still failing — the gateway itself is not back yet,
+            # regardless of what the battery sensors say. Probe state is
+            # refreshed by the periodic _run_checks cycle.
+            return False
         if not self._affected_shades_healthy():
             return False
         if self._last_zero_time is None:
