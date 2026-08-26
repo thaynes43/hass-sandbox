@@ -87,7 +87,8 @@ a cold start never fabricates a baseline from a low reading.
 | Option | Default | Meaning |
 |--------|---------|---------|
 | `disconnect_aware` | `false` | Enable the guard. Off by default so unrelated battery groups are unchanged. |
-| `disconnect_healthy_floor` | `40` | The last-healthy reading must be at or above this (%) for a drop to `<= critical_threshold` to count as a suspected disconnect rather than a real low battery. |
+| `disconnect_healthy_floor` | `40` | The last-healthy reading must be at or above this (%) for a drop to count as a suspected disconnect rather than a real low battery. |
+| `disconnect_low_threshold` | `critical_threshold` | Only readings at/below this (%) can be attributed to a disconnect. Set it below `critical_threshold` when the integration reports discrete bands and only the bottom band is an RF artifact — on G3 (`100/50/20/0`) a `20` is always a genuine measurement, so `shade_batteries` keys this at `5`. |
 
 This only *suppresses the false low-battery page*; paging and remediation for
 the disconnect itself are owned by the dedicated
@@ -99,10 +100,35 @@ leave it off.
 ```yaml
 shade_battery_checker:
   # ...
-  critical_threshold: 5
+  warning_threshold: 50    # G3 50-band → recharge in the coming weeks
+  critical_threshold: 20   # G3 20-band → charge now (pages)
   disconnect_aware: true
   disconnect_healthy_floor: 40
+  disconnect_low_threshold: 5   # only a 0 can be an RF artifact
+  refresh_time: "12:30:00"
 ```
+
+#### Daily battery refresh sweep (opt-in)
+
+PowerView G3 hubs **never re-measure shade batteries on their own**: the HA
+integration's 60s coordinator poll serves the hub's cached value, and only an
+explicit `homeassistant.update_entity` on the battery sensor triggers a real
+re-measure (`shade.refresh_battery()`). Without that, every shade serves a
+stale band forever — observed 2026-08-26: 90 days of Prometheus history
+contained nothing but `100`s until the First Floor Bathroom shade cliff-dropped
+straight to `0` with zero warning, because it silently passed through the `50`
+and `20` bands while HA kept reporting the stale `100`.
+
+When `refresh_time` is set (e.g. `"12:30:00"`), the checker sweeps all
+discovered entities with `homeassistant.update_entity` once a day, in staggered
+batches so the hub's radio queue stays shallow. Each refresh wakes the shade's
+radio, so keep this daily — not per check cycle.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `refresh_time` | unset (off) | Local time of day for the daily sweep. |
+| `refresh_batch_size` | `6` | Entities per `update_entity` call. |
+| `refresh_batch_spacing_s` | `20` | Seconds between batches. |
 
 ### UpsChecker (separate class)
 
