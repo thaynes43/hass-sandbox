@@ -1,6 +1,6 @@
 # Fan Health Checker
 
-Monitors Modern Forms ceiling fans connected via the Modern Forms integration. All fans are reported as a single checker to keep the dashboard compact. Each fan is checked for entity availability and network reachability.
+Monitors Modern Forms ceiling fans — Espressif **Wi-Fi** devices, reached over the LAN by the Modern Forms integration — as a single checker, to keep the dashboard compact. Each fan is checked for entity availability and network reachability.
 
 ## Checks (2 per fan)
 
@@ -43,6 +43,45 @@ checker waits for the script to be free (up to ~11 min) before invoking it;
 if it stays busy the attempt is marked failed with detail "Repair script
 busy" instead of pretending a power-cycle happened.
 
+### Access-Point Awareness (these are Wi-Fi fans)
+
+Modern Forms fans are **Espressif Wi-Fi devices** — they associate with a
+UniFi access point like any other wireless client. The ZEN32 scene
+controller is only the *actuator* the repair script uses to cut mains power;
+it is Z-Wave, the fan is not. Nobody (human or LLM) triaging a fan outage
+should reach for the Z-Wave stack.
+
+Each fan may therefore declare the AP it lives on:
+
+| Key | Meaning |
+|-----|---------|
+| `ap_status_entity` | The HA UniFi integration's state sensor for that AP (e.g. `sensor.kitchen_pantry_u7_pro_state`) |
+| `ap_name` | Friendly AP name for log and alert text; derived from the entity id when omitted |
+
+The AP state is refreshed once per check cycle. States `disconnected`,
+`not_home`, and `off` count as **AP down**; anything else — including
+`unavailable`/`unknown`, which usually means the UniFi *integration* is
+broken rather than the AP — is treated as AP-state-unknown and gates
+nothing.
+
+While a fan's AP is down, that fan is never repair-worthy: power-cycling a
+fan cannot fix a network fault. The repair is held, and with it the fan's
+grace timer and backoff retry (its stale retry keeps sliding forward), so
+the ladder does not climb through an outage the fan was never responsible
+for. The hold and its release are each logged once, on the transition.
+
+The State check's alert detail carries a suffix naming the AP, so the page
+itself says whose fault it is:
+
+| AP state | Alert-detail suffix |
+|----------|---------------------|
+| Down | `(Wi-Fi fan; AP X is disconnected — fan offline expected, power-cycle held until the AP recovers)` |
+| Unreadable | `(Wi-Fi fan; AP X: state unknown)` |
+| Up | `(Wi-Fi fan; AP X: connected — fan itself unreachable)` |
+
+A fan with no `ap_status_entity` configured still gets a bare `(Wi-Fi fan)`
+suffix, and is repaired exactly as before.
+
 ### Per-Fan Repair Tracking
 
 Each fan independently tracks its own repair state. When auto-repair triggers:
@@ -56,15 +95,34 @@ Each fan independently tracks its own repair state. When auto-repair triggers:
 6. **CrashLoopBackOff retries** — a failed repair never ends the episode:
    the n-th failure schedules retry n+1 after `delay × 2^(n-1)` minutes
    (5m → 10m → 20m → …), capped at `repair_backoff_max_min` (default 6h).
-   The attempt counter resets on recovery or manual repair. While a failed
-   fan is *not* entity-down, its scheduled retry keeps sliding to at least
-   one delay out — a stale schedule can never fire the instant the entity
-   blips down again.
-7. A fan's `failed` state resets to `idle` if its checks go green naturally
+   While a failed fan is *not* entity-down, its scheduled retry keeps
+   sliding to at least one delay out — a stale schedule can never fire the
+   instant the entity blips down again.
+7. **Sustained-recovery reset** — the attempt counter resets only after the
+   fan has stayed healthy for `repair_backoff_reset_min` (default 30 min),
+   or on a manual repair (a human-declared fresh start). A bare recovery no
+   longer resets anything: a `success` or `failed` fan whose checks go green
+   just starts a recovery clock, keeping its state and attempt count, and
+   only when that clock runs out does it drop to `idle` with `attempts=0`.
+   **A relapse inside the window resumes the ladder**, counting the false
+   success as a failed attempt — so the next power-cycle waits out the
+   corresponding backoff instead of firing on the next check cycle. This is
+   exactly the 2026-08-31 storm: every false recovery reset the ladder to
+   attempt 1, which bought ~11 power-cycles of one flapping fan in five
+   hours.
+8. **The ladder is persisted** to `input_text.<checker_id>_health_repair_ladder`
+   as compact JSON — `{fan: [attempts, next_retry_iso|null, "failed"|"success"]}`,
+   lowest ladders dropped first if it would exceed the helper's 255-char
+   limit — and seeded back on startup, because an HA restart or plugin
+   reconnect re-initialises every AppDaemon app mid-incident. Restored
+   `failed` entries get a `now + delay` floor on their retry so a stale past
+   retry time cannot fire the instant the app comes back; restored `success`
+   entries come back as `success` awaiting sustained recovery, so a
+   currently-healthy fan is never misreported as failed.
 
 ### Manual Repair
 
-The "Repair" button resets all `failed` fan states and repairs all currently **entity-down** fans sequentially. The same repair-worthiness rule as auto-repair applies: a fan that is reachable by HA but missing pings never gets power-cycled, even manually.
+The "Repair" button clears every fan's backoff ladder — attempt count, `failed`/`success` state, and pending retry alike, since a manual repair is a human-declared fresh start — and repairs all currently **entity-down** fans sequentially. The same repair-worthiness rule as auto-repair applies: a fan that is reachable by HA but missing pings never gets power-cycled, even manually.
 
 ### State Restore After Repair
 
@@ -82,6 +140,8 @@ Restore is on by default; set `restore_state_enabled: false` to disable it. If n
 
 - Each fan uses a different zen32 controller — repairs run independently
 - Only `unavailable`/`unknown` states trigger repair (a fan that is `off` is healthy)
+- A fan whose access point is down is never power-cycled — the repair and its
+  clocks hold until the AP recovers
 - After failure, retries continue on the capped exponential backoff schedule —
   never more often than the schedule allows, but never stopping entirely
 
@@ -91,6 +151,7 @@ Restore is on by default; set `restore_state_enabled: false` to disable it. If n
 |--------|---------|
 | `input_boolean.fans_health_auto_repair` | Auto-repair toggle |
 | `input_number.fans_health_auto_repair_delay` | Minutes before auto-repair (1-60) |
+| `input_text.fans_health_repair_ladder` | Per-fan backoff ladder as JSON (`input_text.<checker_id>_health_repair_ladder`), so an app reload cannot reset a climbing ladder |
 
 ## Configuration Reference
 
@@ -107,8 +168,12 @@ fan_health_checker:
   auto_repair_enabled_default: false                 # Default auto-repair toggle
   auto_repair_delay_min_default: 5                   # Default minutes before auto-repair
   repair_backoff_max_min: 360                        # Backoff cap for repair retries (minutes)
+  repair_backoff_reset_min: 30                       # Recovery must hold this long to reset the ladder
   restore_state_enabled: true                        # Re-apply on/off + speed + direction after repair
   repair_script: script.zen32_hard_reset             # HA script entity for repair
+  # ap_status_entity: the HA UniFi integration's state sensor for the access
+  # point each Wi-Fi fan associates with. AP down => fan offline is expected:
+  # power-cycles are held and the alert names the AP instead of the fan.
   fans:
     - name: Pink Room                                # Display name
       entity_id: fan.pink_room_fan_fan               # Fan entity to monitor
@@ -116,6 +181,8 @@ fan_health_checker:
       power_switch: switch.upstairs_pink_room_scene_controller
       relay_control: select.upstairs_pink_room_scene_controller_relay_control
       scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
+      ap_status_entity: sensor.kitchen_pantry_u7_pro_state   # AP this fan is on
+      ap_name: Kitchen Pantry U7 Pro                 # Friendly AP name for logs/alerts
 ```
 
 ## Dependencies

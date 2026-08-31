@@ -2017,6 +2017,24 @@ class TestAlertmanagerWiring:
 
         _close_created_coros(app)
 
+    def test_improve_hold_config_reaches_the_bridge(self):
+        """alert_improve_hold_s must be plumbed through to the bridge — a
+        typo here silently restores the resolve/flap page storm (prod runs
+        900s)."""
+        app = _make_app({**ALERTMANAGER_ARGS, "alert_improve_hold_s": 900})
+        _startup(app)
+
+        assert app._alert_bridge._improve_hold_s == 900
+        _close_created_coros(app)
+
+    def test_improve_hold_defaults_to_off(self):
+        """Unconfigured = the old act-immediately behaviour."""
+        app = _make_app(ALERTMANAGER_ARGS)
+        _startup(app)
+
+        assert app._alert_bridge._improve_hold_s == 0
+        _close_created_coros(app)
+
     def test_repost_tick_with_bridge_creates_task(self):
         """With a bridge the repost tick schedules repost_active()."""
         app = _make_app(ALERTMANAGER_ARGS)

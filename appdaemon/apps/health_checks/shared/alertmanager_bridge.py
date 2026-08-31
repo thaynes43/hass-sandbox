@@ -42,6 +42,21 @@ and the warning keeps firing — a warning↔critical flapper can never page.
 De-escalations (critical → warning) apply immediately, as does everything
 when ``for=0``.
 
+**Improvement hold (resolve/de-escalation hysteresis).**  The mirror image
+of the for-duration gate: once an alert fires, any *improvement* — resolve
+(checker back to ok) or de-escalation (critical → warning) — must be
+sustained for ``improve_hold_s`` seconds before the bridge acts on it.
+Until then the firing alert stays up unchanged (annotations refreshed).
+If the checker deteriorates again inside the hold window the improvement
+is discarded and nothing was ever posted — so a genuinely oscillating
+condition (a Wi-Fi fan flapping every few minutes for hours, observed
+2026-08-31) produces exactly one ``[FIRING]`` page and, once truly
+stable, one ``[RESOLVED]`` page, instead of a page pair per flap.
+``send_resolved: true`` on the Pushover receiver makes every resolve a
+notification, which is what turns unheld flapping into a page storm.
+``improve_hold_s=0`` (default) disables the hold and restores the old
+act-immediately behaviour.
+
 **Repair hold.**  A checker whose auto-repair is scheduled, running, or
 just-succeeded (``repair_state.status`` of ``pending`` / ``in_progress`` /
 ``success``) gets a chance to fix itself before anyone is paged: promotion
@@ -125,6 +140,7 @@ class AlertmanagerBridge:
         for_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
         now_fn: Optional[Callable[[], datetime.datetime]] = None,
         repair_hold_cap_s: int = 1800,
+        improve_hold_s: int = 0,
     ) -> None:
         self._client = client
         self._log = log_fn or (lambda msg, level="INFO": None)
@@ -147,6 +163,16 @@ class AlertmanagerBridge:
             self._repair_hold_cap_s: int = max(0, int(repair_hold_cap_s))
         except (TypeError, ValueError):
             self._repair_hold_cap_s = 1800
+        # Improvement hold: how long a resolve/de-escalation must be
+        # sustained before it is applied.  0 = act immediately.
+        try:
+            self._improve_hold_s: int = max(0, int(improve_hold_s))
+        except (TypeError, ValueError):
+            self._improve_hold_s = 0
+        # checker_id → {"since": aware datetime} while an active alert's
+        # checker is continuously reporting *better* than the firing
+        # severity (improvement hold in progress).
+        self._improving: Dict[str, Dict[str, Any]] = {}
         # Injectable clock so tests can drive the for-duration gate.
         self._now_fn: Callable[[], datetime.datetime] = now_fn or (
             lambda: datetime.datetime.now(datetime.timezone.utc)
@@ -219,6 +245,13 @@ class AlertmanagerBridge:
                         level="INFO",
                     )
                 if active is not None:
+                    if self._improve_holding(
+                        checker_id,
+                        now,
+                        f"resolve of severity="
+                        f"{active['labels'].get('severity')} (checker recovered)",
+                    ):
+                        continue
                     to_post.append(self._resolved_copy(active))
                     del self._active[checker_id]
                     self._log(
@@ -226,6 +259,8 @@ class AlertmanagerBridge:
                         f"({active['labels'].get('alertname')})",
                         level="INFO",
                     )
+                else:
+                    self._improving.pop(checker_id, None)
                 continue
 
             # desired is non-None — the checker is unhealthy.
@@ -239,6 +274,13 @@ class AlertmanagerBridge:
                     # escalation is dropped: the checker fell back to the
                     # severity that is already firing before promotion.
                     active["annotations"] = desired["annotations"]
+                    if self._improving.pop(checker_id, None) is not None:
+                        self._log(
+                            f"Improvement discarded for checker '{checker_id}' "
+                            f"— back at severity={severity} inside the hold "
+                            f"window",
+                            level="INFO",
+                        )
                     if pending is not None:
                         del self._pending[checker_id]
                         self._log(
@@ -251,6 +293,14 @@ class AlertmanagerBridge:
                 escalating = _SEVERITY_RANK.get(severity, 0) > _SEVERITY_RANK.get(
                     active["labels"].get("severity", ""), 0
                 )
+                if escalating:
+                    if self._improving.pop(checker_id, None) is not None:
+                        self._log(
+                            f"Improvement discarded for checker '{checker_id}' "
+                            f"— escalating to severity={severity} inside the "
+                            f"hold window",
+                            level="INFO",
+                        )
                 if escalating and for_s > 0:
                     # Escalations go through the for-duration gate too — the
                     # currently-firing lower severity stays up meanwhile.
@@ -280,9 +330,19 @@ class AlertmanagerBridge:
                         level="INFO",
                     )
                 elif pending is not None:
-                    # De-escalation (or identity change with for=0) applies
-                    # immediately — clear whatever escalation was pending.
+                    # De-escalation (or identity change with for=0) — clear
+                    # whatever escalation was pending.
                     del self._pending[checker_id]
+
+                if not escalating and self._improve_holding(
+                    checker_id, now, f"de-escalation to severity={severity}"
+                ):
+                    # Keep the higher-severity alert firing through the hold
+                    # window, with fresh annotations so the UI shows what is
+                    # failing right now.
+                    active["annotations"] = desired["annotations"]
+                    continue
+                self._improving.pop(checker_id, None)
 
                 # Labels define alert identity — resolve the old one and
                 # raise the new one.
@@ -354,6 +414,40 @@ class AlertmanagerBridge:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _improve_holding(
+        self, checker_id: str, now: datetime.datetime, what: str
+    ) -> bool:
+        """Track an improvement of a firing alert; True while it is held.
+
+        The hold window starts at the first improved report and survives
+        changes *between* improved states (warning → ok keeps the same
+        clock — the checker has been continuously better than the firing
+        severity throughout).  Any sighting at or above the firing
+        severity clears the entry via the caller, restarting the window
+        on the next improvement.
+        """
+        if self._improve_hold_s <= 0:
+            return False
+        imp = self._improving.get(checker_id)
+        if imp is None:
+            self._improving[checker_id] = {"since": now}
+            self._log(
+                f"Improvement hold for checker '{checker_id}' — {what} "
+                f"withheld until sustained for {self._improve_hold_s}s",
+                level="INFO",
+            )
+            return True
+        elapsed = (now - imp["since"]).total_seconds()
+        if elapsed < self._improve_hold_s:
+            return True
+        del self._improving[checker_id]
+        self._log(
+            f"Improvement sustained for checker '{checker_id}' "
+            f"({elapsed:.0f}s ≥ {self._improve_hold_s}s) — applying {what}",
+            level="INFO",
+        )
+        return False
 
     def _promotion_due(
         self,

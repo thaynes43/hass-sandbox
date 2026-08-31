@@ -59,7 +59,12 @@ def _run(coro):
         loop.close()
 
 
-def _make_gated_bridge(default_for_seconds, for_overrides=None, repair_hold_cap_s=1800):
+def _make_gated_bridge(
+    default_for_seconds,
+    for_overrides=None,
+    repair_hold_cap_s=1800,
+    improve_hold_s=0,
+):
     """Bridge with a for-duration gate and a manually-advanceable clock.
 
     Returns (bridge, client, log, advance) where ``advance(seconds)`` moves
@@ -67,6 +72,8 @@ def _make_gated_bridge(default_for_seconds, for_overrides=None, repair_hold_cap_
     deterministically.  ``repair_hold_cap_s`` (default 1800, matching the
     bridge default) controls how long an active auto-repair may withhold a
     due critical promotion — pass 0 to disable the hold entirely.
+    ``improve_hold_s`` (default 0, matching the bridge default) is how long
+    a resolve/de-escalation must be sustained before it is applied.
     """
     client = MagicMock()
     client.post_alerts = AsyncMock()
@@ -83,6 +90,7 @@ def _make_gated_bridge(default_for_seconds, for_overrides=None, repair_hold_cap_
         for_overrides=for_overrides,
         now_fn=now_fn,
         repair_hold_cap_s=repair_hold_cap_s,
+        improve_hold_s=improve_hold_s,
     )
 
     def advance(seconds):
@@ -981,3 +989,212 @@ class TestRepairHold:
         client.post_alerts.assert_awaited_once()
         assert "x" in bridge.active_alerts
         assert "x" not in bridge.pending_alerts
+
+
+# ---------------------------------------------------------------------------
+# Tests — Improvement hold (resolve / de-escalation hysteresis)
+# ---------------------------------------------------------------------------
+
+class TestImprovementHold:
+    """``alert_improve_hold_s`` — the mirror image of the for-duration gate.
+
+    ``send_resolved: true`` on the Pushover receiver makes every resolve a
+    page, so an oscillating checker paged twice per flap (2026-08-30/31: one
+    flapping Wi-Fi fan = 18 pages overnight).  Holding the improvement until
+    it is sustained turns a whole flapping incident into one FIRING page and
+    one RESOLVED page.
+    """
+
+    def _hold_bridge(self, improve_hold_s=900):
+        # for=0 so the alert fires on the first sync; the hold is what these
+        # tests drive.
+        return _make_gated_bridge(
+            {"critical": 0, "warning": 0}, improve_hold_s=improve_hold_s
+        )
+
+    def test_default_bridge_has_no_hold(self):
+        bridge, _client, _log = _make_bridge()
+        assert bridge._improve_hold_s == 0
+
+    def test_bad_hold_config_coerces_to_zero(self):
+        for bad in ("nope", -30, None):
+            bridge, *_ = _make_gated_bridge({"critical": 0}, improve_hold_s=bad)
+            assert bridge._improve_hold_s == 0, f"improve_hold_s={bad!r}"
+
+    def test_hold_zero_resolves_immediately(self):
+        """The default is exactly the old act-immediately behaviour."""
+        bridge, client, _log, _advance = self._hold_bridge(improve_hold_s=0)
+        _run(bridge.sync({"spa": _checker("critical")}))
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("ok")}))
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1
+        assert batch[0].get("endsAt")
+        assert bridge.active_alerts == {}
+
+    def test_resolve_withheld_until_sustained_then_posted_once(self):
+        bridge, client, _log, advance = self._hold_bridge()
+        _run(bridge.sync({"spa": _checker("critical")}))       # fires
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("ok")}))             # t=0 hold opens
+        client.post_alerts.assert_not_awaited()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+
+        advance(600)
+        _run(bridge.sync({"spa": _checker("ok")}))             # t=600 < 900
+        client.post_alerts.assert_not_awaited()
+        assert "spa" in bridge.active_alerts
+
+        advance(300)
+        _run(bridge.sync({"spa": _checker("ok")}))             # t=900 → apply
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1
+        assert batch[0]["labels"]["severity"] == "critical"
+        assert batch[0].get("endsAt")
+        assert bridge.active_alerts == {}
+
+        # ...and exactly once — later ok syncs post nothing.
+        client.post_alerts.reset_mock()
+        advance(900)
+        _run(bridge.sync({"spa": _checker("ok")}))
+        client.post_alerts.assert_not_awaited()
+
+    def test_flap_inside_the_window_never_posts_again(self):
+        """critical → ok → critical inside the hold: the improvement is
+        discarded, so the original FIRING page is all that ever went out."""
+        bridge, client, _log, advance = self._hold_bridge()
+        _run(bridge.sync({"spa": _checker("critical")}))
+        assert len(_batches(client)) == 1
+        client.post_alerts.reset_mock()
+
+        for _ in range(3):                       # 30 min of oscillation
+            advance(300)
+            _run(bridge.sync({"spa": _checker("ok")}))
+            advance(300)
+            _run(bridge.sync({"spa": _checker("critical")}))
+
+        client.post_alerts.assert_not_awaited()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+
+        # Once the flapping really stops, one resolve — and only one.
+        _run(bridge.sync({"spa": _checker("ok")}))      # window restarts here
+        advance(900)
+        _run(bridge.sync({"spa": _checker("ok")}))
+
+        client.post_alerts.assert_awaited_once()
+        assert _batches(client)[0][0].get("endsAt")
+        assert bridge.active_alerts == {}
+
+    def test_de_escalation_held_then_applied(self):
+        """critical → warning: the critical keeps firing (with refreshed
+        annotations) until the warning is sustained, then one resolve +
+        re-raise batch."""
+        bridge, client, _log, advance = self._hold_bridge()
+        _run(bridge.sync({"spa": _checker("critical")}))
+        client.post_alerts.reset_mock()
+
+        checks = [
+            {"name": "Gateway Ping", "status": "warning", "detail": "flapping 3s"}
+        ]
+        _run(bridge.sync({"spa": _checker("warning", checks=checks)}))
+
+        client.post_alerts.assert_not_awaited()
+        active = bridge.active_alerts["spa"]
+        assert active["labels"]["severity"] == "critical"
+        assert active["annotations"]["description"] == "Gateway Ping: flapping 3s"
+
+        advance(900)
+        _run(bridge.sync({"spa": _checker("warning")}))
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 2
+        resolved, fresh = batch
+        assert resolved["labels"]["severity"] == "critical"
+        assert resolved.get("endsAt")
+        assert fresh["labels"]["severity"] == "warning"
+        assert "endsAt" not in fresh
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "warning"
+
+    def test_escalation_back_to_firing_severity_discards_the_improvement(self):
+        """A held de-escalation that climbs back to the firing severity is
+        discarded: nothing is posted, and the next improvement starts a
+        brand-new window."""
+        bridge, client, _log, advance = self._hold_bridge()
+        _run(bridge.sync({"spa": _checker("critical")}))
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("warning")}))        # t=0 hold opens
+        advance(600)
+        _run(bridge.sync({"spa": _checker("critical")}))       # discarded
+        client.post_alerts.assert_not_awaited()
+
+        advance(600)                                           # >900s since t=0
+        _run(bridge.sync({"spa": _checker("warning")}))        # new window
+
+        client.post_alerts.assert_not_awaited()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+
+    def test_window_survives_a_warning_to_ok_transition(self):
+        """The clock tracks "continuously better than the firing severity",
+        so warning → ok keeps the same window instead of restarting it — and
+        the intermediate warning is never raised."""
+        bridge, client, _log, advance = self._hold_bridge()
+        _run(bridge.sync({"spa": _checker("critical")}))
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("warning")}))        # t=0 hold opens
+        advance(600)
+        _run(bridge.sync({"spa": _checker("ok")}))             # t=600 same window
+        client.post_alerts.assert_not_awaited()
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+
+        advance(300)
+        _run(bridge.sync({"spa": _checker("ok")}))             # t=900 → apply
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 1                                  # plain resolve
+        assert batch[0]["labels"]["severity"] == "critical"
+        assert batch[0].get("endsAt")
+        assert bridge.active_alerts == {}
+
+    def test_escalation_is_never_held(self):
+        """The hold only ever withholds improvements — a warning that gets
+        worse still promotes on the for-duration gate alone."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 0, "warning": 0}, improve_hold_s=900
+        )
+        _run(bridge.sync({"spa": _checker("warning")}))
+        client.post_alerts.reset_mock()
+
+        _run(bridge.sync({"spa": _checker("critical")}))
+
+        client.post_alerts.assert_awaited_once()
+        batch = _batches(client)[0]
+        assert len(batch) == 2
+        assert batch[0]["labels"]["severity"] == "warning"
+        assert batch[0].get("endsAt")
+        assert batch[1]["labels"]["severity"] == "critical"
+        assert bridge.active_alerts["spa"]["labels"]["severity"] == "critical"
+
+    def test_pending_alert_is_not_affected_by_the_hold(self):
+        """The hold protects firing alerts only: a blip that never promoted
+        still vanishes silently, with no hold state left behind."""
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300}, improve_hold_s=900
+        )
+        _run(bridge.sync({"spa": _checker("critical")}))       # pending only
+        advance(60)
+        _run(bridge.sync({"spa": _checker("ok")}))
+
+        client.post_alerts.assert_not_awaited()
+        assert bridge.pending_alerts == {}
+        assert bridge.active_alerts == {}
+        assert bridge._improving == {}
