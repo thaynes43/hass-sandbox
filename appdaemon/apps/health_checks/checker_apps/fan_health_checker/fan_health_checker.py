@@ -15,7 +15,22 @@ power-cycle of another fan that merely blipped.
 
 Failed repairs retry with CrashLoopBackOff semantics: never stop, delay
 doubling per failure (delay × 2^(n-1)) capped at ``repair_backoff_max_min``.
-The counter resets on recovery or manual repair.
+Like k8s CrashLoopBackOff, the counter only resets after *sustained*
+recovery (``repair_backoff_reset_min``, default 30 min) or a manual
+repair — a fan that pops back up for a minute and drops again resumes
+the ladder where it left off instead of earning a fresh instant
+power-cycle (the 2026-08-31 page storm: ~11 power-cycles in 5 h because
+every false recovery reset the ladder to attempt 1).  The ladder is
+persisted in ``input_text.<checker_id>_health_repair_ladder`` so an
+AppDaemon app reload mid-incident cannot reset it either.
+
+Each fan may declare the UniFi access point it associates with
+(``ap_status_entity`` — the HA UniFi integration's AP state sensor).
+These are **Wi-Fi fans** (Modern Forms); when the fan's AP is down the
+fan being unreachable is expected, so the power-cycle is withheld until
+the AP recovers and the alert text says which AP is at fault.  (The
+repair script power-cycles the fan via its ZEN32 relay — the ZEN32 is
+Z-Wave, the fan is not.)
 
 Communication with the controller is event-only (never ``get_app``).
 """
@@ -118,10 +133,22 @@ class FanHealthChecker(hass.Hass):
 
         # CrashLoopBackOff cap for per-fan repair retries: the n-th failure
         # schedules retry n+1 after delay × 2^(n-1) minutes, capped here
-        # (default 6h). Attempts reset on recovery or manual repair.
+        # (default 6h). Attempts reset on sustained recovery or manual repair.
         self._repair_backoff_max_min: int = int(
             args.get("repair_backoff_max_min", 360)
         )
+        # How long a fan must stay fully healthy before its backoff ladder
+        # resets (k8s CrashLoopBackOff resets after 10 min of clean running;
+        # ESP fans get longer). 0 = reset on the first clean cycle (the old
+        # behaviour, which let a flapping fan earn an instant attempt-1
+        # power-cycle every few minutes).
+        self._repair_backoff_reset_min: int = int(
+            args.get("repair_backoff_reset_min", 30)
+        )
+
+        # Last-observed state of each fan's access point status entity
+        # (fan name → lowercased state string or None when unknown).
+        self._ap_state_by_fan: Dict[str, Optional[str]] = {}
 
         # Per-fan repair state
         self._fan_repair_states: Dict[str, Dict[str, Any]] = {
@@ -131,6 +158,10 @@ class FanHealthChecker(hass.Hass):
                 "last_repair_attempt": None,
                 "attempts": 0,
                 "next_retry_at": None,
+                # When the fan was first observed fully healthy while its
+                # backoff ladder is non-idle; the ladder resets only once
+                # this streak reaches repair_backoff_reset_min.
+                "recovered_at": None,
             }
             for fan in self._fans
         }
@@ -178,6 +209,7 @@ class FanHealthChecker(hass.Hass):
     async def _async_startup(self) -> None:
         await self._provision_entities()
         await self._refresh_auto_repair_config()
+        await self._seed_repair_ladder()
         await self._seed_state_cache()
         self._register_state_listeners()
         self._register()
@@ -245,6 +277,23 @@ class FanHealthChecker(hass.Hass):
         except Exception as exc:
             self.log(
                 f"Failed to provision auto-repair delay helper: {exc!r}",
+                level="ERROR",
+            )
+
+        try:
+            created = await prov.ensure_helper(
+                "input_text",
+                f"{self._checker_id} Health Repair Ladder",
+                max=255,
+            )
+            if created:
+                self.log(
+                    f"Provisioned input_text.{self._checker_id}_health_repair_ladder",
+                    level="INFO",
+                )
+        except Exception as exc:
+            self.log(
+                f"Failed to provision repair-ladder helper: {exc!r}",
                 level="ERROR",
             )
 
@@ -375,13 +424,14 @@ class FanHealthChecker(hass.Hass):
 
     async def _check_fan_entity(self, fan: dict) -> Dict[str, str]:
         name = f"{fan['name']} State"
+        await self._refresh_ap_state(fan)
         try:
             state = await self.get_state(fan["entity_id"])
             if state is None or str(state) in ("unavailable", "unknown"):
                 return {
                     "name": name,
                     "status": "critical",
-                    "detail": f"State: {state}",
+                    "detail": f"State: {state}{self._ap_note(fan)}",
                 }
             return {"name": name, "status": "ok", "detail": str(state)}
         except Exception as exc:
@@ -390,6 +440,89 @@ class FanHealthChecker(hass.Hass):
                 level="ERROR",
             )
             return {"name": name, "status": "critical", "detail": f"Error: {exc}"}
+
+    # ------------------------------------------------------------------
+    # Access-point awareness
+    # ------------------------------------------------------------------
+    #
+    # Modern Forms fans are Wi-Fi devices, each associating with one UniFi
+    # access point (configured per fan as ``ap_status_entity`` — the UniFi
+    # integration's AP state sensor, e.g. sensor.kitchen_pantry_u7_pro_state).
+    # When that AP is down, the fan being unreachable is a *network* fault:
+    # power-cycling the fan cannot help, so repair is withheld until the AP
+    # recovers, and the alert text names the AP instead of implying a fan
+    # (or Z-Wave) fault.
+
+    # AP sensor states that positively mean "this AP is down". Anything
+    # else — including unavailable/unknown (the UniFi integration itself
+    # being broken) — is treated as AP-state-unknown and does not gate
+    # repair.
+    _AP_DOWN_STATES = ("disconnected", "not_home", "off")
+
+    async def _refresh_ap_state(self, fan: dict) -> None:
+        """Cache the fan's AP status-sensor state (lowercased) for this cycle."""
+        entity = fan.get("ap_status_entity")
+        if not entity:
+            return
+        name = fan["name"]
+        previous = self._ap_state_by_fan.get(name)
+        try:
+            state = await self.get_state(entity)
+            current: Optional[str] = (
+                str(state).lower() if state is not None else None
+            )
+        except Exception as exc:
+            self.log(
+                f"AP state check failed for {entity}: {exc!r}", level="WARNING"
+            )
+            current = None
+        self._ap_state_by_fan[name] = current
+
+        was_down = previous in self._AP_DOWN_STATES
+        is_down = current in self._AP_DOWN_STATES
+        if is_down and not was_down:
+            self.log(
+                f"{self._ap_label(fan)} is {current} — {name} offline is "
+                "expected; holding power-cycle repairs until the AP recovers",
+                level="WARNING",
+            )
+        elif was_down and not is_down:
+            self.log(
+                f"{self._ap_label(fan)} recovered ({current}) — {name} "
+                "repairs re-enabled",
+                level="INFO",
+            )
+
+    def _ap_is_down(self, fan: dict) -> bool:
+        return (
+            self._ap_state_by_fan.get(fan["name"]) in self._AP_DOWN_STATES
+        )
+
+    def _ap_label(self, fan: dict) -> str:
+        ap_name = fan.get("ap_name")
+        if not ap_name:
+            entity = fan.get("ap_status_entity", "")
+            obj = entity.split(".", 1)[-1]
+            for suffix in ("_state",):
+                if obj.endswith(suffix):
+                    obj = obj[: -len(suffix)]
+            ap_name = obj.replace("_", " ").title() or "AP"
+        return f"AP {ap_name}"
+
+    def _ap_note(self, fan: dict) -> str:
+        """Alert-detail suffix describing the Wi-Fi fan's AP status."""
+        if not fan.get("ap_status_entity"):
+            return " (Wi-Fi fan)"
+        state = self._ap_state_by_fan.get(fan["name"])
+        label = self._ap_label(fan)
+        if state in self._AP_DOWN_STATES:
+            return (
+                f" (Wi-Fi fan; {label} is {state} — fan offline expected, "
+                "power-cycle held until the AP recovers)"
+            )
+        if state is None:
+            return f" (Wi-Fi fan; {label}: state unknown)"
+        return f" (Wi-Fi fan; {label}: {state} — fan itself unreachable)"
 
     async def _check_fan_ping(self, fan: dict) -> Dict[str, str]:
         name = f"{fan['name']} Ping"
@@ -428,19 +561,47 @@ class FanHealthChecker(hass.Hass):
         )
 
     def _reset_recovered_fans(self, results: List[Dict[str, str]]) -> None:
-        """Reset per-fan repair state to idle for fans that recovered naturally."""
+        """Reset repair state for fans that have *stayed* recovered.
+
+        CrashLoopBackOff semantics: a recovery only resets the backoff
+        ladder after it has been sustained for ``repair_backoff_reset_min``
+        minutes. Until then the attempt count (and therefore the next
+        retry's delay) survives, so a fan that flaps back down minutes
+        after a "successful" repair resumes the ladder instead of earning
+        a fresh instant power-cycle.
+        """
+        now = datetime.datetime.now()
         for fan in self._fans:
-            if self._check_single_fan_results(fan, results):
-                fr = self._fan_repair_states[fan["name"]]
-                if fr["status"] in (REPAIR_FAILED, REPAIR_SUCCESS):
+            if not self._check_single_fan_results(fan, results):
+                continue
+            fr = self._fan_repair_states[fan["name"]]
+            if fr["status"] not in (REPAIR_FAILED, REPAIR_SUCCESS):
+                continue
+            if fr["recovered_at"] is None:
+                fr["recovered_at"] = now
+                if self._repair_backoff_reset_min > 0:
                     self.log(
-                        f"{fan['name']} recovered — resetting repair state",
+                        f"{fan['name']} recovered — backoff ladder "
+                        f"(attempts={fr['attempts']}) resets after "
+                        f"{self._repair_backoff_reset_min}m of sustained "
+                        "health",
                         level="INFO",
                     )
-                    fr["status"] = REPAIR_IDLE
-                    fr["detail"] = ""
-                    fr["attempts"] = 0
-                    fr["next_retry_at"] = None
+            held = (
+                now - fr["recovered_at"]
+            ).total_seconds() < self._repair_backoff_reset_min * 60
+            if held:
+                continue
+            self.log(
+                f"{fan['name']} recovered — resetting repair state",
+                level="INFO",
+            )
+            fr["status"] = REPAIR_IDLE
+            fr["detail"] = ""
+            fr["attempts"] = 0
+            fr["next_retry_at"] = None
+            fr["recovered_at"] = None
+            self._persist_ladder()
 
     # ------------------------------------------------------------------
     # Auto-repair logic
@@ -476,12 +637,20 @@ class FanHealthChecker(hass.Hass):
         justifies cutting power. A ping-only miss while HA can still reach
         the fan is a transient warning, never a reason to power-cycle a
         possibly-running fan.
+
+        A fan whose access point is down is likewise never repair-worthy:
+        the outage is the network's, and power-cycling the fan cannot fix
+        it — the repair (and its grace/backoff clocks) hold until the AP
+        recovers.
         """
         state_name = f"{fan['name']} State"
-        return any(
+        entity_down = any(
             r["name"] == state_name and r["status"] == "critical"
             for r in results
         )
+        if entity_down and self._ap_is_down(fan):
+            return False
+        return entity_down
 
     def _update_fan_unhealthy_timers(
         self, results: List[Dict[str, str]]
@@ -524,14 +693,18 @@ class FanHealthChecker(hass.Hass):
         for fan in self._fans:
             name = fan["name"]
             if self._is_fan_repair_worthy(fan, results):
-                # A success relapse (entity down again before a fully-clean
-                # cycle) starts a fresh episode instead of trapping in
-                # SUCCESS forever (attempts were already reset on success)
                 fr = self._fan_repair_states[name]
+                fr["recovered_at"] = None
                 if fr["status"] == REPAIR_SUCCESS:
-                    fr["status"] = REPAIR_IDLE
-                    fr["detail"] = ""
-                if self._fan_unhealthy_since[name] is None:
+                    # The repair's "success" did not stick — the fan is down
+                    # again before its recovery was sustained. Count the
+                    # false success as a failed attempt and resume the
+                    # backoff ladder instead of restarting it at attempt 1
+                    # with a stale grace deadline (which fired an instant
+                    # power-cycle every few minutes on 2026-08-31).
+                    self._register_fan_relapse(name)
+                    self._fan_unhealthy_since[name] = now
+                elif self._fan_unhealthy_since[name] is None:
                     self._fan_unhealthy_since[name] = now
                     self.log(
                         f"{name} entity down — auto-repair grace timer started",
@@ -788,13 +961,16 @@ class FanHealthChecker(hass.Hass):
             self.log("Repair already in progress — ignoring", level="WARNING")
             return
 
-        # Reset failed states so they can be retried (fresh backoff episode)
+        # Reset backoff ladders so fans can be retried immediately (a manual
+        # repair is a human-declared fresh start)
         for fr in self._fan_repair_states.values():
-            if fr["status"] == REPAIR_FAILED:
+            if fr["status"] in (REPAIR_FAILED, REPAIR_SUCCESS) or fr["attempts"]:
                 fr["status"] = REPAIR_IDLE
                 fr["detail"] = ""
                 fr["attempts"] = 0
                 fr["next_retry_at"] = None
+                fr["recovered_at"] = None
+        self._persist_ladder()
 
         # Block the auto-repair evaluator synchronously until the task runs
         self._manual_repair_starting = True
@@ -922,10 +1098,15 @@ class FanHealthChecker(hass.Hass):
                     self._report_repair_status_only()
                     await self._restore_fan_state(fan)
 
+                    # Attempts are NOT reset here — only a *sustained*
+                    # recovery (repair_backoff_reset_min in
+                    # _reset_recovered_fans) resets the backoff ladder, so a
+                    # relapse minutes from now resumes it (crashloop
+                    # semantics).
                     fr["status"] = REPAIR_SUCCESS
                     fr["detail"] = f"Recovered after {elapsed}s"
-                    fr["attempts"] = 0
                     fr["next_retry_at"] = None
+                    self._persist_ladder()
                     self._repair_status = self._aggregate_repair_status()
                     self.log(
                         f"{fan_name} repair successful — recovered after {elapsed}s",
@@ -974,8 +1155,30 @@ class FanHealthChecker(hass.Hass):
 
         CrashLoopBackOff semantics: the episode never ends on failure. The
         n-th failure schedules retry n+1 after delay × 2^(n-1) minutes,
-        capped at repair_backoff_max_min. Reset on recovery/manual repair.
+        capped at repair_backoff_max_min. Reset on *sustained* recovery or
+        manual repair.
         """
+        self._schedule_backoff_retry(fan_name, detail)
+
+    def _register_fan_relapse(self, fan_name: str) -> None:
+        """Resume the backoff ladder after a repair "success" failed to stick.
+
+        The false success counts as a failed attempt: the ladder climbs and
+        the next power-cycle waits out the corresponding backoff instead of
+        firing on the next check cycle.
+        """
+        fr = self._fan_repair_states[fan_name]
+        self._schedule_backoff_retry(
+            fan_name, "Relapsed after repair — recovery did not stick"
+        )
+        self.log(
+            f"{fan_name} relapsed after repair — resuming backoff ladder "
+            f"(attempt {fr['attempts']}; next retry at "
+            f"{fr['next_retry_at'].isoformat(timespec='seconds')})",
+            level="WARNING",
+        )
+
+    def _schedule_backoff_retry(self, fan_name: str, detail: str) -> None:
         fr = self._fan_repair_states[fan_name]
         fr["attempts"] += 1
         _, delay_min = self._read_auto_repair_config()
@@ -987,10 +1190,119 @@ class FanHealthChecker(hass.Hass):
             minutes=backoff_min
         )
         fr["status"] = REPAIR_FAILED
+        fr["recovered_at"] = None
         fr["detail"] = (
             f"{detail} (attempt {fr['attempts']}; retry at "
             f"{fr['next_retry_at'].strftime('%H:%M')})"
         )
+        self._persist_ladder()
+
+    # ------------------------------------------------------------------
+    # Backoff-ladder persistence
+    # ------------------------------------------------------------------
+    #
+    # The ladder lives in input_text.<checker_id>_health_repair_ladder
+    # (lazily provisioned) as compact JSON {fan: [attempts, next_retry]}
+    # so an AppDaemon app reload mid-incident — an HA restart or plugin
+    # reconnect re-initialises every app (observed 2026-08-31 07:24) —
+    # cannot reset a climbing ladder back to instant attempt-1 power-cycles.
+
+    _LADDER_HELPER_MAX_LEN = 255
+
+    def _ladder_helper_entity(self) -> str:
+        return f"input_text.{self._checker_id}_health_repair_ladder"
+
+    def _persist_ladder(self) -> None:
+        """Write the per-fan backoff ladder to its input_text helper.
+
+        Best-effort: failures are logged and never block repair logic. Only
+        fans with a non-zero attempt count are stored; if the payload would
+        exceed input_text's length limit, the lowest ladders are dropped
+        first (they lose the least backoff).
+        """
+        entries: Dict[str, Any] = {
+            name: [
+                fr["attempts"],
+                fr["next_retry_at"].isoformat(timespec="seconds")
+                if fr["next_retry_at"]
+                else None,
+            ]
+            for name, fr in self._fan_repair_states.items()
+            if fr["attempts"] > 0
+        }
+        value = json.dumps(entries, separators=(",", ":"))
+        while len(value) > self._LADDER_HELPER_MAX_LEN and entries:
+            drop = min(entries, key=lambda n: entries[n][0])
+            del entries[drop]
+            value = json.dumps(entries, separators=(",", ":"))
+        try:
+            self.call_service(
+                "input_text/set_value",
+                entity_id=self._ladder_helper_entity(),
+                value=value,
+            )
+        except Exception as exc:
+            self.log(
+                f"Failed to persist repair ladder: {exc!r}", level="WARNING"
+            )
+
+    async def _seed_repair_ladder(self) -> None:
+        """Restore the backoff ladder from its helper after an app reload."""
+        try:
+            raw = await self.get_state(self._ladder_helper_entity())
+        except Exception as exc:
+            self.log(
+                f"Could not read repair-ladder helper: {exc!r}",
+                level="WARNING",
+            )
+            return
+        if not raw or str(raw) in ("unknown", "unavailable"):
+            return
+        try:
+            entries = json.loads(str(raw))
+        except ValueError:
+            entries = None
+        if not isinstance(entries, dict):
+            self.log(
+                f"Ignoring unparseable repair-ladder value: {raw!r}",
+                level="WARNING",
+            )
+            return
+        _, delay_min = self._read_auto_repair_config()
+        # Never retry before one grace delay after a restart — a stale past
+        # retry time must not fire the instant the app comes back.
+        floor = datetime.datetime.now() + datetime.timedelta(minutes=delay_min)
+        restored = []
+        for name, entry in entries.items():
+            fr = self._fan_repair_states.get(name)
+            if fr is None or not isinstance(entry, (list, tuple)) or not entry:
+                continue
+            try:
+                attempts = int(entry[0])
+            except (TypeError, ValueError):
+                continue
+            if attempts <= 0:
+                continue
+            next_retry = None
+            if len(entry) > 1 and entry[1]:
+                try:
+                    next_retry = datetime.datetime.fromisoformat(str(entry[1]))
+                except ValueError:
+                    next_retry = None
+            fr["attempts"] = attempts
+            fr["status"] = REPAIR_FAILED
+            fr["next_retry_at"] = max(next_retry, floor) if next_retry else floor
+            fr["detail"] = (
+                f"Backoff ladder restored after restart (attempt {attempts}; "
+                f"retry at {fr['next_retry_at'].strftime('%H:%M')})"
+            )
+            restored.append(f"{name} (attempt {attempts})")
+        if restored:
+            self.log(
+                "Restored repair backoff ladder from "
+                f"{self._ladder_helper_entity()}: {', '.join(restored)}",
+                level="INFO",
+            )
 
     async def _wait_for_repair_script_free(self, fr: Dict[str, Any]) -> bool:
         """Wait until the repair script entity is not running ('on').
@@ -1130,14 +1442,16 @@ class FanHealthChecker(hass.Hass):
         elif self._repair_status == REPAIR_PENDING:
             detail = "Auto-repair pending"
         else:
-            failed_count = sum(
-                1 for fr in self._fan_repair_states.values()
+            # Name the failed fans with their ladder position — this string
+            # rides into the Alertmanager description, so the Pushover page
+            # itself should say which fan, which attempt, and when the next
+            # power-cycle is due.
+            failed = [
+                f"{name}: {fr['detail']}" if fr["detail"] else name
+                for name, fr in self._fan_repair_states.items()
                 if fr["status"] == REPAIR_FAILED
-            )
-            if failed_count:
-                detail = f"{failed_count} fan(s) repair failed"
-            else:
-                detail = ""
+            ]
+            detail = "; ".join(failed)
 
         return {
             "status": self._aggregate_repair_status(),

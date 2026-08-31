@@ -79,6 +79,38 @@ THIRD_FAN = {
     "scene_control": "select.upstairs_white_room_scene_controller_scene_control_relay",
 }
 
+# Modern Forms fans are Wi-Fi devices: each one associates with a UniFi AP
+# whose state sensor can be declared per fan (the ZEN32 is only the Z-Wave
+# relay that power-cycles them).
+AP_ENTITY = "sensor.kitchen_pantry_u7_pro_state"
+AP_NAME = "Kitchen Pantry U7 Pro"
+
+AP_FANS = [
+    {**SAMPLE_FANS[0], "ap_status_entity": AP_ENTITY, "ap_name": AP_NAME},
+    SAMPLE_FANS[1],
+]
+
+
+def _ok_results() -> list[dict]:
+    """Every check green for both sample fans."""
+    return [
+        {"name": "Pink Room State", "status": "ok", "detail": "on"},
+        {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+        {"name": "Blue Room State", "status": "ok", "detail": "off"},
+        {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+    ]
+
+
+def _pink_down_results() -> list[dict]:
+    """Pink Room entity-down (repair-worthy); Blue Room healthy."""
+    return [
+        {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+        {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+        {"name": "Blue Room State", "status": "ok", "detail": "off"},
+        {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+    ]
+
+
 DEFAULT_ARGS: Dict[str, Any] = {
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
@@ -158,10 +190,21 @@ class TestLifecycle:
         app.run_in.assert_called_once()
 
     def test_startup_provisions_helpers(self):
+        """Auto-repair toggle, delay — and the backoff-ladder helper, without
+        which an AppDaemon app reload mid-incident resets every fan to
+        attempt 1 and instant power-cycles resume."""
         app = _make_app()
         mock_prov = _make_mock_provisioner()
         _startup(app, mock_prov)
-        assert mock_prov.ensure_helper.call_count == 2
+
+        assert mock_prov.ensure_helper.call_count == 3
+        domains = [c.args[0] for c in mock_prov.ensure_helper.call_args_list]
+        assert domains == ["input_boolean", "input_number", "input_text"]
+
+        ladder_call = mock_prov.ensure_helper.call_args_list[-1]
+        assert ladder_call.args[1] == "fans Health Repair Ladder"
+        # input_text hard-caps at 255 chars — the ladder writer truncates to it
+        assert ladder_call.kwargs["max"] == 255
 
     def test_startup_registers_with_supports_repair(self):
         app = _make_app()
@@ -283,20 +326,31 @@ class TestPerFanRepairState:
             assert fr["status"] == REPAIR_IDLE
 
     def test_recovered_fan_resets_failed_state(self):
-        app = _make_app()
-        _init_only(app)
-        app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
-        app._fan_repair_states["Pink Room"]["detail"] = "Did not recover"
+        """Crashloop semantics: one clean cycle no longer clears FAILED — it
+        only starts the recovery streak. Only ``repair_backoff_reset_min=0``
+        (the old instant-reset behaviour) still resets on the first cycle."""
+        held = _make_app()  # default repair_backoff_reset_min = 30
+        _init_only(held)
+        held._fan_repair_states["Pink Room"].update(
+            {"status": REPAIR_FAILED, "detail": "Did not recover"}
+        )
 
-        results = [
-            {"name": "Pink Room State", "status": "ok", "detail": "on"},
-            {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
-            {"name": "Blue Room State", "status": "ok", "detail": "off"},
-            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
-        ]
-        app._reset_recovered_fans(results)
+        held._reset_recovered_fans(_ok_results())
 
-        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        fr = held._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["recovered_at"] is not None  # streak started, not finished
+
+        instant = _make_app({"repair_backoff_reset_min": 0})
+        _init_only(instant)
+        instant._fan_repair_states["Pink Room"].update(
+            {"status": REPAIR_FAILED, "detail": "Did not recover"}
+        )
+
+        instant._reset_recovered_fans(_ok_results())
+
+        assert instant._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert instant._fan_repair_states["Pink Room"]["recovered_at"] is None
 
     def test_still_failing_fan_keeps_failed_state(self):
         app = _make_app()
@@ -720,28 +774,69 @@ class TestAutoRepair:
         assert fr["attempts"] == 2  # ladder preserved
         app.create_task.assert_not_called()
 
-    def test_success_relapse_starts_fresh_episode(self):
-        """A fan stuck in SUCCESS whose entity dies again (before a fully
-        clean cycle) must start a fresh episode, not trap forever."""
+    def test_success_relapse_resumes_backoff_ladder(self):
+        """A repair "success" that did not stick RESUMES the ladder.
+
+        Regression (2026-08-31 page storm): the relapse used to demote the
+        fan to a fresh IDLE episode, so the next power-cycle came after one
+        grace delay at attempt 1 — ~11 power-cycles in 5h. Now the false
+        success counts as a failed attempt: the ladder climbs, the retry is
+        pushed out by the doubled backoff, and the fan's unhealthy clock is
+        restarted so no stale deadline can fire instantly.
+        """
         app = _make_app()
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app._fan_repair_states["Pink Room"]["status"] = REPAIR_SUCCESS
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_SUCCESS,
+                "attempts": 1,
+                "detail": "Recovered after 45s",
+            }
+        )
         app.create_task = MagicMock()
 
-        results = [
-            {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
-            {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
-            {"name": "Blue Room State", "status": "ok", "detail": "off"},
-            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
-        ]
-        app._update_fan_unhealthy_timers(results)
-        app._evaluate_auto_repair(results)
+        before = datetime.datetime.now()
+        app._update_fan_unhealthy_timers(_pink_down_results())
+        app._evaluate_auto_repair(_pink_down_results())
 
-        # Demoted to a fresh IDLE episode with the grace countdown pending
-        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
-        assert app._repair_status == REPAIR_PENDING
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["attempts"] == 2  # ladder resumed, not restarted
+        assert "Relapsed" in fr["detail"]
+        delta_min = (fr["next_retry_at"] - before).total_seconds() / 60
+        assert abs(delta_min - 10) < 0.1  # 5 × 2^(2-1)
+        # Fresh unhealthy clock — no stale grace deadline to fast-track a
+        # power-cycle on the very next cycle.
+        assert app._fan_unhealthy_since["Pink Room"] >= before
+        assert app._repair_status != REPAIR_PENDING
+        app.create_task.assert_not_called()
+
+    def test_repeated_relapses_keep_doubling_up_to_the_cap(self):
+        """Each relapse climbs one rung: 5 → 10 → 20 minutes, then the cap."""
+        app = _make_app({"repair_backoff_max_min": 20})
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        for expected in (5, 10, 20, 20):
+            # Each round starts from a repair that reported success (the fan
+            # came back) and then dropped out again before it was sustained.
+            app._fan_repair_states["Pink Room"]["status"] = REPAIR_SUCCESS
+            before = datetime.datetime.now()
+            app._update_fan_unhealthy_timers(_pink_down_results())
+
+            fr = app._fan_repair_states["Pink Room"]
+            delta_min = (fr["next_retry_at"] - before).total_seconds() / 60
+            assert abs(delta_min - expected) < 0.1, (
+                f"attempt {fr['attempts']}: expected ~{expected}m, "
+                f"got {delta_min:.2f}m"
+            )
+            assert fr["status"] == REPAIR_FAILED
+
+        assert app._fan_repair_states["Pink Room"]["attempts"] == 4
         app.create_task.assert_not_called()
 
     def test_disabled_blocks_due_fan_retry(self):
@@ -827,9 +922,14 @@ class TestAutoRepair:
         # Other fans untouched
         assert app._fan_repair_states["Blue Room"]["attempts"] == 0
 
-    def test_fan_recovery_resets_backoff_counter(self):
-        """Natural recovery ends the fan's episode: counter and schedule reset."""
-        app = _make_app()
+    def test_sustained_recovery_resets_backoff_counter(self):
+        """Only a SUSTAINED recovery ends the episode.
+
+        A single clean cycle starts the streak and keeps the ladder; the
+        counter and schedule clear once the streak reaches
+        ``repair_backoff_reset_min`` (and the ladder helper is emptied).
+        """
+        app = _make_app()  # default repair_backoff_reset_min = 30
         _init_only(app)
         app._fan_repair_states["Pink Room"].update(
             {
@@ -839,18 +939,61 @@ class TestAutoRepair:
             }
         )
 
-        results = [
-            {"name": "Pink Room State", "status": "ok", "detail": "on"},
-            {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
-            {"name": "Blue Room State", "status": "ok", "detail": "off"},
-            {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
-        ]
-        app._reset_recovered_fans(results)
+        app._reset_recovered_fans(_ok_results())
 
         fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["attempts"] == 3
+        assert fr["next_retry_at"] is not None
+        assert fr["recovered_at"] is not None
+
+        # Backdate the streak past the reset window — the ladder clears.
+        fr["recovered_at"] -= datetime.timedelta(minutes=31)
+        app.call_service.reset_mock()
+        app._reset_recovered_fans(_ok_results())
+
         assert fr["status"] == REPAIR_IDLE
         assert fr["attempts"] == 0
         assert fr["next_retry_at"] is None
+        assert fr["recovered_at"] is None
+        # The cleared ladder is persisted too, so a reload can't resurrect it.
+        persisted = app.call_service.call_args_list[-1]
+        assert persisted.args[0] == "input_text/set_value"
+        assert persisted.kwargs["value"] == "{}"
+
+    def test_recovery_streak_restarts_after_a_relapse(self):
+        """A partial streak does not accumulate across a dropout: going
+        entity-down again clears ``recovered_at``, so the fan starts the
+        30-minute clean run from scratch."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_delay_min = 5
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 2,
+                "next_retry_at": datetime.datetime.now()
+                + datetime.timedelta(minutes=10),
+            }
+        )
+
+        app._reset_recovered_fans(_ok_results())
+        fr = app._fan_repair_states["Pink Room"]
+        streak_start = fr["recovered_at"]
+        assert streak_start is not None
+
+        # Entity drops again 29 minutes in (still FAILED, so no relapse
+        # bookkeeping) — the streak must be discarded, not resumed.
+        fr["recovered_at"] = streak_start - datetime.timedelta(minutes=29)
+        app._update_fan_unhealthy_timers(_pink_down_results())
+        assert fr["recovered_at"] is None
+        assert fr["attempts"] == 2
+
+        # Back to healthy: a brand-new streak, so nothing resets yet.
+        app._reset_recovered_fans(_ok_results())
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["attempts"] == 2
+        assert fr["recovered_at"] > streak_start
 
     def test_earliest_due_wins_between_first_attempt_and_retry(self):
         """A backoff retry due now must not be starved by a newer IDLE fan
@@ -936,31 +1079,47 @@ class TestRepairExecution:
     def test_execute_fan_repair_calls_script(self):
         app = _make_app()
         _init_only(app)
+        # One rung already climbed: a "success" must NOT zero the ladder —
+        # only a sustained recovery does (crashloop semantics).
+        app._fan_repair_states["Pink Room"].update(
+            {
+                "status": REPAIR_FAILED,
+                "attempts": 2,
+                "next_retry_at": datetime.datetime.now(),
+            }
+        )
 
         # Mock health checks to return ok immediately
-        app._run_health_checks_only = AsyncMock(
-            return_value=[
-                {"name": "Pink Room State", "status": "ok", "detail": "on"},
-                {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
-                {"name": "Blue Room State", "status": "ok", "detail": "off"},
-                {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
-            ]
-        )
+        app._run_health_checks_only = AsyncMock(return_value=_ok_results())
 
         _run(app._execute_fan_repair(SAMPLE_FANS[0]))
 
         # Verify script was invoked fire-and-forget with correct variables
-        app.call_service.assert_called_once_with(
-            "script/turn_on",
-            entity_id="script.zen32_hard_reset",
-            variables={
+        script_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args[0] == "script/turn_on"
+        ]
+        assert len(script_calls) == 1
+        assert script_calls[0].kwargs == {
+            "entity_id": "script.zen32_hard_reset",
+            "variables": {
                 "power_switch_entity": "switch.upstairs_pink_room_scene_controller",
                 "relay_control_select_entity": "select.upstairs_pink_room_scene_controller_relay_control",
                 "scene_control_select_entity": "select.upstairs_pink_room_scene_controller_scene_control_relay",
                 "unavailable_fan_entity": "fan.pink_room_fan_fan",
             },
-        )
-        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_SUCCESS
+        }
+
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_SUCCESS
+        assert fr["attempts"] == 2  # ladder survives the success
+        assert fr["next_retry_at"] is None
+        # ...and is written through, so an app reload keeps the rung.
+        ladder_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args[0] == "input_text/set_value"
+        ]
+        assert json.loads(ladder_calls[-1].kwargs["value"]) == {"Pink Room": [2, None]}
 
     def test_execute_fan_repair_timeout(self):
         app = _make_app({"repair_recovery_wait_s": 10})
@@ -1442,3 +1601,348 @@ class TestStateRestore:
         assert "fan/turn_on" in services
         assert "fan/set_percentage" in services
         assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_SUCCESS
+
+
+# ---------------------------------------------------------------------------
+# Tests — Backoff-ladder persistence
+# ---------------------------------------------------------------------------
+
+
+def _many_fans(count: int) -> list[dict]:
+    """``count`` fans with long-ish names, for the helper length limit."""
+    return [
+        {
+            "name": f"Upstairs Ceiling Fan {i:02d}",
+            "entity_id": f"fan.ceiling_{i:02d}",
+            "ip": f"192.168.50.{100 + i}",
+            "power_switch": f"switch.ceiling_{i:02d}",
+            "relay_control": f"select.ceiling_{i:02d}_relay",
+            "scene_control": f"select.ceiling_{i:02d}_scene",
+        }
+        for i in range(count)
+    ]
+
+
+class TestLadderPersistence:
+    """The ladder lives in ``input_text.<checker_id>_health_repair_ladder``.
+
+    An HA restart or plugin reconnect re-initialises every AppDaemon app
+    (observed 2026-08-31 07:24); without persistence that reset a climbing
+    ladder back to instant attempt-1 power-cycles.
+    """
+
+    def test_persist_writes_compact_json_for_climbing_fans_only(self):
+        app = _make_app()
+        _init_only(app)
+        retry = datetime.datetime.now() + datetime.timedelta(minutes=10)
+        app._fan_repair_states["Pink Room"].update(
+            {"status": REPAIR_FAILED, "attempts": 2, "next_retry_at": retry}
+        )
+        app.call_service.reset_mock()
+
+        app._persist_ladder()
+
+        # Blue Room (attempts 0) is absent — only live ladders are stored.
+        app.call_service.assert_called_once_with(
+            "input_text/set_value",
+            entity_id="input_text.fans_health_repair_ladder",
+            value=json.dumps(
+                {"Pink Room": [2, retry.isoformat(timespec="seconds")]},
+                separators=(",", ":"),
+            ),
+        )
+
+    def test_persist_writes_empty_object_when_no_ladders(self):
+        app = _make_app()
+        _init_only(app)
+        app.call_service.reset_mock()
+
+        app._persist_ladder()
+
+        assert app.call_service.call_args.kwargs["value"] == "{}"
+
+    def test_persist_truncates_lowest_ladders_first(self):
+        """input_text caps at 255 chars; the fans with the least backoff to
+        lose are the ones dropped."""
+        fans = _many_fans(5)
+        app = _make_app({"fans": fans})
+        _init_only(app)
+        retry = datetime.datetime.now() + datetime.timedelta(minutes=10)
+        for rung, fan in enumerate(fans, start=1):  # attempts 1..5
+            app._fan_repair_states[fan["name"]].update(
+                {"status": REPAIR_FAILED, "attempts": rung, "next_retry_at": retry}
+            )
+        app.call_service.reset_mock()
+
+        app._persist_ladder()
+
+        value = app.call_service.call_args.kwargs["value"]
+        assert len(value) <= 255
+        stored = json.loads(value)
+        assert 0 < len(stored) < len(fans)  # something had to go
+        # Exactly the highest ladders survived (fans are ordered by rung).
+        kept = {f["name"] for f in fans[-len(stored):]}
+        assert set(stored) == kept
+
+    def test_persist_failure_never_breaks_repair_logic(self):
+        app = _make_app()
+        _init_only(app)
+        app._fan_repair_states["Pink Room"]["attempts"] = 1
+        app.call_service = MagicMock(side_effect=Exception("HA unreachable"))
+
+        app._persist_ladder()  # must not raise
+
+        warnings = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING"
+        ]
+        assert any("repair ladder" in str(c) for c in warnings)
+
+    def test_seed_restores_attempts_and_floors_a_stale_retry(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_delay_min = 5
+        stale = datetime.datetime.now() - datetime.timedelta(hours=2)
+        future = datetime.datetime.now() + datetime.timedelta(hours=1)
+        app.get_state = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "Pink Room": [3, stale.isoformat(timespec="seconds")],
+                    "Blue Room": [1, future.isoformat(timespec="seconds")],
+                }
+            )
+        )
+
+        before = datetime.datetime.now()
+        _run(app._seed_repair_ladder())
+
+        app.get_state.assert_awaited_once_with(
+            "input_text.fans_health_repair_ladder"
+        )
+        pink = app._fan_repair_states["Pink Room"]
+        assert pink["attempts"] == 3
+        assert pink["status"] == REPAIR_FAILED
+        assert "restored" in pink["detail"].lower()
+        # A retry time already in the past must not fire the instant the app
+        # comes back — it is floored to now + one grace delay.
+        assert pink["next_retry_at"] >= before + datetime.timedelta(minutes=5)
+        # A future retry is kept as-is.
+        blue = app._fan_repair_states["Blue Room"]
+        assert blue["attempts"] == 1
+        assert blue["next_retry_at"] == future.replace(microsecond=0)
+
+    def test_seed_floors_a_missing_retry_time(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_delay_min = 5
+        app.get_state = AsyncMock(return_value=json.dumps({"Pink Room": [4, None]}))
+
+        before = datetime.datetime.now()
+        _run(app._seed_repair_ladder())
+
+        pink = app._fan_repair_states["Pink Room"]
+        assert pink["attempts"] == 4
+        assert pink["status"] == REPAIR_FAILED
+        assert pink["next_retry_at"] >= before + datetime.timedelta(minutes=5)
+
+    def test_seed_skips_unknown_fans_and_garbage_entries(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(
+            return_value=json.dumps(
+                {
+                    "Ghost Room": [4, None],       # not a configured fan
+                    "Pink Room": ["nope", None],   # unparseable attempt count
+                    "Blue Room": [0, None],        # nothing to restore
+                }
+            )
+        )
+
+        _run(app._seed_repair_ladder())
+
+        for fr in app._fan_repair_states.values():
+            assert fr["attempts"] == 0
+            assert fr["status"] == REPAIR_IDLE
+            assert fr["next_retry_at"] is None
+
+    def test_seed_tolerates_unusable_helper_values(self):
+        """A fresh/garbled helper must leave every fan idle, never crash
+        startup — the helper is unknown until the first write."""
+        for raw in ("", "unknown", "unavailable", "not json", '"a string"', "[1,2]"):
+            app = _make_app()
+            _init_only(app)
+            app.get_state = AsyncMock(return_value=raw)
+
+            _run(app._seed_repair_ladder())
+
+            fr = app._fan_repair_states["Pink Room"]
+            assert fr["attempts"] == 0, f"raw={raw!r}"
+            assert fr["status"] == REPAIR_IDLE, f"raw={raw!r}"
+
+    def test_seed_survives_a_helper_read_error(self):
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(side_effect=Exception("websocket down"))
+
+        _run(app._seed_repair_ladder())  # must not raise
+
+        assert app._fan_repair_states["Pink Room"]["attempts"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests — Access-point awareness (Wi-Fi fans, not Z-Wave)
+# ---------------------------------------------------------------------------
+
+class TestAccessPointGate:
+    """Modern Forms fans are Wi-Fi devices. When the AP they associate with
+    is down, the fan being unreachable is a network fault — power-cycling it
+    via the ZEN32 relay cannot help, so the repair is held and the alert
+    text names the AP."""
+
+    def _run_cycle(self, app, ap_state, fan_state="unavailable"):
+        """Run one full check cycle with a fake HA behind it."""
+        async def fake_get_state(entity_id=None, *a, **kw):
+            if entity_id == AP_ENTITY:
+                return ap_state
+            if entity_id == PINK_ENTITY:
+                return fan_state
+            if entity_id.startswith("input_boolean"):
+                return "on"
+            if entity_id.startswith("input_number"):
+                return "5"
+            return "on"
+
+        app.get_state = AsyncMock(side_effect=fake_get_state)
+        with patch(
+            "health_checks.checker_apps.fan_health_checker.fan_health_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ):
+            _run(app._run_checks())
+
+    def _detail_for(self, fan, ap_state):
+        app = _make_app({"fans": AP_FANS})
+        _init_only(app)
+
+        async def fake_get_state(entity_id=None, *a, **kw):
+            return ap_state if entity_id == AP_ENTITY else "unavailable"
+
+        app.get_state = AsyncMock(side_effect=fake_get_state)
+        return _run(app._check_fan_entity(fan))["detail"]
+
+    def test_ap_down_holds_the_power_cycle(self):
+        """An entity-down fan whose AP is disconnected is not repair-worthy:
+        no power-cycle, and its grace timer never starts (an old one is
+        cleared) so the AP outage cannot bank time toward a repair."""
+        app = _make_app({"fans": AP_FANS})
+        _init_only(app)
+        app.create_task = MagicMock()
+        # Pretend this fan had already been counting down for 30 minutes.
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+
+        self._run_cycle(app, ap_state="disconnected")
+
+        assert app._ap_state_by_fan["Pink Room"] == "disconnected"
+        assert app._is_fan_repair_worthy(AP_FANS[0], _pink_down_results()) is False
+        assert app._fan_unhealthy_since["Pink Room"] is None
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IDLE
+        assert app._repair_status == REPAIR_IDLE
+        app.create_task.assert_not_called()
+
+    def test_ap_up_leaves_the_fan_repair_worthy(self):
+        """AP connected → the fan itself is at fault, so a due repair fires."""
+        app = _make_app({"fans": AP_FANS})
+        _init_only(app)
+        app.create_task = MagicMock()
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=30)
+        )
+
+        self._run_cycle(app, ap_state="connected")
+
+        assert app._is_fan_repair_worthy(AP_FANS[0], _pink_down_results()) is True
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_IN_PROGRESS
+        app.create_task.assert_called_once()
+
+    def test_unknown_ap_state_does_not_gate(self):
+        """A broken UniFi integration (unavailable/unknown/None) must not
+        silently disable fan repair — only a positive down state gates."""
+        for ap_state in ("unavailable", "unknown", None):
+            app = _make_app({"fans": AP_FANS})
+            _init_only(app)
+            app.create_task = MagicMock()
+            app._fan_unhealthy_since["Pink Room"] = (
+                datetime.datetime.now() - datetime.timedelta(minutes=30)
+            )
+
+            self._run_cycle(app, ap_state=ap_state)
+
+            assert app._is_fan_repair_worthy(AP_FANS[0], _pink_down_results()) is True, (
+                f"ap_state={ap_state!r}"
+            )
+            assert (
+                app._fan_repair_states["Pink Room"]["status"] == REPAIR_IN_PROGRESS
+            ), f"ap_state={ap_state!r}"
+
+    def test_every_down_state_gates(self):
+        """disconnected / not_home / off all mean "AP is down" (the UniFi
+        integration uses different sensor flavours per device class)."""
+        for ap_state in ("disconnected", "not_home", "off"):
+            app = _make_app({"fans": AP_FANS})
+            _init_only(app)
+            app._ap_state_by_fan["Pink Room"] = ap_state
+            assert (
+                app._is_fan_repair_worthy(AP_FANS[0], _pink_down_results()) is False
+            ), f"ap_state={ap_state!r}"
+
+    def test_detail_names_the_ap_when_it_is_down(self):
+        detail = self._detail_for(AP_FANS[0], "disconnected")
+        assert detail == (
+            "State: unavailable (Wi-Fi fan; AP Kitchen Pantry U7 Pro is "
+            "disconnected — fan offline expected, power-cycle held until "
+            "the AP recovers)"
+        )
+
+    def test_detail_blames_the_fan_when_the_ap_is_up(self):
+        detail = self._detail_for(AP_FANS[0], "Connected")
+        assert detail == (
+            "State: unavailable (Wi-Fi fan; AP Kitchen Pantry U7 Pro: "
+            "connected — fan itself unreachable)"
+        )
+
+    def test_detail_says_unknown_when_the_ap_sensor_is_dark(self):
+        detail = self._detail_for(AP_FANS[0], None)
+        assert detail == (
+            "State: unavailable (Wi-Fi fan; AP Kitchen Pantry U7 Pro: "
+            "state unknown)"
+        )
+
+    def test_detail_still_flags_wifi_without_an_ap_configured(self):
+        """No ap_status_entity → no AP read at all, but the alert still says
+        Wi-Fi (a triage agent misread these as Z-Wave fans on 2026-08-31)."""
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(return_value="unavailable")
+
+        result = _run(app._check_fan_entity(SAMPLE_FANS[0]))
+
+        assert result["detail"] == "State: unavailable (Wi-Fi fan)"
+        app.get_state.assert_awaited_once_with(SAMPLE_FANS[0]["entity_id"])
+
+    def test_ap_read_error_is_treated_as_unknown(self):
+        app = _make_app({"fans": AP_FANS})
+        _init_only(app)
+
+        async def fake_get_state(entity_id=None, *a, **kw):
+            if entity_id == AP_ENTITY:
+                raise Exception("websocket down")
+            return "unavailable"
+
+        app.get_state = AsyncMock(side_effect=fake_get_state)
+        result = _run(app._check_fan_entity(AP_FANS[0]))
+
+        assert app._ap_state_by_fan["Pink Room"] is None
+        assert "state unknown" in result["detail"]
+        assert app._is_fan_repair_worthy(AP_FANS[0], _pink_down_results()) is True

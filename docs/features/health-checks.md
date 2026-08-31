@@ -135,7 +135,7 @@ The dashboard is great when someone is looking at it. For failures that need att
 
 - **Critical pages the phone.** A checker going `critical` raises a `severity=critical` alert, which the cluster's routing delivers as a Pushover notification.
 - **Warnings stay quiet.** `warning` and `degraded` map to `severity=warning` — visible in the Alertmanager and Grafana UIs, never a page.
-- **Recovery resolves immediately.** The moment a checker reports healthy again, the controller resolves the alert and the phone gets the matching `[RESOLVED]` notification — no lingering stale alerts.
+- **Recovery resolves once it sticks.** When a checker reports healthy again the controller resolves the alert and the phone gets the matching `[RESOLVED]` notification — after a short hold that proves the recovery is real (see *One page per incident* below), so no lingering stale alerts and no resolve-then-refire ping-pong.
 
 Each alert carries the failing check details in its description, so the notification usually tells the whole story on its own ("Event stream frozen for 3.2h — no genuine event since detection"). While an alert is firing, the controller re-posts it every two minutes to keep it alive (Alertmanager expires silent alerts after five), and if Alertmanager itself is down, health checking carries on unaffected — posts are simply retried until it returns.
 
@@ -146,8 +146,26 @@ Checkers can customize their alert name in config (e.g. `ProtectEventStreamFroze
 A page that fires on every momentary blip trains you to ignore it, so the paging path is deliberately patient:
 
 - **Debounce.** A checker has to stay unhealthy for a sustained window — not just a single poll — before it pages. A transient blip that clears on the next check never reaches the phone.
-- **Escalation is gated too.** When something that's already warning gets worse and goes critical, the critical page is held for that same sustained window instead of firing instantly. A checker that flaps between warning and critical keeps its quiet warning and never pages, while a real, sustained escalation still promotes to a page. De-escalations — critical easing back to warning — apply immediately.
+- **Escalation is gated too.** When something that's already warning gets worse and goes critical, the critical page is held for that same sustained window instead of firing instantly. A checker that flaps between warning and critical keeps its quiet warning and never pages, while a real, sustained escalation still promotes to a page.
 - **Repair gets first crack.** If a checker supports auto-repair and a repair is scheduled or running, the critical page is withheld while the repair does its thing — capped at 30 minutes so a stuck repair can never permanently mask a real outage. Most self-healing failures resolve inside that window with no page at all; only a repair that fails or times out escalates to the phone.
+
+### One Page Per Incident
+
+The debounce keeps a blip from *starting* a page. Its mirror image keeps a blip from *ending* one — because the Pushover receiver sends resolves too, every recovery is a notification, and a condition that oscillates would otherwise page on every swing in both directions. One flapping Wi-Fi ceiling fan produced eighteen notifications in a single night that way.
+
+So an **improvement hold** (`alert_improve_hold_s`, 15 minutes in production) applies to everything that makes a firing alert *better*:
+
+- **Recovery has to hold.** A checker returning to `ok` doesn't resolve its alert on the spot — the alert keeps firing until the recovery has been continuous for the whole window. Drop back into failure inside that window and the improvement is discarded silently; nothing was ever posted, so nothing pages.
+- **De-escalations wait too.** Critical easing back to warning is held the same way, with the critical alert staying up (annotations still refreshed each cycle, so the UI shows what is failing *right now*) until the calmer state proves it holds.
+- **Only improvements are held.** Anything at or above the firing severity — a re-failure, an escalation — cancels the hold instantly. Getting worse is never delayed.
+
+The result is one `[FIRING]` page when a real incident starts and one `[RESOLVED]` page when it genuinely ends, no matter how much the underlying condition thrashes in between. The cost is that the resolve lands up to 15 minutes after the dashboard turns green — deliberate, and worth it.
+
+### Reaching Every Alertmanager Replica
+
+Alertmanager runs as an HA pair, and the pair gossips silences and the notification log — but **not** the alert set itself. Prometheus handles this by sending every alert to every replica; a direct poster has to do the same. Posting through the load-balanced Service left each replica with a different, partial view of which alerts existed, their notification logs never lined up, and both replicas paged for the same incident.
+
+The controller now posts to the **headless** Service and fans each batch out to every address it resolves to, concurrently — one POST per replica, per cycle. A post counts as delivered if at least one replica accepts it, so a replica being down degrades to the old single-replica behaviour instead of losing the page. A hostname that resolves to a single address (or an IP outright) takes exactly the original code path.
 
 ### Muting a Checker
 

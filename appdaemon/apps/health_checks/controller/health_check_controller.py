@@ -124,6 +124,12 @@ class HealthCheckController(hass.Hass):
         # promotion (see AlertmanagerBridge repair hold).
         alert_repair_hold_cap_s = int(args.get("alert_repair_hold_cap_s", 1800))
 
+        # Improvement hold: a firing alert's resolve/de-escalation must be
+        # sustained this long before it is applied, so an oscillating
+        # condition pages once instead of once per flap (see
+        # AlertmanagerBridge improvement hold). 0 = act immediately.
+        alert_improve_hold_s = int(args.get("alert_improve_hold_s", 0))
+
         # Prometheus metrics exposition (generic across all checkers).
         self._metrics_enabled: bool = bool(
             args.get("metrics_enabled", True)
@@ -139,6 +145,7 @@ class HealthCheckController(hass.Hass):
                 default_for_seconds=alert_for_seconds,
                 for_overrides=alert_for_overrides,
                 repair_hold_cap_s=alert_repair_hold_cap_s,
+                improve_hold_s=alert_improve_hold_s,
             )
 
         self.log(
@@ -148,7 +155,8 @@ class HealthCheckController(hass.Hass):
             f"alert_retention={self._alert_retention}, "
             f"alertmanager={'enabled (' + self._alertmanager_url + ')' if self._alert_bridge else 'disabled'}, "
             f"alert_for_seconds={alert_for_seconds or '{}'}, "
-            f"alert_for_overrides={alert_for_overrides or '{}'}",
+            f"alert_for_overrides={alert_for_overrides or '{}'}, "
+            f"alert_improve_hold_s={alert_improve_hold_s}",
             level="INFO",
         )
 

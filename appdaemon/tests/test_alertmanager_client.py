@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
 import pytest
@@ -65,6 +65,28 @@ class _FakeSession:
         return self._response
 
 
+class _RoutingFakeSession(_FakeSession):
+    """Session whose outcome depends on the replica URL being posted to.
+
+    ``by_replica`` maps a replica base URL to either a ``_FakeResponse`` or
+    an ``Exception`` to raise — so one replica can be down while another
+    accepts the batch.
+    """
+
+    def __init__(self, by_replica: dict[str, object]) -> None:
+        super().__init__()
+        self._by_replica = by_replica
+
+    def post(self, url: str, **kwargs):
+        self.post_calls.append((url, kwargs))
+        outcome = next(
+            o for base, o in self._by_replica.items() if url.startswith(base)
+        )
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+
 def _patch_session(session: _FakeSession):
     return patch(
         "providers.alertmanager.alertmanager_client.aiohttp.ClientSession",
@@ -72,10 +94,39 @@ def _patch_session(session: _FakeSession):
     )
 
 
+def _patch_replicas(client: AlertmanagerClient, urls: list[str]):
+    """Pin the resolved replica list (DNS is exercised separately below)."""
+    return patch.object(
+        client, "_resolve_replica_urls", AsyncMock(return_value=urls)
+    )
+
+
 def _run(coro):
     loop = asyncio.new_event_loop()
     try:
         return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+def _run_with_dns(coro_factory, addrs: list[str] | None = None, exc=None):
+    """Run *coro_factory()* on a loop whose ``getaddrinfo`` is faked.
+
+    ``_resolve_replica_urls`` resolves through the running loop, so faking
+    the loop's own ``getaddrinfo`` is the seam — no global patching.
+    Returns ``(result, getaddrinfo_mock)``.
+    """
+    loop = asyncio.new_event_loop()
+    if exc is not None:
+        loop.getaddrinfo = AsyncMock(side_effect=exc)
+    else:
+        loop.getaddrinfo = AsyncMock(
+            return_value=[
+                (2, 1, 6, "", (addr, 9093)) for addr in (addrs or [])
+            ]
+        )
+    try:
+        return loop.run_until_complete(coro_factory()), loop.getaddrinfo
     finally:
         loop.close()
 
@@ -237,3 +288,155 @@ class TestErrors:
         with _patch_session(session):
             with pytest.raises(AlertmanagerError, match="POST failed"):
                 _run(client.post_alerts(_sample_alerts()))
+
+
+# ---------------------------------------------------------------------------
+# Tests — replica fan-out
+# ---------------------------------------------------------------------------
+
+REPLICA_A = "http://10.42.0.1:9093"
+REPLICA_B = "http://10.42.0.2:9093"
+
+
+class TestReplicaFanOut:
+    """Alertmanager HA pairs gossip silences and the notification log — not
+    the alert set.  A poster that hits only one replica leaves the other with
+    a partial view, dedup never lines up and both replicas page (2026-08-31:
+    one incident, two page streams).  So every replica gets every batch.
+    """
+
+    def test_posts_the_batch_to_every_replica(self):
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+        alerts = _sample_alerts()
+        session = _FakeSession(response=_FakeResponse(status=200))
+
+        with _patch_session(session), _patch_replicas(client, [REPLICA_A, REPLICA_B]):
+            _run(client.post_alerts(alerts))
+
+        assert sorted(u for u, _ in session.post_calls) == [
+            f"{REPLICA_A}/api/v2/alerts",
+            f"{REPLICA_B}/api/v2/alerts",
+        ]
+        # Identical payload to each — same alert on every replica.
+        assert [kw for _, kw in session.post_calls] == [{"json": alerts}] * 2
+
+    def test_one_replica_down_still_succeeds(self):
+        """A single replica refusing the batch must never lose the page."""
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+        session = _RoutingFakeSession(
+            {
+                REPLICA_A: _FakeResponse(status=200),
+                REPLICA_B: _FakeResponse(status=500, text_data="boom"),
+            }
+        )
+
+        with _patch_session(session), _patch_replicas(client, [REPLICA_A, REPLICA_B]):
+            _run(client.post_alerts(_sample_alerts()))  # must not raise
+
+        assert len(session.post_calls) == 2
+
+    def test_one_replica_unreachable_still_succeeds(self):
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+        session = _RoutingFakeSession(
+            {
+                REPLICA_A: aiohttp.ClientError("connection refused"),
+                REPLICA_B: _FakeResponse(status=200),
+            }
+        )
+
+        with _patch_session(session), _patch_replicas(client, [REPLICA_A, REPLICA_B]):
+            _run(client.post_alerts(_sample_alerts()))  # must not raise
+
+        assert len(session.post_calls) == 2
+
+    def test_all_replicas_failing_raises(self):
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+        session = _RoutingFakeSession(
+            {
+                REPLICA_A: _FakeResponse(status=500, text_data="boom"),
+                REPLICA_B: aiohttp.ClientError("connection refused"),
+            }
+        )
+
+        with _patch_session(session), _patch_replicas(client, [REPLICA_A, REPLICA_B]):
+            with pytest.raises(AlertmanagerError, match="all 2 replica"):
+                _run(client.post_alerts(_sample_alerts()))
+
+    def test_single_replica_keeps_the_old_error_contract(self):
+        """One address = the pre-fan-out client, error messages included."""
+        client = AlertmanagerClient("http://alertmanager.test:9093")
+        session = _FakeSession(response=_FakeResponse(status=503))
+
+        with _patch_session(session), _patch_replicas(client, [client.base_url]):
+            with pytest.raises(AlertmanagerError) as excinfo:
+                _run(client.post_alerts(_sample_alerts()))
+
+        assert "HTTP 503" in str(excinfo.value)
+        assert "replica" not in str(excinfo.value)
+
+
+class TestReplicaResolution:
+    def test_multiple_addresses_become_per_replica_urls(self):
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+
+        urls, getaddrinfo = _run_with_dns(
+            client._resolve_replica_urls, addrs=["10.42.0.2", "10.42.0.1"]
+        )
+
+        # Sorted for a stable post order across resolutions.
+        assert urls == [REPLICA_A, REPLICA_B]
+        getaddrinfo.assert_awaited_once_with("alertmanager-operated.test", 9093)
+
+    def test_single_address_falls_back_to_the_base_url(self):
+        client = AlertmanagerClient("http://alertmanager.test:9093")
+
+        urls, _ = _run_with_dns(client._resolve_replica_urls, addrs=["10.42.0.1"])
+
+        assert urls == ["http://alertmanager.test:9093"]
+
+    def test_duplicate_addresses_are_deduplicated(self):
+        """One address returned once per socket type is still one replica."""
+        client = AlertmanagerClient("http://alertmanager.test:9093")
+
+        urls, _ = _run_with_dns(
+            client._resolve_replica_urls, addrs=["10.42.0.1", "10.42.0.1"]
+        )
+
+        assert urls == ["http://alertmanager.test:9093"]
+
+    def test_ipv6_addresses_are_bracketed(self):
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+
+        urls, _ = _run_with_dns(
+            client._resolve_replica_urls, addrs=["fd00::1", "fd00::2"]
+        )
+
+        assert urls == ["http://[fd00::1]:9093", "http://[fd00::2]:9093"]
+
+    def test_https_without_a_port_resolves_on_443(self):
+        client = AlertmanagerClient("https://alertmanager-operated.test")
+
+        urls, getaddrinfo = _run_with_dns(
+            client._resolve_replica_urls, addrs=["10.42.0.1", "10.42.0.2"]
+        )
+
+        getaddrinfo.assert_awaited_once_with("alertmanager-operated.test", 443)
+        assert urls == ["https://10.42.0.1:443", "https://10.42.0.2:443"]
+
+    def test_ip_literal_host_is_never_resolved(self):
+        client = AlertmanagerClient("http://10.42.0.1:9093")
+
+        urls, getaddrinfo = _run_with_dns(client._resolve_replica_urls, addrs=[])
+
+        assert urls == ["http://10.42.0.1:9093"]
+        getaddrinfo.assert_not_awaited()
+
+    def test_resolution_failure_falls_back_to_the_base_url(self):
+        """DNS trouble must never block an alert post."""
+        client = AlertmanagerClient("http://alertmanager-operated.test:9093")
+
+        urls, _ = _run_with_dns(
+            client._resolve_replica_urls, exc=OSError("Name or service not known")
+        )
+
+        assert urls == ["http://alertmanager-operated.test:9093"]
