@@ -294,7 +294,13 @@ class AlertmanagerBridge:
                     active["labels"].get("severity", ""), 0
                 )
                 if escalating:
-                    self._improving.pop(checker_id, None)
+                    if self._improving.pop(checker_id, None) is not None:
+                        self._log(
+                            f"Improvement discarded for checker '{checker_id}' "
+                            f"— escalating to severity={severity} inside the "
+                            f"hold window",
+                            level="INFO",
+                        )
                 if escalating and for_s > 0:
                     # Escalations go through the for-duration gate too — the
                     # currently-firing lower severity stays up meanwhile.

@@ -173,7 +173,7 @@ Sometimes you already know about a problem and don't want to be paged about it �
 
 ### Auto-Heal First, Page If That Fails
 
-The two checkers that drove this integration show the two ends of the spectrum:
+The checkers that drove this integration span the whole spectrum, from "heals itself before you wake up" to "no automation can help":
 
 **UniFi Protect** has a known failure mode where its websocket dies silently: camera entities keep updating, but every motion and smart-detection sensor stops changing state — with zero log errors. The checker detects the freeze (no events for hours *of active daytime*, so a quiet night never false-positives), reloads the Protect config entry automatically, and then waits for a *genuine* new event to prove the stream is really back — the reload itself re-registers every sensor with fresh timestamps, which would otherwise look like a recovery. Most freezes heal themselves this way; the page only goes out if the reload didn't work, and the alert keeps firing (annotated "auto-repair FAILED") until events actually resume.
 
@@ -182,6 +182,10 @@ A second, harder failure mode gets its own fast path: when the UNVR connection i
 **ComfyUI** is the opposite. A queue that stops moving — or an API that stops answering — is the classic symptom of the GPU falling off the PCI bus on the virtualization host, and only a host reboot fixes that. No automation can help, so this checker is deliberately page-only: it raises the alarm and stays out of the way. Its thresholds are tuned to the real workload — the first generation after a ComfyUI restart takes ~8.5 minutes of model loading, well under the 30-minute stuck threshold, so cold starts never page.
 
 **PowerView shade gateway** is the pattern in its purest form, and it exists because of a real overnight incident. When a Hunter Douglas G3 gateway loses contact with a shade, the shade doesn't report "offline" — it reports **0% battery**, and a flapping gateway makes it bounce `100% ↔ 0%` for hours. The old battery checker read every 0% as a dying battery and paged four times before dawn for something no human could fix by charging. Now two checkers cooperate: `BatteryChecker` recognizes the physically-impossible drop (a healthy battery can't lose 40+ points between readings) and downgrades it to a silent warning instead of paging, while a dedicated `ShadeGatewayChecker` owns the disconnect itself. It tracks a gateway-wide "disconnect episode" that survives the flapping — a momentary bounce back to 100% doesn't count as recovery — and stays silent through a grace period (default two hours), because these outages usually self-heal. If the shades are still flapping when the grace expires, it power-cycles the one thing that helps — the PoE port feeding the primary gateway — waits for the shades to come back, and only pages if that single restart didn't hold. One overnight page storm becomes zero pages when it self-heals, or one actionable "gateway restarted" page when it doesn't.
+
+**Ceiling fans** show what happens when auto-heal is too eager. The fans are Wi-Fi devices; when one drops off the network the repair is a power cycle through its ZEN32 relay — a blunt instrument that reboots the fan to its hardware default. The retry schedule is borrowed from Kubernetes' CrashLoopBackOff: each failed repair doubles the wait before the next one, capped at six hours. What was missing was the *reset* rule. A fan that came back for ninety seconds counted as recovered, which zeroed the ladder, so the next drop earned another immediate power cycle — one flapping fan collected about eleven power cycles in five hours. Now a recovery has to hold for thirty minutes before the ladder resets, and a relapse inside that window counts the false recovery as another failed attempt and resumes climbing. The ladder is also written to a Home Assistant helper, because an AppDaemon reload mid-incident used to wipe it clean.
+
+The other half of that incident was blame. Each fan declares which UniFi access point it associates with, and when that AP is down the fan being unreachable is the network's problem, not the fan's: repairs are held (along with the backoff clock, so the ladder doesn't climb through an outage the fan didn't cause) and the alert text names the access point instead of the fan. It also says "Wi-Fi fan" out loud — during triage the ZEN32 relay in the repair path got mistaken for the fan's own radio, and half an hour went into the Z-Wave stack for a Wi-Fi problem.
 
 ## Dashboard Experience
 
@@ -285,7 +289,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Basement Lights | `MqttDeviceChecker` | Zigbee2MQTT device HA state + linkquality | No |
 | Cigar Room Humidity | `TempHumidityChecker` | Humidity sensors with threshold alerts | No |
 | Spa | `SpaHealthChecker` | Gateway ping, connections, multi-entity staleness (OR logic across thermostat/lights/pumps) | Yes — power cycle |
-| Fans | `FanHealthChecker` | Entity state + IP ping per fan | Yes — per-fan zen32 reset |
+| Fans | `FanHealthChecker` | Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down | Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder |
 | Printer | `RepairableDeviceChecker` | Entity state + IP ping | Yes — power cycle |
 | Vestaboard | `BasicDeviceChecker` | Controller + configuration status | No |
 | Cielo Home | `DeviceGroupChecker` | AC controller status + IP per room | No |

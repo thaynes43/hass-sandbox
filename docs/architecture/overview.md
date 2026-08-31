@@ -73,7 +73,7 @@ This pattern works for non-admin users (unlike `fire_event` which requires admin
 
 ### Health monitoring
 
-The [health check system](../features/health-checks.md) uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes commands. The controller also mirrors checker status into the cluster's Alertmanager via the `alertmanager` provider — critical findings page the phone, and recovery resolves the alert automatically.
+The [health check system](../features/health-checks.md) uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes commands. The controller also mirrors checker status into the cluster's Alertmanager via the `alertmanager` provider — critical findings page the phone, and recovery resolves the alert once it holds, so a flapping condition pages [once per incident](../features/health-checks.md#one-page-per-incident) rather than once per swing.
 
 ### Container separation
 

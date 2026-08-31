@@ -1119,7 +1119,9 @@ class TestRepairExecution:
             c for c in app.call_service.call_args_list
             if c.args[0] == "input_text/set_value"
         ]
-        assert json.loads(ladder_calls[-1].kwargs["value"]) == {"Pink Room": [2, None]}
+        assert json.loads(ladder_calls[-1].kwargs["value"]) == {
+            "Pink Room": [2, None, "success"]
+        }
 
     def test_execute_fan_repair_timeout(self):
         app = _make_app({"repair_recovery_wait_s": 10})
@@ -1647,7 +1649,7 @@ class TestLadderPersistence:
             "input_text/set_value",
             entity_id="input_text.fans_health_repair_ladder",
             value=json.dumps(
-                {"Pink Room": [2, retry.isoformat(timespec="seconds")]},
+                {"Pink Room": [2, retry.isoformat(timespec="seconds"), "failed"]},
                 separators=(",", ":"),
             ),
         )
@@ -1744,6 +1746,25 @@ class TestLadderPersistence:
         assert pink["attempts"] == 4
         assert pink["status"] == REPAIR_FAILED
         assert pink["next_retry_at"] >= before + datetime.timedelta(minutes=5)
+
+    def test_seed_restores_success_awaiting_sustained_recovery(self):
+        """A ladder persisted right after a *successful* repair (before the
+        recovery was sustained) must restore as SUCCESS — not FAILED — so a
+        reload never misreports a currently-healthy fan as failed on the
+        dashboard. A relapse or _reset_recovered_fans takes it from there."""
+        app = _make_app()
+        _init_only(app)
+        app.get_state = AsyncMock(
+            return_value=json.dumps({"Pink Room": [2, None, "success"]})
+        )
+
+        _run(app._seed_repair_ladder())
+
+        pink = app._fan_repair_states["Pink Room"]
+        assert pink["status"] == REPAIR_SUCCESS
+        assert pink["attempts"] == 2
+        assert pink["next_retry_at"] is None
+        assert "awaiting sustained recovery" in pink["detail"]
 
     def test_seed_skips_unknown_fans_and_garbage_entries(self):
         app = _make_app()

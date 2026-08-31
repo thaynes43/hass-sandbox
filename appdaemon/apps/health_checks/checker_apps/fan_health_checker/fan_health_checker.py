@@ -1226,6 +1226,10 @@ class FanHealthChecker(hass.Hass):
                 fr["next_retry_at"].isoformat(timespec="seconds")
                 if fr["next_retry_at"]
                 else None,
+                # The status disambiguates a success-awaiting-sustained-
+                # recovery ladder from a failed one, so a reload does not
+                # misreport a currently-healthy fan as "failed".
+                "success" if fr["status"] == REPAIR_SUCCESS else "failed",
             ]
             for name, fr in self._fan_repair_states.items()
             if fr["attempts"] > 0
@@ -1289,13 +1293,29 @@ class FanHealthChecker(hass.Hass):
                     next_retry = datetime.datetime.fromisoformat(str(entry[1]))
                 except ValueError:
                     next_retry = None
+            was_success = len(entry) > 2 and entry[2] == "success"
             fr["attempts"] = attempts
-            fr["status"] = REPAIR_FAILED
-            fr["next_retry_at"] = max(next_retry, floor) if next_retry else floor
-            fr["detail"] = (
-                f"Backoff ladder restored after restart (attempt {attempts}; "
-                f"retry at {fr['next_retry_at'].strftime('%H:%M')})"
-            )
+            if was_success:
+                # The ladder was persisted right after a successful repair
+                # whose recovery had not yet been sustained. The fan may
+                # well be healthy — restore as SUCCESS so the dashboard
+                # does not misreport it as failed; _reset_recovered_fans
+                # (sustained health) or a relapse takes it from here.
+                fr["status"] = REPAIR_SUCCESS
+                fr["next_retry_at"] = None
+                fr["detail"] = (
+                    f"Backoff ladder restored after restart "
+                    f"(attempt {attempts}; awaiting sustained recovery)"
+                )
+            else:
+                fr["status"] = REPAIR_FAILED
+                fr["next_retry_at"] = (
+                    max(next_retry, floor) if next_retry else floor
+                )
+                fr["detail"] = (
+                    f"Backoff ladder restored after restart (attempt {attempts}; "
+                    f"retry at {fr['next_retry_at'].strftime('%H:%M')})"
+                )
             restored.append(f"{name} (attempt {attempts})")
         if restored:
             self.log(
