@@ -539,6 +539,11 @@ views:
             navigation_path: '#school-lunch-popup'
           - type: custom:school-schedule-card
             status_entity: sensor.school_schedule
+            navigation_path: '#school-schedule-popup'
+            visibility:
+              - condition: state
+                entity: binary_sensor.school_lunch_in_season
+                state: 'on'
       - type: grid
         cards:
           - show_state: false
@@ -2195,6 +2200,38 @@ views:
                 status_entity: sensor.school_lunch_menu
                 selection_entity: input_text.school_lunch_selected_schools
                 relay_script: school_lunch_relay
+          - type: custom:bubble-card
+            card_type: pop-up
+            hash: '#school-schedule-popup'
+            button_type: name
+            width_desktop: 75vw
+            show_header: true
+            name: School Schedule
+            show_icon: true
+            icon: mdi:calendar-clock
+            show_name: true
+            margin: 7px
+            scrolling_effect: false
+            sub_button:
+              main: []
+              bottom:
+                - name: Back
+                  icon: mdi:arrow-left
+                  show_name: true
+                  show_icon: true
+                  tap_action:
+                    action: navigate
+                    navigation_path: '#'
+            tap_action:
+              action: navigate
+              navigation_path: '#'
+            button_action:
+              tap_action:
+                action: navigate
+                navigation_path: '#'
+            cards:
+              - type: custom:school-schedule-detail-card
+                status_entity: sensor.school_schedule
           - type: custom:bubble-card
             card_type: pop-up
             hash: '#health-check-popup'

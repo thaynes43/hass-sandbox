@@ -92,10 +92,19 @@ weekends and holidays are simply absent.
 `agent-docs/appdaemon-testing.md`), and the card already treats a missing key as
 "unknown". Nothing in the payload is a boolean.
 
-## Associated card
+## Associated cards
 
-`school-schedule-card.js` (in this directory). Register it as a Lovelace
-resource and bump the `?v=N` query parameter after any edit.
+Both live in this directory; register each as a Lovelace resource and bump
+the `?v=N` query parameter after any edit.
+
+- `school-schedule-card.js` — the compact card: today and the next school day,
+  rotation day badge, one icon per class. Fixed 112px height for the wall
+  display. `navigation_path` opens the detail view.
+- `school-schedule-detail-card.js` — the six-day rotation as a matrix (periods
+  with times down, Day 1..6 across, icon + class + teacher + room per cell),
+  today/next columns highlighted, icon legend. Read-only. On `wall-display` it
+  sits inside a bubble-card pop-up (`#school-schedule-popup`); on
+  `unifi-connect` it is its own `subview` panel page (`/unifi-connect/school-schedule`).
 
 ```yaml
 type: custom:school-schedule-card
@@ -161,8 +170,9 @@ Anything unmatched gets `mdi:school` and the course name as its label.
 
 1. **Environment variables** — add the four secrets to the Kubernetes
    `ExternalSecret` (and to `appdaemon/.env` for local dev; see `.env.example`).
-2. **Lovelace resource** — register `school-schedule-card.js` under
-   Settings → Dashboards → Resources as a JavaScript module, and bump `?v=N`
+2. **Lovelace resources** — register `school-schedule-card.js` and
+   `school-schedule-detail-card.js` under Settings → Dashboards → Resources as
+   JavaScript modules (served from `/local/school-schedule/`), and bump `?v=N`
    after each update. The provisioner cannot create Lovelace resources.
 
 Nothing else: no shell commands, no `local_file` cameras, no helpers.
