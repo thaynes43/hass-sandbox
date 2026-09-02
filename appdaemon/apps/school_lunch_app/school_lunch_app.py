@@ -16,6 +16,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qs, urlparse
 
 # AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
 # live at `appdaemon/providers`, so add the AppDaemon root directory.
@@ -25,11 +26,33 @@ import hassapi as hass
 
 from providers.school_menu.client import SchoolMenuClient
 from providers.school_menu.types import MenuMonth
+from providers.secrets import resolve_arg_secret
 
 logger = logging.getLogger(__name__)
 
 SENSOR_ENTITY_ID = "sensor.school_lunch_menu"
 SELECTION_ENTITY_ID = "input_text.school_lunch_selected_schools"
+
+
+def sid_from_menu_url(menu_url: str) -> str:
+    """Extract the district site ID (``sid``) from a menu URL.
+
+    The School Nutrition and Fitness menu page looks like
+    ``https://www.schoolnutritionandfitness.com/index.php?sid=<sid>&page=menus``;
+    the ``sid`` query parameter identifies the district and is the only part
+    the client needs. Returns ``""`` when the URL carries no ``sid``.
+    """
+    if not menu_url:
+        return ""
+    values = parse_qs(urlparse(menu_url.strip()).query).get("sid") or []
+    return values[0].strip() if values else ""
+
+
+def mask_sid(sid: str) -> str:
+    """Mask a site ID for logging (``****1234``) — security rule S6."""
+    if not sid:
+        return "<unset>"
+    return f"****{sid[-4:]}"
 
 
 class SchoolLunchApp(hass.Hass):
@@ -42,8 +65,12 @@ class SchoolLunchApp(hass.Hass):
     def initialize(self) -> None:
         args = self.args or {}
 
-        # Config from apps.yaml
-        self._sid: str = args.get("sid", "")
+        # Config from apps.yaml. The district site ID identifies the school
+        # district, so it is kept out of the repo: ``menu_url_env`` names the
+        # env var holding the district's menu URL (SCHOOL_LUNCH in prod), and
+        # the sid is parsed from it. A plain ``sid`` arg remains as a dev/test
+        # fallback.
+        self._sid: str = self._resolve_sid(args)
         self._menus: List[Dict[str, str]] = args.get("menus", [])
         self._default_selected: List[str] = args.get("default_selected", [])
         self._show_tomorrow_after: str = args.get("show_tomorrow_after", "15:00:00")
@@ -55,7 +82,7 @@ class SchoolLunchApp(hass.Hass):
         self._school_data: List[Dict[str, Any]] = []
 
         self.log(
-            f"SchoolLunchApp initialising: sid={self._sid}, "
+            f"SchoolLunchApp initialising: sid={mask_sid(self._sid)}, "
             f"schools={[m['name'] for m in self._menus]}, "
             f"default_selected={self._default_selected}",
             level="INFO",
@@ -63,6 +90,33 @@ class SchoolLunchApp(hass.Hass):
 
         # Defer async provisioning + data fetching to startup wrapper
         self.run_in(self._on_startup, 0)
+
+    def _resolve_sid(self, args: Dict[str, Any]) -> str:
+        """Resolve the district site ID from config.
+
+        Order: ``menu_url_env`` / ``menu_url`` (sid parsed from the URL query),
+        then ``sid_env`` / ``sid``. Returns ``""`` after logging an error when
+        nothing usable is configured; startup then skips the network work
+        instead of hammering the API with a malformed URL.
+        """
+        try:
+            menu_url = str(resolve_arg_secret(args, "menu_url", default="") or "")
+            if menu_url:
+                sid = sid_from_menu_url(menu_url)
+                if not sid:
+                    self.log(
+                        "menu_url is set but carries no 'sid' query parameter — "
+                        "expected .../index.php?sid=<district-id>&page=menus",
+                        level="ERROR",
+                    )
+                return sid
+            return str(resolve_arg_secret(args, "sid", default="") or "")
+        except ValueError as exc:
+            self.log(
+                f"Cannot resolve school lunch site ID: {exc}",
+                level="ERROR",
+            )
+            return ""
 
     # ------------------------------------------------------------------
     # Startup
@@ -75,6 +129,14 @@ class SchoolLunchApp(hass.Hass):
     async def _async_startup(self) -> None:
         """Provision entities, resolve IDs, fetch menus, register listeners."""
         await self._provision_entities()
+
+        if not self._sid:
+            self.log(
+                "No school lunch site ID configured — menus will not be fetched. "
+                "Set menu_url_env (e.g. SCHOOL_LUNCH) or sid in apps.yaml and reload.",
+                level="ERROR",
+            )
+            return
 
         # Create the client (no session yet — used as async context manager per call)
         self._client = SchoolMenuClient(sid=self._sid)

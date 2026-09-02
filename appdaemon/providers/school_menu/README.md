@@ -23,10 +23,10 @@ school_menu/
 
 ### `SchoolMenuClient`
 
-Async context manager. Pass the site ID (`sid`) from the school district's URL.
+Async context manager. Pass the site ID (`sid`) from the school district's menu URL (the `sid=` query parameter). The district id is treated as a secret — apps read it from the `SCHOOL_LUNCH` env var rather than hardcoding it.
 
 ```python
-async with SchoolMenuClient(sid="0802121850414637") as client:
+async with SchoolMenuClient(sid="<district-site-id>") as client:
     # Step 1: resolve a human-facing numeric download ID to a MongoDB ObjectId
     resolved = await client.resolve_menu_id("853700")
     # -> {"id": "69652cd2...", "site_code": "244"}

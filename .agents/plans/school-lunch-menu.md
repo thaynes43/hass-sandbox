@@ -173,7 +173,7 @@ school_lunch_app:
   disable: true
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  sid: "0802121850414637"
+  menu_url_env: SCHOOL_LUNCH  # district menu URL; sid parsed from it
   menus:
     - name: "Elementary"
       download_id: "853700"
@@ -193,7 +193,7 @@ school_lunch_app_dev:
   class: SchoolLunchApp
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  sid: "0802121850414637"
+  menu_url_env: SCHOOL_LUNCH  # district menu URL; sid parsed from it
   menus:
     - name: "Elementary"
       download_id: "853700"
