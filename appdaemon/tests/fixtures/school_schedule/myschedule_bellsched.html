@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Bell Schedule</title>
+<script type="text/javascript">
+	var psc_firstDay =  parseDate('20260902'),
+		psc_lastDay = parseDate('20270621'),
+		startDate = '',
+		att_thisStartWeek = '08/31/2026';
+</script>
+</head>
+<body>
+<div id="print-school">Example Public Schools<br><span>Example Middle School</span></div>
+		     <ul id="students-list">
+	        <li  class="selected">
+	              <a href="javascript:switchStudent(10001);">Student One</a>
+	        </li>
+	        <li >
+	              <a href="javascript:switchStudent(10002);">Student Two</a>
+	        </li>
+	</ul>
+        <form id="switch_student_form" action="home.html" method="post">
+            <input type="hidden" name="selected_student_id"/>
+        </form>
+<div id="content-main">
+<table id="tableStudentSchedMatrix" class="gridSched" border="0" cellpadding="0" cellspacing="0">
+<tr>
+<td class="scheduleHeader">&nbsp;</td>
+<td class="scheduleHeader"><b>Tuesday<br>09/01/2026</b></td>
+<td class="scheduleHeader"><b>Wednesday<br>09/02/2026</b></td>
+<td class="scheduleHeader"><b>Thursday<br>09/03/2026</b></td>
+<td class="scheduleHeader"><b>Friday<br>09/04/2026</b></td>
+<td class="scheduleHeader">&nbsp;</td>
+<td></td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleTickOdd">08:00 AM</td>
+<td rowspan="76" class="scheduleOffTimeTick">&nbsp;</td>
+<td rowspan="4" class="scheduleClass1Tick" name="attCell20260902">Advisory 6&nbsp;<br>Jordan, Jamie<br>A206<br>08:00 AM - 08:20 AM
+						</td>
+<td rowspan="8" class="scheduleClass1Tick" name="attCell20260903">Advisory 6&nbsp;<br>Jordan, Jamie<br>A206<br>08:00 AM - 08:40 AM
+						</td>
+<td rowspan="4" class="scheduleClass1Tick" name="attCell20260904">Advisory 6&nbsp;<br>Jordan, Jamie<br>A206<br>08:00 AM - 08:20 AM
+						</td>
+<td rowspan="12" class="scheduleTickOdd">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="11" class="scheduleClass2" name="attCell20260902">LA&nbsp;<br>Lawson, Logan<br>A209<br>08:20 AM - 09:15 AM
+						</td>
+<td rowspan="11" class="scheduleClass2" name="attCell20260904">LA&nbsp;<br>Lawson, Logan<br>A209<br>08:20 AM - 09:15 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="11" class="scheduleClass7" name="attCell20260903">Science&nbsp;<br>Jordan, Jamie<br>A206<br>08:40 AM - 09:35 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleTickEven">09:00 AM</td>
+<td rowspan="12" class="scheduleTickEven">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="11" class="scheduleClass3" name="attCell20260902">SocStud&nbsp;<br>Adams, Alex<br>A208<br>09:15 AM - 10:10 AM
+						</td>
+<td rowspan="11" class="scheduleClass3" name="attCell20260904">SocStud&nbsp;<br>Adams, Alex<br>A208<br>09:15 AM - 10:10 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="11" class="scheduleClass8" name="attCell20260903">Math&nbsp;<br>Grant, Gray<br>A207<br>09:35 AM - 10:30 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleTickOdd">10:00 AM</td>
+<td rowspan="12" class="scheduleTickOdd">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="9" class="scheduleClass4" name="attCell20260902">FLEX SGFL&nbsp;<br>Mercer, Morgan<br>B204<br>10:10 AM - 10:55 AM
+						</td>
+<td rowspan="9" class="scheduleClass4" name="attCell20260904">FLEX SGFL&nbsp;<br>Mercer, Morgan<br>B204<br>10:10 AM - 10:55 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="9" class="scheduleClass4" name="attCell20260903">FLEX SGFL&nbsp;<br>Mercer, Morgan<br>B204<br>10:30 AM - 11:15 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="9" class="scheduleClass5" name="attCell20260902">Art&nbsp;<br>Hayes, Harper<br>B202<br>10:55 AM - 11:40 AM
+						</td>
+<td rowspan="9" class="scheduleClass5" name="attCell20260904">Art&nbsp;<br>Hayes, Harper<br>B202<br>10:55 AM - 11:40 AM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleTickEven">11:00 AM</td>
+<td rowspan="12" class="scheduleTickEven">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="9" class="scheduleClass5" name="attCell20260903">Art&nbsp;<br>Hayes, Harper<br>B202<br>11:15 AM - 12:00 PM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="5" class="scheduleClass6" name="attCell20260902">Lunch&nbsp;<br>Lunch, MS<br>Cafe<br>11:40 AM - 12:05 PM
+						</td>
+<td rowspan="5" class="scheduleClass6" name="attCell20260904">Lunch&nbsp;<br>Lunch, MS<br>Cafe<br>11:40 AM - 12:05 PM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleTickOdd">12:00 PM</td>
+<td rowspan="5" class="scheduleClass6Tick" name="attCell20260903">Lunch&nbsp;<br>Lunch, MS<br>Cafe<br>12:00 PM - 12:25 PM
+						</td>
+<td rowspan="12" class="scheduleTickOdd">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="4" class="scheduleClass1" name="attCell20260902">Advisory 6&nbsp;<br>Jordan, Jamie<br>A206<br>12:05 PM - 12:25 PM
+						</td>
+<td rowspan="4" class="scheduleClass1" name="attCell20260904">Advisory 6&nbsp;<br>Jordan, Jamie<br>A206<br>12:05 PM - 12:25 PM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="11" class="scheduleClass7" name="attCell20260902">Science&nbsp;<br>Jordan, Jamie<br>A206<br>12:25 PM - 01:20 PM
+						</td>
+<td rowspan="11" class="scheduleClass2" name="attCell20260903">LA&nbsp;<br>Lawson, Logan<br>A209<br>12:25 PM - 01:20 PM
+						</td>
+<td rowspan="11" class="scheduleClass7" name="attCell20260904">Science&nbsp;<br>Jordan, Jamie<br>A206<br>12:25 PM - 01:20 PM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleTickEven">01:00 PM</td>
+<td rowspan="12" class="scheduleTickEven">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="12" class="scheduleClass8" name="attCell20260902">Math&nbsp;<br>Grant, Gray<br>A207<br>01:20 PM - 02:20 PM
+						</td>
+<td rowspan="12" class="scheduleClass3" name="attCell20260903">SocStud&nbsp;<br>Adams, Alex<br>A208<br>01:20 PM - 02:20 PM
+						</td>
+<td rowspan="12" class="scheduleClass8" name="attCell20260904">Math&nbsp;<br>Grant, Gray<br>A207<br>01:20 PM - 02:20 PM
+						</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td rowspan="4" class="scheduleTickOdd">02:00 PM</td>
+<td rowspan="4" class="scheduleTickOdd">&nbsp;</td>
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr class="scheduleRow" valign="top">
+<td> </td>
+</tr>
+<tr>
+<td colspan="6" class="scheduleFooter">&nbsp;</td>
+</tr>
+</table>
+</div>
+</body>
+</html>

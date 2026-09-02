@@ -47,6 +47,7 @@ nav:
       - Immich Photo Frame: features/photo-frame.md
       - Dashboard Notify: features/dashboard-notify.md
       - School Lunch Menu: features/school-lunch.md
+      - School Day Rotation: features/school-schedule.md
       - Vestaboard: features/vestaboard.md
       - System Health Monitoring: features/health-checks.md
       - Media Dashboard: features/media-dashboard.md

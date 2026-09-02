@@ -1,0 +1,422 @@
+{
+ "1": [
+  {
+   "period": "ADV",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B1",
+   "course": "LA",
+   "teacher": "Lawson, Logan",
+   "room": "A209",
+   "section": "6001-11",
+   "term": "26-27"
+  },
+  {
+   "period": "6B2",
+   "course": "SocStud",
+   "teacher": "Adams, Alex",
+   "room": "A208",
+   "section": "6201-129",
+   "term": "26-27"
+  },
+  {
+   "period": "6B3",
+   "course": "FLEX SGFL",
+   "teacher": "Mercer, Morgan",
+   "room": "B204",
+   "section": "614S-41",
+   "term": "Q1"
+  },
+  {
+   "period": "6B4",
+   "course": "Art",
+   "teacher": "Hayes, Harper",
+   "room": "B202",
+   "section": "6601-1221",
+   "term": "T1"
+  },
+  {
+   "period": "6B5",
+   "course": "Lunch",
+   "teacher": "Lunch, MS",
+   "room": "Cafe",
+   "section": "8760-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6PA",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B6",
+   "course": "Science",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6401-139",
+   "term": "26-27"
+  },
+  {
+   "period": "6B7",
+   "course": "Math",
+   "teacher": "Grant, Gray",
+   "room": "A207",
+   "section": "6301-14",
+   "term": "26-27"
+  }
+ ],
+ "2": [
+  {
+   "period": "ADV",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B1",
+   "course": "Science",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6401-139",
+   "term": "26-27"
+  },
+  {
+   "period": "6B2",
+   "course": "Math",
+   "teacher": "Grant, Gray",
+   "room": "A207",
+   "section": "6301-14",
+   "term": "26-27"
+  },
+  {
+   "period": "6B3",
+   "course": "FLEX SGFL",
+   "teacher": "Mercer, Morgan",
+   "room": "B204",
+   "section": "614S-41",
+   "term": "Q1"
+  },
+  {
+   "period": "6B4",
+   "course": "Art",
+   "teacher": "Hayes, Harper",
+   "room": "B202",
+   "section": "6601-1221",
+   "term": "T1"
+  },
+  {
+   "period": "6B5",
+   "course": "Lunch",
+   "teacher": "Lunch, MS",
+   "room": "Cafe",
+   "section": "8760-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6B6",
+   "course": "LA",
+   "teacher": "Lawson, Logan",
+   "room": "A209",
+   "section": "6001-11",
+   "term": "26-27"
+  },
+  {
+   "period": "6B7",
+   "course": "SocStud",
+   "teacher": "Adams, Alex",
+   "room": "A208",
+   "section": "6201-129",
+   "term": "26-27"
+  }
+ ],
+ "3": [
+  {
+   "period": "ADV",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B1",
+   "course": "LA",
+   "teacher": "Lawson, Logan",
+   "room": "A209",
+   "section": "6001-11",
+   "term": "26-27"
+  },
+  {
+   "period": "6B2",
+   "course": "SocStud",
+   "teacher": "Adams, Alex",
+   "room": "A208",
+   "section": "6201-129",
+   "term": "26-27"
+  },
+  {
+   "period": "6B3",
+   "course": "FLEX SGFL",
+   "teacher": "Mercer, Morgan",
+   "room": "B204",
+   "section": "614S-41",
+   "term": "Q1"
+  },
+  {
+   "period": "6B4",
+   "course": "Art",
+   "teacher": "Hayes, Harper",
+   "room": "B202",
+   "section": "6601-1221",
+   "term": "T1"
+  },
+  {
+   "period": "6B5",
+   "course": "Lunch",
+   "teacher": "Lunch, MS",
+   "room": "Cafe",
+   "section": "8760-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6PA",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B6",
+   "course": "Science",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6401-139",
+   "term": "26-27"
+  },
+  {
+   "period": "6B7",
+   "course": "Math",
+   "teacher": "Grant, Gray",
+   "room": "A207",
+   "section": "6301-14",
+   "term": "26-27"
+  }
+ ],
+ "4": [
+  {
+   "period": "ADV",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B1",
+   "course": "Science",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6401-139",
+   "term": "26-27"
+  },
+  {
+   "period": "6B2",
+   "course": "Math",
+   "teacher": "Grant, Gray",
+   "room": "A207",
+   "section": "6301-14",
+   "term": "26-27"
+  },
+  {
+   "period": "6B3",
+   "course": "FLEX SGFL",
+   "teacher": "Mercer, Morgan",
+   "room": "B204",
+   "section": "614S-41",
+   "term": "Q1"
+  },
+  {
+   "period": "6B4",
+   "course": "PhysEd",
+   "teacher": "Dawson, Drew",
+   "room": "D123",
+   "section": "6603-10",
+   "term": "26-27"
+  },
+  {
+   "period": "6B5",
+   "course": "Lunch",
+   "teacher": "Lunch, MS",
+   "room": "Cafe",
+   "section": "8760-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6B6",
+   "course": "LA",
+   "teacher": "Lawson, Logan",
+   "room": "A209",
+   "section": "6001-11",
+   "term": "26-27"
+  },
+  {
+   "period": "6B7",
+   "course": "SocStud",
+   "teacher": "Adams, Alex",
+   "room": "A208",
+   "section": "6201-129",
+   "term": "26-27"
+  }
+ ],
+ "5": [
+  {
+   "period": "ADV",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B1",
+   "course": "LA",
+   "teacher": "Lawson, Logan",
+   "room": "A209",
+   "section": "6001-11",
+   "term": "26-27"
+  },
+  {
+   "period": "6B2",
+   "course": "SocStud",
+   "teacher": "Adams, Alex",
+   "room": "A208",
+   "section": "6201-129",
+   "term": "26-27"
+  },
+  {
+   "period": "6B3",
+   "course": "FLEX SGFL",
+   "teacher": "Mercer, Morgan",
+   "room": "B204",
+   "section": "614S-41",
+   "term": "Q1"
+  },
+  {
+   "period": "6B4",
+   "course": "Theater Arts 6",
+   "teacher": "Keller, Kai",
+   "room": "D106",
+   "section": "6764-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6B5",
+   "course": "Lunch",
+   "teacher": "Lunch, MS",
+   "room": "Cafe",
+   "section": "8760-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6PA",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B6",
+   "course": "Science",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6401-139",
+   "term": "26-27"
+  },
+  {
+   "period": "6B7",
+   "course": "Math",
+   "teacher": "Grant, Gray",
+   "room": "A207",
+   "section": "6301-14",
+   "term": "26-27"
+  }
+ ],
+ "6": [
+  {
+   "period": "ADV",
+   "course": "Advisory 6",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6825-206",
+   "term": "26-27"
+  },
+  {
+   "period": "6B1",
+   "course": "Science",
+   "teacher": "Jordan, Jamie",
+   "room": "A206",
+   "section": "6401-139",
+   "term": "26-27"
+  },
+  {
+   "period": "6B2",
+   "course": "Math",
+   "teacher": "Grant, Gray",
+   "room": "A207",
+   "section": "6301-14",
+   "term": "26-27"
+  },
+  {
+   "period": "6B3",
+   "course": "FLEX SGFL",
+   "teacher": "Mercer, Morgan",
+   "room": "B204",
+   "section": "614S-41",
+   "term": "Q1"
+  },
+  {
+   "period": "6B4",
+   "course": "Theater Arts 6",
+   "teacher": "Keller, Kai",
+   "room": "D106",
+   "section": "6764-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6B5",
+   "course": "Lunch",
+   "teacher": "Lunch, MS",
+   "room": "Cafe",
+   "section": "8760-6",
+   "term": "26-27"
+  },
+  {
+   "period": "6B6",
+   "course": "LA",
+   "teacher": "Lawson, Logan",
+   "room": "A209",
+   "section": "6001-11",
+   "term": "26-27"
+  },
+  {
+   "period": "6B7",
+   "course": "SocStud",
+   "teacher": "Adams, Alex",
+   "room": "A208",
+   "section": "6201-129",
+   "term": "26-27"
+  }
+ ]
+}

@@ -12,6 +12,7 @@
 | **calendar_from_schedule_app** | Sync YAML maintenance schedules to HA local calendar |
 | **immich_fetcher** | Periodic photo fetching from Immich photo library |
 | **school_lunch_app** | Fetch daily school lunch menus and publish to HA sensor |
+| **school_schedule_app** | Six-day class rotation and per-day class icons from the school calendar and PowerSchool |
 | **vestaboard_controller_app** | Vestaboard controller with frame queue, TTL/expiration, and board automations |
 | **vestaboard_configuration_app** | Configuration bridge between Lovelace card and Vestaboard controller |
 | **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
@@ -27,6 +28,7 @@
 | **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers) |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
 | **school_menu** | Async client for the School Nutrition and Fitness API |
+| **school_schedule** | Finalsite school calendar (ICS) and PowerSchool guardian portal scrapers |
 | **media_providers** | Media data fetchers (Tautulli, TMDb, SerpApi) and shared types |
 | **vestaboard** | Vestaboard local API client and character encoding |
 
@@ -47,6 +49,9 @@ detection_summary_app
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 
 school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
+
+school_schedule_app (standalone — scrapes the school calendar + PowerSchool portal,
+                     publishes sensor.school_schedule for school-schedule-card)
 
 vestaboard_controller_app
   └─ controls physical Vestaboard via provider

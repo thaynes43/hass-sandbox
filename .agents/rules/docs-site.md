@@ -41,6 +41,7 @@ Update this map when adding or removing pages.
 | GenAI Camera Notifications | `docs/features/camera-notifications.md` | detection_summary_app, detection_summary_viewer, door_notify |
 | Occupancy-Based Lighting | `docs/features/occupancy-lighting.md` | HA automations, blueprints, Inovelli/Zooz switches |
 | Immich Photo Frame | `docs/features/photo-frame.md` | immich_fetcher, photo_frame_viewer |
+| School Day Rotation | `docs/features/school-schedule.md` | school_schedule_app, school-schedule-card |
 | Architecture Overview | `docs/architecture/overview.md` | System diagram, data flows, self-provisioning, relay pattern |
 | AppDaemon Apps | `docs/apps/index.md` | App listing, provider listing, dependency graph |
 | Getting Started | `docs/setup/getting-started.md` | Clone, venv, secrets, run, test, serve docs |

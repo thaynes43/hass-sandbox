@@ -1203,6 +1203,30 @@ school_lunch_app:
     - "Middle School"
   show_tomorrow_after: "12:00:00"
 
+school_schedule_app:
+  module: school_schedule_app.school_schedule_app
+  class: SchoolScheduleApp
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  name: "Middle School"
+  # Finalsite "view all events" page URL for the school calendar; the app
+  # discovers the ICS feed from it. Kept out of git — it names the school.
+  day_cycle_url_env: MIDDLE_ALL_EVENTS
+  # PowerSchool guardian portal root (no trailing path) + guardian credentials.
+  powerschool_url_env: POWER_SCHOOL
+  powerschool_user_env: MIDDLE_USER
+  powerschool_password_env: MIDDLE_PASSWORD
+  refresh_time: "05:00:00"
+  weeks_ahead: 3
+  # Optional overrides (defaults live in school_schedule_app.py):
+  #   powerschool_student_id / powerschool_student_id_env
+  #     Skip auto-selection when the guardian account has several students and
+  #     their school names do not disambiguate.
+  #   hide_courses: [...]   case-insensitive regexes, default hides
+  #     lunch / advisory / homeroom
+  #   icon_rules: [{match, icon, short}, ...]  ordered, first match wins
+
 spa_health_checker:
   module: health_checks.checker_apps.spa_health_checker.spa_health_checker
   class: SpaHealthChecker
