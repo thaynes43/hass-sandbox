@@ -86,7 +86,7 @@ The app is configured in `apps-prod.yaml`. Key fields:
 
 | Key | Description |
 |-----|-------------|
-| `sid` | Site ID from the school district's URL (numeric string) |
+| `menu_url_env` | Env var holding the district's menu URL; the site ID (`sid`) is parsed from it so the district never appears in the repo (production: `SCHOOL_LUNCH`, sourced from 1Password) |
 | `menus` | List of `{name, download_id}` — one entry per school |
 | `default_selected` | School names pre-selected in the at-a-glance card |
 | `show_tomorrow_after` | `HH:MM:SS` cutoff time — before this, cards show today's lunch; after, tomorrow's (default `"15:00:00"`) |

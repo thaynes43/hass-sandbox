@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List
@@ -29,6 +30,8 @@ sys.path.insert(0, str(_repo_root))
 
 from school_lunch_app.school_lunch_app import (
     SchoolLunchApp,
+    mask_sid,
+    sid_from_menu_url,
     SENSOR_ENTITY_ID,
     SELECTION_ENTITY_ID,
 )
@@ -74,7 +77,7 @@ def _make_menu_month(
 DEFAULT_ARGS: Dict[str, Any] = {
     "ha_url": "http://ha:8123",
     "ha_token_env": "TOKEN",
-    "sid": "0802121850414637",
+    "menu_url_env": "SCHOOL_LUNCH",
     "menus": [
         {"name": "Elementary", "download_id": "853700"},
         {"name": "Middle School", "download_id": "854234"},
@@ -82,6 +85,20 @@ DEFAULT_ARGS: Dict[str, Any] = {
     ],
     "default_selected": ["Elementary", "Middle School"],
 }
+
+
+# The district site id is a secret in prod: the app reads the menu URL from
+# the env var named by ``menu_url_env`` and parses ``sid`` out of it.
+TEST_SID = "test-sid-1234"
+TEST_MENU_URL = (
+    f"https://www.schoolnutritionandfitness.com/index.php?sid={TEST_SID}&page=menus"
+)
+
+
+@pytest.fixture(autouse=True)
+def _school_lunch_env(monkeypatch):
+    monkeypatch.setenv("SCHOOL_LUNCH", TEST_MENU_URL)
+    monkeypatch.delenv("SCHOOL_LUNCH_MISSING", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -214,9 +231,87 @@ class TestInitialize:
         """initialize() stores sid, menus, and default_selected from args."""
         app = _make_app()
         app.initialize()
-        assert app._sid == "0802121850414637"
+        assert app._sid == TEST_SID
         assert len(app._menus) == 3
         assert app._default_selected == ["Elementary", "Middle School"]
+
+
+class TestSidResolution:
+    """The district site id comes from the menu URL env var, never the repo."""
+
+    @pytest.mark.parametrize(
+        "url, expected",
+        [
+            (TEST_MENU_URL, TEST_SID),
+            # sid not the first parameter, and surrounding whitespace
+            ("  https://x.example/index.php?page=menus&sid=99&x=1  ", "99"),
+            # no sid parameter at all
+            ("https://x.example/index.php?page=menus", ""),
+            # empty sid value
+            ("https://x.example/index.php?sid=&page=menus", ""),
+            ("", ""),
+        ],
+    )
+    def test_sid_from_menu_url(self, url, expected):
+        assert sid_from_menu_url(url) == expected
+
+    def test_mask_sid(self):
+        assert mask_sid("0123456789") == "****6789"
+        assert mask_sid("") == "<unset>"
+
+    def test_sid_parsed_from_env_menu_url(self):
+        app = _make_app()
+        app.initialize()
+        assert app._sid == TEST_SID
+
+    def test_initialize_log_masks_sid(self):
+        """The startup log line must not leak the full site id (S6)."""
+        app = _make_app()
+        app.initialize()
+        logged = " ".join(str(c.args[0]) for c in app.log.call_args_list)
+        assert TEST_SID not in logged
+        assert "****1234" in logged
+
+    def test_direct_sid_fallback(self):
+        """A plain ``sid`` arg still works when no menu_url is configured."""
+        args = dict(DEFAULT_ARGS)
+        del args["menu_url_env"]
+        args["sid"] = "direct-sid"
+        app = _make_app()
+        app.args = args
+        app.initialize()
+        assert app._sid == "direct-sid"
+
+    def test_menu_url_wins_over_direct_sid(self):
+        app = _make_app({"sid": "ignored-sid"})
+        app.initialize()
+        assert app._sid == TEST_SID
+
+    def test_missing_env_var_logs_error(self):
+        app = _make_app({"menu_url_env": "SCHOOL_LUNCH_MISSING"})
+        app.initialize()
+        assert app._sid == ""
+        errors = [c for c in app.log.call_args_list if c.kwargs.get("level") == "ERROR"]
+        assert errors and "SCHOOL_LUNCH_MISSING" in str(errors[0].args[0])
+
+    def test_menu_url_without_sid_logs_error(self, monkeypatch):
+        monkeypatch.setenv("SCHOOL_LUNCH", "https://x.example/index.php?page=menus")
+        app = _make_app()
+        app.initialize()
+        assert app._sid == ""
+        errors = [c for c in app.log.call_args_list if c.kwargs.get("level") == "ERROR"]
+        assert errors and "sid" in str(errors[0].args[0])
+
+    def test_startup_skips_fetch_without_sid(self):
+        """Without a site id, startup provisions entities but never hits the API."""
+        app = _make_app({"menu_url_env": "SCHOOL_LUNCH_MISSING"})
+        mock_prov = _make_mock_provisioner()
+        mock_client = _make_mock_client()
+        _startup(app, mock_prov, mock_client)
+        mock_prov.ensure_script.assert_called_once()
+        mock_client.resolve_menu_id.assert_not_called()
+        app.listen_event.assert_not_called()
+        app.set_state.assert_not_called()
 
 
 class TestProvisionEntities:

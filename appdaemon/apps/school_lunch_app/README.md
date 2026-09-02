@@ -35,7 +35,8 @@ Fetches daily lunch menus from the School Nutrition and Fitness API for multiple
 |-----|----------|---------|-------------|
 | `ha_url` | Yes | — | Home Assistant base URL (use `!secret ha_url`) |
 | `ha_token_env` | Yes | — | Env var name containing the HA long-lived access token (e.g. `TOKEN`) |
-| `sid` | Yes | — | Site ID for the School Nutrition and Fitness API (numeric string) |
+| `menu_url_env` | Yes* | — | Env var name holding the district's menu URL (`https://www.schoolnutritionandfitness.com/index.php?sid=<district>&page=menus`). The app parses the site ID (`sid`) out of it. Production uses `SCHOOL_LUNCH`, fed from 1Password via the `appdaemon` ExternalSecret. |
+| `sid` | Yes* | — | Direct site ID (numeric string). Dev/test fallback only — never commit a real district id; use `menu_url_env` instead. |
 | `menus` | Yes | — | List of school menu configs: `name` (display name) and `download_id` (numeric string from the site URL) |
 | `default_selected` | No | `[]` | List of school names selected by default when the helper is first created |
 | `show_tomorrow_after` | No | `"15:00:00"` | `HH:MM:SS` time after which cards flip from "Today's Lunch" to "Tomorrow's Lunch" (or Monday on Fri evenings/weekends) |
@@ -49,7 +50,7 @@ school_lunch_app:
   disable: true
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  sid: "0802121850414637"
+  menu_url_env: SCHOOL_LUNCH
   menus:
     - name: "Elementary"
       download_id: "853700"

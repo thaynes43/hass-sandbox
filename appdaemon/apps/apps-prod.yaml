@@ -1188,7 +1188,9 @@ school_lunch_app:
   disable: true
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  sid: "0802121850414637"
+  # District menu URL (…/index.php?sid=<district>&page=menus) from 1Password;
+  # the app parses the site id out of it so the district stays out of git.
+  menu_url_env: SCHOOL_LUNCH
   menus:
     - name: "Elementary"
       download_id: "853700"
