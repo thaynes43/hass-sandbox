@@ -378,6 +378,19 @@ def build_cycle(
     """
     on_date = on_date or datetime.date.today()
     active = rows_active_on(rows, on_date)
+    if not active and rows:
+        # Nothing enrolled yet (the day before school starts, or a break
+        # between terms): use the next window that opens, so the fallback
+        # cycle is ready for the first day back instead of empty.
+        upcoming = sorted(
+            d for d in (_parse_us_date(r.enroll) for r in rows) if d and d > on_date
+        )
+        if upcoming:
+            active = rows_active_on(rows, upcoming[0])
+            logger.info(
+                "No sections active on %s — using the window opening %s",
+                on_date.isoformat(), upcoming[0].isoformat(),
+            )
 
     buckets: Dict[int, List[Tuple[Tuple[int, int, int], ClassBlock]]] = {}
     for index, row in enumerate(active):
