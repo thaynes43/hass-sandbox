@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Grades and Attendance - PowerSchool Parent Access</title></head>
+<body>
+		     <ul id="students-list">
+	        <li  class="selected">
+	              <a href="javascript:switchStudent(10001);">Student One</a>
+	        </li>
+	        <li >
+	              <a href="javascript:switchStudent(10002);">Student Two</a>
+	        </li>
+	</ul>
+        <form id="switch_student_form" action="home.html" method="post">
+            <input type="hidden" name="selected_student_id"/>
+        </form>
+<a href="home.html?ac=logoff" id="btnLogout">Sign Out</a>
+</body>
+</html>

@@ -87,3 +87,23 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - `vestaboard_client.py`: `VestaboardClient(ip, api_key, session=None)` — async context manager, POST/GET to `http://{ip}:7000/local-api/message`, header `X-Vestaboard-Local-Api-Key`
 - `character_encoding.py`: `CHAR_TO_CODE` (A-Z=1-26, 1-9=27-35, 0=36, punct), `COLOR_CODES` (red=63..black=70), `blank_grid()`, `encode_char()`, `encode_text()`, `decode_grid()`, `text_to_grid(justify, align)`
 - Test pattern: inject `MagicMock` session with `__aenter__`/`__aexit__` AsyncMock; mock `.post`/`.get` returns mock response with `.status` and `.json = AsyncMock()`
+
+### school_schedule_app / providers/school_schedule (added 2026-09-01)
+- **Never log into PowerSchool from the pod during development.** The guardian
+  portal forbids concurrent sessions: every login evicts the family's live
+  session (and a parent signing in mid-run kills the app's). Build parsers
+  against the saved fixtures; if a login is truly unavoidable, do it once and
+  `GET /guardian/home.html?ac=logoff` immediately.
+- App refresh sits at 05:00 for the same reason — never trigger extra scrapes.
+- `appdaemon/tests/fixtures/school_schedule/` is the repo's first test-fixture
+  directory. Two files are **oracles** captured live and must keep matching
+  exactly: `day_numbers.json` (181 ICS day numbers) and `cycle_by_day.json`
+  (six-day rotation from the PowerSchool list view).
+- Fixtures are sanitized: school/district → "Example …", teachers → placeholder
+  `Last, First` names, student ids → 10001/10002. Keep the mapping global across
+  fixture files or the oracle stops matching.
+- No bs4/lxml/icalendar/dateutil in the AppDaemon image — parse with `re` +
+  `html.unescape` only.
+- Redact configured hosts/credentials out of exception strings before putting
+  them in `set_state` attributes: aiohttp errors quote the URL they failed on,
+  and the frontend renders `sources.*.error`.

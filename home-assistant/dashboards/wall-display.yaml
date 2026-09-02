@@ -537,6 +537,8 @@ views:
             status_entity: sensor.school_lunch_menu
             selection_entity: input_text.school_lunch_selected_schools
             navigation_path: '#school-lunch-popup'
+          - type: custom:school-schedule-card
+            status_entity: sensor.school_schedule
       - type: grid
         cards:
           - show_state: false

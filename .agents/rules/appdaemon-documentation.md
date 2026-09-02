@@ -65,6 +65,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `calendar_from_schedule_app` | `appdaemon/apps/calendar_from_schedule_app/README.md` | Sync YAML maintenance schedules to HA local calendar |
 | `dashboard_notify` | `appdaemon/apps/dashboard_notify/README.md` | AI-generated notification carousel for wall displays |
 | `school_lunch_app` | `appdaemon/apps/school_lunch_app/README.md` | Fetch daily school lunch menus and publish to HA sensor |
+| `school_schedule_app` | `appdaemon/apps/school_schedule_app/README.md` | Six-day rotation + per-day class icons from the school calendar and PowerSchool |
 | `vestaboard_controller` | `appdaemon/apps/vestaboard_apps/vestaboard_controller/README.md` | Vestaboard board controller with FIFO frame queue and dynamic automation registration |
 | `vestaboard_configuration` | `appdaemon/apps/vestaboard_apps/vestaboard_configuration/README.md` | Vestaboard configuration bridge: frame library CRUD, card ↔ controller communication |
 | `calendar_clock` | `appdaemon/apps/vestaboard_apps/automations/calendar_clock/README.md` | Calendar grid + clock display, updated every 60 seconds |
@@ -92,6 +93,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
+| `school_schedule` | `appdaemon/providers/school_schedule/README.md` | Finalsite calendar (ICS) + PowerSchool guardian portal scrapers |
 | `media_providers` | `appdaemon/providers/media_providers/README.md` | HTTP clients and fetchers for Tautulli, TMDb, and MovieGlu |
 | `vestaboard` | `appdaemon/providers/vestaboard/README.md` | Vestaboard local API client and character encoding |
 
@@ -130,6 +132,10 @@ detection_summary_app
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 
 school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
+
+school_schedule_app (standalone — scrapes the school calendar + PowerSchool portal,
+                     publishes sensor.school_schedule for school-schedule-card)
+  └─ providers/school_schedule: day_cycle (Finalsite ICS) + powerschool (guardian portal)
 
 vestaboard_controller (vestaboard_apps/vestaboard_controller)
   └─ controls physical Vestaboard via provider
