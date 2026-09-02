@@ -11,7 +11,9 @@
  *   - unifi-connect: as its own subview page (/unifi-connect/school-schedule)
  *
  * Reads sensor.school_schedule (published by school_schedule_app):
- *   cycle  — { "<day number>": [ { course, short, icon, period, teacher, room } ] }
+ *   cycle  — { "<day number>": [ { course, short, icon, period, teacher, room, hidden? } ] }
+ *            every block of the day; hidden: "true" marks lunch/advisory, which the
+ *            compact card leaves off but this view shows (muted)
  *   days   — { "YYYY-MM-DD": { day, classes: [ { period, start, end, ... } ] } }  (times)
  *   dates  — { "YYYY-MM-DD": <day number> }                                   (today / next)
  *   school, cycle_length, last_updated, sources
@@ -273,6 +275,7 @@ class SchoolScheduleDetailCard extends HTMLElement {
             const isNext = !isToday && model.nextNum === n;
             const colClass = `${isToday ? "is-today" : ""} ${isNext ? "is-next" : ""}`;
             if (!cls) return `<td class="cell cell-empty ${colClass}"><span class="dash">–</span></td>`;
+            const muted = cls.hidden === "true" || cls.hidden === true ? "cell-muted" : "";
             const icon = esc(String(cls.icon || "mdi:school"));
             const short = esc(String(cls.short || cls.course || ""));
             const course = String(cls.course || "");
@@ -282,7 +285,7 @@ class SchoolScheduleDetailCard extends HTMLElement {
             ]
               .filter(Boolean)
               .join(" · ");
-            return `<td class="cell ${colClass}" title="${esc(course)}">
+            return `<td class="cell ${colClass} ${muted}" title="${esc(course)}">
               <div class="cell-main">
                 <span class="cell-icon"><ha-icon icon="${icon}"></ha-icon></span>
                 <span class="cell-name">${short}</span>
@@ -507,6 +510,10 @@ class SchoolScheduleDetailCard extends HTMLElement {
 
       .cell-empty { color: var(--ssd-on-surface-secondary); }
       .dash { opacity: 0.5; }
+
+      /* lunch / advisory: present for the full picture, visually secondary */
+      .cell-muted .cell-icon { background: transparent; box-shadow: inset 0 0 0 1px var(--ssd-border); color: var(--ssd-on-surface-secondary); }
+      .cell-muted .cell-name { font-weight: 500; color: var(--ssd-on-surface-secondary); }
 
       .cell-main {
         display: flex;

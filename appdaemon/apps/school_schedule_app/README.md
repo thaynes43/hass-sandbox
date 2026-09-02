@@ -18,9 +18,10 @@ per class on each of those days.
    configured), scrapes the weekly bell-schedule grid for
    `today .. today + weeks_ahead*7` and the list view for the per-rotation-day
    fallback, then always logs off.
-4. **Merge and publish** — hidden courses are dropped, icons and short labels
-   are resolved server-side, period labels from the list view are stitched onto
-   the timed bell-schedule blocks, and everything is written to
+4. **Merge and publish** — every class is published; the ones matching
+   `hide_courses` are *marked* `hidden: "true"` rather than removed. Icons and
+   short labels are resolved server-side, period labels from the list view are
+   stitched onto the timed bell-schedule blocks, and everything is written to
    `sensor.school_schedule` with `set_state`.
 5. **Schedules** — a daily refresh at `refresh_time` (05:00 by default, the same
    cadence as `school_lunch_app`) and a **network-free** republish at 00:00:30 so
@@ -68,7 +69,10 @@ kept), `error` (nothing usable), `unknown` before the first fetch.
       "classes": [
         { "course": "Science", "short": "Science", "icon": "mdi:flask",
           "period": "6B1", "start": "08:40", "end": "09:35",
-          "teacher": "…", "room": "…" }
+          "teacher": "…", "room": "…" },
+        { "course": "Lunch", "short": "Lunch", "icon": "mdi:food",
+          "period": "6B5", "start": "11:40", "end": "12:05",
+          "hidden": "true" }                               // compact card skips it
       ]
     }
   },
@@ -83,9 +87,26 @@ kept), `error` (nothing usable), `unknown` before the first fetch.
 }
 ```
 
-Class lists are chronological, `hide_courses` removed, icons resolved. `days`
-only contains dates that have at least one visible class, from today forward —
-weekends and holidays are simply absent.
+Class lists are chronological and complete — **every** class the portal reports
+is published, icons resolved. `days` contains every date that has at least one
+named class, from today forward; weekends and holidays are simply absent.
+
+#### The `hidden` marker
+
+A class whose course name matches `hide_courses` (Lunch, Advisory, Homeroom by
+default) carries the extra key `hidden: "true"`. Nothing is removed from the
+payload on account of it — the two cards decide for themselves:
+
+| Card | Behaviour |
+|------|-----------|
+| `school-schedule-card` (compact) | Skips classes with `hidden`, so the icon row stays readable |
+| `school-schedule-detail-card` (matrix) | Draws everything, so the day reads as it is actually lived — Advisory at both `ADV` and `6PA`, Lunch in the middle |
+
+The value is the **string** `"true"`, not a boolean, and a visible class has no
+`hidden` key at all. AppDaemon's `set_state` drops falsy attribute values, so a
+`False` would arrive indistinguishable from an absent key — present-and-`"true"`
+versus absent is the only unambiguous encoding. Consumers should test for
+presence (`"hidden" in cls`), never for truthiness of a boolean.
 
 **Empty values are omitted, not published as `""`/`null`/`0`.** AppDaemon's
 `set_state` drops falsy attribute values anyway (see
@@ -98,10 +119,12 @@ Both live in this directory; register each as a Lovelace resource and bump
 the `?v=N` query parameter after any edit.
 
 - `school-schedule-card.js` — the compact card: today and the next school day,
-  rotation day badge, one icon per class. Fixed 112px height for the wall
-  display. `navigation_path` opens the detail view.
+  rotation day badge, one icon per class, **skipping anything marked `hidden`**.
+  Fixed 112px height for the wall display. `navigation_path` opens the detail
+  view.
 - `school-schedule-detail-card.js` — the six-day rotation as a matrix (periods
   with times down, Day 1..6 across, icon + class + teacher + room per cell),
+  **including the hidden blocks** so the full day is visible,
   today/next columns highlighted, icon legend. Read-only. On `wall-display` it
   sits inside a bubble-card pop-up (`#school-schedule-popup`); on
   `unifi-connect` it is its own `subview` panel page (`/unifi-connect/school-schedule`).
@@ -131,7 +154,7 @@ The card reads `dates` + `days` first and falls back to `cycle` / `today` /
 | `refresh_time` | no | `"05:00:00"` | Daily scrape time (`HH:MM:SS` or `HH:MM`) |
 | `weeks_ahead` | no | `3` | How far forward to fetch the bell-schedule grid |
 | `powerschool_student_id` (or `_env`) | no | auto | Skip student auto-selection |
-| `hide_courses` | no | lunch / advisory / homeroom | Case-insensitive regexes; matching courses are left off the card |
+| `hide_courses` | no | lunch / advisory / homeroom | Case-insensitive regexes; matching courses are published with `hidden: "true"` and skipped by the compact card (never removed from the payload) |
 | `icon_rules` | no | see below | Ordered `{match, icon, short}`; first match wins |
 | `ha_url` / `ha_token_env` | no | — | Carried for consistency; this app provisions nothing |
 
@@ -142,10 +165,14 @@ variable**, never a value (security rules S1/S7). A direct `day_cycle_url` /
 ### Default icon rules
 
 Order matters — `Theater Arts 6` must reach the theatre rule before the
-word-bounded `\bart\b` rule sees it.
+word-bounded `\bart\b` rule sees it. Lunch and Advisory lead the table: they are
+hidden on the compact card but still drawn on the matrix, and they need real
+icons there.
 
 | Match | Icon | Short |
 |-------|------|-------|
+| `\blunch\b` | `mdi:food` | Lunch |
+| `advisory\|homeroom\|\badv\b` | `mdi:account-group` | Advisory |
 | `theat\|drama` | `mdi:drama-masks` | Theater |
 | `\bart\b` | `mdi:palette` | Art |
 | `\bmath\|algebra\|geometry` | `mdi:calculator-variant` | Math |
@@ -197,8 +224,11 @@ Nothing else: no shell commands, no `local_file` cameras, no helpers.
   its previous `fetched_at`; check `sources.*.status` and `last_updated` in
   Developer Tools before assuming the scrape is fine.
 - **Payload budget.** HA caps entity attributes at 64 KB. A full year of
-  `dates` plus three weeks of classes lands around 25-30 KB; the app logs a
-  WARNING past 48 KB. If it ever trips, lower `weeks_ahead`.
+  `dates` plus three weeks of classes lands around 43 KB now that Lunch and
+  Advisory are published rather than dropped (it was ~30 KB when they were
+  removed — the fixture-backed budget test measures exactly this). The app logs
+  a WARNING past 48 KB, so the headroom is real but thin: if it ever trips,
+  lower `weeks_ahead` before adding anything to the per-class payload.
 - **After the last day of school the ICS feed goes empty.** That raises rather
   than publishing an empty rotation, so the sensor keeps showing the year that
   just ended until the school publishes the next one.

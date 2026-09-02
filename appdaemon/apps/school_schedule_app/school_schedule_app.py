@@ -50,13 +50,18 @@ DEFAULT_REFRESH_TIME = "05:00:00"
 DEFAULT_WEEKS_AHEAD = 3
 DEFAULT_ICON = "mdi:school"
 
-# Courses that carry no useful signal on a nine-icon row.  Also removes the
-# duplicate Advisory block that odd rotation days carry twice.
+# Courses that carry no useful signal on a nine-icon row.  These are *marked*
+# (`hidden: "true"`), never dropped: the compact card filters them out, the
+# detail matrix shows the full day including Advisory and Lunch.
 DEFAULT_HIDE_COURSES = [r"\blunch\b", r"\badvisory\b", r"\bhomeroom\b"]
 
 # First match wins, so the order matters: "Theater Arts 6" must reach the
-# theatre rule before the (word-bounded) art rule sees it.
+# theatre rule before the (word-bounded) art rule sees it.  Lunch and Advisory
+# lead because they are hidden on the compact card but still drawn on the
+# matrix, and no real course name collides with them.
 DEFAULT_ICON_RULES: List[Dict[str, str]] = [
+    {"match": r"\blunch\b", "icon": "mdi:food", "short": "Lunch"},
+    {"match": r"advisory|homeroom|\badv\b", "icon": "mdi:account-group", "short": "Advisory"},
     {"match": r"theat|drama", "icon": "mdi:drama-masks", "short": "Theater"},
     {"match": r"\bart\b", "icon": "mdi:palette", "short": "Art"},
     {"match": r"\bmath|algebra|geometry", "icon": "mdi:calculator-variant", "short": "Math"},
@@ -145,7 +150,11 @@ def resolve_icon(
 
 
 def is_hidden(course: str, patterns: Sequence[re.Pattern]) -> bool:
-    """True when a course should be left off the card."""
+    """True when a course should be left off the *compact* card.
+
+    Nothing is removed from the payload on the strength of this — it only sets
+    the ``hidden`` marker each card decides what to do with.
+    """
     name = (course or "").strip()
     return any(pattern.search(name) for pattern in patterns)
 
@@ -439,10 +448,23 @@ class SchoolScheduleApp(hass.Hass):
         payload = block.as_dict()
         payload["icon"] = icon
         payload["short"] = short
+        if is_hidden(block.course, self._hide_courses):
+            # The string "true", never a boolean: AppDaemon's `set_state` drops
+            # falsy attribute values, so a `False` would arrive indistinguishable
+            # from an absent key.  Present-and-"true" is hidden; absent is
+            # visible — there is no third state to get wrong.
+            payload["hidden"] = "true"
         return payload
 
-    def _visible(self, blocks: Sequence[ClassBlock]) -> List[ClassBlock]:
-        return [b for b in blocks if b.course and not is_hidden(b.course, self._hide_courses)]
+    @staticmethod
+    def _named(blocks: Sequence[ClassBlock]) -> List[ClassBlock]:
+        """Every block that has a course name.
+
+        ``hide_courses`` no longer removes anything here: the detail matrix wants
+        the full day (Advisory and Lunch included), and the compact card filters
+        on the ``hidden`` marker instead.
+        """
+        return [b for b in blocks if b.course]
 
     def _build_attributes(self) -> Tuple[str, Dict[str, Any]]:
         """Assemble the sensor state and attributes from the last good data."""
@@ -455,9 +477,9 @@ class SchoolScheduleApp(hass.Hass):
 
         cycle_payload: Dict[str, List[Dict[str, str]]] = {}
         for day_number, blocks in sorted(schedule.cycle.items()):
-            visible = self._visible(blocks)
-            if visible:
-                cycle_payload[str(day_number)] = [self._class_payload(b) for b in visible]
+            named = self._named(blocks)
+            if named:
+                cycle_payload[str(day_number)] = [self._class_payload(b) for b in named]
 
         today = self._today()
         today_iso = today.isoformat()
@@ -466,11 +488,11 @@ class SchoolScheduleApp(hass.Hass):
         for iso, blocks in sorted(schedule.days.items()):
             if iso < today_iso:
                 continue  # the card only ever looks forward
-            visible = self._visible(blocks)
-            if not visible:
-                continue
+            named = self._named(blocks)
+            if not named:
+                continue  # a date the portal listed with nothing on it
             day_number = dates.get(iso)
-            enriched = attach_periods(visible, schedule.cycle.get(day_number or 0, []))
+            enriched = attach_periods(named, schedule.cycle.get(day_number or 0, []))
             entry: Dict[str, Any] = {
                 "classes": [self._class_payload(b) for b in enriched]
             }
