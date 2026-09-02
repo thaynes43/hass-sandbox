@@ -45,6 +45,10 @@ Two fixed-height rows, one for today and one for the next school day:
 
 The card is built for the 1920x1080 UniFi Connect wall display, where the column under the lunch menu has only about 130 pixels to spare before the bottom button row is pushed off screen. The card is 112 pixels tall and never grows with content.
 
+## The matrix view
+
+Tapping the card opens the full six-day rotation as a matrix: periods with their times down the side, Day 1 through Day 6 across, and in every cell the same icon as the compact card next to the class name, teacher, and room. Today's column is outlined and the next school day is tinted, and a legend under the grid spells out what each icon means. On the wall display it opens as a popup, matching the lunch menu; on the lighter unifi-connect dashboard it is its own page with a back arrow, which the display's older Android webview handles better than popups.
+
 ## Icons
 
 Courses are matched to Material Design icons by keyword rules in the app config (math, science, ELA, Spanish, art, band, PE, and so on). Anything unmatched gets a generic school icon, and lunch, advisory, and homeroom blocks are hidden so only real classes show. Rules are overridable per deployment without touching code.
