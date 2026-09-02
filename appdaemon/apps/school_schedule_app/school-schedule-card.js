@@ -14,6 +14,8 @@
  *   days   — { "YYYY-MM-DD": { day, classes: [ { course, short, icon, ... } ], note } }
  *            per-date classes from PowerSchool (term- and holiday-aware)
  *   cycle  — { "<day number>": [ { course, short, icon, period, ... } ] } fallback
+ *   Classes carrying hidden: "true" (lunch, advisory) are left off this card;
+ *   the detail card shows them.
  *   closures — { "YYYY-MM-DD": "<label>" } optional no-school notes
  *   today / next — precomputed fallbacks when `dates` is missing
  *
@@ -133,17 +135,21 @@ class SchoolScheduleCard extends HTMLElement {
     const todayKey = sscDateKey(now);
     const rows = [];
 
+    // The app flags lunch/advisory blocks with hidden: "true" (a string —
+    // AppDaemon drops boolean attribute values); the compact card skips them.
+    const shown = (list) => list.filter((c) => c && c.hidden !== "true" && c.hidden !== true);
+
     const cycleClasses = (dayNumber) => {
       if (dayNumber === null || dayNumber === undefined) return [];
       const list = cycle[String(dayNumber)];
-      return Array.isArray(list) ? list : [];
+      return Array.isArray(list) ? shown(list) : [];
     };
 
     const dayInfo = (key) => {
       const perDate = days ? days[key] : null;
       let num = dates ? dates[key] : undefined;
       if (num === undefined || num === null) num = perDate?.day ?? null;
-      const perDateClasses = Array.isArray(perDate?.classes) ? perDate.classes : [];
+      const perDateClasses = Array.isArray(perDate?.classes) ? shown(perDate.classes) : [];
       const classes = perDateClasses.length > 0 ? perDateClasses : cycleClasses(num);
       return {
         num,
@@ -210,7 +216,7 @@ class SchoolScheduleCard extends HTMLElement {
         kicker,
         dateLabel: d ? sscShortDate(d) : "",
         dayNumber: hasDay ? entry.day : null,
-        classes: Array.isArray(entry?.classes) ? entry.classes : cycleClasses(entry?.day),
+        classes: Array.isArray(entry?.classes) ? shown(entry.classes) : cycleClasses(entry?.day),
         note: hasDay ? "" : entry?.note || "No school",
       };
     };

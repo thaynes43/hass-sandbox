@@ -240,6 +240,13 @@ def test_compile_icon_rules_skips_blank_and_invalid_rules(caplog):
 @pytest.mark.parametrize(
     "course,icon,short",
     [
+        # The hidden-course rules lead the table but capture nothing else.
+        ("Lunch", "mdi:food", "Lunch"),
+        ("Advisory 6", "mdi:account-group", "Advisory"),
+        ("Homeroom", "mdi:account-group", "Advisory"),
+        ("ADV", "mdi:account-group", "Advisory"),
+        ("Brunch Club", DEFAULT_ICON, "Brunch Club"),
+        ("Advanced Math", "mdi:calculator-variant", "Math"),
         # Order matters: theatre must win before the word-bounded art rule.
         ("Theater Arts 6", "mdi:drama-masks", "Theater"),
         ("Art", "mdi:palette", "Art"),
@@ -413,22 +420,54 @@ def test_published_sensor_matches_the_card_contract():
     assert attrs["friendly_name"] == "Middle School Schedule"
 
 
-def test_days_drop_hidden_courses_and_carry_icons_and_periods():
+def test_days_publish_the_full_day_with_icons_and_periods():
     app = _make_app()
     _startup(app, _StubClient(_day_cycle()), _StubClient(_schedule()))
     _, attrs = _published(app)
 
     entry = attrs["days"]["2026-09-02"]
     assert entry["day"] == 1
-    assert [c["course"] for c in entry["classes"]] == ["LA", "Theater Arts 6"]
-    assert [c["icon"] for c in entry["classes"]] == [
-        "mdi:book-open-page-variant", "mdi:drama-masks"
+    # Nothing is dropped any more — Advisory and Lunch are published too.
+    assert [c["course"] for c in entry["classes"]] == [
+        "Advisory 6", "LA", "Lunch", "Advisory 6", "Theater Arts 6"
     ]
-    assert [c["short"] for c in entry["classes"]] == ["LA", "Theater"]
+    assert [c["icon"] for c in entry["classes"]] == [
+        "mdi:account-group", "mdi:book-open-page-variant", "mdi:food",
+        "mdi:account-group", "mdi:drama-masks",
+    ]
+    assert [c["short"] for c in entry["classes"]] == [
+        "Advisory", "LA", "Lunch", "Advisory", "Theater"
+    ]
     # Periods come from the list view; times from the bell grid.
-    assert [c["period"] for c in entry["classes"]] == ["6B1", "6B6"]
-    assert entry["classes"][0]["start"] == "08:20"
+    assert [c["period"] for c in entry["classes"]] == [
+        "ADV", "6B1", "6B5", "6PA", "6B6"
+    ]
+    assert entry["classes"][1]["start"] == "08:20"
     assert "note" not in entry
+
+
+def test_days_mark_hidden_courses_and_leave_visible_ones_unmarked():
+    app = _make_app()
+    _startup(app, _StubClient(_day_cycle()), _StubClient(_schedule()))
+    _, attrs = _published(app)
+
+    classes = attrs["days"]["2026-09-02"]["classes"]
+    # A string, never a boolean: AppDaemon drops falsy attribute values.
+    assert [c.get("hidden") for c in classes] == ["true", None, "true", "true", None]
+    assert all(c["hidden"] == "true" for c in classes if "hidden" in c)
+
+
+def test_the_second_advisory_of_the_day_keeps_its_own_period():
+    """Advisory meets twice on Day 1: ADV in the morning, 6PA after lunch."""
+    app = _make_app()
+    _startup(app, _StubClient(_day_cycle()), _StubClient(_schedule()))
+    _, attrs = _published(app)
+
+    advisories = [
+        c for c in attrs["days"]["2026-09-02"]["classes"] if c["course"] == "Advisory 6"
+    ]
+    assert [c["period"] for c in advisories] == ["ADV", "6PA"]
+    assert [c["start"] for c in advisories] == ["08:00", "12:05"]
 
 
 def test_days_carry_the_calendar_note_on_an_early_release_day():
@@ -458,22 +497,49 @@ def test_days_before_today_are_not_published():
     assert "2026-09-01" not in attrs["days"]
 
 
-def test_days_with_only_hidden_courses_are_omitted():
+def test_days_with_only_hidden_courses_are_still_published():
     schedule = _schedule()
     schedule.days["2026-09-10"] = _blocks(("Lunch", "Cafe", "11:40", "12:05"))
     app = _make_app()
     _startup(app, _StubClient(_day_cycle()), _StubClient(schedule))
     _, attrs = _published(app)
-    assert "2026-09-10" not in attrs["days"]
+    entry = attrs["days"]["2026-09-10"]
+    assert [c["course"] for c in entry["classes"]] == ["Lunch"]
+    assert entry["classes"][0]["hidden"] == "true"
 
 
-def test_cycle_is_keyed_by_string_and_drops_hidden_courses():
+def test_days_with_no_classes_at_all_are_omitted():
+    schedule = _schedule()
+    schedule.days["2026-09-11"] = []
+    schedule.days["2026-09-12"] = [ClassBlock(course="", room="A206")]
+    app = _make_app()
+    _startup(app, _StubClient(_day_cycle()), _StubClient(schedule))
+    _, attrs = _published(app)
+    assert "2026-09-11" not in attrs["days"]
+    assert "2026-09-12" not in attrs["days"]
+
+
+def test_cycle_is_keyed_by_string_and_publishes_the_full_day():
     app = _make_app()
     _startup(app, _StubClient(_day_cycle()), _StubClient(_schedule()))
     _, attrs = _published(app)
     assert sorted(attrs["cycle"]) == ["1", "2"]
-    assert [c["course"] for c in attrs["cycle"]["1"]] == ["LA", "Theater Arts 6"]
-    assert attrs["cycle"]["1"][0]["period"] == "6B1"
+    assert [c["course"] for c in attrs["cycle"]["1"]] == [
+        "Advisory 6", "LA", "Lunch", "Advisory 6", "Theater Arts 6"
+    ]
+    assert [c["period"] for c in attrs["cycle"]["1"]] == [
+        "ADV", "6B1", "6B5", "6PA", "6B6"
+    ]
+
+
+def test_cycle_marks_hidden_courses_and_leaves_visible_ones_unmarked():
+    app = _make_app()
+    _startup(app, _StubClient(_day_cycle()), _StubClient(_schedule()))
+    _, attrs = _published(app)
+    assert [c.get("hidden") for c in attrs["cycle"]["1"]] == [
+        "true", None, "true", "true", None
+    ]
+    assert "hidden" not in attrs["cycle"]["2"][0]
 
 
 def test_today_on_a_closure_day_has_no_day_number():
@@ -682,7 +748,12 @@ def test_an_explicit_student_id_is_passed_through():
 # ---------------------------------------------------------------------------
 
 def test_a_realistic_full_year_payload_stays_well_under_the_limit():
-    """A whole school year of dates plus three weeks of classes must fit."""
+    """A whole school year of dates plus three weeks of classes must fit.
+
+    Publishing the hidden blocks instead of dropping them took this from ~30 KB
+    to ~43 KB against a 48 KB warning threshold, so the headroom is thin —
+    anything added to the per-class payload should be weighed here first.
+    """
     from providers.school_schedule import day_cycle as dc, powerschool as ps
     from providers.school_schedule.ics import parse_events_by_date
 
