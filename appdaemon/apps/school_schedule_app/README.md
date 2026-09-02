@@ -114,7 +114,7 @@ The card reads `dates` + `days` first and falls back to `cycle` / `today` /
 | Key | Required | Default | Purpose |
 |-----|----------|---------|---------|
 | `module` / `class` | yes | — | `school_schedule_app.school_schedule_app` / `SchoolScheduleApp` |
-| `name` | no | `"School"` | Label published as the sensor's `school` attribute and friendly name |
+| `school_name` | no | `"School"` | Label published as the sensor's `school` attribute and friendly name |
 | `day_cycle_url_env` | yes | — | Env var holding the Finalsite "view all events" page URL |
 | `powerschool_url_env` | yes | — | Env var holding the PowerSchool guardian portal root |
 | `powerschool_user_env` | yes | — | Env var holding the guardian username |

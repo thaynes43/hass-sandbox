@@ -1209,7 +1209,7 @@ school_schedule_app:
   disable: true
   ha_url: !secret ha_url
   ha_token_env: TOKEN
-  name: "Middle School"
+  school_name: "Middle School"
   # Finalsite "view all events" page URL for the school calendar; the app
   # discovers the ICS feed from it. Kept out of git — it names the school.
   day_cycle_url_env: MIDDLE_ALL_EVENTS

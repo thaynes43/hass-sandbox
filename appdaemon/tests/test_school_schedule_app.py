@@ -53,7 +53,7 @@ TEST_USER = "test-guardian"
 TEST_PASSWORD = "test-password"
 
 DEFAULT_ARGS: Dict[str, Any] = {
-    "name": "Middle School",
+    "school_name": "Middle School",
     "day_cycle_url_env": "MIDDLE_ALL_EVENTS",
     "powerschool_url_env": "POWER_SCHOOL",
     "powerschool_user_env": "MIDDLE_USER",

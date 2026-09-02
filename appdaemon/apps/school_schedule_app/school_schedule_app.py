@@ -214,7 +214,9 @@ class SchoolScheduleApp(hass.Hass):
     def initialize(self) -> None:
         args = self.args or {}
 
-        self._school_label: str = str(args.get("name") or "School")
+        # NB: AppDaemon injects `name` (the app key) into args, so the label
+        # lives under `school_name`.
+        self._school_label: str = str(args.get("school_name") or "School")
         self._weeks_ahead: int = int(args.get("weeks_ahead") or DEFAULT_WEEKS_AHEAD)
         self._refresh_time: datetime.time = parse_time_of_day(
             args.get("refresh_time", DEFAULT_REFRESH_TIME), datetime.time(5, 0)

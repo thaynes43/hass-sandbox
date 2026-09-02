@@ -597,3 +597,22 @@ def test_class_block_as_dict_drops_empty_fields():
     assert block.as_dict() == {
         "course": "Math", "period": "6B7", "start": "13:20", "end": "14:20"
     }
+
+
+def test_build_cycle_uses_the_next_enrolment_window_before_school_starts():
+    """The day before school starts nothing is enrolled yet — the cycle must
+    still be built from the window that opens next, not come back empty."""
+    rows = [
+        ScheduleRow(course="Math", exp="6B1(1,3,5)", enroll="09/02/2026", leave="06/21/2027"),
+        ScheduleRow(course="Health", exp="6B4(2,4,6)", enroll="12/01/2026", leave="03/05/2027"),
+    ]
+    for row in rows:
+        row.periods = ps.expand_exp(row.exp)
+    cycle = ps.build_cycle(rows, datetime.date(2026, 9, 1))
+    assert sorted(cycle) == [1, 3, 5]
+    assert [b.course for b in cycle[1]] == ["Math"]
+    # Once the first window is open the later term is still excluded.
+    assert sorted(ps.build_cycle(rows, datetime.date(2026, 9, 2))) == [1, 3, 5]
+    # With no rows at all the result stays empty.
+    assert ps.build_cycle([], datetime.date(2026, 9, 1)) == {}
+

@@ -9,7 +9,7 @@ Which day of the middle school's six-day rotation is it today, and which classes
 The school rotates a six-day schedule (Day 1 through Day 6) that skips weekends, holidays, and vacation days, so the day number never lines up with the weekday. The `school_schedule_app` AppDaemon app rebuilds the answer every morning from two sources:
 
 - **Which day number a date is** comes from the school's public events calendar. The calendar publishes the whole year's rotation as recurring events, plus no-school days, early releases, and delays.
-- **Which classes fall on each day number** comes from PowerSchool's matrix schedule page, behind the guardian login.
+- **Which classes fall on each date** comes from PowerSchool's weekly schedule page, behind the guardian login. It already accounts for terms and holidays, and the class list view supplies the six-day cycle as a fallback.
 
 Both are scraped at startup and again every morning at 5:00 AM, the same cadence as the [School Lunch Menu](school-lunch.md), because the two feeds come from the same school and change together (a new term, a schedule change, a snow day). The results are merged into one Home Assistant sensor that the card reads.
 
@@ -18,7 +18,7 @@ Both are scraped at startup and again every morning at 5:00 AM, the same cadence
 ```
 Finalsite events calendar (iCal feed)        PowerSchool guardian portal
         │  Day 1..6 per date,                        │  login, then the
-        │  no-school days, early releases            │  matrix schedule table
+        │  no-school days, early releases            │  weekly schedule grid + class list
         ▼                                            ▼
   providers/school_schedule/day_cycle.py    providers/school_schedule/powerschool.py
         └───────────────────┬────────────────────────┘
@@ -33,7 +33,7 @@ Finalsite events calendar (iCal feed)        PowerSchool guardian portal
                   school-schedule-card (Lovelace)
 ```
 
-The app publishes the full year of date to day-number mappings and the six per-day class lists. The card works out "today" and "the next school day" itself from the browser's clock, so it stays correct across midnight and on weekends without waiting for the next scrape.
+The app publishes the full year of date to day-number mappings, three weeks of per-date class lists, and the six-day cycle as a fallback. The card works out "today" and "the next school day" itself from the browser's clock, so it stays correct across midnight and on weekends without waiting for the next scrape.
 
 ## The card
 
@@ -59,7 +59,7 @@ The app is configured in `apps-prod.yaml`. Key fields:
 
 | Key | Description |
 |-----|-------------|
-| `name` | Display name of the school (shown in the sensor) |
+| `school_name` | Display name of the school (shown in the sensor) |
 | `day_cycle_url_env` | Env var holding the school's events calendar page URL |
 | `powerschool_url_env` / `powerschool_user_env` / `powerschool_password_env` | Env vars holding the PowerSchool root URL and guardian credentials |
 | `refresh_time` | Daily scrape time (default `"05:00:00"`, matching the lunch menu) |
