@@ -10,6 +10,10 @@
  *
  * Tapping the card navigates to config.navigation_path (default "#school-lunch-popup").
  *
+ * Optional `height` (px): pins the card to a fixed height so a long menu can
+ * never push the dashboard's bottom button row off the wall display; the menu
+ * area then scrolls by touch, with a fade + chevron hint while more is below.
+ *
  * Platforms: Desktop (Chrome/Firefox/Edge), iOS Companion App, Android/UniFi wall display.
  */
 
@@ -277,19 +281,47 @@ class SchoolLunchCard extends HTMLElement {
             </div>
             <ha-icon class="header-icon" icon="mdi:silverware-fork-knife"></ha-icon>
           </div>
-          <div class="content-stage"></div>
+          <div class="stage-wrap">
+            <div class="content-stage"></div>
+            <div class="scroll-fade" aria-hidden="true"><ha-icon icon="mdi:chevron-down"></ha-icon></div>
+          </div>
         </div>
       </ha-card>
     `;
 
     const root = this.shadowRoot;
     this._els = {
+      card: root.querySelector("ha-card"),
       headerTitle: root.querySelector(".header-title"),
       contentStage: root.querySelector(".content-stage"),
+      scrollFade: root.querySelector(".scroll-fade"),
     };
+
+    // Fixed height (wall display): the card stops growing with the menu and
+    // the menu area scrolls instead. Native touch scrolling is left alone —
+    // the tap handler already ignores a gesture that moved.
+    const height = Number(this._config.height);
+    if (Number.isFinite(height) && height > 0) {
+      this._els.card.classList.add("fixed-height");
+      this._els.card.style.setProperty("--slc-height", `${Math.round(height)}px`);
+      this._els.contentStage.addEventListener(
+        "scroll",
+        () => this._updateScrollFade(),
+        { passive: true }
+      );
+    }
 
     this._bindEvents();
     this._domBuilt = true;
+  }
+
+  /** Show the bottom fade + chevron only while more menu is hidden below. */
+  _updateScrollFade() {
+    const stage = this._els?.contentStage;
+    const fade = this._els?.scrollFade;
+    if (!stage || !fade) return;
+    const more = stage.scrollHeight - stage.scrollTop - stage.clientHeight > 4;
+    fade.classList.toggle("visible", more);
   }
 
   _update() {
@@ -352,6 +384,7 @@ class SchoolLunchCard extends HTMLElement {
         : `<div class="no-menu">No schools selected</div>`;
 
     this._els.contentStage.innerHTML = bodyHtml;
+    requestAnimationFrame(() => this._updateScrollFade());
   }
 
   // ---------------------------------------------------------------------------
@@ -568,6 +601,64 @@ class SchoolLunchCard extends HTMLElement {
       .school-block + .school-block {
         padding-top: 8px;
         border-top: 1px solid var(--slc-border);
+      }
+
+      /* ── Fixed height + touch scrolling (config: height) ── */
+      .stage-wrap {
+        position: relative;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      ha-card.fixed-height {
+        height: var(--slc-height);
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+      }
+
+      ha-card.fixed-height .card-shell {
+        flex: 1;
+        min-height: 0;
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      ha-card.fixed-height .content-stage {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior: contain;
+        touch-action: pan-y;
+        scrollbar-width: none;
+      }
+
+      ha-card.fixed-height .content-stage::-webkit-scrollbar {
+        display: none;
+      }
+
+      .scroll-fade {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 44px;
+        border-radius: 0 0 var(--slc-radius-sm) var(--slc-radius-sm);
+        background: linear-gradient(180deg, rgba(19, 24, 31, 0), rgba(19, 24, 31, 0.97) 70%);
+        display: flex;
+        align-items: flex-end;
+        justify-content: center;
+        padding-bottom: 2px;
+        color: var(--slc-accent);
+        --mdc-icon-size: 22px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 150ms ease;
+      }
+
+      .scroll-fade.visible {
+        opacity: 1;
       }
     `;
   }

@@ -44,6 +44,8 @@ A compact card showing the next relevant lunch menu for all selected schools. Th
 | After cutoff | Friday | **Monday's Lunch** |
 | Any time | Sat/Sun | **Monday's Lunch** |
 
+On the wall display the card is pinned to a fixed height (`height: 296` in the card config) so a long menu can never push the dashboard's bottom button row off the screen. When the menu does not fit, the menu area scrolls by touch, with a fade and chevron at the bottom while more is hidden below.
+
 Menu items are split into numbered **options** (main entree choices) and an **Includes** line for daily items like fruit and milk (auto-classified by the app based on which items appear on 75%+ of days).
 
 School selection persists in `input_text.school_lunch_selected_schools` so the choice survives reloads and is shared across all dashboard instances.
