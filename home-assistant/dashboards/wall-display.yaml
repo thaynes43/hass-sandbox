@@ -537,6 +537,9 @@ views:
             status_entity: sensor.school_lunch_menu
             selection_entity: input_text.school_lunch_selected_schools
             navigation_path: '#school-lunch-popup'
+            # Fixed height so a long menu never pushes the button row off the
+            # 1920x1080 display; the menu area scrolls by touch.
+            height: 296
           - type: custom:school-schedule-card
             status_entity: sensor.school_schedule
             navigation_path: '#school-schedule-popup'

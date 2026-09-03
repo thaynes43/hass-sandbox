@@ -26,7 +26,7 @@ Fetches daily lunch menus from the School Nutrition and Fitness API for multiple
 
 ## Associated cards
 
-- `school-lunch-card.js` — compact at-a-glance card showing tomorrow's entrees for selected schools
+- `school-lunch-card.js` — compact at-a-glance card showing tomorrow's entrees for selected schools. Optional `height` (px) pins the card height and makes the menu area touch-scrollable (fade + chevron hint) — used on the 1920x1080 wall display so a long menu cannot push the button row off screen.
 - `school-lunch-detail-card.js` — popup detail card with weekly view, full month calendars, and settings tab
 
 ## Config reference
