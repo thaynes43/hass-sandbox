@@ -47,7 +47,7 @@ The card is built for the 1920x1080 UniFi Connect wall display, where the column
 
 ## The matrix view
 
-Tapping the card opens the full six-day rotation as a matrix: every block of the day including advisory and lunch, periods with their times down the side, Day 1 through Day 6 across, and in every cell the same icon as the compact card next to the class name, teacher, and room. Today's column is outlined and the next school day is tinted, and a legend under the grid spells out what each icon means. On the wall display it opens as a popup, matching the lunch menu; on the lighter unifi-connect dashboard it is its own page with a back arrow, which the display's older Android webview handles better than popups.
+Tapping the card opens the full six-day rotation as a matrix: every block of the day including advisory and lunch, period numbers down the side, Day 1 through Day 6 across, and in every cell the same icon as the compact card next to the class name, teacher, and room. Today's column is outlined and the next school day is tinted, and a legend under the grid spells out what each icon means. On the wall display it opens as a popup, matching the lunch menu; on the lighter unifi-connect dashboard it is its own page with a back arrow, which the display's older Android webview handles better than popups.
 
 ## Icons
 

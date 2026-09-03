@@ -122,8 +122,8 @@ the `?v=N` query parameter after any edit.
   rotation day badge, one icon per class, **skipping anything marked `hidden`**.
   Fixed 112px height for the wall display. `navigation_path` opens the detail
   view.
-- `school-schedule-detail-card.js` — the six-day rotation as a matrix (periods
-  with times down, Day 1..6 across, icon + class + teacher + room per cell),
+- `school-schedule-detail-card.js` — the six-day rotation as a matrix (period
+  numbers down, Day 1..6 across, icon + class + teacher + room per cell),
   **including the hidden blocks** so the full day is visible,
   today/next columns highlighted, icon legend. Read-only. On `wall-display` it
   sits inside a bubble-card pop-up (`#school-schedule-popup`); on
