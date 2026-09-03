@@ -1,0 +1,1962 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Home Assistant + AppDaemon automation documentation">
+      
+      
+      
+        <link rel="canonical" href="https://thaynes43.github.io/hass-sandbox/features/health-checks/">
+      
+      
+        <link rel="prev" href="../vestaboard/">
+      
+      
+        <link rel="next" href="../media-dashboard/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>System Health Monitoring - HaynesOps Home Automation</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#system-health-monitoring" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="HaynesOps Home Automation" class="md-header__button md-logo" aria-label="HaynesOps Home Automation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            HaynesOps Home Automation
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              System Health Monitoring
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/thaynes43/hass-sandbox" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    thaynes43/hass-sandbox
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="HaynesOps Home Automation" class="md-nav__button md-logo" aria-label="HaynesOps Home Automation" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    HaynesOps Home Automation
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/thaynes43/hass-sandbox" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    thaynes43/hass-sandbox
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../camera-notifications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GenAI Camera Notifications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../occupancy-lighting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Occupancy-Based Lighting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../photo-frame/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Immich Photo Frame
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dashboard-notify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Dashboard Notify
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../school-lunch/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    School Lunch Menu
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../school-schedule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    School Day Rotation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../vestaboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vestaboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Health Monitoring
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    System Health Monitoring
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-gets-monitored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Gets Monitored
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How It Works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#event-driven-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event-Driven Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Levels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dependency-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#heartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alert-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alert History
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-repair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Repair
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#paging-alertmanager-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paging: Alertmanager Integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Paging: Alertmanager Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#smarter-than-a-tripwire" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Smarter Than a Tripwire
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-page-per-incident" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One Page Per Incident
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reaching-every-alertmanager-replica" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reaching Every Alertmanager Replica
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#muting-a-checker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Muting a Checker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-heal-first-page-if-that-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Heal First, Page If That Fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dashboard-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dashboard Experience
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dashboard Experience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#compact-health-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compact Health Bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detail-popup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detail Popup
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-the-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extending the System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending the System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-protocol-check-config-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Protocol Check (Config Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-device-check-config-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Device Check (Config Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-environmental-monitoring-config-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding Environmental Monitoring (Config Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-a-custom-checker-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a Custom Checker App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-checkers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Checkers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../media-dashboard/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Media Dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/overview/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../apps/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    AppDaemon Apps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Setup
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../setup/getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#what-gets-monitored" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Gets Monitored
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-it-works" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How It Works
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How It Works">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#event-driven-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Event-Driven Architecture
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#status-levels" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Levels
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dependency-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dependency System
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#heartbeat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Heartbeat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#alert-history" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Alert History
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#auto-repair" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Repair
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#paging-alertmanager-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Paging: Alertmanager Integration
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Paging: Alertmanager Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#smarter-than-a-tripwire" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Smarter Than a Tripwire
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#one-page-per-incident" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        One Page Per Incident
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reaching-every-alertmanager-replica" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reaching Every Alertmanager Replica
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#muting-a-checker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Muting a Checker
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto-heal-first-page-if-that-fails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Auto-Heal First, Page If That Fails
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dashboard-experience" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dashboard Experience
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dashboard Experience">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#compact-health-bar" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compact Health Bar
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#detail-popup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Detail Popup
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#extending-the-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Extending the System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Extending the System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-protocol-check-config-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Protocol Check (Config Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-a-new-device-check-config-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding a New Device Check (Config Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#adding-environmental-monitoring-config-only" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Adding Environmental Monitoring (Config Only)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#writing-a-custom-checker-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a Custom Checker App
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-checkers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current Checkers
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#related" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Related
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="system-health-monitoring">System Health Monitoring</h1>
+<p>Proactive infrastructure monitoring for every layer of the smart home — from network radios to ceiling fans to the hot tub.</p>
+<!-- TODO: Add screenshot of wall display showing health check compact bar and detail popup -->
+
+<h2 id="overview">Overview</h2>
+<p>A smart home with dozens of devices across multiple protocols will inevitably have things go wrong: a Zigbee coordinator loses its connection, a ceiling fan drops off WiFi, or the hot tub controller enters a zombie state where it <em>looks</em> connected but ignores commands. The health monitoring system catches these problems early and, where possible, fixes them automatically.</p>
+<p>The system is built around two ideas:</p>
+<ol>
+<li><strong>Decoupled checkers</strong> — each checker app monitors one slice of infrastructure and reports status via Home Assistant events. The controller never needs to know <em>how</em> a check works.</li>
+<li><strong>A single aggregated sensor</strong> — the controller combines all checker reports into <code>sensor.health_check_status</code>, which custom Lovelace cards read to render the dashboard.</li>
+</ol>
+<p>This architecture means adding a new health check is often just a YAML config change — no code required.</p>
+<h2 id="what-gets-monitored">What Gets Monitored</h2>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th>Examples</th>
+<th>Checker Type</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Network protocols</td>
+<td>Zigbee bridge, Z-Wave controller, coordinator ping, web UI</td>
+<td><code>NetworkProtocolChecker</code></td>
+</tr>
+<tr>
+<td>MQTT infrastructure</td>
+<td>Broker publish/subscribe round-trip</td>
+<td><code>MqttBrokerChecker</code></td>
+</tr>
+<tr>
+<td>MQTT devices</td>
+<td>Zigbee2MQTT device availability + linkquality</td>
+<td><code>MqttDeviceChecker</code></td>
+</tr>
+<tr>
+<td>Environmental sensors</td>
+<td>Temperature and humidity with threshold alerts</td>
+<td><code>TempHumidityChecker</code></td>
+</tr>
+<tr>
+<td>Smart devices</td>
+<td>Printers, Vestaboards, any entity + optional ping</td>
+<td><code>BasicDeviceChecker</code></td>
+</tr>
+<tr>
+<td>Device groups</td>
+<td>Cielo AC controllers, TP-Link plugs — related devices as one unit</td>
+<td><code>DeviceGroupChecker</code></td>
+</tr>
+<tr>
+<td>Ceiling fans</td>
+<td>Modern Forms fans with per-fan repair</td>
+<td><code>FanHealthChecker</code></td>
+</tr>
+<tr>
+<td>Hot tub / spa</td>
+<td>Gecko integration health, staleness detection, power-cycle repair</td>
+<td><code>SpaHealthChecker</code></td>
+</tr>
+<tr>
+<td>Protect health</td>
+<td>UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal</td>
+<td><code>ProtectHealthChecker</code></td>
+</tr>
+<tr>
+<td>Image generation</td>
+<td>ComfyUI API reachability and queue progress — a GPU watchdog</td>
+<td><code>ImageGenHealthChecker</code></td>
+</tr>
+<tr>
+<td>Batteries</td>
+<td>Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with an opt-in guard that tells a real low battery from a gateway-disconnect 0%</td>
+<td><code>BatteryChecker</code></td>
+</tr>
+<tr>
+<td>Motorized shades</td>
+<td>PowerView G3 gateway RF-disconnect detection, with PoE port power-cycle repair</td>
+<td><code>ShadeGatewayChecker</code></td>
+</tr>
+<tr>
+<td>AppDaemon itself</td>
+<td>Heartbeat timestamp — the card detects staleness client-side</td>
+<td>Controller heartbeat</td>
+</tr>
+</tbody>
+</table>
+<h2 id="how-it-works">How It Works</h2>
+<h3 id="event-driven-architecture">Event-Driven Architecture</h3>
+<p>Checker apps and the controller communicate exclusively through Home Assistant events — never through direct Python references. This means:</p>
+<ul>
+<li>The controller can run in production Kubernetes while a new checker is being developed on a laptop</li>
+<li>Checkers can restart independently without affecting others</li>
+<li>Adding a new checker type requires no changes to the controller</li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Checker Apps (Zigbee, Z-Wave, MQTT, Spa, Fans, ...)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  │  register_checker / report_status events
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>  ▼
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>HealthCheckController
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  │  set_state()
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  ▼
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>sensor.health_check_status
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  ├──▶ health-check-card (compact bar on wall displays)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  │         │
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  │         │ tap to expand
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  │         ▼
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  └──▶ health-check-detail-card (full breakdown + repair controls)
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>              │
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>              │ callService("script", "health_check_relay", ...)
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>              ▼
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>         HA event bus → Controller routes commands back to checkers
+</code></pre></div>
+<h3 id="status-levels">Status Levels</h3>
+<p>Each individual check reports one of five statuses. The controller rolls these up to a per-checker status (worst wins) and then to an overall system status.</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+<th>Card Color</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>ok</strong></td>
+<td>Everything healthy</td>
+<td>Green</td>
+</tr>
+<tr>
+<td><strong>warning</strong></td>
+<td>Degraded but functional</td>
+<td>Yellow</td>
+</tr>
+<tr>
+<td><strong>degraded</strong></td>
+<td>Significant issues</td>
+<td>Orange</td>
+</tr>
+<tr>
+<td><strong>critical</strong></td>
+<td>Service down or unreachable</td>
+<td>Red</td>
+</tr>
+<tr>
+<td><strong>unknown</strong></td>
+<td>Not yet checked or dependency unavailable</td>
+<td>Grey</td>
+</tr>
+</tbody>
+</table>
+<h3 id="dependency-system">Dependency System</h3>
+<p>Checkers can declare dependencies on other checkers. When a dependency is unhealthy, the controller automatically marks affected checks as <code>unknown</code> instead of reporting misleading failures.</p>
+<p>For example, MQTT device checks depend on the MQTT broker checker. If the broker itself is down, individual device checks show as <code>unknown</code> rather than <code>critical</code> — because the real problem is the broker, not the devices.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># MQTT device checker declares broker dependency</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">broker_dependency_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mqtt_broker</span>
+</code></pre></div>
+<p>The controller resolves these dependencies at publish time without modifying the underlying check data, so when the broker recovers, device checks immediately resume reporting their true status.</p>
+<h3 id="heartbeat">Heartbeat</h3>
+<p>The controller updates an <code>input_datetime</code> helper every 60 seconds. The dashboard card compares this timestamp against the current time client-side. If the heartbeat is stale by more than 3 minutes, the card shows AppDaemon as offline — no HA automation or template sensor needed.</p>
+<h3 id="alert-history">Alert History</h3>
+<p>Every status transition is recorded with timestamps and duration tracking. The detail card shows a scrollable history of recent alerts, making it easy to see patterns like "the Zigbee bridge drops every night at 2 AM" without digging through logs.</p>
+<p>Alerts are pruned automatically — both by age (default 36 hours) and by count (default 50 per checker).</p>
+<h2 id="auto-repair">Auto-Repair</h2>
+<p>Some checkers support automatic repair, typically via smart switch power cycling. The repair system follows strict safety rules:</p>
+<ul>
+<li><strong>Only CRITICAL failures trigger repair</strong> — repair fires only when all checks are down; partial failures (warnings or degraded) do not cause a power cycle</li>
+<li><strong>Only sustained failures trigger repair</strong> — a brief blip does not cause a power cycle</li>
+<li><strong>Configurable delay</strong> — the problem must persist for a configurable number of minutes before repair begins</li>
+<li><strong>Auto-clear on recovery</strong> — after a failed repair, the <code>failed</code> state automatically resets to <code>idle</code> when all checks recover. No auto-retry while checks are still unhealthy.</li>
+<li><strong>Unknown does not trigger repair</strong> — if AppDaemon itself is restarting, repair actions are suppressed</li>
+<li><strong>Cancellable</strong> — a pending repair can be cancelled via the detail popup before the power cycle executes</li>
+</ul>
+<p>The repair state machine:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idle → pending → in_progress → success → idle (checks stay healthy)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         │                   → failed  → idle (checks recover naturally)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         └──▶ idle (cancel_repair command received before deadline)
+</code></pre></div>
+<p>Repair-capable checkers provision their own HA helpers for configuration:</p>
+<ul>
+<li><strong>Auto-repair toggle</strong> — <code>input_boolean</code> to enable/disable</li>
+<li><strong>Delay setting</strong> — <code>input_number</code> for minutes before repair triggers</li>
+</ul>
+<p>These settings persist across AppDaemon restarts because they live in Home Assistant.</p>
+<div class="admonition info">
+<p class="admonition-title">Per-device repair</p>
+<p>The fan checker and repairable device group checker support <strong>per-device</strong> repair. Each device tracks its own repair state independently, and devices are repaired sequentially — one at a time — to avoid overwhelming the electrical system.</p>
+</div>
+<h2 id="paging-alertmanager-integration">Paging: Alertmanager Integration</h2>
+<p>The dashboard is great when someone is looking at it. For failures that need attention <em>now</em>, the controller mirrors checker health into the Kubernetes cluster's Prometheus Alertmanager — the same Alertmanager that already routes critical infrastructure alerts to Pushover on the phone. No new notification plumbing; health checks just join the existing pipeline.</p>
+<ul>
+<li><strong>Critical pages the phone.</strong> A checker going <code>critical</code> raises a <code>severity=critical</code> alert, which the cluster's routing delivers as a Pushover notification.</li>
+<li><strong>Warnings stay quiet.</strong> <code>warning</code> and <code>degraded</code> map to <code>severity=warning</code> — visible in the Alertmanager and Grafana UIs, never a page.</li>
+<li><strong>Recovery resolves once it sticks.</strong> When a checker reports healthy again the controller resolves the alert and the phone gets the matching <code>[RESOLVED]</code> notification — after a short hold that proves the recovery is real (see <em>One page per incident</em> below), so no lingering stale alerts and no resolve-then-refire ping-pong.</li>
+</ul>
+<p>Each alert carries the failing check details in its description, so the notification usually tells the whole story on its own ("Event stream frozen for 3.2h — no genuine event since detection"). While an alert is firing, the controller re-posts it every two minutes to keep it alive (Alertmanager expires silent alerts after five), and if Alertmanager itself is down, health checking carries on unaffected — posts are simply retried until it returns.</p>
+<p>Checkers can customize their alert name in config (e.g. <code>ProtectEventStreamFrozen</code>, <code>ImageGenQueueStuck</code>) or opt out of alerting entirely.</p>
+<h3 id="smarter-than-a-tripwire">Smarter Than a Tripwire</h3>
+<p>A page that fires on every momentary blip trains you to ignore it, so the paging path is deliberately patient:</p>
+<ul>
+<li><strong>Debounce.</strong> A checker has to stay unhealthy for a sustained window — not just a single poll — before it pages. A transient blip that clears on the next check never reaches the phone.</li>
+<li><strong>Escalation is gated too.</strong> When something that's already warning gets worse and goes critical, the critical page is held for that same sustained window instead of firing instantly. A checker that flaps between warning and critical keeps its quiet warning and never pages, while a real, sustained escalation still promotes to a page.</li>
+<li><strong>Repair gets first crack.</strong> If a checker supports auto-repair and a repair is scheduled or running, the critical page is withheld while the repair does its thing — capped at 30 minutes so a stuck repair can never permanently mask a real outage. Most self-healing failures resolve inside that window with no page at all; only a repair that fails or times out escalates to the phone.</li>
+</ul>
+<h3 id="one-page-per-incident">One Page Per Incident</h3>
+<p>The debounce keeps a blip from <em>starting</em> a page. Its mirror image keeps a blip from <em>ending</em> one — because the Pushover receiver sends resolves too, every recovery is a notification, and a condition that oscillates would otherwise page on every swing in both directions. One flapping Wi-Fi ceiling fan produced eighteen notifications in a single night that way.</p>
+<p>So an <strong>improvement hold</strong> (<code>alert_improve_hold_s</code>, 15 minutes in production) applies to everything that makes a firing alert <em>better</em>:</p>
+<ul>
+<li><strong>Recovery has to hold.</strong> A checker returning to <code>ok</code> doesn't resolve its alert on the spot — the alert keeps firing until the recovery has been continuous for the whole window. Drop back into failure inside that window and the improvement is discarded silently; nothing was ever posted, so nothing pages.</li>
+<li><strong>De-escalations wait too.</strong> Critical easing back to warning is held the same way, with the critical alert staying up (annotations still refreshed each cycle, so the UI shows what is failing <em>right now</em>) until the calmer state proves it holds.</li>
+<li><strong>Only improvements are held.</strong> Anything at or above the firing severity — a re-failure, an escalation — cancels the hold instantly. Getting worse is never delayed.</li>
+</ul>
+<p>The result is one <code>[FIRING]</code> page when a real incident starts and one <code>[RESOLVED]</code> page when it genuinely ends, no matter how much the underlying condition thrashes in between. The cost is that the resolve lands up to 15 minutes after the dashboard turns green — deliberate, and worth it.</p>
+<h3 id="reaching-every-alertmanager-replica">Reaching Every Alertmanager Replica</h3>
+<p>Alertmanager runs as an HA pair, and the pair gossips silences and the notification log — but <strong>not</strong> the alert set itself. Prometheus handles this by sending every alert to every replica; a direct poster has to do the same. Posting through the load-balanced Service left each replica with a different, partial view of which alerts existed, their notification logs never lined up, and both replicas paged for the same incident.</p>
+<p>The controller now posts to the <strong>headless</strong> Service and fans each batch out to every address it resolves to, concurrently — one POST per replica, per cycle. A post counts as delivered if at least one replica accepts it, so a replica being down degrades to the old single-replica behaviour instead of losing the page. A hostname that resolves to a single address (or an IP outright) takes exactly the original code path.</p>
+<h3 id="muting-a-checker">Muting a Checker</h3>
+<p>Sometimes you already know about a problem and don't want to be paged about it — a camera is unplugged for the season, or you're mid-maintenance on the spa. Every checker in the detail popup has an <strong>Alerting</strong> row with <strong>Mute 1d</strong>, <strong>Mute 7d</strong>, and indefinite <strong>Mute</strong> buttons (and <strong>Unmute</strong> to lift it). A muted checker keeps running and still shows its true status on the dashboard — with a <strong>MUTED</strong> badge in its header — but it won't page while muted. Timed mutes lift themselves automatically when they expire, and a mute survives an AppDaemon restart, so a 7-day mute really lasts 7 days.</p>
+<h3 id="auto-heal-first-page-if-that-fails">Auto-Heal First, Page If That Fails</h3>
+<p>The checkers that drove this integration span the whole spectrum, from "heals itself before you wake up" to "no automation can help":</p>
+<p><strong>UniFi Protect</strong> has a known failure mode where its websocket dies silently: camera entities keep updating, but every motion and smart-detection sensor stops changing state — with zero log errors. The checker detects the freeze (no events for hours <em>of active daytime</em>, so a quiet night never false-positives), reloads the Protect config entry automatically, and then waits for a <em>genuine</em> new event to prove the stream is really back — the reload itself re-registers every sensor with fresh timestamps, which would otherwise look like a recovery. Most freezes heal themselves this way; the page only goes out if the reload didn't work, and the alert keeps firing (annotated "auto-repair FAILED") until events actually resume.</p>
+<p>A second, harder failure mode gets its own fast path: when the UNVR connection is lost outright (a reboot, an auth failure), every Protect entity flips to <code>unavailable</code> at once. That transition refreshes the sensors' timestamps, so the staleness detector alone would wait hours — instead, a <strong>Sensor Availability</strong> check pages within ~15 minutes when essentially everything is unavailable, and the same config-entry reload auto-heal kicks in. Warnings are reserved for devices that <em>recently</em> went offline after being seen alive — disabled-by-default Protect channels and the wireless cameras that live unplugged most of the year never produce standing warnings. The USL entry sensors (door contact/motion) are broken out as their own <strong>Entry Sensors</strong> line item: they warn when offline, but a door that nobody opens for hours never pages.</p>
+<p><strong>ComfyUI</strong> is the opposite. A queue that stops moving — or an API that stops answering — is the classic symptom of the GPU falling off the PCI bus on the virtualization host, and only a host reboot fixes that. No automation can help, so this checker is deliberately page-only: it raises the alarm and stays out of the way. Its thresholds are tuned to the real workload — the first generation after a ComfyUI restart takes ~8.5 minutes of model loading, well under the 30-minute stuck threshold, so cold starts never page.</p>
+<p><strong>PowerView shade gateway</strong> is the pattern in its purest form, and it exists because of a real overnight incident. When a Hunter Douglas G3 gateway loses contact with a shade, the shade doesn't report "offline" — it reports <strong>0% battery</strong>, and a flapping gateway makes it bounce <code>100% ↔ 0%</code> for hours. The old battery checker read every 0% as a dying battery and paged four times before dawn for something no human could fix by charging. Now two checkers cooperate: <code>BatteryChecker</code> recognizes the physically-impossible drop (a healthy battery can't lose 40+ points between readings) and downgrades it to a silent warning instead of paging, while a dedicated <code>ShadeGatewayChecker</code> owns the disconnect itself. It tracks a gateway-wide "disconnect episode" that survives the flapping — a momentary bounce back to 100% doesn't count as recovery — and stays silent through a grace period (default two hours), because these outages usually self-heal. If the shades are still flapping when the grace expires, it power-cycles the one thing that helps — the PoE port feeding the primary gateway — waits for the shades to come back, and only pages if that single restart didn't hold. One overnight page storm becomes zero pages when it self-heals, or one actionable "gateway restarted" page when it doesn't.</p>
+<p><strong>Ceiling fans</strong> show what happens when auto-heal is too eager. The fans are Wi-Fi devices; when one drops off the network the repair is a power cycle through its ZEN32 relay — a blunt instrument that reboots the fan to its hardware default. The retry schedule is borrowed from Kubernetes' CrashLoopBackOff: each failed repair doubles the wait before the next one, capped at six hours. What was missing was the <em>reset</em> rule. A fan that came back for ninety seconds counted as recovered, which zeroed the ladder, so the next drop earned another immediate power cycle — one flapping fan collected about eleven power cycles in five hours. Now a recovery has to hold for thirty minutes before the ladder resets, and a relapse inside that window counts the false recovery as another failed attempt and resumes climbing. The ladder is also written to a Home Assistant helper, because an AppDaemon reload mid-incident used to wipe it clean.</p>
+<p>The other half of that incident was blame. Each fan declares which UniFi access point it associates with, and when that AP is down the fan being unreachable is the network's problem, not the fan's: repairs are held (along with the backoff clock, so the ladder doesn't climb through an outage the fan didn't cause) and the alert text names the access point instead of the fan. It also says "Wi-Fi fan" out loud — during triage the ZEN32 relay in the repair path got mistaken for the fan's own radio, and half an hour went into the Z-Wave stack for a Wi-Fi problem.</p>
+<h2 id="dashboard-experience">Dashboard Experience</h2>
+<h3 id="compact-health-bar">Compact Health Bar</h3>
+<p>The compact card is designed for wall-mounted displays where screen space is limited. It shows a single row of colored status indicators — one per checker — with the overall system status.</p>
+<ul>
+<li>Tap the bar to open the detail popup</li>
+<li>Green bar with no indicators means everything is healthy</li>
+<li>Warning and critical states are immediately visible through color</li>
+</ul>
+<h3 id="detail-popup">Detail Popup</h3>
+<p>The detail card provides a full breakdown:</p>
+<ul>
+<li><strong>Per-checker sections</strong> with individual check results and status icons</li>
+<li><strong>Last check timestamps</strong> showing when each checker last ran</li>
+<li><strong>Alert history</strong> with transition details (e.g., "Bridge Connection: ok -&gt; critical")</li>
+<li><strong>Force Re-check</strong> button to trigger all checkers immediately</li>
+<li><strong>Clear History</strong> button to dismiss resolved alerts</li>
+<li><strong>Repair controls</strong> for repair-capable checkers (manual trigger, cancel pending repair, auto-repair toggle, delay setting)</li>
+<li><strong>Mute controls</strong> on every checker's Alerting row — silence its paging for a day, a week, or indefinitely (a MUTED badge and one-tap Unmute show while active)</li>
+</ul>
+<h2 id="extending-the-system">Extending the System</h2>
+<h3 id="adding-a-new-protocol-check-config-only">Adding a New Protocol Check (Config Only)</h3>
+<p>The <code>NetworkProtocolChecker</code> supports any combination of entity state, ICMP ping, and HTTP checks. Adding a new protocol is a single YAML entry:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">thread_health_checker</span><span class="p">:</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">module</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">health_checks.checker_apps.network_protocol_checker.network_protocol_checker</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">  </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NetworkProtocolChecker</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">checker_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">thread</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">  </span><span class="nt">checker_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Thread</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">binary_sensor.thread_border_router_state</span>
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">entity_healthy_state</span><span class="p">:</span><span class="w"> </span><span class="s">"on"</span>
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">entity_check_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Border Router</span>
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">radio_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">thread-br.local</span>
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">  </span><span class="nt">radio_check_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Radio Ping</span>
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="nt">check_interval_s</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">180</span>
+</code></pre></div>
+<h3 id="adding-a-new-device-check-config-only">Adding a New Device Check (Config Only)</h3>
+<p>For any device that has an HA entity and optionally responds to ping:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">nas_health_checker</span><span class="p">:</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">module</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">health_checks.checker_apps.device_checker.device_checker</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">BasicDeviceChecker</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">checker_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">nas</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">checker_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NAS</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">ping_host</span><span class="p">:</span><span class="w"> </span><span class="s">"192.168.0.10"</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">ping_check_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Ping</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">check_interval_s</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300</span>
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="nt">entities</span><span class="p">:</span>
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.synology_status</span>
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="nt">healthy_state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">normal</span>
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Status</span>
+</code></pre></div>
+<h3 id="adding-environmental-monitoring-config-only">Adding Environmental Monitoring (Config Only)</h3>
+<p>The <code>TempHumidityChecker</code> supports configurable warning and critical thresholds:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">server_room_temp_checker</span><span class="p">:</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">module</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">health_checks.checker_apps.temp_humidity_checker.temp_humidity_checker</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">  </span><span class="nt">class</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">TempHumidityChecker</span>
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">checker_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">server_room_temp</span>
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="w">  </span><span class="nt">checker_name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Server Room</span>
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">check_interval_s</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">120</span>
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">temp_low_warning</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">temp_high_warning</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">80</span>
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">temp_low_critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">55</span>
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">  </span><span class="nt">temp_high_critical</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">85</span>
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">sensors</span><span class="p">:</span>
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">entity_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.server_room_temperature</span>
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Rack Temperature</span>
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">      </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">temperature</span>
+</code></pre></div>
+<h3 id="writing-a-custom-checker-app">Writing a Custom Checker App</h3>
+<p>For monitoring that goes beyond entity state and ping — such as the MQTT round-trip test or the spa staleness detector — you can write a custom checker app. The minimum contract is:</p>
+<ol>
+<li>Listen for <code>health_check_controller_ready</code> and register with check names</li>
+<li>Periodically run checks and report results via <code>health_check_command</code> events</li>
+<li>Listen for <code>health_check_recheck</code> to support on-demand re-checks</li>
+</ol>
+<p>The shared <code>check_utils</code> module provides reusable building blocks like <code>ping_check()</code> and <code>http_check()</code>.</p>
+<h2 id="current-checkers">Current Checkers</h2>
+<table>
+<thead>
+<tr>
+<th>Checker</th>
+<th>Type</th>
+<th>What It Monitors</th>
+<th>Repair</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Zigbee</td>
+<td><code>NetworkProtocolChecker</code></td>
+<td>Bridge connection, coordinator ping, web UI</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Z-Wave</td>
+<td><code>NetworkProtocolChecker</code></td>
+<td>Controller state, radio ping, web UI</td>
+<td>No</td>
+</tr>
+<tr>
+<td>MQTT Broker</td>
+<td><code>MqttBrokerChecker</code></td>
+<td>Publish/subscribe round-trip latency</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Basement Lights</td>
+<td><code>MqttDeviceChecker</code></td>
+<td>Zigbee2MQTT device HA state + linkquality</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Cigar Room Humidity</td>
+<td><code>TempHumidityChecker</code></td>
+<td>Humidity sensors with threshold alerts</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Spa</td>
+<td><code>SpaHealthChecker</code></td>
+<td>Gateway ping, connections, multi-entity staleness (OR logic across thermostat/lights/pumps)</td>
+<td>Yes — power cycle</td>
+</tr>
+<tr>
+<td>Fans</td>
+<td><code>FanHealthChecker</code></td>
+<td>Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down</td>
+<td>Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder</td>
+</tr>
+<tr>
+<td>Printer</td>
+<td><code>RepairableDeviceChecker</code></td>
+<td>Entity state + IP ping</td>
+<td>Yes — power cycle</td>
+</tr>
+<tr>
+<td>Vestaboard</td>
+<td><code>BasicDeviceChecker</code></td>
+<td>Controller + configuration status</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Cielo Home</td>
+<td><code>DeviceGroupChecker</code></td>
+<td>AC controller status + IP per room</td>
+<td>No</td>
+</tr>
+<tr>
+<td>UniFi Protect</td>
+<td><code>ProtectHealthChecker</code></td>
+<td>Sensor discovery + availability fast path + camera-event freshness in active hours + entry-sensor group</td>
+<td>Yes — config entry reload</td>
+</tr>
+<tr>
+<td>Image Gen</td>
+<td><code>ImageGenHealthChecker</code></td>
+<td>ComfyUI API reachability + queue progress</td>
+<td>No — page only</td>
+</tr>
+<tr>
+<td>Shade Batteries</td>
+<td><code>BatteryChecker</code></td>
+<td>PowerView shade battery levels; downgrades implausible drops to warning (disconnect-aware) so a gateway blip isn't a low-battery page</td>
+<td>No</td>
+</tr>
+<tr>
+<td>Shade Gateway</td>
+<td><code>ShadeGatewayChecker</code></td>
+<td>Gateway RF-disconnect detection across all PowerView shades (implausible 0% flaps), gateway-wide episode tracking</td>
+<td>Yes — PoE port 32 power-cycle</td>
+</tr>
+</tbody>
+</table>
+<h2 id="related">Related</h2>
+<ul>
+<li>App README: <code>appdaemon/apps/health_checks/README.md</code></li>
+<li>Architecture: <a href="../../architecture/overview/">Overview</a></li>
+<li>Custom cards: <code>appdaemon/apps/health_checks/cards/</code></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.highlight", "content.code.copy"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
