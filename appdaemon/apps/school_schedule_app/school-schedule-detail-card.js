@@ -14,7 +14,7 @@
  *   cycle  — { "<day number>": [ { course, short, icon, period, teacher, room, hidden? } ] }
  *            every block of the day; hidden: "true" marks lunch/advisory, which the
  *            compact card leaves off but this view shows (muted)
- *   days   — { "YYYY-MM-DD": { day, classes: [ { period, start, end, ... } ] } }  (times)
+ *   days   — { "YYYY-MM-DD": { day, classes: [ ... ] } }                        (today / next)
  *   dates  — { "YYYY-MM-DD": <day number> }                                   (today / next)
  *   school, cycle_length, last_updated, sources
  *
@@ -37,14 +37,6 @@ function ssdDateKey(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${d.getFullYear()}-${m}-${day}`;
-}
-
-/** "08:20" -> "8:20", "13:20" -> "1:20" (12-hour, no suffix — it is a school day); unparseable text is returned unchanged. */
-function ssdShortTime(t) {
-  const m = /^(\d{1,2}):(\d{2})/.exec(String(t || ""));
-  if (!m) return String(t || "");
-  const h = Number(m[1]) % 12 || 12;
-  return `${h}:${m[2]}`;
 }
 
 /**
@@ -148,18 +140,6 @@ class SchoolScheduleDetailCard extends HTMLElement {
       }
     }
 
-    // Times per period from the dated schedule (first occurrence wins).
-    const times = {};
-    for (const key of Object.keys(days).sort()) {
-      const list = Array.isArray(days[key]?.classes) ? days[key].classes : [];
-      for (const cls of list) {
-        const code = String(cls.period || "");
-        if (code && !times[code] && cls.start) {
-          times[code] = `${ssdShortTime(cls.start)}–${ssdShortTime(cls.end || "")}`.replace(/–$/, "");
-        }
-      }
-    }
-
     // Today / next school day (same rule as the compact card).
     const now = new Date();
     const todayKey = ssdDateKey(now);
@@ -198,7 +178,6 @@ class SchoolScheduleDetailCard extends HTMLElement {
       dayNumbers,
       periods,
       cells,
-      times,
       todayNum,
       nextNum,
       nextLabel,
@@ -267,7 +246,6 @@ class SchoolScheduleDetailCard extends HTMLElement {
 
     const rows = model.periods
       .map((code, i) => {
-        const time = model.times[code] || "";
         const tds = model.dayNumbers
           .map((n) => {
             const cls = model.cells[code]?.[n];
@@ -295,9 +273,8 @@ class SchoolScheduleDetailCard extends HTMLElement {
           })
           .join("");
         return `<tr>
-          <th class="period-head">
+          <th class="period-head" title="${esc(code)}">
             <span class="period-num">${i + 1}</span>
-            ${time ? `<span class="period-time">${esc(time)}</span>` : `<span class="period-code">${esc(code)}</span>`}
           </th>
           ${tds}
         </tr>`;
@@ -441,7 +418,7 @@ class SchoolScheduleDetailCard extends HTMLElement {
       }
 
       .corner {
-        width: 96px;
+        width: 72px;
         font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.12em;
@@ -479,25 +456,20 @@ class SchoolScheduleDetailCard extends HTMLElement {
       .chip-today { background: var(--ssd-primary); color: #fff; }
       .chip-next { background: var(--ssd-primary-light); color: var(--ssd-primary); }
 
-      .period-head {
+      /* more specific than ".matrix th" so the centring wins */
+      .matrix th.period-head {
         padding: 10px;
         background: var(--ssd-surface-variant);
         white-space: nowrap;
+        text-align: center;
+        vertical-align: middle;
       }
 
       .period-num {
         display: inline-block;
-        min-width: 22px;
-        font-size: 15px;
+        font-size: 18px;
         font-weight: 700;
         color: var(--ssd-primary);
-      }
-
-      .period-time, .period-code {
-        display: block;
-        font-size: 11px;
-        color: var(--ssd-on-surface-secondary);
-        margin-top: 2px;
       }
 
       .cell {
