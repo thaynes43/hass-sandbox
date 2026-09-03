@@ -33,7 +33,7 @@ views:
             show_attribute: true
             attribute: friendly_name
             main_buttons_position: bottom
-            rows: 2.406
+            rows: 2.6875
             styles: |
               ha-card {
                 --bubble-border-radius: 28px !important;
@@ -578,7 +578,7 @@ views:
             day_spacing: 6px
             event_spacing: 8px
             event_background_opacity: 18
-            height: 250px
+            height: 258px
             weather:
               position: date
               date:
@@ -618,6 +618,8 @@ views:
             heartbeat_entity: input_datetime.appdaemon_heartbeat
             navigation_path: '#health-check-popup'
             stale_threshold_s: 180
+            # Pinned so column 1 ends level with the other columns (see docs)
+            height: 201
       - type: grid
         cards:
           - type: custom:bubble-card
