@@ -238,7 +238,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 
 | Card | File | Purpose |
 |------|------|---------|
-| `health-check-card` | `cards/health-check-card.js` | Compact summary bar for wall-display |
+| `health-check-card` | `cards/health-check-card.js` | Compact summary bar for wall-display. Optional `height` (px) pins the card so dashboard columns align; the check list fills the space and scrolls |
 | `health-check-detail-card` | `cards/health-check-detail-card.js` | Full detail popup with alert history, repair controls, and per-checker mute (Alerting row) |
 
 ## Configuration Reference

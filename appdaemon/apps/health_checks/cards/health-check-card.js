@@ -276,6 +276,14 @@ class HealthCheckCard extends HTMLElement {
       items: this.shadowRoot.querySelector(".hc-items"),
     };
 
+    // Optional fixed height (px): pins the card so dashboard columns can be
+    // aligned to the pixel; the check list fills the space and scrolls.
+    const height = Number(this._config.height);
+    if (Number.isFinite(height) && height > 0) {
+      this._els.bar.classList.add("fixed-height");
+      this._els.bar.style.setProperty("--hc-height", `${Math.round(height)}px`);
+    }
+
     this._bindEvents();
     this._domBuilt = true;
   }
@@ -473,6 +481,19 @@ class HealthCheckCard extends HTMLElement {
 
       .hc-bar:active {
         filter: brightness(0.92);
+      }
+
+      .hc-bar.fixed-height {
+        height: var(--hc-height);
+        box-sizing: border-box;
+      }
+
+      .hc-bar.fixed-height .hc-items {
+        flex: 1 1 auto;
+        align-self: stretch;
+        align-content: flex-start;
+        min-height: 0;
+        max-height: none;
       }
 
       .hc-bar.bar-critical {
