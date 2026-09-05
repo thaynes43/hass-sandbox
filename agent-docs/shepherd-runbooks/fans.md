@@ -116,9 +116,14 @@ power-cycle of another fan that merely blipped.
    2.4 GHz airtime before anything else. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
    — receive airtime above ~0.3 on a fan's AP (baseline is 0.02-0.05) means an associated
-   client is hogging uplink; find it with
-   `unpoller_client_rssi_db{radio="ng", ap_name="<that AP>"}` (video cameras are the usual
-   suspect). Co-channel APs suffer too (Guest Room and Livingroom-Wall share channel 1), so
+   client is hogging uplink. Rank the offenders directly — do not guess from RSSI:
+   `topk(5, rate(unpoller_client_receive_bytes_total{ap_name="<that AP>", wired="false"}[1h]))`
+   (bytes *from* the client, B/s; ~500 kB/s ≈ 4 Mbit/s is already a hog next to a fan's
+   ~280 B/s). A streaming camera is the usual suspect — on 2026-09-05 this query named both
+   G6s outright — but confirm, don't assume. Caveat: the client byte metrics carry `ap_name`
+   but **not** `radio`, so band-filter by cross-referencing
+   `unpoller_client_rssi_db{radio="ng", ap_name="<that AP>"}`, which lists who is associated
+   on 2.4 GHz. Co-channel APs suffer too (Guest Room and Livingroom-Wall share channel 1), so
    check `unpoller_device_radio_channel_utilization_total_ratio` on the neighbours. Fix the
    hog (move it to 5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
 3. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
