@@ -1,33 +1,46 @@
 name: Docs Site Audit
 
+# Agent PRs are opened ready-for-review and never pass through a draft state, so
+# `ready_for_review` alone would never fire for them.
 on:
   pull_request:
-    types: [ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-site-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   docs-site-audit:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
-      issues: read
-      id-token: write
+      id-token: write # OIDC exchange for the Claude GitHub App token
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Check for relevant changes
         id: changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- appdaemon/ home-assistant/ docs/ mkdocs.yml)
+          set -euo pipefail
+          CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- appdaemon/ home-assistant/ docs/ mkdocs.yml)
           if [ -n "$CHANGED" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No relevant changes detected, skipping audit"
+            echo "No relevant changes detected, skipping audit" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Audit docs site with Claude
@@ -36,36 +49,57 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "haynes-dev-bot"
+          # Agent mode: --allowedTools is the whole permission set and also gates
+          # which MCP servers are installed, so the gh grants are mandatory.
           claude_args: |
-            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --model claude-opus-5
+            --max-turns 25
+            --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review the PR diff and check if the mkdocs documentation site (docs/) needs updating.
-            Focus on:
+            You audit the HUMAN-FACING mkdocs-material site (`docs/` + `mkdocs.yml`)
+            published to GitHub Pages. The agent-facing docs (`agent-docs/`, app READMEs)
+            belong to a separate workflow — ignore them here.
 
-            1. **Feature pages**: If AppDaemon app behavior changed significantly (new features,
-               renamed apps, changed architecture), check if the relevant feature page in
-               `docs/features/` should be updated.
+            The PR branch is checked out. Read the diff with
+            `gh pr diff ${{ github.event.pull_request.number }}` and audit ONLY what it
+            changes. The contract is `.agents/rules/docs-site.md` — read it first,
+            especially the page map.
 
-            2. **Architecture page**: If the system architecture changed (new apps, new providers,
-               changed data flows), check if `docs/architecture/overview.md` needs updates.
+            ## Checks
+            1. **Feature pages** — a changed or new user-visible capability should be
+               reflected in the matching page under `docs/features/`
+               (camera-notifications, occupancy-lighting, photo-frame, dashboard-notify,
+               school-lunch, school-schedule, vestaboard, health-checks, media-dashboard).
+               Feature pages explain a feature end-to-end across apps and HA YAML; they are
+               NOT copies of app READMEs and should link to them rather than duplicate them.
+            2. **Architecture** — new apps, new providers, or changed data flows (relay
+               script, self-provisioning, event wiring) mean
+               `docs/architecture/overview.md` and the app/provider listing plus dependency
+               graph in `docs/apps/index.md` need updating.
+            3. **Navigation** — every page in `docs/` must have a `nav:` entry in
+               `mkdocs.yml`. A new page with no `nav:` entry fails `mkdocs build --strict`,
+               which gates the required `docs-build` check.
+            4. **Links and images** — internal links must resolve to files that exist;
+               images live in `docs/img/` with descriptive filenames and are referenced by
+               relative path. Flag renamed or deleted targets still being linked.
+            5. **Page map** — a page added to or removed from `docs/` must also be added to
+               or removed from the page map table in `.agents/rules/docs-site.md`.
+            6. **Config snippets** — YAML or config examples quoted in a feature page must
+               still match the real `appdaemon/apps/apps-prod.yaml` keys and defaults.
 
-            3. **Navigation**: If new docs pages were added to `docs/`, verify they are included
-               in the `nav:` section of `mkdocs.yml`.
+            ## Report
+            Post ONE comment. Reuse your previous comment on re-runs:
+            `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body "..."`
+            and fall back to plain `gh pr comment ... --body "..."` if those flags are
+            rejected. Start the body with the line `## Docs Site Audit`.
 
-            4. **Broken links**: Check for any internal links in `docs/` that point to
-               non-existent pages or moved files.
+            Give every finding a severity — `HIGH` (broken build, broken link, missing
+            `nav:` entry), `MEDIUM` (a page now contradicts the code), `LOW` (polish or a
+            nice-to-have screenshot) — and name the exact file and section to change.
 
-            5. **Image references**: If images were added, moved, or deleted, verify that
-               `docs/` pages referencing them are updated.
-
-            This audit covers the human-facing documentation site only (docs/ + mkdocs.yml),
-            not the agent-facing docs (agent-docs/) which are covered by a separate workflow.
-
-            Post your findings as a PR comment using `gh pr comment`.
-            If everything is in sync, post a brief approval comment.
-            If issues are found, list them as actionable items.
-
-            Only review files changed in this PR — do not audit the entire codebase.
+            If the site is in sync, the body must be exactly `## Docs Site Audit` followed
+            by `No findings.` and one sentence naming what you checked. Do not manufacture
+            findings, and do not review code — that is the Claude Code Review workflow's job.

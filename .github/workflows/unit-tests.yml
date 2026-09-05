@@ -1,5 +1,9 @@
 name: Unit Tests
 
+# `test` (this job's id) is a REQUIRED status check in the "Protect Main" ruleset.
+# It must therefore ALWAYS run and ALWAYS report on every PR to main — path
+# filtering happens INSIDE the job so that a PR touching no AppDaemon code still
+# reports `test` as a success instead of leaving the required check missing.
 on:
   pull_request:
     branches: [main]
@@ -7,43 +11,68 @@ on:
     branches: [main]
     paths:
       - "appdaemon/**"
+      - ".github/workflows/unit-tests.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: unit-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Keep in step with the Python shipped by the AppDaemon base image in
+  # docker/Dockerfile — tests must run on the interpreter production uses.
+  PYTHON_VERSION: "3.12"
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Check for appdaemon changes
         id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- appdaemon/ .github/workflows/unit-tests.yml)
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- appdaemon/ .github/workflows/unit-tests.yml)
+          elif [ "$EVENT_NAME" = "push" ] && git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+            CHANGED=$(git diff --name-only HEAD~1 -- appdaemon/ .github/workflows/unit-tests.yml)
           else
-            CHANGED=$(git diff --name-only HEAD~1 -- appdaemon/)
+            # workflow_dispatch, or a root commit with no parent: always test.
+            CHANGED="forced"
           fi
+
           if [ -n "$CHANGED" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No appdaemon changes detected, skipping tests"
+            echo "No appdaemon changes detected, skipping tests" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Set up Python
         if: steps.changes.outputs.should_run == 'true'
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
           cache-dependency-path: appdaemon/requirements.txt
 
       - name: Install dependencies
         if: steps.changes.outputs.should_run == 'true'
-        run: pip install -r appdaemon/requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r appdaemon/requirements.txt
 
       - name: Run unit tests
         if: steps.changes.outputs.should_run == 'true'
@@ -52,7 +81,9 @@ jobs:
 
       - name: Upload test results
         if: always() && steps.changes.outputs.should_run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: test-results.xml
+          if-no-files-found: warn
+          retention-days: 14
