@@ -809,8 +809,9 @@ fan_health_checker:
   repair_script: script.zen32_hard_reset
   # ap_status_entity: the HA UniFi integration's state sensor for the access
   # point each Wi-Fi fan USUALLY holds — fans roam, so this is a best-current
-  # value, not a binding (last observed via UniFi 2026-09-05). Verify with
-  # unpoller_client_rssi_db{name="MF Fan <Room>"} before trusting an AP verdict.
+  # value, not a binding. All six re-observed against unpoller 2026-09-05 23:34Z
+  # and all six matched. Verify with unpoller_client_rssi_db{name="MF Fan <Room>"}
+  # before trusting an AP verdict.
   # AP down => fan offline is expected: power-cycles are held and the alert
   # names the AP instead of blaming the fan.
   fans:

@@ -115,18 +115,24 @@ power-cycle of another fan that merely blipped.
    (Pink+Blue+White on Guest Room), points at that AP or the network — not at
    the fans. Three of the six now hang off Guest Room, which is also where an
    airtime hog (step 2) does the most damage.
-2. If the failing fan is **flapping** (many short `unavailable` blips that self-recover),
-   check 2.4 GHz airtime before anything else. **Mind the sampling floor**: `State` is a
-   point-in-time `get_state` on a 180 s cadence, so a 20-40 s blip is shorter than one poll —
-   most produce no `alert_history[]` entry at all, and the ones a poll happens to catch come
-   back quantised to ≥ ~180 s. So do not look for tens-of-seconds durations there; the
-   signature is **churn**: a long run of `critical → ok` round-trips for `<Fan> State`, each
-   sitting near that ~180 s floor, filling the 50-entry `alert_history[]` ring
-   (`alert_history_max`, ~1 entry per pair) over hours while the fan is never down long
-   enough to page cleanly. For true blip duration go to HA state history for
-   `fan.<room>_fan_fan`, which records every transition rather than every third minute. Do
-   **not** judge from `device_repairs` (`idle` here regardless — see the domain fact) or from
-   `checks[]`, which is point-in-time only. PromQL:
+2. **Check 2.4 GHz airtime before anything else on a fan that blips.** First, know that
+   flapping alone **never pages**: the bridge deletes the pending clock on any healthy report
+   and `alert_for_seconds.critical: 300` needs 300 s unbroken — three consecutive failing
+   polls at `check_interval_s: 180`. So you never arrive here *from* a flapping page; you
+   arrive on a sustained fault, and the question is whether saturation is what finally
+   stretched one blip past the threshold. The evidence that flapping is happening at all
+   lives in **Loki**, not in the state payload:
+   `{namespace="home-automation", app="appdaemon"} |= "Alert suppressed" |= "fans"` over
+   ~6h — a run of `recovered after Ns pending (never reached for-threshold)` lines is the
+   signature. `alert_history[]` only corroborates, and coarsely: `State` is a point-in-time
+   `get_state` on a 180 s cadence, so a 20-40 s blip is shorter than one poll and most leave
+   no entry; the controller records **both** directions, so a caught round-trip is two
+   entries and a co-failing `<Fan> Ping` adds its own pair — the 50-entry ring
+   (`alert_history_max`) holds only ~12-25 round-trips and can wrap inside an hour. For true
+   blip duration use HA state history on the fan entity — the ids are **not** a uniform
+   template (`fan.pink_room_fan_fan`, but `fan.livingroom_fan_fan`); take them from
+   `apps-prod.yaml`. Do **not** judge from `device_repairs` (`idle` here regardless — see the
+   domain fact). Then measure airtime. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
    — receive airtime above ~0.3 on a fan's AP (baseline is 0.02-0.05) means an associated
    client is hogging uplink — on that AP *or* on a co-channel neighbour. Rank the offenders

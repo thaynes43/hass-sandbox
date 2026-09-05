@@ -37,6 +37,9 @@ so by the time the Shepherd sees an alert the fault is *sustained*.
      checker (e.g. `|= "shade_gateway"` / `|= "Shade Gateway"`), last ~1h.
    - The checker's `README.md` in the baked repo copy
      (`appdaemon/apps/health_checks/checker_apps/<pkg>/README.md`).
+   - HA state history (`GET /api/history/period/...` for a device entity) when a
+     runbook needs *when* and *how long*, rather than the checker's 180 s-sampled
+     view — e.g. true blip duration for a flapping Wi-Fi device.
    - Prometheus (read-only), when a runbook's Diagnosis calls for it — the
      `unpoller` job carries UniFi device/client telemetry (AP airtime, per-client
      byte rates, RSSI) that HA does not expose. `fans.md` step 2 uses it to tell a
