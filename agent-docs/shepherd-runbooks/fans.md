@@ -30,12 +30,15 @@ Three consequences that shape everything below:
   and its grace/backoff clocks do not accrue. Power-cycling a fan cannot fix
   the AP it cannot reach.
 - **Sub-minute flapping is 2.4 GHz airtime, not a fan fault.** Dozens to hundreds of
-  20-40 s `unavailable` blips a day that self-recover (so `device_repairs` stays `idle` —
-  nothing lasts the ~6 min the 180 s poll / 5 min grace needs) means the fan's 2.4 GHz
-  radio is saturated. On 2026-09-05 the cause was two G6 Instant Wi-Fi cameras
-  (`HNETCameras`) streaming 4-8 Mbit/s on 2.4 GHz after roaming onto the fans' APs.
-  `HNETCameras` is **5 GHz-only by design** since then; a camera showing `radio="ng"`
-  means that WLAN setting regressed. Power-cycling the fan cannot fix airtime.
+  20-40 s `unavailable` blips a day that self-recover mean the fan's 2.4 GHz radio is
+  saturated. Judge that by blip **duration** and the airtime measurement — *not* by
+  `device_repairs`: no blip lasts the ~6 min the 180 s poll / 5 min grace needs, so it
+  would read `idle` even with auto-repair on, and with it off
+  (`auto_repair_enabled_default: false`, the default here) `idle` says nothing at all.
+  On 2026-09-05 the cause was two G6 Instant Wi-Fi cameras (`HNETCameras`) streaming
+  4-8 Mbit/s on 2.4 GHz after roaming onto the fans' APs. `HNETCameras` is **5 GHz-only
+  by design** since then; a camera showing `radio="ng"` means that WLAN setting
+  regressed. Power-cycling the fan cannot fix airtime.
 
 | Fan | IP | Access point |
 |-----|----|--------------|
@@ -112,20 +115,25 @@ power-cycle of another fan that merely blipped.
    (Pink+Blue+White on Guest Room), points at that AP or the network — not at
    the fans. Three of the six now hang off Guest Room, which is also where an
    airtime hog (step 2) does the most damage.
-2. If the failing fan is **flapping** (many short blips, `device_repairs` idle), check
+2. If the failing fan is **flapping** (many short `unavailable` blips that self-recover
+   — judge by blip duration, not by `device_repairs`, which is `idle` here regardless), check
    2.4 GHz airtime before anything else. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
    — receive airtime above ~0.3 on a fan's AP (baseline is 0.02-0.05) means an associated
-   client is hogging uplink. Rank the offenders directly — do not guess from RSSI:
-   `topk(5, rate(unpoller_client_receive_bytes_total{ap_name="<that AP>", wired="false"}[1h]))`
-   (bytes *from* the client, B/s; ~500 kB/s ≈ 4 Mbit/s is already a hog next to a fan's
-   ~280 B/s). A streaming camera is the usual suspect — on 2026-09-05 this query named both
-   G6s outright — but confirm, don't assume. Caveat: the client byte metrics carry `ap_name`
-   but **not** `radio`, so band-filter by cross-referencing
-   `unpoller_client_rssi_db{radio="ng", ap_name="<that AP>"}`, which lists who is associated
-   on 2.4 GHz. Co-channel APs suffer too (Guest Room and Livingroom-Wall share channel 1), so
-   check `unpoller_device_radio_channel_utilization_total_ratio` on the neighbours. Fix the
-   hog (move it to 5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
+   client is hogging uplink — on that AP *or* on a co-channel neighbour. Rank the offenders
+   directly, **site-wide**, and do not guess from RSSI:
+   `topk(5, max by (name, ap_name) (rate(unpoller_client_receive_bytes_total{wired="false"}[1h])))`
+   Unscoped on purpose: on 2026-09-05 the fans flapped on Guest Room while both cameras sat on
+   Livingroom-Wall and Kitchen Pantry, so an `ap_name="<that AP>"` filter would have come back
+   clean. The `ap_name` in the result is what tells you where the hog actually is. Values are
+   bytes *from* the client, B/s: ~500 kB/s ≈ 4 Mbit/s is already a hog next to a fan's ~280 B/s.
+   A streaming camera is the usual suspect — this query named both G6s outright — but confirm,
+   don't assume. Caveat: the client byte metrics carry `ap_name` but **not** `radio`, so
+   band-filter by cross-referencing `unpoller_client_rssi_db{radio="ng"}`, which lists who is
+   associated on 2.4 GHz and on which AP. Co-channel APs suffer too (Guest Room and
+   Livingroom-Wall share channel 1), so check
+   `unpoller_device_radio_channel_utilization_total_ratio` on the neighbours. Fix the hog
+   (move it to 5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
 3. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
    adopted/powered/uplinked?). The checker has already held the power-cycles;
    there is nothing to repair on the fan side and no page-worthy fan fault.
