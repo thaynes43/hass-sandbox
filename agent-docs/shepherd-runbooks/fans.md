@@ -115,9 +115,12 @@ power-cycle of another fan that merely blipped.
    (Pink+Blue+White on Guest Room), points at that AP or the network — not at
    the fans. Three of the six now hang off Guest Room, which is also where an
    airtime hog (step 2) does the most damage.
-2. If the failing fan is **flapping** (many short `unavailable` blips that self-recover
-   — judge by blip duration, not by `device_repairs`, which is `idle` here regardless), check
-   2.4 GHz airtime before anything else. PromQL:
+2. If the failing fan is **flapping** (many short `unavailable` blips that self-recover),
+   check 2.4 GHz airtime before anything else. Measure the blips from
+   `checkers.fans.alert_history[]` — one entry per transition of `<Fan> State`, each carrying
+   `previous_state_duration_s`; a run of entries with durations in the tens of seconds *is*
+   the flapping signature. Do **not** judge from `device_repairs` (`idle` here regardless —
+   see the domain fact) or from `checks[]`, which is point-in-time only. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
    — receive airtime above ~0.3 on a fan's AP (baseline is 0.02-0.05) means an associated
    client is hogging uplink — on that AP *or* on a co-channel neighbour. Rank the offenders
@@ -156,13 +159,17 @@ power-cycle of another fan that merely blipped.
 ## Remediation ladder
 
 1. `record_note` the triage start (which fans/checks failed + each AP verdict).
-2. If the AP is down — **or** Diagnosis step 2 found 2.4 GHz airtime saturation
-   on the fan's AP → **stop**. Neither is a fan fault; handle the AP (or the
-   airtime hog) and let the checker resume on its own. In the airtime case the
-   AP reads *connected*, so nothing below gates on it: `start_repair` would
-   cycle **every** entity-down fan — up to three at once when Guest Room is the
-   saturated radio — and wipe all six backoff ladders, for a cause a
-   power-cycle cannot touch.
+2. If the AP is down — **or** Diagnosis step 2 found a 2.4 GHz airtime hog,
+   whether it sits on the fan's own AP or on a co-channel neighbour → **stop**.
+   Neither is a fan fault; handle the AP (or the hog) and let the checker resume
+   on its own. The co-channel case is the one to watch: the fan's own AP can read
+   an unremarkable `..._receive_ratio` while a neighbour on the same channel is
+   saturated, so a clean reading on the fan's AP alone does **not** clear this
+   branch — the site-wide `topk` naming a hog anywhere on the channel does. In
+   either case the AP reads *connected*, so nothing below gates on it:
+   `start_repair` would cycle **every** entity-down fan — up to three at once when
+   Guest Room is the affected radio — and wipe all six backoff ladders, for a
+   cause a power-cycle cannot touch.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
 4. If still critical, the fan's AP is up, and its `device_repairs` entry is

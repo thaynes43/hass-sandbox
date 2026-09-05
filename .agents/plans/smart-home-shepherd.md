@@ -54,7 +54,12 @@ annotates + remediates; phase 2: once trusted, delay the Pushover route).
 
 1. **Context**: read `sensor.health_check_status` attrs for the checker (HA
    REST), pull last 1h of that checker's log lines from Loki, read the
-   checker's README from the baked repo copy.
+   checker's README from the baked repo copy, and — where the runbook's
+   Diagnosis calls for it — query Prometheus read-only (the `unpoller` job
+   carries UniFi AP/client telemetry HA does not expose). Prometheus is a
+   first-class context source, not just an escalation link: `fans.md` step 2
+   uses it to separate a 2.4 GHz airtime problem from a fan fault, and that
+   verdict can halt the remediation ladder.
 2. **Runbook match**: per-checker playbooks live in
    `agent-docs/shepherd-runbooks/<checker_id>.md` (to be authored — spa,
    shade_gateway, zigbee, protect each have known remediations; PowerView
