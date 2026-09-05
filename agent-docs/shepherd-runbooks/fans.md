@@ -115,24 +115,30 @@ power-cycle of another fan that merely blipped.
    (Pink+Blue+White on Guest Room), points at that AP or the network — not at
    the fans. Three of the six now hang off Guest Room, which is also where an
    airtime hog (step 2) does the most damage.
-2. **Check 2.4 GHz airtime before anything else on a fan that blips.** First, know that
-   flapping alone **never pages**: the bridge deletes the pending clock on any healthy report
-   and `alert_for_seconds.critical: 300` needs 300 s unbroken — three consecutive failing
-   polls at `check_interval_s: 180`. So you never arrive here *from* a flapping page; you
-   arrive on a sustained fault, and the question is whether saturation is what finally
-   stretched one blip past the threshold. The evidence that flapping is happening at all
-   lives in **Loki**, not in the state payload:
-   `{namespace="home-automation", app="appdaemon"} |= "Alert suppressed" |= "fans"` over
-   ~6h — a run of `recovered after Ns pending (never reached for-threshold)` lines is the
-   signature. `alert_history[]` only corroborates, and coarsely: `State` is a point-in-time
-   `get_state` on a 180 s cadence, so a 20-40 s blip is shorter than one poll and most leave
-   no entry; the controller records **both** directions, so a caught round-trip is two
-   entries and a co-failing `<Fan> Ping` adds its own pair — the 50-entry ring
-   (`alert_history_max`) holds only ~12-25 round-trips and can wrap inside an hour. For true
-   blip duration use HA state history on the fan entity — the ids are **not** a uniform
-   template (`fan.pink_room_fan_fan`, but `fan.livingroom_fan_fan`); take them from
-   `apps-prod.yaml`. Do **not** judge from `device_repairs` (`idle` here regardless — see the
-   domain fact). Then measure airtime. PromQL:
+2. **Check 2.4 GHz airtime before anything else when the red fan keeps moving.** The
+   page you woke on can be pure flapping, so do not go looking for one continuously-down
+   fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
+   six fans report into one result list — so the checker stays critical while *any* fan is
+   red, and three fans each blipping in a different 180 s cycle reach the
+   `alert_for_seconds.critical: 300` threshold and page, with no single fan down two polls
+   running. That is exactly the shape of an airtime event on the Guest Room cluster.
+   The per-fan evidence is in **Loki**, logged unconditionally every cycle:
+   `{namespace="home-automation", app="appdaemon"} |= "Check cycle complete for 'Ceiling Fans'"`
+   over ~6h gives one line per 180 s naming every fan's `State`/`Ping`. Read down it: a
+   *different* fan red each cycle (rather than the same one throughout) is the flapping
+   signature, and it names which fans, which is what you need for the AP question below.
+   (`|= "Alert suppressed"` also marks blips, but only *before* a page fires — the bridge
+   stops emitting it once the alert is active — and it is checker-scoped, so it never names
+   a fan. Use it for pre-incident history, not live triage.)
+   `alert_history[]` corroborates coarsely: `State` is a point-in-time `get_state` on a
+   180 s cadence, so a 20-40 s blip is shorter than one poll and most leave no entry; the
+   controller records **both** directions, so a caught round-trip is two entries and a
+   co-failing `<Fan> Ping` adds its own pair — the 50-entry ring (`alert_history_max`) holds
+   only ~12-25 round-trips and can wrap inside an hour. For true blip duration use HA state
+   history on the fan entity — the ids are **not** a uniform template
+   (`fan.pink_room_fan_fan`, but `fan.livingroom_fan_fan`); take them from `apps-prod.yaml`.
+   Do **not** judge from `device_repairs` (`idle` here regardless — see the domain fact).
+   Then measure airtime. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
    — receive airtime above ~0.3 on a fan's AP (baseline is 0.02-0.05) means an associated
    client is hogging uplink — on that AP *or* on a co-channel neighbour. Rank the offenders
