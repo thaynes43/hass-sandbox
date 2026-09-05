@@ -94,6 +94,15 @@ cards:
               scrolling_effect: false
               content_layout: icon-left
               custom_height: 60
+            - entity: input_select.basement_staircase_occupancy_off_delay
+              sub_button_type: select
+              name: Zone Off Delay
+              show_name: true
+              show_last_changed: false
+              show_state: true
+              icon: mdi:timer-outline
+              content_layout: icon-left
+              custom_height: 60
       bottom_layout: rows
     scrolling_effect: false
     show_state: true
@@ -193,6 +202,31 @@ cards:
 
       <ha-icon icon="mdi:information-outline"></ha-icon> **Note:** occupancy
       won’t report **off** until each switch’s mmWave clear delay elapses.
+  - type: custom:bubble-card
+    card_type: sub-buttons
+    sub_button:
+      main: []
+      bottom:
+        - name: Automations
+          buttons_layout: inline
+          group:
+            - entity: automation.light_inovelli_basement_staircase_motion_detected_lights_on
+              name: Motion Turns On Lights
+              show_name: true
+              show_state: true
+              show_last_changed: false
+              show_last_updated: false
+              content_layout: icon-top
+              custom_height: 60
+            - entity: automation.light_inovelli_basement_staircase_motion_cleared_lights_off
+              name: No Motion Turns Off Lights
+              show_name: true
+              show_state: true
+              content_layout: icon-top
+              custom_height: 60
+      bottom_layout: rows
+    bottom_layout: rows
+    rows: "1.2"
   - type: grid
     columns: 2
     square: false
@@ -249,6 +283,9 @@ cards:
                     - switch_name: basement_upper_staircase_inovelli_presence
                       prev_led_color_helper: input_text.basement_upper_staircase_led_color
                       normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
+                  automation_entity_ids:
+                    - automation.light_inovelli_basement_staircase_motion_detected_lights_on
+                    - automation.light_inovelli_basement_staircase_motion_cleared_lights_off
               entity: script.inovelli_toggle_hold_group_of_switches
               show_state: false
               show_name: true
