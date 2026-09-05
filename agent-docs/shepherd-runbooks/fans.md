@@ -122,24 +122,35 @@ power-cycle of another fan that merely blipped.
    critical, and three fans each blipping in a different 180 s cycle reach the
    `alert_for_seconds.critical: 300` threshold and page, with no single fan down two polls
    running. That is exactly the shape of an airtime event on the Guest Room cluster.
-   **How the clock actually runs:** `apply_cross_check_per_device` downgrades a fan's
-   `critical` to `warning` (detail gains `" (partial failure)"`) whenever its *other* check
-   still passes, so an airtime event's cycles are **mostly partials**. That does not stop the
-   page. `_pending["since"]` starts on the first **non-ok** cycle of any severity and is
-   cleared only when the whole checker goes green again — warning cycles keep it running —
-   and promotion fires at the first *critical* cycle whose elapsed exceeds that severity's
-   `for_s` (300 s). So do not count critical cycles and conclude "not flapping" when you see
-   few: a long run of partials punctuated by one both-checks-red cycle is enough, and is the
-   normal airtime shape (the fan drops off the air, so `State` and `Ping` fail together).
+   **How the clock actually runs** — this decides whether the Loki timeline explains the
+   page. `apply_cross_check_per_device` downgrades a fan's `critical` to `warning` (detail
+   gains `" (partial failure)"`) whenever its *other* check still passes, so an airtime
+   event's cycles are **mostly partials** — and `warning` is itself alertable
+   (`alert_for_seconds.warning: 600`, UI-only). Two regimes follow:
+   - **Nothing firing yet:** `_pending["since"]` starts on the first **non-ok** cycle of any
+     severity and survives warning cycles, so a run of partials punctuated by a
+     both-checks-red cycle past 300 s promotes straight to critical.
+   - **Once the partials have themselves paged** (~4 partial cycles promote a *warning*
+     alert to active, which clears that pending entry): a later critical cycle opens a
+     **fresh** escalation clock that must sustain its own 300 s — at a 180 s cadence, the
+     third consecutive critical cycle. One cycle falling back to warning in between logs
+     `Escalation dropped for checker 'fans' — returned to severity=warning before promotion`
+     and the clock restarts.
+
+   So in a day-long airtime event do **not** expect a single both-checks-red cycle to
+   explain the page, and do not count criticals and conclude "not flapping" when you see
+   few. Look for the sustained critical run, and for `Escalation dropped` lines marking the
+   runs that did not make it.
    The per-fan evidence is in **Loki**, logged unconditionally every cycle:
    `{namespace="home-automation", app="appdaemon"} |= "Check cycle complete for 'Ceiling Fans'"`
    over ~6h gives one line per 180 s naming every fan's `State`/`Ping`. Read down it: a
    *different* fan red each cycle (rather than the same one throughout) is the flapping
    signature, and it names which fans, which is what you need for the AP question below.
    Those statuses are **post-downgrade**, so a partial reads `State=warning`, not `critical`.
-   (`|= "Alert suppressed"` also marks blips, but only *before* a page fires — the bridge
-   stops emitting it once the alert is active — and it is checker-scoped, so it never names
-   a fan. Use it for pre-incident history, not live triage.)
+   (`|= "Alert suppressed"` also marks blips, but it is written only when a pending clock
+   was live and the checker then went fully green — common before anything fires, rare once
+   a critical page is up — and it is checker-scoped, so it never names a fan. Use it for
+   pre-incident history, not live triage.)
    `alert_history[]` corroborates coarsely: `State` is a point-in-time `get_state` on a
    180 s cadence, so a 20-40 s blip is shorter than one poll and most leave no entry; the
    controller records **both** directions, so a caught round-trip is two entries and a

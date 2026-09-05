@@ -20,10 +20,17 @@ runbook (`<checker_id>.md`). `alertname` is secondary (default
 `ProtectEventStreamFrozen`).
 
 Because of the controller's **for-gate**, a *firing* critical means the
-checker has already been critical for ≥300s (two consecutive failing polls) —
-except `shade_gateway` and `ups`, which have a `critical: 0` override and page
-the instant they go critical. A single bad sample can never reach the phone,
-so by the time the Shepherd sees an alert the fault is *sustained*.
+checker sustained critical for ≥300s before promotion — except `shade_gateway`
+and `ups`, which have a `critical: 0` override and page the instant they go
+critical. A single bad sample can never reach the phone, so by the time the
+Shepherd sees an alert the fault is *sustained*.
+
+Note "sustained" is measured on the **checker**, not a device: a checker whose
+devices take turns failing stays non-ok throughout and can page without any one
+device being down for the whole window. And if a *warning* alert is already
+active, a critical must clear a **fresh** 300s escalation gate — a single cycle
+back at warning logs `Escalation dropped …` and restarts it. `fans.md` step 2
+works through both cases.
 
 ## Sanctioned-action ladder (do these in order)
 
