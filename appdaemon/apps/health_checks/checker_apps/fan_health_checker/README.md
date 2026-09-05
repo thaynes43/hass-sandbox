@@ -178,8 +178,9 @@ fan_health_checker:
   restore_state_enabled: true                        # Re-apply on/off + speed + direction after repair
   repair_script: script.zen32_hard_reset             # HA script entity for repair
   # ap_status_entity: the HA UniFi integration's state sensor for the access
-  # point each Wi-Fi fan associates with. AP down => fan offline is expected:
-  # power-cycles are held and the alert names the AP instead of the fan.
+  # point each Wi-Fi fan usually holds (fans roam — verify before trusting it).
+  # AP down => fan offline is expected: power-cycles are held and the alert
+  # names the AP instead of the fan.
   fans:
     - name: Pink Room                                # Display name
       entity_id: fan.pink_room_fan_fan               # Fan entity to monitor

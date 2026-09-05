@@ -39,7 +39,7 @@ Three consequences that shape everything below:
 
 | Fan | IP | Access point |
 |-----|----|--------------|
-| Pink Room | 192.168.50.112 | Guest Room U7 Pro (roamed from Kitchen Pantry 2026-08-31) — **weakest link (-65 dBm)** |
+| Pink Room | 192.168.50.112 | Guest Room U7 Pro (roamed off Kitchen Pantry 2026-08-31 ~16:47Z, held since) — **weakest link (-65 dBm)** |
 | Blue Room | 192.168.50.134 | Guest Room U7 Pro |
 | White Room | 192.168.50.187 | Guest Room U7 Pro |
 | Primary Bedroom | 192.168.50.146 | Primary Closet U7 Pro |
