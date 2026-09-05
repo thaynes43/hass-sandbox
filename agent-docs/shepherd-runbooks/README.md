@@ -40,7 +40,10 @@ so by the time the Shepherd sees an alert the fault is *sustained*.
    - HA state history (`GET /api/history/period/...` for a device entity) when a
      runbook needs *when* and *how long*, rather than the checker's 180 s-sampled
      view — e.g. true blip duration for a flapping Wi-Fi device.
-   - Prometheus (read-only), when a runbook's Diagnosis calls for it — the
+   - Prometheus (read-only) at
+     `http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090`
+     (`/api/v1/query`, same cluster/namespace as the Alertmanager the bridge posts to),
+     when a runbook's Diagnosis calls for it — the
      `unpoller` job carries UniFi device/client telemetry (AP airtime, per-client
      byte rates, RSSI) that HA does not expose. `fans.md` step 2 uses it to tell a
      2.4 GHz airtime problem from a fan fault, and that verdict can **halt** the

@@ -122,12 +122,15 @@ power-cycle of another fan that merely blipped.
    critical, and three fans each blipping in a different 180 s cycle reach the
    `alert_for_seconds.critical: 300` threshold and page, with no single fan down two polls
    running. That is exactly the shape of an airtime event on the Guest Room cluster.
-   **What counts as critical, per fan:** `apply_cross_check_per_device` downgrades a fan's
+   **How the clock actually runs:** `apply_cross_check_per_device` downgrades a fan's
    `critical` to `warning` (detail gains `" (partial failure)"`) whenever its *other* check
-   still passes, and `warning` maps to `alert_for_seconds.warning: 600` — UI-only, no page.
-   So only a fan failing **`State` and `Ping` in the same cycle** feeds the critical clock.
-   That is the ordinary airtime blip — the fan is genuinely off the air, so both fail
-   together — whereas a lone `State` failure is a partial and never pages on its own.
+   still passes, so an airtime event's cycles are **mostly partials**. That does not stop the
+   page. `_pending["since"]` starts on the first **non-ok** cycle of any severity and is
+   cleared only when the whole checker goes green again — warning cycles keep it running —
+   and promotion fires at the first *critical* cycle whose elapsed exceeds that severity's
+   `for_s` (300 s). So do not count critical cycles and conclude "not flapping" when you see
+   few: a long run of partials punctuated by one both-checks-red cycle is enough, and is the
+   normal airtime shape (the fan drops off the air, so `State` and `Ping` fail together).
    The per-fan evidence is in **Loki**, logged unconditionally every cycle:
    `{namespace="home-automation", app="appdaemon"} |= "Check cycle complete for 'Ceiling Fans'"`
    over ~6h gives one line per 180 s naming every fan's `State`/`Ping`. Read down it: a

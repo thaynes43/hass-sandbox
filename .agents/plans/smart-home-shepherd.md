@@ -32,9 +32,11 @@ Two candidate integration points, pick one at build time:
    paging. Con: needs an HA token the upgrade agent deliberately doesn't
    have; blast-radius coupling.
 2. **Sibling deployment** `kubernetes/main/apps/home-automation/shepherd/`
-   with its own ExternalSecret (HA token + Anthropic key) and a
-   smart-home-scoped safety prompt. Pro: clean separation of credentials and
-   scope. **Recommended.**
+   with its own ExternalSecret (HA token + Anthropic key), read paths to Loki
+   and Prometheus (`kube-prometheus-stack-prometheus.observability`, needed by
+   the `fans` airtime branch — see Triage flow step 1), and a smart-home-scoped
+   safety prompt. Pro: clean separation of credentials and scope.
+   **Recommended.**
 
 ## Trigger
 
