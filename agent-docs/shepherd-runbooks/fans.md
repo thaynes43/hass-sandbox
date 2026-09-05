@@ -119,14 +119,21 @@ power-cycle of another fan that merely blipped.
    page you woke on can be pure flapping, so do not go looking for one continuously-down
    fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
    six fans report into one result list — so the checker stays critical while *any* fan is
-   red, and three fans each blipping in a different 180 s cycle reach the
+   critical, and three fans each blipping in a different 180 s cycle reach the
    `alert_for_seconds.critical: 300` threshold and page, with no single fan down two polls
    running. That is exactly the shape of an airtime event on the Guest Room cluster.
+   **What counts as critical, per fan:** `apply_cross_check_per_device` downgrades a fan's
+   `critical` to `warning` (detail gains `" (partial failure)"`) whenever its *other* check
+   still passes, and `warning` maps to `alert_for_seconds.warning: 600` — UI-only, no page.
+   So only a fan failing **`State` and `Ping` in the same cycle** feeds the critical clock.
+   That is the ordinary airtime blip — the fan is genuinely off the air, so both fail
+   together — whereas a lone `State` failure is a partial and never pages on its own.
    The per-fan evidence is in **Loki**, logged unconditionally every cycle:
    `{namespace="home-automation", app="appdaemon"} |= "Check cycle complete for 'Ceiling Fans'"`
    over ~6h gives one line per 180 s naming every fan's `State`/`Ping`. Read down it: a
    *different* fan red each cycle (rather than the same one throughout) is the flapping
    signature, and it names which fans, which is what you need for the AP question below.
+   Those statuses are **post-downgrade**, so a partial reads `State=warning`, not `critical`.
    (`|= "Alert suppressed"` also marks blips, but only *before* a page fires — the bridge
    stops emitting it once the alert is active — and it is checker-scoped, so it never names
    a fan. Use it for pre-incident history, not live triage.)
