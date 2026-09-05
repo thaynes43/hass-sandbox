@@ -51,12 +51,18 @@ controller is only the *actuator* the repair script uses to cut mains power;
 it is Z-Wave, the fan is not. Nobody (human or LLM) triaging a fan outage
 should reach for the Z-Wave stack.
 
-Each fan may therefore declare the AP it lives on:
+Each fan may therefore declare the AP it usually holds:
 
 | Key | Meaning |
 |-----|---------|
-| `ap_status_entity` | The HA UniFi integration's state sensor for that AP (e.g. `sensor.kitchen_pantry_u7_pro_state`) |
+| `ap_status_entity` | The HA UniFi integration's state sensor for that AP (e.g. `sensor.guest_room_u7_pro_state`) |
 | `ap_name` | Friendly AP name for log and alert text; derived from the entity id when omitted |
+
+Fans **roam**, so this is the AP each fan usually holds, not a fixed binding —
+confirm the live one with `unpoller_client_rssi_db{name="MF Fan <Room>"}` (label
+`ap_name`) before trusting an AP verdict. See
+`agent-docs/shepherd-runbooks/fans.md` for triage, including the 2.4 GHz airtime
+signature behind sub-minute flapping.
 
 The AP state is refreshed once per check cycle. States `disconnected`,
 `not_home`, and `off` count as **AP down**; anything else — including
@@ -181,8 +187,8 @@ fan_health_checker:
       power_switch: switch.upstairs_pink_room_scene_controller
       relay_control: select.upstairs_pink_room_scene_controller_relay_control
       scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
-      ap_status_entity: sensor.kitchen_pantry_u7_pro_state   # AP this fan is on
-      ap_name: Kitchen Pantry U7 Pro                 # Friendly AP name for logs/alerts
+      ap_status_entity: sensor.guest_room_u7_pro_state       # AP this fan usually holds
+      ap_name: Guest Room U7 Pro                     # Friendly AP name for logs/alerts
 ```
 
 ## Dependencies

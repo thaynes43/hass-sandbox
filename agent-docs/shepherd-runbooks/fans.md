@@ -19,7 +19,7 @@ power to the fan** — it is the repair *actuator*, nothing more. A fan going
 mesh problem. (A triage agent misdiagnosed this checker as "ZEN32/Z-Wave fans"
 on 2026-08-31 and chased the wrong network entirely.)
 
-Two consequences that shape everything below:
+Three consequences that shape everything below:
 
 - **ESP Wi-Fi power-save drops single pings.** `Ping` alone is retried
   (`PING_ATTEMPTS = 3`) and a ping-only failure **never** power-cycles a fan —
@@ -108,8 +108,10 @@ power-cycle of another fan that merely blipped.
 
 1. Read `checkers.fans.checks[]` — list **which** fans and **which** check
    (State vs. Ping) are red, and read the AP verdict in each `State` detail.
-   Multiple fans failing together, especially two on the same AP (Pink+Study,
-   Blue+White), points at that AP or the network — not at the fans.
+   Multiple fans failing together, especially fans on the same AP
+   (Pink+Blue+White on Guest Room), points at that AP or the network — not at
+   the fans. Three of the six now hang off Guest Room, which is also where an
+   airtime hog (step 2) does the most damage.
 2. If the failing fan is **flapping** (many short blips, `device_repairs` idle), check
    2.4 GHz airtime before anything else. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
