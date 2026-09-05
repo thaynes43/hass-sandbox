@@ -37,6 +37,11 @@ so by the time the Shepherd sees an alert the fault is *sustained*.
      checker (e.g. `|= "shade_gateway"` / `|= "Shade Gateway"`), last ~1h.
    - The checker's `README.md` in the baked repo copy
      (`appdaemon/apps/health_checks/checker_apps/<pkg>/README.md`).
+   - Prometheus (read-only), when a runbook's Diagnosis calls for it — the
+     `unpoller` job carries UniFi device/client telemetry (AP airtime, per-client
+     byte rates, RSSI) that HA does not expose. `fans.md` step 2 uses it to tell a
+     2.4 GHz airtime problem from a fan fault, and that verdict can **halt** the
+     remediation ladder, so it is a first-class source, not just an escalation link.
 2. **Runbook match** — load `agent-docs/shepherd-runbooks/<checker_id>.md` and
    follow its **Diagnosis** section.
 3. **Bounded remediation** — *sanctioned paths only* (below). The repair logic
