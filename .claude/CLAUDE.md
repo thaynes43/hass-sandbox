@@ -140,9 +140,13 @@ App YAML passes env var **names** (e.g. `api_key_env: OPENAI_API_KEY`, `ha_token
 
 See `.claude/rules/` for domain-specific rules. Summary below.
 
-### Wait for user testing before commit (required)
+### Verify end-to-end yourself before commit (required)
 
-When changes cannot be fully validated by unit tests alone (AppDaemon runtime behavior, Lovelace card JS, HA MCP interactions, queue/TTL behavior), do **not** commit and push until the user confirms they have tested the changes and they work. Unit tests passing does not mean the feature works end-to-end. After making runtime changes, tell the user they are ready to test and wait for confirmation.
+Agents work autonomously in this repo; the owner does not test, mark ready, or merge for you (Tom, 2026-09-04). Unit tests passing does not mean a feature works end-to-end, so when a change touches runtime behavior (AppDaemon apps, Lovelace card JS, HA MCP interactions, queue/TTL behavior) verify it yourself before committing: run the unit tests, then exercise the change live (HA MCP state/traces/logs, `kubectl logs`/`exec` on the AppDaemon pod, Playwright screenshots for cards) and state in the PR body exactly what was verified and how. Anything you could not verify goes under a **Not verified** line in the PR body. Declare it; do not block on the owner.
+
+### Questions go to the owner one at a time (required)
+
+The only thing that waits on the owner is a genuine requirements or design question. Push it with the `AskUserQuestion` tool, one question per prompt, at the moment it arises, with its premise verified first. Never batch questions and never leave them as an "open questions" list in a message: the owner does not act on prose, and the work stalls.
 
 ### When to use AppDaemon vs HA YAML
 
@@ -179,9 +183,9 @@ Every new AppDaemon app **must** include a `README.md` in its package directory.
 After any `appdaemon/` change, state what was changed:
 - **Repo Updated** — changes are in the repo; will deploy automatically when merged to `main` via Docker image build
 
-### Pull requests must be created as draft (required)
+### Pull requests: open ready for review and merge them yourself (required)
 
-Always create PRs as **draft** (`gh pr create --draft`). Claude Code Review, Agent Docs Audit, and Docs Site Audit workflows only trigger when a PR is marked "Ready for review" — creating as non-draft wastes CI budget and leaves checks in a stuck state. The user will mark the PR as ready when it's complete.
+Open PRs **ready for review** (`gh pr create`, never `--draft`) once the branch is complete and verified. Marking ready triggers Claude Code Review, Agent Docs Audit, and Docs Site Audit on top of the required checks (`test`, `docs-build`, `build-and-push`); that review spend is intended. Wait for **all** of them, address findings with follow-up commits, then squash-merge your own PR (`gh pr merge <n> --squash --delete-branch`) and confirm it shows `MERGED`. Never push to `main` directly. A green, unmerged PR is unfinished work, not a hand-off.
 
 ### Button mapping doc sync (required)
 
