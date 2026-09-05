@@ -143,8 +143,13 @@ power-cycle of another fan that merely blipped.
 ## Remediation ladder
 
 1. `record_note` the triage start (which fans/checks failed + each AP verdict).
-2. If the AP is down → **stop**. Nothing here is a fan fault; handle the AP (or
-   escalate it) and let the checker resume on its own.
+2. If the AP is down — **or** Diagnosis step 2 found 2.4 GHz airtime saturation
+   on the fan's AP → **stop**. Neither is a fan fault; handle the AP (or the
+   airtime hog) and let the checker resume on its own. In the airtime case the
+   AP reads *connected*, so nothing below gates on it: `start_repair` would
+   cycle **every** entity-down fan — up to three at once when Guest Room is the
+   saturated radio — and wipe all six backoff ladders, for a cause a
+   power-cycle cannot touch.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
 4. If still critical, the fan's AP is up, and its `device_repairs` entry is
