@@ -1,0 +1,45 @@
+alias: "[Light] [Inovelli] : [Basement Staircase] : [Motion Cleared] : [Lights Off]"
+description: >-
+  Turns the staircase off once both mmWave sensors are clear for the off-delay
+  helper's duration. Hold guard checked before and after the delay.
+triggers:
+  - trigger: template
+    value_template: |
+      {{
+        is_state('binary_sensor.basement_upper_staircase_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.basement_lower_staircase_inovelli_presence_occupancy', 'off')
+      }}
+conditions: []
+actions:
+  - condition: template
+    value_template: |
+      {# Only run when hold is clear on both switches #}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set up = states('number.basement_upper_staircase_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {% set low = states('number.basement_lower_staircase_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {{ up not in [manual, auto] and low not in [manual, auto] }}
+  - delay: >-
+      {% set raw = states('input_select.basement_staircase_occupancy_off_delay') %}
+      {% set d = raw | replace('"','') | replace("'","") | trim %}
+      {{ d if d not in ['unknown','unavailable',''] else '00:01:00' }}
+  - condition: template
+    value_template: |
+      {{
+        is_state('binary_sensor.basement_upper_staircase_inovelli_presence_occupancy', 'off')
+        and is_state('binary_sensor.basement_lower_staircase_inovelli_presence_occupancy', 'off')
+      }}
+  - condition: template
+    value_template: |
+      {# Re-check hold state after the delay #}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set up = states('number.basement_upper_staircase_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {% set low = states('number.basement_lower_staircase_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {{ up not in [manual, auto] and low not in [manual, auto] }}
+  - action: light.turn_off
+    metadata: {}
+    target:
+      entity_id: light.basement_staircase_lights
+    data: {}
+mode: restart

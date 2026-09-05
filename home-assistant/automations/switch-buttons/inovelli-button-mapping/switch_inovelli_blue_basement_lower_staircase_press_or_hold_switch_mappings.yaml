@@ -20,3 +20,6 @@ use_blueprint:
             - switch_name: basement_upper_staircase_inovelli_presence
               prev_led_color_helper: input_text.basement_upper_staircase_led_color
               normal_mode_input_select: input_select.basement_staircase_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_inovelli_basement_staircase_motion_detected_lights_on
+            - automation.light_inovelli_basement_staircase_motion_cleared_lights_off

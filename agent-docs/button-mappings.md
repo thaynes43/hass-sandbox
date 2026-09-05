@@ -236,7 +236,7 @@ The following smart switches are currently configured for AUX companions (so you
 |---|---|---|---|---|
 | Up paddle (either switch) | Local on (that switch’s load) |  |  | Multi-clicks unassigned |
 | Down paddle (either switch) | Local off (that switch’s load) |  |  | Multi-clicks unassigned |
-| Config (either switch) |  | **Toggle hold (group)** |  |  |
+| Config (either switch) |  | **Toggle hold (group)** |  | Disables/enables `automation.light_inovelli_basement_staircase_motion_detected_lights_on` and `automation.light_inovelli_basement_staircase_motion_cleared_lights_off` |
 | AUX (placeholder) |  |  |  | TODO |
 
 ### Downstairs — Entrance — Inovelli (Presence)

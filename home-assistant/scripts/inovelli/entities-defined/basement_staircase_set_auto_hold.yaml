@@ -5,10 +5,16 @@ sequence:
       switch_name: basement_lower_staircase_inovelli_presence
       hold_color: input_text.inovelli_auto_hold
       prev_led_color_helper: input_text.basement_lower_staircase_led_color
+      automation_entity_ids:
+        - automation.light_inovelli_basement_staircase_motion_detected_lights_on
+        - automation.light_inovelli_basement_staircase_motion_cleared_lights_off
   - action: script.inovelli_set_mmwave_hold_led_indicator
     data:
       switch_name: basement_upper_staircase_inovelli_presence
       hold_color: input_text.inovelli_auto_hold
       prev_led_color_helper: input_text.basement_upper_staircase_led_color
+      automation_entity_ids:
+        - automation.light_inovelli_basement_staircase_motion_detected_lights_on
+        - automation.light_inovelli_basement_staircase_motion_cleared_lights_off
 mode: single
 description: ""

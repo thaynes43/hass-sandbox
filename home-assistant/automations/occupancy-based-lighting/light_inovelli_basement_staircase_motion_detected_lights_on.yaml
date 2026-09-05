@@ -1,0 +1,31 @@
+alias: "[Light] [Inovelli] : [Basement Staircase] : [Motion Detected] : [Lights On]"
+description: >-
+  Either staircase mmWave sensor lights the staircase. Only the top switch carries
+  the fixture; the bottom switch has no load, so its own presence logic could never
+  light the stairs. Both switches run mmWave "Disabled" and HA owns the load. The
+  endpoint-2 paddle bindings between the two switches are untouched, so a physical
+  press on either still toggles the fixture without HA.
+triggers:
+  - trigger: state
+    entity_id:
+      - binary_sensor.basement_upper_staircase_inovelli_presence_occupancy
+      - binary_sensor.basement_lower_staircase_inovelli_presence_occupancy
+    from: null
+    to: "on"
+conditions:
+  - alias: Skip when either staircase switch is on manual or auto hold
+    condition: template
+    value_template: |
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set up = states('number.basement_upper_staircase_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {% set low = states('number.basement_lower_staircase_inovelli_presence_defaultled1colorwhenon') | int(-1) %}
+      {{ up not in [manual, auto] and low not in [manual, auto] }}
+actions:
+  - action: light.turn_on
+    metadata: {}
+    data:
+      brightness_pct: 100
+    target:
+      entity_id: light.basement_staircase_lights
+mode: single
