@@ -818,10 +818,11 @@ fan_health_checker:
       power_switch: switch.upstairs_pink_room_scene_controller
       relay_control: select.upstairs_pink_room_scene_controller_relay_control
       scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
-      # NOTE: weakest fan of the six (-63 dBm on this, a downstairs AP);
-      # candidate for re-pinning to a closer AP in the UniFi console.
-      ap_status_entity: sensor.kitchen_pantry_u7_pro_state
-      ap_name: Kitchen Pantry U7 Pro
+      # NOTE: weakest fan of the six (-65 dBm). Roamed Kitchen Pantry -> Guest Room on
+      # 2026-08-31; fans do roam, so this is the AP it usually holds — verify with
+      # unpoller_client_rssi_db{name="MF Fan Pink Room"} before trusting an AP verdict.
+      ap_status_entity: sensor.guest_room_u7_pro_state
+      ap_name: Guest Room U7 Pro
     - name: Blue Room
       entity_id: fan.blue_room_fan_fan
       ip: "192.168.50.134"

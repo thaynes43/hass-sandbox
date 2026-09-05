@@ -29,15 +29,26 @@ Two consequences that shape everything below:
   `not_home` / `off` the fan is **not repair-worthy**: the power-cycle is held
   and its grace/backoff clocks do not accrue. Power-cycling a fan cannot fix
   the AP it cannot reach.
+- **Sub-minute flapping is 2.4 GHz airtime, not a fan fault.** Dozens to hundreds of
+  20-40 s `unavailable` blips a day that self-recover (so `device_repairs` stays `idle` —
+  nothing lasts the ~6 min the 180 s poll / 5 min grace needs) means the fan's 2.4 GHz
+  radio is saturated. On 2026-09-05 the cause was two G6 Instant Wi-Fi cameras
+  (`HNETCameras`) streaming 4-8 Mbit/s on 2.4 GHz after roaming onto the fans' APs.
+  `HNETCameras` is **5 GHz-only by design** since then; a camera showing `radio="ng"`
+  means that WLAN setting regressed. Power-cycling the fan cannot fix airtime.
 
 | Fan | IP | Access point |
 |-----|----|--------------|
-| Pink Room | 192.168.50.112 | Kitchen Pantry U7 Pro — **weakest link (-63 dBm, a downstairs AP)** |
+| Pink Room | 192.168.50.112 | Guest Room U7 Pro (roamed from Kitchen Pantry 2026-08-31) — **weakest link (-65 dBm)** |
 | Blue Room | 192.168.50.134 | Guest Room U7 Pro |
 | White Room | 192.168.50.187 | Guest Room U7 Pro |
 | Primary Bedroom | 192.168.50.146 | Primary Closet U7 Pro |
 | Living Room | 192.168.50.148 | Livingroom U7-Pro-Wall |
 | Study | 192.168.50.179 | Kitchen Pantry U7 Pro |
+
+Fans roam between APs; the table (and `ap_status_entity` in `apps-prod.yaml`) is the AP each
+fan usually holds. Confirm the live one with `unpoller_client_rssi_db{name="MF Fan <Room>"}`
+(label `ap_name`) before trusting an AP verdict.
 
 ## Repair backoff ladder (CrashLoopBackOff)
 
@@ -99,10 +110,19 @@ power-cycle of another fan that merely blipped.
    (State vs. Ping) are red, and read the AP verdict in each `State` detail.
    Multiple fans failing together, especially two on the same AP (Pink+Study,
    Blue+White), points at that AP or the network — not at the fans.
-2. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
+2. If the failing fan is **flapping** (many short blips, `device_repairs` idle), check
+   2.4 GHz airtime before anything else. PromQL:
+   `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
+   — receive airtime above ~0.3 on a fan's AP (baseline is 0.02-0.05) means an associated
+   client is hogging uplink; find it with
+   `unpoller_client_rssi_db{radio="ng", ap_name="<that AP>"}` (video cameras are the usual
+   suspect). Co-channel APs suffer too (Guest Room and Livingroom-Wall share channel 1), so
+   check `unpoller_device_radio_channel_utilization_total_ratio` on the neighbours. Fix the
+   hog (move it to 5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
+3. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
    adopted/powered/uplinked?). The checker has already held the power-cycles;
    there is nothing to repair on the fan side and no page-worthy fan fault.
-3. Read `repair_state.device_repairs[<fan>]` — per-fan status:
+4. Read `repair_state.device_repairs[<fan>]` — per-fan status:
    - `pending`/`in_progress` → a ZEN32 cycle is running (budget 300s) — wait.
    - `failed` with `(attempt N; retry at HH:MM)` → the ladder is climbing;
      attempt N already ran and did not stick. **This is expected behaviour,
@@ -110,10 +130,10 @@ power-cycle of another fan that merely blipped.
      that is the escalation signal.
    - `success` → the last power-cycle brought the fan back; the ladder still
      holds its rung until 30 clean minutes pass.
-4. `State: unavailable` = the Modern Forms integration lost the fan (Wi-Fi
+5. `State: unavailable` = the Modern Forms integration lost the fan (Wi-Fi
    drop / ESP wedged). `Ping: no response` alone = a power-save miss or the
    fan is off the network; it never triggers a power-cycle on its own.
-5. Loki: `{namespace="home-automation", app="appdaemon"} |= "fans"` (or
+6. Loki: `{namespace="home-automation", app="appdaemon"} |= "fans"` (or
    `|= "Ceiling Fans"`) last 1h — repair-script calls, recovery polls,
    `relapsed after repair — resuming backoff ladder`, AP up/down transitions,
    and `Restored repair backoff ladder from input_text…` after a reload.
@@ -161,8 +181,9 @@ summary:
 - that ZEN32 hard-resets (`script.zen32_hard_reset`) were attempted, how many,
   and that none held;
 - likely cause — a single crashlooping fan (its ESP Wi-Fi module or the ZEN32
-  relay: reseat/replace) vs. several fans on one AP (that access point: RSSI,
-  channel utilization, uplink; Pink Room is the known-weak client at -63 dBm on
-  a downstairs AP and is a candidate for re-pinning to a closer AP) vs. all
-  fans at once (HA integration / VLAN / power feeding `192.168.50.x`). Attach
+  relay: reseat/replace) vs. several fans on one AP or channel (first a
+  2.4 GHz airtime hog — see Diagnosis step 2 — then that access point: RSSI,
+  channel utilization, uplink; Pink Room is the known-weak client at -65 dBm
+  and is a candidate for re-pinning to a closer AP) vs. all fans at once
+  (HA integration / VLAN / power feeding `192.168.50.x`). Attach
   Alertmanager + Loki links.
