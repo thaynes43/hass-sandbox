@@ -1,23 +1,35 @@
 name: Claude Code Review
 
+# Agents open PRs ready-for-review and merge their own once every check is
+# green, so this must fire on `opened` and `synchronize` too — with only
+# `ready_for_review` it would never run on a PR that was never a draft.
+# These four types are also exactly the set `track_progress` supports.
 on:
   pull_request:
-    types: [ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions:
+  contents: read
+
+# Re-review on every push, but only the newest push per PR.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   claude-review:
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
-      pull-requests: write
-      issues: read
-      id-token: write
-      actions: read
+      pull-requests: write # post the review + inline comments
+      id-token: write # OIDC exchange for the Claude GitHub App token
+      actions: read # read CI results for the PR
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -28,47 +40,84 @@ jobs:
           allowed_bots: "haynes-dev-bot"
           track_progress: true
           use_sticky_comment: true
-          prompt: |
-            You are an automated PR reviewer for a Home Assistant + AppDaemon repository.
-            The PR branch is already checked out. Review PR #${{ github.event.pull_request.number }}.
-
-            ## Step 1: Gather context
-            - Run `gh pr diff ${{ github.event.pull_request.number }}` to see all changes
-            - Run `gh pr view ${{ github.event.pull_request.number }}` to read the PR description
-            - Read any existing review comments with `gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments` to avoid duplicating feedback
-            - Read .claude/CLAUDE.md for project conventions
-
-            ## Step 2: Review the diff for issues
-            Focus on real bugs and meaningful problems — NOT style nitpicks:
-
-            **CRITICAL (must fix):**
-            - Logic errors, race conditions, off-by-one, null/None mishandling
-            - Security: hardcoded credentials, secrets not using _env pattern, HTTP calls in apps/ instead of providers/
-            - Breaking changes: removed exports, changed function signatures without updating callers
-
-            **HIGH (should fix):**
-            - Error handling gaps: silently swallowed exceptions, missing logging on failure paths
-            - AppDaemon patterns: missing sys.path fix for provider imports, incorrect relay script usage
-            - Test gaps: changed logic without corresponding test updates
-
-            **MEDIUM (consider fixing):**
-            - JavaScript card issues: missing touch/click deduplication, no focus guard on re-render
-            - Defensive coding: unchecked dict access on external data, missing type coercion
-
-            **Ignore entirely:**
-            - Style preferences, formatting, naming conventions (unless they indicate a bug)
-            - Missing docstrings or comments on unchanged code
-            - Import ordering
-            - Suggestions to add features beyond what the PR intends
-
-            ## Step 3: Post findings
-            - For each issue found on a specific line, post an inline comment on that line
-            - After reviewing all files, post ONE summary comment on the PR with:
-              - Overall verdict: "Looks good" / "Needs changes" / "Has critical issues"
-              - Bulleted list of findings grouped by severity
-              - Brief positive callouts if the code does something well
-            - If no issues found, post a brief "LGTM — no issues found" summary
-
-          claude_args: "--max-turns 50000"
+          # Automated surfaces pin the newest Opus explicitly — never an alias.
+          # `--allowedTools` merges with tag mode's base set; without the Bash and
+          # inline-comment grants below Claude cannot run `gh` or post line
+          # comments at all, which is why earlier runs only ever left a summary.
+          claude_args: |
+            --model claude-opus-5
+            --max-turns 40
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
           additional_permissions: |
             actions: read
+          prompt: |
+            You are the automated reviewer for a Home Assistant + AppDaemon repository.
+            The PR branch is already checked out. Review PR #${{ github.event.pull_request.number }}
+            of ${{ github.repository }}.
+
+            ## Step 1 — context
+            - `gh pr diff ${{ github.event.pull_request.number }}` for the changes
+            - `gh pr view ${{ github.event.pull_request.number }}` for intent
+            - Read `.claude/CLAUDE.md` and the rule files under `.agents/rules/` that
+              match the changed paths. Do not repeat feedback already present on the PR.
+
+            ## Step 2 — what this repo cares about
+            Layout: AppDaemon apps live in `appdaemon/apps/<package>/`, shared libraries
+            in `appdaemon/providers/`, tests in `appdaemon/tests/`, HA YAML in
+            `home-assistant/`, the mkdocs site in `docs/`, agent reference in `agent-docs/`.
+
+            **CRITICAL — block the merge**
+            - Security rules S1-S7 (`.agents/rules/security-policy.md`): no hardcoded
+              credentials under `appdaemon/apps/` (S1); every external HTTP call lives in
+              `appdaemon/providers/`, never in an app (S2); no secrets in `fire_event`
+              payloads, `set_state` attributes or card JS (S3); no committed
+              `secrets.yaml`/`.env` (S4); tests use obvious placeholders (S5); no full
+              tokens in logs (S6); API keys passed as `_env` names resolved through
+              `providers.secrets.resolve_secret()` (S7).
+            - Logic errors: race conditions, off-by-one, unhandled `None`, timers or
+              listeners registered but never cancelled.
+            - Breaking changes: a changed signature or removed export whose callers were
+              not updated.
+
+            **HIGH — should fix**
+            - Missing `sys.path.append(str(Path(__file__).resolve().parents[2]))` in an app
+              module that imports from `providers/`.
+            - Card to AppDaemon communication that uses `fire_event` instead of
+              `hass.callService("script", "<app>_relay", ...)` — `fire_event` needs admin
+              and fails silently for non-admin users.
+            - Swallowed exceptions or failure paths with no logging; log levels that
+              contradict `.agents/rules/logging-standards.md`.
+            - Changed app logic with no corresponding test change under `appdaemon/tests/`.
+            - `appdaemon/` changed but `VERSION` not bumped (semver: patch/minor/major).
+            - A new app or provider package with no `README.md`, or missing entries in
+              `appdaemon/apps/apps-prod.yaml` (prod keys carry `disable: true`) and
+              `apps-dev.yaml` (dev keys end in `_dev`).
+            - Helpers (`input_*`, `timer`, `counter`) added as YAML under
+              `home-assistant/helpers/**` — helpers are UI/config-entry managed and must
+              never be mirrored into the repo.
+            - A change under `home-assistant/automations/switch-buttons/**` with no
+              matching update to `agent-docs/button-mappings.md`.
+
+            **MEDIUM — consider**
+            - Custom card issues (`.agents/rules/custom-card-guidelines.md`): missing
+              touch/click deduplication, `preventDefault()` on a `touchend` whose target is
+              `<input>`/`<select>`/`<textarea>` (breaks the Android/UniFi wall display), no
+              focus guard before re-render, or card JS changed without bumping the `?v=N`
+              cache-busting query param on the Lovelace resource.
+            - Unchecked dict access on external API data; missing type coercion.
+            - AppDaemon config keys named `name` (AppDaemon injects the app key as `name`).
+
+            **Ignore entirely:** formatting, naming, import order, missing docstrings on
+            unchanged code, and feature suggestions beyond the PR's intent.
+
+            ## Step 3 — report
+            - Post each line-specific finding with
+              `mcp__github_inline_comment__create_inline_comment` (`confirmed: true`),
+              prefixing the body with its severity: `CRITICAL:`, `HIGH:` or `MEDIUM:`.
+            - Then post ONE summary comment with `gh pr comment` containing a verdict
+              (`Looks good` / `Needs changes` / `Has critical issues`) and the findings
+              grouped by severity, each naming the file and line.
+            - If the diff is clean, say exactly "No findings." followed by one sentence on
+              what you checked. Never invent a finding to look thorough.
+            - Only review files changed in this PR. Post GitHub comments only — do not
+              return the review as chat text.

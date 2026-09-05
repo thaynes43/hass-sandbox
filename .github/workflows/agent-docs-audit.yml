@@ -1,33 +1,46 @@
 name: Agent Docs Audit
 
+# Agent PRs are opened ready-for-review and never pass through a draft state, so
+# `ready_for_review` alone would never fire for them.
 on:
   pull_request:
-    types: [ready_for_review, reopened]
+    types: [opened, synchronize, ready_for_review, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-docs-audit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   agent-docs-audit:
+    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: write
-      issues: read
-      id-token: write
+      id-token: write # OIDC exchange for the Claude GitHub App token
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Check for appdaemon changes
         id: changes
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- appdaemon/)
+          set -euo pipefail
+          CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- appdaemon/ .agents/rules/appdaemon-documentation.md)
           if [ -n "$CHANGED" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No appdaemon changes detected, skipping audit"
+            echo "No appdaemon changes detected, skipping audit" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Audit documentation with Claude
@@ -36,34 +49,60 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           allowed_bots: "haynes-dev-bot"
+          # `prompt:` puts the action in agent mode, where --allowedTools is the
+          # WHOLE permission set and also decides which MCP servers get installed —
+          # the gh grants below are what makes commenting possible at all.
           claude_args: |
-            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+            --model claude-opus-5
+            --max-turns 25
+            --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
             REPO: ${{ github.repository }}
             PR NUMBER: ${{ github.event.pull_request.number }}
 
-            Review the PR diff and check documentation consistency. Focus on:
+            You audit the AGENT-FACING documentation for this Home Assistant +
+            AppDaemon repository. The PR branch is checked out. Read the diff with
+            `gh pr diff ${{ github.event.pull_request.number }}` and audit ONLY the
+            files it changes — never the whole codebase.
 
-            1. **README coverage**: If a new app or provider was added under `appdaemon/apps/` or
-               `appdaemon/providers/`, verify it has a README.md following the requirements in
-               `.agents/rules/appdaemon-documentation.md`.
+            The contract you are enforcing is `.agents/rules/appdaemon-documentation.md`.
+            Read it before judging anything.
 
-            2. **Documentation map**: If a new app/provider was added, check that
-               `.agents/rules/appdaemon-documentation.md` was updated with the new entry
-               in the documentation map table.
+            ## Checks
+            1. **README coverage** — a new package under `appdaemon/apps/<app>/` needs
+               `appdaemon/apps/<app>/README.md` covering all eight required sections:
+               what it does, how it works, dependencies, self-provisioned HA entities,
+               associated card JS, config reference, manual setup, and upstream/downstream
+               dependencies. A new provider needs the interface-level
+               `appdaemon/providers/<group>/README.md` and, for a new adapter, the
+               per-implementation `appdaemon/providers/<group>/<impl>/README.md`.
+            2. **Documentation map** — a new app or provider must be added to the Apps or
+               Providers table in `.agents/rules/appdaemon-documentation.md`.
+            3. **Dependency graph** — new imports, new event publishers/listeners, or a
+               new relay script mean the app dependency graph in that same rule file needs
+               updating.
+            4. **Config drift** — added, removed or re-defaulted config keys must be
+               reflected in the app README's config reference table AND in
+               `appdaemon/apps/apps-prod.yaml` / `apps-dev.yaml` (prod keys carry
+               `disable: true`, dev keys end in `_dev`).
+            5. **Manual setup** — anything `ha_provisioner` cannot create (shell commands
+               in `configuration.yaml`, Lovelace resources, `local_file` cameras,
+               directories) must be listed in the README's manual-setup section.
+            6. **agent-docs/** — a change to `home-assistant/automations/switch-buttons/**`
+               must update `agent-docs/button-mappings.md`. New agent-facing reference
+               material belongs in `agent-docs/`, never as YAML under `home-assistant/`.
 
-            3. **Config sync**: If app behavior changed (new config keys, removed keys, changed
-               defaults), verify the app's README.md config reference table matches.
+            ## Report
+            Post ONE comment. Reuse your previous comment on re-runs:
+            `gh pr comment ${{ github.event.pull_request.number }} --edit-last --create-if-none --body "..."`
+            and fall back to plain `gh pr comment ... --body "..."` if those flags are
+            rejected. Start the body with the line `## Agent Docs Audit`.
 
-            4. **Dependency graph**: If app dependencies changed (new imports, new event
-               listeners/publishers), verify the dependency graph in
-               `.agents/rules/appdaemon-documentation.md` was updated.
+            Give every finding a severity — `HIGH` (a required README or map entry is
+            missing), `MEDIUM` (existing docs contradict the code), `LOW` (wording or
+            polish) — and name the exact file and section to change.
 
-            5. **YAML configs**: If a new app was added, verify entries exist in both
-               `appdaemon/apps/apps-dev.yaml` and `appdaemon/apps/apps-prod.yaml`.
-
-            Post your findings as a PR comment using `gh pr comment`.
-            If everything is in sync, post a brief approval comment.
-            If issues are found, list them as actionable items.
-
-            Only review files changed in this PR — do not audit the entire codebase.
+            If the documentation is in sync, the body must be exactly
+            `## Agent Docs Audit` followed by `No findings.` and one sentence naming what
+            you checked. Do not manufacture findings, and do not comment on code quality —
+            that is the Claude Code Review workflow's job.

@@ -31,12 +31,12 @@ All work must go through a feature branch and pull request. Never commit directl
    ```
    Prefix with `appdaemon:` for AppDaemon changes, `home-assistant:` for HA YAML, `ci:` for workflow changes.
 
-3. **Push and create PR as draft** against `main`:
+3. **Push and create the PR ready for review** against `main`:
    ```bash
    git push -u origin feature/my-feature
-   gh pr create --draft --title "appdaemon: short description" --body "..."
+   gh pr create --title "appdaemon: short description" --body "..."
    ```
-   Create as **draft** to avoid triggering the Code Review workflow. Mark as "Ready for review" when the PR is complete.
+   Never `--draft`. Opening ready triggers the Code Review and docs-audit workflows; that spend is intended for agent PRs (Tom, 2026-09-04).
 
 4. **PR must pass** before merge:
    - Unit tests (`.github/workflows/unit-tests.yml`)
@@ -45,7 +45,14 @@ All work must go through a feature branch and pull request. Never commit directl
    - Docs site audit (`.github/workflows/docs-site-audit.yml`)
    - Code review (`.github/workflows/claude-code-review.yml`)
 
-5. **After merge to main**, deployment is automatic — GitHub Actions builds the Docker image, Flux rolls the Kubernetes deployment.
+5. **Merge it yourself** once every check above is green: address any Code Review findings with follow-up commits, then
+   ```bash
+   gh pr merge <number> --squash --delete-branch
+   gh pr view <number> --json state   # expect MERGED
+   ```
+   Do not leave a green PR waiting for the owner; he does not mark PRs ready or merge them.
+
+6. **After merge to main**, deployment is automatic — GitHub Actions builds the Docker image, Flux rolls the Kubernetes deployment.
 
 ## PR requirements
 
@@ -107,9 +114,9 @@ Agents (Claude Code, Cursor, etc.) creating PRs from local sessions must:
 1. Create a feature branch (never commit to `main`)
 2. Run tests locally before pushing
 3. Bump `VERSION` using semver before opening the PR, unless the user explicitly opts out
-4. Create the PR as **draft** (`gh pr create --draft`) to avoid triggering Code Review
-5. Include a test plan in the PR body
+4. Create the PR **ready for review** (`gh pr create`, never `--draft`)
+5. Include a test plan in the PR body: what was verified live and how, plus a **Not verified** line for anything that could not be
 6. Reference the issue/story if one exists
-7. The user will mark the PR as "Ready for review" when it's complete
+7. Wait for every check (unit tests, docs build, both docs audits, Code Review), address findings, then squash-merge the PR yourself and delete the branch
 
 PRs created by agents via GitHub (e.g. `@claude` in issues) open as ready immediately — Code Review will run on those automatically.

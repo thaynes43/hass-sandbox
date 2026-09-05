@@ -1,5 +1,7 @@
 name: Claude Code
 
+# Interactive "@claude" handler: mention @claude in an issue, a PR comment or a
+# review and Claude picks the work up from there.
 on:
   issue_comment:
     types: [created]
@@ -10,6 +12,14 @@ on:
   pull_request_review:
     types: [submitted]
 
+permissions:
+  contents: read
+
+# One @claude run per thread; a follow-up mention supersedes an in-flight one.
+concurrency:
+  group: claude-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   claude:
     if: |
@@ -18,15 +28,17 @@ jobs:
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     permissions:
       contents: read
       pull-requests: read
       issues: read
-      id-token: write
-      actions: read # Required for Claude to read CI results on PRs
+      id-token: write # OIDC exchange for the Claude GitHub App token (used to comment)
+      actions: read # lets Claude read CI results on PRs
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -35,16 +47,10 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-
-          # This is an optional setting that allows Claude to read CI results on PRs
+          # Agent-authored issues/PRs come from the dev bot; allow it to summon Claude.
+          allowed_bots: "haynes-dev-bot"
+          # Automated surfaces are pinned to the newest Opus explicitly — never an
+          # alias, which resolves client-side and can silently serve an older tier.
+          claude_args: "--model claude-opus-5"
           additional_permissions: |
             actions: read
-
-          # Optional: Give a custom prompt to Claude. If this is not specified, Claude will perform the instructions specified in the comment that tagged it.
-          # prompt: 'Update the pull request description to include a summary of changes.'
-
-          # Optional: Add claude_args to customize behavior and configuration
-          # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
-          # or https://code.claude.com/docs/en/cli-reference for available options
-          # claude_args: '--allowed-tools Bash(gh pr:*)'
-

@@ -1,37 +1,65 @@
 name: Docs Build
 
+# `docs-build` (this job's id) is a REQUIRED status check in the "Protect Main"
+# ruleset, so it must run and report on EVERY PR to main. The docs path filter
+# lives inside the job: a PR that touches no docs still reports success.
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHON_VERSION: "3.12"
 
 jobs:
   docs-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Check for docs changes
         id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- docs/ mkdocs.yml requirements-docs.txt .github/workflows/docs-build.yml)
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- docs/ mkdocs.yml requirements-docs.txt .github/workflows/docs-build.yml)
+          else
+            CHANGED="forced"
+          fi
+
           if [ -n "$CHANGED" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No docs changes detected, skipping build"
+            echo "No docs changes detected, skipping build" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.changes.outputs.should_run == 'true'
         with:
-          python-version: "3.12"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements-docs.txt
 
       - name: Install dependencies
         if: steps.changes.outputs.should_run == 'true'
-        run: pip install -r requirements-docs.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-docs.txt
 
       - name: Build docs site
         if: steps.changes.outputs.should_run == 'true'

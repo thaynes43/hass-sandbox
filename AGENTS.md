@@ -71,7 +71,7 @@ Production deploys are automated. Merging to `main` triggers a Docker image buil
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. **Before bumping, compare against `main` (`git show main:VERSION`)** — if already bumped on this branch, do not bump again.
 
-Pull requests must be created as **draft** (`gh pr create --draft`); the user marks them ready.
+Pull requests are opened **ready for review** (`gh pr create`, never `--draft`) and squash-merged by the agent once every check, including the Claude Code Review and docs-audit workflows, is green. The owner does not mark PRs ready or merge them; a green, unmerged PR is unfinished work.
 
 ## Core repository facts
 
@@ -123,7 +123,8 @@ This repo often uses the Home Assistant MCP server for live HA work, but only wh
 
 - After `home-assistant/` changes, follow `.agents/rules/ha-change-scope-communication.md` — the response must start with exactly one of **Repo YAML Only Updated - You copy paste** or **Repo YAML & Live HA Updated**.
 - After `appdaemon/` changes, clearly state whether changes were only made in the repo or also deployed. Do not claim live HA changes unless they were actually performed.
-- When changes cannot be fully validated by unit tests alone (runtime behavior, card JS, MCP interactions), do **not** commit and push until the user confirms they tested the changes.
+- When changes cannot be fully validated by unit tests alone (runtime behavior, card JS, MCP interactions), verify them yourself live (HA MCP, `kubectl`, Playwright) before committing and state what was verified in the PR body; list anything unverifiable under **Not verified** instead of waiting on the owner.
+- Only genuine requirements or design questions wait on the owner: ask them with `AskUserQuestion`, one at a time, when they arise. Never batch them or leave them as prose.
 
 ## Shared playbooks
 

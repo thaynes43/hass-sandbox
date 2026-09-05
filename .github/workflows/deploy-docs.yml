@@ -9,34 +9,59 @@ on:
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - ".github/workflows/deploy-docs.yml"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+# One deploy at a time; never cancel a half-finished gh-pages push.
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # `mkdocs gh-deploy` pushes the built site to the gh-pages branch.
+      contents: write
+
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure Git Credentials
-        run: |
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
         with:
-          python-version: "3.12"
+          # gh-deploy needs the gh-pages branch history to commit onto it.
+          fetch-depth: 0
 
-      - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
+      - name: Configure Git credentials
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - uses: actions/cache@v4
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Compute mkdocs cache key
+        run: echo "cache_id=$(date --utc '+%V')" >> "$GITHUB_ENV"
+
+      - name: Restore mkdocs-material build cache
+        uses: actions/cache@v6
         with:
           key: mkdocs-material-${{ env.cache_id }}
-          path: ~/.cache
+          path: .cache
           restore-keys: |
             mkdocs-material-
 
-      - run: pip install -r requirements-docs.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-docs.txt
 
-      - run: mkdocs gh-deploy --force
+      - name: Build and deploy to GitHub Pages
+        run: mkdocs gh-deploy --force

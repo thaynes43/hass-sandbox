@@ -16,22 +16,28 @@ Custom Docker image approach (option 2) is implemented:
 ## Branch protection rules
 
 **Priority**: High
-**Status**: In progress (user configuring on GitHub)
+**Status**: Done — ruleset "Protect Main" is active
 
-- Protect `main` branch
-- Require PR reviews
-- Require status checks to pass (Unit Tests workflow)
-- Prevent force pushes to `main`
+- Required status checks (exact context names, do not rename these jobs):
+  `test` (unit-tests.yml), `docs-build` (docs-build.yml), `build-and-push`
+  (build-appdaemon.yml). Each filters paths *inside* the job so a skipped run
+  still reports success — a job-level `if:` would leave the check missing and
+  block every PR.
+- `strict_required_status_checks_policy` is on: a branch must be up to date
+  with `main` before it can merge.
+- Pull request required (0 approvals), linear history, no force pushes, no
+  deletions. There are no bypass actors, so `GITHUB_TOKEN` cannot push to
+  `main` from any workflow.
 
 ## Documentation audit workflow improvements
 
 **Priority**: Medium
-**Status**: Initial version deployed
+**Status**: Deployed as `agent-docs-audit.yml` + `docs-site-audit.yml`
 
-The current `doc-audit.yml` uses Claude to review PR diffs for documentation consistency.
-Future improvements:
-- Add structured output format for audit results
-- Consider making doc audit a required check (not just advisory)
+Both use Claude to review PR diffs for documentation consistency and post a
+single severity-tagged comment. Future improvements:
+- Add structured output format for audit results (`claude_args: --json-schema`)
+- Consider making the audits required checks (they are advisory today)
 - Add automated README scaffolding for new apps/providers
 
 ## Runtime app disable (no-redeploy pause)
@@ -55,3 +61,14 @@ Run integration tests on a schedule or manual trigger. These require:
 - HA instance access (or mock)
 - AI provider API keys
 - Environment variable gating (`RUN_HA_INTEGRATION_TESTS=1`, etc.)
+
+## Pin the AppDaemon base image
+
+**Priority**: Medium
+**Status**: Not started
+
+`docker/Dockerfile` starts `FROM acockburn/appdaemon:latest`. A rebuild can
+therefore silently pull a new AppDaemon major/minor into production with no
+commit to point at. Pin the concrete tag currently running (4.5.13) and bump it
+deliberately, so image builds are reproducible and an AppDaemon upgrade shows up
+as a reviewable diff.

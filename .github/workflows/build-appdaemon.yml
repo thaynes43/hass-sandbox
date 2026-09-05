@@ -1,5 +1,8 @@
 name: Build AppDaemon Image
 
+# `build-and-push` (this job's id) is a REQUIRED status check in the "Protect
+# Main" ruleset, so the pull_request trigger deliberately has NO paths filter —
+# the job must always report. Change detection happens inside the job.
 on:
   push:
     branches: [main]
@@ -12,6 +15,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-appdaemon-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/appdaemon
@@ -19,81 +29,129 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - name: Fetch base branch
-        if: github.event_name == 'pull_request'
-        run: git fetch origin "${{ github.base_ref }}" --depth=1
+      # NOTE: no extra `git fetch --depth=1` here. checkout with fetch-depth: 0
+      # already has full history for origin/<base>; a shallow fetch afterwards
+      # marks the repo shallow and breaks the merge-base used by `A...B`.
 
       - name: Check for AppDaemon image changes
         id: changes
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD -- appdaemon/apps/ appdaemon/providers/ docker/ VERSION .github/workflows/build-appdaemon.yml)
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            CHANGED=$(git diff --name-only HEAD~1 -- appdaemon/apps/ appdaemon/providers/ docker/ VERSION .github/workflows/build-appdaemon.yml)
+          set -euo pipefail
+          PATHS="appdaemon/apps/ appdaemon/providers/ docker/ VERSION .github/workflows/build-appdaemon.yml"
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # shellcheck disable=SC2086
+            CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD" -- $PATHS)
+          elif [ "$EVENT_NAME" = "push" ] && git rev-parse --verify --quiet HEAD~1 >/dev/null; then
+            # shellcheck disable=SC2086
+            CHANGED=$(git diff --name-only HEAD~1 -- $PATHS)
           else
-            CHANGED="workflow_dispatch"
+            CHANGED="forced"
           fi
 
           if [ -n "$CHANGED" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "No AppDaemon image changes detected, skipping build"
+            echo "No AppDaemon image changes detected, skipping build" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # Fork PRs get a read-only GITHUB_TOKEN, so pushing to GHCR would fail and
+      # take the required check down with it. Build (validate the Dockerfile)
+      # but do not push for anything that is not a same-repo ref.
+      - name: Decide whether to push
+        if: steps.changes.outputs.should_run == 'true'
+        id: push
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          THIS_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$HEAD_REPO" != "$THIS_REPO" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Fork PR detected — building without pushing to GHCR." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Read version
         if: steps.changes.outputs.should_run == 'true'
         id: version
-        run: echo "version=$(cat VERSION | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < VERSION)
+          if [ -z "$version" ]; then
+            echo "::error file=VERSION::VERSION is empty" && exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Compute short SHA
         if: steps.changes.outputs.should_run == 'true'
         id: sha
-        run: echo "short=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+        env:
+          # On pull_request, github.sha is the ephemeral merge commit — tag with
+          # the real head commit so the tag maps to a commit that exists.
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: echo "short=${BUILD_SHA:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Sanitize branch name
         if: steps.changes.outputs.should_run == 'true'
         id: branch
         run: |
+          set -euo pipefail
           ref="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           # Take everything after the last slash (feature/foo → foo), then replace remaining invalid chars
-          sanitized=$(echo "$ref" | sed 's|.*/||' | sed 's/[^a-zA-Z0-9._-]/-/g')
+          sanitized=$(echo "$ref" | sed 's|.*/||' | sed 's/[^a-zA-Z0-9._-]/-/g' | cut -c1-100)
           echo "name=$sanitized" >> "$GITHUB_OUTPUT"
 
       - name: Compute tags
         if: steps.changes.outputs.should_run == 'true'
         id: tags
+        env:
+          REF: ${{ github.ref }}
+          IMAGE_REPO: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHORT_SHA: ${{ steps.sha.outputs.short }}
+          BRANCH: ${{ steps.branch.outputs.name }}
         run: |
-          image="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}"
-          version="${{ steps.version.outputs.version }}"
-          short_sha="${{ steps.sha.outputs.short }}"
-          branch="${{ steps.branch.outputs.name }}"
+          set -euo pipefail
+          # GHCR requires an all-lowercase repository path.
+          image=$(echo "$IMAGE_REPO" | tr '[:upper:]' '[:lower:]')
 
-          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          if [ "$REF" = "refs/heads/main" ]; then
             # Main branch: semver tags
-            tags="${image}:${version}"
-            tags="${tags},${image}:${version}-${short_sha}"
+            tags="${image}:${VERSION}"
+            tags="${tags},${image}:${VERSION}-${SHORT_SHA}"
             tags="${tags},${image}:latest"
           else
             # Feature branch: dev tags with semver baseline
-            tags="${image}:${version}-${branch}.${short_sha}"
-            tags="${tags},${image}:${version}-${branch}"
+            tags="${image}:${VERSION}-${BRANCH}.${SHORT_SHA}"
+            tags="${tags},${image}:${VERSION}-${BRANCH}"
           fi
           echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "Image tags: ${tags//,/ }" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Buildx
+        if: steps.changes.outputs.should_run == 'true'
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        if: steps.changes.outputs.should_run == 'true'
-        uses: docker/login-action@v3
+        if: steps.changes.outputs.should_run == 'true' && steps.push.outputs.enabled == 'true'
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -101,13 +159,18 @@ jobs:
 
       - name: Build and push
         if: steps.changes.outputs.should_run == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
-          push: true
+          push: ${{ steps.push.outputs.enabled == 'true' }}
           tags: ${{ steps.tags.outputs.tags }}
+          # Flux's image-reflector watches plain image manifests; keep the
+          # buildx container driver from turning these into attestation indexes.
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.version }}
