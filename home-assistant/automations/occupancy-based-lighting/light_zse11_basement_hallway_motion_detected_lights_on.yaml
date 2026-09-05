@@ -7,7 +7,16 @@ triggers:
       - binary_sensor.basement_hallway_inovelli_presence_occupancy
     from: null
     to: "on"
-conditions: []
+conditions:
+  - alias: Skip when the hallway switch is on manual or auto hold
+    condition: template
+    value_template: |
+      {# Only run when hold is clear #}
+      {% set s = 'basement_hallway_inovelli_presence' %}
+      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+      {{ led1 != manual and led1 != auto }}
 actions:
   - action: light.turn_on
     metadata: {}
