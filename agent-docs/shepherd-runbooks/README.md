@@ -24,8 +24,9 @@ checker stayed **non-ok** for ≥300s before promotion, ending on a critical
 cycle — the clock starts at the first non-ok cycle of any severity, so
 `warning → warning → critical` promotes on that one critical cycle. Except
 `shade_gateway` and `ups`, which have a `critical: 0` override and page the
-instant they go critical. A single bad sample can never reach the phone, so by the time the
-Shepherd sees an alert the fault is *sustained*.
+instant they go critical. For every other checker a single bad sample cannot reach the
+phone, so the fault is *sustained* by the time the Shepherd sees it — but for `ups` and
+`shade_gateway` it can be one cycle old, so confirm those are still failing before acting.
 
 Note "sustained" is measured on the **checker**, not a device: a checker whose
 devices take turns failing stays non-ok throughout and can page without any one
@@ -49,6 +50,10 @@ works through both cases.
    - HA state history (`GET /api/history/period/...` for a device entity) when a
      runbook needs *when* and *how long*, rather than the checker's 180 s-sampled
      view — e.g. true blip duration for a flapping Wi-Fi device.
+   - HA entity state for infrastructure a runbook names (`GET /api/states/<entity_id>`)
+     — e.g. the UniFi AP state sensors behind the fan checker's AP verdict, which only
+     appears in a `State` detail while that check is `critical`, so on a recovered-looking
+     snapshot this read is the only way to get it.
    - Prometheus (read-only) at
      `http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090`
      (`/api/v1/query`, same cluster/namespace as the Alertmanager the bridge posts to),
