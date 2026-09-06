@@ -143,8 +143,11 @@ power-cycle of another fan that merely blipped.
      **fully green** cycle — with six fans blipping those are common — so only an
      *unbroken* run counts and one all-ok cycle restarts the 300 s. Date the promoting
      window from the last green cycle, not from the start of the day's churn.
-   - **Once the partials have themselves paged** (~4 partial cycles promote a *warning*
-     alert to active, which clears that pending entry): a later critical cycle opens a
+   - **Once the partials have themselves paged** — with `alert_for_seconds.warning: 600`
+     the warning promotes on the **fifth** consecutive non-ok cycle (pending at t=0,
+     `elapsed ≥ 600` first true at t=720), clearing that pending entry. Everything before
+     that is still regime 1: a critical cycle at t=540 promotes *critical* with no warning
+     alert ever firing, so do not switch rules early. Once the warning is active: a later critical cycle opens a
      **fresh** escalation clock that must sustain its own 300 s — at a 180 s cadence, the
      third consecutive critical cycle. **Two** things reset that clock, and they log
      differently: a cycle falling back to warning gives
@@ -206,10 +209,11 @@ power-cycle of another fan that merely blipped.
    The band-filtered `..._receive_ratio{radio="ng"}` reading is the gate; the `topk` only
    supplies the culprit's name. If the unbanded top five contains no `ng` client at all —
    likely, since 5 GHz talkers head it — rank *within* the band by joining the two:
-   `topk(5, max by (name, ap_name) (rate(unpoller_client_receive_bytes_total{wired="false"}[1h]))
-   and on (name) (max by (name) (unpoller_client_rssi_db{radio="ng"})))`
-   which returns only clients associated on 2.4 GHz, so it always yields a candidate when
-   the gate has tripped. Run the unbanded form first (it is how the 2026-09-05 cameras were
+   `topk(5, max by (name, ap_name) (rate(unpoller_client_receive_bytes_total{wired="false",
+   name!~"MF Fan.*"}[1h])) and on (name) (max by (name) (unpoller_client_rssi_db{radio="ng"})))`
+   which returns only non-fan clients associated on 2.4 GHz. **Exclude the fans** — they are
+   `ng` clients themselves and will otherwise top a quiet band and get written up as their
+   own hog. Run the unbanded form first (it is how the 2026-09-05 cameras were
    caught, before they moved to 5 GHz) and fall back to this when it comes back all-5 GHz.
    **Derive the co-channel set live** rather than trusting a remembered one — UniFi
    auto-channel moves APs: `unpoller_device_radio_channel{radio="ng"}` gives each AP's 2.4
@@ -247,8 +251,12 @@ power-cycle of another fan that merely blipped.
      co-channel neighbour (derive the neighbours from
      `unpoller_device_radio_channel{radio="ng"}`) — the fan's own AP reading clean
      does not by itself clear the branch; and
-   - the client the `topk` named confirmed present on `ng` via
-     `unpoller_client_rssi_db{radio="ng"}`.
+   - a **named culprit**: a client that is *not* one of the fans, confirmed on `ng` via
+     `unpoller_client_rssi_db{radio="ng"}`, pulling orders of magnitude more than the
+     fans' ~280 B/s — the 2026-09-05 cameras ran 380-960 kB/s. A top-of-list reading in
+     the single-digit kB/s is a quiet band, not a hog: that is gate 2 **failing**, not
+     passing. (`topk` always returns rows, so without this threshold the gate cannot
+     fail.)
 
    If every `ng` receive ratio on the channel is at baseline (0.02-0.05), this is
    **not** an airtime event however fat the `topk` looks — that list is unbanded and
