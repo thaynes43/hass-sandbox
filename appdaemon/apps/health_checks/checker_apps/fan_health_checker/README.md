@@ -59,8 +59,9 @@ Each fan may therefore declare the AP it usually holds:
 | `ap_name` | Friendly AP name for log and alert text; derived from the entity id when omitted |
 
 Fans **roam**, so this is the AP each fan usually holds, not a fixed binding —
-confirm the live one with `unpoller_client_rssi_db{name="MF Fan <Room>"}` (label
-`ap_name`) before trusting an AP verdict. See
+confirm the live one with `unpoller_client_rssi_db{name=~"MF Fan.*"}` (a regex: the
+UniFi client names do not track these fan names, e.g. Living Room is
+`MF Fan Livingroom`) and read the `ap_name` label before trusting an AP verdict. See
 `agent-docs/shepherd-runbooks/fans.md` for triage, including the 2.4 GHz airtime
 signature behind sub-minute flapping.
 

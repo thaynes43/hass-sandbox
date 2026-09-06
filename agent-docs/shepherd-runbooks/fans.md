@@ -50,8 +50,12 @@ Three consequences that shape everything below:
 | Study | 192.168.50.179 | Kitchen Pantry U7 Pro |
 
 Fans roam between APs; the table (and `ap_status_entity` in `apps-prod.yaml`) is the AP each
-fan usually holds. Confirm the live one with `unpoller_client_rssi_db{name="MF Fan <Room>"}`
-(label `ap_name`) before trusting an AP verdict.
+fan usually holds. Confirm the live one with `unpoller_client_rssi_db{name=~"MF Fan.*"}` and
+read the `ap_name` label before trusting an AP verdict. Use the **regex**, not an exact name:
+the UniFi client names do not track the checker's fan names — Living Room is
+`MF Fan Livingroom` — so an exact match can return an empty vector that reads as "not
+associated". (Observed 2026-09-05: `MF Fan Pink Room`, `MF Fan Blue Room`, `MF Fan White
+Room`, `MF Fan Study`, `MF Fan Livingroom`, `MF Fan Primary Bedroom`.)
 
 ## Repair backoff ladder (CrashLoopBackOff)
 
@@ -115,13 +119,19 @@ power-cycle of another fan that merely blipped.
    (Pink+Blue+White on Guest Room), points at that AP or the network — not at
    the fans. Three of the six now hang off Guest Room, which is also where an
    airtime hog (step 2) does the most damage.
+   **If nothing is red, do not stand down** — that is the *expected* snapshot for a
+   flapping incident. `alert_improve_hold_s: 900` keeps a firing critical alive through
+   fully-ok cycles, and any critical sighting restarts the window, so a page can outlive
+   every visible fault by 15 minutes. Go to step 2 and read the cycle history rather than
+   calling it a stale page.
 2. **Check 2.4 GHz airtime before anything else when the red fan keeps moving.** The
    page you woke on can be pure flapping, so do not go looking for one continuously-down
    fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
-   six fans report into one result list — so the checker stays critical while *any* fan is
-   critical, and three fans each blipping in a different 180 s cycle reach the
-   `alert_for_seconds.critical: 300` threshold and page, with no single fan down two polls
-   running. That is exactly the shape of an airtime event on the Guest Room cluster.
+   six fans report into one result list — so the checker stays non-ok while *any* fan is,
+   and fans taking turns keep the clock running with no single fan down two polls in a row.
+   That is the shape of an airtime event on the Guest Room cluster. Exactly *which* cycle
+   promotes depends on the cross-check downgrade, below — read that before you try to match
+   the page against the log.
    **How the clock actually runs** — this decides whether the Loki timeline explains the
    page. `apply_cross_check_per_device` downgrades a fan's `critical` to `warning` (detail
    gains `" (partial failure)"`) whenever its *other* check still passes, so an airtime
@@ -212,6 +222,13 @@ power-cycle of another fan that merely blipped.
    `start_repair` would cycle **every** entity-down fan — up to three at once when
    Guest Room is the affected radio — and wipe all six backoff ladders, for a
    cause a power-cycle cannot touch.
+   **Then exit deliberately** — this stop has no repair to wait on, so the Escalate
+   triggers below (attempt counts, recovery budget) will never fire on their own. The
+   remedy is a UniFi console change (move the hog to 5 GHz, cap its bitrate, lock it to
+   its home AP), which is outside the sanctioned write actions. So `record_note` the hog
+   — client name, its `ap_name`, its byte rate, the saturated radio — and **let the page
+   through** to a human, with the Grafana/Alertmanager links. Do not silence it and do not
+   fall through to steps 3-5.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
 4. If still critical, the fan's AP is up, and its `device_repairs` entry is
