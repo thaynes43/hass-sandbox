@@ -127,11 +127,13 @@ power-cycle of another fan that merely blipped.
    fully-ok cycles, and any critical sighting restarts the window, so a page can outlive
    every visible fault by 15 minutes. Go to step 2 and read the cycle history rather than
    calling it a stale page.
-2. **Check 2.4 GHz airtime when the red fan keeps moving** — but read the AP verdict
-   from step 1 first. **If the failing fan's own AP is down, skip this step entirely** and
-   go to step 3: gate 1 spans co-channel neighbours whose radios are still reporting, so
-   this workup can manufacture an "airtime, do not power-cycle" verdict on what is
-   squarely an AP fault. Everything below assumes the fan's AP reads *connected*.
+2. **Check 2.4 GHz airtime when the red fans keep moving** — but read the AP verdicts
+   from step 1 first. **Do this per fan:** skip this step for any red fan whose own AP is
+   down (gate 1 spans co-channel neighbours whose radios are still reporting, so the
+   workup can manufacture an "airtime, do not power-cycle" verdict on what is squarely an
+   AP fault), and run it for the rest. Only when *every* red fan sits behind a down AP
+   does the whole step fall away — go to step 3. Everything below assumes the fan under
+   test has its AP reading *connected*.
    With that settled: the page you woke on can be pure flapping, so do not go looking for
    one continuously-down fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
    six fans report into one result list — so the checker stays non-ok while *any* fan is,
@@ -320,8 +322,18 @@ power-cycle of another fan that merely blipped.
      page through** to a human with the Grafana/Alertmanager links.
 
    In both cases: do not silence the alert, and do not fall through to steps 3-5 for a
-   fan this step already stopped on. Fans the step did **not** stop on — AP up, airtime
-   clear — continue down the ladder normally.
+   fan this step stopped on.
+
+   **A mixed incident still blocks step 4 for everyone.** `start_repair` is
+   checker-wide — there is no per-fan variant. It rebuilds its own candidate list of
+   every entity-down fan, and the only exclusion is a fan whose **AP is down**; an
+   airtime-stopped fan is by definition not excluded. So if *any* red fan stopped on
+   airtime, firing `start_repair` for a different wedged fan would power-cycle the
+   airtime fans too and wipe all six ladders — the thing the airtime exit above forbids.
+   In that case: `record_note` both findings (which fans are airtime-blocked, which one
+   looks genuinely wedged), skip steps 3-5, and let the page through so a human can
+   power-cycle the wedged fan by hand after the hog is dealt with.
+   `force_recheck` (step 3) is read-only and stays available throughout.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
 4. If still critical, the fan's AP is up, and its `device_repairs` entry is
