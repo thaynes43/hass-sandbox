@@ -277,8 +277,12 @@ power-cycle of another fan that merely blipped.
    power-cycles, so there is nothing to repair on them. This accounts for the **whole
    page** only if every in-scope fan is behind a down AP — otherwise the remaining fans still need step 2's
    airtime workup and steps 4-6.
-4. Read `repair_state.device_repairs[<fan>]` — per-fan status:
-   - `pending`/`in_progress` → a ZEN32 cycle is running (budget 300s) — wait.
+4. Read `repair_state.device_repairs[<fan>]` — per-fan status. It takes only
+   `idle`, `in_progress`, `success` and `failed`: **never `pending`**, because the
+   pre-repair grace countdown is checker-wide. So the state meaning "a power-cycle is
+   about to fire on its own" is not here — it is `repair_state.status: pending` with
+   `repair_state.auto_repair_deadline`, which is what Remediation step 3 gates on.
+   - `in_progress` → a ZEN32 cycle is running (budget 300s) — wait.
    - `failed` with `(attempt N; retry at HH:MM)` → the ladder is climbing;
      attempt N already ran and did not stick. **This is expected behaviour,
      not a stuck repair.** Note N — a high N means the fan is crashlooping and
