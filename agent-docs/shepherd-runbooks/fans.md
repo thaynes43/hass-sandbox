@@ -373,8 +373,12 @@ power-cycle of another fan that merely blipped.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read. **Not a passive read:** it runs a full check cycle, which
    evaluates auto-repair and can fire `script.zen32_hard_reset` on the earliest-due fan.
-   Gate it on `repair_state.auto_repair_enabled`: **false** means nothing can fire and the
-   command really is a read. **True** means treat it as a power-cycle you are scheduling.
+   Gate it on `repair_state.auto_repair_enabled`: **true** means treat it as a
+   power-cycle you are scheduling. **False clears only the fan side** — the command is
+   global (one un-targeted `health_check_recheck` to every checker), and `shade_gateway`
+   and `protect` both default auto-repair **on**, so it can still fire a PoE port cycle or
+   a config-entry reload on a checker you are not triaging. Check their toggles too, and
+   see the command table in `README.md`.
    Do not try to clear it by checking whether a due time has *passed* — that test is
    nearly always false while auto-repair is on, because `auto_repair_deadline` is only
    published while it is still in the future and is nulled the moment it fires, and a past
