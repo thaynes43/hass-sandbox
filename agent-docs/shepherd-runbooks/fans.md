@@ -128,11 +128,16 @@ power-cycle of another fan that merely blipped.
    every visible fault by 15 minutes. Go to step 2 and read the cycle history rather than
    calling it a stale page.
 2. **Check 2.4 GHz airtime when the red fans keep moving** — but read the AP verdicts
-   from step 1 first. **Do this per fan:** skip this step for any red fan whose own AP is
+   from step 1 first.
+   **Which fans are "in scope":** the fans red in `checks[]` — **or**, when nothing is
+   currently red (the expected flapping snapshot, per step 1), the fans that appear red
+   across the recent cycle history below. Never conclude "no red fans, nothing to check";
+   that is the case this step exists for.
+   **Then do this per fan:** skip this step for any in-scope fan whose own AP is
    down (gate 1 spans co-channel neighbours whose radios are still reporting, so the
    workup can manufacture an "airtime, do not power-cycle" verdict on what is squarely an
-   AP fault), and run it for the rest. Only when *every* red fan sits behind a down AP
-   does the whole step fall away — go to step 3. Everything below assumes the fan under
+   AP fault), and run it for the rest. Only when *every* in-scope fan sits behind a down
+   AP does the whole step fall away — go to step 3. Everything below assumes the fan under
    test has its AP reading *connected*.
    With that settled: the page you woke on can be pure flapping, so do not go looking for
    one continuously-down fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
@@ -339,7 +344,12 @@ power-cycle of another fan that merely blipped.
    `force_recheck` (step 3) is read-only and stays available throughout.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
-4. If still critical, the fan's AP is up, and its `device_repairs` entry is
+4. **First re-read step 2 — these entry conditions are the airtime signature verbatim.**
+   "Still critical, AP up, `device_repairs` idle" is exactly what a saturated 2.4 GHz
+   radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
+   is checker-wide and would power-cycle the airtime fans too (see the mixed-incident
+   rule in step 2). Otherwise, with the airtime branch cleared: if still critical, the
+   fan's AP is up, and its `device_repairs` entry is
    `idle` (auto-repair off, or never reached its deadline): `start_repair`
    `{"checker_id":"fans"}` — repairs **all** currently entity-down fans
    sequentially via `script.zen32_hard_reset`. Prefer this over toggling the
