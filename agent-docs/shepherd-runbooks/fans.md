@@ -96,10 +96,11 @@ power-cycle of another fan that merely blipped.
 - Description names the failing fan + check, e.g. `Living Room State:
   unavailable (Wi-Fi fan; AP Livingroom U7-Pro-Wall: connected — fan itself
   unreachable)` or `Study Ping: timeout (3 attempts)`.
-- A **failing** `State` detail carries an AP verdict — read it, it is the triage's
-  first branch. A passing one does not (the `ok` detail is a bare `on`/`off`), so on
-  the all-green arrival there is nothing here to read: get the verdict from
-  `GET /api/states/sensor.<ap>_state` instead, per Diagnosis step 2.
+- A **failing** `State` detail normally carries an AP verdict — read it, it is the
+  triage's first branch. Two details lack one: a passing check (the `ok` detail is a
+  bare `on`/`off`) and an `Error: <exc>` detail (the entity read itself threw). In
+  either case get the verdict from `GET /api/states/sensor.<ap>_state` instead, per
+  Diagnosis step 2.
   - `… (Wi-Fi fan; AP <name> is disconnected — fan offline expected,
     power-cycle held until the AP recovers)` → **AP fault, not a fan fault.**
   - `… (Wi-Fi fan; AP <name>: connected — fan itself unreachable)` → the fan is off
@@ -138,11 +139,12 @@ power-cycle of another fan that merely blipped.
    *nothing* is currently failing (the improve-hold arrival, per step 1), fall back to the
    fans that appear failing across the recent cycle history below. Never conclude "nothing
    is red, nothing to check" — that is the case this step exists for.
-   **Getting an AP verdict at all:** any *failing* `State` detail carries one, `warning`
-   included — the downgrade appends `" (partial failure)"` rather than rebuilding the
-   string, so the AP note survives it. An `ok` detail does not: it is a bare `on`/`off`
-   and no AP state reaches the payload. So on the all-green arrival there is no verdict to
-   read — fetch it yourself with `GET /api/states/sensor.<ap>_state` for the APs named in
+   **Getting an AP verdict at all:** a *failing* `State` detail normally carries one,
+   `warning` included — the downgrade appends `" (partial failure)"` rather than
+   rebuilding the string, so the AP note survives it. Two details carry none: an `ok` one
+   (a bare `on`/`off`, no AP state reaches the payload) and an `Error: <exc>` one (the
+   entity read threw before the note was built). Whenever the verdict is missing — the
+   all-green arrival above, or an error detail — fetch it yourself with `GET /api/states/sensor.<ap>_state` for the APs named in
    the fan table above (`sensor.guest_room_u7_pro_state`,
    `sensor.kitchen_pantry_u7_pro_state`, `sensor.livingroom_u7_pro_wall_state`,
    `sensor.primary_closet_u7_pro_state`); `disconnected` / `not_home` / `off` count as
