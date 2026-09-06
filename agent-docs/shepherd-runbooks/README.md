@@ -44,7 +44,10 @@ works through both cases.
    - HA REST: `GET /api/states/sensor.health_check_status` →
      `attributes.checkers.<checker_id>`. Key fields: `status`, `checks[]`
      (each `{name, status, detail}`), `repair_state` (`{status, detail}` —
-     `idle|pending|in_progress|success|failed`), `muted`, `muted_until`,
+     `idle|pending|in_progress|success|failed` — plus `auto_repair_enabled`,
+     `auto_repair_deadline` and `device_repairs[<device>]` with its `status` and
+     `next_retry_at`; those decide whether a `force_recheck` would fire a repair),
+     `muted`, `muted_until`,
      `last_check`, `alert_history[]`, `is_dependency`.
    - Loki: `{namespace="home-automation", app="appdaemon"}` filtered to the
      checker (e.g. `|= "shade_gateway"` / `|= "Shade Gateway"`), last ~1h.

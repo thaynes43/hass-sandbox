@@ -373,13 +373,19 @@ power-cycle of another fan that merely blipped.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read. **Not a passive read:** it runs a full check cycle, which
    evaluates auto-repair and can fire `script.zen32_hard_reset` on the earliest-due fan.
-   Check three published fields before firing it, not just `device_repairs`:
-   `repair_state.auto_repair_enabled` (if false, nothing can fire), and — when it is
-   true — `repair_state.auto_repair_deadline` (the due time for an **idle** fan, and it
-   is checker-wide) plus `device_repairs[<fan>].next_retry_at` (the due time for a
-   **failed** one). A fan reading `idle` therefore does **not** mean nothing is due; the
-   checker-wide deadline governs it. If `auto_repair_enabled` is true and either time has
-   passed, this command power-cycles. Do not reach for it after a step-2 airtime stop.
+   Gate it on `repair_state.auto_repair_enabled`: **false** means nothing can fire and the
+   command really is a read. **True** means treat it as a power-cycle you are scheduling.
+   Do not try to clear it by checking whether a due time has *passed* — that test is
+   nearly always false while auto-repair is on, because `auto_repair_deadline` is only
+   published while it is still in the future and is nulled the moment it fires, and a past
+   `next_retry_at` is visible only when a repair is already running or the toggle is off
+   (both states where this command cannot start one). What matters is whether one is
+   **queued**: a non-null `repair_state.auto_repair_deadline` (idle fans, checker-wide) or
+   `device_repairs[<fan>].next_retry_at` (failed fans) says yes. Either value is up to one
+   `check_interval_s` stale and may be seconds away, and this step's Loki reconstruction
+   and PromQL queries take minutes — so "not due yet" is not a clearance. A fan reading
+   `idle` is not one either; the checker-wide deadline governs it. Do not reach for this
+   after a step-2 airtime stop.
 4. **First re-read step 2 — these entry conditions are the airtime signature verbatim.**
    "Still critical, AP up, `device_repairs` idle" is exactly what a saturated 2.4 GHz
    radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
