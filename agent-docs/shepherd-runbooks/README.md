@@ -20,9 +20,11 @@ runbook (`<checker_id>.md`). `alertname` is secondary (default
 `ProtectEventStreamFrozen`).
 
 Because of the controller's **for-gate**, a *firing* critical means the
-checker sustained critical for ≥300s before promotion — except `shade_gateway`
-and `ups`, which have a `critical: 0` override and page the instant they go
-critical. A single bad sample can never reach the phone, so by the time the
+checker stayed **non-ok** for ≥300s before promotion, ending on a critical
+cycle — the clock starts at the first non-ok cycle of any severity, so
+`warning → warning → critical` promotes on that one critical cycle. Except
+`shade_gateway` and `ups`, which have a `critical: 0` override and page the
+instant they go critical. A single bad sample can never reach the phone, so by the time the
 Shepherd sees an alert the fault is *sustained*.
 
 Note "sustained" is measured on the **checker**, not a device: a checker whose

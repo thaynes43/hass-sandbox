@@ -127,9 +127,12 @@ power-cycle of another fan that merely blipped.
    gains `" (partial failure)"`) whenever its *other* check still passes, so an airtime
    event's cycles are **mostly partials** — and `warning` is itself alertable
    (`alert_for_seconds.warning: 600`, UI-only). Two regimes follow:
-   - **Nothing firing yet:** `_pending["since"]` starts on the first **non-ok** cycle of any
-     severity and survives warning cycles, so a run of partials punctuated by a
-     both-checks-red cycle past 300 s promotes straight to critical.
+   - **Nothing firing yet:** `_pending["since"]` starts on the first **non-ok** cycle of
+     any severity and survives warning cycles, so a run of partials punctuated by a
+     both-checks-red cycle past 300 s promotes straight to critical. It resets on any
+     **fully green** cycle — with six fans blipping those are common — so only an
+     *unbroken* run counts and one all-ok cycle restarts the 300 s. Date the promoting
+     window from the last green cycle, not from the start of the day's churn.
    - **Once the partials have themselves paged** (~4 partial cycles promote a *warning*
      alert to active, which clears that pending entry): a later critical cycle opens a
      **fresh** escalation clock that must sustain its own 300 s — at a 180 s cadence, the
