@@ -429,10 +429,14 @@ power-cycle of another fan that merely blipped.
    sequentially via `script.zen32_hard_reset`. Prefer this over toggling the
    `power_switch` entities directly — the script sequences the relay/scene
    controls and re-checks the fan.
-5. If the fan is already `failed` with a scheduled retry, **let the ladder
-   run**. A manual repair only resets everyone's backoff; it does not have a
-   better power-cycle than the one that already failed. Max **2**
-   `start_repair` attempts / 6h across the checker.
+5. If the fan is already `failed` with a scheduled retry **and
+   `repair_state.auto_repair_enabled` is true**, let the ladder run. A manual repair
+   only resets everyone's backoff; it does not have a better power-cycle than the one
+   that already failed. **With the toggle false (the prod default) there is no ladder
+   running** — `next_retry_at` is only consumed below the `if not enabled: return` in
+   the evaluator, so the retry time is decorative and waiting on it waits forever;
+   step 4's gate applies instead. Either way: max **2** `start_repair` attempts / 6h
+   across the checker.
 
 ## Verify
 
