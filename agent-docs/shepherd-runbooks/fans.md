@@ -146,24 +146,31 @@ power-cycle of another fan that merely blipped.
    - **Once the partials have themselves paged** (~4 partial cycles promote a *warning*
      alert to active, which clears that pending entry): a later critical cycle opens a
      **fresh** escalation clock that must sustain its own 300 s — at a 180 s cadence, the
-     third consecutive critical cycle. One cycle falling back to warning in between logs
-     `Escalation dropped for checker 'fans' — returned to severity=warning before promotion`
-     and the clock restarts.
+     third consecutive critical cycle. **Two** things reset that clock, and they log
+     differently: a cycle falling back to warning gives
+     `Escalation dropped for checker 'fans' — returned to severity=warning before promotion`,
+     while a **fully green** cycle deletes the pending escalation too but logs
+     `Alert suppressed for checker 'fans' — recovered after Ns pending`. With six fans
+     blipping the green cycle is the *usual* interrupter, so do not look only for
+     `Escalation dropped`. The warning alert itself stays up throughout — it is the
+     escalation to critical that keeps restarting.
 
    So in a day-long airtime event do **not** expect a single both-checks-red cycle to
    explain the page, and do not count criticals and conclude "not flapping" when you see
-   few. Look for the sustained critical run, and for `Escalation dropped` lines marking the
-   runs that did not make it.
+   few. Look for the sustained critical run, and for **both** reset lines
+   (`Escalation dropped` and `Alert suppressed`) marking the runs that did not make it.
    The per-fan evidence is in **Loki**, logged unconditionally every cycle:
    `{namespace="home-automation", app="appdaemon"} |= "Check cycle complete for 'Ceiling Fans'"`
    over ~6h gives one line per 180 s naming every fan's `State`/`Ping`. Read down it: a
    *different* fan red each cycle (rather than the same one throughout) is the flapping
    signature, and it names which fans, which is what you need for the AP question below.
    Those statuses are **post-downgrade**, so a partial reads `State=warning`, not `critical`.
-   (`|= "Alert suppressed"` also marks blips, but it is written only when a pending clock
-   was live and the checker then went fully green — common before anything fires, rare once
-   a critical page is up — and it is checker-scoped, so it never names a fan. Use it for
-   pre-incident history, not live triage.)
+   (`|= "Alert suppressed"` marks blips too — it is written whenever a pending clock was
+   live and the checker then went fully green, which covers both a pre-incident blip *and*
+   an escalation dropped under a firing warning alert, so it is live-triage evidence in
+   regime 2. It stops only once a *critical* is active with nothing pending. It is
+   checker-scoped either way, so it never names a fan — pair it with the per-cycle line
+   above for that.)
    `alert_history[]` corroborates coarsely: `State` is a point-in-time `get_state` on a
    180 s cadence, so a 20-40 s blip is shorter than one poll and most leave no entry; the
    controller records **both** directions, so a caught round-trip is two entries and a
