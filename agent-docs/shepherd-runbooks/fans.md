@@ -40,14 +40,14 @@ Three consequences that shape everything below:
   by design** since then; a camera showing `radio="ng"` means that WLAN setting
   regressed. Power-cycling the fan cannot fix airtime.
 
-| Fan | IP | Access point |
-|-----|----|--------------|
-| Pink Room | 192.168.50.112 | Guest Room U7 Pro (roamed off Kitchen Pantry 2026-08-31 ~16:47Z, held since) — **weakest link (-65 dBm)** |
-| Blue Room | 192.168.50.134 | Guest Room U7 Pro |
-| White Room | 192.168.50.187 | Guest Room U7 Pro |
-| Primary Bedroom | 192.168.50.146 | Primary Closet U7 Pro |
-| Living Room | 192.168.50.148 | Livingroom U7-Pro-Wall |
-| Study | 192.168.50.179 | Kitchen Pantry U7 Pro |
+| Fan | Entity | IP | Access point |
+|-----|--------|----|--------------|
+| Pink Room | `fan.pink_room_fan_fan` | 192.168.50.112 | Guest Room U7 Pro (roamed off Kitchen Pantry 2026-08-31 ~16:47Z, held since) — **weakest link (-65 dBm)** |
+| Blue Room | `fan.blue_room_fan_fan` | 192.168.50.134 | Guest Room U7 Pro |
+| White Room | `fan.white_room_fan_fan` | 192.168.50.187 | Guest Room U7 Pro |
+| Primary Bedroom | `fan.primary_bedroom_fan_fan` | 192.168.50.146 | Primary Closet U7 Pro |
+| Living Room | `fan.livingroom_fan_fan` | 192.168.50.148 | Livingroom U7-Pro-Wall |
+| Study | `fan.study_fan_fan` | 192.168.50.179 | Kitchen Pantry U7 Pro |
 
 Fans roam between APs; the table (and `ap_status_entity` in `apps-prod.yaml`) is the AP each
 fan usually holds. Confirm the live one with `unpoller_client_rssi_db{name=~"MF Fan.*"}` and
@@ -182,7 +182,9 @@ power-cycle of another fan that merely blipped.
    co-failing `<Fan> Ping` adds its own pair — the 50-entry ring (`alert_history_max`) holds
    only ~12-25 round-trips and can wrap inside an hour. For true blip duration use HA state
    history on the fan entity — the ids are **not** a uniform template
-   (`fan.pink_room_fan_fan`, but `fan.livingroom_fan_fan`); take them from `apps-prod.yaml`.
+   (`fan.pink_room_fan_fan`, but `fan.livingroom_fan_fan`); take them from the table above —
+   **not** from `apps-prod.yaml`, which the Docker build strips out of the image
+   (`docker/Dockerfile`: it ships the processed `apps.yaml` instead).
    Do **not** judge from `device_repairs` (`idle` here regardless — see the domain fact).
    Then measure airtime. PromQL:
    `max by (name) (avg_over_time(unpoller_device_radio_channel_utilization_receive_ratio{radio="ng"}[1h]))`
@@ -202,7 +204,13 @@ power-cycle of another fan that merely blipped.
    still top this list). Before a name counts as a hog, confirm it is on 2.4 GHz:
    `unpoller_client_rssi_db{radio="ng"}` lists who is associated on `ng` and on which AP.
    The band-filtered `..._receive_ratio{radio="ng"}` reading is the gate; the `topk` only
-   supplies the culprit's name.
+   supplies the culprit's name. If the unbanded top five contains no `ng` client at all —
+   likely, since 5 GHz talkers head it — rank *within* the band by joining the two:
+   `topk(5, max by (name, ap_name) (rate(unpoller_client_receive_bytes_total{wired="false"}[1h]))
+   and on (name) (max by (name) (unpoller_client_rssi_db{radio="ng"})))`
+   which returns only clients associated on 2.4 GHz, so it always yields a candidate when
+   the gate has tripped. Run the unbanded form first (it is how the 2026-09-05 cameras were
+   caught, before they moved to 5 GHz) and fall back to this when it comes back all-5 GHz.
    **Derive the co-channel set live** rather than trusting a remembered one — UniFi
    auto-channel moves APs: `unpoller_device_radio_channel{radio="ng"}` gives each AP's 2.4
    GHz channel, and the neighbours sharing the fan's AP's value are the ones that can hurt
@@ -245,18 +253,24 @@ power-cycle of another fan that merely blipped.
    If every `ng` receive ratio on the channel is at baseline (0.02-0.05), this is
    **not** an airtime event however fat the `topk` looks — that list is unbanded and
    5 GHz talkers head it routinely. Carry on down the ladder; a genuinely wedged fan
-   deserves its `start_repair`. When the gates *do* both trip, the AP still reads
-   *connected*, so nothing below gates on it:
-   `start_repair` would cycle **every** entity-down fan — up to three at once when
-   Guest Room is the affected radio — and wipe all six backoff ladders, for a
-   cause a power-cycle cannot touch.
-   **Then exit deliberately** — this stop has no repair to wait on, so the Escalate
-   triggers below (attempt counts, recovery budget) will never fire on their own. The
-   remedy is a UniFi console change (move the hog to 5 GHz, cap its bitrate, lock it to
-   its home AP), which is outside the sanctioned write actions. So `record_note` the hog
-   — client name, its `ap_name`, its byte rate, the saturated radio — and **let the page
-   through** to a human, with the Grafana/Alertmanager links. Do not silence it and do not
-   fall through to steps 3-5.
+   deserves its `start_repair`.
+
+   The two stops exit differently — take the right one:
+   - **AP down** → handle the access point (or escalate it) and let the checker resume
+     on its own. The power-cycles are already held and the backoff clocks are not
+     accruing, so there is nothing to do on the fan side and no page-worthy fan fault;
+     recovery is automatic once the AP is back.
+   - **Airtime confirmed** → the AP reads *connected*, so nothing below gates on it and
+     `start_repair` would cycle **every** entity-down fan — up to three at once when Guest
+     Room is the affected radio — and wipe all six backoff ladders, for a cause a
+     power-cycle cannot touch. Nothing self-heals here either: the remedy is a UniFi
+     console change (move the hog to 5 GHz, cap its bitrate, lock it to its home AP),
+     outside the sanctioned write actions, and the Escalate triggers below (attempt
+     counts, recovery budget) will never fire because no repair ran. So `record_note` the
+     hog — client name, its `ap_name`, its byte rate, the saturated radio — and **let the
+     page through** to a human with the Grafana/Alertmanager links.
+
+   In both cases: do not silence the alert and do not fall through to steps 3-5.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
 4. If still critical, the fan's AP is up, and its `device_repairs` entry is
