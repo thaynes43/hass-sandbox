@@ -26,7 +26,10 @@ cycle — the clock starts at the first non-ok cycle of any severity, so
 `shade_gateway` and `ups`, which have a `critical: 0` override and page the
 instant they go critical. For every other checker a single bad sample cannot reach the
 phone, so the fault is *sustained* by the time the Shepherd sees it — but for `ups` and
-`shade_gateway` it can be one cycle old, so confirm those are still failing before acting.
+`shade_gateway` it can be one cycle old. Confirm those two by **re-reading**
+`sensor.health_check_status` after one `check_interval_s`, never with `force_recheck`:
+that command runs a full cycle and can fire `shade_gateway`'s port cycle itself (see the
+command table below).
 
 Note "sustained" is measured on the **checker**, not a device: a checker whose
 devices take turns failing stays non-ok throughout and can page without any one

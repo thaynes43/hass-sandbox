@@ -96,8 +96,10 @@ power-cycle of another fan that merely blipped.
 - Description names the failing fan + check, e.g. `Living Room State:
   unavailable (Wi-Fi fan; AP Livingroom U7-Pro-Wall: connected — fan itself
   unreachable)` or `Study Ping: timeout (3 attempts)`.
-- The `State` detail always carries an AP verdict — read it, it is the
-  triage's first branch:
+- A **failing** `State` detail carries an AP verdict — read it, it is the triage's
+  first branch. A passing one does not (the `ok` detail is a bare `on`/`off`), so on
+  the all-green arrival there is nothing here to read: get the verdict from
+  `GET /api/states/sensor.<ap>_state` instead, per Diagnosis step 2.
   - `… (Wi-Fi fan; AP <name> is disconnected — fan offline expected,
     power-cycle held until the AP recovers)` → **AP fault, not a fan fault.**
   - `… (Wi-Fi fan; AP <name>: connected — fan itself unreachable)` → the fan is off
