@@ -389,10 +389,15 @@ power-cycle of another fan that merely blipped.
    published while it is still in the future and is nulled the moment it fires, and a past
    `next_retry_at` is visible only when a repair is already running or the toggle is off
    (both states where this command cannot start one). What matters is whether one is
-   **queued**: a non-null `repair_state.auto_repair_deadline` (idle fans, checker-wide) or
-   a non-null `next_retry_at` on **any** fan's `device_repairs` entry (failed fans) says
-   yes — scan all six, because `_evaluate_auto_repair` sorts candidates across every fan
-   and fires on the earliest-due one, which need not be the fan you are triaging. Either value is up to one
+   **queued** — but only ever ask that when `auto_repair_enabled` is **true**. With the
+   toggle off (the prod default) nothing can fire regardless, and `next_retry_at` is
+   written on every failed repair and never cleared afterwards, so reading it there would
+   mark `force_recheck` permanently unsafe on any fan that has ever failed a repair.
+   When the toggle *is* true: a non-null `repair_state.auto_repair_deadline` (idle fans,
+   checker-wide) or a non-null `next_retry_at` on **any** fan's `device_repairs` entry
+   (failed fans) says a repair is queued — scan all six, because `_evaluate_auto_repair`
+   sorts candidates across every fan and fires on the earliest-due one, which need not be
+   the fan you are triaging. Either value is up to one
    `check_interval_s` stale and may be seconds away, and this step's Loki reconstruction
    and PromQL queries take minutes — so "not due yet" is not a clearance. A fan reading
    `idle` is not one either; the checker-wide deadline governs it. Do not reach for this
