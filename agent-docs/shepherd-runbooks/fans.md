@@ -402,8 +402,15 @@ power-cycle of another fan that merely blipped.
    radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
    is checker-wide and would power-cycle the airtime fans too (see the mixed-incident
    rule in step 2). Otherwise, with the airtime branch cleared: if still critical and the
-   fan's AP is up — **and no repair is already queued.** That takes **both** reads, for
-   the two different queues: `repair_state.status: pending` + `auto_repair_deadline` for
+   fan's AP is up — **and no repair is already queued.** Read
+   `repair_state.auto_repair_enabled` first: when it is **false** (the prod default —
+   see the Domain fact) nothing can fire on its own and this gate is clear, so proceed.
+   That precondition matters: `next_retry_at` is written on every failed repair,
+   including one you fired manually, and the evaluator returns early when the toggle is
+   off without ever clearing it — so a stale retry time lingers forever on a fan that is
+   still down, and gating on it alone would lock `start_repair` out permanently after a
+   single failed attempt. Only when the toggle is **true** do the queue reads matter, and
+   then it takes **both**, for the two different queues: `repair_state.status: pending` + `auto_repair_deadline` for
    an *idle* fan's pre-attempt countdown (checker-wide — a fan's own `idle` says nothing
    about it, per Diagnosis step 4), and `next_retry_at` on **any** fan's `device_repairs`
    entry for a *failed* fan's backoff retry — scan all six, not just the one you are
