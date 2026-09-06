@@ -311,7 +311,8 @@ summary:
 - likely cause — a single crashlooping fan (its ESP Wi-Fi module or the ZEN32
   relay: reseat/replace) vs. several fans on one AP or channel (first a
   2.4 GHz airtime hog — see Diagnosis step 2 — then that access point: RSSI,
-  channel utilization, uplink; Pink Room is the known-weak client at -65 dBm
-  and is a candidate for re-pinning to a closer AP) vs. all fans at once
+  channel utilization, uplink; Pink Room is the known-weak client at -65 dBm,
+  and note Guest Room already carries three of the six, so moving another fan
+  onto it is the wrong direction) vs. all fans at once
   (HA integration / VLAN / power feeding `192.168.50.x`). Attach
   Alertmanager + Loki links.
