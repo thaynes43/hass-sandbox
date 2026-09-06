@@ -317,7 +317,7 @@ power-cycle of another fan that merely blipped.
    | ≥ ~0.3 | named | **Stop** — airtime confirmed with a culprit. Airtime exit below. |
    | ≥ ~0.3 | none | **Stop anyway** — the band is saturated even if the `topk` cannot name who. `record_note` the AP, the ratio and the channel, say the hog was not identified, and let the page through. Do **not** power-cycle. |
    | ~0.05-0.3 | either | Ambiguous — do not stop on it alone. `record_note` the reading and continue to step 3; if a later `start_repair` fails to hold, re-read this as airtime rather than climbing the ladder. |
-   | ≤ ~0.05 | either | **Not** an airtime event, however fat the unbanded `topk` looks. Carry on down the ladder for this fan — a genuinely wedged fan deserves its `start_repair`, *unless* another red fan stopped on airtime (see the mixed-incident rule below, which takes `start_repair` off the table checker-wide). |
+   | ≤ ~0.05 | either | **Not** an airtime event, however fat the unbanded `topk` looks. Carry on down the ladder for this fan — a genuinely wedged fan deserves its `start_repair`, *unless* any other in-scope fan stopped on airtime (see the mixed-incident rule below, which takes `start_repair` off the table checker-wide). |
 
    The two stops exit differently — take the right one:
    - **AP down** → handle the access point (or escalate it) and let the checker resume
@@ -346,7 +346,9 @@ power-cycle of another fan that merely blipped.
    **A mixed incident still blocks step 4 for everyone.** `start_repair` is
    checker-wide — there is no per-fan variant. It rebuilds its own candidate list of
    every entity-down fan, and the only exclusion is a fan whose **AP is down**; an
-   airtime-stopped fan is by definition not excluded. So if *any* red fan stopped on
+   airtime-stopped fan is by definition not excluded — and the candidate list is rebuilt
+   **at fire time**, not from the snapshot you read, so a fan that looks green right now
+   can still be picked up. So if *any* in-scope fan stopped on
    airtime, firing `start_repair` for a different wedged fan would power-cycle the
    airtime fans too and wipe all six ladders — the thing the airtime exit above forbids.
    In that case: `record_note` both findings (which fans are airtime-blocked, which one
