@@ -49,8 +49,9 @@ Three consequences that shape everything below:
 | Living Room | `fan.livingroom_fan_fan` | 192.168.50.148 | Livingroom U7-Pro-Wall |
 | Study | `fan.study_fan_fan` | 192.168.50.179 | Kitchen Pantry U7 Pro |
 
-Fans roam between APs; the table (and `ap_status_entity` in `apps-prod.yaml`) is the AP each
-fan usually holds. Confirm the live one with `unpoller_client_rssi_db{name=~"MF Fan.*"}` and
+Fans roam between APs; the **Access point** column above is the AP each fan usually holds
+(it mirrors `ap_status_entity`, which the checker reads from its own config — do not go
+looking for `apps-prod.yaml`, the image does not carry it). Confirm the live one with `unpoller_client_rssi_db{name=~"MF Fan.*"}` and
 read the `ap_name` label before trusting an AP verdict. Use the **regex**, not an exact name:
 the UniFi client names do not track the checker's fan names — Living Room is
 `MF Fan Livingroom` — so an exact match can return an empty vector that reads as "not
@@ -198,7 +199,10 @@ power-cycle of another fan that merely blipped.
    Unscoped on purpose: on 2026-09-05 the fans flapped on Guest Room while both cameras sat on
    Livingroom-Wall and Kitchen Pantry, so an `ap_name="<that AP>"` filter would have come back
    clean. The `ap_name` in the result is what tells you where the hog actually is. Values are
-   bytes *from* the client, B/s: ~500 kB/s ≈ 4 Mbit/s is already a hog next to a fan's ~280 B/s.
+   bytes *from* the client, B/s. **The hog bar is ~100 kB/s (≈0.8 Mbit/s)**: a fan pulls
+   ~280 B/s and a quiet 2.4 GHz band tops out in the single-digit kB/s, so anything at
+   100 kB/s or above is three orders of magnitude out and worth chasing — the 2026-09-05
+   cameras measured 380-960 kB/s depending on the window.
    A streaming camera is the usual suspect — this query named both G6s outright — but confirm,
    don't assume.
    **`topk` alone is never the verdict.** It always returns five rows, and the client byte
@@ -252,16 +256,19 @@ power-cycle of another fan that merely blipped.
      `unpoller_device_radio_channel{radio="ng"}`) — the fan's own AP reading clean
      does not by itself clear the branch; and
    - a **named culprit**: a client that is *not* one of the fans, confirmed on `ng` via
-     `unpoller_client_rssi_db{radio="ng"}`, pulling orders of magnitude more than the
-     fans' ~280 B/s — the 2026-09-05 cameras ran 380-960 kB/s. A top-of-list reading in
-     the single-digit kB/s is a quiet band, not a hog: that is gate 2 **failing**, not
-     passing. (`topk` always returns rows, so without this threshold the gate cannot
-     fail.)
+     `unpoller_client_rssi_db{radio="ng"}`, at or above the ~100 kB/s hog bar from
+     Diagnosis step 2 (the 2026-09-05 cameras measured 380-960 kB/s). A top-of-list
+     reading in the single-digit kB/s is a quiet band, not a hog: that is gate 2
+     **failing**, not passing. (`topk` always returns rows, so without a threshold the
+     gate cannot fail.)
 
-   If every `ng` receive ratio on the channel is at baseline (0.02-0.05), this is
-   **not** an airtime event however fat the `topk` looks — that list is unbanded and
-   5 GHz talkers head it routinely. Carry on down the ladder; a genuinely wedged fan
-   deserves its `start_repair`.
+   **If the AP is down, stop here regardless of any airtime reading** — a down radio
+   reports no airtime, so baseline ratios are exactly what you expect and prove nothing.
+   The fall-through below applies **only** when the AP is up and you are testing the
+   airtime branch: if every `ng` receive ratio on the channel is then at baseline
+   (0.02-0.05), this is **not** an airtime event however fat the `topk` looks — that list
+   is unbanded and 5 GHz talkers head it routinely. Carry on down the ladder; a genuinely
+   wedged fan deserves its `start_repair`.
 
    The two stops exit differently — take the right one:
    - **AP down** → handle the access point (or escalate it) and let the checker resume
