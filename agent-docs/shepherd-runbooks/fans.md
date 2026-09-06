@@ -375,10 +375,11 @@ power-cycle of another fan that merely blipped.
    evaluates auto-repair and can fire `script.zen32_hard_reset` on the earliest-due fan.
    Gate it on `repair_state.auto_repair_enabled`: **true** means treat it as a
    power-cycle you are scheduling. **False clears only the fan side** — the command is
-   global (one un-targeted `health_check_recheck` to every checker), and `shade_gateway`
-   and `protect` both default auto-repair **on**, so it can still fire a PoE port cycle or
-   a config-entry reload on a checker you are not triaging. Check their toggles too, and
-   see the command table in `README.md`.
+   global (one un-targeted `health_check_recheck` to every checker), and five prod
+   checkers evaluate auto-repair on it: `fans`, `printer`, `spa`, `shade_gateway` and
+   `protect`. The first three default off and the last two on, but every one re-reads its
+   `input_boolean` live each cycle, so a default proves nothing — check each
+   `auto_repair_enabled` before firing. See the command table in `README.md`.
    Do not try to clear it by checking whether a due time has *passed* — that test is
    nearly always false while auto-repair is on, because `auto_repair_deadline` is only
    published while it is still in the future and is nulled the moment it fires, and a past

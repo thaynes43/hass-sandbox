@@ -45,9 +45,12 @@ works through both cases.
      `attributes.checkers.<checker_id>`. Key fields: `status`, `checks[]`
      (each `{name, status, detail}`), `repair_state` (`{status, detail}` —
      `idle|pending|in_progress|success|failed` — plus `auto_repair_enabled`,
-     `auto_repair_deadline` and `device_repairs[<device>]` with its `status` and
-     `next_retry_at`; those decide whether a `force_recheck` would fire a repair),
-     `muted`, `muted_until`,
+     `auto_repair_delay_min`, `auto_repair_deadline` and `last_repair_attempt`, which
+     decide whether a `force_recheck` would fire a repair. Only the **per-device**
+     checkers (`fans`, and the device-group checkers) additionally publish
+     `device_repairs[<device>]` with its own `status`/`next_retry_at`; on the others its
+     absence means "not published", never "nothing queued" — use `auto_repair_deadline`
+     there), `muted`, `muted_until`,
      `last_check`, `alert_history[]`, `is_dependency`.
    - Loki: `{namespace="home-automation", app="appdaemon"}` filtered to the
      checker (e.g. `|= "shade_gateway"` / `|= "Shade Gateway"`), last ~1h.
@@ -93,7 +96,7 @@ REST: `POST /api/services/script/health_check_relay` with body
 
 | Command | Payload (JSON string) | Effect | Notes |
 |---------|----------------------|--------|-------|
-| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker, and **not a passive read**: each checker's cycle evaluates auto-repair, so this can fire a repair on any checker whose toggle is on and whose grace/backoff deadline has passed — including one you are not triaging (`shade_gateway` and `protect` default to auto-repair **on**). Nothing in the code counts those firings against the max-2-attempts-per-6h guardrail — **you** must, and against **the checker it fires on**, which may not be the one you are triaging. Before firing, check `auto_repair_enabled` on `shade_gateway` and `protect` as well as your own checker; if a repair may land there, `record_note` it *on that checker* so the idempotency guardrail has something to match on the next wake, and debit its 2-per-6h budget. Never reach for it to get another power-cycle once a checker's two `start_repair` attempts are spent. Use it to confirm a fault is still live, not as a free look. |
+| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker, and **not a passive read**: each checker's cycle evaluates auto-repair, so this can fire a repair on any checker whose toggle is on and whose grace/backoff deadline has passed — including one you are not triaging (`shade_gateway` and `protect` default to auto-repair **on**). Nothing in the code counts those firings against the max-2-attempts-per-6h guardrail — **you** must, and against **the checker it fires on**, which may not be the one you are triaging. Before firing, check `auto_repair_enabled` on **every** checker that can auto-repair — `fans`, `printer`, `spa`, `shade_gateway`, `protect` — not just your own. The `apps-prod.yaml` defaults (on for `shade_gateway`/`protect`, off for the rest) are only seeds: each re-reads its `input_boolean` live every cycle, so a `spa` toggle someone left on will power-cycle `switch.spa_intouch3_switch`. if a repair may land there, `record_note` it *on that checker* so the idempotency guardrail has something to match on the next wake, and debit its 2-per-6h budget. Never reach for it to get another power-cycle once a checker's two `start_repair` attempts are spent. Use it to confirm a fault is still live, not as a free look. |
 | `start_repair` | `"{\"checker_id\": \"<id>\"}"` | Triggers that checker's built-in repair (power-cycle / port-cycle / config reload) | Rejected unless the checker's `supports_repair` is true. Battery checkers reject it. |
 | `record_note` | `"{\"checker_id\": \"<id>\", \"note\": \"...\", \"source\": \"shepherd\"}"` | Inserts a note into the checker's alert history (visible on the detail card) | Note capped at 280 chars. Leaves the audit trail — always record what you tried. |
 
