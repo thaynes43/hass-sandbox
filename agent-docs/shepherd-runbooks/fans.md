@@ -100,8 +100,10 @@ power-cycle of another fan that merely blipped.
   triage's first branch:
   - `… (Wi-Fi fan; AP <name> is disconnected — fan offline expected,
     power-cycle held until the AP recovers)` → **AP fault, not a fan fault.**
-  - `… (Wi-Fi fan; AP <name>: connected — fan itself unreachable)` → the fan
-    is genuinely wedged/off the network; the power-cycle is the right tool.
+  - `… (Wi-Fi fan; AP <name>: connected — fan itself unreachable)` → the fan is off
+    the network and the AP is fine. Usually the power-cycle is the right tool — **but
+    this is also exactly what a 2.4 GHz airtime event looks like**, so if the fan is
+    *flapping* rather than steadily down, clear Diagnosis step 2 before repairing.
   - `… (Wi-Fi fan; AP <name>: state unknown)` → the UniFi integration itself
     is unreadable; repair is **not** gated (an unknown AP never disables
     repair), but weigh the network as a suspect.
@@ -125,9 +127,13 @@ power-cycle of another fan that merely blipped.
    fully-ok cycles, and any critical sighting restarts the window, so a page can outlive
    every visible fault by 15 minutes. Go to step 2 and read the cycle history rather than
    calling it a stale page.
-2. **Check 2.4 GHz airtime before anything else when the red fan keeps moving.** The
-   page you woke on can be pure flapping, so do not go looking for one continuously-down
-   fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
+2. **Check 2.4 GHz airtime when the red fan keeps moving** — but read the AP verdict
+   from step 1 first. **If the failing fan's own AP is down, skip this step entirely** and
+   go to step 3: gate 1 spans co-channel neighbours whose radios are still reporting, so
+   this workup can manufacture an "airtime, do not power-cycle" verdict on what is
+   squarely an AP fault. Everything below assumes the fan's AP reads *connected*.
+   With that settled: the page you woke on can be pure flapping, so do not go looking for
+   one continuously-down fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
    six fans report into one result list — so the checker stays non-ok while *any* fan is,
    and fans taking turns keep the clock running with no single fan down two polls in a row.
    That is the shape of an airtime event on the Guest Room cluster. Exactly *which* cycle
@@ -161,8 +167,9 @@ power-cycle of another fan that merely blipped.
 
    **One more delay before you do the arithmetic:** `alert_repair_hold_cap_s: 1800`
    withholds a *critical* promotion while `repair_state.status` is `pending`,
-   `in_progress` **or `success`** — and the fan checker reports `success` checker-wide
-   whenever any fan's last repair succeeded. Since Remediation step 4 has you fire
+   `in_progress` **or `success`** — and the fan checker rolls the per-fan states up into
+   one value (`in_progress` > `pending` > `failed` > `success`), so a lone `success` holds
+   while a mixed success+failed outcome does not. Since Remediation step 4 has you fire
    `start_repair` yourself, a re-page inside that window reads
    `Alert promoted … after 1080s unhealthy`, not 300 s. Look for
    `Repair hold for checker 'fans' — critical promotion withheld …` in the same stream
@@ -231,9 +238,13 @@ power-cycle of another fan that merely blipped.
    auto-channel moves APs: `unpoller_device_radio_channel{radio="ng"}` gives each AP's 2.4
    GHz channel, and the neighbours sharing the fan's AP's value are the ones that can hurt
    it (2026-09-05: Guest Room and Livingroom-Wall on 1; Kitchen Pantry, Server Room and
-   Storage on 6; Garage-Wall and Primary Closet on 11). Check
-   `unpoller_device_radio_channel_utilization_total_ratio` on those. Fix the hog (move it to
-   5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
+   Storage on 6; Garage-Wall and Primary Closet on 11). Read
+   `..._receive_ratio{radio="ng"}` on those neighbours too — the **same** metric as the
+   fan's own AP, because that is what Remediation gate 1 consumes and what the ~0.3 /
+   0.02-0.05 figures are calibrated for. (`..._total_ratio` folds in transmit and beacon
+   overhead and sits structurally higher; read it for colour, never against those
+   thresholds.) Fix the hog (move it to 5 GHz, lower its bitrate, lock it to its home AP)
+   — do not power-cycle fans.
 3. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
    adopted/powered/uplinked?). The checker has already held the power-cycles;
    there is nothing to repair on the fan side and no page-worthy fan fault.
