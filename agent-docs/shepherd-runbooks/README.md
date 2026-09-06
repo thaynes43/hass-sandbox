@@ -54,9 +54,10 @@ works through both cases.
      runbook needs *when* and *how long*, rather than the checker's 180 s-sampled
      view — e.g. true blip duration for a flapping Wi-Fi device.
    - HA entity state for infrastructure a runbook names (`GET /api/states/<entity_id>`)
-     — e.g. the UniFi AP state sensors behind the fan checker's AP verdict, which only
-     appears in a `State` detail while that check is `critical`, so on a recovered-looking
-     snapshot this read is the only way to get it.
+     — e.g. the UniFi AP state sensors behind the fan checker's AP verdict. That verdict
+     rides in a *failing* check's detail (`warning` included — the partial-failure
+     downgrade appends to the string rather than rebuilding it), but never in a passing
+     one, so on a recovered-looking snapshot this read is the only way to get it.
    - Prometheus (read-only) at
      `http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090`
      (`/api/v1/query`, same cluster/namespace as the Alertmanager the bridge posts to),
