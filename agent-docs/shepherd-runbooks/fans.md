@@ -155,10 +155,15 @@ power-cycle of another fan that merely blipped.
      `Escalation dropped`. The warning alert itself stays up throughout — it is the
      escalation to critical that keeps restarting.
 
-   So in a day-long airtime event do **not** expect a single both-checks-red cycle to
-   explain the page, and do not count criticals and conclude "not flapping" when you see
-   few. Look for the sustained critical run, and for **both** reset lines
-   (`Escalation dropped` and `Alert suppressed`) marking the runs that did not make it.
+   **Tell the regimes apart from the promotion line itself** — the bridge names them:
+   `Alert promoted for checker 'fans' after Ns unhealthy` is regime 1, and
+   `Escalation promoted for checker 'fans' after Ns sustained` is regime 2. Read that line
+   first, then match the cycles to the right rule: regime 1 promotes on the **first**
+   critical cycle past 300 s of unbroken non-ok, so a single both-checks-red cycle *is* a
+   complete explanation there; only regime 2 needs the sustained critical run. Either way,
+   do not count criticals and conclude "not flapping" when you see few, and check **both**
+   reset lines (`Escalation dropped` and `Alert suppressed`) for the runs that did not
+   make it.
    The per-fan evidence is in **Loki**, logged unconditionally every cycle:
    `{namespace="home-automation", app="appdaemon"} |= "Check cycle complete for 'Ceiling Fans'"`
    over ~6h gives one line per 180 s naming every fan's `State`/`Ping`. Read down it: a
