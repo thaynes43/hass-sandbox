@@ -159,6 +159,14 @@ power-cycle of another fan that merely blipped.
      `Escalation dropped`. The warning alert itself stays up throughout — it is the
      escalation to critical that keeps restarting.
 
+   **One more delay before you do the arithmetic:** `alert_repair_hold_cap_s: 1800`
+   withholds a *critical* promotion while `repair_state.status` is `pending`,
+   `in_progress` **or `success`** — and the fan checker reports `success` checker-wide
+   whenever any fan's last repair succeeded. Since Remediation step 4 has you fire
+   `start_repair` yourself, a re-page inside that window reads
+   `Alert promoted … after 1080s unhealthy`, not 300 s. Look for
+   `Repair hold for checker 'fans' — critical promotion withheld …` in the same stream
+   before concluding the elapsed figure means regime 2.
    **Tell the regimes apart from the promotion line itself** — the bridge names them:
    `Alert promoted for checker 'fans' after Ns unhealthy` is regime 1, and
    `Escalation promoted for checker 'fans' after Ns sustained` is regime 2. Read that line
@@ -201,7 +209,7 @@ power-cycle of another fan that merely blipped.
    clean. The `ap_name` in the result is what tells you where the hog actually is. Values are
    bytes *from* the client, B/s. **The hog bar is ~100 kB/s (≈0.8 Mbit/s)**: a fan pulls
    ~280 B/s and a quiet 2.4 GHz band tops out in the single-digit kB/s, so anything at
-   100 kB/s or above is three orders of magnitude out and worth chasing — the 2026-09-05
+   100 kB/s or above is ~350x a fan and worth chasing — the 2026-09-05
    cameras measured 380-960 kB/s depending on the window.
    A streaming camera is the usual suspect — this query named both G6s outright — but confirm,
    don't assume.
@@ -248,27 +256,32 @@ power-cycle of another fan that merely blipped.
 ## Remediation ladder
 
 1. `record_note` the triage start (which fans/checks failed + each AP verdict).
-2. If the AP is down — **or** Diagnosis step 2 confirmed 2.4 GHz airtime
-   saturation → **stop**. Neither is a fan fault. The airtime half needs **both**
-   band-filtered gates, not just a name from the `topk`:
-   - `..._receive_ratio{radio="ng"}` above ~0.3 on the fan's own AP **or** on a
-     co-channel neighbour (derive the neighbours from
-     `unpoller_device_radio_channel{radio="ng"}`) — the fan's own AP reading clean
-     does not by itself clear the branch; and
-   - a **named culprit**: a client that is *not* one of the fans, confirmed on `ng` via
+2. **Two stops live here — check them in this order.**
+
+   **(a) AP down → stop, unconditionally.** Take the AP-down exit below and read no
+   further in this step. A down radio reports no airtime, so baseline ratios are exactly
+   what you expect and prove nothing; the airtime table must not be applied to it.
+
+   **(b) AP up → test the airtime branch** on two band-filtered readings:
+   - **Gate 1 — airtime:** the highest `..._receive_ratio{radio="ng"}` across the fan's
+     own AP *and* its co-channel neighbours (derive those from
+     `unpoller_device_radio_channel{radio="ng"}`). The fan's own AP reading clean does
+     not by itself clear the branch. Use the **receive** ratio for both — the ~0.3 bar
+     and the 0.02-0.05 baseline are calibrated for it; `..._total_ratio` folds in
+     transmit and beacon overhead and sits structurally higher, so read it for colour,
+     never against these thresholds.
+   - **Gate 2 — culprit:** a client that is *not* one of the fans, confirmed on `ng` via
      `unpoller_client_rssi_db{radio="ng"}`, at or above the ~100 kB/s hog bar from
      Diagnosis step 2 (the 2026-09-05 cameras measured 380-960 kB/s). A top-of-list
-     reading in the single-digit kB/s is a quiet band, not a hog: that is gate 2
-     **failing**, not passing. (`topk` always returns rows, so without a threshold the
-     gate cannot fail.)
+     reading in the single-digit kB/s is a quiet band, not a hog — gate 2 **failing**,
+     not passing. (`topk` always returns rows, so without a threshold it cannot fail.)
 
-   **If the AP is down, stop here regardless of any airtime reading** — a down radio
-   reports no airtime, so baseline ratios are exactly what you expect and prove nothing.
-   The fall-through below applies **only** when the AP is up and you are testing the
-   airtime branch: if every `ng` receive ratio on the channel is then at baseline
-   (0.02-0.05), this is **not** an airtime event however fat the `topk` looks — that list
-   is unbanded and 5 GHz talkers head it routinely. Carry on down the ladder; a genuinely
-   wedged fan deserves its `start_repair`.
+   | Gate 1 (`ng` receive) | Gate 2 (culprit) | Do this |
+   |---|---|---|
+   | ≥ ~0.3 | named | **Stop** — airtime confirmed with a culprit. Airtime exit below. |
+   | ≥ ~0.3 | none | **Stop anyway** — the band is saturated even if the `topk` cannot name who. `record_note` the AP, the ratio and the channel, say the hog was not identified, and let the page through. Do **not** power-cycle. |
+   | ~0.05-0.3 | either | Ambiguous — do not stop on it alone. `record_note` the reading and continue to step 3; if a later `start_repair` fails to hold, re-read this as airtime rather than climbing the ladder. |
+   | ≤ ~0.05 | either | **Not** an airtime event, however fat the unbanded `topk` looks. Carry on down the ladder — a genuinely wedged fan deserves its `start_repair`. |
 
    The two stops exit differently — take the right one:
    - **AP down** → handle the access point (or escalate it) and let the checker resume
