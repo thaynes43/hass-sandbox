@@ -256,10 +256,10 @@ power-cycle of another fan that merely blipped.
    overhead and sits structurally higher; read it for colour, never against those
    thresholds.) Fix the hog (move it to 5 GHz, lower its bitrate, lock it to its home AP)
    — do not power-cycle fans.
-3. For each red fan whose AP verdict says the AP is down, triage **that AP** (UniFi: is
-   it adopted/powered/uplinked?). The checker has already held those fans' power-cycles,
-   so there is nothing to repair on them. This accounts for the **whole page** only if
-   every red fan is behind a down AP — otherwise the remaining fans still need step 2's
+3. For each in-scope fan whose AP verdict says the AP is down, triage **that AP**
+   (UniFi: is it adopted/powered/uplinked?). The checker has already held those fans'
+   power-cycles, so there is nothing to repair on them. This accounts for the **whole
+   page** only if every in-scope fan is behind a down AP — otherwise the remaining fans still need step 2's
    airtime workup and steps 4-6.
 4. Read `repair_state.device_repairs[<fan>]` — per-fan status:
    - `pending`/`in_progress` → a ZEN32 cycle is running (budget 300s) — wait.
@@ -282,15 +282,15 @@ power-cycle of another fan that merely blipped.
 1. `record_note` the triage start (which fans/checks failed + each AP verdict).
 2. **Two stops live here — check them in this order.**
 
-   **(a) For each red fan whose AP is down → stop *for that fan*.** Take the AP-down
+   **(a) For each in-scope fan (step 2 above) whose AP is down → stop *for that fan*.** Take the AP-down
    exit below for it and do not apply the airtime table to it: a down radio reports no
    airtime, so baseline ratios are exactly what you expect and prove nothing.
    **This is per fan, not per checker.** The six fans span four APs and the checker reads
    each fan's AP separately, so one down AP does **not** close the incident — if any other
-   red fan has its AP up, carry on to (b) for those. Only when *every* red fan is behind a
-   down AP is the whole page an AP fault.
+   in-scope fan has its AP up, carry on to (b) for those. Only when *every* in-scope fan
+   is behind a down AP is the whole page an AP fault.
 
-   **(b) For red fans whose AP is up → test the airtime branch** on two band-filtered
+   **(b) For in-scope fans whose AP is up → test the airtime branch** on two band-filtered
    readings:
    - **Gate 1 — airtime:** the highest `..._receive_ratio{radio="ng"}` across the fan's
      own AP *and* its co-channel neighbours (derive those from
@@ -316,8 +316,8 @@ power-cycle of another fan that merely blipped.
    - **AP down** → handle the access point (or escalate it) and let the checker resume
      on its own. Its fans' power-cycles are already held and their backoff clocks are not
      accruing, so there is nothing to do on those fans and no page-worthy fault in them;
-     recovery is automatic once the AP is back. This closes the *page* only if every red
-     fan sits behind a down AP — otherwise finish (b) for the rest before exiting.
+     recovery is automatic once the AP is back. This closes the *page* only if every
+     in-scope fan sits behind a down AP — otherwise finish (b) for the rest before exiting.
    - **Airtime confirmed** → the AP reads *connected*, so nothing below gates on it and
      `start_repair` would cycle **every** entity-down fan — up to three at once when Guest
      Room is the affected radio — and wipe all six backoff ladders, for a cause a
@@ -328,9 +328,13 @@ power-cycle of another fan that merely blipped.
      hog — client name, its `ap_name`, its byte rate, the saturated radio — and **let the
      page through** to a human with the Grafana/Alertmanager links.
 
-   In both cases: do not silence the alert, and do not fall through to the **repair**
-   steps (4-5) for a fan this step stopped on. Step 3 (`force_recheck`) is read-only and
-   remains fine.
+   In both cases: do not silence the alert, and do not fall through to steps 3-5 for a
+   fan this step stopped on. **`force_recheck` is not read-only** — it runs a full check
+   cycle, which evaluates auto-repair and can fire `script.zen32_hard_reset` on the
+   earliest-due fan whenever the live auto-repair toggle is on and a grace/backoff
+   deadline has passed. In a mixed incident the wedged fan's timer is exactly the one
+   that has accrued, so step 3 can power-cycle during an airtime stop. Treat 3-5 as
+   equally off the table here.
 
    **A mixed incident still blocks step 4 for everyone.** `start_repair` is
    checker-wide — there is no per-fan variant. It rebuilds its own candidate list of
@@ -339,11 +343,14 @@ power-cycle of another fan that merely blipped.
    airtime, firing `start_repair` for a different wedged fan would power-cycle the
    airtime fans too and wipe all six ladders — the thing the airtime exit above forbids.
    In that case: `record_note` both findings (which fans are airtime-blocked, which one
-   looks genuinely wedged), skip steps 4-5, and let the page through so a human can
-   power-cycle the wedged fan by hand after the hog is dealt with.
-   `force_recheck` (step 3) is read-only and stays available throughout.
+   looks genuinely wedged), skip steps 3-5, and let the page through so a human can
+   power-cycle the wedged fan by hand after the hog is dealt with. Note `force_recheck`
+   is **not** a safe read here either — see above.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
-   Wait ~180s, re-read.
+   Wait ~180s, re-read. **Not a passive read:** it runs a full check cycle, which
+   evaluates auto-repair and can fire `script.zen32_hard_reset` on the earliest-due fan
+   if the live auto-repair toggle is on and a deadline has passed. Do not reach for it
+   after a step-2 airtime stop.
 4. **First re-read step 2 — these entry conditions are the airtime signature verbatim.**
    "Still critical, AP up, `device_repairs` idle" is exactly what a saturated 2.4 GHz
    radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
