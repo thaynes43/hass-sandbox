@@ -195,12 +195,21 @@ power-cycle of another fan that merely blipped.
    clean. The `ap_name` in the result is what tells you where the hog actually is. Values are
    bytes *from* the client, B/s: ~500 kB/s ≈ 4 Mbit/s is already a hog next to a fan's ~280 B/s.
    A streaming camera is the usual suspect — this query named both G6s outright — but confirm,
-   don't assume. Caveat: the client byte metrics carry `ap_name` but **not** `radio`, so
-   band-filter by cross-referencing `unpoller_client_rssi_db{radio="ng"}`, which lists who is
-   associated on 2.4 GHz and on which AP. Co-channel APs suffer too (Guest Room and
-   Livingroom-Wall share channel 1), so check
-   `unpoller_device_radio_channel_utilization_total_ratio` on the neighbours. Fix the hog
-   (move it to 5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
+   don't assume.
+   **`topk` alone is never the verdict.** It always returns five rows, and the client byte
+   counters carry `ap_name` but **not** `radio` — so its top talkers are usually 5 GHz
+   clients doing nothing wrong (`HNETCameras` lives on 5 GHz by design now, and the G6s
+   still top this list). Before a name counts as a hog, confirm it is on 2.4 GHz:
+   `unpoller_client_rssi_db{radio="ng"}` lists who is associated on `ng` and on which AP.
+   The band-filtered `..._receive_ratio{radio="ng"}` reading is the gate; the `topk` only
+   supplies the culprit's name.
+   **Derive the co-channel set live** rather than trusting a remembered one — UniFi
+   auto-channel moves APs: `unpoller_device_radio_channel{radio="ng"}` gives each AP's 2.4
+   GHz channel, and the neighbours sharing the fan's AP's value are the ones that can hurt
+   it (2026-09-05: Guest Room and Livingroom-Wall on 1; Kitchen Pantry, Server Room and
+   Storage on 6; Garage-Wall and Primary Closet on 11). Check
+   `unpoller_device_radio_channel_utilization_total_ratio` on those. Fix the hog (move it to
+   5 GHz, lower its bitrate, lock it to its home AP) — do not power-cycle fans.
 3. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
    adopted/powered/uplinked?). The checker has already held the power-cycles;
    there is nothing to repair on the fan side and no page-worthy fan fault.
@@ -223,14 +232,21 @@ power-cycle of another fan that merely blipped.
 ## Remediation ladder
 
 1. `record_note` the triage start (which fans/checks failed + each AP verdict).
-2. If the AP is down — **or** Diagnosis step 2 found a 2.4 GHz airtime hog,
-   whether it sits on the fan's own AP or on a co-channel neighbour → **stop**.
-   Neither is a fan fault; handle the AP (or the hog) and let the checker resume
-   on its own. The co-channel case is the one to watch: the fan's own AP can read
-   an unremarkable `..._receive_ratio` while a neighbour on the same channel is
-   saturated, so a clean reading on the fan's AP alone does **not** clear this
-   branch — the site-wide `topk` naming a hog anywhere on the channel does. In
-   either airtime case the AP reads *connected*, so nothing below gates on it:
+2. If the AP is down — **or** Diagnosis step 2 confirmed 2.4 GHz airtime
+   saturation → **stop**. Neither is a fan fault. The airtime half needs **both**
+   band-filtered gates, not just a name from the `topk`:
+   - `..._receive_ratio{radio="ng"}` above ~0.3 on the fan's own AP **or** on a
+     co-channel neighbour (derive the neighbours from
+     `unpoller_device_radio_channel{radio="ng"}`) — the fan's own AP reading clean
+     does not by itself clear the branch; and
+   - the client the `topk` named confirmed present on `ng` via
+     `unpoller_client_rssi_db{radio="ng"}`.
+
+   If every `ng` receive ratio on the channel is at baseline (0.02-0.05), this is
+   **not** an airtime event however fat the `topk` looks — that list is unbanded and
+   5 GHz talkers head it routinely. Carry on down the ladder; a genuinely wedged fan
+   deserves its `start_repair`. When the gates *do* both trip, the AP still reads
+   *connected*, so nothing below gates on it:
    `start_repair` would cycle **every** entity-down fan — up to three at once when
    Guest Room is the affected radio — and wipe all six backoff ladders, for a
    cause a power-cycle cannot touch.
