@@ -169,11 +169,15 @@ power-cycle of another fan that merely blipped.
    withholds a *critical* promotion while `repair_state.status` is `pending`,
    `in_progress` **or `success`** — and the fan checker rolls the per-fan states up into
    one value (`in_progress` > `pending` > `failed` > `success`), so a lone `success` holds
-   while a mixed success+failed outcome does not. Since Remediation step 4 has you fire
-   `start_repair` yourself, a re-page inside that window reads
-   `Alert promoted … after 1080s unhealthy`, not 300 s. Look for
+   while a mixed success+failed outcome does not. The hold keys only on
+   `severity == "critical"`, and the escalation branch runs through the same
+   `_promotion_due` — so it inflates **both** promotion lines: regime 1's 300 s can read
+   1080 s, and regime 2's third-consecutive-critical becomes the seventh. Since
+   Remediation step 4 has you fire `start_repair` yourself, this is most likely exactly
+   when you are reading. Look for
    `Repair hold for checker 'fans' — critical promotion withheld …` in the same stream
-   before concluding the elapsed figure means regime 2.
+   before concluding an inflated elapsed figure means the other regime — or that the
+   timeline fails to explain the page.
    **Tell the regimes apart from the promotion line itself** — the bridge names them:
    `Alert promoted for checker 'fans' after Ns unhealthy` is regime 1, and
    `Escalation promoted for checker 'fans' after Ns sustained` is regime 2. Read that line
@@ -269,11 +273,16 @@ power-cycle of another fan that merely blipped.
 1. `record_note` the triage start (which fans/checks failed + each AP verdict).
 2. **Two stops live here — check them in this order.**
 
-   **(a) AP down → stop, unconditionally.** Take the AP-down exit below and read no
-   further in this step. A down radio reports no airtime, so baseline ratios are exactly
-   what you expect and prove nothing; the airtime table must not be applied to it.
+   **(a) For each red fan whose AP is down → stop *for that fan*.** Take the AP-down
+   exit below for it and do not apply the airtime table to it: a down radio reports no
+   airtime, so baseline ratios are exactly what you expect and prove nothing.
+   **This is per fan, not per checker.** The six fans span four APs and the checker reads
+   each fan's AP separately, so one down AP does **not** close the incident — if any other
+   red fan has its AP up, carry on to (b) for those. Only when *every* red fan is behind a
+   down AP is the whole page an AP fault.
 
-   **(b) AP up → test the airtime branch** on two band-filtered readings:
+   **(b) For red fans whose AP is up → test the airtime branch** on two band-filtered
+   readings:
    - **Gate 1 — airtime:** the highest `..._receive_ratio{radio="ng"}` across the fan's
      own AP *and* its co-channel neighbours (derive those from
      `unpoller_device_radio_channel{radio="ng"}`). The fan's own AP reading clean does
@@ -296,9 +305,10 @@ power-cycle of another fan that merely blipped.
 
    The two stops exit differently — take the right one:
    - **AP down** → handle the access point (or escalate it) and let the checker resume
-     on its own. The power-cycles are already held and the backoff clocks are not
-     accruing, so there is nothing to do on the fan side and no page-worthy fan fault;
-     recovery is automatic once the AP is back.
+     on its own. Its fans' power-cycles are already held and their backoff clocks are not
+     accruing, so there is nothing to do on those fans and no page-worthy fault in them;
+     recovery is automatic once the AP is back. This closes the *page* only if every red
+     fan sits behind a down AP — otherwise finish (b) for the rest before exiting.
    - **Airtime confirmed** → the AP reads *connected*, so nothing below gates on it and
      `start_repair` would cycle **every** entity-down fan — up to three at once when Guest
      Room is the affected radio — and wipe all six backoff ladders, for a cause a
@@ -309,7 +319,9 @@ power-cycle of another fan that merely blipped.
      hog — client name, its `ap_name`, its byte rate, the saturated radio — and **let the
      page through** to a human with the Grafana/Alertmanager links.
 
-   In both cases: do not silence the alert and do not fall through to steps 3-5.
+   In both cases: do not silence the alert, and do not fall through to steps 3-5 for a
+   fan this step already stopped on. Fans the step did **not** stop on — AP up, airtime
+   clear — continue down the ladder normally.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read.
 4. If still critical, the fan's AP is up, and its `device_repairs` entry is
