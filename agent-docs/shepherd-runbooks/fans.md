@@ -400,10 +400,14 @@ power-cycle of another fan that merely blipped.
    radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
    is checker-wide and would power-cycle the airtime fans too (see the mixed-incident
    rule in step 2). Otherwise, with the airtime branch cleared: if still critical and the
-   fan's AP is up — **and no repair is already queued.** Do *not* read that off the fan's
-   `device_repairs` entry: `idle` says nothing here, because the pre-attempt countdown is
-   checker-wide (Diagnosis step 4). Check `repair_state.status` and
-   `repair_state.auto_repair_deadline` instead, and stand down if a countdown is live —
+   fan's AP is up — **and no repair is already queued.** That takes **both** reads, for
+   the two different queues: `repair_state.status: pending` + `auto_repair_deadline` for
+   an *idle* fan's pre-attempt countdown (checker-wide — a fan's own `idle` says nothing
+   about it, per Diagnosis step 4), and `device_repairs[<fan>].next_retry_at` for a
+   *failed* fan's backoff retry. Neither substitutes for the other: on a backoff retry
+   the evaluator explicitly clears `_repair_status` and `_auto_repair_deadline` ("don't
+   advertise pending"), so the checker-level fields read clean while an attempt is
+   scheduled. Stand down if either says a repair is coming —
    nothing downstream will refuse you (`_handle_start_repair` checks only
    `supports_repair`, and `_is_any_repair_active` tests `in_progress`, never `pending`),
    so firing into one resets all six ladders to attempt 1 and cycles every entity-down
