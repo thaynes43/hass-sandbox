@@ -20,10 +20,23 @@ runbook (`<checker_id>.md`). `alertname` is secondary (default
 `ProtectEventStreamFrozen`).
 
 Because of the controller's **for-gate**, a *firing* critical means the
-checker has already been critical for ≥300s (two consecutive failing polls) —
-except `shade_gateway` and `ups`, which have a `critical: 0` override and page
-the instant they go critical. A single bad sample can never reach the phone,
-so by the time the Shepherd sees an alert the fault is *sustained*.
+checker stayed **non-ok** for ≥300s before promotion, ending on a critical
+cycle — the clock starts at the first non-ok cycle of any severity, so
+`warning → warning → critical` promotes on that one critical cycle. Except
+`shade_gateway` and `ups`, which have a `critical: 0` override and page the
+instant they go critical. For every other checker a single bad sample cannot reach the
+phone, so the fault is *sustained* by the time the Shepherd sees it — but for `ups` and
+`shade_gateway` it can be one cycle old. Confirm those two by **re-reading**
+`sensor.health_check_status` after one `check_interval_s`, never with `force_recheck`:
+that command runs a full cycle and can fire `shade_gateway`'s port cycle itself (see the
+command table below).
+
+Note "sustained" is measured on the **checker**, not a device: a checker whose
+devices take turns failing stays non-ok throughout and can page without any one
+device being down for the whole window. And if a *warning* alert is already
+active, a critical must clear a **fresh** 300s escalation gate — a single cycle
+back at warning logs `Escalation dropped …` and restarts it. `fans.md` step 2
+works through both cases.
 
 ## Sanctioned-action ladder (do these in order)
 
@@ -31,12 +44,35 @@ so by the time the Shepherd sees an alert the fault is *sustained*.
    - HA REST: `GET /api/states/sensor.health_check_status` →
      `attributes.checkers.<checker_id>`. Key fields: `status`, `checks[]`
      (each `{name, status, detail}`), `repair_state` (`{status, detail}` —
-     `idle|pending|in_progress|success|failed`), `muted`, `muted_until`,
+     `idle|pending|in_progress|success|failed` — plus `auto_repair_enabled`,
+     `auto_repair_delay_min`, `auto_repair_deadline` and `last_repair_attempt`, which
+     decide whether a `force_recheck` would fire a repair. Only the **per-device**
+     checkers (`fans`, and the device-group checkers) additionally publish
+     `device_repairs[<device>]` with its own `status`/`next_retry_at`; on the others its
+     absence means "not published", never "nothing queued" — use `auto_repair_deadline`
+     there), `muted`, `muted_until`,
      `last_check`, `alert_history[]`, `is_dependency`.
    - Loki: `{namespace="home-automation", app="appdaemon"}` filtered to the
      checker (e.g. `|= "shade_gateway"` / `|= "Shade Gateway"`), last ~1h.
    - The checker's `README.md` in the baked repo copy
      (`appdaemon/apps/health_checks/checker_apps/<pkg>/README.md`).
+   - HA state history (`GET /api/history/period/...` for a device entity) when a
+     runbook needs *when* and *how long*, rather than the checker's 180 s-sampled
+     view — e.g. true blip duration for a flapping Wi-Fi device.
+   - HA entity state for infrastructure a runbook names (`GET /api/states/<entity_id>`)
+     — e.g. the UniFi AP state sensors behind the fan checker's AP verdict. That verdict
+     normally rides in a *failing* check's detail (`warning` included — the
+     partial-failure downgrade appends to the string rather than rebuilding it), but
+     never in a passing one and not in an `Error: …` one, so on a recovered-looking
+     snapshot or a thrown entity read this is the only way to get it.
+   - Prometheus (read-only) at
+     `http://kube-prometheus-stack-prometheus.observability.svc.cluster.local:9090`
+     (`/api/v1/query`, same cluster/namespace as the Alertmanager the bridge posts to),
+     when a runbook's Diagnosis calls for it — the
+     `unpoller` job carries UniFi device/client telemetry (AP airtime, per-client
+     byte rates, RSSI) that HA does not expose. `fans.md` step 2 uses it to tell a
+     2.4 GHz airtime problem from a fan fault, and that verdict can **halt** the
+     remediation ladder, so it is a first-class source, not just an escalation link.
 2. **Runbook match** — load `agent-docs/shepherd-runbooks/<checker_id>.md` and
    follow its **Diagnosis** section.
 3. **Bounded remediation** — *sanctioned paths only* (below). The repair logic
@@ -60,7 +96,7 @@ REST: `POST /api/services/script/health_check_relay` with body
 
 | Command | Payload (JSON string) | Effect | Notes |
 |---------|----------------------|--------|-------|
-| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker. Cheap; use to confirm a fault is still live or clear a transient. |
+| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker, and **not a passive read**: each checker's cycle evaluates auto-repair, so this can fire a repair on any checker whose toggle is on and whose grace/backoff deadline has passed — including one you are not triaging (`shade_gateway` and `protect` default to auto-repair **on**). Nothing in the code counts those firings against the max-2-attempts-per-6h guardrail — **you** must, and against **the checker it fires on**, which may not be the one you are triaging. Before firing, check `auto_repair_enabled` on **every** checker that can auto-repair — `fans`, `printer`, `spa`, `shade_gateway`, `protect` — not just your own. The `apps-prod.yaml` defaults (on for `shade_gateway`/`protect`, off for the rest) are only seeds: each re-reads its `input_boolean` live every cycle, so a `spa` toggle someone left on will power-cycle `switch.spa_intouch3_switch`. if a repair may land there, `record_note` it *on that checker* so the idempotency guardrail has something to match on the next wake, and debit its 2-per-6h budget. Never reach for it to get another power-cycle once a checker's two `start_repair` attempts are spent. Use it to confirm a fault is still live, not as a free look. |
 | `start_repair` | `"{\"checker_id\": \"<id>\"}"` | Triggers that checker's built-in repair (power-cycle / port-cycle / config reload) | Rejected unless the checker's `supports_repair` is true. Battery checkers reject it. |
 | `record_note` | `"{\"checker_id\": \"<id>\", \"note\": \"...\", \"source\": \"shepherd\"}"` | Inserts a note into the checker's alert history (visible on the detail card) | Note capped at 280 chars. Leaves the audit trail — always record what you tried. |
 

@@ -808,7 +808,11 @@ fan_health_checker:
   restore_state_enabled: true          # Re-apply on/off + speed + direction after repair
   repair_script: script.zen32_hard_reset
   # ap_status_entity: the HA UniFi integration's state sensor for the access
-  # point each Wi-Fi fan associates with (observed via UniFi 2026-08-31).
+  # point each Wi-Fi fan USUALLY holds — fans roam, so this is a best-current
+  # value, not a binding. All six re-observed against unpoller 2026-09-05 23:34Z
+  # and all six matched. Verify with unpoller_client_rssi_db{name=~"MF Fan.*"} (a
+  # REGEX — the UniFi client names don't track these fan names, e.g. Living Room
+  # is "MF Fan Livingroom") and read its ap_name before trusting an AP verdict.
   # AP down => fan offline is expected: power-cycles are held and the alert
   # names the AP instead of blaming the fan.
   fans:
@@ -818,10 +822,13 @@ fan_health_checker:
       power_switch: switch.upstairs_pink_room_scene_controller
       relay_control: select.upstairs_pink_room_scene_controller_relay_control
       scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
-      # NOTE: weakest fan of the six (-63 dBm on this, a downstairs AP);
-      # candidate for re-pinning to a closer AP in the UniFi console.
-      ap_status_entity: sensor.kitchen_pantry_u7_pro_state
-      ap_name: Kitchen Pantry U7 Pro
+      # NOTE: weakest fan of the six (-65 dBm). Recorded on Kitchen Pantry when this
+      # block was written (2026-08-31 13:19Z, #118); unpoller shows it roamed to Guest
+      # Room at ~16:47Z the SAME day and has held it since — i.e. the mapping was stale
+      # within hours. Verify with unpoller_client_rssi_db{name="MF Fan Pink Room"}
+      # before trusting an AP verdict.
+      ap_status_entity: sensor.guest_room_u7_pro_state
+      ap_name: Guest Room U7 Pro
     - name: Blue Room
       entity_id: fan.blue_room_fan_fan
       ip: "192.168.50.134"

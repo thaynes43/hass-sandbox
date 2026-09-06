@@ -108,6 +108,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `agent-docs/roadmap.md` | General project roadmap |
 | `agent-docs/image-view-roadmap.md` | Image viewing feature roadmap |
 | `agent-docs/appdaemon-app-decoupling.md` | Event-based app decoupling pattern for split dev/prod deployment |
+| `agent-docs/shepherd-runbooks/` | Per-checker Shepherd triage runbooks (one per `checker_id`); format and sanctioned-action ladder in that directory's `README.md` |
 
 ### Root
 
