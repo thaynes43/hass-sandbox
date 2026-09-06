@@ -251,9 +251,11 @@ power-cycle of another fan that merely blipped.
    overhead and sits structurally higher; read it for colour, never against those
    thresholds.) Fix the hog (move it to 5 GHz, lower its bitrate, lock it to its home AP)
    — do not power-cycle fans.
-3. If any AP verdict says the AP is down, triage **the AP** (UniFi: is it
-   adopted/powered/uplinked?). The checker has already held the power-cycles;
-   there is nothing to repair on the fan side and no page-worthy fan fault.
+3. For each red fan whose AP verdict says the AP is down, triage **that AP** (UniFi: is
+   it adopted/powered/uplinked?). The checker has already held those fans' power-cycles,
+   so there is nothing to repair on them. This accounts for the **whole page** only if
+   every red fan is behind a down AP — otherwise the remaining fans still need step 2's
+   airtime workup and steps 4-6.
 4. Read `repair_state.device_repairs[<fan>]` — per-fan status:
    - `pending`/`in_progress` → a ZEN32 cycle is running (budget 300s) — wait.
    - `failed` with `(attempt N; retry at HH:MM)` → the ladder is climbing;
@@ -303,7 +305,7 @@ power-cycle of another fan that merely blipped.
    | ≥ ~0.3 | named | **Stop** — airtime confirmed with a culprit. Airtime exit below. |
    | ≥ ~0.3 | none | **Stop anyway** — the band is saturated even if the `topk` cannot name who. `record_note` the AP, the ratio and the channel, say the hog was not identified, and let the page through. Do **not** power-cycle. |
    | ~0.05-0.3 | either | Ambiguous — do not stop on it alone. `record_note` the reading and continue to step 3; if a later `start_repair` fails to hold, re-read this as airtime rather than climbing the ladder. |
-   | ≤ ~0.05 | either | **Not** an airtime event, however fat the unbanded `topk` looks. Carry on down the ladder — a genuinely wedged fan deserves its `start_repair`. |
+   | ≤ ~0.05 | either | **Not** an airtime event, however fat the unbanded `topk` looks. Carry on down the ladder for this fan — a genuinely wedged fan deserves its `start_repair`, *unless* another red fan stopped on airtime (see the mixed-incident rule below, which takes `start_repair` off the table checker-wide). |
 
    The two stops exit differently — take the right one:
    - **AP down** → handle the access point (or escalate it) and let the checker resume
@@ -321,8 +323,9 @@ power-cycle of another fan that merely blipped.
      hog — client name, its `ap_name`, its byte rate, the saturated radio — and **let the
      page through** to a human with the Grafana/Alertmanager links.
 
-   In both cases: do not silence the alert, and do not fall through to steps 3-5 for a
-   fan this step stopped on.
+   In both cases: do not silence the alert, and do not fall through to the **repair**
+   steps (4-5) for a fan this step stopped on. Step 3 (`force_recheck`) is read-only and
+   remains fine.
 
    **A mixed incident still blocks step 4 for everyone.** `start_repair` is
    checker-wide — there is no per-fan variant. It rebuilds its own candidate list of
@@ -331,7 +334,7 @@ power-cycle of another fan that merely blipped.
    airtime, firing `start_repair` for a different wedged fan would power-cycle the
    airtime fans too and wipe all six ladders — the thing the airtime exit above forbids.
    In that case: `record_note` both findings (which fans are airtime-blocked, which one
-   looks genuinely wedged), skip steps 3-5, and let the page through so a human can
+   looks genuinely wedged), skip steps 4-5, and let the page through so a human can
    power-cycle the wedged fan by hand after the hog is dealt with.
    `force_recheck` (step 3) is read-only and stays available throughout.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
