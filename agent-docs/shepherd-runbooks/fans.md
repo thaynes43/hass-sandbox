@@ -131,17 +131,22 @@ power-cycle of another fan that merely blipped.
    calling it a stale page.
 2. **Check 2.4 GHz airtime when the red fans keep moving** — but read the AP verdicts
    from step 1 first.
-   **Which fans are "in scope":** the fans red in `checks[]` — **or**, when nothing is
-   currently red (the expected flapping snapshot, per step 1), the fans that appear red
-   across the recent cycle history below. Never conclude "no red fans, nothing to check";
-   that is the case this step exists for.
-   **Getting an AP verdict at all:** the `State` detail only carries one when the check
-   is `critical` — an `ok` detail is just `on`/`off`, and no AP state reaches the payload.
-   So on the all-green arrival there is **no** verdict to read: fetch it yourself with
-   `GET /api/states/sensor.<ap>_state` for the APs named in the fan table above
-   (`sensor.guest_room_u7_pro_state`, `sensor.kitchen_pantry_u7_pro_state`,
-   `sensor.livingroom_u7_pro_wall_state`, `sensor.primary_closet_u7_pro_state`);
-   `disconnected` / `not_home` / `off` count as down.
+   **Which fans are "in scope":** every fan **not `ok`** in `checks[]` — `critical`
+   *and* `warning`. Do not read "red" as critical-only: the cross-check downgrade makes
+   `warning` the status an airtime blip normally reports, so a critical-only filter comes
+   back empty on exactly the all-partial snapshot this step is written for. And when
+   *nothing* is currently failing (the improve-hold arrival, per step 1), fall back to the
+   fans that appear failing across the recent cycle history below. Never conclude "nothing
+   is red, nothing to check" — that is the case this step exists for.
+   **Getting an AP verdict at all:** any *failing* `State` detail carries one, `warning`
+   included — the downgrade appends `" (partial failure)"` rather than rebuilding the
+   string, so the AP note survives it. An `ok` detail does not: it is a bare `on`/`off`
+   and no AP state reaches the payload. So on the all-green arrival there is no verdict to
+   read — fetch it yourself with `GET /api/states/sensor.<ap>_state` for the APs named in
+   the fan table above (`sensor.guest_room_u7_pro_state`,
+   `sensor.kitchen_pantry_u7_pro_state`, `sensor.livingroom_u7_pro_wall_state`,
+   `sensor.primary_closet_u7_pro_state`); `disconnected` / `not_home` / `off` count as
+   down.
    **Then do this per fan:** skip this step for any in-scope fan whose own AP is
    down (gate 1 spans co-channel neighbours whose radios are still reporting, so the
    workup can manufacture an "airtime, do not power-cycle" verdict on what is squarely an
