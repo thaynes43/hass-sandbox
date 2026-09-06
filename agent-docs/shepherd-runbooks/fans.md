@@ -343,6 +343,12 @@ power-cycle of another fan that merely blipped.
      counts, recovery budget) will never fire because no repair ran. So `record_note` the
      hog — client name, its `ap_name`, its byte rate, the saturated radio — and **let the
      page through** to a human with the Grafana/Alertmanager links.
+     **The note is lossy: keep it short and do not let it be the only copy.** It is
+     truncated at 280 chars and lands in the same 50-entry `alert_history` ring as check
+     transitions, with no carve-out for notes — and Diagnosis step 2 says that ring can
+     wrap inside an hour during exactly this incident. Lead with the client name and its
+     AP so the first clause survives truncation, and put the full reasoning in the
+     escalation summary, which is what the human actually reads.
 
    In both cases: do not silence the alert, and do not fall through to steps 3-5 for a
    fan this step stopped on. **`force_recheck` is not read-only** — it runs a full check
@@ -366,9 +372,14 @@ power-cycle of another fan that merely blipped.
    is **not** a safe read here either — see above.
 3. `force_recheck` (payload `{}`) — clears a one-poll blip (fan mid-reboot).
    Wait ~180s, re-read. **Not a passive read:** it runs a full check cycle, which
-   evaluates auto-repair and can fire `script.zen32_hard_reset` on the earliest-due fan
-   if the live auto-repair toggle is on and a deadline has passed. Do not reach for it
-   after a step-2 airtime stop.
+   evaluates auto-repair and can fire `script.zen32_hard_reset` on the earliest-due fan.
+   Check three published fields before firing it, not just `device_repairs`:
+   `repair_state.auto_repair_enabled` (if false, nothing can fire), and — when it is
+   true — `repair_state.auto_repair_deadline` (the due time for an **idle** fan, and it
+   is checker-wide) plus `device_repairs[<fan>].next_retry_at` (the due time for a
+   **failed** one). A fan reading `idle` therefore does **not** mean nothing is due; the
+   checker-wide deadline governs it. If `auto_repair_enabled` is true and either time has
+   passed, this command power-cycles. Do not reach for it after a step-2 airtime stop.
 4. **First re-read step 2 — these entry conditions are the airtime signature verbatim.**
    "Still critical, AP up, `device_repairs` idle" is exactly what a saturated 2.4 GHz
    radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
