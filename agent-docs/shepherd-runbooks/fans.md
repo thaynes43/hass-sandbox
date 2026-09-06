@@ -399,9 +399,17 @@ power-cycle of another fan that merely blipped.
    "Still critical, AP up, `device_repairs` idle" is exactly what a saturated 2.4 GHz
    radio produces, so if step 2's gates tripped for *any* fan, stop here: `start_repair`
    is checker-wide and would power-cycle the airtime fans too (see the mixed-incident
-   rule in step 2). Otherwise, with the airtime branch cleared: if still critical, the
-   fan's AP is up, and its `device_repairs` entry is
-   `idle` (auto-repair off, or never reached its deadline): `start_repair`
+   rule in step 2). Otherwise, with the airtime branch cleared: if still critical and the
+   fan's AP is up — **and no repair is already queued.** Do *not* read that off the fan's
+   `device_repairs` entry: `idle` says nothing here, because the pre-attempt countdown is
+   checker-wide (Diagnosis step 4). Check `repair_state.status` and
+   `repair_state.auto_repair_deadline` instead, and stand down if a countdown is live —
+   nothing downstream will refuse you (`_handle_start_repair` checks only
+   `supports_repair`, and `_is_any_repair_active` tests `in_progress`, never `pending`),
+   so firing into one resets all six ladders to attempt 1 and cycles every entity-down
+   fan seconds before the targeted single-fan auto-repair would have run. That is the
+   "don't stack repairs" case the README's universal preconditions forbid. With all of
+   that clear: `start_repair`
    `{"checker_id":"fans"}` — repairs **all** currently entity-down fans
    sequentially via `script.zen32_hard_reset`. Prefer this over toggling the
    `power_switch` entities directly — the script sequences the relay/scene
