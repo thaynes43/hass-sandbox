@@ -80,7 +80,7 @@ REST: `POST /api/services/script/health_check_relay` with body
 
 | Command | Payload (JSON string) | Effect | Notes |
 |---------|----------------------|--------|-------|
-| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker. Cheap; use to confirm a fault is still live or clear a transient. |
+| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker, and **not a passive read**: each checker's cycle evaluates auto-repair, so this can fire a repair on any checker whose toggle is on and whose grace/backoff deadline has passed — including one you are not triaging (`shade_gateway` and `protect` default to auto-repair **on**). Those firings are not counted against the max-2-attempts-per-6h guardrail. Use it to confirm a fault is still live, not as a free look. |
 | `start_repair` | `"{\"checker_id\": \"<id>\"}"` | Triggers that checker's built-in repair (power-cycle / port-cycle / config reload) | Rejected unless the checker's `supports_repair` is true. Battery checkers reject it. |
 | `record_note` | `"{\"checker_id\": \"<id>\", \"note\": \"...\", \"source\": \"shepherd\"}"` | Inserts a note into the checker's alert history (visible on the detail card) | Note capped at 280 chars. Leaves the audit trail — always record what you tried. |
 

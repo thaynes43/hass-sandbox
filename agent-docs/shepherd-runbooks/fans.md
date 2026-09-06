@@ -133,6 +133,13 @@ power-cycle of another fan that merely blipped.
    currently red (the expected flapping snapshot, per step 1), the fans that appear red
    across the recent cycle history below. Never conclude "no red fans, nothing to check";
    that is the case this step exists for.
+   **Getting an AP verdict at all:** the `State` detail only carries one when the check
+   is `critical` — an `ok` detail is just `on`/`off`, and no AP state reaches the payload.
+   So on the all-green arrival there is **no** verdict to read: fetch it yourself with
+   `GET /api/states/sensor.<ap>_state` for the APs named in the fan table above
+   (`sensor.guest_room_u7_pro_state`, `sensor.kitchen_pantry_u7_pro_state`,
+   `sensor.livingroom_u7_pro_wall_state`, `sensor.primary_closet_u7_pro_state`);
+   `disconnected` / `not_home` / `off` count as down.
    **Then do this per fan:** skip this step for any in-scope fan whose own AP is
    down (gate 1 spans co-channel neighbours whose radios are still reporting, so the
    workup can manufacture an "airtime, do not power-cycle" verdict on what is squarely an
