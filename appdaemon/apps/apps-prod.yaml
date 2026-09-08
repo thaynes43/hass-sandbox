@@ -822,13 +822,11 @@ fan_health_checker:
       power_switch: switch.upstairs_pink_room_scene_controller
       relay_control: select.upstairs_pink_room_scene_controller_relay_control
       scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
-      # NOTE: weakest fan of the six (-65 dBm). Recorded on Kitchen Pantry when this
-      # block was written (2026-08-31 13:19Z, #118); unpoller shows it roamed to Guest
-      # Room at ~16:47Z the SAME day and has held it since — i.e. the mapping was stale
-      # within hours. Verify with unpoller_client_rssi_db{name="MF Fan Pink Room"}
-      # before trusting an AP verdict.
-      ap_status_entity: sensor.guest_room_u7_pro_state
-      ap_name: Guest Room U7 Pro
+      # NOTE: weakest fan of the six (about -64 dBm). Locked to Kitchen Pantry in UniFi
+      # (client "Lock to AP", 2026-09-08) after a 2026-08-31 lock to Guest Room left it at
+      # -68 dBm. If the lock changes, change this mapping with it.
+      ap_status_entity: sensor.kitchen_pantry_u7_pro_state
+      ap_name: Kitchen Pantry U7 Pro
     - name: Blue Room
       entity_id: fan.blue_room_fan_fan
       ip: "192.168.50.134"
