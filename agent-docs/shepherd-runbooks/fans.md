@@ -42,13 +42,14 @@ Three consequences that shape everything below:
 
 | Fan | Entity | IP | Access point |
 |-----|--------|----|--------------|
-| Pink Room | `fan.pink_room_fan_fan` | 192.168.50.112 | Guest Room U7 Pro (roamed off Kitchen Pantry 2026-08-31 ~16:47Z, held since) — **weakest link (-65 dBm)** |
+| Pink Room | `fan.pink_room_fan_fan` | 192.168.50.112 | Kitchen Pantry U7 Pro (locked to it in UniFi 2026-09-08) — **weakest link (about -64 dBm)** |
 | Blue Room | `fan.blue_room_fan_fan` | 192.168.50.134 | Guest Room U7 Pro |
 | White Room | `fan.white_room_fan_fan` | 192.168.50.187 | Guest Room U7 Pro |
 | Primary Bedroom | `fan.primary_bedroom_fan_fan` | 192.168.50.146 | Primary Closet U7 Pro |
 | Living Room | `fan.livingroom_fan_fan` | 192.168.50.148 | Livingroom U7-Pro-Wall |
 | Study | `fan.study_fan_fan` | 192.168.50.179 | Kitchen Pantry U7 Pro |
 
+Pink Room is **locked** to Kitchen Pantry in UniFi (client "Lock to AP"); the others roam.
 Fans roam between APs; the **Access point** column above is the AP each fan usually holds
 (it mirrors `ap_status_entity`, which the checker reads from its own config — do not go
 looking for `apps-prod.yaml`, the image does not carry it). Confirm the live one with `unpoller_client_rssi_db{name=~"MF Fan.*"}` and
