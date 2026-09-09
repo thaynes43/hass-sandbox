@@ -10,9 +10,11 @@ System health monitoring for the Home Assistant dashboard. Provides visibility i
 │  (Zigbee instance)       │  register_checker     │                         │
 │                          │  report_status        │  Provisions:            │
 ├──────────────────────────┤                       │  - input_datetime       │
-│  NetworkProtocolChecker  │ ──────────────────▶   │    .appdaemon_heartbeat │
-│  (Z-Wave instance)       │                       │  - script               │
-│                          │                       │    .health_check_relay  │
+│  RepairableNetwork-      │ ──────────────────▶   │    .appdaemon_heartbeat │
+│  ProtocolChecker         │  + repair_state       │  - script               │
+│  (Z-Wave instance,       │                       │    .health_check_relay  │
+│   supports_repair: true) │                       │                         │
+│  ◀── health_check_repair_zwave ──                │                         │
 ├──────────────────────────┤                       │                         │
 │  MqttBrokerChecker       │ ──────────────────▶   │  Resolves dependencies: │
 │                          │                       │  (published view only)  │

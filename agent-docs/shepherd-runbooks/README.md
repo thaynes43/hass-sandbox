@@ -46,7 +46,11 @@ works through both cases.
      (each `{name, status, detail}`), `repair_state` (`{status, detail}` —
      `idle|pending|in_progress|success|failed` — plus `auto_repair_enabled`,
      `auto_repair_delay_min`, `auto_repair_deadline` and `last_repair_attempt`, which
-     decide whether a `force_recheck` would fire a repair. Only the **per-device**
+     decide whether a `force_recheck` would fire a repair. `zwave` additionally
+     publishes `repair_attempts[]`, `repair_attempts_24h` and `repair_max_per_24h`
+     — that is how you tell "auto-repair still has budget, leave it alone" from
+     "budget spent, auto-repair has given up and this critical is mine to
+     escalate". Only the **per-device**
      checkers (`fans`, and the device-group checkers) additionally publish
      `device_repairs[<device>]` with its own `status`/`next_retry_at`; on the others its
      absence means "not published", never "nothing queued" — use `auto_repair_deadline`
@@ -149,7 +153,7 @@ Run these gates first, in order — several send you straight to skip/escalate:
 | [protect_batteries.md](protect_batteries.md) | `protect_batteries` | **no** | none — physical battery replacement |
 | [shade_batteries.md](shade_batteries.md) | `shade_batteries` | **no** | none — disconnects owned by `shade_gateway`; real decline = replace |
 | [fans.md](fans.md) | `fans` | yes | per-fan `script.zen32_hard_reset` scene-controller cycle |
-| _(none yet)_ | `zwave` | yes | ESPHome **software** restart of the TubesZB TCP bridge (auto; 5m dwell, 15m apart, max 3/24h, then it forces `critical` itself) — **never** power-cycle or PoE-cycle that board |
+| [`zwave.md`](zwave.md) | `zwave` | yes | ESPHome **software** restart of the TubesZB TCP bridge (auto; 5m dwell, 15m apart, max 3/24h, then it forces `critical` itself) — **never** power-cycle or PoE-cycle that board |
 
 The six runbooked checkers caused ~43 critical episodes/week before the v1.4.0
 paging fixes and the auto-repair work — they are the highest-value triage
