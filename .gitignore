@@ -54,4 +54,5 @@ site/
 .ruff_cache/
 .tox/
 
-zprompt.txt.playwright-mcp/
+zprompt.txt
+.playwright-mcp/
