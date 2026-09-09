@@ -127,11 +127,12 @@ app.create_task = closing_create_task()
 Two limits on fix #2. **Convert the double the leaking test actually uses, not
 reflexively the shared `_make_app`** — the two patterns are mutually exclusive
 per double, and a file can contain both kinds of test. `grep create_task.call_args`
-in the file first: a test that retrieves the coroutine and drives it itself (as
-`test_health_check_controller.py` and `test_school_schedule_app.py` do) breaks with
-`RuntimeError: cannot reuse already awaited coroutine` if the shared helper closed
-it first. Loudly, not silently — but override the double in the leaking test rather
-than converting the helper. And `closing_create_task()` only inspects **positional**
+in the file first. A test that retrieves the coroutine and *awaits* it — as
+`test_health_check_controller.py:1964` does — breaks with `RuntimeError: cannot
+reuse already awaited coroutine` if the shared helper closed it first. Loudly, not
+silently, but override the double in the leaking test rather than converting the
+helper. (Not every hit is a hazard: `test_school_schedule_app.py:387` only calls
+`close()` on the retrieved coroutine, and a second `close()` is a no-op.) And `closing_create_task()` only inspects **positional**
 arguments, so a coroutine handed over by keyword, or wrapped
 (`create_task(asyncio.gather(...))`), is not covered by it at all — drive that one.
 

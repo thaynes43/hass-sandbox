@@ -150,12 +150,19 @@ async def _async_startup(self) -> None:
 ```python
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from conftest import closing_create_task
+
 mock_prov = MagicMock()
 mock_prov.ensure_script = AsyncMock(return_value=False)
 mock_prov.ensure_helper = AsyncMock(return_value=False)
 
 with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov):
-    app.create_task = MagicMock()
+    # NOT a bare MagicMock(): Step 4's wrapper calls
+    # self.create_task(self._async_startup()), and a double that never runs
+    # the coroutine leaks it. `closing_create_task()` records the call exactly
+    # as MagicMock() did and closes the coroutine. See "Test hygiene: the
+    # un-awaited-coroutine gate" in .agents/rules/appdaemon-dev-environment.md.
+    app.create_task = closing_create_task()
     app.initialize()
 ```
 
