@@ -160,8 +160,12 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         self._auto_repair_enabled_default: bool = bool(
             args.get("auto_repair_enabled_default", False)
         )
-        self._auto_repair_delay_min_default: int = int(
-            args.get("auto_repair_delay_min_default", 5)
+        # Clamped here so every path that can set the cached delay obeys the
+        # helper's bounds. Without this, auto_repair_delay_min_default: 0
+        # collapses the dwell for the whole first run — the same failure the
+        # card clamp prevents, through a different door.
+        self._auto_repair_delay_min_default: int = self._clamp_delay(
+            int(args.get("auto_repair_delay_min_default", 5))
         )
 
         # Repair state machine
@@ -603,6 +607,12 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         elif action == "cancel_repair":
             self._cancel_repair()
         elif action == "update_repair_config":
+            self.log(
+                f"Repair config update requested: "
+                f"auto_repair_enabled={data.get('auto_repair_enabled')}, "
+                f"auto_repair_delay_min={data.get('auto_repair_delay_min')}",
+                level="INFO",
+            )
             self._update_repair_config(data)
 
     def _cancel_repair(self) -> None:
@@ -715,9 +725,22 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         except Exception as exc:
             self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
 
-    @staticmethod
-    def _clamp_delay(value: int) -> int:
-        return max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
+    def _clamp_delay(self, value: int) -> int:
+        """Clamp a delay to the helper's bounds, saying so when it bites.
+
+        logging-standards puts "validation failure with fallback" at WARNING,
+        and this cannot recur per cycle — it only fires where a value is
+        actually set — so there is no noise cost to being loud about
+        overriding what an operator asked for.
+        """
+        clamped = max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
+        if clamped != value:
+            self.log(
+                f"Auto-repair delay {value}m is outside the permitted "
+                f"{DELAY_MIN_MIN}-{DELAY_MIN_MAX}m range — using {clamped}m",
+                level="WARNING",
+            )
+        return clamped
 
     def _read_auto_repair_config(self) -> tuple[bool, int]:
         return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min

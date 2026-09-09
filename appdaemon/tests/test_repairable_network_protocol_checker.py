@@ -1599,3 +1599,45 @@ class TestDelayIsClamped:
         _run(app._refresh_auto_repair_config())
 
         assert app._cached_auto_repair_delay_min == 1
+
+    @pytest.mark.parametrize("configured,expected", [(0, 1), (-1, 1), (999, 60)])
+    def test_the_configured_default_is_clamped_too(self, configured, expected):
+        """The config seed is the other door to the same dwell collapse."""
+        app = _make_app({"auto_repair_delay_min_default": configured})
+        app.initialize()
+
+        assert app._auto_repair_delay_min_default == expected
+        assert app._cached_auto_repair_delay_min == expected
+
+    def test_a_zero_configured_default_cannot_collapse_the_dwell(self):
+        app = _make_app(
+            {"auto_repair_delay_min_default": 0},
+            states={"input_number.zwave_health_auto_repair_delay": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_clamping_is_logged(self):
+        """Overriding what an operator asked for must not be silent."""
+        app = _make_app({"auto_repair_delay_min_default": 0})
+        app.initialize()
+
+        assert [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING"
+            and "outside the permitted" in str(c)
+        ]
+
+    def test_in_range_values_are_not_logged(self):
+        app = _make_app({"auto_repair_delay_min_default": 5})
+        app.initialize()
+
+        assert not [
+            c for c in app.log.call_args_list
+            if "outside the permitted" in str(c)
+        ]
