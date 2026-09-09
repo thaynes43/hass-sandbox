@@ -652,7 +652,11 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             # window to have a visible open and close, without a message
             # every check_interval_s for as long as it lasts.
             if readable != self._toggle_readable:
-                if readable:
+                # A clean start with a readable helper is not the *close* of
+                # an unreadable window — only announce that if one was open.
+                if readable and self._toggle_readable is None:
+                    self._toggle_readable = True
+                elif readable:
                     self.log(
                         f"{entity_id} is readable again — auto-repair "
                         f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'} "
@@ -1042,21 +1046,26 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         if auto_enabled is not None:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            # Trust the command itself. While the helper is unreadable (see
-            # _refresh_auto_repair_config) the next get_state stays None for
-            # the rest of the run, so relying on the read-back would leave an
-            # explicit "off" unhonoured: the card would show off, HA would
-            # show off, and the board would still get restarted.
-            self._cached_auto_repair_enabled = bool(auto_enabled)
             current = str(self.get_state(entity_id))
             desired = "on" if auto_enabled else "off"
-            if current != desired:
+            # Mirror the command into the cache, but only once the helper
+            # actually holds it. While the helper is unreadable (see
+            # _refresh_auto_repair_config) the next get_state stays None for
+            # the rest of the run, so waiting for the read-back would leave an
+            # explicit "off" unhonoured — the card would show off, HA would
+            # show off, and the board would still get restarted. Caching a
+            # write that FAILED is the mirror-image bug, so it goes in the
+            # success path.
+            if current == desired:
+                self._cached_auto_repair_enabled = bool(auto_enabled)
+            else:
                 service = (
                     "input_boolean/turn_on" if auto_enabled
                     else "input_boolean/turn_off"
                 )
                 try:
                     self.call_service(service, entity_id=entity_id)
+                    self._cached_auto_repair_enabled = bool(auto_enabled)
                 except Exception as exc:
                     self.log(
                         f"Failed to update auto-repair toggle: {exc!r}",
@@ -1065,21 +1074,30 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         if delay_min is not None:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
+            # Parse once, the same way the helper read does (int(float(...))),
+            # so a card sending "17.0" is handled rather than fatal.
             try:
-                self._cached_auto_repair_delay_min = int(delay_min)
+                desired_delay = int(float(delay_min))
             except (TypeError, ValueError):
-                pass
+                self.log(
+                    f"Ignoring unparseable auto_repair_delay_min: {delay_min!r}",
+                    level="WARNING",
+                )
+                return
             try:
                 current_val = int(float(self.get_state(entity_id)))
             except (TypeError, ValueError):
                 current_val = None
-            if current_val != int(delay_min):
+            if current_val == desired_delay:
+                self._cached_auto_repair_delay_min = desired_delay
+            else:
                 try:
                     self.call_service(
                         "input_number/set_value",
                         entity_id=entity_id,
-                        value=int(delay_min),
+                        value=desired_delay,
                     )
+                    self._cached_auto_repair_delay_min = desired_delay
                 except Exception as exc:
                     self.log(
                         f"Failed to update auto-repair delay: {exc!r}",

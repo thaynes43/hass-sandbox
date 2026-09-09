@@ -1415,3 +1415,82 @@ class TestUnreadableToggleLogging:
             if c[1].get("level") == "INFO" and "readable again" in str(c)
         ]
         assert len(infos) == 1
+
+    def test_clean_start_does_not_announce_a_window_that_never_opened(self):
+        """`is readable again` is the phrase for the *close* of a window."""
+        app = _make_app(states={"input_boolean.zwave_health_auto_repair": "on"})
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert not [
+            c for c in app.log.call_args_list if "readable again" in str(c)
+        ]
+        assert app._toggle_readable is True
+
+
+class TestRepairConfigWriteFailures:
+    def test_a_failed_toggle_write_does_not_update_the_cache(self):
+        """Caching a write that failed asserts the opposite of HA."""
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": "on"},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        app.call_service = MagicMock(side_effect=RuntimeError("boom"))
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_enabled": False},
+            {},
+        )
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_a_failed_delay_write_does_not_update_the_cache(self):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": "5"}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        app.call_service = MagicMock(side_effect=RuntimeError("boom"))
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": 42},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == 5
+
+    @pytest.mark.parametrize("value", ["17.0", 17.0, 17])
+    def test_float_shaped_delays_from_the_card_are_accepted(self, value):
+        """The helper read uses int(float(...)); the card path must match."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": value},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == 17
+
+    def test_an_unparseable_delay_is_ignored_not_fatal(self):
+        app = _make_app()
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        before = app._cached_auto_repair_delay_min
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": "soon"},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == before
