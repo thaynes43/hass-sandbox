@@ -541,7 +541,7 @@ class TestPersistenceAcrossRestart:
         )
         _init_only(app)
 
-        _run(app._seed_attempts_from_controller())
+        _run(app._seed_attempts())
 
         assert len(app._repair_attempts) == 2
         assert app._last_repair_attempt == recent[-1].isoformat(timespec="seconds")
@@ -555,7 +555,7 @@ class TestPersistenceAcrossRestart:
             _ago(hours=1).isoformat(timespec="seconds"),
         ])
         _init_only(app)
-        _run(app._seed_attempts_from_controller())
+        _run(app._seed_attempts())
         app._unhealthy_since = _ago(minutes=60)
 
         _evaluate(app, _results())
@@ -579,7 +579,7 @@ class TestPersistenceAcrossRestart:
         revived = _make_app()
         revived.controller_state = _controller_state(published)
         _init_only(revived)
-        _run(revived._seed_attempts_from_controller())
+        _run(revived._seed_attempts())
 
         assert [
             a.isoformat(timespec="seconds") for a in revived._repair_attempts
@@ -602,7 +602,7 @@ class TestPersistenceAcrossRestart:
         app.controller_state = controller_state
         _init_only(app)
 
-        _run(app._seed_attempts_from_controller())
+        _run(app._seed_attempts())
 
         assert app._repair_attempts == []
         assert app._last_repair_attempt is None
@@ -619,7 +619,7 @@ class TestPersistenceAcrossRestart:
             [_ago(minutes=20).isoformat(timespec="seconds")]
         )
         _init_only(app)
-        _run(app._seed_attempts_from_controller())
+        _run(app._seed_attempts())
 
         assert app._unhealthy_since is None
 
@@ -885,3 +885,116 @@ class TestSerialStateCoercion:
         app = _make_app({"repair_serial_connected_state": False})
         _init_only(app)
         assert app._repair_serial_state == "off"
+
+
+# ---------------------------------------------------------------------------
+# 18. The attempt log survives the controller's startup publish
+# ---------------------------------------------------------------------------
+
+
+class TestAttemptsHelperPersistence:
+    """The 24h cap must survive a whole-pod restart.
+
+    Reading the attempt log back out of ``sensor.health_check_status`` is not
+    enough: the controller publishes that sensor once at its own startup with
+    ``checkers: {}``, and ``set_state`` replaces the attribute wholesale. On a
+    pod restart the controller usually wins that race, so a sensor-only seed
+    would come up with a fresh budget of restarts mid-outage — exactly what
+    the cap exists to prevent. The log therefore lives in its own helper.
+    """
+
+    HELPER = "input_text.zwave_health_repair_attempts"
+
+    def test_attempt_is_written_to_the_helper(self):
+        app = _make_app()
+        _init_only(app)
+        _recovers(app)
+
+        _drive(app, app._execute_repair())
+
+        writes = [
+            c for c in app.call_service.call_args_list
+            if c[0] and c[0][0] == "input_text/set_value"
+        ]
+        assert writes, "the attempt log was never persisted"
+        assert writes[-1][1]["entity_id"] == self.HELPER
+        assert len(json.loads(writes[-1][1]["value"])) == 1
+
+    def test_helper_is_preferred_over_the_wiped_sensor(self):
+        """The controller-publishes-first race must not reset the ladder."""
+        app = _make_app(
+            states={self.HELPER: json.dumps([
+                _ago(hours=3).isoformat(timespec="seconds"),
+                _ago(hours=2).isoformat(timespec="seconds"),
+                _ago(hours=1).isoformat(timespec="seconds"),
+            ])}
+        )
+        # The controller already republished an empty snapshot, so the sensor
+        # fallback would find nothing.
+        app.controller_state = _controller_state(None)
+        _init_only(app)
+
+        _run(app._seed_attempts())
+
+        assert len(app._repair_attempts) == 3
+        # ...and the cap is therefore still spent.
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+        assert _presses(app) == []
+        assert app._cap_reached is True
+
+    def test_old_attempts_in_the_helper_are_pruned(self):
+        app = _make_app(
+            states={self.HELPER: json.dumps([
+                _ago(hours=25).isoformat(timespec="seconds"),
+                _ago(hours=2).isoformat(timespec="seconds"),
+            ])}
+        )
+        _init_only(app)
+
+        _run(app._seed_attempts())
+
+        assert len(app._repair_attempts) == 1
+        # The stale entry must not be reported as the most recent attempt.
+        assert app._last_repair_attempt == app._repair_attempts[0].isoformat(
+            timespec="seconds"
+        )
+
+    @pytest.mark.parametrize(
+        "raw", ["", "unknown", "unavailable", "not json", "{}", "[]"]
+    )
+    def test_unusable_helper_values_are_survived(self, raw):
+        app = _make_app(states={self.HELPER: raw})
+        app.controller_state = _controller_state(None)
+        _init_only(app)
+
+        _run(app._seed_attempts())
+
+        assert app._repair_attempts == []
+
+    def test_helper_is_provisioned(self):
+        app = _make_app()
+        prov = _make_mock_provisioner()
+        _startup(app, prov)
+
+        created = [c[0][1] for c in prov.ensure_helper.call_args_list]
+        assert "zwave Health Repair Attempts" in created
+
+
+class TestNoRadioPingConfigured:
+    def test_missing_ping_check_neither_repairs_nor_escalates(self):
+        """Without a radio_host the stale-client signature can't be confirmed.
+
+        Nothing observed the radio to be down, so forcing critical would be a
+        fabricated diagnosis — matters for reuse on a board configured
+        without a ping check.
+        """
+        app = _make_app({"radio_host": ""})
+        _init_only(app)
+        results = [
+            r for r in _results(entity="critical") if r["name"] != PING_CHECK
+        ]
+
+        _evaluate(app, results)
+
+        assert _presses(app) == []
+        assert app._escalate_detail == ""

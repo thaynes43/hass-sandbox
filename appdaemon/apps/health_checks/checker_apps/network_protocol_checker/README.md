@@ -35,7 +35,7 @@ The board must **never** be power-cycled -- PoE port cycling or any other hard p
 1. **Stale-client signature only** -- the integration entity must be unhealthy *while* the radio still answers ping (`repair_requires_radio_ping`). If ping is down the board is offline and a software restart cannot help, so no restart is attempted -- but the integration check is forced to `critical` so it pages, because the same cross-check downgrade masks that case too. `repair_serial_connected_entity` adds a second confirmation that the board still believes it has a client.
 2. **Dwell** -- unhealthy for the full auto-repair delay (default 5 min) before the first action. The dwell clock restarts from scratch on every AppDaemon start, so a deploy landing mid-outage can never trigger an immediate restart.
 3. **Minimum interval** between restarts (`repair_min_interval_s`, default 15 min).
-4. **Rolling 24h cap** (`repair_max_per_24h`, default 3). Attempt timestamps are published in `repair_state` and re-seeded from `sensor.health_check_status` on startup, so the ladder survives an AppDaemon restart instead of resetting.
+4. **Rolling 24h cap** (`repair_max_per_24h`, default 3). Attempt timestamps are persisted to `input_text.<checker_id>_health_repair_attempts` and re-seeded on startup, so the ladder survives an AppDaemon restart instead of resetting. They are *not* read back from `sensor.health_check_status`: the controller publishes that sensor once at its own startup with `checkers: {}`, and `set_state` replaces the attribute wholesale, so on a whole-pod restart the controller usually wins the race and the persisted attempts are gone before any checker can read them. The sensor is still consulted as a fallback, which only matters before the helper exists.
 5. **Quiet period** after every action (`repair_quiet_period_s`, default 3 min).
 6. **Exactly one action per evaluation** -- the state machine moves to `in_progress` before anything is pressed, and the attempt is recorded *before* the press, so a crash mid-repair still counts against the caps.
 
@@ -56,6 +56,7 @@ The partial-failure cross-check is reversed -- integration forced back to `criti
 |--------|------|---------|
 | `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle (default ON via `auto_repair_enabled_default`, applied on creation only) |
 | `input_number.zwave_health_auto_repair_delay` | Helper | Dwell before the first restart, in minutes (1-60, step 1, default 5) |
+| `input_text.zwave_health_repair_attempts` | Helper | Rolling 24h restart log (compact JSON, max 255 chars) -- this is what makes the cap survive a restart |
 
 ## Relay Commands
 

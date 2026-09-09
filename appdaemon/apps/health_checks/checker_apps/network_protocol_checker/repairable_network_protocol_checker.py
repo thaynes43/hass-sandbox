@@ -180,9 +180,12 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         )
 
     async def _async_startup(self) -> None:
+        # Seed before anything else that awaits: the controller's own startup
+        # publish overwrites the sensor's `checkers` attribute, so the
+        # fallback read is only good for the first few hundred ms.
+        await self._seed_attempts()
         await self._provision_repair_helpers()
         await self._refresh_auto_repair_config()
-        await self._seed_attempts_from_controller()
 
         self._register()
 
@@ -238,6 +241,21 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         try:
             created = await prov.ensure_helper(
+                "input_text",
+                f"{self._checker_id} Health Repair Attempts",
+                max=self._ATTEMPTS_HELPER_MAX_LEN,
+            )
+            if created:
+                self.log(
+                    f"Provisioned {self._attempts_helper_entity()}", level="INFO"
+                )
+        except Exception as exc:
+            self.log(
+                f"Failed to provision repair-attempts helper: {exc!r}", level="ERROR"
+            )
+
+        try:
+            created = await prov.ensure_helper(
                 "input_number",
                 f"{self._checker_id} Health Auto Repair Delay",
                 min=1, max=60, step=1,
@@ -260,15 +278,108 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
     # ------------------------------------------------------------------
     # Persistence — the restart ladder must survive an AppDaemon restart
     # ------------------------------------------------------------------
+    #
+    # The attempt log lives in its own input_text helper rather than being
+    # read back out of sensor.health_check_status. The controller publishes
+    # that sensor once at its own startup with `checkers: {}` (see
+    # health_check_controller._async_startup), and set_state replaces the
+    # attribute wholesale — so on a whole-pod restart the controller usually
+    # wins the race and the persisted attempts are gone before any checker
+    # can read them. That would hand the ladder a fresh budget of restarts
+    # mid-outage, which is exactly what the cap exists to prevent. The
+    # helper is owned by this app alone and is immune to that race; the
+    # sensor is still read as a fallback for the first deploy, before the
+    # helper exists.
 
-    async def _seed_attempts_from_controller(self) -> None:
-        """Re-seed the rolling attempt log from the controller's published sensor.
+    _ATTEMPTS_HELPER_MAX_LEN = 255
+
+    def _attempts_helper_entity(self) -> str:
+        return f"input_text.{self._checker_id}_health_repair_attempts"
+
+    def _persist_attempts(self) -> None:
+        """Write the rolling attempt log to its helper. Best-effort."""
+        value = json.dumps(
+            [a.isoformat(timespec="seconds") for a in self._repair_attempts],
+            separators=(",", ":"),
+        )
+        if len(value) > self._ATTEMPTS_HELPER_MAX_LEN:
+            # Cannot happen at realistic caps (3 attempts ~= 66 chars), but a
+            # truncated write must never look like "no attempts" — keep the
+            # newest, which are the ones the interval gate needs.
+            keep = list(self._repair_attempts)
+            while keep and len(value) > self._ATTEMPTS_HELPER_MAX_LEN:
+                keep.pop(0)
+                value = json.dumps(
+                    [a.isoformat(timespec="seconds") for a in keep],
+                    separators=(",", ":"),
+                )
+        try:
+            self.call_service(
+                "input_text/set_value",
+                entity_id=self._attempts_helper_entity(),
+                value=value,
+            )
+        except Exception as exc:
+            self.log(f"Failed to persist repair attempts: {exc!r}", level="WARNING")
+
+    async def _seed_attempts(self) -> None:
+        """Re-seed the rolling attempt log after an AppDaemon restart.
 
         AppDaemon image deploys restart the pod.  Without this, a deploy
         landing mid-outage would reset the ladder and let the checker hammer
         the dongle.  ``_unhealthy_since`` is deliberately **not** seeded — the
         full dwell is always re-served after a restart before the first
         action.
+        """
+        attempts = await self._read_attempts_helper()
+        source = self._attempts_helper_entity()
+        if attempts is None:
+            attempts = await self._read_attempts_from_controller()
+            source = CONTROLLER_SENSOR
+        if not attempts:
+            return
+
+        self._repair_attempts = attempts
+        self._prune_attempts(datetime.datetime.now())
+        if self._repair_attempts:
+            self._last_repair_attempt = self._repair_attempts[-1].isoformat(
+                timespec="seconds"
+            )
+        self.log(
+            f"Seeded {len(self._repair_attempts)} repair attempt(s) in the last 24h "
+            f"from {source} (most recent {self._last_repair_attempt}) — "
+            f"rate limits carry over the restart",
+            level="INFO",
+        )
+
+    async def _read_attempts_helper(
+        self,
+    ) -> Optional[List[datetime.datetime]]:
+        """Read the attempt log helper. ``None`` means "no usable value"."""
+        try:
+            raw = await self.get_state(self._attempts_helper_entity())
+        except Exception as exc:
+            self.log(f"Could not read repair-attempts helper: {exc!r}", level="WARNING")
+            return None
+        if not raw or str(raw) in ("unknown", "unavailable"):
+            return None
+        try:
+            parsed = json.loads(str(raw))
+        except ValueError:
+            self.log(f"Ignoring unparseable repair-attempts value: {raw!r}", level="WARNING")
+            return None
+        if not isinstance(parsed, list):
+            return None
+        return self._parse_attempts(parsed)
+
+    async def _read_attempts_from_controller(
+        self,
+    ) -> List[datetime.datetime]:
+        """Fallback: read the attempts published in the controller's sensor.
+
+        Only useful before the helper exists (first deploy of this feature);
+        it races the controller's own initial publish, which is why the
+        helper is the primary store.
         """
         try:
             state = await self.get_state(CONTROLLER_SENSOR, attribute="all")
@@ -279,25 +390,13 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                 .get(self._checker_id, {})
                 .get("repair_state")
             ) or {}
-
-            attempts = self._parse_attempts(repair_state.get("repair_attempts"))
-            if not attempts:
-                return
-
-            self._repair_attempts = attempts
-            self._last_repair_attempt = attempts[-1].isoformat(timespec="seconds")
-            self._prune_attempts(datetime.datetime.now())
-            self.log(
-                f"Seeded {len(self._repair_attempts)} repair attempt(s) in the last "
-                f"24h from published status (most recent "
-                f"{self._last_repair_attempt}) — rate limits carry over the restart",
-                level="INFO",
-            )
+            return self._parse_attempts(repair_state.get("repair_attempts"))
         except Exception as exc:
             self.log(
                 f"Failed to seed repair attempts from {CONTROLLER_SENSOR}: {exc!r}",
                 level="WARNING",
             )
+            return []
 
     @staticmethod
     def _parse_attempts(raw: Any) -> List[datetime.datetime]:
@@ -317,7 +416,10 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
     def _prune_attempts(self, now: datetime.datetime) -> None:
         """Drop attempts older than the rolling window."""
         cutoff = now - datetime.timedelta(seconds=ATTEMPT_WINDOW_S)
-        self._repair_attempts = [a for a in self._repair_attempts if a > cutoff]
+        kept = [a for a in self._repair_attempts if a > cutoff]
+        if len(kept) != len(self._repair_attempts):
+            self._repair_attempts = kept
+            self._persist_attempts()
 
     # ------------------------------------------------------------------
     # Registration
@@ -564,10 +666,14 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         # Guard 1: the radio must still answer ping. If it does not, the
         # board is offline/unreachable and a software restart cannot help.
         if self._repair_requires_radio_ping:
-            if ping_result is None or ping_result["status"] != "ok":
-                self._hold(
-                    "Radio unreachable — software restart cannot help"
-                )
+            if ping_result is None:
+                # No radio_host configured: the stale-client signature cannot
+                # be confirmed, so never act — and never escalate either, since
+                # nothing here observed the radio to be down.
+                self._hold("No radio ping configured — cannot confirm signature")
+                return
+            if ping_result["status"] != "ok":
+                self._hold("Radio unreachable — software restart cannot help")
                 # The board is off the network entirely. Nothing here can fix
                 # that, so page rather than let the cross-check mask it.
                 self._escalate_detail = (
@@ -707,6 +813,11 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         self._repair_status = REPAIR_IN_PROGRESS
         self._repair_detail = "Restarting ESP32 (ESPHome software restart)..."
         self._auto_repair_deadline = None
+        # Auto-repair evaluation is skipped while in progress, but
+        # _apply_escalation still runs each cycle — so tie the escalation to a
+        # live evaluation rather than letting a stale reason force critical
+        # through the whole recovery window.
+        self._escalate_detail = ""
 
         self._report_repair_status_only()
         self._repair_task = self.create_task(self._execute_repair())
@@ -720,6 +831,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             self._repair_attempts.append(now)
             self._prune_attempts(now)
             self._last_repair_attempt = now.isoformat(timespec="seconds")
+            self._persist_attempts()
 
             self.log(
                 f"Pressing {self._repair_button} "

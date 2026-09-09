@@ -237,6 +237,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 | `input_number.shade_gateway_health_auto_repair_delay` | Helper | Auto-repair grace period in minutes (provisioned by ShadeGatewayChecker, 15-360, default 120) |
 | `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableNetworkProtocolChecker per `checker_id`, default ON) |
 | `input_number.zwave_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableNetworkProtocolChecker per `checker_id`, 1-60, default 5) |
+| `input_text.zwave_health_repair_attempts` | Helper | Rolling 24h restart log as compact JSON (provisioned by RepairableNetworkProtocolChecker per `checker_id`) -- makes the cap survive an AppDaemon restart |
 
 ## Associated Cards
 
