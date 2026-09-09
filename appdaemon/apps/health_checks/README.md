@@ -323,7 +323,7 @@ zwave_health_checker:
   repair_max_per_24h: 3                             # Rolling 24h cap, then escalate to critical (default 3)
   repair_quiet_period_s: 180                        # Settle time after an action (default 180)
   repair_recovery_wait_s: 300                       # How long to watch for recovery after a press (default 300)
-  auto_repair_enabled_default: true                 # Initial toggle value, applied on creation only (default false)
+  auto_repair_enabled_default: true                 # Seeds the toggle at creation AND governs the whole first run (default false)
   auto_repair_delay_min_default: 5                  # Dwell before the first restart, minutes (default 5)
 ```
 

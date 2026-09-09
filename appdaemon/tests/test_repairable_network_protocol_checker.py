@@ -1282,3 +1282,362 @@ class TestSupportsRepairReflectsConfig:
         logged = " ".join(str(c) for c in app.log.call_args_list)
         assert "repair support DISABLED" in logged
         assert "repair support enabled" not in logged
+
+
+class TestUnreadableToggleKeepsTheDefault:
+    """A helper AppDaemon cannot see must not silently disable auto-repair.
+
+    AppDaemon loads its entity list at startup, so for the whole first run
+    after `_provision_repair_helpers` creates them, `get_state` returns None.
+    Treating that as a real read (`str(None) == "on"` → False) shipped 1.17.0
+    inert: the toggle was `on` in HA, the checker had it cached as disabled,
+    and nothing in the logs said so.
+    """
+
+    @pytest.mark.parametrize("raw", [None, "unavailable", "unknown"])
+    def test_unreadable_toggle_keeps_the_cached_value(self, raw):
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": raw},
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_a_real_off_still_disables(self):
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": "off"},
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_enabled is False
+
+    def test_unreadable_toggle_still_permits_repair(self):
+        """The end-to-end consequence: the restart actually happens."""
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        app._unhealthy_since = _ago(minutes=30)
+
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert len(_presses(app)) == 1
+
+
+class TestRepairConfigCommandUpdatesTheCache:
+    """An explicit user choice must take effect even while the helper is unreadable.
+
+    `_update_repair_config` writes the helper and used to rely on the next
+    `get_state` to pick the value up — but during the unreadable window that
+    read stays None for the rest of the run. An operator turning auto-repair
+    off from the card would see it off in the card and in HA, and the board
+    would still get restarted.
+    """
+
+    def _cmd(self, app, **payload):
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", **payload},
+            {},
+        )
+
+    def test_turning_off_takes_effect_immediately(self):
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        assert app._cached_auto_repair_enabled is True
+
+        self._cmd(app, auto_repair_enabled=False)
+
+        assert app._cached_auto_repair_enabled is False
+        # ...and the restart really does not happen.
+        app._unhealthy_since = _ago(minutes=30)
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+        assert _presses(app) == []
+
+    def test_turning_on_takes_effect_immediately(self):
+        app = _make_app(
+            {"auto_repair_enabled_default": False},
+            states={"input_boolean.zwave_health_auto_repair": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        self._cmd(app, auto_repair_enabled=True)
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_delay_change_takes_effect_immediately(self):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        self._cmd(app, auto_repair_delay_min=17)
+
+        assert app._cached_auto_repair_delay_min == 17
+
+
+class TestUnreadableToggleLogging:
+    def test_unreadable_warns_once_then_recovers_at_info(self):
+        """The window needs a visible open and close, not a message per cycle."""
+        app = _make_app(
+            states={"input_boolean.zwave_health_auto_repair": None}
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        warnings = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" and "not readable" in str(c)
+        ]
+        assert len(warnings) == 1, "should warn on the transition, not every cycle"
+
+        app.entity_states["input_boolean.zwave_health_auto_repair"] = "on"
+        _run(app._refresh_auto_repair_config())
+
+        infos = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "INFO" and "readable again" in str(c)
+        ]
+        assert len(infos) == 1
+
+    def test_clean_start_does_not_announce_a_window_that_never_opened(self):
+        """`is readable again` is the phrase for the *close* of a window."""
+        app = _make_app(states={"input_boolean.zwave_health_auto_repair": "on"})
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert not [
+            c for c in app.log.call_args_list if "readable again" in str(c)
+        ]
+        assert app._toggle_readable is True
+
+
+class TestRepairConfigWriteFailures:
+    def test_a_failed_toggle_write_does_not_update_the_cache(self):
+        """Caching a write that failed asserts the opposite of HA."""
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": "on"},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        app.call_service = MagicMock(side_effect=RuntimeError("boom"))
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_enabled": False},
+            {},
+        )
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_a_failed_delay_write_does_not_update_the_cache(self):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": "5"}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        app.call_service = MagicMock(side_effect=RuntimeError("boom"))
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": 42},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == 5
+
+    @pytest.mark.parametrize("value", ["17.0", 17.0, 17])
+    def test_float_shaped_delays_from_the_card_are_accepted(self, value):
+        """The helper read uses int(float(...)); the card path must match."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": value},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == 17
+
+    def test_an_unparseable_delay_is_ignored_not_fatal(self):
+        app = _make_app()
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        before = app._cached_auto_repair_delay_min
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": "soon"},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == before
+
+    def test_unreadable_delay_helper_warns_on_the_transition(self):
+        """logging-standards puts "config key missing (using default)" at WARNING."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        warnings = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING"
+            and "auto_repair_delay" in str(c)
+            and "not readable" in str(c)
+        ]
+        assert len(warnings) == 1
+
+    def test_unparseable_delay_does_not_skip_the_rest_of_the_command(self):
+        """A bare return here would silently skip anything appended later."""
+        app = _make_app(
+            states={
+                "input_boolean.zwave_health_auto_repair": "on",
+                "input_number.zwave_health_auto_repair_delay": "5",
+            }
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {
+                "action": "update_repair_config",
+                "auto_repair_enabled": False,
+                "auto_repair_delay_min": "soon",
+            },
+            {},
+        )
+
+        # The toggle half of the same command still applied.
+        assert app._cached_auto_repair_enabled is False
+        # ...and the bad delay changed nothing.
+        assert app._cached_auto_repair_delay_min == 5
+        assert not [
+            c for c in app.call_service.call_args_list
+            if c[0] and c[0][0] == "input_number/set_value"
+        ]
+
+
+class TestDelayIsClamped:
+    """A delay of 0 collapses the dwell gate — one of the hard safety limits.
+
+    Reachable through the card: `toggle_auto_repair` doesn't guard `< 1` the
+    way `set_repair_delay` does, and `<input type="number" min="1">` doesn't
+    block a *typed* 0. HA rejects `set_value(0)` without AppDaemon raising, so
+    an unclamped cache would hold a value the helper never accepted — and
+    during the unreadable window nothing can correct it.
+    """
+
+    @pytest.mark.parametrize(
+        "sent,expected", [(0, 1), (-5, 1), (900, 60), (17, 17)]
+    )
+    def test_command_delays_are_clamped(self, sent, expected):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": sent},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == expected
+
+    def test_a_zero_delay_cannot_collapse_the_dwell(self):
+        """The end-to-end consequence: no press on the first unhealthy cycle."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": 0},
+            {},
+        )
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_an_out_of_range_helper_value_is_clamped(self):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": "0"}
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_delay_min == 1
+
+    @pytest.mark.parametrize("configured,expected", [(0, 1), (-1, 1), (999, 60)])
+    def test_the_configured_default_is_clamped_too(self, configured, expected):
+        """The config seed is the other door to the same dwell collapse."""
+        app = _make_app({"auto_repair_delay_min_default": configured})
+        app.initialize()
+
+        assert app._auto_repair_delay_min_default == expected
+        assert app._cached_auto_repair_delay_min == expected
+
+    def test_a_zero_configured_default_cannot_collapse_the_dwell(self):
+        app = _make_app(
+            {"auto_repair_delay_min_default": 0},
+            states={"input_number.zwave_health_auto_repair_delay": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_clamping_is_logged(self):
+        """Overriding what an operator asked for must not be silent."""
+        app = _make_app({"auto_repair_delay_min_default": 0})
+        app.initialize()
+
+        assert [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING"
+            and "outside the permitted" in str(c)
+        ]
+
+    def test_in_range_values_are_not_logged(self):
+        app = _make_app({"auto_repair_delay_min_default": 5})
+        app.initialize()
+
+        assert not [
+            c for c in app.log.call_args_list
+            if "outside the permitted" in str(c)
+        ]
