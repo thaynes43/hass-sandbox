@@ -172,8 +172,8 @@ fan_health_checker:
   checker_name: Ceiling Fans                          # Display name on cards
   check_interval_s: 180                              # Check frequency (seconds)
   repair_recovery_wait_s: 300                        # Max wait for recovery after repair
-  auto_repair_enabled_default: false                 # Default auto-repair toggle
-  auto_repair_delay_min_default: 5                   # Default minutes before auto-repair
+  auto_repair_enabled_default: false                 # Seeds the toggle AND governs the first run while the helper is unreadable
+  auto_repair_delay_min_default: 5                   # Default minutes before auto-repair; seeded the same way, clamped to 1-60
   repair_backoff_max_min: 360                        # Backoff cap for repair retries (minutes)
   repair_backoff_reset_min: 30                       # Recovery must hold this long to reset the ladder
   restore_state_enabled: true                        # Re-apply on/off + speed + direction after repair

@@ -72,6 +72,17 @@ REPAIR_FAILED = "failed"
 
 REPAIR_POLL_INTERVAL_S = 5
 
+#: States that mean "no usable reading", not a real value.
+UNAVAILABLE_STATES = ("unavailable", "unknown", "none", "")
+
+#: Bounds of the auto-repair delay helper. Every path that can set the cached
+#: delay clamps to these, and the ensure_helper call uses them too, so the
+#: clamp and the helper can never drift apart. HA silently rejects a set_value
+#: outside the helper's range without AppDaemon raising, so an unclamped cache
+#: would hold a value the helper never accepted.
+DELAY_MIN_MIN = 1
+DELAY_MIN_MAX = 60
+
 # Delay between fan restore commands so the just-rebooted fan accepts each one
 RESTORE_STEP_DELAY_S = 1
 
@@ -113,8 +124,21 @@ class FanHealthChecker(hass.Hass):
         self._auto_repair_enabled_default: bool = bool(
             args.get("auto_repair_enabled_default", False)
         )
-        self._auto_repair_delay_min_default: int = int(
-            args.get("auto_repair_delay_min_default", 5)
+        #: None until the first read attempt; then whether it succeeded.
+        #: Drives the transition-only logging in _refresh_auto_repair_config.
+        self._toggle_readable: Optional[bool] = None
+        self._delay_readable: Optional[bool] = None
+        #: Latches the out-of-range warning so _clamp_delay says it once per
+        #: episode instead of every check cycle. Must exist before the first
+        #: _clamp_delay call below.
+        self._delay_clamped_logged: bool = False
+        # Clamped here so every path that can set the cached delay obeys
+        # the helper's bounds. Without this, an out-of-range
+        # auto_repair_delay_min_default would be honoured verbatim for the
+        # whole first run (a 0 collapses the dwell gate entirely) — the
+        # same failure the card clamp prevents, through a different door.
+        self._auto_repair_delay_min_default: int = self._clamp_delay(
+            int(args.get("auto_repair_delay_min_default", 5))
         )
         # Re-apply the fan's pre-repair on/off + speed + direction after a
         # successful repair (the power-cycle reboots the fan to its hardware
@@ -246,10 +270,31 @@ class FanHealthChecker(hass.Hass):
                 f"{self._checker_id} Health Auto Repair",
             )
             if created:
-                self.log(
-                    f"Provisioned input_boolean.{self._checker_id}_health_auto_repair",
-                    level="INFO",
-                )
+                entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
+                self.log(f"Provisioned {entity_id}", level="INFO")
+                # A freshly created input_boolean is off. The unreadable-helper
+                # guard in _refresh_auto_repair_config honours
+                # auto_repair_enabled_default for the whole first run, so
+                # without this the toggle would silently flip itself off the
+                # moment the helper became readable after the next restart —
+                # auto-repair disabled one deploy later, with nothing to say
+                # so. Only applied on creation: a later manual "off" is never
+                # overridden.
+                if self._auto_repair_enabled_default:
+                    try:
+                        self.call_service(
+                            "input_boolean/turn_on", entity_id=entity_id
+                        )
+                        self.log(
+                            f"Auto-repair default-enabled via {entity_id}",
+                            level="INFO",
+                        )
+                    except Exception as exc:
+                        self.log(
+                            f"Failed to default-enable auto-repair on "
+                            f"{entity_id}: {exc!r}",
+                            level="WARNING",
+                        )
         except Exception as exc:
             self.log(f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR")
 
@@ -257,8 +302,8 @@ class FanHealthChecker(hass.Hass):
             created = await prov.ensure_helper(
                 "input_number",
                 f"{self._checker_id} Health Auto Repair Delay",
-                min=1,
-                max=60,
+                min=DELAY_MIN_MIN,
+                max=DELAY_MIN_MAX,
                 step=1,
                 unit_of_measurement="min",
                 mode="box",
@@ -608,21 +653,107 @@ class FanHealthChecker(hass.Hass):
     # ------------------------------------------------------------------
 
     async def _refresh_auto_repair_config(self) -> None:
-        """Read auto-repair config from HA helpers (async). Updates cached values."""
+        """Refresh the cached toggle/delay from their HA helpers.
+
+        A read that comes back ``None`` means AppDaemon does not know the
+        entity — the normal state for the whole first run after these helpers
+        are provisioned, because AppDaemon loads its entity list at startup
+        and the helpers did not exist then. ``str(None) == "on"`` is False, so
+        treating that as a real read silently disables auto-repair until the
+        next pod restart, with nothing in the logs to say so (the 1.17.0
+        Z-Wave failure). An unknown value is not evidence, so the previous
+        cached value is kept — which on the first run is
+        ``auto_repair_enabled_default``.
+        """
         try:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
             enabled_state = await self.get_state(entity_id)
-            self._cached_auto_repair_enabled = str(enabled_state) == "on"
+            readable = (
+                enabled_state is not None
+                and str(enabled_state).lower() not in UNAVAILABLE_STATES
+            )
+            if readable:
+                self._cached_auto_repair_enabled = str(enabled_state) == "on"
+            # Log the transitions, not every cycle: an operator needs the
+            # window to have a visible open and close, without a message
+            # every check_interval_s for as long as it lasts.
+            if readable != self._toggle_readable:
+                # A clean start with a readable helper is not the *close* of
+                # an unreadable window — only announce that if one was open.
+                if readable and self._toggle_readable is None:
+                    pass
+                elif readable:
+                    self.log(
+                        f"{entity_id} is readable again — auto-repair "
+                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'} "
+                        f"from the helper",
+                        level="INFO",
+                    )
+                else:
+                    self.log(
+                        f"{entity_id} not readable (state={enabled_state!r}) — "
+                        f"running on the cached default, auto-repair "
+                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
+                        level="WARNING",
+                    )
+                self._toggle_readable = readable
         except Exception as exc:
             self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
 
         try:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
             delay_state = await self.get_state(entity_id)
-            if delay_state is not None and str(delay_state) not in ("unavailable", "unknown"):
-                self._cached_auto_repair_delay_min = int(float(delay_state))
+            delay_readable = (
+                delay_state is not None
+                and str(delay_state).lower() not in UNAVAILABLE_STATES
+            )
+            if delay_readable:
+                self._cached_auto_repair_delay_min = self._clamp_delay(
+                    int(float(delay_state))
+                )
+            if delay_readable != self._delay_readable:
+                if delay_readable and self._delay_readable is None:
+                    pass
+                elif delay_readable:
+                    self.log(
+                        f"{entity_id} is readable again — auto-repair delay "
+                        f"{self._cached_auto_repair_delay_min}m from the helper",
+                        level="INFO",
+                    )
+                else:
+                    self.log(
+                        f"{entity_id} not readable (state={delay_state!r}) — "
+                        f"using the cached default of "
+                        f"{self._cached_auto_repair_delay_min}m",
+                        level="WARNING",
+                    )
+                self._delay_readable = delay_readable
         except Exception as exc:
             self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
+
+    def _clamp_delay(self, value: int) -> int:
+        """Clamp a delay to the helper's bounds, saying so when it bites.
+
+        logging-standards puts "validation failure with fallback" at WARNING,
+        and overriding what an operator asked for must not be silent. But the
+        helper read runs every check cycle, so an out-of-range value sitting
+        in the helper would otherwise warn every ``check_interval_s`` for as
+        long as it sat there. The warning is therefore emitted once per
+        out-of-range episode: ``_delay_clamped_logged`` latches it, and is
+        cleared again the moment an in-range value is seen.
+        """
+        clamped = max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
+        if clamped != value:
+            if not self._delay_clamped_logged:
+                self.log(
+                    f"Auto-repair delay {value}m is outside the permitted "
+                    f"{DELAY_MIN_MIN}-{DELAY_MIN_MAX}m range — using {clamped}m",
+                    level="WARNING",
+                )
+                self._delay_clamped_logged = True
+        else:
+            self._delay_clamped_logged = False
+        return clamped
 
     def _read_auto_repair_config(self) -> tuple[bool, int]:
         """Return cached auto-repair config (sync-safe)."""
@@ -1383,6 +1514,16 @@ class FanHealthChecker(hass.Hass):
     # ------------------------------------------------------------------
 
     def _update_repair_config(self, data: dict) -> None:
+        """Apply a repair-config command from the health dashboard card.
+
+        The command is authoritative for the cache, but only once the write
+        has landed. While the helper is unreadable (see
+        _refresh_auto_repair_config) the next get_state stays None for the
+        rest of the run, so waiting for the read-back would leave an explicit
+        choice unhonoured — the card would show off, HA would show off, and
+        the repair would still fire. Caching a write that FAILED is the
+        mirror-image bug, so every cache update sits in a success path.
+        """
         auto_enabled = data.get("auto_repair_enabled")
         delay_min = data.get("auto_repair_delay_min")
 
@@ -1390,33 +1531,64 @@ class FanHealthChecker(hass.Hass):
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
             current = str(self.get_state(entity_id))
             desired = "on" if auto_enabled else "off"
-            if current != desired:
-                service = "input_boolean/turn_on" if auto_enabled else "input_boolean/turn_off"
+            if current == desired:
+                self._cached_auto_repair_enabled = bool(auto_enabled)
+            else:
+                service = (
+                    "input_boolean/turn_on" if auto_enabled
+                    else "input_boolean/turn_off"
+                )
                 try:
                     self.call_service(service, entity_id=entity_id)
+                    self._cached_auto_repair_enabled = bool(auto_enabled)
                     self.log(
                         f"Auto-repair {'enabled' if auto_enabled else 'disabled'}",
                         level="INFO",
                     )
                 except Exception as exc:
-                    self.log(f"Failed to update auto-repair toggle: {exc!r}", level="ERROR")
+                    self.log(
+                        f"Failed to update auto-repair toggle: {exc!r}",
+                        level="ERROR",
+                    )
 
         if delay_min is not None:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
+            # Parse once, the same way the helper read does (int(float(...))),
+            # so a card sending "17.0" is handled rather than fatal. An
+            # unparseable value skips only the delay half of the command.
             try:
-                current = int(float(self.get_state(entity_id)))
+                desired_delay = self._clamp_delay(int(float(delay_min)))
             except (TypeError, ValueError):
-                current = None
-            if current != int(delay_min):
+                self.log(
+                    f"Ignoring unparseable auto_repair_delay_min: {delay_min!r}",
+                    level="WARNING",
+                )
+                desired_delay = None
+            try:
+                current_val = int(float(self.get_state(entity_id)))
+            except (TypeError, ValueError):
+                current_val = None
+            if desired_delay is None:
+                pass
+            elif current_val == desired_delay:
+                self._cached_auto_repair_delay_min = desired_delay
+            else:
                 try:
                     self.call_service(
                         "input_number/set_value",
                         entity_id=entity_id,
-                        value=int(delay_min),
+                        value=desired_delay,
                     )
-                    self.log(f"Auto-repair delay set to {delay_min}m", level="INFO")
+                    self._cached_auto_repair_delay_min = desired_delay
+                    self.log(
+                        f"Auto-repair delay {desired_delay}m set",
+                        level="INFO",
+                    )
                 except Exception as exc:
-                    self.log(f"Failed to update auto-repair delay: {exc!r}", level="ERROR")
+                    self.log(
+                        f"Failed to update auto-repair delay: {exc!r}",
+                        level="ERROR",
+                    )
 
     # ------------------------------------------------------------------
     # Helpers

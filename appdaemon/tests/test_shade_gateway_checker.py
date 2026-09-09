@@ -1241,3 +1241,414 @@ class TestGatewayProbes:
 
         assert app._probe_down_since is None
         assert app._repair_attempted_this_episode is False
+
+
+# ---------------------------------------------------------------------------
+# Tests — auto-repair config: the unreadable-helper window (v1.17.1 port)
+# ---------------------------------------------------------------------------
+
+TOGGLE_ENTITY = "input_boolean.shade_gateway_health_auto_repair"
+DELAY_ENTITY = "input_number.shade_gateway_health_auto_repair_delay"
+
+
+def _make_repair_app(
+    extra_args: dict | None = None, *, toggle: Any = None, delay: Any = None
+) -> ShadeGatewayChecker:
+    """`_make_app` with explicit states for the two auto-repair helpers.
+
+    `_mock_get_state` only knows the shade battery sensors, so every helper
+    read comes back ``None`` — which is exactly the unreadable window this
+    fix is about. Layering on top of it lets a test pick a real ``"on"`` /
+    ``"120"`` instead, or one of the other no-usable-value states.
+    """
+    app = _make_app(extra_args)
+    app.helper_states = {TOGGLE_ENTITY: toggle, DELAY_ENTITY: delay}
+
+    def _get_state(entity_id=None, **kwargs):
+        if entity_id in app.helper_states:
+            return app.helper_states[entity_id]
+        return _mock_get_state(entity_id, **kwargs)
+
+    app.get_state = AsyncMock(side_effect=_get_state)
+    return app
+
+
+def _capture_tasks(app) -> list:
+    """Hold whatever `_start_repair` hands to `create_task` for later."""
+    app.captured_tasks = []
+    app.create_task = MagicMock(side_effect=app.captured_tasks.append)
+    return app.captured_tasks
+
+
+def _drive_repair(app) -> None:
+    """Run the captured repair coroutine with the settle/poll sleeps skipped."""
+
+    async def _inner():
+        while app.captured_tasks:
+            await app.captured_tasks.pop(0)
+
+    with patch(f"{_CHECKER_MOD}.asyncio.sleep", new=AsyncMock(return_value=None)):
+        _run(_inner())
+
+
+def _presses(app) -> list:
+    return [
+        c for c in app.call_service.call_args_list
+        if c.args[:1] == ("button/press",)
+    ]
+
+
+def _warnings(app, *fragments: str) -> list:
+    return [
+        c for c in app.log.call_args_list
+        if c[1].get("level") == "WARNING"
+        and all(f in str(c) for f in fragments)
+    ]
+
+
+def _attributed_episode(app, *, minutes_ago: int = 0) -> None:
+    """Put the checker in a gateway-attributed outage (two shades dropped)."""
+    _start_episode(
+        app,
+        "sensor.test_shade_a_battery",
+        "sensor.test_shade_b_battery",
+        minutes_ago=minutes_ago,
+    )
+
+
+class TestUnreadableToggleKeepsTheDefault:
+    """A helper AppDaemon cannot see must not silently disable auto-repair.
+
+    AppDaemon loads its entity list at startup, so for the whole first run
+    after `_provision_entities` creates them, `get_state` returns None.
+    Treating that as a real read (`str(None) == "on"` → False) shipped the
+    Z-Wave checker inert in 1.17.0: the toggle was `on` in HA, the checker
+    had it cached as disabled, and nothing in the logs said so. The same
+    idiom lived here, guarding a gateway PoE power-cycle.
+    """
+
+    @pytest.mark.parametrize("raw", [None, "unavailable", "unknown", "none", ""])
+    def test_unreadable_toggle_keeps_the_cached_value(self, raw):
+        app = _make_repair_app({"auto_repair_enabled_default": True}, toggle=raw)
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_a_real_off_still_disables(self):
+        app = _make_repair_app({"auto_repair_enabled_default": True}, toggle="off")
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_enabled is False
+
+    def test_unreadable_toggle_still_power_cycles_the_gateway(self):
+        """The end-to-end consequence: the PoE port really does get cycled."""
+        app = _make_repair_app(
+            {"repair_settle_s": 1, "repair_recovery_wait_s": 1},
+            toggle=None,
+        )
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        _capture_tasks(app)
+        # 200m > the 120m cached default delay.
+        _attributed_episode(app, minutes_ago=200)
+
+        app._evaluate_auto_repair()
+        _drive_repair(app)
+
+        assert app._repair_status != REPAIR_IDLE
+        assert len(_presses(app)) == 1
+        assert _presses(app)[0].kwargs["entity_id"] == (
+            "button.test_gateway_power_cycle"
+        )
+
+
+class TestRepairConfigCommandUpdatesTheCache:
+    """An explicit user choice must take effect even while the helper is unreadable.
+
+    `_update_repair_config` writes the helper and used to rely on the next
+    `get_state` to pick the value up — but during the unreadable window that
+    read stays None for the rest of the run. An operator turning auto-repair
+    off from the card would see it off in the card and in HA, and the gateway
+    would still get power-cycled.
+    """
+
+    def _cmd(self, app, **payload):
+        app._on_repair_command(
+            "health_check_repair_shade_gateway",
+            {"action": "update_repair_config", **payload},
+            {},
+        )
+
+    def test_turning_off_takes_effect_immediately(self):
+        app = _make_repair_app({"auto_repair_enabled_default": True}, toggle=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        assert app._cached_auto_repair_enabled is True
+
+        self._cmd(app, auto_repair_enabled=False)
+
+        assert app._cached_auto_repair_enabled is False
+
+    def test_turning_off_really_prevents_the_power_cycle(self):
+        """The end-to-end mirror: no button press for a long-dead gateway."""
+        app = _make_repair_app({"auto_repair_enabled_default": True}, toggle=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        _capture_tasks(app)
+
+        self._cmd(app, auto_repair_enabled=False)
+        _attributed_episode(app, minutes_ago=200)
+        app._evaluate_auto_repair()
+
+        assert app.captured_tasks == []
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_IDLE
+
+    def test_turning_on_takes_effect_immediately(self):
+        app = _make_repair_app({"auto_repair_enabled_default": False}, toggle=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+
+        self._cmd(app, auto_repair_enabled=True)
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_delay_change_takes_effect_immediately(self):
+        app = _make_repair_app(delay=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+
+        self._cmd(app, auto_repair_delay_min=180)
+
+        assert app._cached_auto_repair_delay_min == 180
+
+
+class TestUnreadableToggleLogging:
+    def test_unreadable_warns_once_then_recovers_at_info(self):
+        """The window needs a visible open and close, not a message per cycle."""
+        app = _make_repair_app(toggle=None)
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        assert len(_warnings(app, "input_boolean", "not readable")) == 1, (
+            "should warn on the transition, not every cycle"
+        )
+
+        app.helper_states[TOGGLE_ENTITY] = "on"
+        _run(app._refresh_auto_repair_config())
+
+        infos = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "INFO" and "readable again" in str(c)
+        ]
+        assert len(infos) == 1
+
+    def test_clean_start_does_not_announce_a_window_that_never_opened(self):
+        """`is readable again` is the phrase for the *close* of a window."""
+        app = _make_repair_app(toggle="on", delay="120")
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+
+        assert not [
+            c for c in app.log.call_args_list if "readable again" in str(c)
+        ]
+        assert not _warnings(app, "not readable")
+        assert app._toggle_readable is True
+        assert app._delay_readable is True
+
+
+class TestRepairConfigWriteFailures:
+    def test_a_failed_toggle_write_does_not_update_the_cache(self):
+        """Caching a write that failed asserts the opposite of HA."""
+        app = _make_repair_app({"auto_repair_enabled_default": True}, toggle="on")
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        app.call_service = MagicMock(side_effect=RuntimeError("boom"))
+
+        app._update_repair_config({"auto_repair_enabled": False})
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_a_failed_delay_write_does_not_update_the_cache(self):
+        app = _make_repair_app(delay="120")
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        app.call_service = MagicMock(side_effect=RuntimeError("boom"))
+
+        app._update_repair_config({"auto_repair_delay_min": 180})
+
+        assert app._cached_auto_repair_delay_min == 120
+
+    @pytest.mark.parametrize("value", ["180.0", 180.0, 180])
+    def test_float_shaped_delays_from_the_card_are_accepted(self, value):
+        """The helper read uses int(float(...)); the card path must match."""
+        app = _make_repair_app(delay=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+
+        app._update_repair_config({"auto_repair_delay_min": value})
+
+        assert app._cached_auto_repair_delay_min == 180
+
+    def test_an_unparseable_delay_is_ignored_not_fatal(self):
+        app = _make_repair_app(delay="120")
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+
+        app._update_repair_config({"auto_repair_delay_min": "soon"})
+
+        assert app._cached_auto_repair_delay_min == 120
+        assert _warnings(app, "unparseable auto_repair_delay_min")
+
+    def test_unreadable_delay_helper_warns_on_the_transition(self):
+        """logging-standards puts "config key missing (using default)" at WARNING."""
+        app = _make_repair_app(delay=None)
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        assert len(
+            _warnings(app, "auto_repair_delay", "not readable")
+        ) == 1
+
+    def test_unparseable_delay_does_not_skip_the_rest_of_the_command(self):
+        """A bare return here would silently skip anything appended later."""
+        app = _make_repair_app(toggle="on", delay="120")
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+
+        app._update_repair_config(
+            {"auto_repair_enabled": False, "auto_repair_delay_min": "soon"}
+        )
+
+        # The toggle half of the same command still applied.
+        assert app._cached_auto_repair_enabled is False
+        # ...and the bad delay changed nothing.
+        assert app._cached_auto_repair_delay_min == 120
+        assert not [
+            c for c in app.call_service.call_args_list
+            if c.args[:1] == ("input_number/set_value",)
+        ]
+
+
+class TestDelayIsClamped:
+    """A delay of 0 collapses the grace window before a PoE power-cycle.
+
+    Reachable through the card, which does not guard the typed value, and HA
+    rejects a `set_value` outside the helper's 15-360m range without
+    AppDaemon raising — so an unclamped cache would hold a delay the helper
+    never accepted, and during the unreadable window nothing can correct it.
+    A gateway blip would then cycle the PoE port on its first check cycle,
+    blipping every shade in the house.
+    """
+
+    @pytest.mark.parametrize(
+        "sent,expected", [(0, 15), (-5, 15), (900, 360), (120, 120)]
+    )
+    def test_command_delays_are_clamped(self, sent, expected):
+        app = _make_repair_app(delay=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+
+        app._update_repair_config({"auto_repair_delay_min": sent})
+
+        assert app._cached_auto_repair_delay_min == expected
+
+    def test_a_zero_delay_cannot_collapse_the_grace_window(self):
+        """The end-to-end consequence: no press on the first unhealthy cycle."""
+        app = _make_repair_app(delay=None)
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        _capture_tasks(app)
+
+        app._update_repair_config({"auto_repair_delay_min": 0})
+        _attributed_episode(app)
+        app._evaluate_auto_repair()
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_PENDING
+
+    @pytest.mark.parametrize("raw,expected", [("0", 15), ("900", 360)])
+    def test_an_out_of_range_helper_value_is_clamped(self, raw, expected):
+        app = _make_repair_app(delay=raw)
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_delay_min == expected
+
+    @pytest.mark.parametrize(
+        "configured,expected", [(0, 15), (-1, 15), (999, 360)]
+    )
+    def test_the_configured_default_is_clamped_too(self, configured, expected):
+        """The config seed is the other door to the same collapsed window."""
+        app = _make_repair_app({"auto_repair_delay_min_default": configured})
+        _init_only(app)
+
+        assert app._auto_repair_delay_min_default == expected
+        assert app._cached_auto_repair_delay_min == expected
+
+    def test_a_zero_configured_default_cannot_collapse_the_window(self):
+        app = _make_repair_app(
+            {"auto_repair_delay_min_default": 0}, delay=None
+        )
+        _init_only(app)
+        _run(app._refresh_auto_repair_config())
+        _capture_tasks(app)
+
+        _attributed_episode(app)
+        app._evaluate_auto_repair()
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_clamping_is_logged(self):
+        """Overriding what an operator asked for must not be silent."""
+        app = _make_repair_app({"auto_repair_delay_min_default": 0})
+        _init_only(app)
+
+        assert _warnings(app, "outside the permitted")
+
+    def test_in_range_values_are_not_logged(self):
+        app = _make_repair_app({"auto_repair_delay_min_default": 120})
+        _init_only(app)
+
+        assert not [
+            c for c in app.log.call_args_list
+            if "outside the permitted" in str(c)
+        ]
+
+    def test_an_out_of_range_helper_warns_once_not_every_cycle(self):
+        """The helper is read every check_interval_s for as long as it sits there.
+
+        Without the `_delay_clamped_logged` latch a single bad value in the
+        helper would warn every 300s forever — the log noise that gets a real
+        warning ignored. It must still warn again for a *new* episode, which
+        is what the second half exercises.
+        """
+        app = _make_repair_app(delay="0")
+        _init_only(app)
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        assert len(_warnings(app, "outside the permitted")) == 1
+
+        # An in-range read clears the latch...
+        app.helper_states[DELAY_ENTITY] = "120"
+        _run(app._refresh_auto_repair_config())
+        assert len(_warnings(app, "outside the permitted")) == 1
+
+        # ...so the next out-of-range episode is announced again.
+        app.helper_states[DELAY_ENTITY] = "900"
+        _run(app._refresh_auto_repair_config())
+        assert len(_warnings(app, "outside the permitted")) == 2

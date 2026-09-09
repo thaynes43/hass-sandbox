@@ -104,7 +104,7 @@ Auto-repair reloads at most once per `reload_cooldown_s` (default 1/hour) — pe
 | `input_boolean.protect_health_auto_repair` | Helper | Toggle auto-repair on/off |
 | `input_number.protect_health_auto_repair_delay` | Helper | Minutes before auto-repair triggers (1-60) |
 
-On **first provision only**, the toggle is turned on when `auto_repair_enabled_default` is true and the delay is set to `auto_repair_delay_min_default`. After that the helpers are the source of truth — config defaults are not re-applied.
+On **first provision**, the toggle is turned on when `auto_repair_enabled_default` is true and the delay is set to `auto_repair_delay_min_default`. Those two config values also govern the whole first run whenever the helpers cannot be read: AppDaemon loads its entity list at startup, so a helper created after that reads back as `None` (or `unavailable`/`unknown`) until the next restart, and an unreadable read keeps the cached default rather than being taken as `off`. Once the helpers read cleanly they are the source of truth — config defaults are not re-applied.
 
 ## Configuration Reference
 
@@ -131,8 +131,8 @@ protect_health_checker:
   reload_cooldown_s: 3600                 # Min seconds between auto-repair reloads (default: 3600)
   repair_settle_s: 60                     # Post-reload settle window; re-registration timestamps inside it don't count (default: 60)
   repair_recovery_wait_s: 600             # Max seconds to wait for a genuine event after reload (default: 600)
-  auto_repair_enabled_default: true       # Toggle state on FIRST provision only (default: true)
-  auto_repair_delay_min_default: 1        # Delay helper value on FIRST provision only (default: 1)
+  auto_repair_enabled_default: true       # Seeds the toggle at creation AND governs the first run while the helper is unreadable (default: true)
+  auto_repair_delay_min_default: 1        # Seeds the delay helper the same way; clamped to 1-60 (default: 1)
   alerting:
     alertname: ProtectEventStreamFrozen   # Default would be UniFiProtectUnhealthy
 ```

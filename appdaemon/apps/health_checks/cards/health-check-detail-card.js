@@ -877,18 +877,20 @@ class HealthCheckDetailCard extends HTMLElement {
         this._callRelay("unmute_checker", { checker_id: el.dataset.checker });
       } else if (action === "toggle_auto_repair") {
         const checker_id = el.dataset.checker;
-        const auto_repair_enabled = el.checked;
+        const payload = {
+          checker_id,
+          auto_repair_enabled: el.checked,
+        };
         const delayInput = root.querySelector(
           `.repair-delay-input[data-checker="${checker_id}"]`
         );
-        const auto_repair_delay_min = delayInput
-          ? parseInt(delayInput.value, 10)
-          : 15;
-        this._callRelay("update_repair_config", {
-          checker_id,
-          auto_repair_enabled,
-          auto_repair_delay_min,
-        });
+        if (delayInput) {
+          const auto_repair_delay_min = parseInt(delayInput.value, 10);
+          if (!isNaN(auto_repair_delay_min) && auto_repair_delay_min >= 1) {
+            payload.auto_repair_delay_min = auto_repair_delay_min;
+          }
+        }
+        this._callRelay("update_repair_config", payload);
       } else if (action === "set_repair_delay") {
         const checker_id = el.dataset.checker;
         const auto_repair_delay_min = parseInt(el.value, 10);

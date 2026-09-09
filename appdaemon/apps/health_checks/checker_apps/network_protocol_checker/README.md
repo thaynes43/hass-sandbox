@@ -118,5 +118,5 @@ Set `module` to `...network_protocol_checker.repairable_network_protocol_checker
 | `repair_max_per_24h` | No | `3` | Rolling 24h restart cap; once spent, stop repairing and force `critical` |
 | `repair_quiet_period_s` | No | `180` | Settle time after an action before re-evaluating |
 | `repair_recovery_wait_s` | No | `300` | How long to poll for recovery after a press |
-| `auto_repair_enabled_default` | No | `false` | Initial toggle value, applied on helper creation only |
-| `auto_repair_delay_min_default` | No | `5` | Initial dwell in minutes before the first restart |
+| `auto_repair_enabled_default` | No | `false` | Seeds the toggle at creation **and** is the value the checker runs on for the whole first run, since a helper created after AppDaemon loaded its entity list reads back unknown until the next restart |
+| `auto_repair_delay_min_default` | No | `5` | Initial dwell in minutes before the first restart. Seeds the helper and governs the first run the same way; clamped to 1-60 |

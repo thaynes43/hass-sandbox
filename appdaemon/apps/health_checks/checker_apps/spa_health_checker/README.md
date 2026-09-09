@@ -81,8 +81,8 @@ spa_health_checker:
   repair_power_off_s: 60                       # Seconds to hold power off during the cycle
   repair_backoff_max_min: 360                  # Backoff cap for repair retries (minutes)
   check_interval_s: 120                        # Check frequency (seconds)
-  auto_repair_enabled_default: false           # Default auto-repair toggle state
-  auto_repair_delay_min_default: 15            # Default minutes before auto-repair triggers
+  auto_repair_enabled_default: false           # Seeds the toggle AND governs the first run while the helper is unreadable
+  auto_repair_delay_min_default: 15            # Default minutes before auto-repair; seeded the same way, clamped to 1-60
 ```
 
 > **Backward compatibility**: the legacy `staleness_entity` (single string) is still accepted and is treated as a one-element list. Prefer `staleness_entities` for new configs.

@@ -51,8 +51,8 @@ printer_health_checker:
   repair_switch: switch.downstairs_study_printer_switch  # Smart switch to toggle
   repair_recovery_wait_s: 300                            # Max wait for recovery
   repair_off_duration_s: 10                              # Seconds to keep switch off
-  auto_repair_enabled_default: false
-  auto_repair_delay_min_default: 5
+  auto_repair_enabled_default: false                     # Seeds the toggle AND governs the first run while the helper is unreadable
+  auto_repair_delay_min_default: 5                       # Seeded the same way; clamped to 1-60
   entities:
     - entity_id: sensor.brother_mfc_l3780cdw_series
       name: Status

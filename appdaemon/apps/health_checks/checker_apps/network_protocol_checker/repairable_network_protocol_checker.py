@@ -100,7 +100,7 @@ CONTROLLER_SENSOR = "sensor.health_check_status"
 ATTEMPT_WINDOW_S = 24 * 60 * 60
 
 #: States that mean "no usable reading", not a real value.
-UNAVAILABLE_STATES = ("unavailable", "unknown")
+UNAVAILABLE_STATES = ("unavailable", "unknown", "none", "")
 
 #: Bounds of the auto-repair delay helper. Every path that can set the cached
 #: delay clamps to these, including the card command: HA silently rejects a
@@ -160,6 +160,10 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         self._auto_repair_enabled_default: bool = bool(
             args.get("auto_repair_enabled_default", False)
         )
+        #: Latches the out-of-range warning so _clamp_delay says it once per
+        #: episode instead of every check cycle. Must exist before the first
+        #: _clamp_delay call below.
+        self._delay_clamped_logged: bool = False
         # Clamped here so every path that can set the cached delay obeys the
         # helper's bounds. Without this, auto_repair_delay_min_default: 0
         # collapses the dwell for the whole first run — the same failure the
@@ -664,7 +668,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             enabled_state = await self.get_state(entity_id)
             readable = (
                 enabled_state is not None
-                and str(enabled_state) not in UNAVAILABLE_STATES
+                and str(enabled_state).lower() not in UNAVAILABLE_STATES
             )
             if readable:
                 self._cached_auto_repair_enabled = str(enabled_state) == "on"
@@ -675,7 +679,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                 # A clean start with a readable helper is not the *close* of
                 # an unreadable window — only announce that if one was open.
                 if readable and self._toggle_readable is None:
-                    self._toggle_readable = True
+                    pass
                 elif readable:
                     self.log(
                         f"{entity_id} is readable again — auto-repair "
@@ -699,7 +703,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             delay_state = await self.get_state(entity_id)
             delay_readable = (
                 delay_state is not None
-                and str(delay_state) not in UNAVAILABLE_STATES
+                and str(delay_state).lower() not in UNAVAILABLE_STATES
             )
             if delay_readable:
                 self._cached_auto_repair_delay_min = self._clamp_delay(
@@ -729,17 +733,24 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         """Clamp a delay to the helper's bounds, saying so when it bites.
 
         logging-standards puts "validation failure with fallback" at WARNING,
-        and this cannot recur per cycle — it only fires where a value is
-        actually set — so there is no noise cost to being loud about
-        overriding what an operator asked for.
+        and overriding what an operator asked for must not be silent. But the
+        helper read runs every check cycle, so an out-of-range value sitting
+        in the helper would otherwise warn every ``check_interval_s`` for as
+        long as it sat there. The warning is therefore emitted once per
+        out-of-range episode: ``_delay_clamped_logged`` latches it, and is
+        cleared again the moment an in-range value is seen.
         """
         clamped = max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
         if clamped != value:
-            self.log(
-                f"Auto-repair delay {value}m is outside the permitted "
-                f"{DELAY_MIN_MIN}-{DELAY_MIN_MAX}m range — using {clamped}m",
-                level="WARNING",
-            )
+            if not self._delay_clamped_logged:
+                self.log(
+                    f"Auto-repair delay {value}m is outside the permitted "
+                    f"{DELAY_MIN_MIN}-{DELAY_MIN_MAX}m range — using {clamped}m",
+                    level="WARNING",
+                )
+                self._delay_clamped_logged = True
+        else:
+            self._delay_clamped_logged = False
         return clamped
 
     def _read_auto_repair_config(self) -> tuple[bool, int]:

@@ -21,6 +21,7 @@ A Home Assistant YAML sandbox + AppDaemon Python apps.
 
 - Everywhere:
   - `.agents/rules/hass.md` — project overview, HA/AppDaemon container separation, MCP usage, YAML formatting, non-admin frontend rule (**always applies**)
+  - `.agents/rules/finish-in-flight-work.md` — your session is the unit of delivery: finish, merge and deploy everything you start or find; no "follow-up" hand-offs (**always applies**)
 - `appdaemon/`:
   - `.agents/rules/appdaemon-architecture.md` — system overview, self-provisioning, relay script pattern, new app checklist
   - `.agents/rules/appdaemon-coding-guidelines.md` — apps vs shared libs, AI offloading, dev/prod naming
@@ -125,6 +126,7 @@ This repo often uses the Home Assistant MCP server for live HA work, but only wh
 - After `appdaemon/` changes, clearly state whether changes were only made in the repo or also deployed. Do not claim live HA changes unless they were actually performed.
 - When changes cannot be fully validated by unit tests alone (runtime behavior, card JS, MCP interactions), verify them yourself live (HA MCP, `kubectl`, Playwright) before committing and state what was verified in the PR body; list anything unverifiable under **Not verified** instead of waiting on the owner.
 - Only genuine requirements or design questions wait on the owner: ask them with `AskUserQuestion`, one at a time, when they arise. Never batch them or leave them as prose.
+- Finish everything in flight before your final message — merged **and** deployed, review findings fixed or concretely refuted on the PR, sibling instances of a bug fixed, stale instructions you tripped over corrected. Sessions are short-lived and worktrees are pruned; a "worth a follow-up" line is a deletion. Durable deferral is a `backlog/NNN-*.md` entry or GitHub issue only, and only for work needing a design decision. See `.agents/rules/finish-in-flight-work.md`.
 
 ## Shared playbooks
 

@@ -128,8 +128,8 @@ cielo_health_checker:
 | `repair_switch` | No | `""` | Shared repair switch entity ID (fallback when device has no per-device switch) |
 | `repair_recovery_wait_s` | No | `300` | Max time to wait for recovery after repair (seconds) |
 | `repair_off_duration_s` | No | `10` | How long to hold the switch off during power cycle |
-| `auto_repair_enabled_default` | No | `false` | Initial state of auto-repair toggle |
-| `auto_repair_delay_min_default` | No | `5` | Initial auto-repair delay in minutes |
+| `auto_repair_enabled_default` | No | `false` | Seeds the toggle at creation **and** is the value the checker runs on for the whole first run, since a helper created after AppDaemon loaded its entity list reads back unknown until the next restart |
+| `auto_repair_delay_min_default` | No | `5` | Initial auto-repair delay in minutes. Seeds the helper and governs the first run the same way; clamped to 1-60 |
 
 ### Device-level repair config
 

@@ -187,6 +187,10 @@ After any `appdaemon/` change, state what was changed:
 
 Open PRs **ready for review** (`gh pr create`, never `--draft`) once the branch is complete and verified. Marking ready triggers Claude Code Review, Agent Docs Audit, and Docs Site Audit on top of the required checks (`test`, `docs-build`, `build-and-push`); that review spend is intended. Wait for **all** of them, address findings with follow-up commits, then squash-merge your own PR (`gh pr merge <n> --squash --delete-branch`) and confirm it shows `MERGED`. Never push to `main` directly. A green, unmerged PR is unfinished work, not a hand-off.
 
+### Finish work in flight (required)
+
+Your session is the unit of delivery. Sessions get killed mid-turn (pod roll, context wipe, quota wall), worktrees are pruned, and nobody reads a closing "here is what I left open" message — anything not merged **and deployed** when the session ends is lost, and the next agent rediscovers it cold. So: a defect you find is yours, including the same bug in sibling files and the stale instruction you followed to get there; review findings get fixed, or a concrete reason on the PR why they don't apply — never "polish, merging anyway"; merged is not done when the repo has a deploy chain (haynes-ops tag bump, Flux reconcile, card copy + `?v=N` bump). Phrases like "worth a follow-up", "out of scope here", "leaving open", "if you want" mean you are not finished. The only durable deferral is a `backlog/NNN-*.md` entry or a GitHub issue with cold-start context, and only for work that genuinely needs a design decision. Full rule: `.agents/rules/finish-in-flight-work.md` (Tom, 2026-09-09).
+
 ### Button mapping doc sync (required)
 
 Any change to switch button behavior in `home-assistant/automations/switch-buttons/**` or related blueprints **must** also update `agent-docs/button-mappings.md` in the same session.

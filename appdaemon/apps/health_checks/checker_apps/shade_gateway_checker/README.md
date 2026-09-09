@@ -201,8 +201,8 @@ shade_gateway_checker:
   repair_button: button.switch_pro_max_48_poe_port_32_power_cycle
   repair_settle_s: 180                 # wait after button press before polling; also the post-repair flap-free bar
   repair_recovery_wait_s: 900          # total elapsed budget (from button press) to confirm recovery
-  auto_repair_enabled_default: true
-  auto_repair_delay_min_default: 120   # 2h grace before auto-restart
+  auto_repair_enabled_default: true    # seeds the toggle AND governs the first run while the helper is unreadable
+  auto_repair_delay_min_default: 120   # 2h grace before auto-restart; seeded the same way, clamped to 15-360
 ```
 
 `entity_patterns` uses the same include/exclude regex approach as

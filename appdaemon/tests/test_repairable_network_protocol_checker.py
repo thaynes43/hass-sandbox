@@ -1294,7 +1294,9 @@ class TestUnreadableToggleKeepsTheDefault:
     and nothing in the logs said so.
     """
 
-    @pytest.mark.parametrize("raw", [None, "unavailable", "unknown"])
+    @pytest.mark.parametrize(
+        "raw", [None, "unavailable", "unknown", "none", ""]
+    )
     def test_unreadable_toggle_keeps_the_cached_value(self, raw):
         app = _make_app(
             {"auto_repair_enabled_default": True},
@@ -1641,3 +1643,49 @@ class TestDelayIsClamped:
             c for c in app.log.call_args_list
             if "outside the permitted" in str(c)
         ]
+
+    def _clamp_warnings(self, app) -> list:
+        return [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING"
+            and "outside the permitted" in str(c)
+        ]
+
+    def test_an_out_of_range_helper_warns_once_not_every_cycle(self):
+        """The helper read runs every check_interval_s — the warning must not.
+
+        _clamp_delay's contract is "loud when it bites", but the helper-read
+        path calls it on every cycle, so an out-of-range value parked in the
+        helper would emit a WARNING every 180s forever. One warning per
+        out-of-range episode is the useful signal; the rest is noise that
+        buries everything else in the log.
+        """
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": "900"}
+        )
+        app.initialize()
+
+        for _ in range(3):
+            _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_delay_min == 60
+        assert len(self._clamp_warnings(app)) == 1
+
+    def test_a_new_out_of_range_episode_warns_again(self):
+        """Once an in-range value is read the episode is over — re-arm."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": "900"}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        assert len(self._clamp_warnings(app)) == 1
+
+        app.entity_states["input_number.zwave_health_auto_repair_delay"] = "5"
+        _run(app._refresh_auto_repair_config())
+        assert len(self._clamp_warnings(app)) == 1
+
+        app.entity_states["input_number.zwave_health_auto_repair_delay"] = "0"
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_delay_min == 1
+        assert len(self._clamp_warnings(app)) == 2

@@ -50,7 +50,7 @@ All work must go through a feature branch and pull request. Never commit directl
    gh pr merge <number> --squash --delete-branch
    gh pr view <number> --json state   # expect MERGED
    ```
-   Do not leave a green PR waiting for the owner; he does not mark PRs ready or merge them.
+   Do not leave a green PR waiting for the owner; he does not mark PRs ready or merge them. Do not merge with review findings unaddressed either: each one is fixed, or has a concrete reason on the PR why it does not apply. A review or audit job that failed on its own turn budget is not a finding and not a blocker — but it is not a reason to skip the findings it did post.
 
 6. **After merge to main**, deployment is automatic — GitHub Actions builds the Docker image, Flux rolls the Kubernetes deployment.
 
@@ -118,5 +118,6 @@ Agents (Claude Code, Cursor, etc.) creating PRs from local sessions must:
 5. Include a test plan in the PR body: what was verified live and how, plus a **Not verified** line for anything that could not be
 6. Reference the issue/story if one exists
 7. Wait for every check (unit tests, docs build, both docs audits, Code Review), address findings, then squash-merge the PR yourself and delete the branch
+8. Finish the deploy chain in the same session — for AppDaemon that is the haynes-ops `tag:` bump PR, Flux reconcile, and verifying the running pod; for card JS it is the copy into the HA pod plus the `?v=N` bump. Merged is not done. See `.agents/rules/finish-in-flight-work.md`.
 
 PRs created by agents via GitHub (e.g. `@claude` in issues) open as ready immediately — Code Review will run on those automatically.
