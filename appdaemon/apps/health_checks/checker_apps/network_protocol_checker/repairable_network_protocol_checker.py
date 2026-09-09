@@ -162,7 +162,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         # Rolling attempt log (datetimes), persisted via repair_state
         self._repair_attempts: List[datetime.datetime] = []
-        self._cap_reached: bool = False
         #: Why the partial-failure downgrade must be reversed this cycle
         #: (see _apply_escalation). Empty means no escalation.
         self._escalate_detail: str = ""
@@ -188,6 +187,13 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         # fallback read is only good for the first few hundred ms.
         await self._seed_attempts()
         await self._provision_repair_helpers()
+        # Write the seeded log back only now that the helper is guaranteed to
+        # exist. A seed from the sensor fallback (or a persist that silently
+        # failed last time) would otherwise leave the durable copy empty, and
+        # the next restart would come up with a fresh budget — the same
+        # failure, one restart later.
+        if self._repair_attempts:
+            self._persist_attempts()
         await self._refresh_auto_repair_config()
 
         self._register()
@@ -348,11 +354,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             self._last_repair_attempt = self._repair_attempts[-1].isoformat(
                 timespec="seconds"
             )
-        # Write the log back unconditionally. A seed from the sensor fallback
-        # (or a persist that silently failed last time) would otherwise leave
-        # the durable copy empty, and the very next restart would come up with
-        # a fresh budget — the same failure, one restart later.
-        self._persist_attempts()
         self.log(
             f"Seeded {len(self._repair_attempts)} repair attempt(s) in the last 24h "
             f"from {source} (most recent {self._last_repair_attempt}) — "
@@ -616,14 +617,8 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         """
         self._prune_attempts(now)
 
-        if len(self._repair_attempts) >= self._repair_max_per_24h:
-            oldest = self._repair_attempts[0]
-            retry_at = oldest + datetime.timedelta(seconds=ATTEMPT_WINDOW_S)
-            return False, (
-                f"Cap reached: {len(self._repair_attempts)}/"
-                f"{self._repair_max_per_24h} restarts in 24h "
-                f"(next allowed {retry_at.isoformat(timespec='seconds')})"
-            )
+        if self._cap_is_spent(now):
+            return False, self._cap_detail()
 
         if self._repair_attempts:
             last = self._repair_attempts[-1]
@@ -636,7 +631,31 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         return True, ""
 
+    def _cap_detail(self) -> str:
+        """Human-readable reason the restart budget is spent."""
+        if self._repair_max_per_24h <= 0:
+            return "Restarts disabled (repair_max_per_24h = 0)"
+        # Empty only when the cap is 0, handled above — but never index blind.
+        if not self._repair_attempts:
+            return "Cap reached: no restarts permitted"
+        retry_at = self._repair_attempts[0] + datetime.timedelta(
+            seconds=ATTEMPT_WINDOW_S
+        )
+        return (
+            f"Cap reached: {len(self._repair_attempts)}/"
+            f"{self._repair_max_per_24h} restarts in 24h "
+            f"(next allowed {retry_at.isoformat(timespec='seconds')})"
+        )
+
     def _cap_is_spent(self, now: datetime.datetime) -> bool:
+        """True when no further restart is permitted inside the window.
+
+        ``repair_max_per_24h <= 0`` means "never restart this board" and is a
+        legitimate way to disable the action while keeping the checker; it is
+        handled explicitly so the empty attempt list is never indexed.
+        """
+        if self._repair_max_per_24h <= 0:
+            return True
         self._prune_attempts(now)
         return len(self._repair_attempts) >= self._repair_max_per_24h
 
@@ -653,7 +672,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         to critical cannot flicker on and off between cycles.
         """
         now = datetime.datetime.now()
-        self._cap_reached = False
         self._escalate_detail = ""
 
         entity_result = self._find_result(results, self._entity_check_name)
@@ -698,14 +716,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         # auto-repair has already given up. Once the budget is spent a human
         # is needed no matter what the other signals say.
         if self._cap_is_spent(now):
-            self._cap_reached = True
-            oldest = self._repair_attempts[0]
-            retry_at = oldest + datetime.timedelta(seconds=ATTEMPT_WINDOW_S)
-            detail = (
-                f"Cap reached: {len(self._repair_attempts)}/"
-                f"{self._repair_max_per_24h} restarts in 24h "
-                f"(next allowed {retry_at.isoformat(timespec='seconds')})"
-            )
+            detail = self._cap_detail()
             if self._repair_status != REPAIR_FAILED:
                 self.log(
                     f"Auto-repair cap reached ({self._repair_max_per_24h}/24h) "
@@ -793,18 +804,20 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             self._repair_detail = ""
         self._auto_repair_deadline = None
         self._unhealthy_since = None
-        self._cap_reached = False
         self._escalate_detail = ""
 
     def _hold(self, detail: str) -> None:
         """Record why no action was taken this cycle, without acting.
 
-        Only a *scheduled* repair is stood down. Terminal statuses
-        (``failed`` / ``success``) are left alone so the Alertmanager bridge's
-        repair-hold logic still sees them; they clear when the integration
+        ``_hold`` is only ever reached with the integration *down*, which makes
+        a lingering ``success`` stale by definition — and ``success`` is one of
+        the bridge's repair-hold states, so leaving it up would withhold the
+        critical promotion for up to ``repair_hold_cap_s`` (1800 s) while the
+        outage is back. ``failed`` is kept: the bridge releases on it, and it
+        carries the reason a human needs. Both clear once the integration
         actually recovers (see :meth:`_clear_ladder`).
         """
-        if self._repair_status == REPAIR_PENDING:
+        if self._repair_status in (REPAIR_PENDING, REPAIR_SUCCESS):
             self._repair_status = REPAIR_IDLE
         self._auto_repair_deadline = None
         self._repair_detail = detail
@@ -867,7 +880,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                     self._repair_status = REPAIR_SUCCESS
                     self._repair_detail = f"Recovered after {elapsed}s"
                     self._unhealthy_since = None
-                    self._cap_reached = False
                     self._escalate_detail = ""
                     self.log(
                         f"Repair successful — {self._entity_check_name} back to "

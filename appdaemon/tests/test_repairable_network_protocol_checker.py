@@ -360,7 +360,7 @@ class TestMinimumInterval:
 
         assert _presses(app) == []
         assert app.captured_tasks == []
-        assert app._cap_reached is False
+        assert app._escalate_detail == ""
         assert app._repair_status == REPAIR_PENDING
         assert app._auto_repair_deadline == attempt + datetime.timedelta(
             seconds=DEFAULT_ARGS["repair_min_interval_s"]
@@ -398,7 +398,7 @@ class TestTwentyFourHourCap:
 
         assert _presses(app) == []
         assert app.captured_tasks == []
-        assert app._cap_reached is True
+        assert app._escalate_detail != ""
         assert app._repair_status == REPAIR_FAILED
         assert "Cap reached" in app._repair_detail
         assert "3/3" in app._repair_detail
@@ -416,7 +416,7 @@ class TestTwentyFourHourCap:
         _evaluate(app, _results())
 
         assert len(_presses(app)) == 1
-        assert app._cap_reached is False
+        assert app._escalate_detail == ""
         # 2 survivors + the new attempt; the 25 h-old entry is gone.
         assert len(app._repair_attempts) == 3
         assert stale not in app._repair_attempts
@@ -460,7 +460,7 @@ class TestCapEscalation:
         entity = [r for r in results if r["name"] == ENTITY_CHECK][0]
         assert entity["status"] == "warning"
         assert "partial failure" in entity["detail"]
-        assert app._cap_reached is False
+        assert app._escalate_detail == ""
         assert app._repair_status == REPAIR_PENDING  # dwell started, no action
         assert _presses(app) == []
 
@@ -561,7 +561,7 @@ class TestPersistenceAcrossRestart:
         _evaluate(app, _results())
 
         assert _presses(app) == []
-        assert app._cap_reached is True
+        assert app._escalate_detail != ""
         assert app._repair_status == REPAIR_FAILED
         assert "Cap reached" in app._repair_detail
 
@@ -644,13 +644,13 @@ class TestRepairOutcome:
         _recovers(app)
         app._repair_status = REPAIR_IN_PROGRESS
         app._unhealthy_since = _ago(minutes=30)
-        app._cap_reached = True
+        app._escalate_detail = "stale escalation"
 
         _drive(app, app._execute_repair())
 
         assert app._repair_status == REPAIR_SUCCESS
         assert app._unhealthy_since is None
-        assert app._cap_reached is False
+        assert app._escalate_detail == ""
         assert len(app._repair_attempts) == 1
         # The success edge event is queued on _pending_repair_events and
         # drained onto the report that carries the conclusion.
@@ -940,7 +940,7 @@ class TestAttemptsHelperPersistence:
         # ...and the cap is therefore still spent.
         _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
         assert _presses(app) == []
-        assert app._cap_reached is True
+        assert app._escalate_detail != ""
 
     def test_old_attempts_in_the_helper_are_pruned(self):
         app = _make_app(
@@ -1068,15 +1068,16 @@ class TestSeedWritesBackToHelper:
         """A seed from the sensor must repopulate the durable copy.
 
         Otherwise the ladder lives only in memory and the next restart comes
-        up with a fresh budget — the same failure, one restart later.
+        up with a fresh budget — the same failure, one restart later. The
+        write-back runs after provisioning, so the helper it targets is
+        guaranteed to exist — hence the full startup rather than a bare seed.
         """
         app = _make_app()
         app.controller_state = _controller_state(
             [_ago(hours=1).isoformat(timespec="seconds")]
         )
-        _init_only(app)
 
-        _run(app._seed_attempts())
+        _startup(app)
 
         writes = [
             c for c in app.call_service.call_args_list
@@ -1084,3 +1085,69 @@ class TestSeedWritesBackToHelper:
         ]
         assert writes, "seed did not write the attempt log back to the helper"
         assert len(json.loads(writes[-1][1]["value"])) == 1
+
+
+# ---------------------------------------------------------------------------
+# 20. Round-4 review findings
+# ---------------------------------------------------------------------------
+
+
+class TestStaleSuccessDoesNotHoldThePage:
+    def test_returning_outage_clears_a_lingering_success(self):
+        """A stale `success` would withhold the critical promotion.
+
+        `success` is one of the Alertmanager bridge's repair-hold states, so
+        leaving it up while the outage is back delays the page by up to
+        repair_hold_cap_s (1800s). Any hold happens with the integration
+        down, which makes a prior success stale by definition.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_SUCCESS
+        app._quiet_until = _ago(minutes=-5)  # quiet period still running
+
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert app._repair_status == REPAIR_IDLE
+
+    def test_a_failed_repair_is_still_preserved(self):
+        """`failed` carries the reason a human needs, and the bridge releases
+        on it — so it must survive a hold."""
+        app = _make_app()
+        _init_only(app)
+        app._repair_status = REPAIR_FAILED
+        app._quiet_until = _ago(minutes=-5)
+
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert app._repair_status == REPAIR_FAILED
+
+
+class TestZeroCapIsSafe:
+    def test_zero_cap_disables_restarts_without_raising(self):
+        """`repair_max_per_24h: 0` means "never restart this board".
+
+        Both cap sites used to index _repair_attempts[0] on an empty list,
+        raising IndexError out of the check cycle and taking the checker down.
+        """
+        app = _make_app({"repair_max_per_24h": 0})
+        _init_only(app)
+        results = _results(entity="critical", ping="ok", web="ok")
+        app._run_checks_only = AsyncMock(return_value=results)
+
+        _drive(app, app._run_checks())  # must not raise
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_FAILED
+        assert "disabled" in app._repair_detail.lower()
+
+    def test_zero_cap_refuses_manual_repair_without_raising(self):
+        app = _make_app({"repair_max_per_24h": 0})
+        _init_only(app)
+
+        app._on_repair_command(
+            "health_check_repair_zwave", {"action": "start_repair"}, {}
+        )
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_FAILED
