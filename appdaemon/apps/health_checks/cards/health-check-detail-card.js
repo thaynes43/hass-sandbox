@@ -840,6 +840,13 @@ class HealthCheckDetailCard extends HTMLElement {
       return null;
     };
 
+    // Native form controls dispatch from "change" only — it carries the
+    // post-toggle value, and touchend/click would fire a second, stale command.
+    const isNativeFormEl = (el) => {
+      const tag = el.tagName?.toLowerCase();
+      return tag === "input" || tag === "select" || tag === "textarea";
+    };
+
     const dispatchAction = (el) => {
       const action = el.dataset.action;
       if (action === "recheck") {
@@ -936,10 +943,11 @@ class HealthCheckDetailCard extends HTMLElement {
           return;
         }
 
-        const tag = el.tagName?.toLowerCase();
-        const nativeEl =
-          tag === "input" || tag === "select" || tag === "textarea";
-        if (!nativeEl && e.cancelable) e.preventDefault();
+        // NEVER preventDefault on native controls (Android webviews won't open
+        // keyboards/dropdowns), and leave their dispatch to "change".
+        if (isNativeFormEl(el)) return;
+
+        if (e.cancelable) e.preventDefault();
 
         this._touchActive = true;
         dispatchAction(el);
@@ -953,7 +961,7 @@ class HealthCheckDetailCard extends HTMLElement {
     root.addEventListener("click", (e) => {
       if (this._touchActive) return;
       const el = findActionEl(e);
-      if (el) dispatchAction(el);
+      if (el && !isNativeFormEl(el)) dispatchAction(el);
     });
 
     // Change events for repair controls (checkbox and number input)
