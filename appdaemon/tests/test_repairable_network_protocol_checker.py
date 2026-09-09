@@ -1273,3 +1273,12 @@ class TestSupportsRepairReflectsConfig:
         _init_only(app)
         app._register()
         assert self._registration(app)["supports_repair"] is False
+
+    def test_registration_log_matches_the_payload(self):
+        """The deploy check reads this line — it must not contradict the flag."""
+        app = _make_app({"repair_button": ""})
+        _init_only(app)
+        app._register()
+        logged = " ".join(str(c) for c in app.log.call_args_list)
+        assert "repair support DISABLED" in logged
+        assert "repair support enabled" not in logged

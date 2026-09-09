@@ -482,9 +482,14 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             command="register_checker",
             payload=json.dumps(payload),
         )
+        disabled = self._restarts_disabled()
+        repair_note = (
+            f"repair support DISABLED — {disabled}" if disabled
+            else f"repair support enabled, button={self._repair_button}"
+        )
         self.log(
             f"Registered '{self._checker_name}' with checks: {check_names} "
-            f"(repair support enabled, button={self._repair_button or 'none'})",
+            f"({repair_note})",
             level="INFO",
         )
 
