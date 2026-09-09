@@ -1670,7 +1670,7 @@
 <p>The repair state machine:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idle → pending → in_progress → success → idle (checks stay healthy)
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         │                   → failed  → idle (checks recover naturally)
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         └──▶ idle (cancel_repair command received before deadline)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
 </code></pre></div>
 <p>Repair-capable checkers provision their own HA helpers for configuration:</p>
 <ul>
