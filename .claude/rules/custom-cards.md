@@ -10,7 +10,7 @@ When working on `**/*.js` card files, read `.agents/rules/custom-card-guidelines
 
 **Critical Android/UniFi rule**: Never call `e.preventDefault()` on `touchend` when the target is `<input>`, `<select>`, or `<textarea>`. Android webviews won't open keyboard or dropdown.
 
-**Re-render focus guard**: Check `shadowRoot.activeElement` before re-rendering. If an input has focus, skip the render — otherwise the DOM replacement steals focus mid-typing.
+**Re-render guard is for edits, not focus**: track an edit in progress — a delegated `input`/`keydown` from a text-entry control (`INPUT` other than checkbox/radio/button/submit/reset, `TEXTAREA`, `SELECT`) sets `this._editing`; `change`, `focusout` and `disconnectedCallback` clear it — and skip *every* re-render path (`set hass` **and** any refresh timer) while it is set. Do not gate on `shadowRoot.activeElement`: a merely focused control (a tapped checkbox, or a number box someone clicked into and left) would block renders until focus moves, which froze the health-check detail card twice on 2026-09-09. An un-gated re-render replaces the node mid-typing and, in Chromium, commits the half-typed value.
 
 **Card skeleton**: Extend `HTMLElement`, `attachShadow({ mode: "open" })`, implement `setConfig(config)` and `set hass(hass)`, register with `customElements.define()`.
 

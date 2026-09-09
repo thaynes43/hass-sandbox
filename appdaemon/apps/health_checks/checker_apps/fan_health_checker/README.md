@@ -116,7 +116,12 @@ Each fan independently tracks its own repair state. When auto-repair triggers:
    corresponding backoff instead of firing on the next check cycle. This is
    exactly the 2026-08-31 storm: every false recovery reset the ladder to
    attempt 1, which bought ~11 power-cycles of one flapping fan in five
-   hours.
+   hours. **Turning auto-repair off** stands the per-fan ladder down too,
+   because a lingering `success` would keep the aggregate — and so
+   Alertmanager's repair hold — pinned on a hold state: a fan that is
+   healthy at that moment drops to `idle` keeping its attempt count and its
+   recovery clock (so the reset above still lands), and one that is already
+   down is recorded as the relapse it is.
 8. **The ladder is persisted** to `input_text.<checker_id>_health_repair_ladder`
    as compact JSON — `{fan: [attempts, next_retry_iso|null, "failed"|"success"]}`,
    lowest ladders dropped first if it would exceed the helper's 255-char
@@ -125,7 +130,12 @@ Each fan independently tracks its own repair state. When auto-repair triggers:
    `failed` entries get a `now + delay` floor on their retry so a stale past
    retry time cannot fire the instant the app comes back; restored `success`
    entries come back as `success` awaiting sustained recovery, so a
-   currently-healthy fan is never misreported as failed.
+   currently-healthy fan is never misreported as failed. The one exception
+   is a fan demoted to `idle` by the stand-down above: the format has no
+   `idle` shape, so it persists and restores as `failed`. That is the safe
+   direction — `failed` releases the page where `success` would go on
+   withholding it — at the cost of a healthy fan reading `failed` until the
+   sustained-recovery reset clears it.
 
 ### Manual Repair
 

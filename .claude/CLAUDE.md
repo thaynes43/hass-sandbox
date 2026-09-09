@@ -211,7 +211,7 @@ When importing night light automations from HA: one file per automation, filenam
 
 - Use delegated touch+click events with deduplication to support desktop, iOS, and Android/UniFi wall displays
 - Never `preventDefault()` on `<input>`, `<select>`, `<textarea>` touchend — breaks Android keyboard/dropdowns
-- Skip re-render when an input has focus (prevents lost focus on keystrokes)
+- Skip re-render while an edit is in progress — `input`/`keydown` on a text-entry control sets a flag, `change`/`focusout`/disconnect clear it — on every render path including refresh timers. Never gate on `activeElement`: a merely focused control must not block renders (it froze the detail card twice on 2026-09-09)
 - Bump `?v=N` query param on Lovelace resource URL after updating card JS
 - Cards extend `HTMLElement`, use `attachShadow({ mode: "open" })`, implement `setConfig()` and `set hass()`
 

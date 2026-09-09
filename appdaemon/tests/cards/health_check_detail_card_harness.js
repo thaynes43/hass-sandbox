@@ -199,8 +199,10 @@ class ShimEvent {
     this.type = type;
     this.bubbles = options.bubbles !== false;
     this.cancelable = options.cancelable !== false;
-    // "change" and "input" are NOT composed: they stop at the shadow root.
-    // Every other event the card listens for is.
+    // "change" is NOT composed — it stops at the shadow root, which is why
+    // the card's listener has to sit on the root itself.  "input" IS composed
+    // (the HTML spec fires it with bubbles and composed both true), as are the
+    // touch, key and focus events.  Callers pass what each one really is.
     this.composed = options.composed === true;
     this.defaultPrevented = false;
     this.target = null;
@@ -234,6 +236,10 @@ class ShimEvent {
  * can see.  Without that second part the card's focus guard would keep
  * answering "yes, an input is focused" about an input that was destroyed three
  * re-renders ago, and the guard would look like it worked when it did not.
+ *
+ * No focusout is synthesised here.  Browsers disagree about whether removing a
+ * focused node fires one, so the card must not be allowed to depend on it —
+ * it clears its own edit flag in disconnectedCallback instead.
  */
 function detachSubtree(node) {
   if (shimDocument.activeElement === node) {
@@ -460,12 +466,26 @@ class ShimElement extends ShimNode {
     return this.shadowRoot;
   }
 
+  // Losing the focus is two events, not none: the non-bubbling `blur` and then
+  // the bubbling `focusout`, both composed.  A delegated listener on the shadow
+  // root can only ever see the second one — which is exactly why the card
+  // listens for `focusout`, and why a shim that dispatched nothing here would
+  // have let a `blur` listener look like it worked.
   blur() {
-    if (shimDocument.activeElement === this) shimDocument.activeElement = null;
+    if (shimDocument.activeElement !== this) return;
+    shimDocument.activeElement = null;
+    fire(this, "blur", { bubbles: false, composed: true, cancelable: false });
+    fire(this, "focusout", { bubbles: true, composed: true, cancelable: false });
   }
 
+  // Taking the focus unfocuses whatever held it first, in that order.
   focus() {
+    const previous = shimDocument.activeElement;
+    if (previous === this) return;
+    if (previous && typeof previous.blur === "function") previous.blur();
     shimDocument.activeElement = this;
+    fire(this, "focus", { bubbles: false, composed: true, cancelable: false });
+    fire(this, "focusin", { bubbles: true, composed: true, cancelable: false });
   }
 }
 
@@ -750,15 +770,40 @@ function tap(el, { touch }) {
 
   if (el.type === "checkbox") el.checked = !el.checked;
   fire(el, "click");
-  if (isNative) fire(el, "change", { composed: false, cancelable: false });
+  if (isNative) {
+    // A checkbox's activation fires `input` and then `change` — both, from the
+    // one tap.  Modelled because the card's edit guard has to survive it: were
+    // the guard to treat any `input` as the start of an edit, this pair alone
+    // would decide whether a tapped checkbox freezes the card.
+    fire(el, "input", { composed: true, cancelable: false });
+    fire(el, "change", { composed: false, cancelable: false });
+  }
 }
 
-/** Type into the delay box and commit it, which is what fires "change". */
-function editDelay(el, value) {
+/**
+ * Keystrokes into the delay box, with nothing committed — a half-typed value.
+ *
+ * A browser produces `keydown` and then `input` per character; one round of the
+ * pair is enough, and setting `.value` without them would be a test of nothing,
+ * since a property write raises no event a card could ever hear.
+ */
+function typeInto(el, value) {
   el.focus();
   el.value = String(value);
-  el.blur();
+  fire(el, "keydown", { composed: true });
+  fire(el, "input", { composed: true, cancelable: false });
+}
+
+/**
+ * Type into the delay box and commit it, which is what fires "change".
+ *
+ * `change` comes *before* `blur`: the spec fires it from the unfocusing steps,
+ * so a browser reports the committed value while the box still has the focus.
+ */
+function editDelay(el, value) {
+  typeInto(el, value);
   fire(el, "change", { composed: false, cancelable: false });
+  el.blur();
 }
 
 /**
@@ -885,7 +930,7 @@ function record(name, calls, extra) {
 // innerHTML wholesale, so a tick landing mid-edit swaps the focused input for a
 // fresh node carrying the published value — the keystrokes and the focus both
 // gone, on a wall display where re-typing means re-finding the popup.  `set
-// hass` has always guarded on activeElement; the timer had not.
+// hass` has always guarded; the timer had not.
 {
   const { card, calls, root } = mount("shade_gateway", checker());
   const input = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
@@ -894,8 +939,8 @@ function record(name, calls, extra) {
     changeEvents += 1;
   });
 
-  input.focus();
-  input.value = "18"; // mid-way to 180 — one keystroke short
+  typeInto(input, "18"); // mid-way to 180 — one keystroke short
+
   fireRefreshTick(card);
 
   const after = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
@@ -904,7 +949,75 @@ function record(name, calls, extra) {
     value_after: after ? after.value : null,
     change_events: changeEvents,
   });
-  input.blur();
+
+  // Closing the popup mid-edit is the one path where no focusout is
+  // guaranteed to arrive, so the box is deliberately NOT blurred first.  A
+  // flag surviving the close would freeze the card the next time it opens.
+  teardown(card);
+  results.refresh_during_edit.editing_after_close = card._editing;
+  shimDocument.activeElement = null;
+}
+
+// (g2) the mirror image of (g), and the reason focus was the wrong signal all
+// along: a delay box the operator merely tapped into and then walked away from
+// holds nothing.  Guarding on activeElement stopped both re-render paths there
+// too — indefinitely, because a wall display never gets clicked elsewhere.
+{
+  const { card, calls, root, hass } = mount("shade_gateway", checker());
+  const input = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
+  const detailBefore = root.querySelector(".check-detail").textContent;
+
+  input.focus(); // ...and nothing typed
+
+  // Stated, not assumed: if the box were not really focused, or not really a
+  // text control, the scenario would pass for a reason that proves nothing.
+  const focusedTag = root.activeElement ? root.activeElement.tagName : null;
+  const focusedType = root.activeElement ? root.activeElement.type : null;
+
+  hass.states["sensor.health_check_status"].attributes.checkers.shade_gateway
+    .checks[0].detail = "gateway back";
+  fireRefreshTick(card);
+
+  const after = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
+  record("refresh_with_input_merely_focused", calls, {
+    focused_tag: focusedTag,
+    focused_type: focusedType,
+    detail_before: detailBefore,
+    detail_after_tick: root.querySelector(".check-detail").textContent,
+    node_replaced: after !== input,
+  });
+  shimDocument.activeElement = null;
+  teardown(card);
+}
+
+// (g3) a committed value releases the guard at once, so the very next render
+// shows the server's number again.  A spinner click is exactly this pair —
+// `input` then `change`, with the focus never leaving the box — which is why
+// the release cannot be made to wait for a blur.
+{
+  const { card, calls, root } = mount("shade_gateway", checker());
+  const input = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
+
+  typeInto(input, "180");
+  fire(input, "change", { composed: false, cancelable: false });
+  const valueTyped = input.value;
+
+  // The box still holds the focus here — that is the point.  A guard reading
+  // activeElement would block the tick below and this would prove nothing.
+  const focusedAtTick = root.activeElement === input ? input.tagName : null;
+
+  // The backend has not accepted 180 yet, so the redraw must show the 120 the
+  // sensor still publishes rather than leaving the typed value on screen.
+  fireRefreshTick(card);
+
+  const after = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
+  record("refresh_after_commit", calls, {
+    value_typed: valueTyped,
+    focused_at_tick: focusedAtTick,
+    node_replaced: after !== input,
+    value_after: after ? after.value : null,
+  });
+  shimDocument.activeElement = null;
   teardown(card);
 }
 
@@ -970,6 +1083,31 @@ function record(name, calls, extra) {
   });
   // Focus is global to the shim document and the re-render dropped it into
   // <body>; clear it so the next scenario starts with nothing focused.
+  shimDocument.activeElement = null;
+  teardown(card);
+}
+
+// (h3) the same freeze reached through the keyboard.  A keystroke arrives from
+// whatever holds the focus, and a checkbox that takes one never follows it with
+// an `input` or a `change` — so a guard that treated any keydown as the start
+// of an edit would stop here for good, with nothing left to lower the flag.
+{
+  const { card, calls, root, hass } = mount("shade_gateway", checker());
+  const box = root.querySelector('.repair-auto-toggle[data-checker="shade_gateway"]');
+  box.focus();
+  fire(box, "keydown", { composed: true }); // an arrow key: no activation
+  // Read before the tick: afterwards the re-render has replaced the box and
+  // dropped the focus, so a later read would say nothing about the keystroke.
+  const focusedType = root.activeElement ? root.activeElement.type : null;
+
+  hass.states["sensor.health_check_status"].attributes.checkers.shade_gateway
+    .checks[0].detail = "gateway back";
+  fireRefreshTick(card);
+
+  record("refresh_after_keydown_on_checkbox", calls, {
+    focused_type: focusedType,
+    detail_after_tick: root.querySelector(".check-detail").textContent,
+  });
   shimDocument.activeElement = null;
   teardown(card);
 }

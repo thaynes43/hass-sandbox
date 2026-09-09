@@ -575,7 +575,7 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
             if not self._check_single_fan_results(fan, results):
                 continue
             fr = self._fan_repair_states[fan["name"]]
-            if fr["status"] not in (REPAIR_FAILED, REPAIR_SUCCESS):
+            if not self._ladder_is_resettable(fr):
                 continue
             if fr["recovered_at"] is None:
                 fr["recovered_at"] = now
@@ -603,6 +603,32 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
             fr["recovered_at"] = None
             self._persist_ladder()
 
+    @staticmethod
+    def _ladder_is_resettable(fr: Dict[str, Any]) -> bool:
+        """Whether this fan still has a backoff ladder waiting to be zeroed.
+
+        ``failed`` and ``success`` are the states a repair leaves behind, so
+        they are the obvious two. ``idle`` is here for exactly one case:
+        :meth:`_stand_down_pending_repair` demotes a *healthy* ``success`` fan
+        to ``idle`` when auto-repair is switched off, and deliberately keeps
+        its attempt count — a recovery that has not been sustained yet must
+        not buy a fresh attempt-1 instant power-cycle. Without this clause
+        that fan would sit outside the only path that ever zeroes the ladder,
+        so its inflated ``attempts`` (and the longer backoff they buy) would
+        survive until some future episode happened to run a whole
+        success → sustained-recovery cycle of its own.
+
+        A plain ``idle`` fan is excluded by the other two conditions: it has
+        no attempts to clear, and no ``recovered_at`` streak to measure.
+        """
+        if fr["status"] in (REPAIR_FAILED, REPAIR_SUCCESS):
+            return True
+        return (
+            fr["status"] == REPAIR_IDLE
+            and bool(fr["attempts"])
+            and fr["recovered_at"] is not None
+        )
+
     def _stand_down_pending_repair(self, reason: str) -> None:
         """Stand the global ladder down, and the per-fan one with it.
 
@@ -622,7 +648,11 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
           drops to ``idle`` with ``attempts`` and ``next_retry_at`` untouched.
           It cannot re-arm anything: ``_evaluate_auto_repair`` only considers
           fans with a non-None ``_fan_unhealthy_since``, and a healthy fan has
-          None.
+          None. Its ``recovered_at`` streak is kept — started here if it had
+          not begun — so :meth:`_reset_recovered_fans` can still zero the
+          ladder once the health has been sustained; see
+          :meth:`_ladder_is_resettable` for why that needs a clause of its
+          own.
         * **Unhealthy** — the success did not stick. That is a relapse, and it
           goes through :meth:`_register_fan_relapse` so it lands on ``failed``
           with the ladder climbing and a real ``next_retry_at``, exactly as
@@ -637,12 +667,20 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         cycle by ``_update_fan_unhealthy_timers`` instead.
         """
         super()._stand_down_pending_repair(reason)
+        now = datetime.datetime.now()
+        demoted = False
         for name, fr in self._fan_repair_states.items():
             if fr["status"] != REPAIR_SUCCESS:
                 continue
             if self._fan_unhealthy_since[name] is None:
                 fr["status"] = REPAIR_IDLE
                 fr["detail"] = reason
+                if fr["recovered_at"] is None:
+                    # The fan is healthy at this instant, so this is where its
+                    # sustained-recovery streak starts. Without it the demoted
+                    # fan would carry attempts that nothing could ever clear.
+                    fr["recovered_at"] = now
+                demoted = True
                 self.log(
                     f"{name}: {reason} — clearing a recovered fan's stale "
                     f"repair success (ladder kept at attempts="
@@ -651,6 +689,23 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 )
             else:
                 self._register_fan_relapse(name)
+
+        if demoted:
+            # The relapse branch persists via _schedule_backoff_retry; the
+            # demotion has to do it itself, and it matters. The helper still
+            # held "success" for this fan, and _seed_repair_ladder restores
+            # that as REPAIR_SUCCESS — so an AppDaemon reload inside the
+            # window would resurrect the very hold state this method exists
+            # to clear, and go on withholding the page.
+            #
+            # The ladder format has only "success" and "failed", so a demoted
+            # fan persists (and restores) as "failed". That is the right way
+            # to be wrong: `failed` releases the page, and
+            # _reset_recovered_fans zeroes it after the usual sustained
+            # health. The cost is a healthy fan labelled "failed" on the card
+            # until then, and only after a reload that lands while
+            # auto-repair is switched off.
+            self._persist_ladder()
 
     # ------------------------------------------------------------------
     # Auto-repair logic

@@ -9,6 +9,12 @@ turn on.  ``tests/cards/health_check_detail_card_harness.js`` drives the real
 card file through a minimal DOM shim (node stdlib only, no npm) and prints what
 each interaction actually sent; this module asserts on that.
 
+Also pinned here: the re-render guard.  Both re-render paths rewrite
+``innerHTML`` wholesale, so one landing mid-edit destroys what the operator was
+typing — but the thing to protect is an *edit in progress*, not a focus.  Two
+earlier rounds gated on ``activeElement`` and froze the card outright: first
+from a tapped checkbox, then from a delay box someone had merely tapped into.
+
 Also pinned here: the delay input's ``min``/``max``/``step``.  Those bounds are
 per checker — the shade gateway is 15/360/15 while the other six are 1/60/1 —
 so the card renders whatever the checker published in
@@ -208,15 +214,15 @@ class TestDelayBounds:
 
 
 class TestRefreshDoesNotClobberTyping:
-    """The 15 s refresh tick has to respect the focus guard too.
+    """The 15 s refresh tick has to respect the edit guard too.
 
     ``_update()`` rewrites ``innerHTML`` wholesale, so a tick landing while the
-    operator is part-way through typing a delay swaps the focused input for a
-    fresh node carrying the published value — keystrokes and focus both gone.
-    ``set hass`` has always guarded on ``activeElement``; the timer had not.
+    operator is part-way through typing a delay swaps the input being typed
+    into for a fresh node carrying the published value — keystrokes and focus
+    both gone.  ``set hass`` has always guarded; the timer had not.
     """
 
-    def test_the_tick_leaves_the_focused_input_alone(self, harness):
+    def test_the_tick_leaves_the_input_being_typed_into_alone(self, harness):
         scenario = harness["refresh_during_edit"]
 
         assert scenario["same_node"] is True
@@ -228,6 +234,78 @@ class TestRefreshDoesNotClobberTyping:
 
     def test_the_tick_sends_no_relay_command(self, harness):
         assert harness["refresh_during_edit"]["calls"] == []
+
+    def test_a_popup_closed_mid_edit_does_not_stay_guarded(self, harness):
+        """The guard is a flag now, and a flag can be left standing.
+
+        Closing the popup destroys the input the flag was protecting, and
+        browsers do not agree on whether removing a focused node fires
+        ``focusout`` — so nothing is guaranteed to lower it on that path.  Left
+        up, it would freeze the card the next time the popup opens, which is
+        the very failure this guard was rewritten to end.
+        """
+        assert harness["refresh_during_edit"]["editing_after_close"] is False
+
+
+class TestAMerelyFocusedInputDoesNotFreezeTheCard:
+    """Focus was the wrong signal; an edit in progress is the right one.
+
+    Guarding on ``activeElement`` meant an operator who tapped into the delay
+    box and walked away without typing a character stopped both re-render
+    paths — ``set hass`` and the 15 s tick — until something blurred the box.
+    On the wall display the card is built for, nothing ever does: the freeze
+    lasted until somebody physically walked up to it.  Nothing had been typed,
+    so there was never anything to protect.
+    """
+
+    def test_the_box_really_is_focused_and_really_is_a_text_control(
+        self, harness
+    ):
+        """Without this the rest of the class would pass for the wrong reason.
+
+        A guard reading ``activeElement`` could only have been exercised by a
+        control that both holds the focus and would have matched its tag test.
+        """
+        scenario = harness["refresh_with_input_merely_focused"]
+
+        assert scenario["focused_tag"] == "INPUT"
+        assert scenario["focused_type"] == "number"
+
+    def test_the_tick_still_redraws_under_an_untouched_box(self, harness):
+        scenario = harness["refresh_with_input_merely_focused"]
+
+        assert scenario["detail_before"] == "disconnected"
+        assert scenario["detail_after_tick"] == "gateway back"
+        assert scenario["node_replaced"] is True
+
+
+class TestACommittedValueReleasesTheGuard:
+    """A commit hands the box back, at once — no blur required.
+
+    The spinner is the case that forces it: a click on it fires ``input`` and
+    ``change`` together and leaves the focus where it was, so a release that
+    waited for the box to be left would hold the card frozen after every
+    nudge.  Once committed, the operator's number is the backend's business —
+    the next redraw has to show whatever the sensor actually publishes, or the
+    card quietly reports a delay that was never accepted.
+    """
+
+    def test_the_commit_reached_the_backend(self, harness):
+        call = _one_call(harness, "refresh_after_commit")
+
+        assert call["command"] == "update_repair_config"
+        assert call["payload"]["auto_repair_delay_min"] == 180
+        assert harness["refresh_after_commit"]["value_typed"] == "180"
+
+    def test_the_box_still_held_the_focus_when_the_tick_landed(self, harness):
+        """Otherwise the redraw below would prove nothing about the release."""
+        assert harness["refresh_after_commit"]["focused_at_tick"] == "INPUT"
+
+    def test_the_next_tick_redraws_the_server_value(self, harness):
+        scenario = harness["refresh_after_commit"]
+
+        assert scenario["node_replaced"] is True
+        assert scenario["value_after"] == "120"
 
 
 class TestATappedCheckboxDoesNotFreezeTheCard:
@@ -277,3 +355,28 @@ class TestATappedCheckboxDoesNotFreezeTheCard:
 
         assert call["command"] == "update_repair_config"
         assert call["payload"]["auto_repair_enabled"] is True
+
+
+class TestAKeystrokeOnANonTextControlIsNotAnEdit:
+    """Which is the whole reason ``HCD_NON_TEXT_INPUT_TYPES`` survives.
+
+    The flag is raised by ``input`` and by ``keydown``.  ``input`` alone would
+    need no type test: a checkbox's activation fires ``input`` and ``change``
+    together, so the flag would go up and come straight back down in the same
+    task.  ``keydown`` has no such partner — it arrives from whatever holds the
+    focus, and a checkbox taking an arrow key never follows it with a
+    ``change``, nor with a ``focusout`` on a display no one clicks.  Untyped,
+    that one keystroke would freeze the card exactly as focus used to.
+    """
+
+    def test_the_keystroke_really_landed_on_the_checkbox(self, harness):
+        assert (
+            harness["refresh_after_keydown_on_checkbox"]["focused_type"]
+            == "checkbox"
+        )
+
+    def test_the_tick_still_runs_after_the_keystroke(self, harness):
+        assert (
+            harness["refresh_after_keydown_on_checkbox"]["detail_after_tick"]
+            == "gateway back"
+        )

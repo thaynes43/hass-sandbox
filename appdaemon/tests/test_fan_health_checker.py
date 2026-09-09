@@ -1364,6 +1364,107 @@ class TestStandDownReachesThePerFanLadder:
         assert fr["attempts"] == 2
 
 
+_ALL_OK = [
+    {"name": "Pink Room State", "status": "ok", "detail": "on"},
+    {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+    {"name": "Blue Room State", "status": "ok", "detail": "off"},
+    {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+]
+
+
+class TestADemotedFanStillResetsItsLadder:
+    """`idle` used to be a dead end for a fan carrying attempts.
+
+    The stand-down drops a healthy `success` fan to `idle` and keeps its
+    attempt count on purpose — a recovery that has not been sustained yet must
+    not buy a fresh attempt-1 instant power-cycle. But `_reset_recovered_fans`
+    gated on `status in (failed, success)`, so that fan then sat outside the
+    only path that ever zeroes the ladder: its inflated attempts, and the
+    longer backoff they buy, survived until some future episode happened to
+    run a whole success -> sustained-recovery cycle of its own.
+    """
+
+    def _demoted(self):
+        """A healthy `success` fan pushed to `idle` by the stand-down."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._persist_ladder = MagicMock()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 3
+        fr["next_retry_at"] = datetime.datetime.now()
+        # Healthy right now — _fan_unhealthy_since is None from initialize().
+        app._stand_down_pending_repair("Auto-repair disabled")
+        assert fr["status"] == REPAIR_IDLE
+        assert fr["attempts"] == 3
+        assert fr["recovered_at"] is not None
+        return app, fr
+
+    def test_sustained_health_zeroes_the_ladder(self):
+        app, fr = self._demoted()
+        # The streak has run its course: wind it back past the reset window,
+        # which is what the checker sees repair_backoff_reset_min later.
+        fr["recovered_at"] -= datetime.timedelta(
+            minutes=app._repair_backoff_reset_min + 1
+        )
+
+        app._reset_recovered_fans(_ALL_OK)
+
+        assert fr["attempts"] == 0
+        assert fr["next_retry_at"] is None
+        assert fr["status"] == REPAIR_IDLE
+
+    def test_the_ladder_survives_until_the_window_is_served(self):
+        """The other half — the demotion must not shortcut the reset either."""
+        app, fr = self._demoted()
+
+        app._reset_recovered_fans(_ALL_OK)
+
+        assert fr["attempts"] == 3
+        assert fr["next_retry_at"] is not None
+
+    def test_the_demotion_survives_a_reload(self):
+        """Otherwise a restart resurrects the hold this all exists to clear.
+
+        The ladder helper still says "success" for this fan until something
+        rewrites it, and `_seed_repair_ladder` restores that as REPAIR_SUCCESS
+        — a repair-hold state, so an AppDaemon reload inside the window would
+        go back to withholding the page. The relapse branch persists via
+        `_schedule_backoff_retry`; the demotion has to do it itself.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._persist_ladder = MagicMock()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 3
+
+        app._stand_down_pending_repair("Auto-repair disabled")
+
+        app._persist_ladder.assert_called_once()
+
+        # ...and only once. The disabled branch of _evaluate_auto_repair runs
+        # this every check cycle, so a fan that has already been demoted must
+        # not rewrite the helper on each of them — that would be a service
+        # call every check_interval_s for the length of the outage.
+        app._stand_down_pending_repair("Auto-repair disabled")
+
+        app._persist_ladder.assert_called_once()
+
+    def test_nothing_is_persisted_when_no_fan_was_demoted(self):
+        """A stand-down with no stale success must not write the helper."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._persist_ladder = MagicMock()
+
+        app._stand_down_pending_repair("Auto-repair disabled")
+
+        app._persist_ladder.assert_not_called()
+
+
 class TestCancelDefersTheBackoffLadder:
     """Cancel has to defer the retry ladder too, not just the first attempts.
 

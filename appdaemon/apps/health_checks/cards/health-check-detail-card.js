@@ -17,9 +17,10 @@
  *   - Shadow DOM
  *   - Touch/click deduplication (400ms flag)
  *   - NEVER preventDefault() on input/select/textarea touchend (Android)
- *   - Focus guard: every re-render path (set hass AND the refresh timer)
- *     skips the render while shadowRoot.activeElement is a text-entry control
- *     (never a checkbox — it keeps the focus after a tap, see _hasFocusedInput)
+ *   - Edit guard: every re-render path (set hass AND the refresh timer) skips
+ *     the render while an edit is in progress — characters typed into a
+ *     text-entry control and not yet committed.  Focus is NOT an edit: a box
+ *     someone merely tapped into holds nothing worth protecting (see _editing)
  *
  * Platforms: Desktop, iOS Companion App, Android/UniFi wall display.
  */
@@ -49,9 +50,9 @@ function hcdInt(value, fallback) {
   return isNaN(n) ? fallback : n;
 }
 
-// Input types the re-render focus guard must ignore: none of them holds typed
-// text, and all of them keep the focus after a tap. Anything else — including
-// an <input> with no type at all, which HTML defines as text — is text entry.
+// Input types that cannot hold a half-typed value, so an event landing on one
+// can never start an edit.  Anything else — including an <input> with no type
+// at all, which HTML defines as text — is text entry.  See _isTextEntry.
 const HCD_NON_TEXT_INPUT_TYPES = new Set([
   "checkbox",
   "radio",
@@ -69,6 +70,9 @@ class HealthCheckDetailCard extends HTMLElement {
     this._lastSnapshot = null;
     this._domBuilt = false;
     this._touchActive = false;
+    // Raised by a keystroke in a text-entry control, lowered when the value is
+    // committed (change) or the control is left (focusout) — see _bindEvents.
+    this._editing = false;
     this._refreshTimer = null;
     this._countdownInterval = null;
     this._expandedCheckers = new Set();
@@ -82,6 +86,11 @@ class HealthCheckDetailCard extends HTMLElement {
   disconnectedCallback() {
     // Reset expanded state when popup closes so next open starts collapsed
     this._expandedCheckers.clear();
+    // An edit cannot outlive the popup that hosted it.  The input it was
+    // protecting goes with the popup, and browsers do not agree on whether
+    // removing a focused node fires focusout at all — so a flag left standing
+    // here would freeze the card the next time it opens.
+    this._editing = false;
     if (this._refreshTimer) {
       clearInterval(this._refreshTimer);
       this._refreshTimer = null;
@@ -102,26 +111,22 @@ class HealthCheckDetailCard extends HTMLElement {
     this._config = { ...HCD_DEFAULTS, ...config };
   }
 
-  // Protects one thing: text the operator has typed but not yet committed.
-  // Every re-render path replaces innerHTML wholesale, which swaps the node the
-  // operator is typing into for a fresh one carrying the old value — keystrokes
-  // and focus both gone.  So every re-render path has to ask this first.
+  // Can this event target hold characters the operator is part-way through
+  // typing?  That is the only question the edit guard needs answered, and it is
+  // asked of the *target of an event*, never of whatever happens to have the
+  // focus — focus was the wrong signal twice over.
   //
-  // Which means only text-entry controls may qualify.  A checkbox — the
-  // auto-repair toggle — keeps the focus after a tap but holds nothing a
-  // re-render could destroy, so counting it froze BOTH re-render paths from
-  // that tap onward; on a wall display nothing ever clicks elsewhere, so the
-  // card stayed frozen indefinitely.  SELECT does stay in: an open dropdown
-  // must not be replaced out from under the pointer.
-  _hasFocusedInput() {
-    const active = this.shadowRoot?.activeElement;
-    if (!active) return false;
-    const tag = active.tagName;
-    if (tag === "SELECT" || tag === "TEXTAREA") return true;
+  // SELECT is deliberately absent.  An edit-in-progress is typed text a render
+  // would destroy, and a dropdown has none: it publishes input and change
+  // together the instant a choice is made, so it could only ever raise the flag
+  // and lower it again in the same task.  (The card renders no SELECT at all.)
+  _isTextEntry(el) {
+    const tag = el?.tagName;
+    if (tag === "TEXTAREA") return true;
     if (tag !== "INPUT") return false;
     // A missing or empty type is a text input — that is the HTML default — so
     // only the explicitly non-typing types are exempt.
-    const rawType = active.type ?? active.getAttribute?.("type") ?? "";
+    const rawType = el.type ?? el.getAttribute?.("type") ?? "";
     return !HCD_NON_TEXT_INPUT_TYPES.has(String(rawType).toLowerCase());
   }
 
@@ -133,8 +138,8 @@ class HealthCheckDetailCard extends HTMLElement {
     if (!firstSet && snap === this._lastSnapshot) return;
     this._lastSnapshot = snap;
 
-    // Focus guard
-    if (this._hasFocusedInput()) return;
+    // Edit guard — an uncommitted edit owns the DOM until it is committed
+    if (this._editing) return;
 
     if (!this._domBuilt) {
       this._buildDom();
@@ -178,9 +183,10 @@ class HealthCheckDetailCard extends HTMLElement {
   _startRefreshTimer() {
     if (this._refreshTimer) return;
     this._refreshTimer = setInterval(() => {
-      // Same focus guard as `set hass` — a tick landing mid-edit would throw
-      // away whatever the operator had typed into the delay box.
-      if (this._hasFocusedInput()) return;
+      // Same edit guard as `set hass` — a tick landing mid-edit would throw
+      // away whatever the operator had typed into the delay box.  A box merely
+      // focused is not mid-edit, so the tick keeps running through that.
+      if (this._editing) return;
       this._update();
     }, 15000);
   }
@@ -1031,6 +1037,37 @@ class HealthCheckDetailCard extends HTMLElement {
         dispatchAction(el);
       }
     });
+
+    // -- Edit-in-progress tracking -----------------------------------------
+    //
+    // Both re-render paths rewrite innerHTML wholesale, so one landing mid-edit
+    // swaps the node being typed into for a fresh one carrying the published
+    // value — keystrokes and focus both gone.  What deserves that protection is
+    // an edit, not a focus: an operator who taps into the delay box and walks
+    // away has typed nothing, and gating on focus left the card frozen on the
+    // wall display until somebody came back and blurred the box.
+    //
+    // Only a text-entry control can start an edit.  `input` on its own would be
+    // self-correcting — a checkbox's activation fires input AND change, so the
+    // flag would clear again in the same task — but `keydown` is not: it fires
+    // for any key on whatever holds the focus, a checkbox or the Repair button
+    // included, and neither of those ever fires a change.  Without the type
+    // test one arrow key would re-create the indefinite freeze.
+    const startEditing = (e) => {
+      if (this._isTextEntry(e.target)) this._editing = true;
+    };
+    root.addEventListener("input", startEditing);
+    root.addEventListener("keydown", startEditing);
+
+    // `change` is the commit — including a spinner click, which fires input and
+    // change together, so the very next render shows the server's value again.
+    // `focusout`, never `blur`: blur does not bubble, so a delegated listener
+    // on the shadow root would never see it and the flag would stick.
+    const stopEditing = () => {
+      this._editing = false;
+    };
+    root.addEventListener("change", stopEditing);
+    root.addEventListener("focusout", stopEditing);
   }
 
   // ---------------------------------------------------------------------------
