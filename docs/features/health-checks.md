@@ -116,7 +116,7 @@ The repair state machine:
 ```
 idle → pending → in_progress → success → idle (checks stay healthy)
          │                   → failed  → idle (checks recover naturally)
-         └──▶ idle (cancel_repair command received before deadline)
+         └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
 ```
 
 Repair-capable checkers provision their own HA helpers for configuration:

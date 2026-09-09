@@ -17,7 +17,10 @@
  *   - Shadow DOM
  *   - Touch/click deduplication (400ms flag)
  *   - NEVER preventDefault() on input/select/textarea touchend (Android)
- *   - Focus guard: skip re-render when shadowRoot.activeElement is set
+ *   - Edit guard: every re-render path (set hass AND the refresh timer) skips
+ *     the render while an edit is in progress — characters typed into a
+ *     text-entry control and not yet committed.  Focus is NOT an edit: a box
+ *     someone merely tapped into holds nothing worth protecting (see _editing)
  *
  * Platforms: Desktop, iOS Companion App, Android/UniFi wall display.
  */
@@ -36,6 +39,28 @@ function hcdEscapeHtml(str) {
   return div.innerHTML;
 }
 
+// Auto-repair delay bounds are per checker, not global: the shade gateway
+// runs 15/360/15 while the other six run 1/60/1. The checker publishes its own
+// in repair_state.auto_repair_delay_bounds; these are the fallback for a
+// checker (or a cached sensor payload) from before that field existed.
+const HCD_DELAY_BOUNDS_FALLBACK = { min: 1, max: 60, step: 1 };
+
+function hcdInt(value, fallback) {
+  const n = parseInt(value, 10);
+  return isNaN(n) ? fallback : n;
+}
+
+// Input types that cannot hold a half-typed value, so an event landing on one
+// can never start an edit.  Anything else — including an <input> with no type
+// at all, which HTML defines as text — is text entry.  See _isTextEntry.
+const HCD_NON_TEXT_INPUT_TYPES = new Set([
+  "checkbox",
+  "radio",
+  "button",
+  "submit",
+  "reset",
+]);
+
 class HealthCheckDetailCard extends HTMLElement {
   constructor() {
     super();
@@ -45,6 +70,9 @@ class HealthCheckDetailCard extends HTMLElement {
     this._lastSnapshot = null;
     this._domBuilt = false;
     this._touchActive = false;
+    // Raised by a keystroke in a text-entry control, lowered when the value is
+    // committed (change) or the control is left (focusout) — see _bindEvents.
+    this._editing = false;
     this._refreshTimer = null;
     this._countdownInterval = null;
     this._expandedCheckers = new Set();
@@ -58,6 +86,11 @@ class HealthCheckDetailCard extends HTMLElement {
   disconnectedCallback() {
     // Reset expanded state when popup closes so next open starts collapsed
     this._expandedCheckers.clear();
+    // An edit cannot outlive the popup that hosted it.  The input it was
+    // protecting goes with the popup, and browsers do not agree on whether
+    // removing a focused node fires focusout at all — so a flag left standing
+    // here would freeze the card the next time it opens.
+    this._editing = false;
     if (this._refreshTimer) {
       clearInterval(this._refreshTimer);
       this._refreshTimer = null;
@@ -78,6 +111,25 @@ class HealthCheckDetailCard extends HTMLElement {
     this._config = { ...HCD_DEFAULTS, ...config };
   }
 
+  // Can this event target hold characters the operator is part-way through
+  // typing?  That is the only question the edit guard needs answered, and it is
+  // asked of the *target of an event*, never of whatever happens to have the
+  // focus — focus was the wrong signal twice over.
+  //
+  // SELECT is deliberately absent.  An edit-in-progress is typed text a render
+  // would destroy, and a dropdown has none: it publishes input and change
+  // together the instant a choice is made, so it could only ever raise the flag
+  // and lower it again in the same task.  (The card renders no SELECT at all.)
+  _isTextEntry(el) {
+    const tag = el?.tagName;
+    if (tag === "TEXTAREA") return true;
+    if (tag !== "INPUT") return false;
+    // A missing or empty type is a text input — that is the HTML default — so
+    // only the explicitly non-typing types are exempt.
+    const rawType = el.type ?? el.getAttribute?.("type") ?? "";
+    return !HCD_NON_TEXT_INPUT_TYPES.has(String(rawType).toLowerCase());
+  }
+
   set hass(hass) {
     const firstSet = !this._hass;
     this._hass = hass;
@@ -86,14 +138,8 @@ class HealthCheckDetailCard extends HTMLElement {
     if (!firstSet && snap === this._lastSnapshot) return;
     this._lastSnapshot = snap;
 
-    // Focus guard
-    const active = this.shadowRoot?.activeElement;
-    if (
-      active &&
-      (active.tagName === "INPUT" || active.tagName === "TEXTAREA")
-    ) {
-      return;
-    }
+    // Edit guard — an uncommitted edit owns the DOM until it is committed
+    if (this._editing) return;
 
     if (!this._domBuilt) {
       this._buildDom();
@@ -137,6 +183,10 @@ class HealthCheckDetailCard extends HTMLElement {
   _startRefreshTimer() {
     if (this._refreshTimer) return;
     this._refreshTimer = setInterval(() => {
+      // Same edit guard as `set hass` — a tick landing mid-edit would throw
+      // away whatever the operator had typed into the delay box.  A box merely
+      // focused is not mid-edit, so the tick keeps running through that.
+      if (this._editing) return;
       this._update();
     }, 15000);
   }
@@ -638,6 +688,10 @@ class HealthCheckDetailCard extends HTMLElement {
     const detail = rs.detail || "";
     const enabled = rs.auto_repair_enabled === true || rs.auto_repair_enabled === "true";
     const delayMin = rs.auto_repair_delay_min || 15;
+    const bounds = rs.auto_repair_delay_bounds || {};
+    const delayLo = hcdInt(bounds.min, HCD_DELAY_BOUNDS_FALLBACK.min);
+    const delayHi = hcdInt(bounds.max, HCD_DELAY_BOUNDS_FALLBACK.max);
+    const delayStep = hcdInt(bounds.step, HCD_DELAY_BOUNDS_FALLBACK.step);
     const deadline = rs.auto_repair_deadline;
     const lastAttempt = rs.last_repair_attempt;
 
@@ -748,7 +802,7 @@ class HealthCheckDetailCard extends HTMLElement {
         <label class="repair-delay-label">
           <input type="number" class="repair-delay-input"
             data-action="set_repair_delay" data-checker="${hcdEscapeHtml(checkerId)}"
-            value="${delayMin}" min="1" max="60" step="1">
+            value="${delayMin}" min="${delayLo}" max="${delayHi}" step="${delayStep}">
           min
         </label>
       </div>
@@ -840,6 +894,13 @@ class HealthCheckDetailCard extends HTMLElement {
       return null;
     };
 
+    // Native form controls dispatch from "change" only — it carries the
+    // post-toggle value, and touchend/click would fire a second, stale command.
+    const isNativeFormEl = (el) => {
+      const tag = el.tagName?.toLowerCase();
+      return tag === "input" || tag === "select" || tag === "textarea";
+    };
+
     const dispatchAction = (el) => {
       const action = el.dataset.action;
       if (action === "recheck") {
@@ -877,22 +938,36 @@ class HealthCheckDetailCard extends HTMLElement {
         this._callRelay("unmute_checker", { checker_id: el.dataset.checker });
       } else if (action === "toggle_auto_repair") {
         const checker_id = el.dataset.checker;
-        const auto_repair_enabled = el.checked;
+        const payload = {
+          checker_id,
+          auto_repair_enabled: el.checked,
+        };
         const delayInput = root.querySelector(
           `.repair-delay-input[data-checker="${checker_id}"]`
         );
-        const auto_repair_delay_min = delayInput
-          ? parseInt(delayInput.value, 10)
-          : 15;
-        this._callRelay("update_repair_config", {
-          checker_id,
-          auto_repair_enabled,
-          auto_repair_delay_min,
-        });
+        if (delayInput) {
+          const auto_repair_delay_min = parseInt(delayInput.value, 10);
+          // 1 is the only bound the card enforces: a 0 or negative delay
+          // collapses the dwell gate, so it must never reach the backend. The
+          // upper bound is the backend's to enforce — _clamp_delay(loud=True)
+          // corrects it with a WARNING and republishes the corrected value,
+          // whereas dropping it here would be a silent client-side no-op.
+          if (!isNaN(auto_repair_delay_min) && auto_repair_delay_min >= 1) {
+            payload.auto_repair_delay_min = auto_repair_delay_min;
+          }
+        }
+        this._callRelay("update_repair_config", payload);
       } else if (action === "set_repair_delay") {
         const checker_id = el.dataset.checker;
         const auto_repair_delay_min = parseInt(el.value, 10);
-        if (isNaN(auto_repair_delay_min) || auto_repair_delay_min < 1) return;
+        // 1 is the only bound the card enforces: a 0 or negative delay
+        // collapses the dwell gate, so it must never reach the backend. The
+        // upper bound is the backend's to enforce — _clamp_delay(loud=True)
+        // corrects it with a WARNING and republishes the corrected value,
+        // whereas dropping it here would be a silent client-side no-op.
+        if (isNaN(auto_repair_delay_min) || auto_repair_delay_min < 1) {
+          return;
+        }
         const toggle = root.querySelector(
           `.repair-auto-toggle[data-checker="${checker_id}"]`
         );
@@ -934,10 +1009,11 @@ class HealthCheckDetailCard extends HTMLElement {
           return;
         }
 
-        const tag = el.tagName?.toLowerCase();
-        const nativeEl =
-          tag === "input" || tag === "select" || tag === "textarea";
-        if (!nativeEl && e.cancelable) e.preventDefault();
+        // NEVER preventDefault on native controls (Android webviews won't open
+        // keyboards/dropdowns), and leave their dispatch to "change".
+        if (isNativeFormEl(el)) return;
+
+        if (e.cancelable) e.preventDefault();
 
         this._touchActive = true;
         dispatchAction(el);
@@ -951,7 +1027,7 @@ class HealthCheckDetailCard extends HTMLElement {
     root.addEventListener("click", (e) => {
       if (this._touchActive) return;
       const el = findActionEl(e);
-      if (el) dispatchAction(el);
+      if (el && !isNativeFormEl(el)) dispatchAction(el);
     });
 
     // Change events for repair controls (checkbox and number input)
@@ -961,6 +1037,37 @@ class HealthCheckDetailCard extends HTMLElement {
         dispatchAction(el);
       }
     });
+
+    // -- Edit-in-progress tracking -----------------------------------------
+    //
+    // Both re-render paths rewrite innerHTML wholesale, so one landing mid-edit
+    // swaps the node being typed into for a fresh one carrying the published
+    // value — keystrokes and focus both gone.  What deserves that protection is
+    // an edit, not a focus: an operator who taps into the delay box and walks
+    // away has typed nothing, and gating on focus left the card frozen on the
+    // wall display until somebody came back and blurred the box.
+    //
+    // Only a text-entry control can start an edit.  `input` on its own would be
+    // self-correcting — a checkbox's activation fires input AND change, so the
+    // flag would clear again in the same task — but `keydown` is not: it fires
+    // for any key on whatever holds the focus, a checkbox or the Repair button
+    // included, and neither of those ever fires a change.  Without the type
+    // test one arrow key would re-create the indefinite freeze.
+    const startEditing = (e) => {
+      if (this._isTextEntry(e.target)) this._editing = true;
+    };
+    root.addEventListener("input", startEditing);
+    root.addEventListener("keydown", startEditing);
+
+    // `change` is the commit — including a spinner click, which fires input and
+    // change together, so the very next render shows the server's value again.
+    // `focusout`, never `blur`: blur does not bubble, so a delegated listener
+    // on the shadow root would never see it and the flag would stick.
+    const stopEditing = () => {
+      this._editing = false;
+    };
+    root.addEventListener("change", stopEditing);
+    root.addEventListener("focusout", stopEditing);
   }
 
   // ---------------------------------------------------------------------------

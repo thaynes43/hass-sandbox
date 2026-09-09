@@ -146,6 +146,16 @@ The checker-level status is recomputed from the modified checks in the published
 
 Checkers can declare `supports_repair: true` during registration. The controller routes repair commands to the specific checker without knowing how to repair — all repair logic lives in the checker app. The detail card shows repair controls (manual button, auto-repair toggle, delay config) for repair-capable checkers.
 
+A repair-capable checker reports a `repair_state` object on every status report. Its auto-repair fields all come from `shared/auto_repair_config.py` (`_auto_repair_state_fields`), so all seven repairable checkers publish them identically:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `auto_repair_enabled` | bool | The live value of `input_boolean.<checker_id>_health_auto_repair` |
+| `auto_repair_delay_min` | int | The live value of `input_number.<checker_id>_health_auto_repair_delay`, in minutes |
+| `auto_repair_delay_bounds` | `{min, max, step}` | The bounds that delay is clamped to, and that its helper was created with |
+
+The bounds are **per checker**, not global: `shade_gateway` is `15/360/15` (default 120) while the other six are `1/60/1`. The detail card renders them straight onto its delay input's `min`/`max`/`step`, which is what makes the spinner step and stop in the right places. It does **not** use them to reject what it sends: the only bound the card enforces is a floor of 1 (a zero or negative delay would collapse the dwell gate), and everything else goes to the backend, which clamps it with `_clamp_delay(loud=True)` — a WARNING plus an immediate republish of the corrected value. A card-side rejection would instead be a silent no-op, which is exactly what it was: with the bounds not yet published the fallback `1/60/1` applied to every checker, so typing a legal `180` on the shade-gateway row dropped the command with no relay call and no log. A checker that does not publish the field (or a sensor payload cached from before it existed) still makes the card fall back to `1/60/1` for rendering.
+
 ### Alertmanager Bridge
 
 When `alertmanager_url` is configured on the controller, checker health is mirrored into the cluster's Prometheus Alertmanager — one alert per unhealthy checker. The decision logic lives in `shared/alertmanager_bridge.py` (pure, no HTTP); `providers/alertmanager` does the actual `POST /api/v2/alerts`.
@@ -220,6 +230,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/alertmanager` — posts/resolves alerts in the cluster Alertmanager (controller, when `alertmanager_url` is set)
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
+- `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`)
 - `prometheus-client` — metrics exposition (controller)
 
@@ -323,7 +334,7 @@ zwave_health_checker:
   repair_max_per_24h: 3                             # Rolling 24h cap, then escalate to critical (default 3)
   repair_quiet_period_s: 180                        # Settle time after an action (default 180)
   repair_recovery_wait_s: 300                       # How long to watch for recovery after a press (default 300)
-  auto_repair_enabled_default: true                 # Seeds the toggle at creation AND governs the whole first run (default false)
+  auto_repair_enabled_default: true                 # Seeds the toggle at creation AND is the fallback while it is unreadable (default false)
   auto_repair_delay_min_default: 5                  # Dwell before the first restart, minutes (default 5)
 ```
 
@@ -450,10 +461,13 @@ health_checks/
 │   └── imagegen_health_checker/
 │       ├── __init__.py
 │       └── imagegen_health_checker.py
-├── shared/
-│   ├── __init__.py
-│   ├── check_utils.py
-│   └── alertmanager_bridge.py
+├── shared/                          # shared library code, the one exception to
+│   ├── __init__.py                  # "no shared code under apps/"
+│   ├── check_utils.py               # ping/HTTP checks + the cross-check downgrade
+│   ├── alertmanager_bridge.py       # pure alert decision logic (no HTTP)
+│   └── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
+│                                    # toggle/delay helpers, shared by all seven
+│                                    # repair-capable checkers
 ├── cards/
 │   ├── health-check-card.js
 │   └── health-check-detail-card.js

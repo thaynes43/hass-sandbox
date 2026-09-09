@@ -104,7 +104,7 @@ Auto-repair reloads at most once per `reload_cooldown_s` (default 1/hour) — pe
 | `input_boolean.protect_health_auto_repair` | Helper | Toggle auto-repair on/off |
 | `input_number.protect_health_auto_repair_delay` | Helper | Minutes before auto-repair triggers (1-60) |
 
-On **first provision only**, the toggle is turned on when `auto_repair_enabled_default` is true and the delay is set to `auto_repair_delay_min_default`. After that the helpers are the source of truth — config defaults are not re-applied.
+On **first provision**, the toggle is turned on when `auto_repair_enabled_default` is true and the delay is set to `auto_repair_delay_min_default`. Those two config values are also the fallback while a helper cannot be read yet — a newly created helper is registered with `add_entity` straight away, and without that AppDaemon would not see it for up to one `refresh_delay` (10 min). An unreadable read keeps the cached default rather than being taken as `off`; once a helper has been read successfully, losing it again fails the toggle **closed**. Full mechanism: `shared/auto_repair_config.py`. Once the helpers read cleanly they are the source of truth — config defaults are not re-applied.
 
 ## Configuration Reference
 
@@ -131,8 +131,8 @@ protect_health_checker:
   reload_cooldown_s: 3600                 # Min seconds between auto-repair reloads (default: 3600)
   repair_settle_s: 60                     # Post-reload settle window; re-registration timestamps inside it don't count (default: 60)
   repair_recovery_wait_s: 600             # Max seconds to wait for a genuine event after reload (default: 600)
-  auto_repair_enabled_default: true       # Toggle state on FIRST provision only (default: true)
-  auto_repair_delay_min_default: 1        # Delay helper value on FIRST provision only (default: 1)
+  auto_repair_enabled_default: true       # Seeds the toggle at creation AND is the fallback while the helper is unreadable (default: true)
+  auto_repair_delay_min_default: 1        # Seeds the delay helper the same way; clamped to 1-60 (default: 1)
   alerting:
     alertname: ProtectEventStreamFrozen   # Default would be UniFiProtectUnhealthy
 ```
@@ -160,4 +160,5 @@ The `alerting` block is passed through to the controller at registration and con
 ## Dependencies
 
 - `providers/ha_provisioner` — `HAProvisioner` creates the auto-repair helpers on startup; `HaAdminClient` does template-based sensor discovery, config-entry listing, and the reload itself
+- `shared/auto_repair_config` — `AutoRepairConfigMixin`: the auto-repair toggle/delay helpers, and `UNAVAILABLE_STATES` for the `_is_available` sensor check
 - `health_check_controller` — registration/status via HA events (never `get_app`); Alertmanager mirroring lives in the controller, not here

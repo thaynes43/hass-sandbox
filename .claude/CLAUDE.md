@@ -47,7 +47,7 @@ appdaemon -c appdaemon
 
 ### Deploy to production
 
-Production deploys are automated via Docker image builds. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux detects the new image and rolls the Kubernetes deployment.
+Production deploys are half automatic. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux does **not** pick it up on its own: the haynes-ops HelmRelease pins `tag:`, so the rollout is a haynes-ops tag-bump PR + `flux reconcile` + `rollout status`, done by the same agent in the same session (`.agents/rules/git-workflow.md` step 6).
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. The merge to `main` then automatically produces the semver tag.
 
@@ -181,11 +181,15 @@ Every new AppDaemon app **must** include a `README.md` in its package directory.
 ### AppDaemon deploy communication (required)
 
 After any `appdaemon/` change, state what was changed:
-- **Repo Updated** — changes are in the repo; will deploy automatically when merged to `main` via Docker image build
+- **Repo Updated** — changes are merged to `main`; the image `ghcr.io/thaynes43/appdaemon:<VERSION>` is built automatically, and the rollout was done via the haynes-ops `tag:` bump + reconcile (say which tag the pod now runs). The rollout is not automatic — see `.agents/rules/git-workflow.md` step 6
 
 ### Pull requests: open ready for review and merge them yourself (required)
 
 Open PRs **ready for review** (`gh pr create`, never `--draft`) once the branch is complete and verified. Marking ready triggers Claude Code Review, Agent Docs Audit, and Docs Site Audit on top of the required checks (`test`, `docs-build`, `build-and-push`); that review spend is intended. Wait for **all** of them, address findings with follow-up commits, then squash-merge your own PR (`gh pr merge <n> --squash --delete-branch`) and confirm it shows `MERGED`. Never push to `main` directly. A green, unmerged PR is unfinished work, not a hand-off.
+
+### Finish work in flight (required)
+
+Your session is the unit of delivery: everything you start or find is merged **and deployed** before your final message, or parked where it survives you (a `backlog/NNN-*.md` entry or a GitHub issue, and only for work that genuinely needs a design decision). Sessions die mid-turn, worktrees are pruned, and nobody reads a closing "here is what I left open" message. A defect you find is yours; review findings get fixed or concretely refuted on the PR; "worth a follow-up" is a tripwire. Full rule: `.agents/rules/finish-in-flight-work.md` (Tom, 2026-09-09).
 
 ### Button mapping doc sync (required)
 
@@ -207,7 +211,7 @@ When importing night light automations from HA: one file per automation, filenam
 
 - Use delegated touch+click events with deduplication to support desktop, iOS, and Android/UniFi wall displays
 - Never `preventDefault()` on `<input>`, `<select>`, `<textarea>` touchend — breaks Android keyboard/dropdowns
-- Skip re-render when an input has focus (prevents lost focus on keystrokes)
+- Skip re-render while an edit is in progress — `input`/`keydown` on a text-entry control sets a flag, `change`/`focusout`/disconnect clear it — on every render path including refresh timers. Never gate on `activeElement`: a merely focused control must not block renders (it froze the detail card twice on 2026-09-09)
 - Bump `?v=N` query param on Lovelace resource URL after updating card JS
 - Cards extend `HTMLElement`, use `attachShadow({ mode: "open" })`, implement `setConfig()` and `set hass()`
 

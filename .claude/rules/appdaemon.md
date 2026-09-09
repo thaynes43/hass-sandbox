@@ -9,6 +9,7 @@ When working in `appdaemon/`, read these for full detail:
 - `.agents/rules/logging-standards.md` — log levels, required logging points, formatting conventions
 - `.agents/rules/security-policy.md` — always applies; see also `.claude/rules/security.md`
 - `.agents/rules/git-workflow.md` — branching, PRs, CI gates, commit conventions
+- `.agents/rules/finish-in-flight-work.md` — always applies; finish, merge and deploy everything you start or find, no follow-up hand-offs
 
 ## Key decisions to know before coding
 

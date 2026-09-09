@@ -83,7 +83,7 @@ Also check relevant playbooks listed in CLAUDE.md before starting implementation
 
 ## Scope Boundaries — What You Must NOT Do
 - **Do NOT push code to Git** — no `git push`, `git commit`, etc.
-- **Do NOT deploy to production** — deployment is automatic on merge to `main` via Docker image build
+- **Do NOT deploy to production** — the driving session owns the merge and the haynes-ops `tag:` bump that actually rolls the image out (the build is automatic on merge; the rollout is not). Report what needs rolling out and the `VERSION` it will ship as
 - **Do NOT run integration tests** unless explicitly asked and env vars are confirmed available
 
 ## Communication Protocol

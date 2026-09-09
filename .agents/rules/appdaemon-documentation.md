@@ -157,6 +157,9 @@ media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publis
 
 health_check_controller (listens for health_check_command events from all checkers)
   │    — mirrors checker health → Alertmanager (providers/alertmanager) when alertmanager_url set
+  │    — every repair-capable checker (printer, fans, spa, shade_gateway, protect, zwave) mixes in
+  │      shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair helpers via
+  │      ha_provisioner, reads them with the first-run guard, clamps the delay, applies card commands
   ├─ cloud_checker/cloud (root dependency)
   │    └─ depended on by: cielo, lock_batteries
   ├─ mqtt_broker_checker/mqtt_broker (root dependency)

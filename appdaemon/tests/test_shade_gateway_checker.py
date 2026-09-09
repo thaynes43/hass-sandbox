@@ -909,31 +909,6 @@ class TestCancelAndConfig:
         ]
         assert len(warning_calls) >= 1
 
-    def test_update_auto_repair_enabled(self):
-        app = _make_app()
-        _init_only(app)
-        app.get_state = MagicMock(return_value="off")
-
-        app._update_repair_config({"auto_repair_enabled": True})
-
-        app.call_service.assert_called_with(
-            "input_boolean/turn_on",
-            entity_id="input_boolean.shade_gateway_health_auto_repair",
-        )
-
-    def test_update_auto_repair_delay(self):
-        app = _make_app()
-        _init_only(app)
-        app.get_state = MagicMock(return_value="15")
-
-        app._update_repair_config({"auto_repair_delay_min": 180})
-
-        app.call_service.assert_called_with(
-            "input_number/set_value",
-            entity_id="input_number.shade_gateway_health_auto_repair_delay",
-            value=180,
-        )
-
     def test_on_repair_command_start(self):
         app = _make_app()
         _init_only(app)

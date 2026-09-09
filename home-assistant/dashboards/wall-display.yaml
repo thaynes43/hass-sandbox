@@ -2102,7 +2102,7 @@ views:
               main: []
               bottom: []
             cards:
-              - type: custom:skylight-calendar-card
+              - type: custom:daylight-calendar-card
                 title: Family Calendar
                 entities:
                   - calendar.hayneshome01886_gmail_com

@@ -899,40 +899,6 @@ class TestRepairEventsEmission:
 # ---------------------------------------------------------------------------
 
 class TestRepairConfig:
-    def test_update_auto_repair_enabled(self):
-        app = _make_app()
-        _init_only(app)
-
-        app._update_repair_config({"auto_repair_enabled": True})
-
-        app.call_service.assert_called_with(
-            "input_boolean/turn_on",
-            entity_id="input_boolean.spa_health_auto_repair",
-        )
-
-    def test_update_auto_repair_disabled(self):
-        app = _make_app()
-        _init_only(app)
-
-        app._update_repair_config({"auto_repair_enabled": False})
-
-        app.call_service.assert_called_with(
-            "input_boolean/turn_off",
-            entity_id="input_boolean.spa_health_auto_repair",
-        )
-
-    def test_update_auto_repair_delay(self):
-        app = _make_app()
-        _init_only(app)
-
-        app._update_repair_config({"auto_repair_delay_min": 10})
-
-        app.call_service.assert_called_with(
-            "input_number/set_value",
-            entity_id="input_number.spa_health_auto_repair_delay",
-            value=10,
-        )
-
     def test_build_repair_state(self):
         """_build_repair_state should return a complete dict."""
         app = _make_app()
@@ -965,20 +931,6 @@ class TestRepairCommandHandler:
         )
 
         assert app._repair_status == REPAIR_IN_PROGRESS
-
-    def test_update_config_command(self):
-        app = _make_app()
-        _init_only(app)
-
-        app._on_repair_command(
-            "health_check_repair_spa",
-            {"action": "update_repair_config", "auto_repair_enabled": True, "auto_repair_delay_min": 8},
-            {},
-        )
-
-        # Should have called service to enable auto-repair
-        calls = [c[0][0] for c in app.call_service.call_args_list]
-        assert "input_boolean/turn_on" in calls
 
     def test_cancel_repair_command_while_pending(self):
         """cancel_repair command resets pending state to idle."""

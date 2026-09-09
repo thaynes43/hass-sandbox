@@ -100,26 +100,51 @@ On Android wall tablets / embedded webviews, global shadow-root touch listeners 
 - Set `touch-action: pan-y` on `:host`, primary card containers, and large editor wrappers so the browser can keep vertical scroll ownership.
 - Do not assume behavior seen in the Android phone companion app matches the wall tablet webview.
 
-## 3) Form inputs must not lose focus on re-render
+## 3) Re-renders must not clobber an edit in progress — but focus alone must not block them
 
-When the card re-renders (e.g., after `_markDirty()`), the entire shadow DOM is replaced, stealing focus from any active input field. This makes typing impossible — each keystroke triggers a re-render that deselects the field.
+When the card re-renders (after `_markDirty()`, a new `hass`, or a refresh timer), the shadow DOM is replaced wholesale. That destroys the node the operator is typing into — keystrokes and focus gone, and in Chromium the removal fires `change` with the half-typed value, so `"1"` of `"15"` gets committed.
+
+The wrong fix is to skip the render whenever `shadowRoot.activeElement` is an input. A *merely focused* control — a checkbox someone tapped, a number box someone clicked into and walked away from — then blocks every render until focus moves. That froze the health-check detail card twice on 2026-09-09 (once via the checkbox, once via the delay box) after it was written to exactly that rule.
 
 ### Fix
 
-Before re-rendering, check if the active element is an input. If so, skip the render or defer it:
+Track an **edit in progress**, not focus, and gate **every** render path on it — `set hass` and any refresh timer alike:
 
 ```javascript
+constructor() {
+  super();
+  this._editing = false;
+}
+
+_isTextEntry(el) {
+  const tag = el?.tagName;
+  if (tag === "SELECT" || tag === "TEXTAREA") return true;
+  if (tag !== "INPUT") return false;
+  const type = String(el.type ?? el.getAttribute?.("type") ?? "").toLowerCase();
+  return !["checkbox", "radio", "button", "submit", "reset"].includes(type);
+}
+
+_bindEditTracking(root) {
+  const raise = (e) => { if (this._isTextEntry(e.target)) this._editing = true; };
+  root.addEventListener("input", raise);
+  root.addEventListener("keydown", raise);   // keys land before any input event
+  root.addEventListener("change", () => { this._editing = false; });   // committed
+  root.addEventListener("focusout", () => { this._editing = false; }); // abandoned
+}
+
+disconnectedCallback() {
+  this._editing = false;   // a popup closed mid-edit does not reliably fire focusout
+}
+
 _render() {
-  const active = this.shadowRoot?.activeElement;
-  if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) {
-    // Don't re-render while user is typing — the save button is already enabled
-    return;
-  }
+  if (this._editing) return;   // same line in the refresh timer's path
   // ... actual render logic
 }
 ```
 
-For date inputs (`<input type="date">`), also skip re-render since the date picker counts as an active input on mobile.
+Why each piece: `input` alone would let a `keydown` on a focused checkbox or button (which never emits `change`) count as an edit — hence the text-entry filter on the target; `change` releasing the guard is what lets a spinner click (which fires `input` then `change`) show the server's value on the next render; `focusout` covers an abandoned edit; `disconnectedCallback` covers the popup case. For date inputs (`<input type="date">`), the picker counts as an edit on mobile — the filter treats them as text entry, which is right.
+
+Test it: the health-check detail card's node harness (`appdaemon/tests/cards/health_check_detail_card_harness.js`) drives exactly these scenarios — focus only → a render proceeds; type → a tick is skipped; commit → the next render proceeds; keydown on a checkbox → not an edit.
 
 ## 4) Structural changes require explicit save
 

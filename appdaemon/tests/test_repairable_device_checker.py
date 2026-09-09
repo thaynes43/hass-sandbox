@@ -118,6 +118,7 @@ class TestLifecycle:
         _startup(app, mock_prov)
         assert mock_prov.ensure_helper.call_count == 2
 
+
     def test_listens_for_repair_events(self):
         app = _make_app()
         _startup(app)
@@ -393,15 +394,3 @@ class TestRepairCommand:
             {},
         )
         assert app._repair_status == REPAIR_IN_PROGRESS
-
-    def test_update_config_command(self):
-        app = _make_app()
-        _init_only(app)
-
-        app._on_repair_command(
-            "health_check_repair_printer",
-            {"action": "update_repair_config", "auto_repair_enabled": True},
-            {},
-        )
-        calls = [c[0][0] for c in app.call_service.call_args_list]
-        assert "input_boolean/turn_on" in calls

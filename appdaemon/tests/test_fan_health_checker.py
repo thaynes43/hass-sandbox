@@ -1282,18 +1282,257 @@ class TestRepairCommandHandler:
 
         app.create_task.assert_called_once()
 
-    def test_update_config_command(self):
+
+_BOTH_DOWN = [
+    {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+    {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+    {"name": "Blue Room State", "status": "critical", "detail": "unavailable"},
+    {"name": "Blue Room Ping", "status": "critical", "detail": "timeout"},
+]
+
+_HOLD_STATES = (REPAIR_PENDING, REPAIR_IN_PROGRESS, REPAIR_SUCCESS)
+
+
+class TestStandDownReachesThePerFanLadder:
+    """A per-fan `success` outranks the global `idle` the mixin can reach.
+
+    The published status is `_aggregate_repair_status()` over the per-fan
+    states, and `success` is one of alertmanager_bridge's repair-hold states —
+    the bridge withholds the critical page for up to repair_hold_cap_s while
+    one is up. Standing only the *global* status down therefore took the
+    countdown off the card and changed nothing the pager sees: auto-repair off,
+    a fan still down, and the page still suppressed.
+    """
+
+    def _app(self):
         app = _make_app()
         _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 5
+        app._repair_status = REPAIR_PENDING
+        app._auto_repair_deadline = datetime.datetime.now()
+        # Blue Room is down and awaiting a first attempt — that is what keeps
+        # the evaluation from returning at its "no repair-worthy fans" arm
+        # before the toggle is ever consulted.
+        app._fan_unhealthy_since["Blue Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=1)
+        )
+        return app
 
-        app._on_repair_command(
-            "health_check_repair_fans",
-            {"action": "update_repair_config", "auto_repair_enabled": True},
-            {},
+    def test_a_recovered_success_fan_drops_to_idle_with_its_ladder_intact(self):
+        """Healthy at `success` is not a failure and must not be filed as one.
+
+        The fan is serving out `repair_backoff_reset_min` of sustained health
+        before its ladder resets. Recording that as `failed` would page for a
+        fan that is working; resetting the ladder would hand it a fresh
+        attempt-1 instant power-cycle the moment it blipped. `idle` with the
+        ladder untouched is the only answer that is neither.
+        """
+        app = self._app()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 2
+        fr["recovered_at"] = datetime.datetime.now()
+        assert app._aggregate_repair_status() in _HOLD_STATES
+
+        app._evaluate_auto_repair(_BOTH_DOWN)
+
+        assert app._aggregate_repair_status() not in _HOLD_STATES
+        assert fr["status"] == REPAIR_IDLE
+        assert fr["attempts"] == 2
+
+    def test_an_unhealthy_success_fan_becomes_a_relapse(self):
+        """Unhealthy at `success` means the repair did not stick.
+
+        That is exactly what `_register_fan_relapse` records, so it is routed
+        through it rather than re-derived here — a second, subtly different
+        relapse rule is how the two would drift.
+        """
+        app = self._app()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 1
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=1)
         )
 
-        calls = [c[0][0] for c in app.call_service.call_args_list]
-        assert "input_boolean/turn_on" in calls
+        app._evaluate_auto_repair(_BOTH_DOWN)
+
+        assert app._aggregate_repair_status() not in _HOLD_STATES
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["next_retry_at"] is not None
+        assert fr["attempts"] == 2
+
+
+_ALL_OK = [
+    {"name": "Pink Room State", "status": "ok", "detail": "on"},
+    {"name": "Pink Room Ping", "status": "ok", "detail": "3ms"},
+    {"name": "Blue Room State", "status": "ok", "detail": "off"},
+    {"name": "Blue Room Ping", "status": "ok", "detail": "5ms"},
+]
+
+
+class TestADemotedFanStillResetsItsLadder:
+    """`idle` used to be a dead end for a fan carrying attempts.
+
+    The stand-down drops a healthy `success` fan to `idle` and keeps its
+    attempt count on purpose — a recovery that has not been sustained yet must
+    not buy a fresh attempt-1 instant power-cycle. But `_reset_recovered_fans`
+    gated on `status in (failed, success)`, so that fan then sat outside the
+    only path that ever zeroes the ladder: its inflated attempts, and the
+    longer backoff they buy, survived until some future episode happened to
+    run a whole success -> sustained-recovery cycle of its own.
+    """
+
+    def _demoted(self):
+        """A healthy `success` fan pushed to `idle` by the stand-down."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._persist_ladder = MagicMock()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 3
+        fr["next_retry_at"] = datetime.datetime.now()
+        # Healthy right now — _fan_unhealthy_since is None from initialize().
+        app._stand_down_pending_repair("Auto-repair disabled")
+        assert fr["status"] == REPAIR_IDLE
+        assert fr["attempts"] == 3
+        assert fr["recovered_at"] is not None
+        return app, fr
+
+    def test_sustained_health_zeroes_the_ladder(self):
+        app, fr = self._demoted()
+        # The streak has run its course: wind it back past the reset window,
+        # which is what the checker sees repair_backoff_reset_min later.
+        fr["recovered_at"] -= datetime.timedelta(
+            minutes=app._repair_backoff_reset_min + 1
+        )
+
+        app._reset_recovered_fans(_ALL_OK)
+
+        assert fr["attempts"] == 0
+        assert fr["next_retry_at"] is None
+        assert fr["status"] == REPAIR_IDLE
+
+    def test_the_ladder_survives_until_the_window_is_served(self):
+        """The other half — the demotion must not shortcut the reset either."""
+        app, fr = self._demoted()
+
+        app._reset_recovered_fans(_ALL_OK)
+
+        assert fr["attempts"] == 3
+        assert fr["next_retry_at"] is not None
+
+    def test_the_demotion_survives_a_reload(self):
+        """Otherwise a restart resurrects the hold this all exists to clear.
+
+        The ladder helper still says "success" for this fan until something
+        rewrites it, and `_seed_repair_ladder` restores that as REPAIR_SUCCESS
+        — a repair-hold state, so an AppDaemon reload inside the window would
+        go back to withholding the page. The relapse branch persists via
+        `_schedule_backoff_retry`; the demotion has to do it itself.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._persist_ladder = MagicMock()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 3
+
+        app._stand_down_pending_repair("Auto-repair disabled")
+
+        app._persist_ladder.assert_called_once()
+
+        # ...and only once. The disabled branch of _evaluate_auto_repair runs
+        # this every check cycle, so a fan that has already been demoted must
+        # not rewrite the helper on each of them — that would be a service
+        # call every check_interval_s for the length of the outage.
+        app._stand_down_pending_repair("Auto-repair disabled")
+
+        app._persist_ladder.assert_called_once()
+
+    def test_nothing_is_persisted_when_no_fan_was_demoted(self):
+        """A stand-down with no stale success must not write the helper."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._persist_ladder = MagicMock()
+
+        app._stand_down_pending_repair("Auto-repair disabled")
+
+        app._persist_ladder.assert_not_called()
+
+
+class TestCancelDefersTheBackoffLadder:
+    """Cancel has to defer the retry ladder too, not just the first attempts.
+
+    ``_cancel_repair`` restarts every unhealthy fan's down-clock, which defers
+    the fans still awaiting a FIRST attempt. But ``_evaluate_auto_repair``
+    arms a second kind of candidate: a FAILED fan whose backoff
+    ``next_retry_at`` has come due. That clock is not the down-clock, so
+    restarting the down-clocks left it untouched — and a retry scheduled
+    inside the deferral would power-cycle the fan from inside the very window
+    the operator asked to be left alone.
+    """
+
+    def test_cancel_floors_a_failed_fans_next_retry(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._report_repair_status_only = MagicMock()
+        now = datetime.datetime.now()
+        # Pink Room is mid-ladder: attempt 1 failed and the retry is a minute
+        # out — inside the deferral the operator is about to ask for.
+        app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=30)
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_FAILED
+        fr["attempts"] = 1
+        fr["next_retry_at"] = now + datetime.timedelta(minutes=1)
+        app._repair_status = REPAIR_PENDING
+
+        app._cancel_repair()
+
+        assert fr["next_retry_at"] >= now + datetime.timedelta(minutes=5)
+        # ...and the ladder position is untouched: cancelling is not a repair
+        # and must not buy back budget.
+        assert fr["attempts"] == 1
+
+    def test_the_deferred_retry_does_not_fire_inside_the_window(self):
+        """The end-to-end consequence, on the clock the checker really reads.
+
+        Rather than patching ``datetime.now``, the state is wound back two
+        minutes after the cancel, which is exactly what the checker sees two
+        minutes later. Without the floor the retry would then be a minute in
+        the past and the next tick would power-cycle the fan.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._report_repair_status_only = MagicMock()
+        now = datetime.datetime.now()
+        app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=30)
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_FAILED
+        fr["attempts"] = 1
+        fr["next_retry_at"] = now + datetime.timedelta(minutes=1)
+        app._repair_status = REPAIR_PENDING
+
+        app._cancel_repair()
+
+        # Two minutes pass.
+        elapsed = datetime.timedelta(minutes=2)
+        app._fan_unhealthy_since["Pink Room"] -= elapsed
+        fr["next_retry_at"] -= elapsed
+        app.create_task = MagicMock()
+
+        app._evaluate_auto_repair(_pink_down_results())
+
+        assert fr["status"] == REPAIR_FAILED
+        assert app.create_task.call_args_list == []
 
 
 # ---------------------------------------------------------------------------

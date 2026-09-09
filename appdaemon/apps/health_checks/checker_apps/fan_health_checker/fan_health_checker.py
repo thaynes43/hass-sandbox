@@ -59,6 +59,7 @@ if _appdaemon_root not in sys.path:
 import hassapi as hass
 
 from providers.ha_provisioner import HAProvisioner
+from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check_per_device, ping_check
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ PING_ATTEMPTS = 3
 SCRIPT_BUSY_WAIT_S = 660
 
 
-class FanHealthChecker(hass.Hass):
+class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker for Modern Forms ceiling fans with per-fan repair."""
 
     # ------------------------------------------------------------------
@@ -110,12 +111,7 @@ class FanHealthChecker(hass.Hass):
         self._repair_recovery_wait_s: int = int(
             args.get("repair_recovery_wait_s", 300)
         )
-        self._auto_repair_enabled_default: bool = bool(
-            args.get("auto_repair_enabled_default", False)
-        )
-        self._auto_repair_delay_min_default: int = int(
-            args.get("auto_repair_delay_min_default", 5)
-        )
+        self._init_auto_repair_config(args)
         # Re-apply the fan's pre-repair on/off + speed + direction after a
         # successful repair (the power-cycle reboots the fan to its hardware
         # default). Enabled by default; set false to disable.
@@ -186,10 +182,6 @@ class FanHealthChecker(hass.Hass):
         # auto-repair evaluator can't race in before the task starts
         self._manual_repair_starting: bool = False
 
-        # Cached auto-repair config (updated each async check cycle)
-        self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
-        self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
-
         # Repair completion events awaiting delivery to the controller.
         # Drained into the next report_status payload (once-only delivery).
         self._pending_repair_events: List[Dict[str, Any]] = []
@@ -239,46 +231,7 @@ class FanHealthChecker(hass.Hass):
             return
 
         prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
-
-        try:
-            created = await prov.ensure_helper(
-                "input_boolean",
-                f"{self._checker_id} Health Auto Repair",
-            )
-            if created:
-                self.log(
-                    f"Provisioned input_boolean.{self._checker_id}_health_auto_repair",
-                    level="INFO",
-                )
-        except Exception as exc:
-            self.log(f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR")
-
-        try:
-            created = await prov.ensure_helper(
-                "input_number",
-                f"{self._checker_id} Health Auto Repair Delay",
-                min=1,
-                max=60,
-                step=1,
-                unit_of_measurement="min",
-                mode="box",
-            )
-            if created:
-                entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=self._auto_repair_delay_min_default,
-                    )
-                except Exception as exc:
-                    self.log(f"Failed to set default for {entity_id}: {exc!r}", level="DEBUG")
-                self.log(f"Provisioned {entity_id}", level="INFO")
-        except Exception as exc:
-            self.log(
-                f"Failed to provision auto-repair delay helper: {exc!r}",
-                level="ERROR",
-            )
+        await self._provision_auto_repair_helpers(prov)
 
         try:
             created = await prov.ensure_helper(
@@ -354,8 +307,55 @@ class FanHealthChecker(hass.Hass):
         if action == "start_repair":
             self.log("Manual repair requested for fans", level="INFO")
             self._start_manual_repair()
+        elif action == "cancel_repair":
+            self._cancel_repair()
         elif action == "update_repair_config":
-            self._update_repair_config(data)
+            self._handle_repair_config_command(data)
+        else:
+            self.log(f"Unknown repair action {action!r}", level="WARNING")
+
+    def _cancel_repair(self) -> None:
+        """Stand down a scheduled repair, without ending the outage.
+
+        The card offers Cancel for any checker sitting at ``pending`` and the
+        controller forwards it, so without this arm the tap was silently
+        dropped. Only the aggregate status ever holds ``pending`` — per-fan
+        states never do; the countdown is derived from the per-fan down-clocks
+        of every fan currently unhealthy. Candidates are re-armed on every
+        cycle, so dropping back to ``idle`` alone would let the countdown fire
+        on the very next tick — every unhealthy fan's down-clock is restarted
+        instead, giving a real deferral of one full auto-repair delay.
+        ``attempts`` is untouched: cancelling is not a repair and must not buy
+        back budget.
+        """
+        if self._repair_status != REPAIR_PENDING:
+            self.log(
+                f"Cannot cancel repair — status is {self._repair_status}",
+                level="WARNING",
+            )
+            return
+
+        now = datetime.datetime.now()
+        for name, since in self._fan_unhealthy_since.items():
+            if since is not None:
+                self._fan_unhealthy_since[name] = now
+            # Restarting the down-clock only defers a fan awaiting its FIRST
+            # attempt. _evaluate_auto_repair also fires a FAILED fan the
+            # moment its backoff `next_retry_at` falls due — a clock the
+            # cancel does not otherwise move — so a retry could power-cycle a
+            # fan from inside the very deferral the operator just asked for.
+            # Floor it by the same rule a fan gets while it is not
+            # repair-worthy.
+            self._floor_stale_backoff(name, now)
+
+        self._repair_status = REPAIR_IDLE
+        self._auto_repair_deadline = None
+        _, delay_min = self._read_auto_repair_config()
+        self.log(
+            f"Auto-repair cancelled by user — dwell restarted ({delay_min}m)",
+            level="INFO",
+        )
+        self._report_repair_status_only()
 
     def _first_check(self, kwargs: Any) -> None:
         self.create_task(self._run_checks())
@@ -575,7 +575,7 @@ class FanHealthChecker(hass.Hass):
             if not self._check_single_fan_results(fan, results):
                 continue
             fr = self._fan_repair_states[fan["name"]]
-            if fr["status"] not in (REPAIR_FAILED, REPAIR_SUCCESS):
+            if not self._ladder_is_resettable(fr):
                 continue
             if fr["recovered_at"] is None:
                 fr["recovered_at"] = now
@@ -603,30 +603,113 @@ class FanHealthChecker(hass.Hass):
             fr["recovered_at"] = None
             self._persist_ladder()
 
+    @staticmethod
+    def _ladder_is_resettable(fr: Dict[str, Any]) -> bool:
+        """Whether this fan still has a backoff ladder waiting to be zeroed.
+
+        ``failed`` and ``success`` are the states a repair leaves behind, so
+        they are the obvious two. ``idle`` is here for exactly one case:
+        :meth:`_stand_down_pending_repair` demotes a *healthy* ``success`` fan
+        to ``idle`` when auto-repair is switched off, and deliberately keeps
+        its attempt count — a recovery that has not been sustained yet must
+        not buy a fresh attempt-1 instant power-cycle. Without this clause
+        that fan would sit outside the only path that ever zeroes the ladder,
+        so its inflated ``attempts`` (and the longer backoff they buy) would
+        survive until some future episode happened to run a whole
+        success → sustained-recovery cycle of its own.
+
+        A plain ``idle`` fan is excluded by the other two conditions: it has
+        no attempts to clear, and no ``recovered_at`` streak to measure.
+        """
+        if fr["status"] in (REPAIR_FAILED, REPAIR_SUCCESS):
+            return True
+        return (
+            fr["status"] == REPAIR_IDLE
+            and bool(fr["attempts"])
+            and fr["recovered_at"] is not None
+        )
+
+    def _stand_down_pending_repair(self, reason: str) -> None:
+        """Stand the global ladder down, and the per-fan one with it.
+
+        The mixin only knows ``self._repair_status``, but this checker's
+        published status is :meth:`_aggregate_repair_status` over the per-fan
+        states, and a single per-fan ``success`` outranks an ``idle`` global.
+        So without this, switching auto-repair off cleared the card's
+        countdown and left ``alertmanager_bridge`` holding the critical page
+        exactly as before — ``success`` is one of its ``_REPAIR_HOLD_STATES``.
+
+        A ``success`` fan gets one of two different answers, because the state
+        means two different things:
+
+        * **Still healthy** — the repair worked and the fan is serving out
+          ``repair_backoff_reset_min`` of sustained health before its ladder
+          resets. That is not a failure and must not be recorded as one, so it
+          drops to ``idle`` with ``attempts`` and ``next_retry_at`` untouched.
+          It cannot re-arm anything: ``_evaluate_auto_repair`` only considers
+          fans with a non-None ``_fan_unhealthy_since``, and a healthy fan has
+          None. Its ``recovered_at`` streak is kept — started here if it had
+          not begun — so :meth:`_reset_recovered_fans` can still zero the
+          ladder once the health has been sustained; see
+          :meth:`_ladder_is_resettable` for why that needs a clause of its
+          own.
+        * **Unhealthy** — the success did not stick. That is a relapse, and it
+          goes through :meth:`_register_fan_relapse` so it lands on ``failed``
+          with the ladder climbing and a real ``next_retry_at``, exactly as
+          the check cycle would have recorded it. Re-deriving that here would
+          be a second, subtly different relapse rule.
+
+        Health is read from ``_fan_unhealthy_since`` because that is what the
+        evaluation itself uses for candidacy and it is the only signal
+        available on the card path, which runs with no check results at all.
+        A fan that went down between cycles has not been marked yet and is
+        treated as healthy — it simply gets its relapse recorded on the next
+        cycle by ``_update_fan_unhealthy_timers`` instead.
+        """
+        super()._stand_down_pending_repair(reason)
+        now = datetime.datetime.now()
+        demoted = False
+        for name, fr in self._fan_repair_states.items():
+            if fr["status"] != REPAIR_SUCCESS:
+                continue
+            if self._fan_unhealthy_since[name] is None:
+                fr["status"] = REPAIR_IDLE
+                fr["detail"] = reason
+                if fr["recovered_at"] is None:
+                    # The fan is healthy at this instant, so this is where its
+                    # sustained-recovery streak starts. Without it the demoted
+                    # fan would carry attempts that nothing could ever clear.
+                    fr["recovered_at"] = now
+                demoted = True
+                self.log(
+                    f"{name}: {reason} — clearing a recovered fan's stale "
+                    f"repair success (ladder kept at attempts="
+                    f"{fr['attempts']})",
+                    level="INFO",
+                )
+            else:
+                self._register_fan_relapse(name)
+
+        if demoted:
+            # The relapse branch persists via _schedule_backoff_retry; the
+            # demotion has to do it itself, and it matters. The helper still
+            # held "success" for this fan, and _seed_repair_ladder restores
+            # that as REPAIR_SUCCESS — so an AppDaemon reload inside the
+            # window would resurrect the very hold state this method exists
+            # to clear, and go on withholding the page.
+            #
+            # The ladder format has only "success" and "failed", so a demoted
+            # fan persists (and restores) as "failed". That is the right way
+            # to be wrong: `failed` releases the page, and
+            # _reset_recovered_fans zeroes it after the usual sustained
+            # health. The cost is a healthy fan labelled "failed" on the card
+            # until then, and only after a reload that lands while
+            # auto-repair is switched off.
+            self._persist_ladder()
+
     # ------------------------------------------------------------------
     # Auto-repair logic
     # ------------------------------------------------------------------
-
-    async def _refresh_auto_repair_config(self) -> None:
-        """Read auto-repair config from HA helpers (async). Updates cached values."""
-        try:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            enabled_state = await self.get_state(entity_id)
-            self._cached_auto_repair_enabled = str(enabled_state) == "on"
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
-
-        try:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            delay_state = await self.get_state(entity_id)
-            if delay_state is not None and str(delay_state) not in ("unavailable", "unknown"):
-                self._cached_auto_repair_delay_min = int(float(delay_state))
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
-
-    def _read_auto_repair_config(self) -> tuple[bool, int]:
-        """Return cached auto-repair config (sync-safe)."""
-        return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
 
     def _is_fan_repair_worthy(
         self, fan: dict, results: List[Dict[str, str]]
@@ -715,7 +798,7 @@ class FanHealthChecker(hass.Hass):
                 self._floor_stale_backoff(name, now)
 
     def _floor_stale_backoff(self, name: str, now: datetime.datetime) -> None:
-        """Slide a FAILED fan's retry forward while it is not repair-worthy.
+        """Slide a FAILED fan's retry forward when it must not fire yet.
 
         While a fan's entity is reachable (or a systemic outage suspends
         timers), its scheduled backoff retry keeps sliding to at least
@@ -723,6 +806,10 @@ class FanHealthChecker(hass.Hass):
         instant the entity blips down again — the fan always gets at least
         one full delay of sustained entity-down first — while the attempt
         ladder is preserved (only full recovery resets it).
+
+        :meth:`_cancel_repair` applies the same floor for the same reason:
+        an operator's deferral has to cover the backoff ladder, not just the
+        fans waiting on a first attempt.
         """
         fr = self._fan_repair_states[name]
         if fr["status"] != REPAIR_FAILED or not fr["next_retry_at"]:
@@ -772,13 +859,7 @@ class FanHealthChecker(hass.Hass):
             # Clear any countdown started before the toggle was switched off —
             # otherwise reports keep advertising a pending repair (with a
             # stale deadline) that can never fire.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._auto_repair_deadline = None
+            self._stand_down_pending_repair("Auto-repair disabled")
             return
 
         # Earliest-due fan first (first attempts and backoff retries compete
@@ -1379,46 +1460,6 @@ class FanHealthChecker(hass.Hass):
         )
 
     # ------------------------------------------------------------------
-    # Repair config updates
-    # ------------------------------------------------------------------
-
-    def _update_repair_config(self, data: dict) -> None:
-        auto_enabled = data.get("auto_repair_enabled")
-        delay_min = data.get("auto_repair_delay_min")
-
-        if auto_enabled is not None:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            current = str(self.get_state(entity_id))
-            desired = "on" if auto_enabled else "off"
-            if current != desired:
-                service = "input_boolean/turn_on" if auto_enabled else "input_boolean/turn_off"
-                try:
-                    self.call_service(service, entity_id=entity_id)
-                    self.log(
-                        f"Auto-repair {'enabled' if auto_enabled else 'disabled'}",
-                        level="INFO",
-                    )
-                except Exception as exc:
-                    self.log(f"Failed to update auto-repair toggle: {exc!r}", level="ERROR")
-
-        if delay_min is not None:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            try:
-                current = int(float(self.get_state(entity_id)))
-            except (TypeError, ValueError):
-                current = None
-            if current != int(delay_min):
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=int(delay_min),
-                    )
-                    self.log(f"Auto-repair delay set to {delay_min}m", level="INFO")
-                except Exception as exc:
-                    self.log(f"Failed to update auto-repair delay: {exc!r}", level="ERROR")
-
-    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
@@ -1441,8 +1482,6 @@ class FanHealthChecker(hass.Hass):
         return REPAIR_IDLE
 
     def _build_repair_state(self) -> Dict[str, Any]:
-        enabled, delay_min = self._read_auto_repair_config()
-
         # Find latest repair attempt across all fans
         last_attempt = None
         for fr in self._fan_repair_states.values():
@@ -1476,8 +1515,7 @@ class FanHealthChecker(hass.Hass):
         return {
             "status": self._aggregate_repair_status(),
             "detail": detail,
-            "auto_repair_enabled": enabled,
-            "auto_repair_delay_min": delay_min,
+            **self._auto_repair_state_fields(),
             "auto_repair_deadline": (
                 self._auto_repair_deadline.isoformat(timespec="seconds")
                 if self._auto_repair_deadline

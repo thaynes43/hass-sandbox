@@ -38,6 +38,7 @@ if _appdaemon_root not in sys.path:
 import hassapi as hass
 
 from providers.ha_provisioner import HAProvisioner
+from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check, ping_check
 
 logger = logging.getLogger(__name__)
@@ -52,8 +53,12 @@ REPAIR_FAILED = "failed"
 REPAIR_POLL_INTERVAL_S = 5
 
 
-class SpaHealthChecker(hass.Hass):
+class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker for a Gecko-integrated spa with repair support."""
+
+    #: The spa's gateway takes minutes to settle after a power cycle, so it
+    #: dwells three times as long as the shared default before acting.
+    DELAY_MIN_DEFAULT = 15
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -86,12 +91,7 @@ class SpaHealthChecker(hass.Hass):
         self._repair_recovery_wait_s: int = int(
             args.get("repair_recovery_wait_s", 300)
         )
-        self._auto_repair_enabled_default: bool = bool(
-            args.get("auto_repair_enabled_default", False)
-        )
-        self._auto_repair_delay_min_default: int = int(
-            args.get("auto_repair_delay_min_default", 15)
-        )
+        self._init_auto_repair_config(args)
 
         # "health_dependencies" avoids collision with AppDaemon's built-in "dependencies"
         self._dependencies: List[dict] = args.get("health_dependencies", [])
@@ -126,10 +126,6 @@ class SpaHealthChecker(hass.Hass):
         # (drained into the next report_status payload — see
         # _record_repair_event / _drain_pending_repair_events).
         self._pending_repair_events: List[Dict[str, Any]] = []
-
-        # Cached auto-repair config (updated each async check cycle)
-        self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
-        self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
         self.log(
             f"SpaHealthChecker initialising: id={self._checker_id}, "
@@ -180,47 +176,7 @@ class SpaHealthChecker(hass.Hass):
             return
 
         prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
-
-        try:
-            created = await prov.ensure_helper(
-                "input_boolean",
-                f"{self._checker_id} Health Auto Repair",
-            )
-            if created:
-                self.log(
-                    f"Provisioned input_boolean.{self._checker_id}_health_auto_repair",
-                    level="INFO",
-                )
-        except Exception as exc:
-            self.log(f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR")
-
-        try:
-            created = await prov.ensure_helper(
-                "input_number",
-                f"{self._checker_id} Health Auto Repair Delay",
-                min=1,
-                max=60,
-                step=1,
-                unit_of_measurement="min",
-                mode="box",
-            )
-            if created:
-                # Set default value
-                entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=self._auto_repair_delay_min_default,
-                    )
-                except Exception as exc:
-                    self.log(f"Failed to set default for {entity_id}: {exc!r}", level="DEBUG")
-                self.log(f"Provisioned {entity_id}", level="INFO")
-        except Exception as exc:
-            self.log(
-                f"Failed to provision auto-repair delay helper: {exc!r}",
-                level="ERROR",
-            )
+        await self._provision_auto_repair_helpers(prov)
 
     # ------------------------------------------------------------------
     # Registration
@@ -302,7 +258,9 @@ class SpaHealthChecker(hass.Hass):
         elif action == "cancel_repair":
             self._cancel_repair()
         elif action == "update_repair_config":
-            self._update_repair_config(data)
+            self._handle_repair_config_command(data)
+        else:
+            self.log(f"Unknown repair action {action!r}", level="WARNING")
 
     def _first_check(self, kwargs: Any) -> None:
         self.create_task(self._run_checks())
@@ -491,27 +449,6 @@ class SpaHealthChecker(hass.Hass):
     # Auto-repair logic
     # ------------------------------------------------------------------
 
-    async def _refresh_auto_repair_config(self) -> None:
-        """Read auto-repair config from HA helpers (async). Updates cached values."""
-        try:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            enabled_state = await self.get_state(entity_id)
-            self._cached_auto_repair_enabled = str(enabled_state) == "on"
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
-
-        try:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            delay_state = await self.get_state(entity_id)
-            if delay_state is not None and str(delay_state) not in ("unavailable", "unknown"):
-                self._cached_auto_repair_delay_min = int(float(delay_state))
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
-
-    def _read_auto_repair_config(self) -> tuple[bool, int]:
-        """Return cached auto-repair config (sync-safe)."""
-        return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
-
     def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
         """Evaluate whether to start, continue, or cancel auto-repair.
 
@@ -537,6 +474,16 @@ class SpaHealthChecker(hass.Hass):
                 self._next_retry_at = None
             return
 
+        enabled, delay_min = self._read_auto_repair_config()
+        if not enabled:
+            # Stand the ladder down BEFORE the early returns below, not after
+            # them: a non-critical interlude (warnings only, once the
+            # cross-check has downgraded a partial failure) takes the
+            # `not any_critical` return on every cycle, and would otherwise
+            # leave the countdown — and the paging hold that rides on it — up
+            # for the rest of the outage.
+            self._stand_down_pending_repair("Auto-repair disabled")
+
         # A success relapse (critical again before an all-ok cycle) starts a
         # fresh episode instead of trapping in SUCCESS forever (attempts were
         # already reset on success); fall through to the normal grace path.
@@ -551,7 +498,6 @@ class SpaHealthChecker(hass.Hass):
             # return to critical must be sustained before a stale retry can
             # fire — never an instant power-cycle off an hours-old schedule.
             if self._repair_status == REPAIR_FAILED and self._next_retry_at:
-                _, delay_min = self._read_auto_repair_config()
                 floor = datetime.datetime.now() + datetime.timedelta(
                     minutes=delay_min
                 )
@@ -559,9 +505,9 @@ class SpaHealthChecker(hass.Hass):
                     self._next_retry_at = floor
             return
 
-        enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
-            # Track unhealthy time but don't act
+            # Track unhealthy time but don't act — the ladder was already
+            # stood down above.
             if self._unhealthy_since is None:
                 self._unhealthy_since = datetime.datetime.now()
             return
@@ -793,55 +739,15 @@ class SpaHealthChecker(hass.Hass):
         )
 
     # ------------------------------------------------------------------
-    # Repair config updates (from card via controller)
-    # ------------------------------------------------------------------
-
-    def _update_repair_config(self, data: dict) -> None:
-        """Update auto-repair HA helpers from card settings."""
-        auto_enabled = data.get("auto_repair_enabled")
-        delay_min = data.get("auto_repair_delay_min")
-
-        if auto_enabled is not None:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            current = str(self.get_state(entity_id))
-            desired = "on" if auto_enabled else "off"
-            if current != desired:
-                service = "input_boolean/turn_on" if auto_enabled else "input_boolean/turn_off"
-                try:
-                    self.call_service(service, entity_id=entity_id)
-                    self.log(f"Auto-repair {'enabled' if auto_enabled else 'disabled'}", level="INFO")
-                except Exception as exc:
-                    self.log(f"Failed to update auto-repair toggle: {exc!r}", level="ERROR")
-
-        if delay_min is not None:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            try:
-                current = int(float(self.get_state(entity_id)))
-            except (TypeError, ValueError):
-                current = None
-            if current != int(delay_min):
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=int(delay_min),
-                    )
-                    self.log(f"Auto-repair delay set to {delay_min}m", level="INFO")
-                except Exception as exc:
-                    self.log(f"Failed to update auto-repair delay: {exc!r}", level="ERROR")
-
-    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
     def _build_repair_state(self) -> Dict[str, Any]:
         """Build the repair state dict for inclusion in status reports."""
-        enabled, delay_min = self._read_auto_repair_config()
         return {
             "status": self._repair_status,
             "detail": self._repair_detail,
-            "auto_repair_enabled": enabled,
-            "auto_repair_delay_min": delay_min,
+            **self._auto_repair_state_fields(),
             "auto_repair_deadline": (
                 self._auto_repair_deadline.isoformat(timespec="seconds")
                 if self._auto_repair_deadline

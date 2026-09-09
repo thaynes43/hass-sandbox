@@ -201,8 +201,8 @@ shade_gateway_checker:
   repair_button: button.switch_pro_max_48_poe_port_32_power_cycle
   repair_settle_s: 180                 # wait after button press before polling; also the post-repair flap-free bar
   repair_recovery_wait_s: 900          # total elapsed budget (from button press) to confirm recovery
-  auto_repair_enabled_default: true
-  auto_repair_delay_min_default: 120   # 2h grace before auto-restart
+  auto_repair_enabled_default: true    # seeds the toggle AND is the fallback while the helper is unreadable
+  auto_repair_delay_min_default: 120   # 2h grace before auto-restart; seeded the same way, clamped to 15-360
 ```
 
 `entity_patterns` uses the same include/exclude regex approach as
@@ -244,3 +244,9 @@ Routed the same way as every other repair-capable checker, via
 | `start_repair` | `{"checker_id": "shade_gateway"}` | Trigger a manual power-cycle immediately |
 | `cancel_repair` | `{"checker_id": "shade_gateway"}` | Cancel a pending auto-repair countdown (does not clear the episode) |
 | `update_repair_config` | `{"checker_id": "shade_gateway", "auto_repair_enabled": true, "auto_repair_delay_min": 120}` | Update auto-repair settings |
+
+## Dependencies
+
+- `shared/check_utils` — `ping_check()` / `http_check()` for the gateway probes, `is_implausible_battery_drop()` for the detection heuristic
+- `shared/auto_repair_config` — `AutoRepairConfigMixin`: the auto-repair toggle/delay helpers
+- `providers/ha_provisioner` — creates the auto-repair helpers on startup

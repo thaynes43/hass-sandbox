@@ -201,7 +201,7 @@ The relay script is required because non-admin tablet/phone accounts cannot call
 
 Add production entries to `apps-prod.yaml` (omit `_dev` suffix, add `disable: true`). **Remove `debug_preserve_run_dirs: true`** — dev-only, prevents cleanup of old run directories.
 
-Then deploy by merging to `main` — GitHub Actions builds the Docker image and Flux rolls the Kubernetes deployment automatically.
+Then merge to `main` (GitHub Actions builds the image) and roll it out — haynes-ops `tag:` bump, `flux reconcile`, `rollout status` — per `.agents/playbooks/appdaemon-deploy.md`; the rollout is not automatic.
 
 ---
 
