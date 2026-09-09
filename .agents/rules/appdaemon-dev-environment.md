@@ -99,6 +99,14 @@ the test that actually leaked it. Without the fixture the gate blames the wrong
 tests and is unusable. The session-scoped `gc.freeze()` beside it is what keeps
 that collection cheap (~6s over the whole suite instead of ~110s) — keep both.
 
+Two caveats worth knowing before you debug a failure. The
+`PytestUnraisableExceptionWarning` filter is deliberately broad — it fails on any
+exception escaping any `__del__`, so read the reported cause and only reach for
+the coroutine fixes below when it actually says "was never awaited". And the
+attribution guarantee covers coroutines held by function-scoped state; one
+retained by a module-, class- or session-scoped fixture, or by the traceback
+pytest keeps for a *failing* test, can still be misattributed.
+
 **When the gate fails, fix the test — never re-silence the warning.** Two
 patterns, in order of preference:
 
