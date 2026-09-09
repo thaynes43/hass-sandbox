@@ -155,6 +155,6 @@ Run these gates first, in order — several send you straight to skip/escalate:
 | [fans.md](fans.md) | `fans` | yes | per-fan `script.zen32_hard_reset` scene-controller cycle |
 | [`zwave.md`](zwave.md) | `zwave` | yes | ESPHome **software** restart of the TubesZB TCP bridge (auto; 5m dwell, 15m apart, max 3/24h, then it forces `critical` itself) — **never** power-cycle or PoE-cycle that board |
 
-The six runbooked checkers caused ~43 critical episodes/week before the v1.4.0
+The runbooked checkers caused ~43 critical episodes/week before the v1.4.0
 paging fixes and the auto-repair work — they are the highest-value triage
 targets.

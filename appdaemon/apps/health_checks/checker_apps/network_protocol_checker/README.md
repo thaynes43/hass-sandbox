@@ -52,7 +52,7 @@ Both escalations sit **above** the serial-sensor guard and the auto-repair toggl
 
 ## Self-Provisioned Entities
 
-`NetworkProtocolChecker` provisions nothing. `RepairableNetworkProtocolChecker` provisions its two auto-repair helpers, named from `checker_id` (`zwave` today), and needs `ha_url` / `ha_token_env` to do so:
+`NetworkProtocolChecker` provisions nothing. `RepairableNetworkProtocolChecker` provisions the three helpers below, named from `checker_id` (`zwave` today), and needs `ha_url` / `ha_token_env` to do so:
 
 | Entity | Type | Purpose |
 |--------|------|---------|
