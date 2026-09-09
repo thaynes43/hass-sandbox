@@ -1494,3 +1494,51 @@ class TestRepairConfigWriteFailures:
         )
 
         assert app._cached_auto_repair_delay_min == before
+
+    def test_unreadable_delay_helper_warns_on_the_transition(self):
+        """logging-standards puts "config key missing (using default)" at WARNING."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        warnings = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING"
+            and "auto_repair_delay" in str(c)
+            and "not readable" in str(c)
+        ]
+        assert len(warnings) == 1
+
+    def test_unparseable_delay_does_not_skip_the_rest_of_the_command(self):
+        """A bare return here would silently skip anything appended later."""
+        app = _make_app(
+            states={
+                "input_boolean.zwave_health_auto_repair": "on",
+                "input_number.zwave_health_auto_repair_delay": "5",
+            }
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {
+                "action": "update_repair_config",
+                "auto_repair_enabled": False,
+                "auto_repair_delay_min": "soon",
+            },
+            {},
+        )
+
+        # The toggle half of the same command still applied.
+        assert app._cached_auto_repair_enabled is False
+        # ...and the bad delay changed nothing.
+        assert app._cached_auto_repair_delay_min == 5
+        assert not [
+            c for c in app.call_service.call_args_list
+            if c[0] and c[0][0] == "input_number/set_value"
+        ]

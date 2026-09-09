@@ -56,7 +56,7 @@ Both escalations sit **above** the serial-sensor guard and the auto-repair toggl
 
 | Entity | Type | Purpose |
 |--------|------|---------|
-| `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle (default ON via `auto_repair_enabled_default`, applied on creation only) |
+| `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle. `auto_repair_enabled_default` seeds it at creation **and** is the value the checker runs on for the whole first run: AppDaemon loads its entity list at startup, so a helper created after that reads back as `None` until the next restart, and an unknown read keeps the cached default rather than being taken as `off` |
 | `input_number.zwave_health_auto_repair_delay` | Helper | Dwell before the first restart, in minutes (1-60, step 1, default 5) |
 | `input_text.zwave_health_repair_attempts` | Helper | Rolling 24h restart log (compact JSON, max 255 chars) -- this is what makes the cap survive a restart |
 

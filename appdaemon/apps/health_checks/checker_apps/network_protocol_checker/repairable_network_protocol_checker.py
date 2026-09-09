@@ -174,6 +174,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
         #: None until the first read attempt; then whether it succeeded.
         self._toggle_readable: Optional[bool] = None
+        self._delay_readable: Optional[bool] = None
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
         self.log(
@@ -677,8 +678,29 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         try:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
             delay_state = await self.get_state(entity_id)
-            if delay_state is not None and str(delay_state) not in UNAVAILABLE_STATES:
+            delay_readable = (
+                delay_state is not None
+                and str(delay_state) not in UNAVAILABLE_STATES
+            )
+            if delay_readable:
                 self._cached_auto_repair_delay_min = int(float(delay_state))
+            if delay_readable != self._delay_readable:
+                if delay_readable and self._delay_readable is None:
+                    pass
+                elif delay_readable:
+                    self.log(
+                        f"{entity_id} is readable again — auto-repair delay "
+                        f"{self._cached_auto_repair_delay_min}m from the helper",
+                        level="INFO",
+                    )
+                else:
+                    self.log(
+                        f"{entity_id} not readable (state={delay_state!r}) — "
+                        f"using the cached default of "
+                        f"{self._cached_auto_repair_delay_min}m",
+                        level="WARNING",
+                    )
+                self._delay_readable = delay_readable
         except Exception as exc:
             self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
 
@@ -1083,12 +1105,14 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                     f"Ignoring unparseable auto_repair_delay_min: {delay_min!r}",
                     level="WARNING",
                 )
-                return
+                desired_delay = None
             try:
                 current_val = int(float(self.get_state(entity_id)))
             except (TypeError, ValueError):
                 current_val = None
-            if current_val == desired_delay:
+            if desired_delay is None:
+                pass
+            elif current_val == desired_delay:
                 self._cached_auto_repair_delay_min = desired_delay
             else:
                 try:
