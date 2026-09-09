@@ -99,6 +99,9 @@ CONTROLLER_SENSOR = "sensor.health_check_status"
 #: Rolling window the restart cap is measured over.
 ATTEMPT_WINDOW_S = 24 * 60 * 60
 
+#: States that mean "no usable reading", not a real value.
+UNAVAILABLE_STATES = ("unavailable", "unknown")
+
 
 class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
     """NetworkProtocolChecker with rate-limited ESPHome software-restart repair."""
@@ -169,6 +172,8 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         # Cached auto-repair config (refreshed each check cycle)
         self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
+        #: None until the first read attempt; then whether it succeeded.
+        self._toggle_readable: Optional[bool] = None
         self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
         self.log(
@@ -637,23 +642,38 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         try:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
             enabled_state = await self.get_state(entity_id)
-            if enabled_state is None or str(enabled_state) in (
-                "unavailable", "unknown"
-            ):
-                self.log(
-                    f"{entity_id} not readable yet — keeping auto-repair "
-                    f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
-                    level="DEBUG",
-                )
-            else:
+            readable = (
+                enabled_state is not None
+                and str(enabled_state) not in UNAVAILABLE_STATES
+            )
+            if readable:
                 self._cached_auto_repair_enabled = str(enabled_state) == "on"
+            # Log the transitions, not every cycle: an operator needs the
+            # window to have a visible open and close, without a message
+            # every check_interval_s for as long as it lasts.
+            if readable != self._toggle_readable:
+                if readable:
+                    self.log(
+                        f"{entity_id} is readable again — auto-repair "
+                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'} "
+                        f"from the helper",
+                        level="INFO",
+                    )
+                else:
+                    self.log(
+                        f"{entity_id} not readable (state={enabled_state!r}) — "
+                        f"running on the cached default, auto-repair "
+                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
+                        level="WARNING",
+                    )
+                self._toggle_readable = readable
         except Exception as exc:
             self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
 
         try:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
             delay_state = await self.get_state(entity_id)
-            if delay_state is not None and str(delay_state) not in ("unavailable", "unknown"):
+            if delay_state is not None and str(delay_state) not in UNAVAILABLE_STATES:
                 self._cached_auto_repair_delay_min = int(float(delay_state))
         except Exception as exc:
             self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
@@ -1022,6 +1042,12 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         if auto_enabled is not None:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
+            # Trust the command itself. While the helper is unreadable (see
+            # _refresh_auto_repair_config) the next get_state stays None for
+            # the rest of the run, so relying on the read-back would leave an
+            # explicit "off" unhonoured: the card would show off, HA would
+            # show off, and the board would still get restarted.
+            self._cached_auto_repair_enabled = bool(auto_enabled)
             current = str(self.get_state(entity_id))
             desired = "on" if auto_enabled else "off"
             if current != desired:
@@ -1039,6 +1065,10 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         if delay_min is not None:
             entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
+            try:
+                self._cached_auto_repair_delay_min = int(delay_min)
+            except (TypeError, ValueError):
+                pass
             try:
                 current_val = int(float(self.get_state(entity_id)))
             except (TypeError, ValueError):

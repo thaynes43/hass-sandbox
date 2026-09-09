@@ -1330,3 +1330,88 @@ class TestUnreadableToggleKeepsTheDefault:
         _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
 
         assert len(_presses(app)) == 1
+
+
+class TestRepairConfigCommandUpdatesTheCache:
+    """An explicit user choice must take effect even while the helper is unreadable.
+
+    `_update_repair_config` writes the helper and used to rely on the next
+    `get_state` to pick the value up — but during the unreadable window that
+    read stays None for the rest of the run. An operator turning auto-repair
+    off from the card would see it off in the card and in HA, and the board
+    would still get restarted.
+    """
+
+    def _cmd(self, app, **payload):
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", **payload},
+            {},
+        )
+
+    def test_turning_off_takes_effect_immediately(self):
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        assert app._cached_auto_repair_enabled is True
+
+        self._cmd(app, auto_repair_enabled=False)
+
+        assert app._cached_auto_repair_enabled is False
+        # ...and the restart really does not happen.
+        app._unhealthy_since = _ago(minutes=30)
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+        assert _presses(app) == []
+
+    def test_turning_on_takes_effect_immediately(self):
+        app = _make_app(
+            {"auto_repair_enabled_default": False},
+            states={"input_boolean.zwave_health_auto_repair": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        self._cmd(app, auto_repair_enabled=True)
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_delay_change_takes_effect_immediately(self):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        self._cmd(app, auto_repair_delay_min=17)
+
+        assert app._cached_auto_repair_delay_min == 17
+
+
+class TestUnreadableToggleLogging:
+    def test_unreadable_warns_once_then_recovers_at_info(self):
+        """The window needs a visible open and close, not a message per cycle."""
+        app = _make_app(
+            states={"input_boolean.zwave_health_auto_repair": None}
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+        _run(app._refresh_auto_repair_config())
+
+        warnings = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" and "not readable" in str(c)
+        ]
+        assert len(warnings) == 1, "should warn on the transition, not every cycle"
+
+        app.entity_states["input_boolean.zwave_health_auto_repair"] = "on"
+        _run(app._refresh_auto_repair_config())
+
+        infos = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "INFO" and "readable again" in str(c)
+        ]
+        assert len(infos) == 1
