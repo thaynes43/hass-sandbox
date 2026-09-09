@@ -165,12 +165,13 @@ class AutoRepairConfigMixin:
         #: Drives the transition-only logging in _refresh_auto_repair_config.
         self._toggle_readable: Optional[bool] = None
         self._delay_readable: Optional[bool] = None
-        #: Whether the helper has EVER been read successfully. Before that, an
-        #: unreadable read is provisioning lag and the default stands; after
-        #: it, an unreadable read is a missing helper and the toggle fails
-        #: closed.
+        #: Whether the *toggle* helper has EVER been read successfully. Before
+        #: that, an unreadable read is provisioning lag and the default stands;
+        #: after it, an unreadable read is a missing helper and the toggle
+        #: fails closed. The delay has no counterpart on purpose — there is no
+        #: safe "closed" delay, so an unreadable read always keeps the last
+        #: good value and nothing needs to know whether one ever succeeded.
         self._toggle_ever_readable: bool = False
-        self._delay_ever_readable: bool = False
 
     # ------------------------------------------------------------------
     # Provisioning
@@ -419,7 +420,6 @@ class AutoRepairConfigMixin:
             delay_readable = parsed is not None
             if delay_readable:
                 self._cached_auto_repair_delay_min = self._clamp_delay(parsed)
-                self._delay_ever_readable = True
             # No fail-closed counterpart: there is no safe "closed" delay, so
             # an unreadable read always keeps the last good value.
             if delay_readable != self._delay_readable:
@@ -445,6 +445,41 @@ class AutoRepairConfigMixin:
     def _read_auto_repair_config(self) -> tuple[bool, int]:
         """Return the cached ``(enabled, delay_min)`` — sync-safe."""
         return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
+
+    def _auto_repair_state_fields(self) -> dict:
+        """The auto-repair slice of ``repair_state``, for every checker.
+
+        Merged into each checker's ``_build_repair_state`` with
+        ``**self._auto_repair_state_fields()``.
+
+        ``auto_repair_enabled`` and ``auto_repair_delay_min`` keep exactly the
+        names and types they have always had — the dashboard card and the
+        Shepherd runbooks read them.  ``auto_repair_delay_bounds`` is the
+        addition: the card used to hard-code ``min=1 max=60 step=1`` on its
+        delay input, which is right for six checkers and wrong for the shade
+        gateway (15/360/15).  From the card a spinner nudge on the shade row
+        therefore clamped 120 down to 60, and nothing above 60 could be typed
+        at all.  The backend already clamped to the real bounds, so the loss
+        was the card's alone — publishing them is what lets it render the
+        input the checker actually accepts.
+
+        The AppDaemon ``set_state`` attribute gotcha (falsy values are dropped,
+        ``True`` becomes ``"true"``) does not bite here: every bound is a
+        non-zero int.  A ``0`` bound would silently vanish from the published
+        attributes and the card would fall back — but ``0`` is not a legal
+        bound for any of these (a zero delay collapses the dwell gate, which
+        is why ``DELAY_MIN_MIN`` is 1 at its lowest).
+        """
+        enabled, delay_min = self._read_auto_repair_config()
+        return {
+            "auto_repair_enabled": enabled,
+            "auto_repair_delay_min": delay_min,
+            "auto_repair_delay_bounds": {
+                "min": self.DELAY_MIN_MIN,
+                "max": self.DELAY_MIN_MAX,
+                "step": self.DELAY_STEP,
+            },
+        }
 
     # ------------------------------------------------------------------
     # Delay parsing and clamping

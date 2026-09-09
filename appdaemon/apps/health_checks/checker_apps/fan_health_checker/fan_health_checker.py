@@ -1376,8 +1376,6 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         return REPAIR_IDLE
 
     def _build_repair_state(self) -> Dict[str, Any]:
-        enabled, delay_min = self._read_auto_repair_config()
-
         # Find latest repair attempt across all fans
         last_attempt = None
         for fr in self._fan_repair_states.values():
@@ -1411,8 +1409,7 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         return {
             "status": self._aggregate_repair_status(),
             "detail": detail,
-            "auto_repair_enabled": enabled,
-            "auto_repair_delay_min": delay_min,
+            **self._auto_repair_state_fields(),
             "auto_repair_deadline": (
                 self._auto_repair_deadline.isoformat(timespec="seconds")
                 if self._auto_repair_deadline

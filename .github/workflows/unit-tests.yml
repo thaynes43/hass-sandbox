@@ -68,6 +68,17 @@ jobs:
           cache: "pip"
           cache-dependency-path: appdaemon/requirements.txt
 
+      # tests/test_health_check_detail_card.py drives the real Lovelace card JS
+      # through a DOM shim in node (stdlib only, no npm install). It SKIPS when
+      # node is missing, and a silently-skipped test is worse than no test —
+      # that card's event dispatch has regressed twice. Pinned here rather than
+      # trusting whatever the runner image happens to preinstall.
+      - name: Set up Node
+        if: steps.changes.outputs.should_run == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+
       - name: Install dependencies
         if: steps.changes.outputs.should_run == 'true'
         run: |

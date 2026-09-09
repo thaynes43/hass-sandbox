@@ -36,6 +36,28 @@ function hcdEscapeHtml(str) {
   return div.innerHTML;
 }
 
+// Auto-repair delay bounds are per checker, not global: the shade gateway
+// runs 15/360/15 while the other six run 1/60/1. The checker publishes its own
+// in repair_state.auto_repair_delay_bounds; these are the fallback for a
+// checker (or a cached sensor payload) from before that field existed.
+const HCD_DELAY_BOUNDS_FALLBACK = { min: 1, max: 60, step: 1 };
+
+function hcdInt(value, fallback) {
+  const n = parseInt(value, 10);
+  return isNaN(n) ? fallback : n;
+}
+
+// Read the bounds back off the rendered input rather than re-deriving them
+// from the checker: the attributes the input already carries are exactly what
+// the operator was allowed to enter, so the guard and the spinner can never
+// disagree.
+function hcdDelayBounds(inputEl) {
+  return {
+    min: hcdInt(inputEl?.getAttribute("min"), HCD_DELAY_BOUNDS_FALLBACK.min),
+    max: hcdInt(inputEl?.getAttribute("max"), HCD_DELAY_BOUNDS_FALLBACK.max),
+  };
+}
+
 class HealthCheckDetailCard extends HTMLElement {
   constructor() {
     super();
@@ -638,6 +660,10 @@ class HealthCheckDetailCard extends HTMLElement {
     const detail = rs.detail || "";
     const enabled = rs.auto_repair_enabled === true || rs.auto_repair_enabled === "true";
     const delayMin = rs.auto_repair_delay_min || 15;
+    const bounds = rs.auto_repair_delay_bounds || {};
+    const delayLo = hcdInt(bounds.min, HCD_DELAY_BOUNDS_FALLBACK.min);
+    const delayHi = hcdInt(bounds.max, HCD_DELAY_BOUNDS_FALLBACK.max);
+    const delayStep = hcdInt(bounds.step, HCD_DELAY_BOUNDS_FALLBACK.step);
     const deadline = rs.auto_repair_deadline;
     const lastAttempt = rs.last_repair_attempt;
 
@@ -748,7 +774,7 @@ class HealthCheckDetailCard extends HTMLElement {
         <label class="repair-delay-label">
           <input type="number" class="repair-delay-input"
             data-action="set_repair_delay" data-checker="${hcdEscapeHtml(checkerId)}"
-            value="${delayMin}" min="1" max="60" step="1">
+            value="${delayMin}" min="${delayLo}" max="${delayHi}" step="${delayStep}">
           min
         </label>
       </div>
@@ -892,16 +918,28 @@ class HealthCheckDetailCard extends HTMLElement {
           `.repair-delay-input[data-checker="${checker_id}"]`
         );
         if (delayInput) {
+          const { min, max } = hcdDelayBounds(delayInput);
           const auto_repair_delay_min = parseInt(delayInput.value, 10);
-          if (!isNaN(auto_repair_delay_min) && auto_repair_delay_min >= 1) {
+          if (
+            !isNaN(auto_repair_delay_min) &&
+            auto_repair_delay_min >= min &&
+            auto_repair_delay_min <= max
+          ) {
             payload.auto_repair_delay_min = auto_repair_delay_min;
           }
         }
         this._callRelay("update_repair_config", payload);
       } else if (action === "set_repair_delay") {
         const checker_id = el.dataset.checker;
+        const { min, max } = hcdDelayBounds(el);
         const auto_repair_delay_min = parseInt(el.value, 10);
-        if (isNaN(auto_repair_delay_min) || auto_repair_delay_min < 1) return;
+        if (
+          isNaN(auto_repair_delay_min) ||
+          auto_repair_delay_min < min ||
+          auto_repair_delay_min > max
+        ) {
+          return;
+        }
         const toggle = root.querySelector(
           `.repair-auto-toggle[data-checker="${checker_id}"]`
         );

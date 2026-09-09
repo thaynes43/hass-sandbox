@@ -554,8 +554,6 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
         return REPAIR_IDLE
 
     def _build_repair_state(self) -> Dict[str, Any]:
-        enabled, delay_min = self._read_auto_repair_config()
-
         # Find latest repair attempt across all devices
         last_attempt = None
         for dr in self._device_repair_states.values():
@@ -588,8 +586,7 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
         return {
             "status": self._aggregate_repair_status(),
             "detail": detail,
-            "auto_repair_enabled": enabled,
-            "auto_repair_delay_min": delay_min,
+            **self._auto_repair_state_fields(),
             "auto_repair_deadline": (
                 self._auto_repair_deadline.isoformat(timespec="seconds")
                 if self._auto_repair_deadline

@@ -748,12 +748,10 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
 
     def _build_repair_state(self) -> Dict[str, Any]:
         """Build the repair state dict for inclusion in status reports."""
-        enabled, delay_min = self._read_auto_repair_config()
         return {
             "status": self._repair_status,
             "detail": self._repair_detail,
-            "auto_repair_enabled": enabled,
-            "auto_repair_delay_min": delay_min,
+            **self._auto_repair_state_fields(),
             "auto_repair_deadline": (
                 self._auto_repair_deadline.isoformat(timespec="seconds")
                 if self._auto_repair_deadline

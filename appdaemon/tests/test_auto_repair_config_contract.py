@@ -1137,3 +1137,93 @@ class TestLocalRegistrationFollowsTheSeed:
         assert spec.delay not in added
         # ...and the toggle (not seeded — default off) is registered truthfully.
         assert app.add_entity.call_args_list[0].args[1] == "off"
+
+
+# ---------------------------------------------------------------------------
+# What the card is told
+# ---------------------------------------------------------------------------
+
+
+class TestPublishedRepairState:
+    """``repair_state`` is the card's only source for the delay input.
+
+    The card used to hard-code ``min=1 max=60 step=1`` on that input, which is
+    right for six checkers and wrong for the shade gateway (15/360/15).  From
+    the card, a spinner nudge on the shade row took 120 down to 60 (the
+    browser clamps ``stepDown`` to the input's ``max``) and nothing above 60
+    could be entered at all.  Nothing unsafe reached the backend — it clamps
+    to the real bounds either way — but the value the operator saw was not
+    the value they had.  Each checker therefore publishes its own bounds.
+
+    The two keys that were already there keep their names, their types and
+    their meaning: the card and the Shepherd runbooks read them.
+    """
+
+    def test_publishes_its_own_delay_bounds(self, spec):
+        bounds = spec.app()._build_repair_state()["auto_repair_delay_bounds"]
+
+        assert bounds == {
+            "min": spec.delay_min,
+            "max": spec.delay_max,
+            "step": spec.step,
+        }
+
+    def test_the_two_existing_keys_are_unchanged(self, spec):
+        """Same names, same types, same cached values as before the merge."""
+        app = spec.app(enabled_default=True, delay_default=spec.delay_max)
+        spec.refresh(app)
+
+        state = app._build_repair_state()
+
+        assert state["auto_repair_enabled"] is True
+        assert state["auto_repair_delay_min"] == spec.delay_max
+        assert isinstance(state["auto_repair_delay_min"], int)
+
+    def test_the_two_existing_keys_track_the_cache(self, spec):
+        """A card command must be visible in the next published state."""
+        app = spec.app(enabled_default=False, delay_default=spec.delay_min)
+        spec.refresh(app)
+        wanted = min(spec.delay_min + spec.step, spec.delay_max)
+
+        spec.command(
+            app, auto_repair_enabled=True, auto_repair_delay_min=wanted
+        )
+        state = app._build_repair_state()
+
+        assert state["auto_repair_enabled"] is True
+        assert state["auto_repair_delay_min"] == wanted
+
+    def test_the_published_bounds_are_the_range_the_backend_accepts(self, spec):
+        """So a card rendering them can never offer a value that gets clamped."""
+        app = spec.app()
+        bounds = app._build_repair_state()["auto_repair_delay_bounds"]
+
+        assert app._clamp_delay(bounds["min"]) == bounds["min"]
+        assert app._clamp_delay(bounds["max"]) == bounds["max"]
+        assert app._clamp_delay(bounds["min"] - 1) == bounds["min"]
+        assert app._clamp_delay(bounds["max"] + 1) == bounds["max"]
+
+    def test_no_bound_is_falsy(self, spec):
+        """AppDaemon 4.5.13's ``set_state`` drops falsy attribute values.
+
+        A ``0`` bound would vanish from the published attributes and the card
+        would silently fall back to 1/60/1 — so the contract is that none of
+        these is ever 0.  (None legitimately can be: a zero delay collapses
+        the dwell gate, and a zero step is meaningless.)
+        """
+        bounds = spec.app()._build_repair_state()["auto_repair_delay_bounds"]
+
+        assert all(bounds.values())
+
+    def test_the_repair_state_keys_the_card_reads_are_all_present(self, spec):
+        """The merge must not have dropped a key on the way in."""
+        state = spec.app()._build_repair_state()
+
+        assert {
+            "status",
+            "auto_repair_enabled",
+            "auto_repair_delay_min",
+            "auto_repair_delay_bounds",
+            "auto_repair_deadline",
+            "last_repair_attempt",
+        } <= set(state)
