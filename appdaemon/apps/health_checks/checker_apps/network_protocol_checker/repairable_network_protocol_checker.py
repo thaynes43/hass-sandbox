@@ -102,6 +102,15 @@ ATTEMPT_WINDOW_S = 24 * 60 * 60
 #: States that mean "no usable reading", not a real value.
 UNAVAILABLE_STATES = ("unavailable", "unknown")
 
+#: Bounds of the auto-repair delay helper. Every path that can set the cached
+#: delay clamps to these, including the card command: HA silently rejects a
+#: set_value outside the helper's range without AppDaemon raising, so an
+#: unclamped cache would keep a value the helper never accepted — and a delay
+#: of 0 collapses the dwell gate and restarts the board on the first
+#: unhealthy cycle.
+DELAY_MIN_MIN = 1
+DELAY_MIN_MAX = 60
+
 
 class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
     """NetworkProtocolChecker with rate-limited ESPHome software-restart repair."""
@@ -274,7 +283,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             created = await prov.ensure_helper(
                 "input_number",
                 f"{self._checker_id} Health Auto Repair Delay",
-                min=1, max=60, step=1,
+                min=DELAY_MIN_MIN, max=DELAY_MIN_MAX, step=1,
                 unit_of_measurement="min", mode="box",
             )
             if created:
@@ -683,7 +692,9 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                 and str(delay_state) not in UNAVAILABLE_STATES
             )
             if delay_readable:
-                self._cached_auto_repair_delay_min = int(float(delay_state))
+                self._cached_auto_repair_delay_min = self._clamp_delay(
+                    int(float(delay_state))
+                )
             if delay_readable != self._delay_readable:
                 if delay_readable and self._delay_readable is None:
                     pass
@@ -703,6 +714,10 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                 self._delay_readable = delay_readable
         except Exception as exc:
             self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
+
+    @staticmethod
+    def _clamp_delay(value: int) -> int:
+        return max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
 
     def _read_auto_repair_config(self) -> tuple[bool, int]:
         return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
@@ -1099,7 +1114,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             # Parse once, the same way the helper read does (int(float(...))),
             # so a card sending "17.0" is handled rather than fatal.
             try:
-                desired_delay = int(float(delay_min))
+                desired_delay = self._clamp_delay(int(float(delay_min)))
             except (TypeError, ValueError):
                 self.log(
                     f"Ignoring unparseable auto_repair_delay_min: {delay_min!r}",

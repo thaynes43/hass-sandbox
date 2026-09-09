@@ -1542,3 +1542,60 @@ class TestRepairConfigWriteFailures:
             c for c in app.call_service.call_args_list
             if c[0] and c[0][0] == "input_number/set_value"
         ]
+
+
+class TestDelayIsClamped:
+    """A delay of 0 collapses the dwell gate — one of the hard safety limits.
+
+    Reachable through the card: `toggle_auto_repair` doesn't guard `< 1` the
+    way `set_repair_delay` does, and `<input type="number" min="1">` doesn't
+    block a *typed* 0. HA rejects `set_value(0)` without AppDaemon raising, so
+    an unclamped cache would hold a value the helper never accepted — and
+    during the unreadable window nothing can correct it.
+    """
+
+    @pytest.mark.parametrize(
+        "sent,expected", [(0, 1), (-5, 1), (900, 60), (17, 17)]
+    )
+    def test_command_delays_are_clamped(self, sent, expected):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": sent},
+            {},
+        )
+
+        assert app._cached_auto_repair_delay_min == expected
+
+    def test_a_zero_delay_cannot_collapse_the_dwell(self):
+        """The end-to-end consequence: no press on the first unhealthy cycle."""
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": None}
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+
+        app._on_repair_command(
+            "health_check_repair_zwave",
+            {"action": "update_repair_config", "auto_repair_delay_min": 0},
+            {},
+        )
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert _presses(app) == []
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_an_out_of_range_helper_value_is_clamped(self):
+        app = _make_app(
+            states={"input_number.zwave_health_auto_repair_delay": "0"}
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_delay_min == 1
