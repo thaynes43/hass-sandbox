@@ -1283,6 +1283,87 @@ class TestRepairCommandHandler:
         app.create_task.assert_called_once()
 
 
+_BOTH_DOWN = [
+    {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
+    {"name": "Pink Room Ping", "status": "critical", "detail": "timeout"},
+    {"name": "Blue Room State", "status": "critical", "detail": "unavailable"},
+    {"name": "Blue Room Ping", "status": "critical", "detail": "timeout"},
+]
+
+_HOLD_STATES = (REPAIR_PENDING, REPAIR_IN_PROGRESS, REPAIR_SUCCESS)
+
+
+class TestStandDownReachesThePerFanLadder:
+    """A per-fan `success` outranks the global `idle` the mixin can reach.
+
+    The published status is `_aggregate_repair_status()` over the per-fan
+    states, and `success` is one of alertmanager_bridge's repair-hold states —
+    the bridge withholds the critical page for up to repair_hold_cap_s while
+    one is up. Standing only the *global* status down therefore took the
+    countdown off the card and changed nothing the pager sees: auto-repair off,
+    a fan still down, and the page still suppressed.
+    """
+
+    def _app(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._cached_auto_repair_delay_min = 5
+        app._repair_status = REPAIR_PENDING
+        app._auto_repair_deadline = datetime.datetime.now()
+        # Blue Room is down and awaiting a first attempt — that is what keeps
+        # the evaluation from returning at its "no repair-worthy fans" arm
+        # before the toggle is ever consulted.
+        app._fan_unhealthy_since["Blue Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=1)
+        )
+        return app
+
+    def test_a_recovered_success_fan_drops_to_idle_with_its_ladder_intact(self):
+        """Healthy at `success` is not a failure and must not be filed as one.
+
+        The fan is serving out `repair_backoff_reset_min` of sustained health
+        before its ladder resets. Recording that as `failed` would page for a
+        fan that is working; resetting the ladder would hand it a fresh
+        attempt-1 instant power-cycle the moment it blipped. `idle` with the
+        ladder untouched is the only answer that is neither.
+        """
+        app = self._app()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 2
+        fr["recovered_at"] = datetime.datetime.now()
+        assert app._aggregate_repair_status() in _HOLD_STATES
+
+        app._evaluate_auto_repair(_BOTH_DOWN)
+
+        assert app._aggregate_repair_status() not in _HOLD_STATES
+        assert fr["status"] == REPAIR_IDLE
+        assert fr["attempts"] == 2
+
+    def test_an_unhealthy_success_fan_becomes_a_relapse(self):
+        """Unhealthy at `success` means the repair did not stick.
+
+        That is exactly what `_register_fan_relapse` records, so it is routed
+        through it rather than re-derived here — a second, subtly different
+        relapse rule is how the two would drift.
+        """
+        app = self._app()
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_SUCCESS
+        fr["attempts"] = 1
+        app._fan_unhealthy_since["Pink Room"] = (
+            datetime.datetime.now() - datetime.timedelta(minutes=1)
+        )
+
+        app._evaluate_auto_repair(_BOTH_DOWN)
+
+        assert app._aggregate_repair_status() not in _HOLD_STATES
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["next_retry_at"] is not None
+        assert fr["attempts"] == 2
+
+
 class TestCancelDefersTheBackoffLadder:
     """Cancel has to defer the retry ladder too, not just the first attempts.
 

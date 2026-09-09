@@ -18,7 +18,8 @@
  *   - Touch/click deduplication (400ms flag)
  *   - NEVER preventDefault() on input/select/textarea touchend (Android)
  *   - Focus guard: every re-render path (set hass AND the refresh timer)
- *     skips the render while shadowRoot.activeElement is an input
+ *     skips the render while shadowRoot.activeElement is a text-entry control
+ *     (never a checkbox — it keeps the focus after a tap, see _hasFocusedInput)
  *
  * Platforms: Desktop, iOS Companion App, Android/UniFi wall display.
  */
@@ -47,6 +48,17 @@ function hcdInt(value, fallback) {
   const n = parseInt(value, 10);
   return isNaN(n) ? fallback : n;
 }
+
+// Input types the re-render focus guard must ignore: none of them holds typed
+// text, and all of them keep the focus after a tap. Anything else — including
+// an <input> with no type at all, which HTML defines as text — is text entry.
+const HCD_NON_TEXT_INPUT_TYPES = new Set([
+  "checkbox",
+  "radio",
+  "button",
+  "submit",
+  "reset",
+]);
 
 class HealthCheckDetailCard extends HTMLElement {
   constructor() {
@@ -90,14 +102,27 @@ class HealthCheckDetailCard extends HTMLElement {
     this._config = { ...HCD_DEFAULTS, ...config };
   }
 
+  // Protects one thing: text the operator has typed but not yet committed.
   // Every re-render path replaces innerHTML wholesale, which swaps the node the
   // operator is typing into for a fresh one carrying the old value — keystrokes
   // and focus both gone.  So every re-render path has to ask this first.
+  //
+  // Which means only text-entry controls may qualify.  A checkbox — the
+  // auto-repair toggle — keeps the focus after a tap but holds nothing a
+  // re-render could destroy, so counting it froze BOTH re-render paths from
+  // that tap onward; on a wall display nothing ever clicks elsewhere, so the
+  // card stayed frozen indefinitely.  SELECT does stay in: an open dropdown
+  // must not be replaced out from under the pointer.
   _hasFocusedInput() {
     const active = this.shadowRoot?.activeElement;
     if (!active) return false;
     const tag = active.tagName;
-    return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+    if (tag === "SELECT" || tag === "TEXTAREA") return true;
+    if (tag !== "INPUT") return false;
+    // A missing or empty type is a text input — that is the HTML default — so
+    // only the explicitly non-typing types are exempt.
+    const rawType = active.type ?? active.getAttribute?.("type") ?? "";
+    return !HCD_NON_TEXT_INPUT_TYPES.has(String(rawType).toLowerCase());
   }
 
   set hass(hass) {

@@ -228,3 +228,52 @@ class TestRefreshDoesNotClobberTyping:
 
     def test_the_tick_sends_no_relay_command(self, harness):
         assert harness["refresh_during_edit"]["calls"] == []
+
+
+class TestATappedCheckboxDoesNotFreezeTheCard:
+    """The focus guard must cover typed text and nothing else.
+
+    Guarding on any focused ``INPUT`` also caught the auto-repair checkbox,
+    which keeps the focus after a tap.  From that tap on, both re-render paths
+    — ``set hass`` and the 15 s tick — returned early, so the card stopped
+    showing new health data entirely.  A desktop user clears it by clicking
+    somewhere else; the wall display it is built for never gets clicked
+    elsewhere, so there the freeze lasts until somebody walks up to it.  A
+    checkbox holds no keystrokes, so there was never anything to protect.
+    """
+
+    def test_the_tapped_checkbox_really_does_hold_the_focus(self, harness):
+        """Without this the rest of the class would pass for the wrong reason.
+
+        If the tap left nothing focused, the guard could not have blocked the
+        re-render whatever it matched on.
+        """
+        scenario = harness["rerender_with_checkbox_focused"]
+
+        assert scenario["focused_tag"] == "INPUT"
+        assert scenario["focused_type"] == "checkbox"
+
+    def test_new_health_data_still_reaches_the_card_after_the_tap(self, harness):
+        """``set hass`` is the path that carries every state change from HA."""
+        scenario = harness["rerender_with_checkbox_focused"]
+
+        assert scenario["detail_before"] == "disconnected"
+        assert scenario["detail_after_set_hass"] == "reconnecting"
+        assert scenario["node_replaced"] is True
+
+    def test_the_refresh_tick_still_runs_after_the_tap(self, harness):
+        """The other half: the tick redraws the age-dependent text every 15 s.
+
+        A frozen tick leaves stale "5s ago" staleness and countdowns on screen
+        even while the underlying data is fresh.
+        """
+        scenario = harness["rerender_with_checkbox_focused"]
+
+        assert scenario["detail_after_tick"] == "gateway back"
+
+    def test_the_tap_itself_still_sent_exactly_one_command(self, harness):
+        """Two re-renders in the middle must not resend or drop the toggle."""
+        call = _one_call(harness, "rerender_with_checkbox_focused")
+
+        assert call["command"] == "update_repair_config"
+        assert call["payload"]["auto_repair_enabled"] is True

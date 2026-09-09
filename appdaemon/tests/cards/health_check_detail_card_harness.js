@@ -425,8 +425,16 @@ class ShimElement extends ShimNode {
 
   // -- form-control properties -------------------------------------------
 
+  // A browser's HTMLInputElement.type is lower-cased and defaults to "text"
+  // when the attribute is absent, and the card's focus guard reads it to tell a
+  // text box from a checkbox.  Answering a bare null here would let card code
+  // pass in the shim that misbehaves in a browser, so the shim matches the
+  // browser instead.  Other elements keep the raw attribute — the harness only
+  // reads it to spot a checkbox.
   get type() {
-    return this.getAttribute("type");
+    const attr = this.getAttribute("type");
+    if (this.localName !== "input") return attr;
+    return attr ? String(attr).toLowerCase() : "text";
   }
 
   get value() {
@@ -694,7 +702,9 @@ function mount(checkerId, checkerData) {
   card.setConfig({});
   shimDocument.body.appendChild(card);
   card.hass = hass;
-  return { card, calls, root: card.shadowRoot };
+  // `hass` comes back so a scenario can mutate the state and set it again —
+  // the card ignores a set whose snapshot has not moved.
+  return { card, calls, root: card.shadowRoot, hass };
 }
 
 function teardown(card) {
@@ -895,6 +905,72 @@ function record(name, calls, extra) {
     change_events: changeEvents,
   });
   input.blur();
+  teardown(card);
+}
+
+// (h) ...and the mirror image: a tap on the auto-repair checkbox must NOT
+// freeze the card.  A checkbox keeps the browser focus after a tap, and on a
+// wall display nothing ever clicks elsewhere afterwards — so a focus guard that
+// counts every INPUT stops both re-render paths (`set hass` AND the 15 s tick)
+// from that one tap until someone physically walks up to the display.  Unlike
+// the delay box, a checkbox holds no typed text: there is nothing for a
+// re-render to destroy, so it must not qualify.
+{
+  const { card, calls, root, hass } = mount("shade_gateway", checker());
+  const box = root.querySelector('.repair-auto-toggle[data-checker="shade_gateway"]');
+  tap(box, { touch: true });
+  // A real tap leaves the focus on the control it landed on; `tap` models only
+  // the event sequence, so the focus is stated here.
+  box.focus();
+  const focusedTag = root.activeElement ? root.activeElement.tagName : null;
+  const focusedType = root.activeElement ? root.activeElement.type : null;
+
+  const detailBefore = root.querySelector(".check-detail").textContent;
+  const nodeBefore = root.querySelector(
+    '.repair-auto-toggle[data-checker="shade_gateway"]'
+  );
+
+  // Move what _snapshot() actually hashes — the status entity's state and its
+  // `checkers` attribute — or `set hass` would skip the render for its own
+  // unrelated reason and prove nothing.
+  const status = hass.states["sensor.health_check_status"];
+  status.state = "warning";
+  status.attributes = {
+    checkers: {
+      shade_gateway: checker({
+        status: "warning",
+        checks: [
+          {
+            name: "Gateway",
+            status: "warning",
+            detail: "reconnecting",
+            last_changed: ISO,
+          },
+        ],
+      }),
+    },
+  };
+  card.hass = hass;
+  const detailAfterSetHass = root.querySelector(".check-detail").textContent;
+
+  // The 15 s tick is the other re-render path and reads the same guard.
+  status.attributes.checkers.shade_gateway.checks[0].detail = "gateway back";
+  fireRefreshTick(card);
+  const detailAfterTick = root.querySelector(".check-detail").textContent;
+
+  record("rerender_with_checkbox_focused", calls, {
+    focused_tag: focusedTag,
+    focused_type: focusedType,
+    detail_before: detailBefore,
+    detail_after_set_hass: detailAfterSetHass,
+    detail_after_tick: detailAfterTick,
+    node_replaced:
+      root.querySelector('.repair-auto-toggle[data-checker="shade_gateway"]') !==
+      nodeBefore,
+  });
+  // Focus is global to the shim document and the re-render dropped it into
+  // <body>; clear it so the next scenario starts with nothing focused.
+  shimDocument.activeElement = null;
   teardown(card);
 }
 

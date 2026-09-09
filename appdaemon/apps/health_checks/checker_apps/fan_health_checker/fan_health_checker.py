@@ -603,6 +603,55 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
             fr["recovered_at"] = None
             self._persist_ladder()
 
+    def _stand_down_pending_repair(self, reason: str) -> None:
+        """Stand the global ladder down, and the per-fan one with it.
+
+        The mixin only knows ``self._repair_status``, but this checker's
+        published status is :meth:`_aggregate_repair_status` over the per-fan
+        states, and a single per-fan ``success`` outranks an ``idle`` global.
+        So without this, switching auto-repair off cleared the card's
+        countdown and left ``alertmanager_bridge`` holding the critical page
+        exactly as before — ``success`` is one of its ``_REPAIR_HOLD_STATES``.
+
+        A ``success`` fan gets one of two different answers, because the state
+        means two different things:
+
+        * **Still healthy** — the repair worked and the fan is serving out
+          ``repair_backoff_reset_min`` of sustained health before its ladder
+          resets. That is not a failure and must not be recorded as one, so it
+          drops to ``idle`` with ``attempts`` and ``next_retry_at`` untouched.
+          It cannot re-arm anything: ``_evaluate_auto_repair`` only considers
+          fans with a non-None ``_fan_unhealthy_since``, and a healthy fan has
+          None.
+        * **Unhealthy** — the success did not stick. That is a relapse, and it
+          goes through :meth:`_register_fan_relapse` so it lands on ``failed``
+          with the ladder climbing and a real ``next_retry_at``, exactly as
+          the check cycle would have recorded it. Re-deriving that here would
+          be a second, subtly different relapse rule.
+
+        Health is read from ``_fan_unhealthy_since`` because that is what the
+        evaluation itself uses for candidacy and it is the only signal
+        available on the card path, which runs with no check results at all.
+        A fan that went down between cycles has not been marked yet and is
+        treated as healthy — it simply gets its relapse recorded on the next
+        cycle by ``_update_fan_unhealthy_timers`` instead.
+        """
+        super()._stand_down_pending_repair(reason)
+        for name, fr in self._fan_repair_states.items():
+            if fr["status"] != REPAIR_SUCCESS:
+                continue
+            if self._fan_unhealthy_since[name] is None:
+                fr["status"] = REPAIR_IDLE
+                fr["detail"] = reason
+                self.log(
+                    f"{name}: {reason} — clearing a recovered fan's stale "
+                    f"repair success (ladder kept at attempts="
+                    f"{fr['attempts']})",
+                    level="INFO",
+                )
+            else:
+                self._register_fan_relapse(name)
+
     # ------------------------------------------------------------------
     # Auto-repair logic
     # ------------------------------------------------------------------

@@ -812,6 +812,73 @@ class TestTheCommandTellsProvisioningLagFromAVanishedHelper:
         assert app._cached_auto_repair_enabled is False
 
 
+class TestTheDelayCommandAlsoGuardsAgainstAVanishedHelper:
+    """The delay write has the same trap as the toggle, and needs the same key.
+
+    ``input_number/set_value`` against a helper that no longer exists comes
+    back ``success`` just as ``input_boolean/turn_off`` does, so ``_service_ok``
+    cannot tell the difference and the cache would move on a write that
+    changed nothing — the card would then show a dwell the checker is not
+    counting and the helper does not hold.
+
+    The read paths stay deliberately asymmetric: only the toggle fails
+    *closed* on a helper it has lost, because there is no safe "closed" delay.
+    ``_delay_ever_readable`` exists purely so the command path can tell
+    provisioning lag from a deletion, which is the one place both helpers
+    behave alike.
+    """
+
+    def test_a_write_to_a_vanished_delay_helper_is_skipped(self, spec):
+        good = min(spec.delay_min + spec.step, spec.delay_max)
+        wanted = min(spec.delay_min + 2 * spec.step, spec.delay_max)
+        app = spec.app(delay_default=spec.delay_min, states={spec.delay: str(good)})
+        spec.refresh(app)
+        assert app._cached_auto_repair_delay_min == good
+        app.entity_states[spec.delay] = None  # somebody deleted the helper
+
+        spec.command(app, auto_repair_delay_min=wanted)
+
+        assert _service_calls(app, "input_number/set_value") == []
+        assert app._cached_auto_repair_delay_min == good
+        assert _logs(app, "WARNING", spec.delay, "not available")
+
+    def test_a_write_during_provisioning_lag_still_goes_through(self, spec):
+        """Never seen is not the same as gone: the helper does exist here."""
+        wanted = min(spec.delay_min + spec.step, spec.delay_max)
+        app = spec.app(delay_default=spec.delay_min, states={spec.delay: None})
+        spec.refresh(app)
+        assert app._delay_ever_readable is False
+
+        spec.command(app, auto_repair_delay_min=wanted)
+
+        assert len(_service_calls(app, "input_number/set_value")) == 1
+        assert app._cached_auto_repair_delay_min == wanted
+
+    def test_a_delay_helper_first_seen_by_a_command_still_counts_as_seen(
+        self, spec
+    ):
+        """The card path reads the helper too, so it must arm the flag too.
+
+        Without that, a helper whose only successful read ever happened on the
+        command path would look never-seen for good, and the deletion guard
+        above — the whole reason the flag exists — would never engage for it.
+        """
+        first = min(spec.delay_min + spec.step, spec.delay_max)
+        second = min(spec.delay_min + 2 * spec.step, spec.delay_max)
+        app = spec.app(delay_default=spec.delay_min, states={spec.delay: None})
+        spec.refresh(app)  # unreadable so far
+
+        app.entity_states[spec.delay] = str(spec.delay_min)  # the refresh landed
+        spec.command(app, auto_repair_delay_min=first)  # ...and the card read it
+        assert len(_service_calls(app, "input_number/set_value")) == 1
+
+        app.entity_states[spec.delay] = None  # now the helper is deleted
+        spec.command(app, auto_repair_delay_min=second)
+
+        assert len(_service_calls(app, "input_number/set_value")) == 1
+        assert app._cached_auto_repair_delay_min == first
+
+
 class TestAReadableCommandPreReadCountsAsASighting:
     """The card path sees the helper too, and must say so.
 

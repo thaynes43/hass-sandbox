@@ -201,13 +201,25 @@ class AutoRepairConfigMixin:
         #: Drives the transition-only logging in _refresh_auto_repair_config.
         self._toggle_readable: Optional[bool] = None
         self._delay_readable: Optional[bool] = None
-        #: Whether the *toggle* helper has EVER been read successfully. Before
-        #: that, an unreadable read is provisioning lag and the default stands;
-        #: after it, an unreadable read is a missing helper and the toggle
-        #: fails closed. The delay has no counterpart on purpose — there is no
-        #: safe "closed" delay, so an unreadable read always keeps the last
-        #: good value and nothing needs to know whether one ever succeeded.
+        #: Whether each helper has EVER been read successfully.
+        #:
+        #: Both of these drive the vanished-helper guard in the card-command
+        #: path, and there they mean the same thing for both helpers: a
+        #: pre-read that comes back None is provisioning lag *before* the
+        #: first sighting — the entity does exist, ``ensure_helper`` just made
+        #: it, so the write is right — and a deleted helper *after* one, where
+        #: writing is worse than useless because Home Assistant answers
+        #: success for a service call that matched nothing and the cache would
+        #: move on a write that changed nothing.
+        #:
+        #: What is NOT symmetric is the read path. Only the toggle fails
+        #: **closed** when it loses a helper it had seen: a kill switch nobody
+        #: can read must stop repairing. The delay has no such rule and never
+        #: will — there is no safe "closed" delay, so an unreadable read
+        #: always keeps the last good value. The two flags are therefore not
+        #: interchangeable, and only one of them gates a fail-closed.
         self._toggle_ever_readable: bool = False
+        self._delay_ever_readable: bool = False
 
     # ------------------------------------------------------------------
     # Provisioning
@@ -466,6 +478,7 @@ class AutoRepairConfigMixin:
             delay_readable = parsed is not None
             if delay_readable:
                 self._cached_auto_repair_delay_min = self._clamp_delay(parsed)
+                self._delay_ever_readable = True
             # No fail-closed counterpart: there is no safe "closed" delay, so
             # an unreadable read always keeps the last good value.
             if delay_readable != self._delay_readable:
@@ -776,13 +789,20 @@ class AutoRepairConfigMixin:
         desired_delay = self._clamp_delay(parsed, loud=True)
 
         try:
-            current_val = self._parse_delay(await self.get_state(entity_id))
+            current_state = await self.get_state(entity_id)
         except Exception as exc:
             self.log(
                 f"Could not read {entity_id} before writing it: {exc!r}",
                 level="WARNING",
             )
-            current_val = None
+            current_state = None
+
+        current_val = self._parse_delay(current_state)
+        if current_val is not None:
+            # A pre-read that came back with a real number is a sighting, the
+            # same way the toggle's is — the card path reads these helpers too,
+            # and a helper first seen here must still count as seen.
+            self._delay_ever_readable = True
 
         if current_val == desired_delay:
             self._cached_auto_repair_delay_min = desired_delay
@@ -792,6 +812,20 @@ class AutoRepairConfigMixin:
                 level="INFO",
             )
             return
+
+        if current_state is None and self._delay_ever_readable:
+            # Deleted (or gone unavailable) since we last read it — the same
+            # trap as the toggle: HA answers success for a set_value that
+            # matched no entity, so _service_ok would say yes and the cache
+            # would move on a write that changed nothing. Keyed on the raw
+            # state, not on current_val: an input_number holding something
+            # unparseable still exists and should be written to.
+            self.log(
+                f"{entity_id} is not available — skipping update",
+                level="WARNING",
+            )
+            return
+        # current_state is None and never seen: provisioning lag, so write.
 
         try:
             ok = self._service_ok(
