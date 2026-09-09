@@ -46,7 +46,11 @@ works through both cases.
      (each `{name, status, detail}`), `repair_state` (`{status, detail}` —
      `idle|pending|in_progress|success|failed` — plus `auto_repair_enabled`,
      `auto_repair_delay_min`, `auto_repair_deadline` and `last_repair_attempt`, which
-     decide whether a `force_recheck` would fire a repair. Only the **per-device**
+     decide whether a `force_recheck` would fire a repair. `zwave` additionally
+     publishes `repair_attempts[]`, `repair_attempts_24h` and `repair_max_per_24h`
+     — that is how you tell "auto-repair still has budget, leave it alone" from
+     "budget spent, auto-repair has given up and this critical is mine to
+     escalate". Only the **per-device**
      checkers (`fans`, and the device-group checkers) additionally publish
      `device_repairs[<device>]` with its own `status`/`next_retry_at`; on the others its
      absence means "not published", never "nothing queued" — use `auto_repair_deadline`
@@ -96,7 +100,7 @@ REST: `POST /api/services/script/health_check_relay` with body
 
 | Command | Payload (JSON string) | Effect | Notes |
 |---------|----------------------|--------|-------|
-| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker, and **not a passive read**: each checker's cycle evaluates auto-repair, so this can fire a repair on any checker whose toggle is on and whose grace/backoff deadline has passed — including one you are not triaging (`shade_gateway` and `protect` default to auto-repair **on**). Nothing in the code counts those firings against the max-2-attempts-per-6h guardrail — **you** must, and against **the checker it fires on**, which may not be the one you are triaging. Before firing, check `auto_repair_enabled` on **every** checker that can auto-repair — `fans`, `printer`, `spa`, `shade_gateway`, `protect` — not just your own. The `apps-prod.yaml` defaults (on for `shade_gateway`/`protect`, off for the rest) are only seeds: each re-reads its `input_boolean` live every cycle, so a `spa` toggle someone left on will power-cycle `switch.spa_intouch3_switch`. if a repair may land there, `record_note` it *on that checker* so the idempotency guardrail has something to match on the next wake, and debit its 2-per-6h budget. Never reach for it to get another power-cycle once a checker's two `start_repair` attempts are spent. Use it to confirm a fault is still live, not as a free look. |
+| `force_recheck` | `"{}"` | Broadcasts `health_check_recheck` to **all** checkers — re-runs every check immediately | Global, not per-checker, and **not a passive read**: each checker's cycle evaluates auto-repair, so this can fire a repair on any checker whose toggle is on and whose grace/backoff deadline has passed — including one you are not triaging (`shade_gateway`, `protect` and `zwave` default to auto-repair **on**, and a `zwave` cycle can press the TubesZB board's ESPHome software-restart button). Nothing in the code counts those firings against the max-2-attempts-per-6h guardrail — **you** must, and against **the checker it fires on**, which may not be the one you are triaging. Before firing, check `auto_repair_enabled` on **every** checker that can auto-repair — `fans`, `printer`, `spa`, `shade_gateway`, `protect`, `zwave` — not just your own. The `apps-prod.yaml` defaults (on for `shade_gateway`/`protect`/`zwave`, off for the rest) are only seeds: each re-reads its `input_boolean` live every cycle, so a `spa` toggle someone left on will power-cycle `switch.spa_intouch3_switch`. if a repair may land there, `record_note` it *on that checker* so the idempotency guardrail has something to match on the next wake, and debit its 2-per-6h budget. Never reach for it to get another power-cycle once a checker's two `start_repair` attempts are spent. Use it to confirm a fault is still live, not as a free look. |
 | `start_repair` | `"{\"checker_id\": \"<id>\"}"` | Triggers that checker's built-in repair (power-cycle / port-cycle / config reload) | Rejected unless the checker's `supports_repair` is true. Battery checkers reject it. |
 | `record_note` | `"{\"checker_id\": \"<id>\", \"note\": \"...\", \"source\": \"shepherd\"}"` | Inserts a note into the checker's alert history (visible on the detail card) | Note capped at 280 chars. Leaves the audit trail — always record what you tried. |
 
@@ -149,6 +153,8 @@ Run these gates first, in order — several send you straight to skip/escalate:
 | [protect_batteries.md](protect_batteries.md) | `protect_batteries` | **no** | none — physical battery replacement |
 | [shade_batteries.md](shade_batteries.md) | `shade_batteries` | **no** | none — disconnects owned by `shade_gateway`; real decline = replace |
 | [fans.md](fans.md) | `fans` | yes | per-fan `script.zen32_hard_reset` scene-controller cycle |
+| [`zwave.md`](zwave.md) | `zwave` | yes | ESPHome **software** restart of the TubesZB TCP bridge (auto; 5m dwell, 15m apart, max 3/24h, then it forces `critical` itself) — **never** power-cycle or PoE-cycle that board |
 
-These six caused ~43 critical episodes/week before the v1.4.0 paging fixes and
-the auto-repair work — they are the highest-value triage targets.
+The runbooked checkers caused ~43 critical episodes/week before the v1.4.0
+paging fixes and the auto-repair work — they are the highest-value triage
+targets.

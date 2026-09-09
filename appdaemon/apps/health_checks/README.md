@@ -1,6 +1,6 @@
 # Health Checks
 
-System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, printers) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
+System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave — with rate-limited ESPHome software-restart repair for the Z-Wave TCP serial bridge), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, printers) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
 
 ## Architecture
 
@@ -10,9 +10,11 @@ System health monitoring for the Home Assistant dashboard. Provides visibility i
 │  (Zigbee instance)       │  register_checker     │                         │
 │                          │  report_status        │  Provisions:            │
 ├──────────────────────────┤                       │  - input_datetime       │
-│  NetworkProtocolChecker  │ ──────────────────▶   │    .appdaemon_heartbeat │
-│  (Z-Wave instance)       │                       │  - script               │
-│                          │                       │    .health_check_relay  │
+│  RepairableNetwork-      │ ──────────────────▶   │    .appdaemon_heartbeat │
+│  ProtocolChecker         │  + repair_state       │  - script               │
+│  (Z-Wave instance,       │                       │    .health_check_relay  │
+│   supports_repair: true) │                       │                         │
+│  ◀── health_check_repair_zwave ──                │                         │
 ├──────────────────────────┤                       │                         │
 │  MqttBrokerChecker       │ ──────────────────▶   │  Resolves dependencies: │
 │                          │                       │  (published view only)  │
@@ -76,6 +78,8 @@ The controller updates `input_datetime.appdaemon_heartbeat` every 60 seconds. Th
 3. **Web UI** — HTTP GET a management web interface URL
 
 Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no code changes.
+
+`RepairableNetworkProtocolChecker` extends `NetworkProtocolChecker` with rate-limited auto-repair for radios reached over a **TCP serial bridge** (the TubesZB ESP32 boards running ESPHome), used by the `zwave` instance. The ESP32 stream server accepts exactly one client and never notices when that client dies, so a dropped TCP session wedges the protocol while the radio still answers ICMP and the ESPHome "serial connected" sensor stays on — on 2026-09-09 every Z-Wave entity sat `unavailable` for 4h20m without paging, because the partial-failure cross-check downgraded the lone integration failure to `warning`. Restarting the zwave-js pod does not help; the fix is an ESPHome **software** restart of the board. The only action this class ever takes is a single `button/press` on that restart button — the board must **never** be power-cycled (PoE or otherwise); that destroyed a previous dongle. Every restart passes hard gates enforced in code: the stale-client signature (integration unhealthy *while* the radio still pings, optionally confirmed by `repair_serial_connected_entity`), a dwell (`auto_repair_delay_min_default`, always re-served in full after an AppDaemon start), a minimum interval, a rolling 24h cap, a post-action quiet period, and exactly one action per evaluation — and manual repair skips only the dwell, never the rate limits. Attempt timestamps are persisted to `input_text.<checker_id>_health_repair_attempts` and re-seeded from it on startup, so a deploy landing mid-outage resumes the ladder instead of resetting it — deliberately not read back from `sensor.health_check_status`, which the controller republishes as `checkers: {}` at its own startup and would race away. Once the 24h cap is spent the checker stops repairing and forces the integration check back to `critical`, bypassing the cross-check downgrade so Alertmanager pages.
 
 ### Spa Health Checker
 
@@ -233,6 +237,9 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 | `input_number.protect_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by ProtectHealthChecker) |
 | `input_boolean.shade_gateway_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ShadeGatewayChecker, default ON) |
 | `input_number.shade_gateway_health_auto_repair_delay` | Helper | Auto-repair grace period in minutes (provisioned by ShadeGatewayChecker, 15-360, default 120) |
+| `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableNetworkProtocolChecker per `checker_id`, default ON) |
+| `input_number.zwave_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableNetworkProtocolChecker per `checker_id`, 1-60, default 5) |
+| `input_text.zwave_health_repair_attempts` | Helper | Rolling 24h restart log as compact JSON (provisioned by RepairableNetworkProtocolChecker per `checker_id`) -- makes the cap survive an AppDaemon restart |
 
 ## Associated Cards
 
@@ -298,6 +305,27 @@ zigbee_health_checker:
 ```
 
 Any check can be disabled by omitting its config key (e.g., remove `radio_host` to skip the ping check).
+
+### RepairableNetworkProtocolChecker
+
+Every `NetworkProtocolChecker` key, plus the repair keys below. Also needs `ha_url` / `ha_token_env` so it can provision its auto-repair helpers.
+
+```yaml
+zwave_health_checker:
+  module: health_checks.checker_apps.network_protocol_checker.repairable_network_protocol_checker
+  class: RepairableNetworkProtocolChecker
+  # ...all NetworkProtocolChecker keys...
+  repair_button: button.restart_the_esp32_device_2  # ESPHome SOFTWARE restart — never a power cycle
+  repair_requires_radio_ping: true                  # Only repair while the radio still pings (default true)
+  repair_serial_connected_entity: binary_sensor.tubeszb_zw_serial_connected_2  # Optional 2nd signature check
+  repair_serial_connected_state: "on"               # State meaning "board still has a client" (default "on")
+  repair_min_interval_s: 900                        # Minimum gap between restarts (default 900)
+  repair_max_per_24h: 3                             # Rolling 24h cap, then escalate to critical (default 3)
+  repair_quiet_period_s: 180                        # Settle time after an action (default 180)
+  repair_recovery_wait_s: 300                       # How long to watch for recovery after a press (default 300)
+  auto_repair_enabled_default: true                 # Initial toggle value, applied on creation only (default false)
+  auto_repair_delay_min_default: 5                  # Dwell before the first restart, minutes (default 5)
+```
 
 ## Relay Commands
 
@@ -380,6 +408,7 @@ health_checks/
 │   ├── network_protocol_checker/
 │   │   ├── __init__.py
 │   │   ├── network_protocol_checker.py
+│   │   ├── repairable_network_protocol_checker.py
 │   │   └── README.md
 │   ├── mqtt_broker_checker/
 │   │   ├── __init__.py

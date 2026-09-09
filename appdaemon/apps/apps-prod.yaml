@@ -714,9 +714,11 @@ zigbee_health_checker:
     - checker_id: mqtt_broker
 
 zwave_health_checker:
-  module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
-  class: NetworkProtocolChecker
+  module: health_checks.checker_apps.network_protocol_checker.repairable_network_protocol_checker
+  class: RepairableNetworkProtocolChecker
   disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
   checker_id: zwave
   checker_name: Z-Wave
   entity_id: sensor.800_series_long_range_gpio_module_status
@@ -727,6 +729,25 @@ zwave_health_checker:
   web_ui_url: https://zwave.haynesops.com
   web_ui_check_name: Web UI
   check_interval_s: 180
+  # Auto-repair for the TubesZB stale-client wedge (2026-09-09 outage).
+  # zwave-js-ui talks to the ESP32 over TCP; the stream server accepts one
+  # client and never notices when it dies, so a dropped session leaves the
+  # radio pingable, the ESPHome "serial connected" sensor stuck ON, and every
+  # Z-Wave entity unavailable until the board is restarted. Restarting the
+  # zwave pod does NOT help (our socket sits in FIN_WAIT2).
+  #
+  # SAFETY: the ONLY permitted action is the ESPHome *software* restart
+  # button. Never PoE-cycle or otherwise hard-power this board — the previous
+  # dongle was destroyed that way.
+  repair_button: button.restart_the_esp32_device_2
+  repair_requires_radio_ping: true
+  repair_serial_connected_entity: binary_sensor.tubeszb_zw_serial_connected_2
+  repair_min_interval_s: 900        # >= 15 min between restarts
+  repair_max_per_24h: 3             # then stop, escalate to critical, page
+  repair_quiet_period_s: 180        # settle before re-evaluating
+  repair_recovery_wait_s: 300
+  auto_repair_enabled_default: true
+  auto_repair_delay_min_default: 5  # dwell before the first restart
 
 cielo_health_checker:
   module: health_checks.checker_apps.device_group_checker.device_group_checker

@@ -163,7 +163,9 @@ health_check_controller (listens for health_check_command events from all checke
   │    └─ depended on by: zigbee, basement_lights, downstairs_lights, upstairs_lights, exterior_lights
   ├─ network_protocol_checker/zigbee (depends on: mqtt_broker)
   │    └─ depended on by: basement_lights, downstairs_lights, upstairs_lights, exterior_lights, zigbee_batteries
-  ├─ network_protocol_checker/zwave (root dependency)
+  ├─ repairable_network_protocol_checker/zwave (root dependency; supports_repair — rate-limited ESPHome
+  │    software restart of the TubesZB TCP serial bridge, max 3/24h then forces critical itself;
+  │    uses ha_provisioner for its auto-repair helpers)
   │    └─ depended on by: zwave_batteries
   ├─ mqtt_device_checker (4 instances: basement/downstairs/upstairs/exterior_lights, depends on: zigbee + mqtt_broker)
   ├─ battery_checker (6 instances: zwave/shade/lock/airthings/protect/zigbee_batteries)
