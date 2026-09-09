@@ -82,6 +82,7 @@ from providers.ha_provisioner import HAProvisioner
 from health_checks.checker_apps.network_protocol_checker.network_protocol_checker import (
     NetworkProtocolChecker,
 )
+from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check
 
 logger = logging.getLogger(__name__)
@@ -99,21 +100,14 @@ CONTROLLER_SENSOR = "sensor.health_check_status"
 #: Rolling window the restart cap is measured over.
 ATTEMPT_WINDOW_S = 24 * 60 * 60
 
-#: States that mean "no usable reading", not a real value.
-UNAVAILABLE_STATES = ("unavailable", "unknown", "none", "")
-
-#: Bounds of the auto-repair delay helper. Every path that can set the cached
-#: delay clamps to these, including the card command: HA silently rejects a
-#: set_value outside the helper's range without AppDaemon raising, so an
-#: unclamped cache would keep a value the helper never accepted — and a delay
-#: of 0 collapses the dwell gate and restarts the board on the first
-#: unhealthy cycle.
-DELAY_MIN_MIN = 1
-DELAY_MIN_MAX = 60
-
-
-class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
+class RepairableNetworkProtocolChecker(
+    AutoRepairConfigMixin, NetworkProtocolChecker
+):
     """NetworkProtocolChecker with rate-limited ESPHome software-restart repair."""
+
+    DELAY_MIN_MIN = 1
+    DELAY_MIN_MAX = 60
+    DELAY_MIN_DEFAULT = 5
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -157,20 +151,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         )
 
         # Auto-repair helper defaults
-        self._auto_repair_enabled_default: bool = bool(
-            args.get("auto_repair_enabled_default", False)
-        )
-        #: Latches the out-of-range warning so _clamp_delay says it once per
-        #: episode instead of every check cycle. Must exist before the first
-        #: _clamp_delay call below.
-        self._delay_clamped_logged: bool = False
-        # Clamped here so every path that can set the cached delay obeys the
-        # helper's bounds. Without this, auto_repair_delay_min_default: 0
-        # collapses the dwell for the whole first run — the same failure the
-        # card clamp prevents, through a different door.
-        self._auto_repair_delay_min_default: int = self._clamp_delay(
-            int(args.get("auto_repair_delay_min_default", 5))
-        )
+        self._init_auto_repair_config(args)
 
         # Repair state machine
         self._repair_status: str = REPAIR_IDLE
@@ -186,13 +167,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         #: Why the partial-failure downgrade must be reversed this cycle
         #: (see _apply_escalation). Empty means no escalation.
         self._escalate_detail: str = ""
-
-        # Cached auto-repair config (refreshed each check cycle)
-        self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
-        #: None until the first read attempt; then whether it succeeded.
-        self._toggle_readable: Optional[bool] = None
-        self._delay_readable: Optional[bool] = None
-        self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
         self.log(
             f"RepairableNetworkProtocolChecker repair config: "
@@ -248,29 +222,7 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             return
 
         prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
-
-        try:
-            created = await prov.ensure_helper(
-                "input_boolean",
-                f"{self._checker_id} Health Auto Repair",
-            )
-            if created:
-                entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-                # A freshly created input_boolean is off, so without this the
-                # repair would be provisioned and then never run. Only applied
-                # on creation — a later manual "off" is never overridden.
-                if self._auto_repair_enabled_default:
-                    try:
-                        self.call_service(
-                            "input_boolean/turn_on", entity_id=entity_id
-                        )
-                    except Exception as exc:
-                        self.log(
-                            f"Failed to enable {entity_id}: {exc!r}", level="DEBUG"
-                        )
-                self.log(f"Provisioned {entity_id}", level="INFO")
-        except Exception as exc:
-            self.log(f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR")
+        await self._provision_auto_repair_helpers(prov)
 
         try:
             created = await prov.ensure_helper(
@@ -286,27 +238,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             self.log(
                 f"Failed to provision repair-attempts helper: {exc!r}", level="ERROR"
             )
-
-        try:
-            created = await prov.ensure_helper(
-                "input_number",
-                f"{self._checker_id} Health Auto Repair Delay",
-                min=DELAY_MIN_MIN, max=DELAY_MIN_MAX, step=1,
-                unit_of_measurement="min", mode="box",
-            )
-            if created:
-                entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=self._auto_repair_delay_min_default,
-                    )
-                except Exception as exc:
-                    self.log(f"Failed to set default for {entity_id}: {exc!r}", level="DEBUG")
-                self.log(f"Provisioned {entity_id}", level="INFO")
-        except Exception as exc:
-            self.log(f"Failed to provision auto-repair delay: {exc!r}", level="ERROR")
 
     # ------------------------------------------------------------------
     # Persistence — the restart ladder must survive an AppDaemon restart
@@ -611,13 +542,9 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         elif action == "cancel_repair":
             self._cancel_repair()
         elif action == "update_repair_config":
-            self.log(
-                f"Repair config update requested: "
-                f"auto_repair_enabled={data.get('auto_repair_enabled')}, "
-                f"auto_repair_delay_min={data.get('auto_repair_delay_min')}",
-                level="INFO",
-            )
-            self._update_repair_config(data)
+            self._handle_repair_config_command(data)
+        else:
+            self.log(f"Unknown repair action {action!r}", level="WARNING")
 
     def _cancel_repair(self) -> None:
         """Stand down a *scheduled* restart, without ending the outage.
@@ -645,116 +572,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             level="INFO",
         )
         self._report_repair_status_only()
-
-    # ------------------------------------------------------------------
-    # Auto-repair config
-    # ------------------------------------------------------------------
-
-    async def _refresh_auto_repair_config(self) -> None:
-        """Refresh the cached toggle/delay from their HA helpers.
-
-        A read that comes back ``None`` means AppDaemon does not know the
-        entity — which is the normal state for the whole first run after these
-        helpers are provisioned, because AppDaemon loads the entity list at
-        startup and the helpers did not exist then. ``str(None) == "on"`` is
-        False, so treating that as a real read silently disables auto-repair
-        until the next pod restart: the feature ships inert, with nothing in
-        the logs to say so (observed on the 1.17.0 deploy). An unknown value
-        is not evidence, so the previous cached value is kept — which on the
-        first run is ``auto_repair_enabled_default``.
-        """
-        try:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            enabled_state = await self.get_state(entity_id)
-            readable = (
-                enabled_state is not None
-                and str(enabled_state).lower() not in UNAVAILABLE_STATES
-            )
-            if readable:
-                self._cached_auto_repair_enabled = str(enabled_state) == "on"
-            # Log the transitions, not every cycle: an operator needs the
-            # window to have a visible open and close, without a message
-            # every check_interval_s for as long as it lasts.
-            if readable != self._toggle_readable:
-                # A clean start with a readable helper is not the *close* of
-                # an unreadable window — only announce that if one was open.
-                if readable and self._toggle_readable is None:
-                    pass
-                elif readable:
-                    self.log(
-                        f"{entity_id} is readable again — auto-repair "
-                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'} "
-                        f"from the helper",
-                        level="INFO",
-                    )
-                else:
-                    self.log(
-                        f"{entity_id} not readable (state={enabled_state!r}) — "
-                        f"running on the cached default, auto-repair "
-                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
-                        level="WARNING",
-                    )
-                self._toggle_readable = readable
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
-
-        try:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            delay_state = await self.get_state(entity_id)
-            delay_readable = (
-                delay_state is not None
-                and str(delay_state).lower() not in UNAVAILABLE_STATES
-            )
-            if delay_readable:
-                self._cached_auto_repair_delay_min = self._clamp_delay(
-                    int(float(delay_state))
-                )
-            if delay_readable != self._delay_readable:
-                if delay_readable and self._delay_readable is None:
-                    pass
-                elif delay_readable:
-                    self.log(
-                        f"{entity_id} is readable again — auto-repair delay "
-                        f"{self._cached_auto_repair_delay_min}m from the helper",
-                        level="INFO",
-                    )
-                else:
-                    self.log(
-                        f"{entity_id} not readable (state={delay_state!r}) — "
-                        f"using the cached default of "
-                        f"{self._cached_auto_repair_delay_min}m",
-                        level="WARNING",
-                    )
-                self._delay_readable = delay_readable
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
-
-    def _clamp_delay(self, value: int) -> int:
-        """Clamp a delay to the helper's bounds, saying so when it bites.
-
-        logging-standards puts "validation failure with fallback" at WARNING,
-        and overriding what an operator asked for must not be silent. But the
-        helper read runs every check cycle, so an out-of-range value sitting
-        in the helper would otherwise warn every ``check_interval_s`` for as
-        long as it sat there. The warning is therefore emitted once per
-        out-of-range episode: ``_delay_clamped_logged`` latches it, and is
-        cleared again the moment an in-range value is seen.
-        """
-        clamped = max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
-        if clamped != value:
-            if not self._delay_clamped_logged:
-                self.log(
-                    f"Auto-repair delay {value}m is outside the permitted "
-                    f"{DELAY_MIN_MIN}-{DELAY_MIN_MAX}m range — using {clamped}m",
-                    level="WARNING",
-                )
-                self._delay_clamped_logged = True
-        else:
-            self._delay_clamped_logged = False
-        return clamped
-
-    def _read_auto_repair_config(self) -> tuple[bool, int]:
-        return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
 
     # ------------------------------------------------------------------
     # Rate limiting
@@ -1106,76 +923,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             command="report_status",
             payload=json.dumps(self._build_report_payload([])),
         )
-
-    # ------------------------------------------------------------------
-    # Repair config updates (from the health dashboard card)
-    # ------------------------------------------------------------------
-
-    def _update_repair_config(self, data: dict) -> None:
-        auto_enabled = data.get("auto_repair_enabled")
-        delay_min = data.get("auto_repair_delay_min")
-
-        if auto_enabled is not None:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            current = str(self.get_state(entity_id))
-            desired = "on" if auto_enabled else "off"
-            # Mirror the command into the cache, but only once the helper
-            # actually holds it. While the helper is unreadable (see
-            # _refresh_auto_repair_config) the next get_state stays None for
-            # the rest of the run, so waiting for the read-back would leave an
-            # explicit "off" unhonoured — the card would show off, HA would
-            # show off, and the board would still get restarted. Caching a
-            # write that FAILED is the mirror-image bug, so it goes in the
-            # success path.
-            if current == desired:
-                self._cached_auto_repair_enabled = bool(auto_enabled)
-            else:
-                service = (
-                    "input_boolean/turn_on" if auto_enabled
-                    else "input_boolean/turn_off"
-                )
-                try:
-                    self.call_service(service, entity_id=entity_id)
-                    self._cached_auto_repair_enabled = bool(auto_enabled)
-                except Exception as exc:
-                    self.log(
-                        f"Failed to update auto-repair toggle: {exc!r}",
-                        level="ERROR",
-                    )
-
-        if delay_min is not None:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            # Parse once, the same way the helper read does (int(float(...))),
-            # so a card sending "17.0" is handled rather than fatal.
-            try:
-                desired_delay = self._clamp_delay(int(float(delay_min)))
-            except (TypeError, ValueError):
-                self.log(
-                    f"Ignoring unparseable auto_repair_delay_min: {delay_min!r}",
-                    level="WARNING",
-                )
-                desired_delay = None
-            try:
-                current_val = int(float(self.get_state(entity_id)))
-            except (TypeError, ValueError):
-                current_val = None
-            if desired_delay is None:
-                pass
-            elif current_val == desired_delay:
-                self._cached_auto_repair_delay_min = desired_delay
-            else:
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=desired_delay,
-                    )
-                    self._cached_auto_repair_delay_min = desired_delay
-                except Exception as exc:
-                    self.log(
-                        f"Failed to update auto-repair delay: {exc!r}",
-                        level="ERROR",
-                    )
 
     # ------------------------------------------------------------------
     # Helpers

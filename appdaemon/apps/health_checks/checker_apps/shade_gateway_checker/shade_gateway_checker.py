@@ -57,6 +57,7 @@ if _appdaemon_root not in sys.path:
 import hassapi as hass
 
 from providers.ha_provisioner import HAProvisioner
+from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import http_check, is_implausible_battery_drop, ping_check
 
 logger = logging.getLogger(__name__)
@@ -76,20 +77,18 @@ REPAIR_FAILED = "failed"
 
 REPAIR_POLL_INTERVAL_S = 5
 
-#: States that mean "no usable reading", not a real value.
-UNAVAILABLE_STATES = ("unavailable", "unknown", "none", "")
 
-#: Bounds of the auto-repair delay helper. Every path that can set the cached
-#: delay clamps to these, and the ensure_helper call uses them too, so the
-#: clamp and the helper can never drift apart. HA silently rejects a set_value
-#: outside the helper's range without AppDaemon raising, so an unclamped cache
-#: would hold a value the helper never accepted.
-DELAY_MIN_MIN = 15
-DELAY_MIN_MAX = 360
-
-
-class ShadeGatewayChecker(hass.Hass):
+class ShadeGatewayChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker that owns gateway-disconnect detection for all shade batteries."""
+
+    # A shade RF disconnect often self-heals within a couple of hours, so the
+    # grace defaults to 2h and must be allowed up to 6h — far above the other
+    # checkers' 60m cap — and steps in quarter-hours.
+    DELAY_MIN_MIN = 15
+    DELAY_MIN_MAX = 360
+    DELAY_STEP = 15
+    DELAY_MIN_DEFAULT = 120
+    AUTO_REPAIR_ENABLED_DEFAULT = True
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -144,25 +143,7 @@ class ShadeGatewayChecker(hass.Hass):
         self._repair_recovery_wait_s: int = int(
             args.get("repair_recovery_wait_s", 900)
         )
-        self._auto_repair_enabled_default: bool = bool(
-            args.get("auto_repair_enabled_default", True)
-        )
-        #: None until the first read attempt; then whether it succeeded.
-        #: Drives the transition-only logging in _refresh_auto_repair_config.
-        self._toggle_readable: Optional[bool] = None
-        self._delay_readable: Optional[bool] = None
-        #: Latches the out-of-range warning so _clamp_delay says it once per
-        #: episode instead of every check cycle. Must exist before the first
-        #: _clamp_delay call below.
-        self._delay_clamped_logged: bool = False
-        # Clamped here so every path that can set the cached delay obeys
-        # the helper's bounds. Without this, an out-of-range
-        # auto_repair_delay_min_default would be honoured verbatim for the
-        # whole first run (a 0 collapses the dwell gate entirely) — the
-        # same failure the card clamp prevents, through a different door.
-        self._auto_repair_delay_min_default: int = self._clamp_delay(
-            int(args.get("auto_repair_delay_min_default", 120))
-        )
+        self._init_auto_repair_config(args)
 
         # Per-entity tracking
         self._last_good_value: Dict[str, float] = {}
@@ -178,6 +159,11 @@ class ShadeGatewayChecker(hass.Hass):
         # One auto-restart per episode — set True the moment a repair (auto
         # or manual) is started, cleared only when the episode fully clears.
         self._repair_attempted_this_episode: bool = False
+        # Set by _cancel_repair: the earliest an auto-repair may be scheduled
+        # again. The dwell is measured from _disconnect_since, which a cancel
+        # cannot move, so without this floor the countdown would simply fire
+        # again on the next check tick.
+        self._repair_deferred_until: Optional[datetime.datetime] = None
 
         # Repair state machine
         self._repair_status: str = REPAIR_IDLE
@@ -185,10 +171,6 @@ class ShadeGatewayChecker(hass.Hass):
         self._auto_repair_deadline: Optional[datetime.datetime] = None
         self._last_repair_attempt: Optional[str] = None
         self._repair_task: Optional[asyncio.Task] = None
-
-        # Cached auto-repair config (updated each async check cycle)
-        self._cached_auto_repair_enabled: bool = self._auto_repair_enabled_default
-        self._cached_auto_repair_delay_min: int = self._auto_repair_delay_min_default
 
         # Repair events for the metrics exporter, buffered here and drained
         # into the very next report_status payload (once-only delivery — a
@@ -259,71 +241,7 @@ class ShadeGatewayChecker(hass.Hass):
             return
 
         prov = HAProvisioner(ha_url=ha_url, ha_token_env=ha_token_env)
-
-        try:
-            created = await prov.ensure_helper(
-                "input_boolean",
-                f"{self._checker_id} Health Auto Repair",
-            )
-            if created:
-                entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-                self.log(f"Provisioned {entity_id}", level="INFO")
-                # A freshly-created input_boolean defaults to "off", and
-                # _refresh_auto_repair_config reads that helper every cycle —
-                # so without seeding it here, auto_repair_enabled_default=True
-                # would be silently overridden to disabled. Turn it on at
-                # creation time (only when created) to honor the default
-                # without clobbering a later user choice.
-                if self._auto_repair_enabled_default:
-                    try:
-                        self.call_service(
-                            "input_boolean/turn_on", entity_id=entity_id
-                        )
-                        self.log(
-                            f"Auto-repair default-enabled via {entity_id}",
-                            level="INFO",
-                        )
-                    except Exception as exc:
-                        self.log(
-                            f"Failed to enable auto-repair default on {entity_id}: {exc!r}",
-                            level="ERROR",
-                        )
-        except Exception as exc:
-            self.log(f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR")
-
-        try:
-            # Grace defaults to 2h and must allow up to 6h — much higher than
-            # the other checkers' 60m cap — since a shade RF disconnect is
-            # expected to often self-heal well within a couple of hours.
-            created = await prov.ensure_helper(
-                "input_number",
-                f"{self._checker_id} Health Auto Repair Delay",
-                min=DELAY_MIN_MIN,
-                max=DELAY_MIN_MAX,
-                step=15,
-                unit_of_measurement="min",
-                mode="box",
-            )
-            if created:
-                entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=self._auto_repair_delay_min_default,
-                    )
-                except Exception as exc:
-                    self.log(f"Failed to set default for {entity_id}: {exc!r}", level="DEBUG")
-                self.log(f"Provisioned {entity_id}", level="INFO")
-        except Exception as exc:
-            self.log(
-                f"Failed to provision auto-repair delay helper: {exc!r}",
-                level="ERROR",
-            )
-
-    # ------------------------------------------------------------------
-    # Entity discovery
-    # ------------------------------------------------------------------
+        await self._provision_auto_repair_helpers(prov)
 
     async def _discover_entities(self) -> None:
         """Discover shade battery entities matching configured regex patterns.
@@ -465,7 +383,9 @@ class ShadeGatewayChecker(hass.Hass):
         elif action == "cancel_repair":
             self._cancel_repair()
         elif action == "update_repair_config":
-            self._update_repair_config(data)
+            self._handle_repair_config_command(data)
+        else:
+            self.log(f"Unknown repair action {action!r}", level="WARNING")
 
     def _on_shade_state_change(
         self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any
@@ -829,113 +749,6 @@ class ShadeGatewayChecker(hass.Hass):
     # Auto-repair logic
     # ------------------------------------------------------------------
 
-    async def _refresh_auto_repair_config(self) -> None:
-        """Refresh the cached toggle/delay from their HA helpers.
-
-        A read that comes back ``None`` means AppDaemon does not know the
-        entity — the normal state for the whole first run after these helpers
-        are provisioned, because AppDaemon loads its entity list at startup
-        and the helpers did not exist then. ``str(None) == "on"`` is False, so
-        treating that as a real read silently disables auto-repair until the
-        next pod restart, with nothing in the logs to say so (the 1.17.0
-        Z-Wave failure). An unknown value is not evidence, so the previous
-        cached value is kept — which on the first run is
-        ``auto_repair_enabled_default``.
-        """
-        try:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            enabled_state = await self.get_state(entity_id)
-            readable = (
-                enabled_state is not None
-                and str(enabled_state).lower() not in UNAVAILABLE_STATES
-            )
-            if readable:
-                self._cached_auto_repair_enabled = str(enabled_state) == "on"
-            # Log the transitions, not every cycle: an operator needs the
-            # window to have a visible open and close, without a message
-            # every check_interval_s for as long as it lasts.
-            if readable != self._toggle_readable:
-                # A clean start with a readable helper is not the *close* of
-                # an unreadable window — only announce that if one was open.
-                if readable and self._toggle_readable is None:
-                    pass
-                elif readable:
-                    self.log(
-                        f"{entity_id} is readable again — auto-repair "
-                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'} "
-                        f"from the helper",
-                        level="INFO",
-                    )
-                else:
-                    self.log(
-                        f"{entity_id} not readable (state={enabled_state!r}) — "
-                        f"running on the cached default, auto-repair "
-                        f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
-                        level="WARNING",
-                    )
-                self._toggle_readable = readable
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
-
-        try:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            delay_state = await self.get_state(entity_id)
-            delay_readable = (
-                delay_state is not None
-                and str(delay_state).lower() not in UNAVAILABLE_STATES
-            )
-            if delay_readable:
-                self._cached_auto_repair_delay_min = self._clamp_delay(
-                    int(float(delay_state))
-                )
-            if delay_readable != self._delay_readable:
-                if delay_readable and self._delay_readable is None:
-                    pass
-                elif delay_readable:
-                    self.log(
-                        f"{entity_id} is readable again — auto-repair delay "
-                        f"{self._cached_auto_repair_delay_min}m from the helper",
-                        level="INFO",
-                    )
-                else:
-                    self.log(
-                        f"{entity_id} not readable (state={delay_state!r}) — "
-                        f"using the cached default of "
-                        f"{self._cached_auto_repair_delay_min}m",
-                        level="WARNING",
-                    )
-                self._delay_readable = delay_readable
-        except Exception as exc:
-            self.log(f"Failed to read auto-repair delay: {exc!r}", level="WARNING")
-
-    def _clamp_delay(self, value: int) -> int:
-        """Clamp a delay to the helper's bounds, saying so when it bites.
-
-        logging-standards puts "validation failure with fallback" at WARNING,
-        and overriding what an operator asked for must not be silent. But the
-        helper read runs every check cycle, so an out-of-range value sitting
-        in the helper would otherwise warn every ``check_interval_s`` for as
-        long as it sat there. The warning is therefore emitted once per
-        out-of-range episode: ``_delay_clamped_logged`` latches it, and is
-        cleared again the moment an in-range value is seen.
-        """
-        clamped = max(DELAY_MIN_MIN, min(DELAY_MIN_MAX, value))
-        if clamped != value:
-            if not self._delay_clamped_logged:
-                self.log(
-                    f"Auto-repair delay {value}m is outside the permitted "
-                    f"{DELAY_MIN_MIN}-{DELAY_MIN_MAX}m range — using {clamped}m",
-                    level="WARNING",
-                )
-                self._delay_clamped_logged = True
-        else:
-            self._delay_clamped_logged = False
-        return clamped
-
-    def _read_auto_repair_config(self) -> tuple[bool, int]:
-        """Return cached auto-repair config (sync-safe)."""
-        return self._cached_auto_repair_enabled, self._cached_auto_repair_delay_min
-
     def _evaluate_auto_repair(self) -> None:
         """Evaluate whether to start, continue, or cancel auto-repair.
 
@@ -964,6 +777,7 @@ class ShadeGatewayChecker(hass.Hass):
                 self._repair_status = REPAIR_IDLE
                 self._repair_detail = ""
                 self._auto_repair_deadline = None
+            self._repair_deferred_until = None
             return
 
         # Don't trigger auto-repair from "success" state (waiting for the
@@ -979,10 +793,27 @@ class ShadeGatewayChecker(hass.Hass):
 
         enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
+            # Stand the countdown down. A PENDING left up here is not
+            # cosmetic: the card counts down to a repair that can never
+            # start, and alertmanager_bridge holds the critical page for up
+            # to repair_hold_cap_s on `pending` — withholding the page for an
+            # outage the operator has just said will not self-heal.
+            if self._repair_status == REPAIR_PENDING:
+                self.log(
+                    "Auto-repair disabled — cancelling pending auto-repair",
+                    level="INFO",
+                )
+                self._repair_status = REPAIR_IDLE
+                self._repair_detail = "Auto-repair disabled"
+                self._auto_repair_deadline = None
             return
 
         now = datetime.datetime.now()
         deadline = unhealthy_since + datetime.timedelta(minutes=delay_min)
+        if self._repair_deferred_until:
+            # A human cancelled the countdown: honour the deferral rather
+            # than re-firing off the (already elapsed) episode clock.
+            deadline = max(deadline, self._repair_deferred_until)
 
         if self._repair_status == REPAIR_IDLE:
             if now >= deadline:
@@ -1043,10 +874,21 @@ class ShadeGatewayChecker(hass.Hass):
                 level="WARNING",
             )
             return
-        self.log("Auto-repair cancelled by user", level="INFO")
+        _, delay_min = self._read_auto_repair_config()
         self._repair_status = REPAIR_IDLE
-        self._repair_detail = ""
         self._auto_repair_deadline = None
+        # The dwell is measured from the disconnect episode, which is still
+        # running and already older than the delay — so a bare IDLE would
+        # re-arm and fire on the very next tick. Defer by one full delay
+        # instead, which is what the human asked for.
+        self._repair_deferred_until = datetime.datetime.now() + datetime.timedelta(
+            minutes=delay_min
+        )
+        self._repair_detail = f"Cancelled by user — deferred {delay_min}m"
+        self.log(
+            f"Auto-repair cancelled by user — deferred {delay_min}m",
+            level="INFO",
+        )
         self._report_repair_status_only()
 
     async def _execute_repair(self) -> None:
@@ -1136,87 +978,6 @@ class ShadeGatewayChecker(hass.Hass):
             return True
         flap_free_s = (datetime.datetime.now() - self._last_zero_time).total_seconds()
         return flap_free_s >= self._repair_settle_s
-
-    # ------------------------------------------------------------------
-    # Repair config updates (from card via controller)
-    # ------------------------------------------------------------------
-
-    def _update_repair_config(self, data: dict) -> None:
-        """Apply a repair-config command from the health dashboard card.
-
-        The command is authoritative for the cache, but only once the write
-        has landed. While the helper is unreadable (see
-        _refresh_auto_repair_config) the next get_state stays None for the
-        rest of the run, so waiting for the read-back would leave an explicit
-        choice unhonoured — the card would show off, HA would show off, and
-        the repair would still fire. Caching a write that FAILED is the
-        mirror-image bug, so every cache update sits in a success path.
-        """
-        auto_enabled = data.get("auto_repair_enabled")
-        delay_min = data.get("auto_repair_delay_min")
-
-        if auto_enabled is not None:
-            entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
-            current = str(self.get_state(entity_id))
-            desired = "on" if auto_enabled else "off"
-            if current == desired:
-                self._cached_auto_repair_enabled = bool(auto_enabled)
-            else:
-                service = (
-                    "input_boolean/turn_on" if auto_enabled
-                    else "input_boolean/turn_off"
-                )
-                try:
-                    self.call_service(service, entity_id=entity_id)
-                    self._cached_auto_repair_enabled = bool(auto_enabled)
-                    self.log(
-                        f"Auto-repair {'enabled' if auto_enabled else 'disabled'}",
-                        level="INFO",
-                    )
-                except Exception as exc:
-                    self.log(
-                        f"Failed to update auto-repair toggle: {exc!r}",
-                        level="ERROR",
-                    )
-
-        if delay_min is not None:
-            entity_id = f"input_number.{self._checker_id}_health_auto_repair_delay"
-            # Parse once, the same way the helper read does (int(float(...))),
-            # so a card sending "17.0" is handled rather than fatal. An
-            # unparseable value skips only the delay half of the command.
-            try:
-                desired_delay = self._clamp_delay(int(float(delay_min)))
-            except (TypeError, ValueError):
-                self.log(
-                    f"Ignoring unparseable auto_repair_delay_min: {delay_min!r}",
-                    level="WARNING",
-                )
-                desired_delay = None
-            try:
-                current_val = int(float(self.get_state(entity_id)))
-            except (TypeError, ValueError):
-                current_val = None
-            if desired_delay is None:
-                pass
-            elif current_val == desired_delay:
-                self._cached_auto_repair_delay_min = desired_delay
-            else:
-                try:
-                    self.call_service(
-                        "input_number/set_value",
-                        entity_id=entity_id,
-                        value=desired_delay,
-                    )
-                    self._cached_auto_repair_delay_min = desired_delay
-                    self.log(
-                        f"Auto-repair delay {desired_delay}m set",
-                        level="INFO",
-                    )
-                except Exception as exc:
-                    self.log(
-                        f"Failed to update auto-repair delay: {exc!r}",
-                        level="ERROR",
-                    )
 
     # ------------------------------------------------------------------
     # Helpers

@@ -220,6 +220,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/alertmanager` — posts/resolves alerts in the cluster Alertmanager (controller, when `alertmanager_url` is set)
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
+- `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, mixed into all seven repair-capable checkers
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`)
 - `prometheus-client` — metrics exposition (controller)
 
@@ -323,7 +324,7 @@ zwave_health_checker:
   repair_max_per_24h: 3                             # Rolling 24h cap, then escalate to critical (default 3)
   repair_quiet_period_s: 180                        # Settle time after an action (default 180)
   repair_recovery_wait_s: 300                       # How long to watch for recovery after a press (default 300)
-  auto_repair_enabled_default: true                 # Seeds the toggle at creation AND governs the whole first run (default false)
+  auto_repair_enabled_default: true                 # Seeds the toggle at creation AND is the fallback while it is unreadable (default false)
   auto_repair_delay_min_default: 5                  # Dwell before the first restart, minutes (default 5)
 ```
 
@@ -450,10 +451,13 @@ health_checks/
 │   └── imagegen_health_checker/
 │       ├── __init__.py
 │       └── imagegen_health_checker.py
-├── shared/
-│   ├── __init__.py
-│   ├── check_utils.py
-│   └── alertmanager_bridge.py
+├── shared/                          # shared library code, the one exception to
+│   ├── __init__.py                  # "no shared code under apps/"
+│   ├── check_utils.py               # ping/HTTP checks + the cross-check downgrade
+│   ├── alertmanager_bridge.py       # pure alert decision logic (no HTTP)
+│   └── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
+│                                    # toggle/delay helpers, shared by all seven
+│                                    # repair-capable checkers
 ├── cards/
 │   ├── health-check-card.js
 │   └── health-check-detail-card.js

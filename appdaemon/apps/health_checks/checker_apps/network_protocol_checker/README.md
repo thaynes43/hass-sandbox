@@ -49,6 +49,7 @@ Both escalations sit **above** the serial-sensor guard and the auto-repair toggl
 
 - `shared/check_utils` -- `ping_check()` for ICMP pings, `http_check()` for HTTP GET checks; `apply_cross_check()` for the partial-failure downgrade
 - `providers/ha_provisioner` -- auto-repair helper provisioning (`RepairableNetworkProtocolChecker` only)
+- `shared/auto_repair_config` -- `AutoRepairConfigMixin`: the auto-repair toggle/delay helpers (`RepairableNetworkProtocolChecker` only)
 
 ## Self-Provisioned Entities
 
@@ -56,7 +57,7 @@ Both escalations sit **above** the serial-sensor guard and the auto-repair toggl
 
 | Entity | Type | Purpose |
 |--------|------|---------|
-| `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle. `auto_repair_enabled_default` seeds it at creation **and** is the value the checker runs on for the whole first run: AppDaemon loads its entity list at startup, so a helper created after that reads back as `None` until the next restart, and an unknown read keeps the cached default rather than being taken as `off` |
+| `input_boolean.zwave_health_auto_repair` | Helper | Auto-repair toggle. `auto_repair_enabled_default` seeds it at creation **and** is the fallback until it can be read: a helper created over the REST API is registered with `add_entity` immediately, and would otherwise be invisible to AppDaemon for up to one `refresh_delay` (10 min). An unreadable read keeps the cached default rather than being taken as `off` — until the helper has been read once, after which losing it fails the toggle closed. Full mechanism: `shared/auto_repair_config.py` |
 | `input_number.zwave_health_auto_repair_delay` | Helper | Dwell before the first restart, in minutes (1-60, step 1, default 5) |
 | `input_text.zwave_health_repair_attempts` | Helper | Rolling 24h restart log (compact JSON, max 255 chars) -- this is what makes the cap survive a restart |
 
@@ -118,5 +119,5 @@ Set `module` to `...network_protocol_checker.repairable_network_protocol_checker
 | `repair_max_per_24h` | No | `3` | Rolling 24h restart cap; once spent, stop repairing and force `critical` |
 | `repair_quiet_period_s` | No | `180` | Settle time after an action before re-evaluating |
 | `repair_recovery_wait_s` | No | `300` | How long to poll for recovery after a press |
-| `auto_repair_enabled_default` | No | `false` | Seeds the toggle at creation **and** is the value the checker runs on for the whole first run, since a helper created after AppDaemon loaded its entity list reads back unknown until the next restart |
-| `auto_repair_delay_min_default` | No | `5` | Initial dwell in minutes before the first restart. Seeds the helper and governs the first run the same way; clamped to 1-60 |
+| `auto_repair_enabled_default` | No | `false` | Seeds the toggle at creation **and** is the fallback while it is still unreadable (see `shared/auto_repair_config.py`) |
+| `auto_repair_delay_min_default` | No | `5` | Initial dwell in minutes before the first restart. Seeds the helper and is its fallback the same way; clamped to 1-60 |
