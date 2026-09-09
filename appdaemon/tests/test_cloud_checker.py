@@ -14,6 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -64,7 +66,7 @@ def _make_app(extra_args: dict | None = None) -> CloudChecker:
     app.run_every = MagicMock()
     app.cancel_timer = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 

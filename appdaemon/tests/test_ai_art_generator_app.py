@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
+from conftest import closing_create_task
+
 # Mock hassapi before any app imports
 mock_hass = MagicMock()
 mock_hass.Hass = type("_MockHass", (), {"__init__": lambda self, *a, **kw: None})
@@ -43,7 +45,7 @@ def _make_app(args: dict | None = None):
     app.cancel_listen_event = MagicMock()
     app.run_in = MagicMock(return_value="timer-handle")
     app.get_state = MagicMock(return_value=None)
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
     # Initialize the same way initialize() does
     app._art_bundles_path = app.args.get("art_prompt_bundles_path")
     app._art_bundles_missing_warned = False

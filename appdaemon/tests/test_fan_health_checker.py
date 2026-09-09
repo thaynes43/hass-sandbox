@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -145,7 +147,7 @@ def _make_app(extra_args: dict | None = None) -> FanHealthChecker:
     app.run_every = MagicMock()
     app.cancel_timer = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 
@@ -400,7 +402,7 @@ class TestAutoRepair:
         app._fan_unhealthy_since["Pink Room"] = (
             datetime.datetime.now() - datetime.timedelta(minutes=10)
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -422,7 +424,7 @@ class TestAutoRepair:
         app._fan_unhealthy_since["Pink Room"] = old
         app._fan_unhealthy_since["Blue Room"] = old
         app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -486,7 +488,7 @@ class TestAutoRepair:
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "ok", "detail": "on"},
@@ -520,7 +522,7 @@ class TestAutoRepair:
             datetime.datetime.now() - datetime.timedelta(minutes=30)
         )
         app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -552,7 +554,7 @@ class TestAutoRepair:
         app._fan_unhealthy_since["Pink Room"] = (
             datetime.datetime.now() - datetime.timedelta(minutes=10)
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         ok_results = [
             {"name": "Pink Room State", "status": "ok", "detail": "on"},
@@ -588,7 +590,7 @@ class TestAutoRepair:
         # (config-first) blipped 1 min ago — grace not elapsed.
         app._fan_unhealthy_since["Blue Room"] = now - datetime.timedelta(minutes=30)
         app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=1)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -610,7 +612,7 @@ class TestAutoRepair:
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -640,7 +642,7 @@ class TestAutoRepair:
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         all_down = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -712,7 +714,7 @@ class TestAutoRepair:
         app._fan_repair_states["Pink Room"].update(
             {"status": REPAIR_FAILED, "attempts": 1, "next_retry_at": retry_at}
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -746,7 +748,7 @@ class TestAutoRepair:
                 - datetime.timedelta(hours=2),
             }
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         # Partial recovery: entity back, ping still failing
         partial = [
@@ -795,7 +797,7 @@ class TestAutoRepair:
                 "detail": "Recovered after 45s",
             }
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         before = datetime.datetime.now()
         app._update_fan_unhealthy_timers(_pink_down_results())
@@ -819,7 +821,7 @@ class TestAutoRepair:
         _init_only(app)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         for expected in (5, 10, 20, 20):
             # Each round starts from a repair that reported success (the fan
@@ -856,7 +858,7 @@ class TestAutoRepair:
                 - datetime.timedelta(seconds=1),
             }
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -887,7 +889,7 @@ class TestAutoRepair:
                 - datetime.timedelta(seconds=1),
             }
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -1014,7 +1016,7 @@ class TestAutoRepair:
         )
         # Blue: idle, entity down 2 min — grace deadline still 3 min away
         app._fan_unhealthy_since["Blue Room"] = now - datetime.timedelta(minutes=2)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Pink Room State", "status": "critical", "detail": "unavailable"},
@@ -1051,7 +1053,7 @@ class TestAutoRepair:
         app._fan_unhealthy_since["Pink Room"] = (
             datetime.datetime.now() - datetime.timedelta(minutes=10)
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         async def fake_get_state(entity_id=None, *a, **kw):
             if entity_id == PINK_ENTITY:
@@ -1224,7 +1226,7 @@ class TestRepairExecution:
         _init_only(app)
         app._fan_repair_states["Pink Room"]["status"] = REPAIR_FAILED
         app._fan_repair_states["Blue Room"]["status"] = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._start_manual_repair()
 
@@ -1272,7 +1274,7 @@ class TestRepairCommandHandler:
     def test_start_repair_command(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command(
             "health_check_repair_fans",
@@ -2096,7 +2098,7 @@ class TestAccessPointGate:
         cleared) so the AP outage cannot bank time toward a repair."""
         app = _make_app({"fans": AP_FANS})
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
         # Pretend this fan had already been counting down for 30 minutes.
         app._fan_unhealthy_since["Pink Room"] = (
             datetime.datetime.now() - datetime.timedelta(minutes=30)
@@ -2115,7 +2117,7 @@ class TestAccessPointGate:
         """AP connected → the fan itself is at fault, so a due repair fires."""
         app = _make_app({"fans": AP_FANS})
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
         app._fan_unhealthy_since["Pink Room"] = (
             datetime.datetime.now() - datetime.timedelta(minutes=30)
         )
@@ -2132,7 +2134,7 @@ class TestAccessPointGate:
         for ap_state in ("unavailable", "unknown", None):
             app = _make_app({"fans": AP_FANS})
             _init_only(app)
-            app.create_task = MagicMock()
+            app.create_task = closing_create_task()
             app._fan_unhealthy_since["Pink Room"] = (
                 datetime.datetime.now() - datetime.timedelta(minutes=30)
             )

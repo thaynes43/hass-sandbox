@@ -28,6 +28,8 @@ import types
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from conftest import closing_create_task
+
 # Mock hassapi before importing the apps (matches the other test modules).
 mock_hass = MagicMock()
 mock_hass.Hass = type("_MockHass", (), {"__init__": lambda self, *a, **kw: None})
@@ -170,9 +172,10 @@ def _make_sgc():
         )
     )
     for meth in ("set_state", "call_service", "listen_state", "listen_event",
-                 "fire_event", "run_in", "run_every", "cancel_timer", "log",
-                 "create_task"):
+                 "fire_event", "run_in", "run_every", "cancel_timer", "log"):
         setattr(app, meth, MagicMock())
+    # The replay never drives the repair coroutine, so the double closes it.
+    app.create_task = closing_create_task()
     return app
 
 
