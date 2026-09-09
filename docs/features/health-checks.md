@@ -107,7 +107,7 @@ Some checkers support automatic repair, typically via smart switch power cycling
 - **Only CRITICAL failures trigger repair** — repair fires only when all checks are down; partial failures (warnings or degraded) do not cause a power cycle. The one deliberate exception is the Z-Wave bridge, where the *partial* failure **is** the fingerprint of the fault (see below)
 - **Only sustained failures trigger repair** — a brief blip does not cause a power cycle
 - **Configurable delay** — the problem must persist for a configurable number of minutes before repair begins
-- **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy.
+- **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy — except where a checker declares its own retry budget: the fans climb a CrashLoopBackOff ladder, and the Z-Wave bridge retries up to 3 times in 24 hours, 15 minutes apart, before giving up and paging
 - **Unknown does not trigger repair** — if AppDaemon itself is restarting, repair actions are suppressed
 - **Cancellable** — a pending repair can be cancelled via the detail popup before the power cycle executes
 

@@ -92,3 +92,32 @@ returning to `idle`. Note that restarting the `zwave` **pod** does not fix the
 stale-client wedge — our side of the old socket sits in `FIN_WAIT2` and the
 board never acks the close — so a rollout restart is not a remediation step
 here.
+
+## Verify
+
+- After `start_repair`, allow up to `repair_recovery_wait_s` (300s) plus one
+  `check_interval_s` (180s) ≈ **8 min** budget. A working restart normally
+  recovers in well under a minute — the board reboots, the stale client drops,
+  and the waiting `zwave-js-ui` reconnect succeeds (~17s, measured 2026-09-09).
+- Recovery = `Integration Status` back to `ready`, Z-Wave entities available,
+  and `repair_state.status == success` for one cycle before it returns to
+  `idle`. The bridge posts `[RESOLVED]` automatically.
+- Confirm the budget you spent: `repair_attempts_24h` should have gone up by
+  exactly one. If it did not, the restart was refused by a rate limit and the
+  detail says so — do not read that as a repair.
+
+## Escalate
+
+If not recovered within budget, or `repair_state.status == failed`, let the
+page through and `record_note` a summary:
+
+- which checks are red, and specifically whether `Radio Ping` is up (board
+  alive, serial wedged) or down (board off the network — a different problem);
+- `repair_attempts_24h` / `repair_max_per_24h`, so the human knows how much
+  budget is left and that no further automatic restart is coming;
+- that the sanctioned software restart was attempted and its outcome.
+
+State plainly in the note that **the board must not be power-cycled** to
+recover this, and that restarting the `zwave` pod does not clear the wedge.
+The human fix, if the software restart truly will not take, is to look at the
+board physically. Attach the Alertmanager link and the Loki queries above.

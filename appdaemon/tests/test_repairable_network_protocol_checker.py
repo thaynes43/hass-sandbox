@@ -1183,3 +1183,62 @@ class TestZeroCapIsSafe:
 
         assert _presses(app) == []
         assert app._repair_status == REPAIR_FAILED
+
+
+# ---------------------------------------------------------------------------
+# 21. A bad helper value must never take the checker down
+# ---------------------------------------------------------------------------
+
+
+class TestHostileHelperValues:
+    HELPER = "input_text.zwave_health_repair_attempts"
+
+    def test_tz_aware_timestamps_are_normalised(self):
+        """An offset-aware ISO string parses cleanly, then raises TypeError.
+
+        The helper is UI-visible and hand-editable, and HA's own timestamps
+        are offset-aware. Comparing one against our naive clock (in `sorted`,
+        or against the prune cutoff) would raise out of the fire-and-forget
+        _async_startup task: _register() never runs and the checker is
+        *absent*, not degraded — for exactly the outage class this exists to
+        make audible.
+        """
+        aware = (
+            datetime.datetime.now().astimezone() - datetime.timedelta(hours=1)
+        ).isoformat(timespec="seconds")
+        app = _make_app(states={self.HELPER: json.dumps([aware])})
+        _init_only(app)
+
+        _run(app._seed_attempts())
+
+        assert len(app._repair_attempts) == 1
+        assert app._repair_attempts[0].tzinfo is None
+        # And the ladder is usable: a naive comparison must not raise.
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+    def test_mixed_naive_and_aware_timestamps_sort(self):
+        aware = (
+            datetime.datetime.now().astimezone() - datetime.timedelta(hours=2)
+        ).isoformat(timespec="seconds")
+        naive = _ago(hours=1).isoformat(timespec="seconds")
+        app = _make_app(states={self.HELPER: json.dumps([aware, naive])})
+        _init_only(app)
+
+        _run(app._seed_attempts())
+
+        assert len(app._repair_attempts) == 2
+        assert app._repair_attempts == sorted(app._repair_attempts)
+
+    def test_seed_failure_never_escapes_startup(self):
+        """Losing the ladder costs one budget; losing the checker costs all."""
+        app = _make_app()
+        app._read_attempts_helper = AsyncMock(side_effect=RuntimeError("boom"))
+
+        _startup(app)  # must not raise
+
+        assert app._repair_attempts == []
+        registrations = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "register_checker"
+        ]
+        assert registrations, "checker failed to register after a seed error"

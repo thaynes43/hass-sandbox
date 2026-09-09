@@ -341,26 +341,41 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         full dwell is always re-served after a restart before the first
         action.
         """
-        attempts = await self._read_attempts_helper()
-        source = self._attempts_helper_entity()
-        if attempts is None:
-            attempts = await self._read_attempts_from_controller()
-            source = CONTROLLER_SENSOR
-        if not attempts:
-            return
+        # _async_startup is a fire-and-forget task: anything that escapes here
+        # means _register() never runs and the checker is absent rather than
+        # degraded — no listeners, no checks, no alerts, for exactly the
+        # outage class this exists to make audible. Seeding is an
+        # optimisation; losing it costs one ladder, losing the checker costs
+        # everything.
+        try:
+            attempts = await self._read_attempts_helper()
+            source = self._attempts_helper_entity()
+            if attempts is None:
+                attempts = await self._read_attempts_from_controller()
+                source = CONTROLLER_SENSOR
+            if not attempts:
+                return
 
-        self._repair_attempts = attempts
-        self._prune_attempts(datetime.datetime.now())
-        if self._repair_attempts:
-            self._last_repair_attempt = self._repair_attempts[-1].isoformat(
-                timespec="seconds"
+            self._repair_attempts = attempts
+            self._prune_attempts(datetime.datetime.now())
+            if self._repair_attempts:
+                self._last_repair_attempt = self._repair_attempts[-1].isoformat(
+                    timespec="seconds"
+                )
+            self.log(
+                f"Seeded {len(self._repair_attempts)} repair attempt(s) in the "
+                f"last 24h from {source} (most recent "
+                f"{self._last_repair_attempt}) — rate limits carry over the "
+                f"restart",
+                level="INFO",
             )
-        self.log(
-            f"Seeded {len(self._repair_attempts)} repair attempt(s) in the last 24h "
-            f"from {source} (most recent {self._last_repair_attempt}) — "
-            f"rate limits carry over the restart",
-            level="INFO",
-        )
+        except Exception as exc:
+            self._repair_attempts = []
+            self.log(
+                f"Could not seed repair attempts ({exc!r}) — starting with an "
+                f"empty ladder; the dwell and interval gates still apply",
+                level="ERROR",
+            )
 
     async def _read_attempts_helper(
         self,
@@ -418,9 +433,18 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         parsed: List[datetime.datetime] = []
         for item in raw or []:
             try:
-                parsed.append(datetime.datetime.fromisoformat(str(item)))
+                value = datetime.datetime.fromisoformat(str(item))
             except (TypeError, ValueError):
                 continue
+            if value.tzinfo is not None:
+                # An offset-aware string parses cleanly and then raises
+                # TypeError on the first comparison against our naive clock —
+                # in sorted() or against _prune_attempts' cutoff. The helper
+                # is UI-visible and hand-editable, and an HA-style timestamp
+                # is offset-aware, so normalise to local naive rather than
+                # letting it reach a comparison.
+                value = value.astimezone().replace(tzinfo=None)
+            parsed.append(value)
         return sorted(parsed)
 
     def _prune_attempts(self, now: datetime.datetime) -> None:
