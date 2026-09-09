@@ -74,6 +74,11 @@ class NetworkProtocolChecker(hass.Hass):
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 180))
 
+        # One-shot repair edge events, drained onto the next report_status
+        # payload by _build_report_payload. Only populated by repair-capable
+        # subclasses (see RepairableNetworkProtocolChecker).
+        self._pending_repair_events: List[Dict[str, Any]] = []
+
         self.log(
             f"NetworkProtocolChecker initialising: id={self._checker_id}, "
             f"name={self._checker_name}, entity={self._entity_id}, "
@@ -185,22 +190,7 @@ class NetworkProtocolChecker(hass.Hass):
 
     async def _run_checks(self) -> None:
         """Execute all configured checks and report results."""
-        results: List[Dict[str, str]] = []
-
-        # 1. Entity state check
-        if self._entity_id:
-            result = await self._check_entity_state()
-            results.append(result)
-
-        # 2. Radio ping check
-        if self._radio_host:
-            result = await self._check_radio_ping()
-            results.append(result)
-
-        # 3. Web UI check
-        if self._web_ui_url:
-            result = await self._check_web_ui()
-            results.append(result)
+        results = await self._run_checks_only()
 
         # Cross-check: downgrade critical→warning for partial failures
         apply_cross_check(results)
@@ -209,19 +199,56 @@ class NetworkProtocolChecker(hass.Hass):
         self.fire_event(
             "health_check_command",
             command="report_status",
-            payload=json.dumps({
-                "checker_id": self._checker_id,
-                "results": results,
-            }),
+            payload=json.dumps(self._build_report_payload(results)),
         )
 
         status_parts = [f"{r['name']}={r['status']}" for r in results]
-        any_bad = any(r["status"] != "ok" for r in results)
         self.log(
             f"Check cycle complete for '{self._checker_name}': "
             f"{', '.join(status_parts)}",
             level="INFO",
         )
+
+    async def _run_checks_only(self) -> List[Dict[str, str]]:
+        """Run all configured checks and return raw results without reporting.
+
+        Statuses are un-cross-checked here on purpose: repair-capable
+        subclasses need the raw ``critical`` signal to decide whether to act
+        (``apply_cross_check`` would mask it as ``warning``).
+        """
+        results: List[Dict[str, str]] = []
+
+        # 1. Entity state check
+        if self._entity_id:
+            results.append(await self._check_entity_state())
+
+        # 2. Radio ping check
+        if self._radio_host:
+            results.append(await self._check_radio_ping())
+
+        # 3. Web UI check
+        if self._web_ui_url:
+            results.append(await self._check_web_ui())
+
+        return results
+
+    def _build_report_payload(
+        self, results: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """Build the report_status payload.
+
+        Subclasses extend this to add ``repair_state``.  Drains any pending
+        repair edge events so they ride along on the very next
+        report_status call — they are one-shot and must never be sent twice.
+        """
+        payload: Dict[str, Any] = {
+            "checker_id": self._checker_id,
+            "results": results,
+        }
+        if self._pending_repair_events:
+            payload["repair_events"] = self._pending_repair_events
+            self._pending_repair_events = []
+        return payload
 
     async def _check_entity_state(self) -> Dict[str, str]:
         """Check whether the monitored HA entity is in its healthy state."""

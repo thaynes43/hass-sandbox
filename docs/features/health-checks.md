@@ -19,7 +19,7 @@ This architecture means adding a new health check is often just a YAML config ch
 
 | Category | Examples | Checker Type |
 |----------|----------|-------------|
-| Network protocols | Zigbee bridge, Z-Wave controller, coordinator ping, web UI | `NetworkProtocolChecker` |
+| Network protocols | Zigbee bridge, Z-Wave controller, coordinator ping, web UI | `NetworkProtocolChecker` (Z-Wave uses the repair-capable subclass) |
 | MQTT infrastructure | Broker publish/subscribe round-trip | `MqttBrokerChecker` |
 | MQTT devices | Zigbee2MQTT device availability + linkquality | `MqttDeviceChecker` |
 | Environmental sensors | Temperature and humidity with threshold alerts | `TempHumidityChecker` |
@@ -104,7 +104,7 @@ Alerts are pruned automatically — both by age (default 36 hours) and by count 
 
 Some checkers support automatic repair, typically via smart switch power cycling. The repair system follows strict safety rules:
 
-- **Only CRITICAL failures trigger repair** — repair fires only when all checks are down; partial failures (warnings or degraded) do not cause a power cycle
+- **Only CRITICAL failures trigger repair** — repair fires only when all checks are down; partial failures (warnings or degraded) do not cause a power cycle. The one deliberate exception is the Z-Wave bridge, where the *partial* failure **is** the fingerprint of the fault (see below)
 - **Only sustained failures trigger repair** — a brief blip does not cause a power cycle
 - **Configurable delay** — the problem must persist for a configurable number of minutes before repair begins
 - **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy.
@@ -186,6 +186,12 @@ A second, harder failure mode gets its own fast path: when the UNVR connection i
 **Ceiling fans** show what happens when auto-heal is too eager. The fans are Wi-Fi devices; when one drops off the network the repair is a power cycle through its ZEN32 relay — a blunt instrument that reboots the fan to its hardware default. The retry schedule is borrowed from Kubernetes' CrashLoopBackOff: each failed repair doubles the wait before the next one, capped at six hours. What was missing was the *reset* rule. A fan that came back for ninety seconds counted as recovered, which zeroed the ladder, so the next drop earned another immediate power cycle — one flapping fan collected about eleven power cycles in five hours. Now a recovery has to hold for thirty minutes before the ladder resets, and a relapse inside that window counts the false recovery as another failed attempt and resumes climbing. The ladder is also written to a Home Assistant helper, because an AppDaemon reload mid-incident used to wipe it clean.
 
 The other half of that incident was blame. Each fan declares the UniFi access point it usually holds — fans roam, so the mapping is a best-current value rather than a fixed binding, and one of them moved to a different access point within hours of being recorded — and when that AP is down the fan being unreachable is the network's problem, not the fan's: repairs are held (along with the backoff clock, so the ladder doesn't climb through an outage the fan didn't cause) and the alert text names the access point instead of the fan. It also says "Wi-Fi fan" out loud — during triage the ZEN32 relay in the repair path got mistaken for the fan's own radio, and half an hour went into the Z-Wave stack for a Wi-Fi problem.
+
+**The Z-Wave bridge** is the case where the *partial* failure is the whole diagnosis. Z-Wave doesn't reach its radio over USB — it reaches it over TCP, across the house, to a TubesZB board running ESPHome. That board's serial-to-network server accepts exactly one client and never notices when that client goes away. So when a switch reboot dropped the TCP session at 3:24 one morning, nothing looked broken: the board answered every ping, its own "serial connected" sensor still read ON, the web UI still loaded. Only the controller was gone, and with it every lock, every Z-Wave motion sensor, and the door automations that depend on them — silently, for four hours and twenty minutes. Restarting the Z-Wave server doesn't help; the dead socket is on the *board's* side, and our end sits in `FIN_WAIT2` waiting for a close that never comes. The one thing that works is telling the board to reboot itself, which drops the stale client so the waiting reconnect succeeds — it recovered in seventeen seconds when we finally did it by hand.
+
+Two things had to change. The checker now presses that ESPHome restart button on its own, and the outage stops being invisible. The old behaviour is the reason nobody was paged: with the radio still pinging and the web UI still up, the cross-check that exists to suppress noise looked at "two of three checks fine" and downgraded a total Z-Wave outage to a warning — and warnings don't page. Now, once auto-repair has spent its budget, that downgrade is reversed and the alert goes critical.
+
+The budget is the point. This board is fragile — its predecessor was killed by repeated power cycling — so the repair is a *software* restart, never a power cut, and it is fenced in on every side: five minutes of sustained failure before the first attempt, fifteen minutes between attempts, and at most three in any rolling day, after which it stops trying and pages a human instead. It only acts on the exact fingerprint above — controller down *while the radio still answers* — because if the board has genuinely dropped off the network, a software restart is not a thing that can help. That case now pages instead, which it previously didn't: a dead board still leaves the web UI answering, so the same "two of three checks are fine" arithmetic was quietly hiding it too. And the counter that enforces the daily cap is published with the checker's state, so an AppDaemon deploy landing in the middle of an outage resumes the ladder where it left off instead of starting over with a fresh three restarts.
 
 ## Dashboard Experience
 
@@ -284,7 +290,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Checker | Type | What It Monitors | Repair |
 |---------|------|-----------------|--------|
 | Zigbee | `NetworkProtocolChecker` | Bridge connection, coordinator ping, web UI | No |
-| Z-Wave | `NetworkProtocolChecker` | Controller state, radio ping, web UI | No |
+| Z-Wave | `RepairableNetworkProtocolChecker` | Controller state, radio ping, web UI | Yes — ESPHome software restart of the TubesZB bridge |
 | MQTT Broker | `MqttBrokerChecker` | Publish/subscribe round-trip latency | No |
 | Basement Lights | `MqttDeviceChecker` | Zigbee2MQTT device HA state + linkquality | No |
 | Cigar Room Humidity | `TempHumidityChecker` | Humidity sensors with threshold alerts | No |
