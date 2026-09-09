@@ -1283,6 +1283,76 @@ class TestRepairCommandHandler:
         app.create_task.assert_called_once()
 
 
+class TestCancelDefersTheBackoffLadder:
+    """Cancel has to defer the retry ladder too, not just the first attempts.
+
+    ``_cancel_repair`` restarts every unhealthy fan's down-clock, which defers
+    the fans still awaiting a FIRST attempt. But ``_evaluate_auto_repair``
+    arms a second kind of candidate: a FAILED fan whose backoff
+    ``next_retry_at`` has come due. That clock is not the down-clock, so
+    restarting the down-clocks left it untouched — and a retry scheduled
+    inside the deferral would power-cycle the fan from inside the very window
+    the operator asked to be left alone.
+    """
+
+    def test_cancel_floors_a_failed_fans_next_retry(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._report_repair_status_only = MagicMock()
+        now = datetime.datetime.now()
+        # Pink Room is mid-ladder: attempt 1 failed and the retry is a minute
+        # out — inside the deferral the operator is about to ask for.
+        app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=30)
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_FAILED
+        fr["attempts"] = 1
+        fr["next_retry_at"] = now + datetime.timedelta(minutes=1)
+        app._repair_status = REPAIR_PENDING
+
+        app._cancel_repair()
+
+        assert fr["next_retry_at"] >= now + datetime.timedelta(minutes=5)
+        # ...and the ladder position is untouched: cancelling is not a repair
+        # and must not buy back budget.
+        assert fr["attempts"] == 1
+
+    def test_the_deferred_retry_does_not_fire_inside_the_window(self):
+        """The end-to-end consequence, on the clock the checker really reads.
+
+        Rather than patching ``datetime.now``, the state is wound back two
+        minutes after the cancel, which is exactly what the checker sees two
+        minutes later. Without the floor the retry would then be a minute in
+        the past and the next tick would power-cycle the fan.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._report_repair_status_only = MagicMock()
+        now = datetime.datetime.now()
+        app._fan_unhealthy_since["Pink Room"] = now - datetime.timedelta(minutes=30)
+        fr = app._fan_repair_states["Pink Room"]
+        fr["status"] = REPAIR_FAILED
+        fr["attempts"] = 1
+        fr["next_retry_at"] = now + datetime.timedelta(minutes=1)
+        app._repair_status = REPAIR_PENDING
+
+        app._cancel_repair()
+
+        # Two minutes pass.
+        elapsed = datetime.timedelta(minutes=2)
+        app._fan_unhealthy_since["Pink Room"] -= elapsed
+        fr["next_retry_at"] -= elapsed
+        app.create_task = MagicMock()
+
+        app._evaluate_auto_repair(_pink_down_results())
+
+        assert fr["status"] == REPAIR_FAILED
+        assert app.create_task.call_args_list == []
+
+
 # ---------------------------------------------------------------------------
 # Tests — State cache + restore
 # ---------------------------------------------------------------------------

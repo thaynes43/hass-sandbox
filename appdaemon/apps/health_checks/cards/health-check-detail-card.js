@@ -17,7 +17,8 @@
  *   - Shadow DOM
  *   - Touch/click deduplication (400ms flag)
  *   - NEVER preventDefault() on input/select/textarea touchend (Android)
- *   - Focus guard: skip re-render when shadowRoot.activeElement is set
+ *   - Focus guard: every re-render path (set hass AND the refresh timer)
+ *     skips the render while shadowRoot.activeElement is an input
  *
  * Platforms: Desktop, iOS Companion App, Android/UniFi wall display.
  */
@@ -45,17 +46,6 @@ const HCD_DELAY_BOUNDS_FALLBACK = { min: 1, max: 60, step: 1 };
 function hcdInt(value, fallback) {
   const n = parseInt(value, 10);
   return isNaN(n) ? fallback : n;
-}
-
-// Read the bounds back off the rendered input rather than re-deriving them
-// from the checker: the attributes the input already carries are exactly what
-// the operator was allowed to enter, so the guard and the spinner can never
-// disagree.
-function hcdDelayBounds(inputEl) {
-  return {
-    min: hcdInt(inputEl?.getAttribute("min"), HCD_DELAY_BOUNDS_FALLBACK.min),
-    max: hcdInt(inputEl?.getAttribute("max"), HCD_DELAY_BOUNDS_FALLBACK.max),
-  };
 }
 
 class HealthCheckDetailCard extends HTMLElement {
@@ -100,6 +90,16 @@ class HealthCheckDetailCard extends HTMLElement {
     this._config = { ...HCD_DEFAULTS, ...config };
   }
 
+  // Every re-render path replaces innerHTML wholesale, which swaps the node the
+  // operator is typing into for a fresh one carrying the old value — keystrokes
+  // and focus both gone.  So every re-render path has to ask this first.
+  _hasFocusedInput() {
+    const active = this.shadowRoot?.activeElement;
+    if (!active) return false;
+    const tag = active.tagName;
+    return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA";
+  }
+
   set hass(hass) {
     const firstSet = !this._hass;
     this._hass = hass;
@@ -109,13 +109,7 @@ class HealthCheckDetailCard extends HTMLElement {
     this._lastSnapshot = snap;
 
     // Focus guard
-    const active = this.shadowRoot?.activeElement;
-    if (
-      active &&
-      (active.tagName === "INPUT" || active.tagName === "TEXTAREA")
-    ) {
-      return;
-    }
+    if (this._hasFocusedInput()) return;
 
     if (!this._domBuilt) {
       this._buildDom();
@@ -159,6 +153,9 @@ class HealthCheckDetailCard extends HTMLElement {
   _startRefreshTimer() {
     if (this._refreshTimer) return;
     this._refreshTimer = setInterval(() => {
+      // Same focus guard as `set hass` — a tick landing mid-edit would throw
+      // away whatever the operator had typed into the delay box.
+      if (this._hasFocusedInput()) return;
       this._update();
     }, 15000);
   }
@@ -918,26 +915,26 @@ class HealthCheckDetailCard extends HTMLElement {
           `.repair-delay-input[data-checker="${checker_id}"]`
         );
         if (delayInput) {
-          const { min, max } = hcdDelayBounds(delayInput);
           const auto_repair_delay_min = parseInt(delayInput.value, 10);
-          if (
-            !isNaN(auto_repair_delay_min) &&
-            auto_repair_delay_min >= min &&
-            auto_repair_delay_min <= max
-          ) {
+          // 1 is the only bound the card enforces: a 0 or negative delay
+          // collapses the dwell gate, so it must never reach the backend. The
+          // upper bound is the backend's to enforce — _clamp_delay(loud=True)
+          // corrects it with a WARNING and republishes the corrected value,
+          // whereas dropping it here would be a silent client-side no-op.
+          if (!isNaN(auto_repair_delay_min) && auto_repair_delay_min >= 1) {
             payload.auto_repair_delay_min = auto_repair_delay_min;
           }
         }
         this._callRelay("update_repair_config", payload);
       } else if (action === "set_repair_delay") {
         const checker_id = el.dataset.checker;
-        const { min, max } = hcdDelayBounds(el);
         const auto_repair_delay_min = parseInt(el.value, 10);
-        if (
-          isNaN(auto_repair_delay_min) ||
-          auto_repair_delay_min < min ||
-          auto_repair_delay_min > max
-        ) {
+        // 1 is the only bound the card enforces: a 0 or negative delay
+        // collapses the dwell gate, so it must never reach the backend. The
+        // upper bound is the backend's to enforce — _clamp_delay(loud=True)
+        // corrects it with a WARNING and republishes the corrected value,
+        // whereas dropping it here would be a silent client-side no-op.
+        if (isNaN(auto_repair_delay_min) || auto_repair_delay_min < 1) {
           return;
         }
         const toggle = root.querySelector(

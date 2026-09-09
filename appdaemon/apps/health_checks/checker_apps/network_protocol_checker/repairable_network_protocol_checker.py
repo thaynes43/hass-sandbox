@@ -105,10 +105,6 @@ class RepairableNetworkProtocolChecker(
 ):
     """NetworkProtocolChecker with rate-limited ESPHome software-restart repair."""
 
-    DELAY_MIN_MIN = 1
-    DELAY_MIN_MAX = 60
-    DELAY_MIN_DEFAULT = 5
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -741,7 +737,10 @@ class RepairableNetworkProtocolChecker(
 
         enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
-            self._hold("Auto-repair disabled")
+            # The shared stand-down rather than _hold: same rule for
+            # `pending`/`success`, but it leaves a FAILED ladder's detail and
+            # deadline alone — that detail is the cap message a human needs.
+            self._stand_down_pending_repair("Auto-repair disabled")
             return
 
         disabled = self._restarts_disabled()

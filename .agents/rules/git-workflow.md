@@ -52,7 +52,7 @@ All work must go through a feature branch and pull request. Never commit directl
    ```
    Do not leave a green PR waiting for the owner; he does not mark PRs ready or merge them. Do not merge with review findings unaddressed either: each one is fixed, or has a concrete reason on the PR why it does not apply. A review or audit job that failed on its own turn budget is not a finding and not a blocker — but it is not a reason to skip the findings it did post.
 
-6. **After merge to main**, deployment is automatic — GitHub Actions builds the Docker image, Flux rolls the Kubernetes deployment.
+6. **After merge to main**, GitHub Actions builds and pushes `ghcr.io/thaynes43/appdaemon:<VERSION>` — that part is automatic. **The rollout is not.** The haynes-ops HelmRelease pins `tag:`, so nothing runs the new image until you bump it: branch + PR in haynes-ops (`kubernetes/main/apps/home-automation/appdaemon/app/helmrelease.yaml`, that file only), self-merge, `flux reconcile kustomization appdaemon -n home-automation --with-source`, `kubectl rollout status deploy/appdaemon -n home-automation`, then confirm the pod runs `:<VERSION>` and the changed behaviour is visible in its logs. (1.16.5 was released and never rolled out because this step was assumed automatic.) The full chain, including the GHCR manifest check, is in haynes-ops `CLAUDE.md` → *AppDaemon Deploys*.
 
 ## PR requirements
 
@@ -118,6 +118,6 @@ Agents (Claude Code, Cursor, etc.) creating PRs from local sessions must:
 5. Include a test plan in the PR body: what was verified live and how, plus a **Not verified** line for anything that could not be
 6. Reference the issue/story if one exists
 7. Wait for every check (unit tests, docs build, both docs audits, Code Review), address findings, then squash-merge the PR yourself and delete the branch
-8. Finish the deploy chain in the same session — for AppDaemon that is the haynes-ops `tag:` bump PR, Flux reconcile, and verifying the running pod; for card JS it is the copy into the HA pod plus the `?v=N` bump. Merged is not done. See `.agents/rules/finish-in-flight-work.md`.
+8. Finish the deploy chain (Workflow step 6; for card JS, the copy into the HA pod plus the `?v=N` bump) in the same session — merged is not done. `.agents/rules/finish-in-flight-work.md`.
 
 PRs created by agents via GitHub (e.g. `@claude` in issues) open as ready immediately — Code Review will run on those automatically.

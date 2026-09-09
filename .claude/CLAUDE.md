@@ -47,7 +47,7 @@ appdaemon -c appdaemon
 
 ### Deploy to production
 
-Production deploys are automated via Docker image builds. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux detects the new image and rolls the Kubernetes deployment.
+Production deploys are half automatic. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux does **not** pick it up on its own: the haynes-ops HelmRelease pins `tag:`, so the rollout is a haynes-ops tag-bump PR + `flux reconcile` + `rollout status`, done by the same agent in the same session (`.agents/rules/git-workflow.md` step 6).
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. The merge to `main` then automatically produces the semver tag.
 
@@ -181,7 +181,7 @@ Every new AppDaemon app **must** include a `README.md` in its package directory.
 ### AppDaemon deploy communication (required)
 
 After any `appdaemon/` change, state what was changed:
-- **Repo Updated** — changes are in the repo; will deploy automatically when merged to `main` via Docker image build
+- **Repo Updated** — changes are merged to `main`; the image `ghcr.io/thaynes43/appdaemon:<VERSION>` is built automatically, and the rollout was done via the haynes-ops `tag:` bump + reconcile (say which tag the pod now runs). The rollout is not automatic — see `.agents/rules/git-workflow.md` step 6
 
 ### Pull requests: open ready for review and merge them yourself (required)
 
@@ -189,7 +189,7 @@ Open PRs **ready for review** (`gh pr create`, never `--draft`) once the branch 
 
 ### Finish work in flight (required)
 
-Your session is the unit of delivery. Sessions get killed mid-turn (pod roll, context wipe, quota wall), worktrees are pruned, and nobody reads a closing "here is what I left open" message — anything not merged **and deployed** when the session ends is lost, and the next agent rediscovers it cold. So: a defect you find is yours, including the same bug in sibling files and the stale instruction you followed to get there; review findings get fixed, or a concrete reason on the PR why they don't apply — never "polish, merging anyway"; merged is not done when the repo has a deploy chain (haynes-ops tag bump, Flux reconcile, card copy + `?v=N` bump). Phrases like "worth a follow-up", "out of scope here", "leaving open", "if you want" mean you are not finished. The only durable deferral is a `backlog/NNN-*.md` entry or a GitHub issue with cold-start context, and only for work that genuinely needs a design decision. Full rule: `.agents/rules/finish-in-flight-work.md` (Tom, 2026-09-09).
+Your session is the unit of delivery: everything you start or find is merged **and deployed** before your final message, or parked where it survives you (a `backlog/NNN-*.md` entry or a GitHub issue, and only for work that genuinely needs a design decision). Sessions die mid-turn, worktrees are pruned, and nobody reads a closing "here is what I left open" message. A defect you find is yours; review findings get fixed or concretely refuted on the PR; "worth a follow-up" is a tripwire. Full rule: `.agents/rules/finish-in-flight-work.md` (Tom, 2026-09-09).
 
 ### Button mapping doc sync (required)
 

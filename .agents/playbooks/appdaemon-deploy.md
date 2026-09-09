@@ -1,6 +1,6 @@
 # AppDaemon deploy playbook
 
-Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon`) in Kubernetes. App code is baked into the image at build time. Deploys happen automatically when code merges to `main`.
+Production AppDaemon runs as a custom Docker image (`ghcr.io/thaynes43/appdaemon`) in Kubernetes. App code is baked into the image at build time. Merging to `main` builds and pushes the image automatically; **the rollout is not automatic** — the rollout is a haynes-ops `tag:` bump (branch + PR in haynes-ops on `kubernetes/main/apps/home-automation/appdaemon/app/helmrelease.yaml`, self-merge), `flux reconcile kustomization appdaemon -n home-automation --with-source`, `kubectl rollout status deploy/appdaemon -n home-automation`, and confirming the pod runs the new tag — done by the same agent in the same session. 1.16.5 was released and never rolled out because this was assumed to be automatic.
 
 Before deploying to production, run the pre-deploy security audit: `.agents/playbooks/security-audit.md`.
 
@@ -9,8 +9,10 @@ Before deploying to production, run the pre-deploy security audit: `.agents/play
 1. Developer merges PR to `main` (or pushes directly for hotfixes)
 2. GitHub Actions workflow (`.github/workflows/build-appdaemon.yml`) builds a Docker image
 3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
-4. Flux detects the new image tag and rolls the Kubernetes deployment
-5. The container's entrypoint copies baked-in app code to `/conf/apps/` and starts AppDaemon
+4. Verify the tag exists in GHCR (anon pull token + `GET /v2/thaynes43/appdaemon/manifests/<VERSION>` with an `Accept` header that includes `application/vnd.oci.image.manifest.v1+json` — the index types alone return a false 404)
+5. Bump `tag:` in the haynes-ops HelmRelease (branch + PR, self-merge) — Flux does **not** track new tags on its own
+6. `flux reconcile kustomization appdaemon -n home-automation --with-source`, then `kubectl rollout status deploy/appdaemon -n home-automation`; confirm the pod runs `:<VERSION>` and the changed behaviour shows in its logs
+7. The container's entrypoint copies baked-in app code to `/conf/apps/` and starts AppDaemon
 
 ## Versioning
 

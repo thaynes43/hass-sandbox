@@ -56,8 +56,8 @@ REPAIR_POLL_INTERVAL_S = 5
 class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker for a Gecko-integrated spa with repair support."""
 
-    DELAY_MIN_MIN = 1
-    DELAY_MIN_MAX = 60
+    #: The spa's gateway takes minutes to settle after a power cycle, so it
+    #: dwells three times as long as the shared default before acting.
     DELAY_MIN_DEFAULT = 15
 
     # ------------------------------------------------------------------
@@ -474,6 +474,16 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 self._next_retry_at = None
             return
 
+        enabled, delay_min = self._read_auto_repair_config()
+        if not enabled:
+            # Stand the ladder down BEFORE the early returns below, not after
+            # them: a non-critical interlude (warnings only, once the
+            # cross-check has downgraded a partial failure) takes the
+            # `not any_critical` return on every cycle, and would otherwise
+            # leave the countdown — and the paging hold that rides on it — up
+            # for the rest of the outage.
+            self._stand_down_pending_repair("Auto-repair disabled")
+
         # A success relapse (critical again before an all-ok cycle) starts a
         # fresh episode instead of trapping in SUCCESS forever (attempts were
         # already reset on success); fall through to the normal grace path.
@@ -488,7 +498,6 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
             # return to critical must be sustained before a stale retry can
             # fire — never an instant power-cycle off an hours-old schedule.
             if self._repair_status == REPAIR_FAILED and self._next_retry_at:
-                _, delay_min = self._read_auto_repair_config()
                 floor = datetime.datetime.now() + datetime.timedelta(
                     minutes=delay_min
                 )
@@ -496,22 +505,9 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     self._next_retry_at = floor
             return
 
-        enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
-            # Track unhealthy time but don't act — and stand any countdown
-            # down. A PENDING left up here is not cosmetic: the card counts
-            # down to a repair that can never start, and alertmanager_bridge
-            # holds the critical page for up to repair_hold_cap_s on
-            # `pending` — withholding the page for an outage the operator has
-            # just said will not self-heal.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._repair_detail = "Auto-repair disabled"
-                self._auto_repair_deadline = None
+            # Track unhealthy time but don't act — the ladder was already
+            # stood down above.
             if self._unhealthy_since is None:
                 self._unhealthy_since = datetime.datetime.now()
             return

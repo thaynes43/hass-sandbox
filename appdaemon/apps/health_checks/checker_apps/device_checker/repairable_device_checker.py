@@ -46,10 +46,6 @@ REPAIR_POLL_INTERVAL_S = 5
 class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
     """BasicDeviceChecker with smart-switch power-cycle repair support."""
 
-    DELAY_MIN_MIN = 1
-    DELAY_MIN_MAX = 60
-    DELAY_MIN_DEFAULT = 5
-
     # ------------------------------------------------------------------
     # Lifecycle (extends parent)
     # ------------------------------------------------------------------
@@ -232,28 +228,24 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
                 self._unhealthy_since = None
             return
 
+        enabled, delay_min = self._read_auto_repair_config()
+        if not enabled:
+            # Stand the ladder down BEFORE the early returns below, not after
+            # them: a checker parked at `success`, or one whose results are
+            # all warnings, takes one of those returns on every cycle and
+            # would otherwise hold the critical page on a repair state
+            # auto-repair is no longer allowed to reach.
+            self._stand_down_pending_repair("Auto-repair disabled")
+
         if self._repair_status == REPAIR_SUCCESS:
             return
 
         if not any_bad:
             return
 
-        enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
-            # Keep the outage clock running, but stand any countdown down.
-            # A PENDING left up here is not cosmetic: the card counts down to
-            # a repair that can never start, and alertmanager_bridge holds
-            # the critical page for up to repair_hold_cap_s on `pending` —
-            # withholding the page for an outage the operator has just said
-            # will not self-heal.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._repair_detail = "Auto-repair disabled"
-                self._auto_repair_deadline = None
+            # Keep the outage clock running: the dwell is measured from when
+            # the outage started, not from when auto-repair was re-enabled.
             if self._unhealthy_since is None:
                 self._unhealthy_since = datetime.datetime.now()
             return

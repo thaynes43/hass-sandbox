@@ -225,6 +225,24 @@ class ShimEvent {
 // Nodes
 // ---------------------------------------------------------------------------
 
+/**
+ * Drop a replaced subtree on the floor, the way a browser does.
+ *
+ * Two details matter to the card.  A node that has left the tree has no
+ * parentNode any more, and if it held the focus the document blurs it —
+ * activeElement falls back to <body> rather than resolving to a node nothing
+ * can see.  Without that second part the card's focus guard would keep
+ * answering "yes, an input is focused" about an input that was destroyed three
+ * re-renders ago, and the guard would look like it worked when it did not.
+ */
+function detachSubtree(node) {
+  if (shimDocument.activeElement === node) {
+    shimDocument.activeElement = shimDocument.body;
+  }
+  for (const child of node.childNodes) detachSubtree(child);
+  node.parentNode = null;
+}
+
 class ShimNode {
   constructor() {
     this.parentNode = null;
@@ -319,6 +337,7 @@ class ShimNode {
   }
 
   set innerHTML(html) {
+    for (const child of this.childNodes) detachSubtree(child);
     this.childNodes = parseHtml(String(html), this);
   }
 
@@ -530,6 +549,9 @@ const notes = [];
 // Timers are collected so the harness can let the event loop drain instead of
 // process.exit()-ing, which can truncate a piped stdout.
 const timers = new Set();
+// Interval callbacks are kept by id as well, so a scenario can fire a tick on
+// demand — the card's refresh timer is 15 s, which no test is going to wait for.
+const intervalCallbacks = new Map();
 
 const sandbox = {
   HTMLElement: ShimElement,
@@ -545,10 +567,12 @@ const sandbox = {
   setInterval: (fn, ms) => {
     const id = setInterval(fn, ms);
     timers.add(id);
+    intervalCallbacks.set(id, fn);
     return id;
   },
   clearInterval: (id) => {
     timers.delete(id);
+    intervalCallbacks.delete(id);
     return clearInterval(id);
   },
   setTimeout: (fn, ms) => {
@@ -727,6 +751,17 @@ function editDelay(el, value) {
   fire(el, "change", { composed: false, cancelable: false });
 }
 
+/**
+ * Fire one tick of the card's 15 s refresh timer, without waiting 15 s for it.
+ * The card holds the interval id in `_refreshTimer`; the sandbox kept the
+ * callback under the same id.
+ */
+function fireRefreshTick(card) {
+  const fn = intervalCallbacks.get(card._refreshTimer);
+  if (!fn) throw new Error("harness: the card registered no refresh timer");
+  fn();
+}
+
 // ---------------------------------------------------------------------------
 // Scenarios
 // ---------------------------------------------------------------------------
@@ -803,17 +838,21 @@ function record(name, calls, extra) {
   teardown(card);
 }
 
-// (f) a delay below the published minimum is refused, not sent and clamped
+// (f) the client enforces one bound and no more: 1 is a safety floor, because
+// a 0 or negative delay collapses the dwell gate altogether.
 {
   const { card, calls, root } = mount("shade_gateway", checker());
   const input = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
-  editDelay(input, 5);
-  record("delay_below_min", calls);
+  editDelay(input, 0);
+  record("delay_below_floor", calls);
   teardown(card);
 }
 
-// ...and one above the published maximum, which the old `>= 1` guard let
-// through unchecked.
+// ...but the upper bound belongs to the backend, which clamps it *loudly*
+// (_clamp_delay(loud=True) warns and republishes the correction).  A guard here
+// would drop the command with no relay call, no log and nothing on screen — and
+// while the checker has not published its bounds yet the fallback max is 60, so
+// that silent drop swallowed a perfectly legal shade-gateway 180.
 {
   const { card, calls, root } = mount("shade_gateway", checker());
   const input = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
@@ -829,6 +868,33 @@ function record(name, calls, extra) {
   const box = root.querySelector('.repair-auto-toggle[data-checker="shade_gateway"]');
   tap(box, { touch: false });
   record("toggle_carries_out_of_legacy_range_delay", calls);
+  teardown(card);
+}
+
+// (g) the 15 s refresh tick must not eat a half-typed delay.  _update() rewrites
+// innerHTML wholesale, so a tick landing mid-edit swaps the focused input for a
+// fresh node carrying the published value — the keystrokes and the focus both
+// gone, on a wall display where re-typing means re-finding the popup.  `set
+// hass` has always guarded on activeElement; the timer had not.
+{
+  const { card, calls, root } = mount("shade_gateway", checker());
+  const input = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
+  let changeEvents = 0;
+  root.addEventListener("change", () => {
+    changeEvents += 1;
+  });
+
+  input.focus();
+  input.value = "18"; // mid-way to 180 — one keystroke short
+  fireRefreshTick(card);
+
+  const after = root.querySelector('.repair-delay-input[data-checker="shade_gateway"]');
+  record("refresh_during_edit", calls, {
+    same_node: after === input,
+    value_after: after ? after.value : null,
+    change_events: changeEvents,
+  });
+  input.blur();
   teardown(card);
 }
 

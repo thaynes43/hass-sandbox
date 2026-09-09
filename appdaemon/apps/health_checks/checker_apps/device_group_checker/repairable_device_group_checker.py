@@ -52,10 +52,6 @@ REPAIR_POLL_INTERVAL_S = 5
 class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
     """DeviceGroupChecker with per-device smart-switch power-cycle repair support."""
 
-    DELAY_MIN_MIN = 1
-    DELAY_MIN_MAX = 60
-    DELAY_MIN_DEFAULT = 5
-
     # ------------------------------------------------------------------
     # Lifecycle (extends parent)
     # ------------------------------------------------------------------
@@ -157,6 +153,11 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
 
         # Auto-reset device repair states for devices that recovered naturally
         self._reset_recovered_devices(results)
+        # ...and the other direction: a "success" that has failed again.
+        # Outside the _is_any_repair_active() gate below on purpose, so a
+        # relapse is never left standing for a whole cycle just because some
+        # other device happens to be mid-repair.
+        self._register_device_relapses(results)
 
         # Evaluate auto-repair (skip if any repair is in progress)
         if not self._is_any_repair_active():
@@ -289,6 +290,79 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
                     dr["status"] = REPAIR_IDLE
                     dr["detail"] = ""
 
+    def _register_device_relapses(self, results: List[Dict[str, str]]) -> None:
+        """The mirror of :meth:`_reset_recovered_devices`: a success that did
+        not stick.
+
+        A device is marked ``success`` from results computed moments after its
+        power cycle, which is the earliest and least reliable moment to judge
+        recovery. When it fails again, nothing used to move it off ``success``:
+        ``_reset_recovered_devices`` only clears on *real* recovery, and
+        ``repairable`` only ever looks for ``idle``, so the device sat at
+        ``success`` for the rest of the outage. That is not cosmetic —
+        ``success`` is one of ``alertmanager_bridge``'s repair-hold states
+        (``_REPAIR_HOLD_STATES``), so :meth:`_aggregate_repair_status` kept
+        reporting it and the bridge kept withholding the critical page, for a
+        device that is down and that auto-repair has already spent its one
+        attempt on.
+        """
+        for dev in self._get_failing_devices(results):
+            self._demote_stale_success(
+                dev["name"], "Relapsed after repair — recovery did not stick"
+            )
+
+    def _demote_stale_success(self, name: str, detail: str) -> None:
+        """Move one device off a ``success`` that is no longer true.
+
+        ``failed`` and not ``idle``, deliberately. ``idle`` is this checker's
+        "eligible for an attempt" marker, and the dwell it would then be
+        measured against is the **global** ``_unhealthy_since``, which is only
+        cleared when *every* device is ok. So in the exact situation this
+        method exists for — one device relapsed while another is still down —
+        ``idle`` would put the device straight back into ``repairable`` with
+        an already-elapsed deadline and power-cycle it on the next check
+        cycle, and again after every relapse. That is the loop
+        ``fan_health_checker._register_fan_relapse`` was written to stop
+        (instant power-cycles every few minutes, 2026-08-31); it lands the fan
+        on ``REPAIR_FAILED`` too, and only adds a retry time because it has a
+        backoff ladder to climb. This checker has no ladder — no ``attempts``,
+        no ``next_retry_at``, one attempt per device per episode — so
+        ``failed`` alone carries the whole meaning: the repair ran, it did not
+        hold, a human is needed. It is also not a hold state, which is the
+        point: the page is released.
+
+        Recovery is unaffected — ``_reset_recovered_devices`` clears ``failed``
+        back to ``idle`` as soon as the device's checks pass again.
+        """
+        dr = self._device_repair_states[name]
+        if dr["status"] != REPAIR_SUCCESS:
+            return
+        dr["status"] = REPAIR_FAILED
+        dr["detail"] = detail
+        self.log(f"{name}: {detail}", level="WARNING")
+
+    def _stand_down_pending_repair(self, reason: str) -> None:
+        """Stand the global ladder down, and the per-device one with it.
+
+        The mixin only knows about ``self._repair_status``, but this checker's
+        published status comes from :meth:`_aggregate_repair_status`, which a
+        single per-device ``success`` is enough to pin. Standing the global
+        countdown down while that stayed up would clear the card's countdown
+        and leave the bridge's repair hold exactly where it was — the page
+        still withheld for an outage the operator has just declared will not
+        self-heal.
+
+        Every per-device ``success`` is stale here by construction: this is
+        only ever reached with the checker unhealthy (``_evaluate_auto_repair``
+        is past its ``all_ok`` return) or from the card, where the operator has
+        just switched auto-repair off mid-outage. A device that has genuinely
+        recovered is put back to ``idle`` by ``_reset_recovered_devices`` on
+        the next cycle, so this cannot strand one.
+        """
+        super()._stand_down_pending_repair(reason)
+        for name in self._device_repair_states:
+            self._demote_stale_success(name, reason)
+
     # ------------------------------------------------------------------
     # Auto-repair logic
     # ------------------------------------------------------------------
@@ -308,6 +382,20 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
             self._unhealthy_since = None
             return
 
+        enabled, delay_min = self._read_auto_repair_config()
+        if not enabled:
+            # Stand the ladder down BEFORE the `repairable` early return
+            # below, not after it: once every failing device has had its one
+            # attempt that list is empty and the return is taken on every
+            # cycle, which would leave the global countdown — and the paging
+            # hold that rides on it — up for the rest of the outage.
+            self._stand_down_pending_repair("Auto-repair disabled")
+            # Keep the outage clock running: the dwell is measured from when
+            # the outage started, not from when auto-repair was re-enabled.
+            if self._unhealthy_since is None:
+                self._unhealthy_since = datetime.datetime.now()
+            return
+
         # Only consider devices that haven't already been attempted
         repairable = [
             d for d in failing_devices
@@ -316,25 +404,6 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
 
         # If no repairable devices left, stay in current state
         if not repairable:
-            return
-
-        enabled, delay_min = self._read_auto_repair_config()
-        if not enabled:
-            # Keep the outage clock running, but stand any countdown down.
-            # A PENDING left up here is not cosmetic: the card counts down to
-            # a repair that can never start, and alertmanager_bridge holds the
-            # critical page for up to repair_hold_cap_s on `pending` —
-            # withholding the page for an outage the operator has just said
-            # will not self-heal.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._auto_repair_deadline = None
-            if self._unhealthy_since is None:
-                self._unhealthy_since = datetime.datetime.now()
             return
 
         now = datetime.datetime.now()

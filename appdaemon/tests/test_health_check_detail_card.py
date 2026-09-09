@@ -139,6 +139,9 @@ class TestDelayBounds:
     Hard-coded ``min=1 max=60 step=1`` was right for six checkers and wrong for
     the shade gateway (15/360/15, default 120): a spinner nudge on that row
     clamped 120 down to 60, and nothing above 60 could be entered at all.
+
+    The rendered bounds drive the spinner only.  The command guard enforces a
+    floor of 1 and leaves the ceiling to the backend, which clamps it loudly.
     """
 
     def test_the_published_bounds_are_rendered(self, harness):
@@ -162,12 +165,29 @@ class TestDelayBounds:
             "value": "5",
         }
 
-    def test_a_delay_below_the_published_minimum_is_refused(self, harness):
-        assert harness["delay_below_min"]["calls"] == []
+    def test_a_delay_below_the_client_floor_is_refused(self, harness):
+        """1 is the one bound the card enforces itself.
 
-    def test_a_delay_above_the_published_maximum_is_refused(self, harness):
-        """The old guard was ``>= 1`` only, so this went through unchecked."""
-        assert harness["delay_above_max"]["calls"] == []
+        A 0 or negative delay collapses the dwell gate, so it must never leave
+        the card at all.
+        """
+        assert harness["delay_below_floor"]["calls"] == []
+
+    def test_a_delay_above_the_published_maximum_is_sent_to_be_clamped(
+        self, harness
+    ):
+        """The upper bound is the backend's, and the backend clamps it loudly.
+
+        ``_clamp_delay(loud=True)`` warns and republishes the corrected value.
+        Refusing the command here instead would be a silent client-side no-op —
+        no relay call, no log, nothing on screen — and while a checker has not
+        published its bounds the fallback max is 60, so that silent drop
+        swallowed a perfectly legal shade-gateway 180.
+        """
+        call = _one_call(harness, "delay_above_max")
+
+        assert call["command"] == "update_repair_config"
+        assert call["payload"]["auto_repair_delay_min"] == 9000
 
     def test_the_toggle_carries_a_delay_the_old_guard_would_have_dropped(
         self, harness
@@ -180,3 +200,31 @@ class TestDelayBounds:
         call = _one_call(harness, "toggle_carries_out_of_legacy_range_delay")
 
         assert call["payload"]["auto_repair_delay_min"] == 120
+
+
+# ---------------------------------------------------------------------------
+# Re-render focus guard
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshDoesNotClobberTyping:
+    """The 15 s refresh tick has to respect the focus guard too.
+
+    ``_update()`` rewrites ``innerHTML`` wholesale, so a tick landing while the
+    operator is part-way through typing a delay swaps the focused input for a
+    fresh node carrying the published value — keystrokes and focus both gone.
+    ``set hass`` has always guarded on ``activeElement``; the timer had not.
+    """
+
+    def test_the_tick_leaves_the_focused_input_alone(self, harness):
+        scenario = harness["refresh_during_edit"]
+
+        assert scenario["same_node"] is True
+        assert scenario["value_after"] == "18"
+
+    def test_the_tick_dispatches_no_change_event(self, harness):
+        """A replaced input must not look like the operator committed a value."""
+        assert harness["refresh_during_edit"]["change_events"] == 0
+
+    def test_the_tick_sends_no_relay_command(self, harness):
+        assert harness["refresh_during_edit"]["calls"] == []

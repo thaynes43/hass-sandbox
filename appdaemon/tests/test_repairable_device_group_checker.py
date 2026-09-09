@@ -271,6 +271,90 @@ class TestPerDeviceRepairState:
         assert app._aggregate_repair_status() == REPAIR_IDLE
 
 
+_MOVIE_DOWN = [
+    {"name": "Movie Room Status", "status": "critical", "detail": "off"},
+    {"name": "Movie Room Ping", "status": "critical", "detail": "timeout"},
+    {"name": "Rumpus Room Status", "status": "critical", "detail": "off"},
+    {"name": "Rumpus Room Ping", "status": "critical", "detail": "timeout"},
+]
+
+
+class TestStaleSuccessNeverHoldsThePage:
+    """A per-device `success` that stopped being true pins the aggregate.
+
+    `success` is one of alertmanager_bridge's repair-hold states, so the bridge
+    withholds the critical page for up to repair_hold_cap_s while it is up.
+    Nothing used to move a device off it once set: `_reset_recovered_devices`
+    clears only on real recovery, and `repairable` only ever looks for `idle`.
+    So a device whose repair did not stick reported `success` — and suppressed
+    its own page — for the rest of the outage, and neither disabling
+    auto-repair nor standing the global countdown down could reach it, because
+    both act on `self._repair_status` and the aggregate outranks it.
+    """
+
+    def test_a_relapse_stops_reporting_success(self):
+        app = _make_app()
+        _init_only(app)
+        # Movie Room was repaired and looked healthy on the post-repair cycle.
+        app._device_repair_states["Movie Room"]["status"] = REPAIR_SUCCESS
+        assert app._aggregate_repair_status() == REPAIR_SUCCESS
+
+        # ...and now it is down again.
+        app._register_device_relapses(_MOVIE_DOWN)
+
+        assert app._aggregate_repair_status() != REPAIR_SUCCESS
+        assert app._device_repair_states["Movie Room"]["status"] == REPAIR_FAILED
+
+    def test_a_relapse_does_not_re_arm_an_immediate_power_cycle(self):
+        """Why `failed` and not `idle`.
+
+        The dwell is global (`_unhealthy_since`) and is cleared only when every
+        device is ok, so during a two-device outage it is already elapsed. An
+        `idle` here would put the device straight back into `repairable`
+        against that stale deadline and power-cycle it on this very cycle —
+        the loop fan_health_checker._register_fan_relapse exists to stop.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(
+            minutes=400
+        )
+        app._device_repair_states["Movie Room"]["status"] = REPAIR_SUCCESS
+        app._device_repair_states["Rumpus Room"]["status"] = REPAIR_FAILED
+        app.create_task = MagicMock()
+
+        app._register_device_relapses(_MOVIE_DOWN)
+        app._evaluate_auto_repair(_MOVIE_DOWN)
+
+        assert app.create_task.call_args_list == []
+        assert app._device_repair_states["Movie Room"]["status"] == REPAIR_FAILED
+
+    def test_standing_down_clears_a_stale_success_too(self):
+        """The disable path has to reach the per-device ladder as well.
+
+        The mixin's stand-down only knows `self._repair_status`; the published
+        status comes from `_aggregate_repair_status`, which one per-device
+        `success` is enough to pin. Clearing the global countdown while that
+        stayed up would take the countdown off the card and leave the page
+        withheld exactly as before.
+        """
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = False
+        app._repair_status = REPAIR_PENDING
+        app._auto_repair_deadline = datetime.datetime.now()
+        app._device_repair_states["Movie Room"]["status"] = REPAIR_SUCCESS
+
+        app._evaluate_auto_repair(_MOVIE_DOWN)
+
+        status = app._aggregate_repair_status()
+        assert status not in (REPAIR_PENDING, REPAIR_IN_PROGRESS, REPAIR_SUCCESS)
+        assert status == REPAIR_FAILED
+        assert app._auto_repair_deadline is None
+
+
 # ---------------------------------------------------------------------------
 # Tests — Auto-repair
 # ---------------------------------------------------------------------------

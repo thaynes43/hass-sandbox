@@ -129,4 +129,4 @@ class OpenAIMultimodalTextProvider(MultimodalTextProvider):
 
 1. Run full pytest.
 2. Verify `manager.py` and `narrative.py` use the correct capability providers (multimodal for scoring, simple-text for narrative).
-3. Do **not** manually deploy to production — deployment is automatic on merge to `main` via Docker image build.
+3. Merge to `main` builds the image automatically; the rollout is the haynes-ops `tag:` bump + `flux reconcile` per `.agents/playbooks/appdaemon-deploy.md`, done in the same session.

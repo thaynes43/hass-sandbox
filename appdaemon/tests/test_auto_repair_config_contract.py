@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import importlib
 from typing import Any, Callable, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -35,6 +36,12 @@ import test_repairable_device_group_checker as t_group
 import test_repairable_network_protocol_checker as t_network
 import test_shade_gateway_checker as t_shade
 import test_spa_health_checker as t_spa
+
+# ...and, once those have run their sys.path bootstrap, the mixin itself.
+# The checkers reach it as ``shared.auto_repair_config``; so do we, so that
+# TestTheStandDownConstantsMatchEveryChecker compares the very module object
+# they are mixing in.
+mixin_mod = importlib.import_module("shared.auto_repair_config")
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +89,14 @@ WRITE_FAILURES = [TIMEOUT_RESULT, HA_ERROR_RESULT, DISCONNECTED_RESULT]
 #: Every state that means "no usable reading".
 UNREADABLE = (None, "unavailable", "unknown", "none", "")
 
+#: The repair statuses this contract reasons about, spelled out rather than
+#: imported from any one checker — that is the whole point of
+#: :class:`TestTheStandDownConstantsMatchEveryChecker`, which proves all eight
+#: copies (seven checkers plus the mixin) still agree with these literals.
+REPAIR_IDLE = "idle"
+REPAIR_PENDING = "pending"
+REPAIR_SUCCESS = "success"
+
 
 class ServiceResult:
     """A stand-in for what ``call_service`` hands back.
@@ -91,8 +106,20 @@ class ServiceResult:
     on the loop, so a bare call still runs).  The double therefore has to
     survive both: awaiting it yields ``value``, and discarding it is silent.
     A plain ``AsyncMock`` would emit "coroutine was never awaited" at every
-    fire-and-forget site, which is exactly the noise the -W error run below
-    exists to detect.
+    fire-and-forget site.  This file is kept free of that noise, checked from
+    ``appdaemon/`` with::
+
+        python -m pytest tests/test_auto_repair_config_contract.py -q \\
+            -W error::RuntimeWarning
+
+    which reports the run with **no warnings**; swapping this double for an
+    ``AsyncMock`` turns that into eleven.  It has to be pytest's own ``-W``,
+    not the interpreter's: ``tests/conftest.py`` installs a repo-wide
+    ``ignore:coroutine .* was never awaited`` filter, and pytest applies its
+    ``-W`` after the ini filters, so only the flag spelled this way wins.
+    (The warning surfaces as ``PytestUnraisableExceptionWarning`` — it is
+    raised during GC, so it is reported rather than failing the test; the
+    positive check that the awaits really happen is ``ServiceResult.awaits``.)
     """
 
     def __init__(self, value: Any) -> None:
@@ -474,6 +501,10 @@ SPECS = [
 ]
 
 
+#: For the handful of contracts that are genuinely one checker's shape.
+SPEC_BY_NAME = {s.name: s for s in SPECS}
+
+
 @pytest.fixture(params=SPECS, ids=lambda s: s.name)
 def spec(request) -> Spec:
     return request.param
@@ -615,6 +646,23 @@ class TestTransitionLogging:
 
         assert len(_logs(app, "INFO", spec.toggle, "readable again")) == 1
 
+    def test_the_delay_window_opening_warns_once(self, spec):
+        """The delay helper owes the same courtesy as the toggle.
+
+        Its branch is a separate ``try`` with its own transition flag, so it
+        can regress on its own: a warning per cycle here is one line every
+        ``check_interval_s``, for every checker whose delay helper is missing,
+        for as long as it stays missing — the kind of noise that gets an
+        operator to stop reading the log the toggle's warning also lives in.
+        """
+        app = spec.app(delay_default=spec.delay_min, states={spec.delay: None})
+
+        spec.refresh(app)
+        spec.refresh(app)
+        spec.refresh(app)
+
+        assert len(_logs(app, "WARNING", spec.delay, "not readable")) == 1
+
 
 # ---------------------------------------------------------------------------
 # Card commands
@@ -721,6 +769,79 @@ class TestCommandUpdatesTheCache:
         assert _logs(app, "WARNING", "Unknown repair action")
 
 
+class TestTheCommandTellsProvisioningLagFromAVanishedHelper:
+    """Both look like ``get_state`` → None. They need opposite answers.
+
+    Home Assistant answers ``success: true`` for a service call that matched
+    zero entities — ``helpers/service.py`` logs a warning and returns — so
+    ``_service_ok`` cannot tell a write that landed from one that hit nothing.
+    The pre-read is the only evidence available, and its ``None`` is
+    ambiguous: before the helper has ever been seen it means the REST-created
+    entity has not reached AppDaemon's local state yet (write, it exists);
+    after it has been seen it means the helper was deleted (do not write, and
+    above all do not cache a change that never happened).
+    """
+
+    def test_a_write_to_a_vanished_helper_is_skipped(self, spec):
+        app = spec.app(enabled_default=True, states={spec.toggle: "on"})
+        spec.refresh(app)
+        app.entity_states[spec.toggle] = None  # somebody deleted the helper
+
+        spec.command(app, auto_repair_enabled=False)
+
+        assert _service_calls(app, "input_boolean/turn_off") == []
+        assert _service_calls(app, "input_boolean/turn_on") == []
+        assert app._cached_auto_repair_enabled is True
+        assert _logs(app, "WARNING", spec.toggle, "not available")
+
+    def test_a_write_during_provisioning_lag_still_goes_through(self, spec):
+        """The other side of the same ``None`` — and the reason it is subtle.
+
+        Here the helper genuinely exists in HA (``ensure_helper`` just made
+        it); only AppDaemon's copy of the namespace is behind. Refusing to
+        write would strand the operator's very first toggle for up to
+        ``refresh_delay``.
+        """
+        app = spec.app(enabled_default=True, states={spec.toggle: None})
+        spec.refresh(app)
+        assert app._toggle_ever_readable is False
+
+        spec.command(app, auto_repair_enabled=False)
+
+        assert len(_service_calls(app, "input_boolean/turn_off")) == 1
+        assert app._cached_auto_repair_enabled is False
+
+
+class TestAReadableCommandPreReadCountsAsASighting:
+    """The card path sees the helper too, and must say so.
+
+    ``_refresh_auto_repair_config`` is not the only place a helper is read:
+    ``_apply_toggle_command`` reads it before every write. If only the refresh
+    armed ``_toggle_ever_readable``, a helper first seen by a command would
+    still count as never-seen — and the fail-closed rule, which is the whole
+    kill switch, would not apply to it.
+    """
+
+    def test_a_helper_first_seen_by_a_command_still_fails_closed(self, spec):
+        app = spec.app(enabled_default=True, states={spec.toggle: None})
+        spec.refresh(app)  # unreadable so far: the configured default stands
+
+        app.entity_states[spec.toggle] = "on"  # the plugin refresh landed
+        spec.command(app, auto_repair_enabled=True)  # ...and the card read it
+
+        app.entity_states[spec.toggle] = None  # now the helper is deleted
+        spec.refresh(app)
+
+        assert app._cached_auto_repair_enabled is False
+
+        # The end-to-end consequence: no repair runs behind a kill switch
+        # nobody can reach.
+        spec.arm(app)
+        spec.fire(app)
+
+        assert spec.actions(app) == []
+
+
 class TestWriteFailuresDoNotUpdateTheCache:
     """A cache the write never reached is a lie the operator cannot see.
 
@@ -759,6 +880,24 @@ class TestWriteFailuresDoNotUpdateTheCache:
 
         assert app._cached_auto_repair_enabled is True
         assert _logs(app, "ERROR", "auto-repair toggle")
+
+    def test_a_raised_delay_write_is_not_cached(self, spec):
+        """The delay write has its own ``except`` arm, and its own way to lie.
+
+        A cached delay the helper never took is quieter than a cached toggle
+        but no less wrong: the card shows the number the operator typed, the
+        helper still holds the old one, and the dwell the checker actually
+        counts is neither of the two a human can see.
+        """
+        wanted = min(spec.delay_min + spec.step, spec.delay_max)
+        app = spec.app(delay_default=spec.delay_min, states={spec.delay: None})
+        spec.refresh(app)
+        app.call_service = MagicMock(side_effect=RuntimeError("ws closed"))
+
+        spec.command(app, auto_repair_delay_min=wanted)
+
+        assert app._cached_auto_repair_delay_min == spec.delay_min
+        assert _logs(app, "ERROR", "auto-repair delay")
 
     def test_a_successful_write_is_cached(self, spec):
         """The control: the same path with the real success shape."""
@@ -880,6 +1019,59 @@ class TestDelayIsClamped:
 
         assert len(_logs(app, "WARNING", "outside the permitted")) == 2
 
+    def test_a_loud_clamp_never_touches_the_read_paths_latch(self, spec):
+        """The latch is the read path's alone — a loud clamp must not arm it.
+
+        An out-of-range ``auto_repair_delay_min_default`` left in the app YAML
+        is clamped once at startup, loudly. If that clamp also set the latch,
+        the once-per-episode warning the read path owes about the *helper's*
+        value would be permanently spent before the helper had ever been read
+        — the operator would be told about the YAML they can see and never
+        about the helper they cannot. Two independently wrong values must
+        produce two independent warnings.
+        """
+        # Out of range for every spec: 9000 is above both maxima, and
+        # delay_max * 2 is above whichever maximum this checker has.
+        app = spec.app(
+            delay_default=9000, states={spec.delay: str(spec.delay_max * 2)}
+        )
+        assert len(_logs(app, "WARNING", "outside the permitted")) == 1
+
+        spec.refresh(app)
+
+        assert len(_logs(app, "WARNING", "outside the permitted")) == 2
+        assert app._cached_auto_repair_delay_min == spec.delay_max
+
+        # ...and the read path's own latch still works: the same out-of-range
+        # helper value on the next cycle stays quiet.
+        spec.refresh(app)
+
+        assert len(_logs(app, "WARNING", "outside the permitted")) == 2
+
+    def test_a_zero_configured_default_cannot_collapse_the_dwell(self, spec):
+        """The end-to-end consequence of clamping the *config* default.
+
+        ``auto_repair_delay_min_default: 0`` in the app YAML, with the delay
+        helper not yet readable, is a checker that repairs the instant it
+        first sees an outage — no dwell, no chance for a transient to clear
+        itself, and (for the fan and spa) mains power cycled off a single bad
+        poll. Only the clamped cache stands between that YAML and the action,
+        so the evaluation has to read the cache and nothing else.
+        """
+        app = spec.app(
+            enabled_default=True,
+            delay_default=0,
+            states={spec.toggle: "on", spec.delay: None},
+        )
+        spec.refresh(app)
+        assert app._cached_auto_repair_enabled is True  # nothing else is stopping it
+        spec.arm(app, minutes_ago=0)  # unhealthy as of right now
+
+        spec.fire(app)
+
+        assert spec.actions(app) == []
+        assert spec.reported_status(app) == REPAIR_PENDING
+
 
 # ---------------------------------------------------------------------------
 # Provisioning
@@ -1000,9 +1192,6 @@ class TestProvisioning:
 # Standing a pending repair down
 # ---------------------------------------------------------------------------
 
-REPAIR_IDLE = "idle"
-REPAIR_PENDING = "pending"
-
 
 def _pending(spec: Spec):
     """A checker counting down to a repair that has not fired yet."""
@@ -1060,6 +1249,127 @@ class TestDisableStandsDownAPendingRepair:
         assert spec.reported_status(app) == REPAIR_IDLE
         assert app._auto_repair_deadline is None
 
+    def test_disabling_from_the_card_clears_it_without_waiting_for_a_tick(
+        self, spec
+    ):
+        """No ``spec.fire`` here — that is the entire point of this one.
+
+        ``_update_repair_config`` republishes the repair state the instant the
+        command is applied, so whatever the card is handed at that moment is
+        what the operator sees. If only the next ``_evaluate_auto_repair``
+        stood the ladder down, the card would re-render a live countdown and a
+        Cancel button next to a box the operator has just unchecked — and
+        ``alertmanager_bridge`` would go on withholding the critical page —
+        for up to a whole ``check_interval_s``. The sibling test above proves
+        the eventual state; this one proves the immediate one.
+        """
+        app = _pending(spec)
+
+        spec.command(app, auto_repair_enabled=False)
+
+        assert spec.reported_status(app) == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+
+
+class TestTheStandDownConstantsMatchEveryChecker:
+    """Eight copies of three strings, and the mixin cannot import any of them.
+
+    Each checker owns its own ``REPAIR_*`` constants — its own test module
+    imports them from there, and the mixin importing a checker would be a
+    cycle (every checker imports the mixin, and the checker modules drag
+    ``hassapi`` and their own ``sys.path`` bootstrap in with them). So
+    ``shared/auto_repair_config.py`` repeats the three literals it needs and
+    this test is what makes the duplication safe: the moment any checker's
+    copy drifts, ``_stand_down_pending_repair`` would silently stop matching
+    that checker's status strings and leave the countdown — and the paging
+    hold — standing, with nothing else to notice.
+    """
+
+    @pytest.mark.parametrize(
+        "const", ["REPAIR_IDLE", "REPAIR_PENDING", "REPAIR_SUCCESS"]
+    )
+    def test_the_checker_agrees_with_the_mixin(self, spec, const):
+        checker = importlib.import_module(spec.module)
+
+        assert getattr(checker, const) == getattr(mixin_mod, const)
+
+    @pytest.mark.parametrize(
+        "const,literal",
+        [
+            ("REPAIR_IDLE", REPAIR_IDLE),
+            ("REPAIR_PENDING", REPAIR_PENDING),
+            ("REPAIR_SUCCESS", REPAIR_SUCCESS),
+        ],
+    )
+    def test_this_suite_agrees_with_the_mixin(self, const, literal):
+        """Otherwise a shared drift would move both sides and pass."""
+        assert getattr(mixin_mod, const) == literal
+
+
+class TestTheDisabledCheckRunsBeforeTheEarlyReturns:
+    """Where the toggle is read decides whether it can ever be obeyed.
+
+    Every one of these checkers has at least one guard that returns before the
+    dwell ladder is touched — parked at ``success``, budget spent, nothing
+    critical this cycle. Read the toggle *after* one of those and the
+    stand-down is unreachable for exactly the outages that take that return
+    every cycle: the state stands for the rest of the outage, and with it the
+    bridge's repair hold on the critical page.
+    """
+
+    def test_a_checker_parked_at_success_still_stands_down(self, spec):
+        """``success`` is a hold state, and a stale one is the worst kind.
+
+        The repair ran, HA looked healthy for a cycle, and then the outage
+        came back. ``device`` and ``shade_gateway`` take a bare ``return`` on
+        ``success`` before the ladder is touched at all; the other five reach
+        the same place past guards of their own. Either way ``success`` is one
+        of the two states ``alertmanager_bridge`` withholds the critical page
+        on, so it is precisely the state that must not outlive the toggle
+        being switched off.
+        """
+        app = _pending(spec)
+        app._repair_status = REPAIR_SUCCESS
+
+        app.entity_states[spec.toggle] = "off"
+        spec.refresh(app)
+        spec.fire(app)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert spec.reported_status(app) == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+
+    def test_device_group_with_every_device_already_attempted_stands_down(self):
+        """Not parametrised: only device_group has this early return.
+
+        Its ladder is per-device on top of a global countdown. Once every
+        failing device has had its one attempt, ``repairable`` is empty and
+        ``_evaluate_auto_repair`` returns there on every cycle — so with the
+        toggle read after that return, the *global* ``pending`` (which is the
+        only thing that ever holds ``pending``, and therefore the only thing
+        the card's countdown and the bridge's hold are reading) survived being
+        switched off for the rest of the outage.
+
+        The per-device ``failed`` deliberately survives the stand-down: it is
+        the truth about that device and it is a state the bridge releases on,
+        so the aggregate goes from ``pending`` to ``failed`` — a page, which
+        is exactly what an operator who has just disabled auto-repair on a
+        dead device should get.
+        """
+        spec = SPEC_BY_NAME["device_group"]
+        app = _pending(spec)
+        # Movie Room is the failing device in _GROUP_BAD; it has had its one
+        # attempt and did not recover, which is what leaves `repairable` empty.
+        app._device_repair_states["Movie Room"]["status"] = t_group.REPAIR_FAILED
+
+        app.entity_states[spec.toggle] = "off"
+        spec.refresh(app)
+        spec.fire(app)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+        assert spec.reported_status(app) == t_group.REPAIR_FAILED
+
 
 class TestCancelRepair:
     """Every repair-capable checker must honour the card's Cancel button.
@@ -1084,6 +1394,12 @@ class TestCancelRepair:
         These checkers re-evaluate every cycle off a clock the cancel does not
         move, so cancelling has to restart the dwell (or defer past it) to be
         a deferral at all rather than a one-tick pause.
+
+        The elapsed deadline matters as much as the elapsed dwell: ``device``
+        and ``spa`` fire from their ``pending`` arm only when
+        ``_auto_repair_deadline`` is set and past, so without it here the
+        repair would not have run with or without the cancel and the test
+        would assert nothing at all.
         """
         app = spec.app(
             enabled_default=True,
@@ -1093,6 +1409,7 @@ class TestCancelRepair:
         spec.refresh(app)
         spec.arm(app, minutes_ago=400)  # long past due
         app._repair_status = REPAIR_PENDING
+        app._auto_repair_deadline = _ago(minutes=1)
 
         spec.cancel(app)
         spec.fire(app)
@@ -1111,21 +1428,46 @@ class TestCancelRepair:
 class TestLocalRegistrationFollowsTheSeed:
     """The local copy must reflect what HA confirmed, never a guess.
 
-    A successful seed registers the seeded value so the read one line later
-    agrees with HA (no inert first interval). A failed toggle seed registers
-    "off" — truthful, fail closed. A failed delay seed registers nothing:
-    there is no safe direction to guess a delay in, so the read guard keeps
-    the cached default until the next plugin refresh brings the truth.
+    One rule, symmetric across both helpers: register the value only when the
+    write that set it came back accepted. A successful seed registers what was
+    seeded, so the read one line later agrees with HA and the checker is not
+    inert for its first interval. A *failed* seed of either helper registers
+    nothing at all — leaving the entity unreadable, which the read guard
+    already handles by keeping the configured default and saying so every
+    cycle. The only case that registers without a seed is a toggle whose
+    configured default is off: nothing was written, so a freshly created
+    input_boolean really is off, and "off" is a truth rather than a guess.
     """
 
-    def test_failed_toggle_seed_registers_off(self, spec):
+    def test_a_failed_toggle_seed_registers_nothing(self, spec):
+        """"off" after a failed ``turn_on`` would be a fabrication.
+
+        The commonest failure here is a websocket TIMEOUT, where HA very
+        probably DID execute the turn_on and only the reply was lost — so
+        "off" is not the safe reading of a failure, it is a coin flip
+        recorded as fact. Registering it caches auto-repair disabled for a
+        default-enabled checker, latches ``_toggle_ever_readable`` on that
+        fiction (so the next unreadable read "fails closed" on a lie), and
+        logs nothing, because as far as the read path can tell the helper is
+        perfectly readable.
+        """
         app = spec.app(enabled_default=True)
         app.call_service = MagicMock(
             return_value=ServiceResult({"success": False, "ad_status": "TIMEOUT"})
         )
+
         _run(app._provision_auto_repair_helpers(_prov(True)))
-        added = {c.args[0]: c.args[1] for c in app.add_entity.call_args_list}
-        assert added[spec.toggle] == "off"
+
+        added = {c.args[0] for c in app.add_entity.call_args_list}
+        assert spec.toggle not in added
+
+        # The consequence: the helper stays unreadable, so the configured
+        # default still stands and every refresh says so out loud until the
+        # next plugin state refresh brings HA's real answer.
+        spec.refresh(app)
+
+        assert app._cached_auto_repair_enabled is True
+        assert _logs(app, "WARNING", spec.toggle, "not readable")
 
     def test_failed_delay_seed_registers_nothing(self, spec):
         app = spec.app(enabled_default=False)

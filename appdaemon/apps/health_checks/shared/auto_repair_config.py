@@ -29,6 +29,8 @@ subclass that provides:
 * ``self._checker_id`` — set before ``_init_auto_repair_config`` is called
 * ``self._report_repair_status_only()`` — publish the repair state to the
   controller without re-running the checks
+* ``self._repair_status`` and ``self._auto_repair_deadline`` — the repair
+  ladder :meth:`_stand_down_pending_repair` stands down
 
 Wiring, per checker::
 
@@ -66,6 +68,10 @@ shipped inert.  Two things close it:
 1. :meth:`_provision_auto_repair_helpers` calls ``self.add_entity`` right
    after creating a helper (``adapi.py:794``), which inserts it into
    AppDaemon's local state immediately — so in practice the window is zero.
+   It registers only a value Home Assistant confirmed, though: if the
+   initial seed fails, nothing is registered and the full window is back.
+   That is deliberate — see the comments there for why a guessed value is
+   worse than an unreadable helper.
 2. :meth:`_refresh_auto_repair_config` treats an unreadable read as *no
    evidence* and keeps the cached value — but only until the helper has been
    read successfully once.  After that, an unreadable read means the helper
@@ -81,6 +87,28 @@ from typing import Any, Optional
 
 #: States that mean "no usable reading", not a real value.
 UNAVAILABLE_STATES = ("unavailable", "unknown", "none", "")
+
+#: The three repair statuses :meth:`AutoRepairConfigMixin._stand_down_pending_repair`
+#: has to reason about.
+#:
+#: They are *duplicated* here rather than imported. Each of the seven checkers
+#: defines its own equal ``REPAIR_*`` constants at module scope, and its own
+#: test module imports them from there; the canonical home is therefore
+#: per-checker, and there is no single module the mixin could import from.
+#: Importing any one checker would also drag ``hassapi`` and that checker's
+#: ``sys.path`` bootstrap into ``shared/`` — a cycle, since every checker
+#: imports ``shared.auto_repair_config``. Two string literals are the cheaper
+#: coupling, and ``TestTheStandDownConstantsMatchEveryChecker`` in
+#: ``test_auto_repair_config_contract.py`` fails the moment a checker's copy
+#: drifts from these.
+REPAIR_IDLE = "idle"
+REPAIR_PENDING = "pending"
+REPAIR_SUCCESS = "success"
+
+
+def _is_readable(state: Any) -> bool:
+    """Whether a ``get_state`` answer is a real reading rather than a gap."""
+    return state is not None and str(state).lower() not in UNAVAILABLE_STATES
 
 
 class AutoRepairConfigMixin:
@@ -110,6 +138,12 @@ class AutoRepairConfigMixin:
     DELAY_MIN_DEFAULT = 5
     #: Fallback when ``auto_repair_enabled_default`` is absent.
     AUTO_REPAIR_ENABLED_DEFAULT = False
+
+    #: Default so :meth:`_stand_down_pending_repair` always has the attribute
+    #: to write. Five checkers set their own in ``initialize()`` and publish
+    #: it; the fan and device-group checkers derive their published detail
+    #: from per-device state and simply never read this one.
+    _repair_detail: str = ""
 
     # ------------------------------------------------------------------
     # Entity ids
@@ -152,9 +186,11 @@ class AutoRepairConfigMixin:
             )
             parsed_default = self.DELAY_MIN_DEFAULT
         # Clamped here so every path that can set the cached delay obeys the
-        # helper's bounds, config included.
+        # helper's bounds, config included. loud=True: this runs exactly once,
+        # so there is nothing to rate-limit, and it must not touch the read
+        # path's once-per-episode latch (see _clamp_delay).
         self._auto_repair_delay_min_default: int = self._clamp_delay(
-            parsed_default
+            parsed_default, loud=True
         )
 
         # Cached auto-repair config, refreshed each check cycle.
@@ -192,29 +228,43 @@ class AutoRepairConfigMixin:
             )
             if created:
                 self.log(f"Provisioned {toggle_entity}", level="INFO")
-                # A freshly created input_boolean is off, so without this the
-                # repair would be provisioned and then never run. Only applied
-                # on creation — a later manual "off" is never overridden.
-                seeded_on = False
+                # AppDaemon does not learn about an entity created over the
+                # REST API until its next full plugin-state refresh, so
+                # register it locally now (see the module docstring) — AFTER
+                # any seed, and only with a state HA actually confirmed.
+                # Registering before the seed would read back "off" one line
+                # later and start a default-on checker one check interval
+                # inert (the 1.17.0 shape); registering the intended value
+                # blind would trust a write HA may have rejected for up to
+                # refresh_delay.
                 if self._auto_repair_enabled_default:
+                    # A freshly created input_boolean is off, so without this
+                    # the repair would be provisioned and then never run. Only
+                    # applied on creation — a later manual "off" is never
+                    # overridden.
                     seeded_on = await self._seed_helper(
                         "input_boolean/turn_on",
                         toggle_entity,
                         f"Auto-repair default-enabled via {toggle_entity}",
                     )
-                # AppDaemon does not learn about an entity created over the
-                # REST API until its next full plugin-state refresh, so
-                # register it locally now (see the module docstring) — AFTER
-                # the seed, with the state HA actually confirmed. Registering
-                # before the seed would read back "off" one line later and
-                # start a default-on checker one check interval inert (the
-                # 1.17.0 shape); registering the intended value blind would
-                # trust a write HA may have rejected for up to refresh_delay.
-                # A failed seed therefore registers "off": truthful, and the
-                # first read fails closed.
-                await self._add_local_entity(
-                    toggle_entity, "on" if seeded_on else "off"
-                )
+                    # A FAILED seed registers nothing — the same rule the
+                    # delay below has always followed. "off" would be a
+                    # fabrication, not a truth: the commonest failure is a
+                    # websocket TIMEOUT, where HA very probably DID execute
+                    # turn_on and only the reply was lost. Registering that
+                    # fiction caches auto-repair disabled, latches
+                    # _toggle_ever_readable on it (so the next unreadable read
+                    # fails closed on a lie) and says nothing in the log.
+                    # Leaving the entity unregistered keeps it unreadable, so
+                    # the configured default stands and every refresh WARNs
+                    # "not readable" until the plugin refresh brings HA's
+                    # truth.
+                    if seeded_on:
+                        await self._add_local_entity(toggle_entity, "on")
+                else:
+                    # Nothing was written, so nothing can have failed: a
+                    # freshly created input_boolean really is off.
+                    await self._add_local_entity(toggle_entity, "off")
         except Exception as exc:
             self.log(
                 f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR"
@@ -359,10 +409,7 @@ class AutoRepairConfigMixin:
         entity_id = self._auto_repair_toggle_entity()
         try:
             enabled_state = await self.get_state(entity_id)
-            readable = (
-                enabled_state is not None
-                and str(enabled_state).lower() not in UNAVAILABLE_STATES
-            )
+            readable = _is_readable(enabled_state)
             if readable:
                 self._cached_auto_repair_enabled = (
                     str(enabled_state).lower() == "on"
@@ -412,10 +459,9 @@ class AutoRepairConfigMixin:
         try:
             delay_state = await self.get_state(entity_id)
             parsed = (
-                None
-                if delay_state is None
-                or str(delay_state).lower() in UNAVAILABLE_STATES
-                else self._parse_delay(delay_state)
+                self._parse_delay(delay_state)
+                if _is_readable(delay_state)
+                else None
             )
             delay_readable = parsed is not None
             if delay_readable:
@@ -510,23 +556,75 @@ class AutoRepairConfigMixin:
         out-of-range episode (``_delay_clamped_logged``, cleared as soon as an
         in-range value is seen).
 
-        ``loud=True`` bypasses the latch: it is used by the card command path,
-        where an operator has just typed a value and must always be told it
-        was overridden.
+        ``loud=True`` bypasses the latch: it is used by the card command path
+        (an operator has just typed a value and must always be told it was
+        overridden) and by the one-shot clamp of the configured default in
+        :meth:`_init_auto_repair_config`.
+
+        The latch itself belongs to the read path alone. A ``loud`` clamp must
+        neither set nor clear it: an out-of-range ``auto_repair_delay_min_default``
+        in the app YAML would otherwise latch at startup and permanently
+        silence the once-per-episode warning the read path owes the operator
+        about the *helper's* value — and a single out-of-range value typed
+        into the card would do the same until the next in-range read.
         """
         clamped = max(self.DELAY_MIN_MIN, min(self.DELAY_MIN_MAX, value))
-        if clamped != value:
-            if loud or not self._delay_clamped_logged:
-                self.log(
-                    f"Auto-repair delay {value}m is outside the permitted "
-                    f"{self.DELAY_MIN_MIN}-{self.DELAY_MIN_MAX}m range — "
-                    f"using {clamped}m",
-                    level="WARNING",
-                )
-            self._delay_clamped_logged = True
-        else:
-            self._delay_clamped_logged = False
+        out_of_range = clamped != value
+        if out_of_range and (loud or not self._delay_clamped_logged):
+            self.log(
+                f"Auto-repair delay {value}m is outside the permitted "
+                f"{self.DELAY_MIN_MIN}-{self.DELAY_MIN_MAX}m range — "
+                f"using {clamped}m",
+                level="WARNING",
+            )
+        if not loud:
+            self._delay_clamped_logged = out_of_range
         return clamped
+
+    # ------------------------------------------------------------------
+    # Standing a repair down
+    # ------------------------------------------------------------------
+
+    def _stand_down_pending_repair(self, reason: str) -> None:
+        """Drop a countdown (or a stale success) that can no longer be honoured.
+
+        Called from every place auto-repair stops being allowed to act: each
+        checker's ``_evaluate_auto_repair`` when the toggle reads off, and
+        :meth:`_apply_toggle_command` the moment an operator unchecks it from
+        the card. All seven used to carry their own copy of this, and the card
+        path had none at all — so unchecking the toggle left a countdown and a
+        Cancel button on screen, and the page held, for up to a full check
+        interval.
+
+        Why ``success`` stands down too, not just ``pending``: both are
+        ``alertmanager_bridge`` *repair-hold* states, and the bridge withholds
+        the critical page for up to ``repair_hold_cap_s`` (1800 s) while
+        either is up. A ``pending`` counting down to a repair that can never
+        start, or a ``success`` from a repair that is no longer allowed to be
+        repeated, would each suppress the page for exactly the outage the
+        operator has just said will not self-heal.
+
+        ``failed`` and ``in_progress`` are left alone on purpose: the bridge
+        releases on ``failed``, and both carry a detail a human needs (the
+        24 h cap message, "Restarting ESP32…") that this reason must not
+        overwrite. ``failed`` also owns ``_auto_repair_deadline`` as its
+        backoff retry time in the Protect checker, so clearing it there would
+        re-arm an immediate retry.
+
+        The reason is still recorded when the checker is already ``idle`` —
+        that is the network checker's ``_hold`` semantics, which this replaces
+        at the auto-repair-disabled call site: the card's detail line should
+        say *why* nothing is happening.
+        """
+        if self._repair_status in (REPAIR_PENDING, REPAIR_SUCCESS):
+            if self._repair_status == REPAIR_PENDING:
+                self.log(f"{reason} — cancelling pending auto-repair", level="INFO")
+            else:
+                self.log(f"{reason} — clearing stale repair success", level="INFO")
+            self._repair_status = REPAIR_IDLE
+            self._auto_repair_deadline = None
+        if self._repair_status == REPAIR_IDLE:
+            self._repair_detail = reason
 
     # ------------------------------------------------------------------
     # Card commands
@@ -584,16 +682,45 @@ class AutoRepairConfigMixin:
             )
             current = None
 
+        if _is_readable(current):
+            # A read that came back with a real value is a sighting, whatever
+            # it said. Without this the card path could set the cache while
+            # _toggle_ever_readable stayed False, and a later deleted helper
+            # would keep the cached "on" instead of failing closed.
+            self._toggle_ever_readable = True
+
         if current is not None and str(current).lower() == desired:
             # Already where the operator wants it — no service call needed,
             # and the read itself is proof enough to cache.
-            self._cached_auto_repair_enabled = desired_enabled
+            self._settle_toggle(desired_enabled)
             self.log(
                 f"Auto-repair {'enabled' if desired_enabled else 'disabled'} "
                 f"({entity_id} was already {desired})",
                 level="INFO",
             )
             return
+
+        if current is None and self._toggle_ever_readable:
+            # The helper was readable and now is not: it has been deleted (or
+            # gone unavailable), and _refresh_auto_repair_config has already
+            # failed the cache closed. Firing the service anyway would be
+            # worse than useless — Home Assistant answers *success* for an
+            # entity service call that matched nothing. Read from the HA in
+            # the production pod (2026.6.1,
+            # homeassistant/helpers/service.py:767-807): unmatched ids go to
+            # `referenced.log_missing(missing, _LOGGER)`, a log line and
+            # nothing else, and the empty candidate list then `return None`
+            # without raising. So _service_ok would say yes and the cache
+            # would be updated for a write that changed nothing at all.
+            # Write nothing, cache nothing, and say so.
+            self.log(
+                f"{entity_id} is not available — skipping update",
+                level="WARNING",
+            )
+            return
+        # current is None and the helper has never been seen: that is
+        # provisioning lag, not a vanished helper (the entity does exist in
+        # HA — ensure_helper just made it), so the write below is right.
 
         service = (
             "input_boolean/turn_on" if desired_enabled else "input_boolean/turn_off"
@@ -609,7 +736,7 @@ class AutoRepairConfigMixin:
             return
 
         if ok:
-            self._cached_auto_repair_enabled = desired_enabled
+            self._settle_toggle(desired_enabled)
             self.log(
                 f"Auto-repair {'enabled' if desired_enabled else 'disabled'}",
                 level="INFO",
@@ -621,6 +748,20 @@ class AutoRepairConfigMixin:
                 f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
                 level="ERROR",
             )
+
+    def _settle_toggle(self, desired_enabled: bool) -> None:
+        """Cache a toggle write HA has confirmed, and act on a switch-off.
+
+        Turning auto-repair off has to stand a countdown down here and not
+        merely at the next ``_evaluate_auto_repair``: ``_update_repair_config``
+        republishes immediately afterwards, so without this the card would
+        re-render a live countdown and a Cancel button next to a box the
+        operator has just unchecked, and ``alertmanager_bridge`` would keep
+        holding the page, for up to a whole check interval.
+        """
+        self._cached_auto_repair_enabled = desired_enabled
+        if not desired_enabled:
+            self._stand_down_pending_repair("Auto-repair disabled")
 
     async def _apply_delay_command(self, raw_delay: Any) -> None:
         entity_id = self._auto_repair_delay_entity()

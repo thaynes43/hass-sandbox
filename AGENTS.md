@@ -7,7 +7,7 @@ Guidance for AI coding agents (Codex and any other tool that reads `AGENTS.md`) 
 A Home Assistant YAML sandbox + AppDaemon Python apps.
 
 - `home-assistant/` — repo mirror for HA YAML (automations, scripts, cards, helpers); changes are copy-pasted into/from the HA UI editor. No CI; reference/backup, not source of truth for HA.
-- `appdaemon/` — Python AppDaemon apps. Dev here; production deploys via Docker image build on merge to `main` (Flux rolls the Kubernetes deployment).
+- `appdaemon/` — Python AppDaemon apps. Dev here; merge to `main` builds the Docker image automatically, and the rollout is a haynes-ops `tag:` bump + reconcile done in the same session (`.agents/rules/git-workflow.md` step 6).
 
 ## Agent file structure
 
@@ -68,7 +68,7 @@ appdaemon -c appdaemon
 
 ### Deploy AppDaemon
 
-Production deploys are automated. Merging to `main` triggers a Docker image build and push to GHCR; Flux rolls the Kubernetes deployment.
+Merging to `main` triggers the Docker image build and push to GHCR automatically. The rollout is **not** automatic: the haynes-ops HelmRelease pins `tag:`, so bump it (branch + PR, self-merge), `flux reconcile`, `rollout status`, and confirm the pod runs the new tag — in the same session (`.agents/rules/git-workflow.md` step 6).
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. **Before bumping, compare against `main` (`git show main:VERSION`)** — if already bumped on this branch, do not bump again.
 
@@ -126,7 +126,7 @@ This repo often uses the Home Assistant MCP server for live HA work, but only wh
 - After `appdaemon/` changes, clearly state whether changes were only made in the repo or also deployed. Do not claim live HA changes unless they were actually performed.
 - When changes cannot be fully validated by unit tests alone (runtime behavior, card JS, MCP interactions), verify them yourself live (HA MCP, `kubectl`, Playwright) before committing and state what was verified in the PR body; list anything unverifiable under **Not verified** instead of waiting on the owner.
 - Only genuine requirements or design questions wait on the owner: ask them with `AskUserQuestion`, one at a time, when they arise. Never batch them or leave them as prose.
-- Finish everything in flight before your final message — merged **and** deployed, review findings fixed or concretely refuted on the PR, sibling instances of a bug fixed, stale instructions you tripped over corrected. Sessions are short-lived and worktrees are pruned; a "worth a follow-up" line is a deletion. Durable deferral is a `backlog/NNN-*.md` entry or GitHub issue only, and only for work needing a design decision. See `.agents/rules/finish-in-flight-work.md`.
+- Finish everything in flight before your final message — merged **and** deployed, review findings fixed or concretely refuted on the PR. The only durable deferral is a `backlog/NNN-*.md` entry or a GitHub issue. `.agents/rules/finish-in-flight-work.md`.
 
 ## Shared playbooks
 

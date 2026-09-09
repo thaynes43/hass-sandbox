@@ -22,7 +22,7 @@ Try to keep calls to the MCP server at a minimum. Much of the context you will n
 
 ## AppDaemon
 
-AddDaemon has it's own rules that apply to the folders. It is recommended agents are familiar with it's documentation from [here](https://appdaemon.readthedocs.io/en/latest/) before programming the apps as they are not stadard python programs but plug-in to the AppDaemon docker which manages their execution. AppDaemon is also setup to run in the .venv or .venv-wsl directories of this repositories so we can test new apps and features before deploying them to the production server. Production deploys are automated via Docker image builds — merging to `main` triggers a GitHub Actions workflow that builds and pushes the image to GHCR, and Flux rolls the Kubernetes deployment.
+AddDaemon has it's own rules that apply to the folders. It is recommended agents are familiar with it's documentation from [here](https://appdaemon.readthedocs.io/en/latest/) before programming the apps as they are not stadard python programs but plug-in to the AppDaemon docker which manages their execution. AppDaemon is also setup to run in the .venv or .venv-wsl directories of this repositories so we can test new apps and features before deploying them to the production server. Production the image build is automatic and the rollout is a haynes-ops `tag:` bump done in the same session via Docker image builds — merging to `main` triggers a GitHub Actions workflow that builds and pushes the image to GHCR, and the agent bumps the haynes-ops HelmRelease tag and reconciles Flux (Flux does not track new tags on its own).
 
 ## Rule files (`.agents/rules/`)
 

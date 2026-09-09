@@ -53,14 +53,14 @@ Everything we do in this repo considers `appdaemon/` as the **development enviro
 
 ## Deploy procedure (production)
 
-Production deploys are automated via Docker image builds.
+Merging to `main` builds the Docker image automatically; the rollout is not automatic (see `.agents/playbooks/appdaemon-deploy.md`).
 
 ### How it works
 
 1. Developer merges PR to `main`
 2. GitHub Actions (`.github/workflows/build-appdaemon.yml`) builds a Docker image
 3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
-4. Flux detects the new image tag and rolls the Kubernetes deployment
+4. The agent bumps `tag:` in the haynes-ops HelmRelease (branch + PR, self-merge), runs `flux reconcile`, and confirms the pod runs the new tag — Flux does not track new tags on its own
 
 ### What the Docker build does
 

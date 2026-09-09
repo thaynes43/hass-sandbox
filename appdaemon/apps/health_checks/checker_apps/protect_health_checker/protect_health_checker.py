@@ -189,8 +189,8 @@ def _fmt_age(seconds: float) -> str:
 class ProtectHealthChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker for the UniFi Protect event stream with reload auto-heal."""
 
-    DELAY_MIN_MIN = 1
-    DELAY_MIN_MAX = 60
+    #: A frozen event stream is invisible until someone walks past a camera,
+    #: so this one dwells a single minute and ships enabled.
     DELAY_MIN_DEFAULT = 1
     AUTO_REPAIR_ENABLED_DEFAULT = True
 
@@ -1171,20 +1171,9 @@ class ProtectHealthChecker(AutoRepairConfigMixin, hass.Hass):
 
         enabled, delay_min = self._read_auto_repair_config()
         if not enabled:
-            # Keep the outage clock running, but stand any countdown down.
-            # A PENDING left up here is not cosmetic: the card counts down to
-            # a repair that can never start, and alertmanager_bridge holds
-            # the critical page for up to repair_hold_cap_s on `pending` —
-            # withholding the page for an outage the operator has just said
-            # will not self-heal.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._repair_detail = "Auto-repair disabled"
-                self._auto_repair_deadline = None
+            self._stand_down_pending_repair("Auto-repair disabled")
+            # Keep the outage clock running: the dwell is measured from when
+            # the outage started, not from when auto-repair was re-enabled.
             if self._unhealthy_since is None:
                 self._unhealthy_since = datetime.datetime.now()
             return

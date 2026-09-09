@@ -780,6 +780,17 @@ class ShadeGatewayChecker(AutoRepairConfigMixin, hass.Hass):
             self._repair_deferred_until = None
             return
 
+        enabled, delay_min = self._read_auto_repair_config()
+        if not enabled:
+            # Stand the ladder down BEFORE the early returns below, not after
+            # them: once the episode's single auto-restart has been spent
+            # (_repair_attempted_this_episode), and whenever the checker is
+            # parked at `success`, one of those returns is taken on every
+            # cycle — and the state left standing would hold the critical
+            # page for the rest of the episode.
+            self._stand_down_pending_repair("Auto-repair disabled")
+            return
+
         # Don't trigger auto-repair from "success" state (waiting for the
         # episode to clear via the normal recovery path).
         if self._repair_status == REPAIR_SUCCESS:
@@ -789,23 +800,6 @@ class ShadeGatewayChecker(AutoRepairConfigMixin, hass.Hass):
         # REPAIR_FAILED case: no branch below matches it, so it stays FAILED
         # — the human escalation page — until the episode clears).
         if self._repair_attempted_this_episode:
-            return
-
-        enabled, delay_min = self._read_auto_repair_config()
-        if not enabled:
-            # Stand the countdown down. A PENDING left up here is not
-            # cosmetic: the card counts down to a repair that can never
-            # start, and alertmanager_bridge holds the critical page for up
-            # to repair_hold_cap_s on `pending` — withholding the page for an
-            # outage the operator has just said will not self-heal.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._repair_detail = "Auto-repair disabled"
-                self._auto_repair_deadline = None
             return
 
         now = datetime.datetime.now()

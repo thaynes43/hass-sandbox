@@ -154,7 +154,7 @@ A repair-capable checker reports a `repair_state` object on every status report.
 | `auto_repair_delay_min` | int | The live value of `input_number.<checker_id>_health_auto_repair_delay`, in minutes |
 | `auto_repair_delay_bounds` | `{min, max, step}` | The bounds that delay is clamped to, and that its helper was created with |
 
-The bounds are **per checker**, not global: `shade_gateway` is `15/360/15` (default 120) while the other six are `1/60/1`. The detail card renders them straight onto its delay input's `min`/`max`/`step` and uses them to validate what it sends back, so it can never offer a value the checker would clamp. A checker that does not publish the field (or a sensor payload cached from before it existed) makes the card fall back to `1/60/1`.
+The bounds are **per checker**, not global: `shade_gateway` is `15/360/15` (default 120) while the other six are `1/60/1`. The detail card renders them straight onto its delay input's `min`/`max`/`step`, which is what makes the spinner step and stop in the right places. It does **not** use them to reject what it sends: the only bound the card enforces is a floor of 1 (a zero or negative delay would collapse the dwell gate), and everything else goes to the backend, which clamps it with `_clamp_delay(loud=True)` — a WARNING plus an immediate republish of the corrected value. A card-side rejection would instead be a silent no-op, which is exactly what it was: with the bounds not yet published the fallback `1/60/1` applied to every checker, so typing a legal `180` on the shade-gateway row dropped the command with no relay call and no log. A checker that does not publish the field (or a sensor payload cached from before it existed) still makes the card fall back to `1/60/1` for rendering.
 
 ### Alertmanager Bridge
 
@@ -230,7 +230,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/alertmanager` — posts/resolves alerts in the cluster Alertmanager (controller, when `alertmanager_url` is set)
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
-- `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, mixed into all seven repair-capable checkers
+- `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`)
 - `prometheus-client` — metrics exposition (controller)
 

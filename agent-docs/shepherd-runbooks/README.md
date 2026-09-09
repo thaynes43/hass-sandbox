@@ -45,8 +45,10 @@ works through both cases.
      `attributes.checkers.<checker_id>`. Key fields: `status`, `checks[]`
      (each `{name, status, detail}`), `repair_state` (`{status, detail}` —
      `idle|pending|in_progress|success|failed` — plus `auto_repair_enabled`,
-     `auto_repair_delay_min`, `auto_repair_deadline` and `last_repair_attempt`, which
-     decide whether a `force_recheck` would fire a repair. `zwave` additionally
+     `auto_repair_delay_min`, `auto_repair_delay_bounds` (`{min, max, step}`, the range
+     that checker's delay helper actually accepts — `shade_gateway` runs 15/360/15
+     where the other six run 1/60/1), `auto_repair_deadline` and `last_repair_attempt`,
+     which decide whether a `force_recheck` would fire a repair. `zwave` additionally
      publishes `repair_attempts[]`, `repair_attempts_24h` and `repair_max_per_24h`
      — that is how you tell "auto-repair still has budget, leave it alone" from
      "budget spent, auto-repair has given up and this critical is mine to

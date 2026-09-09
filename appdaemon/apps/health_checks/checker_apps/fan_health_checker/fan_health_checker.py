@@ -89,10 +89,6 @@ SCRIPT_BUSY_WAIT_S = 660
 class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker for Modern Forms ceiling fans with per-fan repair."""
 
-    DELAY_MIN_MIN = 1
-    DELAY_MIN_MAX = 60
-    DELAY_MIN_DEFAULT = 5
-
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -343,6 +339,14 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         for name, since in self._fan_unhealthy_since.items():
             if since is not None:
                 self._fan_unhealthy_since[name] = now
+            # Restarting the down-clock only defers a fan awaiting its FIRST
+            # attempt. _evaluate_auto_repair also fires a FAILED fan the
+            # moment its backoff `next_retry_at` falls due — a clock the
+            # cancel does not otherwise move — so a retry could power-cycle a
+            # fan from inside the very deferral the operator just asked for.
+            # Floor it by the same rule a fan gets while it is not
+            # repair-worthy.
+            self._floor_stale_backoff(name, now)
 
         self._repair_status = REPAIR_IDLE
         self._auto_repair_deadline = None
@@ -690,7 +694,7 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 self._floor_stale_backoff(name, now)
 
     def _floor_stale_backoff(self, name: str, now: datetime.datetime) -> None:
-        """Slide a FAILED fan's retry forward while it is not repair-worthy.
+        """Slide a FAILED fan's retry forward when it must not fire yet.
 
         While a fan's entity is reachable (or a systemic outage suspends
         timers), its scheduled backoff retry keeps sliding to at least
@@ -698,6 +702,10 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         instant the entity blips down again — the fan always gets at least
         one full delay of sustained entity-down first — while the attempt
         ladder is preserved (only full recovery resets it).
+
+        :meth:`_cancel_repair` applies the same floor for the same reason:
+        an operator's deferral has to cover the backoff ladder, not just the
+        fans waiting on a first attempt.
         """
         fr = self._fan_repair_states[name]
         if fr["status"] != REPAIR_FAILED or not fr["next_retry_at"]:
@@ -747,13 +755,7 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
             # Clear any countdown started before the toggle was switched off —
             # otherwise reports keep advertising a pending repair (with a
             # stale deadline) that can never fire.
-            if self._repair_status == REPAIR_PENDING:
-                self.log(
-                    "Auto-repair disabled — cancelling pending auto-repair",
-                    level="INFO",
-                )
-                self._repair_status = REPAIR_IDLE
-                self._auto_repair_deadline = None
+            self._stand_down_pending_repair("Auto-repair disabled")
             return
 
         # Earliest-due fan first (first attempts and backoff retries compete
