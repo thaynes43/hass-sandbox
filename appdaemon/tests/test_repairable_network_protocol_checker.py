@@ -998,3 +998,89 @@ class TestNoRadioPingConfigured:
 
         assert _presses(app) == []
         assert app._escalate_detail == ""
+
+
+# ---------------------------------------------------------------------------
+# 19. The cap escalation cannot be cancelled by a lesser signal
+# ---------------------------------------------------------------------------
+
+
+class TestCapEscalationPrecedence:
+    """Once the budget is spent, a human is needed regardless of other signals.
+
+    After three restarts that didn't take, the ESPHome serial sensor may well
+    read ``off`` — but that is not evidence the outage got smaller. Letting it
+    (or the auto-repair toggle) short-circuit the escalation would drop Z-Wave
+    back to a non-paging ``warning`` while it is still fully down and
+    auto-repair has already given up: the exact silence this PR exists to end.
+    """
+
+    def _spent(self, app):
+        app._repair_attempts = [_ago(hours=3), _ago(hours=2), _ago(hours=1)]
+
+    def test_serial_sensor_off_does_not_cancel_the_escalation(self):
+        app = _make_app(
+            states={"binary_sensor.tubeszb_zw_serial_connected_2": "off"}
+        )
+        _init_only(app)
+        self._spent(app)
+        results = _results(entity="critical", ping="ok", web="ok")
+        app._run_checks_only = AsyncMock(return_value=results)
+
+        _drive(app, app._run_checks())
+
+        entity = [r for r in results if r["name"] == ENTITY_CHECK][0]
+        assert entity["status"] == "critical"
+        assert "cap reached" in entity["detail"]
+        assert _presses(app) == []
+
+    def test_disabled_auto_repair_does_not_cancel_the_escalation(self):
+        app = _make_app(states={"input_boolean.zwave_health_auto_repair": "off"})
+        _init_only(app)
+        self._spent(app)
+        results = _results(entity="critical", ping="ok", web="ok")
+        app._run_checks_only = AsyncMock(return_value=results)
+
+        _drive(app, app._run_checks())
+
+        entity = [r for r in results if r["name"] == ENTITY_CHECK][0]
+        assert entity["status"] == "critical"
+        assert _presses(app) == []
+
+    def test_unspent_budget_with_serial_off_still_just_warns(self):
+        """The precedence change must not make everything page."""
+        app = _make_app(
+            states={"binary_sensor.tubeszb_zw_serial_connected_2": "off"}
+        )
+        _init_only(app)
+        results = _results(entity="critical", ping="ok", web="ok")
+        app._run_checks_only = AsyncMock(return_value=results)
+
+        _drive(app, app._run_checks())
+
+        entity = [r for r in results if r["name"] == ENTITY_CHECK][0]
+        assert entity["status"] == "warning"
+        assert _presses(app) == []
+
+
+class TestSeedWritesBackToHelper:
+    def test_sensor_fallback_seed_is_persisted(self):
+        """A seed from the sensor must repopulate the durable copy.
+
+        Otherwise the ladder lives only in memory and the next restart comes
+        up with a fresh budget — the same failure, one restart later.
+        """
+        app = _make_app()
+        app.controller_state = _controller_state(
+            [_ago(hours=1).isoformat(timespec="seconds")]
+        )
+        _init_only(app)
+
+        _run(app._seed_attempts())
+
+        writes = [
+            c for c in app.call_service.call_args_list
+            if c[0] and c[0][0] == "input_text/set_value"
+        ]
+        assert writes, "seed did not write the attempt log back to the helper"
+        assert len(json.loads(writes[-1][1]["value"])) == 1

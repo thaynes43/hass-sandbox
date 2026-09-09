@@ -37,9 +37,12 @@ hard gates, all enforced in code:
    landing mid-outage can never trigger an immediate restart.
 3. **Minimum interval** between restarts (default 15 min).
 4. **Rolling 24 h cap** on restarts (default 3).  These two survive an
-   AppDaemon restart: attempt timestamps are published in ``repair_state``
-   and re-seeded from ``sensor.health_check_status`` on startup, so a deploy
-   mid-outage resumes the ladder instead of resetting it.
+   AppDaemon restart: attempt timestamps are persisted to
+   ``input_text.<checker_id>_health_repair_attempts`` and re-seeded on
+   startup, so a deploy mid-outage resumes the ladder instead of resetting
+   it.  They are deliberately *not* read back out of
+   ``sensor.health_check_status`` — see the Persistence section below for
+   why that races the controller and loses.
 5. **Quiet period** after every action (default 3 min) before the checker is
    allowed to evaluate a repair again.
 6. **Exactly one action per evaluation** — the state machine moves to
@@ -345,6 +348,11 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             self._last_repair_attempt = self._repair_attempts[-1].isoformat(
                 timespec="seconds"
             )
+        # Write the log back unconditionally. A seed from the sensor fallback
+        # (or a persist that silently failed last time) would otherwise leave
+        # the durable copy empty, and the very next restart would come up with
+        # a fresh budget — the same failure, one restart later.
+        self._persist_attempts()
         self.log(
             f"Seeded {len(self._repair_attempts)} repair attempt(s) in the last 24h "
             f"from {source} (most recent {self._last_repair_attempt}) — "
@@ -681,7 +689,39 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                 )
                 return
 
-        # Guard 2 (optional): the ESPHome board still believes it has a
+        # Guard 2: the rolling 24 h cap. Deliberately settled BEFORE the
+        # serial-sensor and enabled guards. After three restarts that didn't
+        # take, the ESPHome serial sensor may well read `off` — but that is
+        # not evidence the outage got smaller, and letting it (or a toggle
+        # someone flipped) short-circuit the escalation would drop Z-Wave
+        # back to a non-paging `warning` while it is still fully down and
+        # auto-repair has already given up. Once the budget is spent a human
+        # is needed no matter what the other signals say.
+        if self._cap_is_spent(now):
+            self._cap_reached = True
+            oldest = self._repair_attempts[0]
+            retry_at = oldest + datetime.timedelta(seconds=ATTEMPT_WINDOW_S)
+            detail = (
+                f"Cap reached: {len(self._repair_attempts)}/"
+                f"{self._repair_max_per_24h} restarts in 24h "
+                f"(next allowed {retry_at.isoformat(timespec='seconds')})"
+            )
+            if self._repair_status != REPAIR_FAILED:
+                self.log(
+                    f"Auto-repair cap reached ({self._repair_max_per_24h}/24h) "
+                    f"— giving up and escalating to critical",
+                    level="WARNING",
+                )
+            self._repair_status = REPAIR_FAILED
+            self._repair_detail = detail
+            self._auto_repair_deadline = None
+            self._escalate_detail = (
+                f"auto-repair cap reached "
+                f"({self._repair_max_per_24h} restarts/24h), manual action needed"
+            )
+            return
+
+        # Guard 3 (optional): the ESPHome board still believes it has a
         # serial client — the stale-client fingerprint.
         if self._repair_serial_entity:
             try:
@@ -706,33 +746,6 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
         if not self._repair_button:
             self._hold("No repair button configured")
-            return
-
-        # Guard 3: the rolling 24 h cap. Settled before the quiet-period and
-        # interval guards so _cap_reached (and the critical escalation that
-        # rides on it) stays stable for as long as the budget is spent.
-        if self._cap_is_spent(now):
-            self._cap_reached = True
-            oldest = self._repair_attempts[0]
-            retry_at = oldest + datetime.timedelta(seconds=ATTEMPT_WINDOW_S)
-            detail = (
-                f"Cap reached: {len(self._repair_attempts)}/"
-                f"{self._repair_max_per_24h} restarts in 24h "
-                f"(next allowed {retry_at.isoformat(timespec='seconds')})"
-            )
-            if self._repair_status != REPAIR_FAILED:
-                self.log(
-                    f"Auto-repair cap reached ({self._repair_max_per_24h}/24h) "
-                    f"— giving up and escalating to critical",
-                    level="WARNING",
-                )
-            self._repair_status = REPAIR_FAILED
-            self._repair_detail = detail
-            self._auto_repair_deadline = None
-            self._escalate_detail = (
-                f"auto-repair cap reached "
-                f"({self._repair_max_per_24h} restarts/24h), manual action needed"
-            )
             return
 
         # Guard 4: post-action quiet period.
@@ -970,8 +983,9 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
                 else None
             ),
             "last_repair_attempt": self._last_repair_attempt,
-            # Persisted so the rate limits survive an AppDaemon restart —
-            # re-seeded by _seed_attempts_from_controller() on startup.
+            # Published for the dashboard only. The durable copy that the
+            # rate limits are re-seeded from is the input_text helper — see
+            # _persist_attempts / _seed_attempts.
             "repair_attempts": [
                 a.isoformat(timespec="seconds") for a in self._repair_attempts
             ],

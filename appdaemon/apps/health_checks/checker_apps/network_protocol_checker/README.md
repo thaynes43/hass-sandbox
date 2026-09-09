@@ -43,6 +43,8 @@ Manual repair from the detail card skips the dwell but **not** the rate limits.
 
 The partial-failure cross-check is reversed -- integration forced back to `critical` so Alertmanager pages -- in exactly two cases: the 24h cap is spent (auto-repair has given up), or the integration is down while the radio is unreachable (the board is off the network). Both are states no automation can fix. Everything else keeps the normal `warning` downgrade, and Alertmanager's 5-minute for-duration still applies, so a transient miss cannot page.
 
+Both escalations sit **above** the serial-sensor guard and the auto-repair toggle in the guard order, deliberately. The toggle governs whether we press a button, not whether a total outage is allowed to page; and after three restarts that didn't take, the ESPHome serial sensor may well read `off` -- which is not evidence the outage got smaller. Letting either one short-circuit the escalation would put Z-Wave back on a silent `warning` while it is still fully down.
+
 ## Dependencies
 
 - `shared/check_utils` -- `ping_check()` for ICMP pings, `http_check()` for HTTP GET checks; `apply_cross_check()` for the partial-failure downgrade
