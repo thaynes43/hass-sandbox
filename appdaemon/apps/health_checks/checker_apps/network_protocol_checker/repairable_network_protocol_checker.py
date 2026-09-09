@@ -622,10 +622,31 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
     # ------------------------------------------------------------------
 
     async def _refresh_auto_repair_config(self) -> None:
+        """Refresh the cached toggle/delay from their HA helpers.
+
+        A read that comes back ``None`` means AppDaemon does not know the
+        entity — which is the normal state for the whole first run after these
+        helpers are provisioned, because AppDaemon loads the entity list at
+        startup and the helpers did not exist then. ``str(None) == "on"`` is
+        False, so treating that as a real read silently disables auto-repair
+        until the next pod restart: the feature ships inert, with nothing in
+        the logs to say so (observed on the 1.17.0 deploy). An unknown value
+        is not evidence, so the previous cached value is kept — which on the
+        first run is ``auto_repair_enabled_default``.
+        """
         try:
             entity_id = f"input_boolean.{self._checker_id}_health_auto_repair"
             enabled_state = await self.get_state(entity_id)
-            self._cached_auto_repair_enabled = str(enabled_state) == "on"
+            if enabled_state is None or str(enabled_state) in (
+                "unavailable", "unknown"
+            ):
+                self.log(
+                    f"{entity_id} not readable yet — keeping auto-repair "
+                    f"{'enabled' if self._cached_auto_repair_enabled else 'disabled'}",
+                    level="DEBUG",
+                )
+            else:
+                self._cached_auto_repair_enabled = str(enabled_state) == "on"
         except Exception as exc:
             self.log(f"Failed to read auto-repair toggle: {exc!r}", level="WARNING")
 

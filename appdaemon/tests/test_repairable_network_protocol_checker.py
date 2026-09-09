@@ -1282,3 +1282,51 @@ class TestSupportsRepairReflectsConfig:
         logged = " ".join(str(c) for c in app.log.call_args_list)
         assert "repair support DISABLED" in logged
         assert "repair support enabled" not in logged
+
+
+class TestUnreadableToggleKeepsTheDefault:
+    """A helper AppDaemon cannot see must not silently disable auto-repair.
+
+    AppDaemon loads its entity list at startup, so for the whole first run
+    after `_provision_repair_helpers` creates them, `get_state` returns None.
+    Treating that as a real read (`str(None) == "on"` → False) shipped 1.17.0
+    inert: the toggle was `on` in HA, the checker had it cached as disabled,
+    and nothing in the logs said so.
+    """
+
+    @pytest.mark.parametrize("raw", [None, "unavailable", "unknown"])
+    def test_unreadable_toggle_keeps_the_cached_value(self, raw):
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": raw},
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_enabled is True
+
+    def test_a_real_off_still_disables(self):
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": "off"},
+        )
+        app.initialize()
+
+        _run(app._refresh_auto_repair_config())
+
+        assert app._cached_auto_repair_enabled is False
+
+    def test_unreadable_toggle_still_permits_repair(self):
+        """The end-to-end consequence: the restart actually happens."""
+        app = _make_app(
+            {"auto_repair_enabled_default": True},
+            states={"input_boolean.zwave_health_auto_repair": None},
+        )
+        app.initialize()
+        _run(app._refresh_auto_repair_config())
+        app._unhealthy_since = _ago(minutes=30)
+
+        _evaluate(app, _results(entity="critical", ping="ok", web="ok"))
+
+        assert len(_presses(app)) == 1
