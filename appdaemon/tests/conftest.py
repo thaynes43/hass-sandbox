@@ -49,10 +49,18 @@ def _finalize_coroutines_in_own_test():
     """Force a GC pass in every test's teardown.
 
     Autouse fixtures are set up before explicitly requested ones, so this
-    tears down *last* — after app fixtures have released their mocks. Any
-    coroutine leaked by the test is therefore collected here, and its
-    "never awaited" RuntimeWarning is attributed to the test that leaked it
-    rather than to whichever test the collector happened to interrupt.
+    tears down *last* — after function-scoped fixtures have released their
+    mocks. A coroutine reachable only from that function-scoped state is
+    therefore collected here, and its "never awaited" RuntimeWarning is
+    attributed to the test that leaked it rather than to whichever test the
+    collector happened to interrupt.
+
+    That covers every leak found so far, but it is not absolute. A coroutine
+    still held by a module-, class- or session-scoped fixture outlives this
+    teardown, and so does one pinned by the traceback pytest retains for a
+    *failing* test. Either is finalised later and can still land on a
+    bystander — so if a reported leak makes no sense for the test named,
+    check for a wider-scoped holder before believing the attribution.
     """
     yield
     gc.collect()
