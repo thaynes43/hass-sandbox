@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -81,7 +83,7 @@ def _make_app(extra_args: dict | None = None) -> SpaHealthChecker:
     app.run_every = MagicMock()
     app.cancel_timer = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 
@@ -371,7 +373,7 @@ class TestRepairStateMachine:
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         # Mock create_task to prevent actual repair execution
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -390,7 +392,7 @@ class TestRepairStateMachine:
         app._next_retry_at = datetime.datetime.now() + datetime.timedelta(minutes=5)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -410,7 +412,7 @@ class TestRepairStateMachine:
         app._next_retry_at = datetime.datetime.now() - datetime.timedelta(seconds=1)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -429,7 +431,7 @@ class TestRepairStateMachine:
         app._next_retry_at = None
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -488,7 +490,7 @@ class TestRepairStateMachine:
         app._next_retry_at = datetime.datetime.now() - datetime.timedelta(hours=2)
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 15
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "ok", "detail": "5ms"},
@@ -512,7 +514,7 @@ class TestRepairStateMachine:
         app._repair_status = REPAIR_SUCCESS
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 15
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -533,7 +535,7 @@ class TestRepairStateMachine:
         app._next_retry_at = datetime.datetime.now() - datetime.timedelta(seconds=1)
         app._cached_auto_repair_enabled = False
         app._cached_auto_repair_delay_min = 15
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Gateway Ping", "status": "critical", "detail": "timeout"},
@@ -552,7 +554,7 @@ class TestRepairStateMachine:
         app._repair_attempts = 3
         retry_at = datetime.datetime.now() + datetime.timedelta(hours=1)
         app._next_retry_at = retry_at
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command(
             "health_check_repair_spa", {"action": "start_repair"}, None
@@ -569,7 +571,7 @@ class TestRepairStateMachine:
         app._repair_status = REPAIR_FAILED
         app._repair_attempts = 4
         app._next_retry_at = datetime.datetime.now() + datetime.timedelta(hours=2)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command("health_check_repair_spa", {"action": "start_repair"}, None)
 
@@ -600,7 +602,7 @@ class TestRepairStateMachine:
         app = _make_app()
         _init_only(app)
         app._repair_status = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._start_repair()
 
@@ -922,7 +924,7 @@ class TestRepairCommandHandler:
     def test_start_repair_command(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command(
             "health_check_repair_spa",

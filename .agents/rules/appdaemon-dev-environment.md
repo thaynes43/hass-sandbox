@@ -77,6 +77,45 @@ Use the Windows venv python directly (run from repo root):
 - Run from repo root, then `cd appdaemon` before pytest (tests use `Path(__file__).resolve().parent.parent` to find `appdaemon/`).
 - For failures, paste the pytest output (especially `short test summary` and tracebacks) so fixes can be applied.
 
+## Test hygiene: the un-awaited-coroutine gate
+
+`appdaemon/pytest.ini` turns two warnings into errors, so a leaked coroutine
+fails the build instead of being ignored:
+
+```ini
+filterwarnings =
+    error:coroutine .* was never awaited:RuntimeWarning
+    error::pytest.PytestUnraisableExceptionWarning
+```
+
+CI runs pytest from `appdaemon/`, so the gate applies there too.
+
+**Why the autouse `gc.collect()` fixture in `tests/conftest.py` must stay.** The
+"never awaited" warning is raised from the coroutine's `__del__`, which runs
+whenever the garbage collector happens to finalise it — usually during some
+*later*, innocent test. Forcing a collection in every test's teardown finalises
+the coroutine while its own test is still current, so the error is attributed to
+the test that actually leaked it. Without the fixture the gate blames the wrong
+tests and is unusable. The session-scoped `gc.freeze()` beside it is what keeps
+that collection cheap (~6s over the whole suite instead of ~110s) — keep both.
+
+**When the gate fails, fix the test — never re-silence the warning.** Two
+patterns, in order of preference:
+
+1. The test *meant* the task to run: capture the coroutine and await it. See
+   `app.captured_tasks` + `_drive()` in
+   `tests/test_repairable_network_protocol_checker.py`.
+2. The test does not care whether the task runs: build the double with
+   `closing_create_task()` from `tests/conftest.py` instead of a bare
+   `MagicMock()`. It records calls and returns exactly what `MagicMock()` did,
+   but closes the coroutine it is handed.
+
+```python
+from conftest import closing_create_task
+
+app.create_task = closing_create_task()
+```
+
 ## Other Python commands (lint, scripts, local AppDaemon)
 
 All commands assume you've activated the appropriate venv first.
