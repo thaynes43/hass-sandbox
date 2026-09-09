@@ -465,7 +465,14 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             "checker_id": self._checker_id,
             "checker_name": self._checker_name,
             "check_names": check_names,
-            "supports_repair": True,
+            # Not hardcoded True, unlike the other repairable checkers: this
+            # is the first one to document config that means "disable repair"
+            # (`repair_button: ""` / `repair_max_per_24h: 0`), and the detail
+            # card gates its Repair button purely on this flag. Advertising a
+            # button that can only ever refuse would also push the refusal
+            # string into the Alertmanager description as auto-repair context
+            # on a checker configured never to repair.
+            "supports_repair": self._restarts_disabled() == "",
             "repair_state": self._build_repair_state(),
         }
         if self._dependencies:

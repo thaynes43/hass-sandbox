@@ -1242,3 +1242,34 @@ class TestHostileHelperValues:
             if c[1].get("command") == "register_checker"
         ]
         assert registrations, "checker failed to register after a seed error"
+
+
+class TestSupportsRepairReflectsConfig:
+    def _registration(self, app) -> dict:
+        return [
+            json.loads(c[1]["payload"])
+            for c in app.fire_event.call_args_list
+            if c[1].get("command") == "register_checker"
+        ][-1]
+
+    def test_configured_checker_advertises_repair(self):
+        app = _make_app()
+        _init_only(app)
+        app._register()
+        assert self._registration(app)["supports_repair"] is True
+
+    @pytest.mark.parametrize(
+        "disable", [{"repair_button": ""}, {"repair_max_per_24h": 0}]
+    )
+    def test_disabled_repair_is_not_advertised(self, disable):
+        """The card gates its Repair button purely on this flag.
+
+        Both documented ways to switch the action off must therefore reach
+        the registration payload, or the UI offers a button that can only
+        refuse — and the refusal rides into the Alertmanager description as
+        auto-repair context on a checker configured never to repair.
+        """
+        app = _make_app(disable)
+        _init_only(app)
+        app._register()
+        assert self._registration(app)["supports_repair"] is False
