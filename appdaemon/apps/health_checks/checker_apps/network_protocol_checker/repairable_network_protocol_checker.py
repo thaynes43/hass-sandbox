@@ -36,7 +36,8 @@ hard gates, all enforced in code:
    clock restarts from scratch on every AppDaemon start, so an image deploy
    landing mid-outage can never trigger an immediate restart.
 3. **Minimum interval** between restarts (default 15 min).
-4. **Rolling 24 h cap** on restarts (default 3).  These two survive an
+4. **Rolling 24 h cap** on restarts (default 3; ``0`` disables restarts
+   entirely, behaving exactly like omitting ``repair_button``).  These two survive an
    AppDaemon restart: attempt timestamps are persisted to
    ``input_text.<checker_id>_health_repair_attempts`` and re-seeded on
    startup, so a deploy mid-outage resumes the ladder instead of resetting
@@ -615,6 +616,10 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         the minimum interval keeps a flapping integration from turning into a
         restart loop.
         """
+        disabled = self._restarts_disabled()
+        if disabled:
+            return False, disabled
+
         self._prune_attempts(now)
 
         if self._cap_is_spent(now):
@@ -633,9 +638,8 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
 
     def _cap_detail(self) -> str:
         """Human-readable reason the restart budget is spent."""
-        if self._repair_max_per_24h <= 0:
-            return "Restarts disabled (repair_max_per_24h = 0)"
-        # Empty only when the cap is 0, handled above — but never index blind.
+        # _cap_is_spent only reports True with a positive cap and at least one
+        # attempt, but never index blind.
         if not self._repair_attempts:
             return "Cap reached: no restarts permitted"
         retry_at = self._repair_attempts[0] + datetime.timedelta(
@@ -648,16 +652,32 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
         )
 
     def _cap_is_spent(self, now: datetime.datetime) -> bool:
-        """True when no further restart is permitted inside the window.
+        """True when a real restart budget has actually been used up.
 
-        ``repair_max_per_24h <= 0`` means "never restart this board" and is a
-        legitimate way to disable the action while keeping the checker; it is
-        handled explicitly so the empty attempt list is never indexed.
+        A configured budget of ``<= 0`` is *not* a spent cap — nothing was
+        ever consumed — so it returns False here and is handled by
+        :meth:`_restarts_disabled` instead. Reporting it as "cap reached"
+        would page on the first cycle of any outage with a fabricated
+        diagnosis, the same shape as treating a missing ping check as an
+        unreachable radio.
         """
         if self._repair_max_per_24h <= 0:
-            return True
+            return False
         self._prune_attempts(now)
         return len(self._repair_attempts) >= self._repair_max_per_24h
+
+    def _restarts_disabled(self) -> str:
+        """Reason restarts are switched off by config, or "" if they are on.
+
+        Both forms behave identically — hold, no action, and keep the normal
+        partial-failure ``warning`` downgrade — because neither is evidence
+        about the outage itself.
+        """
+        if not self._repair_button:
+            return "No repair button configured"
+        if self._repair_max_per_24h <= 0:
+            return "Restarts disabled (repair_max_per_24h = 0)"
+        return ""
 
     # ------------------------------------------------------------------
     # Auto-repair evaluation
@@ -755,8 +775,9 @@ class RepairableNetworkProtocolChecker(NetworkProtocolChecker):
             self._hold("Auto-repair disabled")
             return
 
-        if not self._repair_button:
-            self._hold("No repair button configured")
+        disabled = self._restarts_disabled()
+        if disabled:
+            self._hold(disabled)
             return
 
         # Guard 4: post-action quiet period.

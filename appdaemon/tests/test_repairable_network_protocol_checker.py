@@ -1138,8 +1138,40 @@ class TestZeroCapIsSafe:
         _drive(app, app._run_checks())  # must not raise
 
         assert _presses(app) == []
-        assert app._repair_status == REPAIR_FAILED
         assert "disabled" in app._repair_detail.lower()
+
+    def test_zero_cap_does_not_fabricate_a_spent_cap(self):
+        """A budget of 0 was never *spent*, so it must not page as one.
+
+        Escalating here would force critical on the first cycle of any
+        outage, forever, with the text "auto-repair cap reached (0
+        restarts/24h)" — the same fabricated diagnosis as treating a missing
+        ping check as an unreachable radio.
+        """
+        app = _make_app({"repair_max_per_24h": 0})
+        _init_only(app)
+        results = _results(entity="critical", ping="ok", web="ok")
+        app._run_checks_only = AsyncMock(return_value=results)
+
+        _drive(app, app._run_checks())
+
+        assert app._escalate_detail == ""
+        entity = [r for r in results if r["name"] == ENTITY_CHECK][0]
+        assert entity["status"] == "warning"
+
+    def test_zero_cap_matches_a_missing_repair_button(self):
+        """The two documented ways to switch the action off behave alike."""
+        zero = _make_app({"repair_max_per_24h": 0})
+        no_button = _make_app({"repair_button": ""})
+        for app in (zero, no_button):
+            _init_only(app)
+            results = _results(entity="critical", ping="ok", web="ok")
+            app._run_checks_only = AsyncMock(return_value=results)
+            _drive(app, app._run_checks())
+            entity = [r for r in results if r["name"] == ENTITY_CHECK][0]
+            assert _presses(app) == []
+            assert app._escalate_detail == ""
+            assert entity["status"] == "warning"
 
     def test_zero_cap_refuses_manual_repair_without_raising(self):
         app = _make_app({"repair_max_per_24h": 0})
