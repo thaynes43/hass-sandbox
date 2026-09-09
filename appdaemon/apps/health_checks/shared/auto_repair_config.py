@@ -191,25 +191,29 @@ class AutoRepairConfigMixin:
             )
             if created:
                 self.log(f"Provisioned {toggle_entity}", level="INFO")
-                # AppDaemon does not learn about an entity created over the
-                # REST API until its next full plugin-state refresh, so
-                # register it locally now (see the module docstring). It is
-                # registered as "off" — a fresh input_boolean's true state —
-                # not as the value about to be seeded: once the entity exists
-                # locally, HA's state_changed for the seed below flips it to
-                # "on" on its own, and if that seed FAILS the local copy stays
-                # truthful, so the first read fails closed instead of
-                # trusting a write HA never accepted for up to refresh_delay.
-                await self._add_local_entity(toggle_entity, "off")
                 # A freshly created input_boolean is off, so without this the
                 # repair would be provisioned and then never run. Only applied
                 # on creation — a later manual "off" is never overridden.
+                seeded_on = False
                 if self._auto_repair_enabled_default:
-                    await self._seed_helper(
+                    seeded_on = await self._seed_helper(
                         "input_boolean/turn_on",
                         toggle_entity,
                         f"Auto-repair default-enabled via {toggle_entity}",
                     )
+                # AppDaemon does not learn about an entity created over the
+                # REST API until its next full plugin-state refresh, so
+                # register it locally now (see the module docstring) — AFTER
+                # the seed, with the state HA actually confirmed. Registering
+                # before the seed would read back "off" one line later and
+                # start a default-on checker one check interval inert (the
+                # 1.17.0 shape); registering the intended value blind would
+                # trust a write HA may have rejected for up to refresh_delay.
+                # A failed seed therefore registers "off": truthful, and the
+                # first read fails closed.
+                await self._add_local_entity(
+                    toggle_entity, "on" if seeded_on else "off"
+                )
         except Exception as exc:
             self.log(
                 f"Failed to provision auto-repair toggle: {exc!r}", level="ERROR"
@@ -228,10 +232,7 @@ class AutoRepairConfigMixin:
             )
             if created:
                 self.log(f"Provisioned {delay_entity}", level="INFO")
-                await self._add_local_entity(
-                    delay_entity, self._auto_repair_delay_min_default
-                )
-                await self._seed_helper(
+                seeded = await self._seed_helper(
                     "input_number/set_value",
                     delay_entity,
                     f"Auto-repair delay default "
@@ -239,6 +240,14 @@ class AutoRepairConfigMixin:
                     f"{delay_entity}",
                     value=self._auto_repair_delay_min_default,
                 )
+                # Register locally only with a value HA confirmed. There is no
+                # safe direction to guess a delay in, so a failed seed leaves
+                # the entity unregistered: the read guard keeps the cached
+                # default until the next plugin refresh brings the truth.
+                if seeded:
+                    await self._add_local_entity(
+                        delay_entity, self._auto_repair_delay_min_default
+                    )
         except Exception as exc:
             self.log(
                 f"Failed to provision auto-repair delay: {exc!r}", level="ERROR"
@@ -264,8 +273,8 @@ class AutoRepairConfigMixin:
 
     async def _seed_helper(
         self, service: str, entity_id: str, success_msg: str, **data: Any
-    ) -> None:
-        """Write a just-created helper's initial value, checking the result."""
+    ) -> bool:
+        """Write a just-created helper's initial value; True if HA accepted it."""
         try:
             result = await self.call_service(service, entity_id=entity_id, **data)
         except Exception as exc:
@@ -273,15 +282,16 @@ class AutoRepairConfigMixin:
                 f"Failed to seed {entity_id} via {service}: {exc!r}",
                 level="WARNING",
             )
-            return
+            return False
         if self._service_ok(result):
             self.log(success_msg, level="INFO")
-        else:
-            self.log(
-                f"Home Assistant did not accept the initial value for "
-                f"{entity_id} ({service}, result={result!r})",
-                level="WARNING",
-            )
+            return True
+        self.log(
+            f"Home Assistant did not accept the initial value for "
+            f"{entity_id} ({service}, result={result!r})",
+            level="WARNING",
+        )
+        return False
 
     # ------------------------------------------------------------------
     # Service-call result contract

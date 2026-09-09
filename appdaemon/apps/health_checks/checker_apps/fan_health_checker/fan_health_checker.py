@@ -323,18 +323,16 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
 
         The card offers Cancel for any checker sitting at ``pending`` and the
         controller forwards it, so without this arm the tap was silently
-        dropped. Candidates are re-armed on every cycle, so dropping back to
-        ``idle`` alone would let the countdown fire on the very next tick —
-        each pending fan's down-clock is restarted instead, giving a real
-        deferral of one full auto-repair delay. ``attempts`` is untouched:
-        cancelling is not a repair and must not buy back budget.
+        dropped. Only the aggregate status ever holds ``pending`` — per-fan
+        states never do; the countdown is derived from the per-fan down-clocks
+        of every fan currently unhealthy. Candidates are re-armed on every
+        cycle, so dropping back to ``idle`` alone would let the countdown fire
+        on the very next tick — every unhealthy fan's down-clock is restarted
+        instead, giving a real deferral of one full auto-repair delay.
+        ``attempts`` is untouched: cancelling is not a repair and must not buy
+        back budget.
         """
-        pending_fans = [
-            name
-            for name, fr in self._fan_repair_states.items()
-            if fr["status"] == REPAIR_PENDING
-        ]
-        if self._repair_status != REPAIR_PENDING and not pending_fans:
+        if self._repair_status != REPAIR_PENDING:
             self.log(
                 f"Cannot cancel repair — status is {self._repair_status}",
                 level="WARNING",
@@ -342,9 +340,6 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
             return
 
         now = datetime.datetime.now()
-        for name in pending_fans:
-            self._fan_repair_states[name]["status"] = REPAIR_IDLE
-            self._fan_repair_states[name]["detail"] = ""
         for name, since in self._fan_unhealthy_since.items():
             if since is not None:
                 self._fan_unhealthy_since[name] = now

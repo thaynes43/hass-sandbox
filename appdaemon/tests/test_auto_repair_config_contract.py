@@ -928,10 +928,11 @@ class TestProvisioning:
         _run(app._provision_auto_repair_helpers(prov))
 
         added = {c.args[0]: c.args[1] for c in app.add_entity.call_args_list}
-        # Registered as "off" — a fresh input_boolean's true state — even with
-        # enabled_default=True: the seed's state_changed flips it, and if the
-        # seed fails the local copy stays truthful (fail closed).
-        assert added[spec.toggle] == "off"
+        # Registered AFTER the seed with the state HA confirmed: "on" here,
+        # because the seed succeeded. Registering "off" first would be read
+        # back one line later and start a default-on checker one interval
+        # inert; registering "on" blind would trust an unconfirmed write.
+        assert added[spec.toggle] == "on"
         assert added[spec.delay] == spec.delay_min
         # ...and it was awaited, not left as a dangling coroutine.
         assert app.add_entity.return_value.awaits == 2
@@ -1105,3 +1106,34 @@ class TestCancelRepair:
         spec.cancel(app)
 
         assert _logs(app, "WARNING", "Cannot cancel repair")
+
+
+class TestLocalRegistrationFollowsTheSeed:
+    """The local copy must reflect what HA confirmed, never a guess.
+
+    A successful seed registers the seeded value so the read one line later
+    agrees with HA (no inert first interval). A failed toggle seed registers
+    "off" — truthful, fail closed. A failed delay seed registers nothing:
+    there is no safe direction to guess a delay in, so the read guard keeps
+    the cached default until the next plugin refresh brings the truth.
+    """
+
+    def test_failed_toggle_seed_registers_off(self, spec):
+        app = spec.app(enabled_default=True)
+        app.call_service = MagicMock(
+            return_value=ServiceResult({"success": False, "ad_status": "TIMEOUT"})
+        )
+        _run(app._provision_auto_repair_helpers(_prov(True)))
+        added = {c.args[0]: c.args[1] for c in app.add_entity.call_args_list}
+        assert added[spec.toggle] == "off"
+
+    def test_failed_delay_seed_registers_nothing(self, spec):
+        app = spec.app(enabled_default=False)
+        app.call_service = MagicMock(
+            return_value=ServiceResult({"success": False, "ad_status": "TIMEOUT"})
+        )
+        _run(app._provision_auto_repair_helpers(_prov(True)))
+        added = {c.args[0] for c in app.add_entity.call_args_list}
+        assert spec.delay not in added
+        # ...and the toggle (not seeded — default off) is registered truthfully.
+        assert app.add_entity.call_args_list[0].args[1] == "off"

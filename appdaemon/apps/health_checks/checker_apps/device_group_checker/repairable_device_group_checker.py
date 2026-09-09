@@ -225,20 +225,15 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
         one full auto-repair delay. Attempts are never refunded: cancelling is
         not a repair.
         """
-        pending = [
-            name
-            for name, dr in self._device_repair_states.items()
-            if dr["status"] == REPAIR_PENDING
-        ]
-        if self._repair_status != REPAIR_PENDING and not pending:
+        # Only the aggregate status ever holds PENDING — per-device states
+        # never do (see _aggregate_repair_status) — so the countdown lives on
+        # the shared dwell clock and that is what gets restarted.
+        if self._repair_status != REPAIR_PENDING:
             self.log(
                 f"Cannot cancel repair — status is {self._repair_status}",
                 level="WARNING",
             )
             return
-        for name in pending:
-            self._device_repair_states[name]["status"] = REPAIR_IDLE
-            self._device_repair_states[name]["detail"] = ""
         self._repair_status = REPAIR_IDLE
         self._auto_repair_deadline = None
         self._unhealthy_since = datetime.datetime.now()
