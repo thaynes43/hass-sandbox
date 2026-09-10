@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -107,7 +109,7 @@ def _make_app(
     app.timer_running = MagicMock(return_value=False)
     app.datetime = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 

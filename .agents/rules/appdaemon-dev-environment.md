@@ -77,6 +77,65 @@ Use the Windows venv python directly (run from repo root):
 - Run from repo root, then `cd appdaemon` before pytest (tests use `Path(__file__).resolve().parent.parent` to find `appdaemon/`).
 - For failures, paste the pytest output (especially `short test summary` and tracebacks) so fixes can be applied.
 
+## Test hygiene: the un-awaited-coroutine gate
+
+`appdaemon/pytest.ini` turns two warnings into errors, so a leaked coroutine
+fails the build instead of being ignored:
+
+```ini
+filterwarnings =
+    error:coroutine .* was never awaited:RuntimeWarning
+    error::pytest.PytestUnraisableExceptionWarning
+```
+
+CI runs pytest from `appdaemon/`, so the gate applies there too.
+
+**Why the autouse `gc.collect()` fixture in `tests/conftest.py` must stay.** The
+"never awaited" warning is raised from the coroutine's `__del__`, which runs
+whenever the garbage collector happens to finalise it — usually during some
+*later*, innocent test. Forcing a collection in every test's teardown finalises
+the coroutine while its own test is still current, so the error is attributed to
+the test that actually leaked it. Without the fixture the gate blames the wrong
+tests and is unusable. The session-scoped `gc.freeze()` beside it is what keeps
+that collection cheap (~6s over the whole suite instead of ~110s) — keep both.
+
+Two caveats worth knowing before you debug a failure. The
+`PytestUnraisableExceptionWarning` filter is deliberately broad — it fails on any
+exception escaping any `__del__`, so read the reported cause and only reach for
+the coroutine fixes below when it actually says "was never awaited". And the
+attribution guarantee covers coroutines held by function-scoped state; one
+retained by a module-, class- or session-scoped fixture, or by the traceback
+pytest keeps for a *failing* test, can still be misattributed.
+
+**When the gate fails, fix the test — never re-silence the warning.** Two
+patterns, in order of preference:
+
+1. The test *meant* the task to run: capture the coroutine and await it. See
+   `app.captured_tasks` + `_drive()` in
+   `tests/test_repairable_network_protocol_checker.py`.
+2. The test does not care whether the task runs: build the double with
+   `closing_create_task()` from `tests/conftest.py` instead of a bare
+   `MagicMock()`. It records calls and returns exactly what `MagicMock()` did,
+   but closes the coroutine it is handed.
+
+```python
+from conftest import closing_create_task
+
+app.create_task = closing_create_task()
+```
+
+Two limits on fix #2. **Convert the double the leaking test actually uses, not
+reflexively the shared `_make_app`** — the two patterns are mutually exclusive
+per double, and a file can contain both kinds of test. `grep create_task.call_args`
+in the file first. A test that retrieves the coroutine and *awaits* it — as
+`test_health_check_controller.py:1964` does — breaks with `RuntimeError: cannot
+reuse already awaited coroutine` if the shared helper closed it first. Loudly, not
+silently, but override the double in the leaking test rather than converting the
+helper. (Not every hit is a hazard: `test_school_schedule_app.py:387` only calls
+`close()` on the retrieved coroutine, and a second `close()` is a no-op.) And `closing_create_task()` only inspects **positional**
+arguments, so a coroutine handed over by keyword, or wrapped
+(`create_task(asyncio.gather(...))`), is not covered by it at all — drive that one.
+
 ## Other Python commands (lint, scripts, local AppDaemon)
 
 All commands assume you've activated the appropriate venv first.

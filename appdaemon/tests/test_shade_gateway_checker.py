@@ -16,6 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -116,7 +118,7 @@ def _make_app(extra_args: dict | None = None) -> ShadeGatewayChecker:
     app.run_every = MagicMock()
     app.cancel_timer = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 
@@ -560,7 +562,7 @@ class TestGraceAndResults:
     def test_starts_repair_at_deadline(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=10)
@@ -601,7 +603,7 @@ class TestGraceAndResults:
         the same episode — this is the 'one restart per episode' rule."""
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=30)
@@ -620,7 +622,7 @@ class TestGraceAndResults:
     def test_success_state_does_not_retrigger(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 5
         app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=30)
@@ -644,7 +646,7 @@ class TestRepairExecution:
     def test_start_repair_presses_button_and_sets_in_progress(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._start_repair()
 
@@ -723,7 +725,7 @@ class TestRepairExecution:
         guard — only the *automatic* trigger is gated."""
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
         app._repair_status = REPAIR_FAILED
         app._repair_attempted_this_episode = True
 
@@ -912,7 +914,7 @@ class TestCancelAndConfig:
     def test_on_repair_command_start(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command(
             "health_check_repair_shade_gateway", {"action": "start_repair"}, {}

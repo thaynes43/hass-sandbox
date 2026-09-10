@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 mock_hass = MagicMock()
 mock_hass.Hass = type("_MockHass", (), {"__init__": lambda self, *a, **kw: None})
 sys.modules["hassapi"] = mock_hass
@@ -67,7 +69,7 @@ def _make_app(extra_args: dict | None = None) -> RepairableDeviceChecker:
     app.run_in = MagicMock()
     app.run_every = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 
@@ -217,7 +219,7 @@ class TestRepairStateMachine:
         app = _make_app()
         _init_only(app)
         app._repair_status = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._start_repair()
         assert app._repair_status == REPAIR_IN_PROGRESS
@@ -386,7 +388,7 @@ class TestRepairCommand:
     def test_start_repair_command(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command(
             "health_check_repair_printer",

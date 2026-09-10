@@ -17,6 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -103,8 +105,11 @@ def _make_app(extra_args: dict | None = None) -> MediaDashboardApp:
 
     for attr in ("get_state", "set_state", "call_service", "listen_state",
                  "listen_event", "fire_event", "run_in", "run_every",
-                 "run_daily", "cancel_timer", "log", "create_task"):
+                 "run_daily", "cancel_timer", "log"):
         setattr(app, attr, MagicMock())
+    # These tests assert *that* a task was created, never drive it, so the
+    # double closes the coroutine instead of leaking it.
+    app.create_task = closing_create_task()
     app.name = "media_dashboard_app"
 
     with patch("media_dashboard_app.media_dashboard_app.TautulliFetcher") as MockT, \

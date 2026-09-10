@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import closing_create_task
+
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
 # ---------------------------------------------------------------------------
@@ -101,7 +103,7 @@ def _make_app(extra_args: dict | None = None) -> RepairableDeviceGroupChecker:
     app.run_every = MagicMock()
     app.cancel_timer = MagicMock()
     app.log = MagicMock()
-    app.create_task = MagicMock()
+    app.create_task = closing_create_task()
 
     return app
 
@@ -368,7 +370,7 @@ class TestAutoRepair:
         app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(
             minutes=10
         )
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Movie Room Status", "status": "critical", "detail": "off"},
@@ -389,7 +391,7 @@ class TestAutoRepair:
             minutes=10
         )
         app._device_repair_states["Movie Room"]["status"] = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Movie Room Status", "status": "critical", "detail": "off"},
@@ -522,7 +524,7 @@ class TestRepairExecution:
         _init_only(app)
         app._device_repair_states["Movie Room"]["status"] = REPAIR_FAILED
         app._device_repair_states["Rumpus Room"]["status"] = REPAIR_FAILED
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._start_manual_repair()
 
@@ -613,7 +615,7 @@ class TestRepairCommandHandler:
     def test_start_repair_command(self):
         app = _make_app()
         _init_only(app)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         app._on_repair_command(
             "health_check_repair_cielo",
@@ -637,7 +639,7 @@ class TestCachedAutoRepairConfig:
         app._cached_auto_repair_enabled = True
         app._cached_auto_repair_delay_min = 1
         app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=5)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Movie Room Status", "status": "critical", "detail": "off"},
@@ -657,7 +659,7 @@ class TestCachedAutoRepairConfig:
         app._cached_auto_repair_enabled = False
         app._cached_auto_repair_delay_min = 1
         app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=5)
-        app.create_task = MagicMock()
+        app.create_task = closing_create_task()
 
         results = [
             {"name": "Movie Room Status", "status": "critical", "detail": "off"},
