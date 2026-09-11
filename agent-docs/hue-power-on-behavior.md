@@ -1,11 +1,11 @@
 # Hue power-on behavior (Zigbee2MQTT)
 
 Ruling (Tom, 2026-08-30): after a power loss every Hue bulb restores its
-**previous state**. Two deliberate exceptions stay `on` (the kids' nightstands
-`upstairs_blue_room_nightstand_hue_bulb_jackson` and
-`upstairs_pink_room_nightstand_hue_bulb_penelope`), the photocell-fed
-`front_yard_lamp_post_hue_edison` stays `on` (every dusk is a power-on for it),
-and `outdoor_hue_string_lights_01` is seasonal decor left unset. Third Reality
+**previous state**. Four deliberate exceptions. Three stay `on`: the kids'
+nightstands `upstairs_blue_room_nightstand_hue_bulb_jackson` and
+`upstairs_pink_room_nightstand_hue_bulb_penelope`, and the photocell-fed
+`front_yard_lamp_post_hue_edison` (every dusk is a power-on for it). One is
+left unset: `outdoor_hue_string_lights_01`, seasonal decor. Third Reality
 night lights are not Hue and are outside this ruling.
 
 ## The gotcha: the HA select only covers on/off
@@ -43,9 +43,10 @@ takes the Zigbee2MQTT **friendly name**, which is not always the HA entity
 slug (`Den Hue Iris Light` has spaces). The HA select keeps showing `previous`
 afterwards because `startUpOnOff` is still 0xFF; that is correct, not drift.
 
-Applied to all 93 `*hue*` bulbs on 2026-09-10 (the 17 front porch/yard bulbs
-via `mqtt.publish`, the rest paced at one device per 1.5 s over MQTT). The four
-exceptions above were not touched.
+Applied on 2026-09-10 to 93 bulbs: every `*hue*` device in Zigbee2MQTT except
+the four exceptions above (97 devices total; the two `front_yard_hue_*_lights`
+entries are groups, not bulbs). The 17 front porch/yard bulbs went via
+`mqtt.publish`, the other 76 paced at one device per 1.5 s over MQTT.
 
 ### Verify from the bulb, not from HA state
 
