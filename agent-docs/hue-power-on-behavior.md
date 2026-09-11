@@ -43,14 +43,18 @@ takes the Zigbee2MQTT **friendly name**, which is not always the HA entity
 slug (`Den Hue Iris Light` has spaces). The HA select keeps showing `previous`
 afterwards because `startUpOnOff` is still 0xFF; that is correct, not drift.
 
-Applied on 2026-09-10 to 93 bulbs: every `*hue*` device in Zigbee2MQTT except
-the four exceptions above (97 devices total; the two `front_yard_hue_*_lights`
-entries are groups, not bulbs). The 17 front porch/yard bulbs went via
-`mqtt.publish`, the other 76 paced at one device per 1.5 s over MQTT.
+Applied on 2026-09-10. Zigbee2MQTT has 99 `*hue*` entries: 2 groups
+(`front_yard_hue_calla_lights`, `front_yard_hue_lily_lights`, skipped), the 4
+bulb exceptions above (skipped), and 93 bulbs that were swept. The 17 front
+porch/yard bulbs (`outdoor_front_porch_hue_recessed_01-03`, the 8 calla and
+the 6 lily bulbs; the porch's `downstairs_front_porch_inovelli_dimmer` is the
+smart-bulb-mode switch, not a bulb) went via `mqtt.publish`; the other 76 were
+paced at one device per 1.5 s over MQTT.
 
 ### Verify from the bulb, not from HA state
 
 ```json
+// publish to zigbee2mqtt/<friendly_name>/set, one at a time
 {"read": {"cluster": "genLevelCtrl", "attributes": ["startUpCurrentLevel"]}}
 {"read": {"cluster": "lightingColorCtrl", "attributes": ["startUpColorTemperature"]}}
 ```
@@ -63,8 +67,11 @@ the level read applies.
 
 ## Onboarding a new Hue bulb
 
-1. Join it to Zigbee2MQTT and give it its `<area>_hue_<fixture>_NN` name.
+1. Join it to Zigbee2MQTT and name it after its area and fixture like its
+   neighbours (`<area>_hue_recessed_NN` for a recessed run; named bulbs such
+   as the nightstands and the lamp post keep their own pattern).
 2. Publish `{"hue_power_on_behavior": "recover"}` to its `/set` topic.
-3. Read `startUpCurrentLevel` back and confirm 255.
+3. Publish the `startUpCurrentLevel` read above to the same topic and confirm
+   255 in the Zigbee2MQTT log.
 
 Do not "normalise" the four exceptions, and do not rely on the select alone.
