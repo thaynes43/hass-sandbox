@@ -31,6 +31,20 @@ Admin-level HA REST operations beyond provisioning. Mirrors `HAProvisioner`'s co
 
 AppDaemon cancels in-flight service calls after ~60 seconds, and a config-entry reload (e.g. UniFi Protect re-establishing its websocket) can exceed that. Going through the REST API keeps the timeout under our control and returns HA's actual response instead of a cancelled future.
 
+### `await local_file_status(ha_url, url_path, timeout_s=5.0, session=None) -> int`
+
+Unauthenticated `HEAD` probe against a HA `/local/...` static URL, returning the HTTP status HA answered. Never raises: a connection error, a timeout, or a URL that cannot be built all return the module constant `STATUS_UNREACHABLE` (`-1`), which is deliberately negative so it can never collide with a real status.
+
+It deliberately sends **no** `Authorization` header: `/local/...` maps to `/config/www` and is served unauthenticated, so attaching the long-lived token would leak it for no benefit (security policy S3/S6). Redirects are not followed, so a 302 to the HA login page reads as 302 rather than as a served file. `build_local_url(ha_url, url_path)` is exported alongside it for callers that need the joined URL.
+
+**Prefer this over `local_file_exists` whenever the caller reports failure to an operator.** The distinction is operational, not cosmetic: `404` means the file is not there (usually transient and self-healing), while a redirect, a 401/403, or `STATUS_UNREACHABLE` means `ha_url` or HA itself is wrong and *nothing will fix itself*. Collapsing them makes a permanent misconfiguration look like a transient miss.
+
+### `await local_file_exists(ha_url, url_path, timeout_s=5.0, session=None) -> bool`
+
+Thin wrapper over `local_file_status` — `True` **only** on HTTP 200. A 404, redirect, connection error or timeout all return `False`, and it never raises.
+
+Used by `photo_frame_viewer` (via `local_file_status`) to confirm HA is really serving a staged generation before publishing it — HA kills `shell_command`s at 60s, so the staging command's return value cannot be trusted.
+
 ## Why WebSocket for helpers?
 
 The REST Config Entry Flow API (`POST /api/config/config_entries/flow`) does **not** support helper types in modern HA versions (confirmed broken on HA 2026.2.x). Helpers must be created via the WebSocket `{helper_type}/create` command.
@@ -54,6 +68,7 @@ Rules: lowercase, non-alphanumeric chars become underscores, consecutive undersc
 | `provisioner.py` | `HAProvisioner` — high-level idempotent ensure API |
 | `ha_admin_client.py` | `HaAdminClient` — config-entry inspection/reload + server-side template rendering |
 | `ha_rest_client.py` | `HaRestClient` — low-level async HTTP + WebSocket wrapper |
+| `local_file_check.py` | `local_file_status()` / `local_file_exists()` / `build_local_url()` — unauthenticated `/local/...` probe |
 | `__init__.py` | Package exports |
 
 ## Dependencies
@@ -72,6 +87,9 @@ All apps that self-provision HA entities:
 
 `HaAdminClient` users:
 - `health_checks/checker_apps/protect_health_checker` — `render_template` for `integration_entities` sensor discovery; `list_config_entries` + `reload_config_entry` for the websocket-freeze auto-heal
+
+`local_file_status` / `local_file_exists` users:
+- `photo_frame_viewer` — staged-generation verification (uses `local_file_status` so its give-up WARNING can tell a 404 apart from a bad `ha_url`)
 
 ## Detailed playbook
 

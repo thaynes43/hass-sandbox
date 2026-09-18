@@ -470,6 +470,8 @@ photo_frame_viewer_wall_display:
   cleanup_shell_command: photo_frame_cleanup_gen
   source_poll_interval_s: 30
   stage_settle_delay_s: 3
+  stage_verify_interval_s: 5
+  stage_verify_timeout_s: 240
   fallback_image_path: /media/immich-photos/no-image.jpg
   options_max: 50
   refresh_options_every_s: 60

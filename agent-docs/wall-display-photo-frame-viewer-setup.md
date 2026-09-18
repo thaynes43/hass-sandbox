@@ -16,15 +16,17 @@ Immich fetcher                  AppDaemon                         Dashboard
        |  └── IMG_002.jpg -------> | fingerprint changed?          |
        |                           |   yes -> call shell_command   |
        |                           |          photo_frame_stage_gen|
-       |                           |          (copy to gen dir)    |
+       |                           |          (detached copy+mv)   |
        |                           |                               |
        |                           |  /config/www/photo-frame/     |
        |                           |  live/2/                      |
        |                           |  ├── IMG_001.jpg              |
        |                           |  └── IMG_002.jpg              |
        |                           |                               |
-       |                           | update input_select options   |
-       |                           | (picker shows new filenames)  |
+       |                           | HEAD /local/photo-frame/      |
+       |                           |      live/2/IMG_001.jpg       |
+       |                           |   200? -> gen is pending      |
+       |                           |   never? -> drop it, re-stage |
        |                           |                               |
        |                           | on next advance (tick/nav):   |
        |                           |   publish sensor URL -------> | displays image
@@ -43,9 +45,11 @@ dashboard URL always points at a gen directory that is guaranteed to exist.
 When a new batch arrives:
 
 1. A new gen directory is created atomically (copy to temp, then `mv`).
-2. The `input_select` picker updates to reflect the new filenames.
+2. The app verifies over HTTP that HA is actually serving the new gen — until
+   then it is not pending and nothing about it is published.
 3. The currently displayed image URL is **not changed** yet (pinned to old gen).
-4. On the next slideshow advance (or manual nav), the URL moves to the new gen.
+4. On the next slideshow advance (or manual nav), the `input_select` picker
+   options and the published URL both move to the new gen.
 5. Only then is the old gen directory deleted.
 
 This means a paused slideshow keeps its current image visible indefinitely,
@@ -87,30 +91,51 @@ shell_command:
     live_root="/config/www/photo-frame/live";
     src="{{ source_dir }}";
     gen="{{ gen_id }}";
+    keep="{{ keep_gens | default("") }}";
     dest="$live_root/$gen";
     tmp="$live_root/.staging-$gen";
     lock="$live_root/.stage.lock";
+    log="$live_root/.stage.log";
 
     [ -n "$gen" ] || { echo "gen_id empty"; exit 2; };
+    case "$keep" in *[!0-9\ ]*) keep="";; esac;
+    case "$gen" in *[!0-9]*) keep="";; esac;
     [ -d "$live_root" ] || mkdir -p "$live_root";
+    if [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 65536 ]; then : > "$log"; fi;
 
-    exec 9>"$lock";
-    if ! flock -n 9; then
-      echo "photo_frame_stage_gen: lock busy"; exit 3;
-    fi
-
-    find "$live_root" -maxdepth 1 -type d -name ".staging-*" -mmin +60 -exec rm -rf {} \; 2>/dev/null || true;
-
-    rm -rf "$tmp" "$dest";
-    mkdir -p "$tmp";
-
-    if [ -d "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
-      cp -a "$src"/. "$tmp"/;
-      mv "$tmp" "$dest";
-    else
-      rm -rf "$tmp";
-      exit 1;
-    fi'
+    (
+      exec 9>"$lock";
+      i=0;
+      until flock -n 9; do
+        i=$((i+1));
+        if [ "$i" -ge 150 ]; then echo "$(date +%FT%T) gen=$gen lock busy, giving up"; exit 3; fi;
+        sleep 1;
+      done;
+      find "$live_root" -maxdepth 1 -type d -name ".staging-*" -mmin +60 -exec rm -rf -- {} \; 2>/dev/null || true;
+      if [ -d "$dest" ]; then echo "$(date +%FT%T) gen=$gen already staged, leaving it untouched"; exit 0; fi;
+      rm -rf -- "$tmp";
+      mkdir -p "$tmp";
+      if [ -d "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
+        cp -a "$src"/. "$tmp"/;
+        mv "$tmp" "$dest";
+        echo "$(date +%FT%T) gen=$gen staged $(ls "$dest" | wc -l) files";
+        if [ -n "$keep" ]; then
+          for d in "$live_root"/*/; do
+            [ -d "$d" ] || continue;
+            n=$(basename "$d");
+            case "$n" in *[!0-9]*) continue;; esac;
+            [ "$n" -lt "$gen" ] || continue;
+            case " $keep $gen " in *" $n "*) continue;; esac;
+            rm -rf -- "$d";
+            echo "$(date +%FT%T) gen=$gen pruned unreferenced generation $n";
+          done;
+        fi;
+      else
+        rm -rf -- "$tmp";
+        echo "$(date +%FT%T) gen=$gen source empty or missing: $src";
+        exit 1;
+      fi
+    ) >> "$log" 2>&1 < /dev/null &'
 
   photo_frame_cleanup_gen: >-
     /bin/sh -c 'set -e;
@@ -119,6 +144,134 @@ shell_command:
 ```
 
 Restart Home Assistant to register the new shell commands.
+
+**Why the stage command detaches.** HA kills every `shell_command` at a hard 60s
+timeout.  The `/media/immich-photos` NFS source intermittently stalls ~100s
+mid-copy, so the previous inline version was killed before its atomic `mv` and
+the gen directory never appeared — while the app (which then trusted a 3s settle
+delay) published `/local/photo-frame/live/<gen>/...` URLs that 404'd for 10+
+minutes.  Running the copy in a detached background subshell lets the `mv`
+finish regardless of what HA does with the shell, and the app no longer cares
+about the command's return value because it verifies over HTTP (below).  All
+output goes to `/config/www/photo-frame/live/.stage.log`, which self-truncates
+at 64 KB — that file is the only record of why a stage failed.
+
+**Why the keep-list prune.** Detaching creates a second leak: a generation the
+app abandons can still be completed by its worker minutes later — the app's
+`photo_frame_cleanup_gen` already ran while the directory did not exist yet — and
+nothing would ever reclaim it.  (Three orphans of exactly this class were found
+in prod on 2026-09-18: gens 808/2635/6015, left behind by earlier gen-counter
+epochs.)  So every stage call now carries `keep_gens`, a space-separated list of
+the generations the app still needs, and a successful stage deletes every other
+generation directory **numbered lower than the one it just staged** (which is
+itself always kept).  The keep list alone is *not* a sufficient safety argument:
+`_abandon_staging` releases the app's latch while the abandoned generation's
+detached worker may still be alive, so two workers can be queued on the lock
+with different keep lists, and `flock` gives waiters no ordering — a stale worker
+winning late could otherwise `rm -rf` the generation on screen, and nothing would
+re-stage it because the source fingerprint still matches.  Restricting the prune
+to **older** generations closes that for any `stage_verify_timeout_s` (not only
+while it exceeds the script's 150 s lock wait): a stale worker can never delete a
+generation staged after it.  The price is deliberate — a leftover from an earlier
+gen-counter epoch carrying a *higher* number (like 808/2635/6015 above) is left
+alone: a harmless leak, chosen over any chance of deleting what is on screen.
+Non-numeric directories are never pruned and a non-numeric `gen` prunes nothing.
+The worker also never destroys an existing `live/<gen>`: if the directory is
+already there, a twin worker for the same id staged it (an AppDaemon reload
+mid-stage could issue the same id twice — seen in prod on 2026-09-18 as
+`staging gen=19` and `staging gen=22` logged twice each), so it logs
+`already staged, leaving it untouched` and exits without copying or pruning.
+Otherwise the twin's cleanup would wipe a generation the app had already
+verified and put on screen.
+The script refuses a non-numeric `keep` value and prunes
+nothing when the field is empty, so an old app paired with this script is a
+no-op, as is an old script paired with the new app (it ignores the extra
+variable).
+
+**Constraint: one viewer instance per `live` directory.**  Generation ids are
+plain per-instance counters, so two instances sharing a live root already
+collided on directory names; with the prune they would now also delete each
+other's generations.  A second display needs its own `ha_local_url_base` and its
+own pair of shell commands.
+
+The app works with **both** this command and the old inline one; with the old
+one a >60s stall simply fails verification and the next poll re-stages.
+
+#### Staging verification (app side)
+
+`PhotoFrameViewerApp` never marks a generation pending — and therefore never
+publishes it — until HA is verifiably serving it.  After firing the stage
+command it issues an HTTP `HEAD` against the exact URL the card will load
+(`{ha_url}/local/photo-frame/live/<gen>/<first file>`): first check after
+`stage_settle_delay_s`, then every `stage_verify_interval_s`, until
+`stage_verify_timeout_s`.  A `200` means staged (the script's last step is an
+atomic directory `mv`, so one file implies the whole generation).  On deadline
+the app logs a `WARNING` naming `.stage.log`, cleans up the dead gen, publishes
+nothing, and the next source poll re-stages automatically.
+
+Staging is latched for the whole verification window, and `stage_verify_timeout_s`
+is only evaluated when a probe *result* arrives — so an absolute-deadline
+watchdog abandons the gen and releases the latch even if the chain stops
+responding.  Without it one lost callback would block every future stage until
+AppDaemon restarted.  Its delay is **derived**, not constant:
+`stage_verify_timeout_s + stage_verify_interval_s + <provider probe timeout> + 5s`
+slack.  The last probe can be scheduled as late as the timeout and then take a
+full probe timeout to answer, so a fixed margin would pre-empt it at any large
+`stage_verify_interval_s` — abandoning a healthy gen, deleting a directory the
+in-flight probe was about to see as 200, and logging a phantom "chain stopped
+responding".
+
+**Album titles are attributed by fingerprint, not by arrival time.**  The
+fetcher writes every file, *then* publishes its sensor (an HA round trip),
+*then* fires `immich_fetcher_batch_ready` — so the viewer's periodic poll can
+stage the new album's *complete* files in that gap, a moment before the event
+lands.  Arrival time is therefore ambiguous in both directions: an early poll
+would leave the new photos under the previous album's name (and nothing
+re-stages afterwards, because the fingerprint already matches the current gen
+and every poll returns early), while a late event would retitle a generation it
+does not describe.
+
+So on each titled event `_on_batch_ready` fingerprints what is on disk and
+routes the name to the generation those files belong to:
+
+| Fingerprint matches | Goes to |
+|---|---|
+| the gen being staged/verified | `_staging_filter_name` (survives an abandon via the restore path) |
+| a gen already pending | `_pending_filter_name` |
+| the current gen | retitled on screen in place — persisted and republished, image untouched |
+| nothing known | `_staged_filter_name`, i.e. the stage the poll is about to start |
+
+The scan + hash is computed once and handed to `_poll_for_changes`.  An event
+with an empty filter name changes nothing.
+
+**Generation ids are unique across reloads.**  AppDaemon constructs a new app
+instance on every reload — a module change, or just an HA-websocket reconnect —
+and `initialize()` always re-stages.  The counter is seeded from the generation
+currently *displayed*, so two instances coming up while a stage is still in
+flight used to hand out the same id (observed in prod 2026-09-18: `staging
+gen=19` and `staging gen=22` each logged twice, seconds apart, by two
+instances).  Since the HA-side worker is detached, the loser's cleanup can then
+delete a directory the winner already verified and promoted, and a reused id can
+make the probe answer `200` from a leftover directory holding the previous
+album.
+
+The counter is therefore persisted as `next_gen` in `state_dir/state.json`, and
+advanced **before** the stage command is sent, so an instance starting mid-stage
+reads a value beyond anything in flight.  On startup the app takes
+`max(sensor-recovered id, persisted next_gen)` — the sensor wins if the state
+file was rolled back, the state file wins while a generation the sensor has not
+caught up with is in flight.  A missing, unparseable, negative or absurd
+`next_gen` falls back to the sensor value instead of poisoning the counter, and
+a failed state write is logged at `ERROR` without blocking staging (the
+degradation is "ids may collide after a reload", not a frozen slideshow).
+`_poll_for_changes` — the only funnel into id allocation — also refuses to run
+on a non-owner instance.
+
+`/local/...` is unauthenticated static content, so the probe sends no
+`Authorization` header; the HTTP call lives in
+`providers/ha_provisioner/local_file_check.py` (security policy S2).  Without an
+`ha_url`, verification is impossible and the app falls back to the old
+unverified settle delay after one startup `WARNING`.
 
 ### 3. Fallback image
 
@@ -179,6 +332,8 @@ photo_frame_viewer_wall_display:
   cleanup_shell_command: photo_frame_cleanup_gen
   source_poll_interval_s: 30
   stage_settle_delay_s: 3
+  stage_verify_interval_s: 5
+  stage_verify_timeout_s: 240
   fallback_image_path: /config/www/immich-album/no-image.jpg
   options_max: 100
   refresh_options_every_s: 60
@@ -191,16 +346,19 @@ photo_frame_viewer_wall_display:
 
 | Key | Default | Description |
 |---|---|---|
-| `ha_url` | — | Home Assistant URL (required for provisioning) |
+| `ha_url` | — | Home Assistant URL (required for provisioning **and** staging verification) |
 | `ha_token` | — | Long-lived access token (required for provisioning) |
 | `source_dir` | `/media/immich-photos` | NFS directory the Immich fetcher writes to |
 | `ha_local_url_base` | `/local/photo-frame/live` | URL prefix mapping to `/config/www/photo-frame/live/` |
 | `stage_shell_command` | `photo_frame_stage_gen` | HA shell_command name for staging a gen |
 | `cleanup_shell_command` | `photo_frame_cleanup_gen` | HA shell_command name for deleting an old gen |
 | `source_poll_interval_s` | `30` | How often to check for source changes (seconds) |
-| `stage_settle_delay_s` | `3` | Delay after staging before marking the gen ready |
+| `stage_settle_delay_s` | `3` | Delay before the **first** staging verification check |
+| `stage_verify_interval_s` | `5` | Delay between subsequent verification checks |
+| `stage_verify_timeout_s` | `240` | Abandon a gen this long after the stage call and let the next poll re-stage |
+| `refresh_options_every_s` | `60` | Accepted for backward compatibility and validated (min 10), but currently **unused** — picker options are refreshed when a generation is adopted, not on a timer |
 | `default_interval_s` | `10` | Default slideshow interval (overridden by user via relay) |
-| `state_dir` | `/media/photo-frame-viewer/<prefix>` | Directory for persisting interval across restarts |
+| `state_dir` | `/media/photo-frame-viewer/<prefix>` | Holds `state.json`: interval, auto-unpause, displayed album title, and `next_gen` (the generation counter — must survive reloads) |
 | `entity_prefix` | derived from instance name | Override entity ID prefix (see below) |
 
 ### Entity prefix

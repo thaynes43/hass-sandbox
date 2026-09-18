@@ -107,3 +107,173 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - Redact configured hosts/credentials out of exception strings before putting
   them in `set_state` attributes: aiohttp errors quote the URL they failed on,
   and the frontend renders `sources.*.error`.
+
+### AppDaemon `call_service(callback=...)` is non-blocking (4.5.13, verified)
+- `adapi.call_service` (site-packages `appdaemon/adapi.py` ~line 2022): with
+  `callback` set it does `task = self.AD.loop.create_task(coro)` +
+  `add_done_callback` and returns immediately — the `sync_decorator`'s 60s
+  `internal_function_timeout` never applies to the service itself.
+- Use it for any service whose HA side can be slow (`shell_command/*`), or the
+  app's pinned worker thread is held for up to 60s and every `run_in` timer on
+  that app starves. Symptom in the log: `Coroutine (<coroutine object
+  Hass.call_service ...>) took too long (01:00), cancelling the task...`
+- The callback is **non-async, takes one arg (the result), and runs on the
+  event loop thread** — do not call `get_state`/`call_service` from it
+  (`sync_decorator` returns a Task, not a value, on the main thread). Bounce
+  back to the app thread with `self.run_in(cb, 0, **data)` first.
+- `run_in` from a coroutine on the loop thread is safe (it creates a task and
+  registers it in `ad.futures`); do not `await` it — unit tests mock `run_in`
+  with a plain MagicMock, which is not awaitable.
+
+### HA shell_command results are not trustworthy (photo_frame_viewer, 2026-09-18)
+- HA kills every `shell_command` at a hard 60s. A stalled NFS copy dies before
+  its atomic `mv`, so the target directory never appears while the service call
+  still "completes". Never treat a stage/copy shell_command's return (or a
+  fixed settle delay) as proof the files landed.
+- Verify instead with `providers.ha_provisioner.local_file_exists(ha_url,
+  url_path)` — unauthenticated HTTP HEAD on the exact `/local/...` URL the card
+  will load. 200 = there. Sends no Authorization header on purpose
+  (`/local/...` is unauthenticated static content).
+- HA-side stage commands should detach their work (`( ... ) >> "$log" 2>&1 < /dev/null &`)
+  so the `mv` finishes regardless of HA's timeout; the log is the only record.
+
+### Mutation-checking new tests (cheap and worth it)
+- The repo's vacuous-test trap is real. Script it: for each (file, anchor,
+  broken replacement, test selector) apply the edit, run pytest, restore in a
+  `finally`, and assert the return code is non-zero. 16 mutations over the
+  photo-frame verification change ran in ~3s total.
+
+### Any "latch" released only by a callback needs an absolute-deadline watchdog
+- Pattern bug found in review on 2026-09-18 (`photo_frame_viewer` staging):
+  a boolean that blocks work while an async chain runs, released only when the
+  chain's result callback fires, and whose timeout is *evaluated inside that
+  same callback*. If the chain dies (lost `run_in` bounce, cancelled task), the
+  timeout can never fire and the flag blocks the feature until AppDaemon
+  restarts.
+- Fix is two-part: (1) try/except the hand-back and release the flag there,
+  guarded on the id you own so a newer in-flight job is not clobbered;
+  (2) a `run_in` timer armed at `timeout + margin` when the work starts,
+  carrying the job id, no-op for a superseded id and for a non-owner instance
+  (which must still release its own flag). Cancel it on success, on give-up,
+  in `terminate()`, and when a new job starts.
+- Pick the margin above one retry interval + one probe timeout so the normal
+  deadline path still wins under scheduling jitter.
+
+### Mocked `run_in`/`create_task` returning one shared handle hides cancel bugs
+- `MagicMock()` returns the SAME `return_value` for every call, so two handles
+  stored from two `run_in` calls compare equal. Every
+  `assert handle in cancel_timer.call_args_list` then passes even when the code
+  cancels the wrong timer — a mutation check caught exactly this.
+- Give the double distinct handles:
+  `handles = itertools.count(); app.run_in = MagicMock(side_effect=lambda *a, **k: f"handle-{next(handles)}")`.
+
+### HA shell_command file staging: pass an explicit keep-list, prune on the HA side
+- A detached HA-side worker can land its output minutes after the app gave up
+  and already ran its per-gen cleanup — the directory did not exist then, so
+  nothing ever reclaims it. Found 3 such orphans in prod (gens 808/2635/6015).
+- Design: every stage call sends `keep_gens` (space-separated, digits only —
+  it is interpolated into shell); a successful stage deletes every output
+  directory not in `keep_gens` plus its own. Safe because the app's staging
+  latch means the only dir that can become current before the prune runs is the
+  one being staged. Empty list = prune nothing, so old app/old script pairings
+  both degrade to no-ops.
+- Implies **one app instance per staging output dir** — gen ids are per-instance
+  counters, so two instances would prune each other. Document that constraint.
+
+### A yes/no health probe hides the non-self-healing half of its failure modes
+- Found in review 2026-09-18: `local_file_exists` collapsed 404 / 301 / 401 /
+  timeout / connection-error into `False`, so the give-up WARNING read
+  identically for "the file has not landed yet" (transient, next poll fixes it)
+  and "the configured URL is wrong / the service is down" (never self-heals,
+  feature silently frozen forever).
+- Shape of the fix: `*_status(...) -> int` returning the real HTTP status plus a
+  negative sentinel (`STATUS_UNREACHABLE = -1`) for "no answer at all"; keep the
+  boolean as a thin `== 200` wrapper so existing callers and tests stay valid.
+  Callers remember the last status for the in-flight job and branch the operator
+  hint on it — and say explicitly which branches will NOT self-heal and which
+  log will not explain them.
+- General rule: any probe whose result reaches a human must preserve *what the
+  other side said*, not just whether it was what we wanted.
+
+### Every `call_service("shell_command/...")` should pass `callback=`
+- Not just the slow one. Nothing reads a shell_command result, and a blocking
+  call pins the app's worker thread for up to AppDaemon's 60s
+  internal_function_timeout — which starves every `run_in` timer on that app.
+- Cheap guard test: collect all `call_service` calls whose service starts with
+  `shell_command/` and assert each got a callable `callback`; assert
+  `input_select/*` (state-changing) calls did NOT.
+- Keep the callbacks as small named bound methods delegating to one shared
+  implementation (`_on_shell_service_result(service, result)`), not
+  `functools.partial`/closures — bound methods stay identity-comparable, so
+  tests can assert exactly which callback was attached.
+
+### Timeout constants must be derived when the inputs they race are tunable
+- Round-3 finding on `photo_frame_viewer`: a watchdog armed at
+  `timeout + FIXED_MARGIN` only outran the normal give-up path at the *default*
+  retry interval. Raise the documented (unclamped) `stage_verify_interval_s` and
+  the backstop fires first, killing a healthy job and logging a phantom fault.
+- Rule: when a backstop timer must lose a race against a normal path, compute
+  its delay from the same live values the normal path uses
+  (`timeout + retry_interval + probe_timeout + named_slack`), and import the
+  probe timeout from the provider that owns it rather than duplicating the
+  literal. Test the *invariant* across several interval values, not the default.
+
+### Don't let a long-running async window read a mutable "latest" field
+- Same app, same review: `_on_batch_ready` wrote `_staged_filter_name`, and the
+  settle step read that live field minutes later — so a generation got published
+  under the *next* album's title once verification stretched the window from 3s
+  to minutes. It was invisible while the window was short.
+- Pattern: snapshot the value into the job's own context when the job starts and
+  free the live field for the next job. On failure, hand the snapshot back only
+  `if not <live field>` so a newer arrival still wins. Clear the snapshot in the
+  context teardown, and read it into a local *before* teardown where the settle
+  path clears first.
+- Watch for tests that encode the old drift: one asserted a title set *after* a
+  stage began still landed on that stage. Fix the sequence (let the prior stage
+  settle first), don't relax the assertion.
+
+### Attribute event metadata by content fingerprint, not arrival order
+- Round-4 finding: my own round-3 snapshot fix opened the mirror-image bug.
+  `immich_fetcher` writes all files -> publishes a sensor (HA round trip) ->
+  fires `batch_ready(filter=...)`. The viewer's periodic poll can stage that
+  album's COMPLETE files inside that gap, so the title arrives *after* the
+  generation it describes was already staged with an empty title — and nothing
+  re-stages afterwards (fingerprint already matches current, every poll returns
+  early), so the wrong album name sticks forever.
+- Fix shape: on a titled event, fingerprint what is on disk and route the title
+  to whichever generation those files belong to (in-flight / pending / current /
+  next). Arrival time is ambiguous in BOTH directions; content is not.
+- Generalise: whenever a producer writes data and *then* announces it, any
+  consumer that also polls has a window where the announcement arrives after it
+  already acted. Match announcement to data by content, never by timing.
+
+### Watch for tests that encode timing that cannot happen
+- Two of my own round-3 tests fired `batch_ready("Album B")` without changing
+  the files on disk — impossible in reality (the fetcher writes B's files before
+  announcing B). They only passed because routing was timing-based. Round 4's
+  content-based routing correctly reclassified them, and the fix was to make the
+  scenario realistic, not to relax the assertion.
+- Before asserting on an event sequence, check the producer's actual ordering
+  (read its source) rather than assuming events and state move independently.
+
+### AppDaemon reloads construct a NEW instance — memory-only counters collide
+- `photo_frame_viewer` allocated generation ids from `_next_gen_counter`, seeded
+  from the currently DISPLAYED gen, and `initialize()` always re-stages. Every
+  reload (module change *or* an HA-websocket reconnect) makes a fresh instance,
+  so two of them coming up during a staging window handed out the SAME id. Seen
+  in prod 2026-09-18: `staging gen=19` and `staging gen=22` each logged twice,
+  seconds apart, from two instances.
+- Consequences with a detached HA-side worker: the loser's cleanup deletes a
+  directory the winner already verified and promoted, and a reused id lets an
+  existence probe answer 200 from a leftover directory holding old content.
+- Fix: persist the counter in the app's existing `state_dir/state.json` and
+  advance it **before** the side effect that uses the id; on init take
+  `max(recovered-from-live-state, persisted)`. Validate the persisted value
+  (missing / non-int / negative / absurd -> fall back, never raise) or one bad
+  write poisons the counter forever.
+- Any id/sequence an AppDaemon app hands out must be persisted, not just held in
+  `self.`. The ownership guard (`_is_active_owner`) belongs on the single funnel
+  into allocation too, not only on the individual callbacks.
+- `_save_runtime_state()` here rebuilds the whole JSON document from live fields
+  on every call, so adding a key is automatically preserved by all other
+  writers — worth checking before adding a field to a shared state file.
