@@ -112,7 +112,8 @@ shell_command:
         sleep 1;
       done;
       find "$live_root" -maxdepth 1 -type d -name ".staging-*" -mmin +60 -exec rm -rf -- {} \; 2>/dev/null || true;
-      rm -rf -- "$tmp" "$dest";
+      if [ -d "$dest" ]; then echo "$(date +%FT%T) gen=$gen already staged, leaving it untouched"; exit 0; fi;
+      rm -rf -- "$tmp";
       mkdir -p "$tmp";
       if [ -d "$src" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
         cp -a "$src"/. "$tmp"/;
@@ -175,6 +176,13 @@ generation staged after it.  The price is deliberate — a leftover from an earl
 gen-counter epoch carrying a *higher* number (like 808/2635/6015 above) is left
 alone: a harmless leak, chosen over any chance of deleting what is on screen.
 Non-numeric directories are never pruned and a non-numeric `gen` prunes nothing.
+The worker also never destroys an existing `live/<gen>`: if the directory is
+already there, a twin worker for the same id staged it (an AppDaemon reload
+mid-stage could issue the same id twice — seen in prod on 2026-09-18 as
+`staging gen=19` and `staging gen=22` logged twice each), so it logs
+`already staged, leaving it untouched` and exits without copying or pruning.
+Otherwise the twin's cleanup would wipe a generation the app had already
+verified and put on screen.
 The script refuses a non-numeric `keep` value and prunes
 nothing when the field is empty, so an old app paired with this script is a
 no-op, as is an old script paired with the new app (it ignores the extra
@@ -235,6 +243,29 @@ routes the name to the generation those files belong to:
 
 The scan + hash is computed once and handed to `_poll_for_changes`.  An event
 with an empty filter name changes nothing.
+
+**Generation ids are unique across reloads.**  AppDaemon constructs a new app
+instance on every reload — a module change, or just an HA-websocket reconnect —
+and `initialize()` always re-stages.  The counter is seeded from the generation
+currently *displayed*, so two instances coming up while a stage is still in
+flight used to hand out the same id (observed in prod 2026-09-18: `staging
+gen=19` and `staging gen=22` each logged twice, seconds apart, by two
+instances).  Since the HA-side worker is detached, the loser's cleanup can then
+delete a directory the winner already verified and promoted, and a reused id can
+make the probe answer `200` from a leftover directory holding the previous
+album.
+
+The counter is therefore persisted as `next_gen` in `state_dir/state.json`, and
+advanced **before** the stage command is sent, so an instance starting mid-stage
+reads a value beyond anything in flight.  On startup the app takes
+`max(sensor-recovered id, persisted next_gen)` — the sensor wins if the state
+file was rolled back, the state file wins while a generation the sensor has not
+caught up with is in flight.  A missing, unparseable, negative or absurd
+`next_gen` falls back to the sensor value instead of poisoning the counter, and
+a failed state write is logged at `ERROR` without blocking staging (the
+degradation is "ids may collide after a reload", not a frozen slideshow).
+`_poll_for_changes` — the only funnel into id allocation — also refuses to run
+on a non-owner instance.
 
 `/local/...` is unauthenticated static content, so the probe sends no
 `Authorization` header; the HTTP call lives in
@@ -327,7 +358,7 @@ photo_frame_viewer_wall_display:
 | `stage_verify_timeout_s` | `240` | Abandon a gen this long after the stage call and let the next poll re-stage |
 | `refresh_options_every_s` | `60` | Accepted for backward compatibility and validated (min 10), but currently **unused** — picker options are refreshed when a generation is adopted, not on a timer |
 | `default_interval_s` | `10` | Default slideshow interval (overridden by user via relay) |
-| `state_dir` | `/media/photo-frame-viewer/<prefix>` | Directory for persisting interval across restarts |
+| `state_dir` | `/media/photo-frame-viewer/<prefix>` | Holds `state.json`: interval, auto-unpause, displayed album title, and `next_gen` (the generation counter — must survive reloads) |
 | `entity_prefix` | derived from instance name | Override entity ID prefix (see below) |
 
 ### Entity prefix

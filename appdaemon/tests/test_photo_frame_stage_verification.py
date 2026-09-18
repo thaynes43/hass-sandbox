@@ -70,9 +70,15 @@ def _make_app(
     picker_options: list[str] | None = None,
     source_filenames: list[str] | None = None,
     extra_args: dict | None = None,
+    source_dir: str = "",
 ) -> PhotoFrameViewerApp:
-    """A PhotoFrameViewerApp with mocked AppDaemon methods and a real temp dir."""
-    source_dir = tempfile.mkdtemp(prefix="pfv_verify_")
+    """A PhotoFrameViewerApp with mocked AppDaemon methods and a real temp dir.
+
+    Pass *source_dir* to reuse an existing directory — needed to simulate an
+    AppDaemon reload, where the new instance shares the previous one's
+    ``state_dir``.
+    """
+    source_dir = source_dir or tempfile.mkdtemp(prefix="pfv_verify_")
     for fname in source_filenames if source_filenames is not None else SOURCE_FILENAMES:
         Path(os.path.join(source_dir, fname)).write_bytes(b"")
 
@@ -1632,3 +1638,262 @@ class TestSwapNeverPublishesNewTitleOverOldImage:
             "immich_fetcher_batch_ready", {"count": 2, "filter": "Album B"}, {}
         )
         assert seen == ["Album B"]
+
+
+# ----------------------------------------------------------------------
+# Generation ids are unique across AppDaemon reloads
+# ----------------------------------------------------------------------
+
+
+class TestGenerationIdUniqueness:
+    """`_next_gen_counter` is seeded from the DISPLAYED generation and
+    `initialize()` always re-stages, so two instances coming up while a stage
+    is still in flight used to hand out the same id (observed in prod: gens 19
+    and 22 each staged twice, seconds apart, by two instances).  With detached
+    HA-side workers the loser's cleanup can then delete a directory the winner
+    already verified and promoted, and a reused id can make the probe answer
+    200 from a leftover directory holding the previous album.
+
+    The counter is persisted at allocation time, so a reload reads a value
+    beyond anything in flight.
+    """
+
+    def _staged_ids(self, app: PhotoFrameViewerApp) -> list[str]:
+        return [c.kwargs["gen_id"] for c in _stage_calls(app)]
+
+    def _state(self, app: PhotoFrameViewerApp) -> dict:
+        return json.loads(Path(app._state_file).read_text())
+
+    def test_reload_mid_verification_never_reuses_the_in_flight_id(self):
+        """The prod scenario: the reload lands while gen N is unverified."""
+        shared = tempfile.mkdtemp(prefix="pfv_reload_")
+        url = "/local/photo-frame/live/18/IMG_001.jpg"
+
+        first = _make_app(source_dir=shared, current_url=url)
+        first.initialize()
+        in_flight = first._staging_gen_id
+        assert in_flight == "19"
+        assert first._staging_in_progress is True, "still unverified"
+
+        # AppDaemon constructs a new instance; the sensor still says gen 18
+        # because gen 19 was never promoted.
+        second = _make_app(source_dir=shared, current_url=url)
+        second.initialize()
+
+        assert second._staging_gen_id != in_flight, (
+            "a reload must not hand out the id already in flight"
+        )
+        assert int(second._staging_gen_id) > int(in_flight)
+        assert set(self._staged_ids(first)) & set(self._staged_ids(second)) == set()
+
+    def test_reload_after_promotion_never_reuses_ids(self):
+        shared = tempfile.mkdtemp(prefix="pfv_reload2_")
+        first = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/18/IMG_001.jpg"
+        )
+        first.initialize()
+        _verify_round(first, exists=True)
+        first._on_tick({})
+        promoted = first._current_gen_id
+        assert promoted == "19"
+
+        second = _make_app(
+            source_dir=shared,
+            current_url=f"/local/photo-frame/live/{promoted}/IMG_001.jpg",
+        )
+        second.initialize()
+
+        assert second._staging_gen_id == "20"
+        assert set(self._staged_ids(first)) & set(self._staged_ids(second)) == set()
+
+    def test_many_reloads_keep_allocating_forward(self):
+        shared = tempfile.mkdtemp(prefix="pfv_reload3_")
+        url = "/local/photo-frame/live/18/IMG_001.jpg"
+        seen: list[str] = []
+        for _ in range(5):
+            app = _make_app(source_dir=shared, current_url=url)
+            app.initialize()
+            seen.append(app._staging_gen_id)
+        assert len(set(seen)) == len(seen), f"ids repeated across reloads: {seen}"
+        assert seen == sorted(seen, key=int)
+
+    def test_persisted_value_wins_over_a_lower_sensor_value(self):
+        shared = tempfile.mkdtemp(prefix="pfv_seed1_")
+        Path(os.path.join(shared, "state.json")).write_text(
+            json.dumps({"next_gen": 500})
+        )
+        app = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/7/IMG_001.jpg"
+        )
+        app.initialize()
+        assert app._staging_gen_id == "500"
+
+    def test_sensor_value_wins_over_a_lower_persisted_value(self):
+        """A restored/rolled-back state file must not rewind the counter."""
+        shared = tempfile.mkdtemp(prefix="pfv_seed2_")
+        Path(os.path.join(shared, "state.json")).write_text(
+            json.dumps({"next_gen": 3})
+        )
+        app = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/40/IMG_001.jpg"
+        )
+        app.initialize()
+        assert app._staging_gen_id == "41"
+
+    def test_missing_next_gen_falls_back_to_the_sensor_value(self):
+        shared = tempfile.mkdtemp(prefix="pfv_seed3_")
+        Path(os.path.join(shared, "state.json")).write_text(
+            json.dumps({"interval_seconds": 12})
+        )
+        app = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/8/IMG_001.jpg"
+        )
+        app.initialize()
+        assert app._staging_gen_id == "9"
+
+    @pytest.mark.parametrize(
+        "bad", ["abc", "", -5, 0, 10**12, 1.5e30, [], {}, True]
+    )
+    def test_garbage_next_gen_is_tolerated(self, bad):
+        """Every unusable value falls back to the sensor-recovered id.
+
+        Absurdly large values matter as much as unparseable ones: honouring
+        one would poison the counter permanently.
+        """
+        shared = tempfile.mkdtemp(prefix="pfv_seed4_")
+        Path(os.path.join(shared, "state.json")).write_text(
+            json.dumps({"next_gen": bad})
+        )
+        app = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/8/IMG_001.jpg"
+        )
+        app.initialize()
+        assert app._staging_gen_id == "9", (
+            f"next_gen={bad!r} should have been rejected"
+        )
+
+    def test_a_sane_large_value_is_still_honoured(self):
+        """The ceiling must reject corruption without capping real growth."""
+        shared = tempfile.mkdtemp(prefix="pfv_seed4b_")
+        Path(os.path.join(shared, "state.json")).write_text(
+            json.dumps({"next_gen": 999_999})
+        )
+        app = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/8/IMG_001.jpg"
+        )
+        app.initialize()
+        assert app._staging_gen_id == "999999"
+
+    def test_unreadable_state_file_is_tolerated(self):
+        shared = tempfile.mkdtemp(prefix="pfv_seed5_")
+        Path(os.path.join(shared, "state.json")).write_text("{not json")
+        app = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/8/IMG_001.jpg"
+        )
+        app.initialize()
+        assert app._staging_gen_id == "9"
+
+    def test_counter_is_persisted_before_the_stage_call(self):
+        """A reload landing mid-stage must already see the advanced value."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+
+        events: list[str] = []
+        original_call = app.call_service
+        app._save_runtime_state = MagicMock(side_effect=lambda: events.append("save"))
+
+        def record(service, **kwargs):
+            if str(service) == "shell_command/photo_frame_stage_gen":
+                events.append("stage")
+            return original_call(service, **kwargs)
+
+        app.call_service = MagicMock(side_effect=record)
+
+        _replace_source_files(app.source_dir, ["N_1.jpg"])
+        app._poll_for_changes(reason="poll")
+
+        assert "save" in events and "stage" in events
+        assert events.index("save") < events.index("stage"), events
+
+    def test_persisted_value_is_the_advanced_one(self):
+        app = _init_with_current_gen("3")
+        assert app._staging_gen_id == "4"
+        assert self._state(app)["next_gen"] == 5
+
+    def test_state_write_failure_does_not_block_staging(self):
+        app = _make_app(
+            current_url="/local/photo-frame/live/3/IMG_001.jpg",
+            extra_args={"state_dir": "/proc/pfv-not-writable/state"},
+        )
+        app.initialize()
+
+        assert len(_stage_calls(app)) == 1, "staging must proceed"
+        assert app._staging_gen_id == "4"
+        assert _logs(app, "ERROR", "failed to save runtime state"), (
+            "the failure must be reported, not silent"
+        )
+
+    def test_other_state_saves_preserve_next_gen(self):
+        app = _init_with_current_gen("3")
+        assert self._state(app)["next_gen"] == 5
+
+        app._handle_set_interval({"seconds": 42})
+        state = self._state(app)
+        assert state["interval_seconds"] == 42
+        assert state["next_gen"] == 5, "an interval save must not drop the counter"
+
+        app._handle_set_pause_auto_resume({"seconds": 90})
+        assert self._state(app)["next_gen"] == 5
+
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        assert self._state(app)["next_gen"] == 5
+
+    def test_a_reload_reads_back_what_the_other_writers_left(self):
+        shared = tempfile.mkdtemp(prefix="pfv_seed6_")
+        first = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/18/IMG_001.jpg"
+        )
+        first.initialize()
+        first._handle_set_interval({"seconds": 33})
+
+        second = _make_app(
+            source_dir=shared, current_url="/local/photo-frame/live/18/IMG_001.jpg"
+        )
+        second.initialize()
+        assert second._staging_gen_id == "20"
+        assert second._interval == 33
+
+    def test_non_owner_instance_allocates_nothing(self):
+        shared = tempfile.mkdtemp(prefix="pfv_zombie_")
+        url = "/local/photo-frame/live/18/IMG_001.jpg"
+        zombie = _make_app(source_dir=shared, current_url=url)
+        zombie.initialize()
+        # Resolve its startup stage so the staging latch is NOT what stops it
+        # below — the ownership guard has to be what does.
+        _verify_round(zombie, exists=True)
+        zombie._on_tick({})
+        assert zombie._staging_in_progress is False
+
+        # A newer instance for the same prefix takes ownership.
+        owner = _make_app(source_dir=shared, current_url=url)
+        owner.initialize()
+        assert zombie._is_active_owner() is False
+
+        counter_before = zombie._next_gen_counter
+        persisted_before = self._state(zombie)["next_gen"]
+        zombie.call_service.reset_mock()
+
+        _replace_source_files(shared, ["Z_1.jpg"])
+        zombie._poll_for_changes(reason="poll")
+        zombie._poll_for_changes_cb({})
+        zombie._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 1, "filter": "Zombie"}, {}
+        )
+
+        assert _stage_calls(zombie) == [], "a zombie must not stage"
+        assert zombie._next_gen_counter == counter_before
+        assert self._state(zombie)["next_gen"] == persisted_before, (
+            "a zombie must not advance the shared persisted counter"
+        )

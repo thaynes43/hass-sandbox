@@ -68,6 +68,11 @@ class PhotoFrameViewerApp(hass.Hass):
         {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     )
 
+    # A generation id far beyond anything a real deployment reaches.  A larger
+    # persisted value is corruption, not state worth honouring — accepting it
+    # would poison the counter permanently.
+    MAX_SANE_GEN_ID: int = 1_000_000_000
+
     # Fixed slack on top of the *derived* watchdog margin — see
     # _stage_watchdog_delay_s().  This absorbs scheduling jitter only; the
     # parts that scale with configuration are computed, not constant.
@@ -301,6 +306,31 @@ class PhotoFrameViewerApp(hass.Hass):
         # Recover generation counter from previously published virtual sensor
         self._recover_gen_from_sensor()
 
+        # Generation ids must be unique across AppDaemon reloads.  The counter
+        # is seeded from the *displayed* generation, and initialize() always
+        # re-stages — so two instances coming up while a stage is still in
+        # flight would each hand out the same id.  With detached HA-side
+        # workers the loser's cleanup can then delete a directory the winner
+        # already verified and promoted, and a reused id can make the probe
+        # return 200 from a leftover directory holding the previous album.
+        # The persisted counter is advanced at allocation time, so a reload
+        # reads a value beyond anything currently in flight.
+        recovered_next_gen = self._next_gen_counter
+        persisted_next_gen = self._load_next_gen(recovered_next_gen)
+        self._next_gen_counter = max(recovered_next_gen, persisted_next_gen)
+        if persisted_next_gen > recovered_next_gen:
+            next_gen_source = "persisted"
+        elif recovered_next_gen > persisted_next_gen:
+            next_gen_source = "sensor"
+        else:
+            next_gen_source = "agree"
+        self.log(
+            f"PhotoFrameViewerApp: next_gen={self._next_gen_counter} "
+            f"(sensor={recovered_next_gen} persisted={persisted_next_gen} "
+            f"source={next_gen_source})",
+            level="INFO",
+        )
+
         # Watch picker selection (manual nav or auto-advance echo).
         self.listen_state(self._on_picker_change, self.picker_entity_id)
 
@@ -447,22 +477,56 @@ class PhotoFrameViewerApp(hass.Hass):
         data = self._load_runtime_state()
         return str(data.get("displaying_filter_name", "") or "").strip()
 
+    def _load_next_gen(self, default: int) -> int:
+        """Load the persisted next generation id, or return *default*.
+
+        Never raises.  A missing, non-integer, negative or absurd value falls
+        back to *default* (the id recovered from the sensor) — honouring a
+        corrupt value would poison the counter permanently.
+        """
+        data = self._load_runtime_state()
+        raw = data.get("next_gen")
+        if raw is None:
+            return default
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            self.log(
+                f"PhotoFrameViewerApp: ignoring non-integer persisted "
+                f"next_gen={raw!r}, using {default}",
+                level="WARNING",
+            )
+            return default
+        if value < 1 or value > self.MAX_SANE_GEN_ID:
+            self.log(
+                f"PhotoFrameViewerApp: ignoring out-of-range persisted "
+                f"next_gen={value}, using {default}",
+                level="WARNING",
+            )
+            return default
+        return value
+
     def _save_runtime_state(self) -> None:
         """Persist runtime settings to state file."""
         try:
             os.makedirs(self._state_dir, exist_ok=True)
             Path(self._state_file).write_text(
+                # The whole document is rebuilt from live fields on every save,
+                # so every writer (interval, auto-resume, filter name, the
+                # generation counter) preserves the others' values.
                 json.dumps({
                     "interval_seconds": self._interval,
                     "pause_auto_resume_s": self.pause_auto_resume_s,
                     "displaying_filter_name": self._displaying_filter_name,
+                    "next_gen": self._next_gen_counter,
                 }),
                 encoding="utf-8",
             )
             self.log(
                 "PhotoFrameViewerApp: runtime state persisted "
                 f"(interval={self._interval}s pause_auto_resume_s={self.pause_auto_resume_s}s "
-                f"filter={self._displaying_filter_name!r})",
+                f"filter={self._displaying_filter_name!r} "
+                f"next_gen={self._next_gen_counter})",
                 level="DEBUG",
             )
         except Exception as exc:
@@ -862,6 +926,19 @@ class PhotoFrameViewerApp(hass.Hass):
         source directory (``_on_batch_ready``) hand the result over instead of
         paying for a second scan.
         """
+        # Ownership guard.  Every caller already guards, but this is the single
+        # funnel into _stage_new_generation — which allocates and persists a
+        # generation id — and a zombie instance from an older reload doing that
+        # is exactly how two instances ended up staging the same gen.
+        if not self._is_active_owner():
+            self.log(
+                f"PhotoFrameViewerApp: stale instance seq="
+                f"{getattr(self, '_instance_seq', None)}; skipping poll "
+                f"reason={reason}",
+                level="DEBUG",
+            )
+            return
+
         if precomputed is not None:
             source_paths, fp = precomputed
         else:
@@ -911,6 +988,12 @@ class PhotoFrameViewerApp(hass.Hass):
         """
         gen_id = str(self._next_gen_counter)
         self._next_gen_counter += 1
+        # Persist the advanced counter BEFORE asking HA to stage anything: an
+        # AppDaemon reload that lands mid-stage must read a value beyond the id
+        # now in flight, or it hands the same id out again.  _save_runtime_state
+        # logs and swallows its own failures, so a write error degrades to
+        # "ids may collide after a reload" instead of blocking the slideshow.
+        self._save_runtime_state()
         self._cancel_verify_timer()
         self._cancel_watchdog()
         self._staging_in_progress = True

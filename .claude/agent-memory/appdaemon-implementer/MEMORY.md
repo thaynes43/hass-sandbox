@@ -255,3 +255,25 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
   scenario realistic, not to relax the assertion.
 - Before asserting on an event sequence, check the producer's actual ordering
   (read its source) rather than assuming events and state move independently.
+
+### AppDaemon reloads construct a NEW instance — memory-only counters collide
+- `photo_frame_viewer` allocated generation ids from `_next_gen_counter`, seeded
+  from the currently DISPLAYED gen, and `initialize()` always re-stages. Every
+  reload (module change *or* an HA-websocket reconnect) makes a fresh instance,
+  so two of them coming up during a staging window handed out the SAME id. Seen
+  in prod 2026-09-18: `staging gen=19` and `staging gen=22` each logged twice,
+  seconds apart, from two instances.
+- Consequences with a detached HA-side worker: the loser's cleanup deletes a
+  directory the winner already verified and promoted, and a reused id lets an
+  existence probe answer 200 from a leftover directory holding old content.
+- Fix: persist the counter in the app's existing `state_dir/state.json` and
+  advance it **before** the side effect that uses the id; on init take
+  `max(recovered-from-live-state, persisted)`. Validate the persisted value
+  (missing / non-int / negative / absurd -> fall back, never raise) or one bad
+  write poisons the counter forever.
+- Any id/sequence an AppDaemon app hands out must be persisted, not just held in
+  `self.`. The ownership guard (`_is_active_owner`) belongs on the single funnel
+  into allocation too, not only on the individual callbacks.
+- `_save_runtime_state()` here rebuilds the whole JSON document from live fields
+  on every call, so adding a key is automatically preserved by all other
+  writers — worth checking before adding a field to a shared state file.
