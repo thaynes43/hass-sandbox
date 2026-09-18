@@ -850,14 +850,31 @@ class PhotoFrameViewerApp(hass.Hass):
     # Change detection + staging
     # ------------------------------------------------------------------
 
-    def _poll_for_changes(self, *, reason: str) -> None:
-        """Check for source changes and trigger staging if needed."""
-        source_paths = self._read_source_file_list()
-        if not source_paths:
-            self.log("PhotoFrameViewerApp: source file list empty, skipping poll", level="DEBUG")
-            return
+    def _poll_for_changes(
+        self,
+        *,
+        reason: str,
+        precomputed: Optional[tuple[list[str], str]] = None,
+    ) -> None:
+        """Check for source changes and trigger staging if needed.
 
-        fp = compute_fingerprint(source_paths, file_stats=self._stat_files(source_paths))
+        *precomputed* lets a caller that has already scanned and hashed the
+        source directory (``_on_batch_ready``) hand the result over instead of
+        paying for a second scan.
+        """
+        if precomputed is not None:
+            source_paths, fp = precomputed
+        else:
+            source_paths = self._read_source_file_list()
+            if not source_paths:
+                self.log(
+                    "PhotoFrameViewerApp: source file list empty, skipping poll",
+                    level="DEBUG",
+                )
+                return
+            fp = compute_fingerprint(
+                source_paths, file_stats=self._stat_files(source_paths)
+            )
         if fp == self._current_fingerprint and self._current_gen_id is not None:
             return  # No change
 
@@ -1451,6 +1468,27 @@ class PhotoFrameViewerApp(hass.Hass):
     # Publish URL + generation swap
     # ------------------------------------------------------------------
 
+    def _set_displaying_filter_name(self, name: str, *, reason: str) -> bool:
+        """Adopt *name* as the album title the card shows.
+
+        The single place that changes the displayed title: it persists to the
+        state file and republishes the sensor, so the change reaches the card
+        even when the image URL did not move (a late ``batch_ready`` naming the
+        album already on screen).  Returns ``True`` when something changed.
+        """
+        name = str(name or "").strip()
+        if not name or name == self._displaying_filter_name:
+            return False
+        self._displaying_filter_name = name
+        self._save_runtime_state()
+        self._publish_sensor_state()
+        self.log(
+            f"PhotoFrameViewerApp: displaying filter name -> {name!r} "
+            f"reason={reason}",
+            level="INFO",
+        )
+        return True
+
     def _apply_pending_gen(self, *, reason: str) -> None:
         """Promote the pending generation to current and update the picker.
 
@@ -1463,9 +1501,9 @@ class PhotoFrameViewerApp(hass.Hass):
 
         # Promote the filter name so the card knows which filter is actually
         # being displayed (not the one the fetcher is already fetching next).
-        if self._pending_filter_name:
-            self._displaying_filter_name = self._pending_filter_name
-            self._save_runtime_state()
+        self._set_displaying_filter_name(
+            self._pending_filter_name, reason=f"apply_{reason}"
+        )
 
         pending_labels = self._pending_labels[:]
         self._finalize_pending(reason=reason)
@@ -1664,15 +1702,73 @@ class PhotoFrameViewerApp(hass.Hass):
         self._poll_for_changes(reason="poll")
 
     def _on_batch_ready(self, event_name: str, data: dict, kwargs: Any) -> None:
-        """Fetcher wrote a new batch — poll for changes immediately."""
+        """Fetcher wrote a new batch — attribute its title, then poll."""
         if not self._is_active_owner():
             return
-        # Stash the filter name from the event so we can publish it when the
-        # viewer actually swaps to the new generation (avoiding title drift).
+
         batch_filter = str(data.get("filter", "") or "").strip()
+        precomputed: Optional[tuple[list[str], str]] = None
+
         if batch_filter:
-            self._staged_filter_name = batch_filter
-        self._poll_for_changes(reason="batch_ready")
+            source_paths = self._read_source_file_list()
+            if source_paths:
+                fp = compute_fingerprint(
+                    source_paths, file_stats=self._stat_files(source_paths)
+                )
+                # Reused by the poll below so the scan+hash happens once.
+                precomputed = (source_paths, fp)
+                self._route_batch_filter_name(batch_filter, fp)
+            else:
+                # Nothing on disk to attribute it to — it must describe a
+                # future batch.
+                self._staged_filter_name = batch_filter
+                self.log(
+                    f"PhotoFrameViewerApp: batch_ready filter={batch_filter!r} "
+                    f"routed to next_stage (no source files on disk)",
+                    level="DEBUG",
+                )
+
+        self._poll_for_changes(reason="batch_ready", precomputed=precomputed)
+
+    def _route_batch_filter_name(self, name: str, fp: str) -> None:
+        """Attribute an album title to the generation whose files it describes.
+
+        Arrival time is not a reliable signal.  The fetcher writes every file,
+        *then* publishes its sensor (an HA round trip), *then* fires
+        ``batch_ready`` — so our periodic poll can stage that album's complete
+        files a moment before the event lands.  Routing purely by arrival
+        would leave the new photos under the previous album's title forever:
+        nothing re-stages afterwards, because the fingerprint already matches
+        the current generation and every poll returns early.
+
+        The fingerprint of what is on disk when the event fires says which
+        generation the title is actually about, so route by that.
+        """
+        if self._staging_in_progress and fp == self._staging_fingerprint:
+            # Names the generation currently being staged/verified.  Goes to
+            # the snapshot, which _restore_staged_filter_name hands back if
+            # that generation is later abandoned.
+            self._staging_filter_name = name
+            route = "staging"
+        elif self._pending_gen_id is not None and fp == self._pending_fingerprint:
+            # Names a generation already staged and waiting to be swapped in.
+            self._pending_filter_name = name
+            route = "pending"
+        elif self._current_gen_id is not None and fp == self._current_fingerprint:
+            # The album is already on screen — retitle it in place.
+            changed = self._set_displaying_filter_name(name, reason="batch_ready")
+            route = "current" if changed else "current_unchanged"
+        else:
+            # Files differ from everything we know about: the title belongs to
+            # the stage the poll below is about to start.
+            self._staged_filter_name = name
+            route = "next_stage"
+
+        self.log(
+            f"PhotoFrameViewerApp: batch_ready filter={name!r} routed to "
+            f"{route} (fp={fp[:12]}...)",
+            level="DEBUG",
+        )
 
     def _on_picker_change(self, entity: str, attribute: str, old: Any, new: Any, kwargs: Any) -> None:
         if not self._is_active_owner():

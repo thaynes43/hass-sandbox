@@ -231,3 +231,27 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - Watch for tests that encode the old drift: one asserted a title set *after* a
   stage began still landed on that stage. Fix the sequence (let the prior stage
   settle first), don't relax the assertion.
+
+### Attribute event metadata by content fingerprint, not arrival order
+- Round-4 finding: my own round-3 snapshot fix opened the mirror-image bug.
+  `immich_fetcher` writes all files -> publishes a sensor (HA round trip) ->
+  fires `batch_ready(filter=...)`. The viewer's periodic poll can stage that
+  album's COMPLETE files inside that gap, so the title arrives *after* the
+  generation it describes was already staged with an empty title — and nothing
+  re-stages afterwards (fingerprint already matches current, every poll returns
+  early), so the wrong album name sticks forever.
+- Fix shape: on a titled event, fingerprint what is on disk and route the title
+  to whichever generation those files belong to (in-flight / pending / current /
+  next). Arrival time is ambiguous in BOTH directions; content is not.
+- Generalise: whenever a producer writes data and *then* announces it, any
+  consumer that also polls has a window where the announcement arrives after it
+  already acted. Match announcement to data by content, never by timing.
+
+### Watch for tests that encode timing that cannot happen
+- Two of my own round-3 tests fired `batch_ready("Album B")` without changing
+  the files on disk — impossible in reality (the fetcher writes B's files before
+  announcing B). They only passed because routing was timing-based. Round 4's
+  content-based routing correctly reclassified them, and the fix was to make the
+  scenario realistic, not to relax the assertion.
+- Before asserting on an event sequence, check the producer's actual ordering
+  (read its source) rather than assuming events and state move independently.

@@ -200,12 +200,28 @@ full probe timeout to answer, so a fixed margin would pre-empt it at any large
 in-flight probe was about to see as 200, and logging a phantom "chain stopped
 responding".
 
-The album title is snapshotted when a stage starts.  `_on_batch_ready` keeps
-writing the incoming title throughout the (now possibly minutes-long)
-verification window while its poll is a no-op on the latch, so without the
-snapshot the in-flight gen would be published under the *next* album's title.
-A newer title waits for the next stage; if the in-flight gen is abandoned its
-title is handed back for the retry, unless a newer batch already claimed it.
+**Album titles are attributed by fingerprint, not by arrival time.**  The
+fetcher writes every file, *then* publishes its sensor (an HA round trip),
+*then* fires `immich_fetcher_batch_ready` — so the viewer's periodic poll can
+stage the new album's *complete* files in that gap, a moment before the event
+lands.  Arrival time is therefore ambiguous in both directions: an early poll
+would leave the new photos under the previous album's name (and nothing
+re-stages afterwards, because the fingerprint already matches the current gen
+and every poll returns early), while a late event would retitle a generation it
+does not describe.
+
+So on each titled event `_on_batch_ready` fingerprints what is on disk and
+routes the name to the generation those files belong to:
+
+| Fingerprint matches | Goes to |
+|---|---|
+| the gen being staged/verified | `_staging_filter_name` (survives an abandon via the restore path) |
+| a gen already pending | `_pending_filter_name` |
+| the current gen | retitled on screen in place — persisted and republished, image untouched |
+| nothing known | `_staged_filter_name`, i.e. the stage the poll is about to start |
+
+The scan + hash is computed once and handed to `_poll_for_changes`.  An event
+with an empty filter name changes nothing.
 
 `/local/...` is unauthenticated static content, so the probe sends no
 `Authorization` header; the HTTP call lives in

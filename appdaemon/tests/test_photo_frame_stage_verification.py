@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import json
 import os
 import sys
 import tempfile
@@ -1147,8 +1148,11 @@ class TestFilterNameSnapshot:
         app = self._staged_with_title("Album A")
         gen_a = app._staging_gen_id
 
-        # A fresh batch lands while gen A is still being verified.  Its poll is
-        # a no-op because the staging latch is held.
+        # A fresh batch lands while gen A is still being verified — the
+        # fetcher has already replaced the files on disk, so the event
+        # describes a fingerprint gen A knows nothing about.  Its poll is a
+        # no-op because the staging latch is held.
+        _replace_source_files(app.source_dir, ["B_1.jpg", "B_2.jpg"])
         app._on_batch_ready(
             "immich_fetcher_batch_ready", {"count": 9, "filter": "Album B"}, {}
         )
@@ -1167,7 +1171,6 @@ class TestFilterNameSnapshot:
         assert app._displaying_filter_name == "Album A"
 
         # ...and the next stage picks up B.
-        _replace_source_files(app.source_dir, ["B_1.jpg"])
         app._poll_for_changes(reason="poll")
         assert app._staging_filter_name == "Album B"
         _verify_round(app, exists=True)
@@ -1190,6 +1193,9 @@ class TestFilterNameSnapshot:
 
     def test_abandon_does_not_clobber_a_newer_title(self):
         app = self._staged_with_title("Album A")
+        # A genuinely newer batch: different files, so it is routed to the
+        # next stage rather than to the generation being verified.
+        _replace_source_files(app.source_dir, ["B_1.jpg"])
         app._on_batch_ready(
             "immich_fetcher_batch_ready", {"count": 9, "filter": "Album B"}, {}
         )
@@ -1200,7 +1206,6 @@ class TestFilterNameSnapshot:
             "a batch that arrived during verification describes a newer album"
         )
 
-        _replace_source_files(app.source_dir, ["B_1.jpg"])
         app._poll_for_changes(reason="poll")
         assert app._staging_filter_name == "Album B"
 
@@ -1283,3 +1288,244 @@ class TestFilterNameSnapshot:
         app._on_stage_settled({})
 
         assert app._staged_filter_name == "Album Next"
+
+
+# ----------------------------------------------------------------------
+# batch_ready titles are attributed by fingerprint, not arrival time
+# ----------------------------------------------------------------------
+
+
+class TestFilterNameRouting:
+    """The fetcher writes its files, THEN publishes a sensor, THEN fires
+    `batch_ready`.  Our periodic poll can land in that gap and stage the new
+    album's complete files before the event arrives — so a title must be
+    attributed to the generation whose files it describes, not to whatever
+    happens to be in flight when it lands.
+    """
+
+    def _batch_ready(self, app: PhotoFrameViewerApp, title: str) -> None:
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 2, "filter": title}, {}
+        )
+
+    def _routes(self, app: PhotoFrameViewerApp) -> list[str]:
+        return [
+            m.split("routed to ", 1)[1].split(" ", 1)[0]
+            for m in _logs(app, "DEBUG", "routed to")
+        ]
+
+    # -- route 1: names the generation being staged/verified ---------------
+
+    def test_route_staging_when_files_match_the_in_flight_gen(self):
+        """THE REGRESSION: poll stages the complete batch, event arrives late."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        app.log.reset_mock()
+
+        # The fetcher has finished writing album B; our poll gets there first.
+        _replace_source_files(app.source_dir, ["B_1.jpg", "B_2.jpg"])
+        app._poll_for_changes(reason="poll")
+        gen_b = app._staging_gen_id
+        assert gen_b is not None
+        assert app._staging_filter_name == "", "staged before the event arrived"
+
+        # ...and only now does batch_ready land.
+        self._batch_ready(app, "Album B")
+
+        assert self._routes(app) == ["staging"]
+        assert app._staging_filter_name == "Album B"
+        assert app._staged_filter_name == "", (
+            "the title names the gen in flight, not a future one"
+        )
+
+        # End to end: the new photos must appear under their own album name.
+        _verify_round(app, exists=True)
+        assert app._pending_gen_id == gen_b
+        assert app._pending_filter_name == "Album B"
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album B"
+
+    def test_route_staging_title_survives_an_abandon(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        _replace_source_files(app.source_dir, ["B_1.jpg"])
+        app._poll_for_changes(reason="poll")
+        self._batch_ready(app, "Album B")
+        assert app._staging_filter_name == "Album B"
+
+        _verify_round(app, exists=False, elapsed_s=app.stage_verify_timeout_s + 1)
+
+        assert app._staged_filter_name == "Album B", "the retry must keep it"
+        app._poll_for_changes(reason="poll")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album B"
+
+    # -- route 2: names a generation already pending -----------------------
+
+    def test_route_pending_when_files_match_the_pending_gen(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        _replace_source_files(app.source_dir, ["P_1.jpg", "P_2.jpg"])
+        app._poll_for_changes(reason="poll")
+        _verify_round(app, exists=True)
+        pending = app._pending_gen_id
+        assert pending is not None
+        app.log.reset_mock()
+
+        self._batch_ready(app, "Album P")
+
+        assert self._routes(app) == ["pending"]
+        assert app._pending_filter_name == "Album P"
+        assert app._staged_filter_name == ""
+        assert app._pending_gen_id == pending
+
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album P"
+
+    # -- route 3: names the album already on screen ------------------------
+
+    def test_route_current_retitles_in_place_and_persists(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        app.log.reset_mock()
+        app.set_state.reset_mock()
+        url_before = app._last_published_local_url
+
+        self._batch_ready(app, "Album C")
+
+        assert self._routes(app) == ["current"]
+        assert app._displaying_filter_name == "Album C"
+        assert app._last_published_local_url == url_before, (
+            "retitling must not move the displayed image"
+        )
+
+        published = [
+            c.kwargs["attributes"]["displaying_filter_name"]
+            for c in app.set_state.call_args_list
+            if "attributes" in c.kwargs
+        ]
+        assert "Album C" in published, "the sensor must carry the new title"
+
+        state = json.loads(Path(app._state_file).read_text())
+        assert state["displaying_filter_name"] == "Album C"
+
+    def test_route_current_is_a_noop_when_the_title_is_unchanged(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        self._batch_ready(app, "Album C")
+        app.log.reset_mock()
+        app.set_state.reset_mock()
+
+        self._batch_ready(app, "Album C")
+
+        assert self._routes(app) == ["current_unchanged"]
+        assert app.set_state.call_count == 0
+        assert app._displaying_filter_name == "Album C"
+
+    # -- route 4: names a batch we have not seen yet -----------------------
+
+    def test_route_next_stage_when_files_match_nothing_known(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        app.log.reset_mock()
+
+        _replace_source_files(app.source_dir, ["N_1.jpg"])
+        self._batch_ready(app, "Album N")
+
+        assert self._routes(app) == ["next_stage"]
+        # The poll inside _on_batch_ready stages it and takes the snapshot.
+        assert app._staging_filter_name == "Album N"
+        assert app._staged_filter_name == ""
+
+    def test_route_next_stage_when_the_source_dir_is_empty(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        _replace_source_files(app.source_dir, [])
+        app.log.reset_mock()
+
+        self._batch_ready(app, "Album E")
+
+        assert app._staged_filter_name == "Album E"
+        assert _logs(app, "DEBUG", "no source files on disk")
+
+    # -- general -----------------------------------------------------------
+
+    def test_empty_filter_name_changes_nothing(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        self._batch_ready(app, "Album C")
+        app.log.reset_mock()
+
+        app._on_batch_ready("immich_fetcher_batch_ready", {"count": 2}, {})
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 2, "filter": "  "}, {}
+        )
+
+        assert self._routes(app) == []
+        assert app._displaying_filter_name == "Album C"
+        assert app._staged_filter_name == ""
+
+    def test_source_is_scanned_once_per_batch_ready(self):
+        """The routing fingerprint is handed to the poll, not recomputed."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+
+        with patch.object(
+            app, "_read_source_file_list", wraps=app._read_source_file_list
+        ) as scan:
+            self._batch_ready(app, "Album C")
+
+        assert scan.call_count == 1
+
+    def test_legacy_no_ha_url_path_routes_the_same_way(self):
+        app = _init_with_current_gen("3", extra_args={"ha_url": ""})
+        app._on_stage_verify(dict(_last_run_in(app, app._on_stage_verify).kwargs))
+        app._on_tick({})
+        app.log.reset_mock()
+
+        # Poll first, event second — the regression scenario, legacy path.
+        _replace_source_files(app.source_dir, ["L_1.jpg"])
+        app._poll_for_changes(reason="poll")
+        self._batch_ready(app, "Album L")
+
+        assert self._routes(app) == ["staging"]
+        app._on_stage_verify(dict(_last_run_in(app, app._on_stage_verify).kwargs))
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album L"
+
+    def test_after_terminate_a_matching_title_goes_to_the_next_stage(self):
+        """`terminate()` clears the latch but keeps the staging context.
+
+        Routing on the fingerprint alone would then hand the title to a
+        snapshot nobody will ever consume; the latch check is what sends it to
+        the next stage instead.
+        """
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        _replace_source_files(app.source_dir, ["T_1.jpg"])
+        app._poll_for_changes(reason="poll")
+        assert app._staging_fingerprint is not None
+
+        app.terminate()
+        assert app._staging_in_progress is False
+        assert app._staging_fingerprint is not None, "context deliberately kept"
+        app.log.reset_mock()
+
+        self._batch_ready(app, "Album T")
+
+        assert self._routes(app) == ["next_stage"]
+        # The poll inside _on_batch_ready re-stages (the latch is clear) and
+        # snapshots the title onto that new generation — routing it to the dead
+        # context instead would have lost it when the re-stage overwrote it.
+        assert app._staging_filter_name == "Album T"

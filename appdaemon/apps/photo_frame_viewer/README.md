@@ -24,7 +24,9 @@ Instead, after firing the stage command the app polls the exact URL the card wil
 - `200` means staged. Because the stage script's final step is an atomic directory `mv`, one file existing implies the whole generation exists.
 - Anything else (404, connection error, timeout) means "not yet".
 - On success the generation becomes pending as before. On deadline the app logs a `WARNING`, cleans up the dead generation, publishes nothing, and lets the next source poll re-stage automatically (the album title is preserved for the retry).
-- While a generation is being verified, staging is latched — a new source batch waits for the current one to resolve. The album title is snapshotted when the stage starts, so a batch arriving mid-verification cannot retitle the generation already in flight; it is used for the next one instead. If the generation is abandoned, its title is handed back for the automatic retry unless a newer batch has since claimed it.
+- While a generation is being verified, staging is latched — a new source batch waits for the current one to resolve.
+- **Album titles are attributed by fingerprint, not by arrival time.** The fetcher writes every file, *then* publishes its sensor, *then* fires `immich_fetcher_batch_ready`, so the viewer's periodic poll can stage the new album's complete files a moment before the event lands. On each titled event the viewer fingerprints what is on disk and routes the title to whichever generation those files belong to: the one being staged, one already pending, the one already on screen (retitled in place, persisted, and republished without moving the image), or — if the files match nothing known — the stage about to start. Routing purely by arrival time strands the title in either direction: an early poll leaves new photos under the old album's name, and a late event retitles a generation it does not describe.
+- If a generation is abandoned, its title is handed back for the automatic retry unless a newer batch has since claimed it.
 - Because the deadline is only evaluated when a probe result arrives, an absolute-deadline watchdog abandons the generation and releases the latch even if the verification chain stops responding entirely. Without it a single lost callback would block every future stage until AppDaemon restarted. It fires at `stage_verify_timeout_s + stage_verify_interval_s + <probe timeout> + 5 s` — derived, not fixed, because the last probe can be scheduled as late as the timeout and then take a full probe timeout to answer. A fixed margin would pre-empt that at any large `stage_verify_interval_s` and abandon a healthy generation.
 
 `/local/...` is unauthenticated static content, so the probe sends **no** `Authorization` header. The HTTP call itself lives in `providers/ha_provisioner/local_file_check.py` (security policy S2).
@@ -37,7 +39,7 @@ If `ha_url` / `ha_url_env` is not configured, verification is impossible: the ap
 
 - `photo_frame_viewer.gen_helpers` — URL generation, fingerprinting, label building
 - `providers.ha_provisioner.HAProvisioner` — HA entity provisioning
-- `providers.ha_provisioner.local_file_exists()` — HTTP `HEAD` probe used to verify a staged generation
+- `providers.ha_provisioner.local_file_status()` — HTTP `HEAD` probe used to verify a staged generation (plus `STATUS_UNREACHABLE` and `DEFAULT_TIMEOUT_S`, which the watchdog margin is derived from)
 - `providers.secrets.resolve_secret()` — credential resolution
 
 ## Upstream dependencies

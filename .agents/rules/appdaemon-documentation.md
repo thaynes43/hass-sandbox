@@ -89,7 +89,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers/gemini` | `appdaemon/providers/ai_providers/gemini/README.md` | Google Gemini adapter (text, multimodal, image) |
 | `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal) |
 | `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image) |
-| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `local_file_exists` (unauthenticated `/local/...` existence probe) |
+| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
@@ -124,7 +124,7 @@ immich_fetcher
   └─ writes photos to disk
        └─ photo_frame_viewer (reads from same directory)
             └─ depends on: ha_provisioner (relay/picker provisioning,
-               local_file_exists staging probe)
+               local_file_status staging probe)
 
 detection_summary_app
   └─ fires detection_summary/run_published event
