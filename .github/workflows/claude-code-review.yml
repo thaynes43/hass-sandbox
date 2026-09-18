@@ -46,7 +46,7 @@ jobs:
           # comments at all, which is why earlier runs only ever left a summary.
           claude_args: |
             --model claude-opus-5
-            --max-turns 40
+            --max-turns 60
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
           additional_permissions: |
             actions: read
