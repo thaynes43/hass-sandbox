@@ -27,6 +27,14 @@ Admin-level HA REST operations beyond provisioning. Mirrors `HAProvisioner`'s co
 - `await reload_config_entry(entry_id)` — `POST /api/config/config_entries/entry/{entry_id}/reload`; returns HA's response payload.
 - `await render_template(template) -> str` — server-side Jinja2 rendering via `POST /api/template`. Always returns a string (re-serialises if a proxy/HA version hands back parsed JSON). Useful for registry-backed lookups unavailable through plain state reads, e.g. `integration_entities('unifiprotect')`.
 
+### `await local_file_exists(ha_url, url_path, timeout_s=5.0, session=None) -> bool`
+
+Unauthenticated `HEAD` probe against a HA `/local/...` static URL. Returns `True` **only** on HTTP 200; a 404, redirect, connection error or timeout all return `False`, and it never raises — it is a poll-until-ready probe, not a request whose failure means anything on its own.
+
+It deliberately sends **no** `Authorization` header: `/local/...` maps to `/config/www` and is served unauthenticated, so attaching the long-lived token would leak it for no benefit (security policy S3/S6). `build_local_url(ha_url, url_path)` is exported alongside it for callers that need the joined URL.
+
+Used by `photo_frame_viewer` to confirm HA is really serving a staged generation before publishing it — HA kills `shell_command`s at 60s, so the staging command's return value cannot be trusted.
+
 #### Why REST instead of `call_service` for reload?
 
 AppDaemon cancels in-flight service calls after ~60 seconds, and a config-entry reload (e.g. UniFi Protect re-establishing its websocket) can exceed that. Going through the REST API keeps the timeout under our control and returns HA's actual response instead of a cancelled future.
@@ -54,6 +62,7 @@ Rules: lowercase, non-alphanumeric chars become underscores, consecutive undersc
 | `provisioner.py` | `HAProvisioner` — high-level idempotent ensure API |
 | `ha_admin_client.py` | `HaAdminClient` — config-entry inspection/reload + server-side template rendering |
 | `ha_rest_client.py` | `HaRestClient` — low-level async HTTP + WebSocket wrapper |
+| `local_file_check.py` | `local_file_exists()` / `build_local_url()` — unauthenticated `/local/...` existence probe |
 | `__init__.py` | Package exports |
 
 ## Dependencies

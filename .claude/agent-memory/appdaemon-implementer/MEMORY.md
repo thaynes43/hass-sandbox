@@ -107,3 +107,38 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
 - Redact configured hosts/credentials out of exception strings before putting
   them in `set_state` attributes: aiohttp errors quote the URL they failed on,
   and the frontend renders `sources.*.error`.
+
+### AppDaemon `call_service(callback=...)` is non-blocking (4.5.13, verified)
+- `adapi.call_service` (site-packages `appdaemon/adapi.py` ~line 2022): with
+  `callback` set it does `task = self.AD.loop.create_task(coro)` +
+  `add_done_callback` and returns immediately — the `sync_decorator`'s 60s
+  `internal_function_timeout` never applies to the service itself.
+- Use it for any service whose HA side can be slow (`shell_command/*`), or the
+  app's pinned worker thread is held for up to 60s and every `run_in` timer on
+  that app starves. Symptom in the log: `Coroutine (<coroutine object
+  Hass.call_service ...>) took too long (01:00), cancelling the task...`
+- The callback is **non-async, takes one arg (the result), and runs on the
+  event loop thread** — do not call `get_state`/`call_service` from it
+  (`sync_decorator` returns a Task, not a value, on the main thread). Bounce
+  back to the app thread with `self.run_in(cb, 0, **data)` first.
+- `run_in` from a coroutine on the loop thread is safe (it creates a task and
+  registers it in `ad.futures`); do not `await` it — unit tests mock `run_in`
+  with a plain MagicMock, which is not awaitable.
+
+### HA shell_command results are not trustworthy (photo_frame_viewer, 2026-09-18)
+- HA kills every `shell_command` at a hard 60s. A stalled NFS copy dies before
+  its atomic `mv`, so the target directory never appears while the service call
+  still "completes". Never treat a stage/copy shell_command's return (or a
+  fixed settle delay) as proof the files landed.
+- Verify instead with `providers.ha_provisioner.local_file_exists(ha_url,
+  url_path)` — unauthenticated HTTP HEAD on the exact `/local/...` URL the card
+  will load. 200 = there. Sends no Authorization header on purpose
+  (`/local/...` is unauthenticated static content).
+- HA-side stage commands should detach their work (`( ... ) >> "$log" 2>&1 < /dev/null &`)
+  so the `mv` finishes regardless of HA's timeout; the log is the only record.
+
+### Mutation-checking new tests (cheap and worth it)
+- The repo's vacuous-test trap is real. Script it: for each (file, anchor,
+  broken replacement, test selector) apply the edit, run pytest, restore in a
+  `finally`, and assert the return code is non-zero. 16 mutations over the
+  photo-frame verification change ran in ~3s total.

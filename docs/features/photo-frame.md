@@ -20,10 +20,13 @@ The `photo_frame_viewer` app manages the slideshow lifecycle:
 
 1. **Poll** — watches the fetcher's output directory for new photos
 2. **Stage** — atomically copies photos to a versioned generation directory via HA `shell_command`
-3. **Display** — publishes the current image URL on an HA sensor that the dashboard card reads
-4. **Swap** — on the next slide advance, switches to the new generation and cleans up the old one
+3. **Verify** — checks over HTTP that Home Assistant is really serving the new generation before trusting it
+4. **Display** — publishes the current image URL on an HA sensor that the dashboard card reads
+5. **Swap** — on the next slide advance, switches to the new generation and cleans up the old one
 
 This generation-swap pattern means a paused slideshow keeps its current image visible indefinitely, even after multiple batch refreshes from Immich.
+
+The verification step exists because copying a batch across NFS can occasionally outlast Home Assistant's 60-second limit on shell commands. Rather than assume a fixed delay is enough, the app polls the exact image URL the card will load and only adopts the new generation once it answers. A staging attempt that never lands is discarded and retried, so the display never shows a broken image.
 
 ## Architecture
 

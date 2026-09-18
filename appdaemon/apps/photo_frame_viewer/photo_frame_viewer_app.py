@@ -21,6 +21,7 @@ from photo_frame_viewer.gen_helpers import (
     parse_gen_id_from_url,
     source_paths_to_gen_paths,
 )
+from providers.ha_provisioner.local_file_check import local_file_exists
 from providers.secrets import resolve_arg_secret
 
 
@@ -70,6 +71,8 @@ class PhotoFrameViewerApp(hass.Hass):
         "cleanup_shell_command": "photo_frame_cleanup_gen",
         "source_poll_interval_s": 30,
         "stage_settle_delay_s": 3,
+        "stage_verify_interval_s": 5,
+        "stage_verify_timeout_s": 240,
         "fallback_image_path": "/config/www/immich-album/no-image.jpg",
         "options_max": 100,
         "refresh_options_every_s": 60,
@@ -106,6 +109,15 @@ class PhotoFrameViewerApp(hass.Hass):
         self.cleanup_shell_command: str = str(cfg["cleanup_shell_command"])
         self.source_poll_interval_s: float = max(5.0, float(cfg["source_poll_interval_s"]))
         self.stage_settle_delay_s: float = max(1.0, float(cfg["stage_settle_delay_s"]))
+        # Staging verification: how often to re-probe HA for the staged gen,
+        # and how long to keep probing before declaring the stage a failure.
+        self.stage_verify_interval_s: float = max(
+            1.0, _safe_float(cfg.get("stage_verify_interval_s"), 5.0)
+        )
+        self.stage_verify_timeout_s: float = max(
+            self.stage_settle_delay_s,
+            _safe_float(cfg.get("stage_verify_timeout_s"), 240.0),
+        )
         # TODO: fallback_image_path currently points into source_dir (immich-photos), which
         # immich_fetcher clears on every run. The image will never exist; we show broken image
         # instead of a fallback. Move to a dir the fetcher doesn't touch (e.g. state_dir) or
@@ -179,6 +191,19 @@ class PhotoFrameViewerApp(hass.Hass):
         self._next_gen_counter: int = 1
         self._staging_in_progress: bool = False
 
+        # In-flight staging context.  A generation is *never* promoted to
+        # pending until HA is verifiably serving it (see _on_stage_verify):
+        # HA kills shell_commands at 60s, so the service call returning tells
+        # us nothing about whether the atomic `mv` into the gen directory
+        # actually happened.
+        self._staging_gen_id: Optional[str] = None
+        self._staging_source_paths: list[str] = []
+        self._staging_fingerprint: Optional[str] = None
+        self._staging_started_at: Optional[float] = None
+        self._staging_verify_url_path: str = ""
+        self._staging_checks: int = 0
+        self._verify_handle: Optional[Any] = None
+
         # Pending generation (staged but not yet displayed)
         self._pending_gen_id: Optional[str] = None
         self._pending_labels: list[str] = []
@@ -211,6 +236,22 @@ class PhotoFrameViewerApp(hass.Hass):
         # without persisting stale entries indefinitely.
         self._programmatic_target_ttl_s: float = 5.0
 
+        # Base URL used to verify that HA is actually serving a staged
+        # generation.  Resolved once — resolve_arg_secret() raises when a
+        # *_env key points at an unset variable, which must not break init.
+        try:
+            self._ha_url: str = str(
+                resolve_arg_secret(self.args, "ha_url", default="") or ""
+            ).strip().rstrip("/")
+        except Exception as exc:
+            self._ha_url = ""
+            self.log(
+                f"PhotoFrameViewerApp: could not resolve ha_url ({exc}) — "
+                f"staging verification disabled",
+                level="WARNING",
+            )
+        self._stage_verification_enabled: bool = bool(self._ha_url)
+
         self.log(
             f"PhotoFrameViewerApp init "
             f"prefix={self._entity_prefix} "
@@ -218,9 +259,23 @@ class PhotoFrameViewerApp(hass.Hass):
             f"ha_source_dir={self.ha_source_dir} "
             f"ha_local_url_base={self.ha_local_url_base} "
             f"picker={self.picker_entity_id} "
-            f"sensor={self._sensor_entity_id}",
+            f"sensor={self._sensor_entity_id} "
+            f"stage_verify={self._stage_verification_enabled} "
+            f"stage_verify_interval_s={self.stage_verify_interval_s} "
+            f"stage_verify_timeout_s={self.stage_verify_timeout_s}",
             level="INFO",
         )
+
+        # One-time warning (not per generation) so legacy/dev configs without
+        # an HA URL are obvious in the log without becoming noise.
+        if not self._stage_verification_enabled:
+            self.log(
+                "PhotoFrameViewerApp: no ha_url configured — staging "
+                "verification is DISABLED; generations are assumed staged "
+                f"after stage_settle_delay_s={self.stage_settle_delay_s}s "
+                "(a failed stage will publish broken image URLs)",
+                level="WARNING",
+            )
 
         # Recover generation counter from previously published virtual sensor
         self._recover_gen_from_sensor()
@@ -284,6 +339,7 @@ class PhotoFrameViewerApp(hass.Hass):
             "_poll_handle",
             "_periodic_handle",
             "_pause_auto_resume_handle",
+            "_verify_handle",
         ):
             handle = getattr(self, attr, None)
             setattr(self, attr, None)
@@ -294,6 +350,9 @@ class PhotoFrameViewerApp(hass.Hass):
                     self.cancel_timer(handle)
             except Exception:
                 pass
+        # A verification window may have been open; never leave the staging
+        # latch set on a torn-down instance.
+        self._staging_in_progress = False
         self.log(
             f"PhotoFrameViewerApp: terminate() seq={getattr(self, '_instance_seq', None)} "
             f"prefix={getattr(self, '_entity_prefix', None)!r}",
@@ -801,9 +860,19 @@ class PhotoFrameViewerApp(hass.Hass):
         self._stage_new_generation(source_paths, fp)
 
     def _stage_new_generation(self, source_paths: list[str], fingerprint: str) -> None:
-        """Call the staging shell_command and schedule the settle callback."""
+        """Ask HA to stage a new generation, then verify it over HTTP.
+
+        The shell_command's return value is deliberately NOT the source of
+        truth.  HA kills shell_commands at 60s; when the NFS source stalls
+        mid-copy the shell dies before the atomic ``mv``, so the generation
+        directory never appears even though the service call "completed".
+        Publishing on that signal is what put broken images on the wall
+        display.  Instead we poll the exact URL the card will load until HA
+        serves it (or we give up and let the next poll re-stage).
+        """
         gen_id = str(self._next_gen_counter)
         self._next_gen_counter += 1
+        self._cancel_verify_timer()
         self._staging_in_progress = True
 
         # If there's an existing pending gen that was never adopted, clean it up
@@ -829,28 +898,210 @@ class PhotoFrameViewerApp(hass.Hass):
             level="INFO",
         )
 
+        # Stash staging context BEFORE the service call so the verification
+        # chain (and any re-entrant poll) sees a consistent view.
+        self._staging_gen_id = gen_id
+        self._staging_source_paths = source_paths
+        self._staging_fingerprint = fingerprint
+        self._staging_started_at = time.monotonic()
+        self._staging_checks = 0
+        self._staging_verify_url_path = gen_path_to_local_url(
+            source_paths[0], self.ha_local_url_base, gen_id
+        )
+
+        # `callback=` makes AppDaemon fire-and-forget the service call
+        # (adapi.call_service creates a task and returns immediately) instead
+        # of pinning this app's worker thread for up to the 60s internal
+        # function timeout — which used to starve the slideshow tick.
         self.call_service(
             f"shell_command/{self.stage_shell_command}",
+            callback=self._on_stage_service_result,
             source_dir=self.ha_source_dir,
             gen_id=gen_id,
         )
 
-        # Stash staging context for the settle callback
-        self._staging_gen_id = gen_id
-        self._staging_source_paths = source_paths
-        self._staging_fingerprint = fingerprint
+        self._verify_handle = self.run_in(
+            self._on_stage_verify, self.stage_settle_delay_s, gen_id=gen_id
+        )
 
-        self.run_in(self._on_stage_settled, self.stage_settle_delay_s)
+    def _on_stage_service_result(self, result: Any = None) -> None:
+        """AppDaemon service-call completion callback — informational only.
 
-    def _on_stage_settled(self, kwargs: Any) -> None:
-        """Called after the staging shell_command has had time to complete."""
+        Runs on the event loop thread.  Deliberately does nothing but log:
+        the staging shell_command's exit status is not trustworthy (see
+        ``_stage_new_generation``), the HTTP probe is.
+        """
+        self.log(
+            f"PhotoFrameViewerApp: stage service call returned {result!r}",
+            level="DEBUG",
+        )
+
+    # ------------------------------------------------------------------
+    # Staging verification
+    # ------------------------------------------------------------------
+
+    def _staging_elapsed_s(self) -> float:
+        started = self._staging_started_at
+        if started is None:
+            return 0.0
+        return max(0.0, time.monotonic() - started)
+
+    def _cancel_verify_timer(self) -> None:
+        handle = self._verify_handle
+        self._verify_handle = None
+        if handle is None:
+            return
+        try:
+            if self.timer_running(handle):
+                self.cancel_timer(handle)
+        except Exception:
+            pass
+
+    def _clear_staging_context(self) -> None:
+        """Release the staging latch and forget the in-flight generation."""
+        self._cancel_verify_timer()
         self._staging_in_progress = False
+        self._staging_gen_id = None
+        self._staging_source_paths = []
+        self._staging_fingerprint = None
+        self._staging_started_at = None
+        self._staging_verify_url_path = ""
+        self._staging_checks = 0
+
+    def _on_stage_verify(self, kwargs: Any) -> None:
+        """Timer callback: probe HA for the staged generation."""
+        self._verify_handle = None
+        data = kwargs if isinstance(kwargs, dict) else {}
+        gen_id = data.get("gen_id")
+
         if not self._is_active_owner():
+            # Zombie instance left over from an AppDaemon reload — release the
+            # latch and stop the verification chain.
+            self._clear_staging_context()
             return
 
+        if not gen_id or gen_id != self._staging_gen_id:
+            # A newer generation superseded this one; the stale chain dies here.
+            self.log(
+                f"PhotoFrameViewerApp: ignoring stale stage verification for "
+                f"gen={gen_id!r} (in-flight gen={self._staging_gen_id!r})",
+                level="DEBUG",
+            )
+            return
+
+        if not self._stage_verification_enabled:
+            # Legacy behaviour: no ha_url means we cannot verify anything, so
+            # assume the settle delay was enough (warned about once at init).
+            self._on_stage_settled({"gen_id": gen_id})
+            return
+
+        self.create_task(self._verify_stage_async(gen_id))
+
+    async def _verify_stage_async(self, gen_id: str) -> None:
+        """Run the HTTP probe off the app thread, then hand the result back.
+
+        The result is bounced through ``run_in(..., 0)`` because everything in
+        the settle path (``get_state``/``call_service``) must run on the app's
+        worker thread, not the event loop.
+        """
+        url_path = self._staging_verify_url_path
+        exists = False
+        if url_path:
+            try:
+                exists = await local_file_exists(self._ha_url, url_path)
+            except Exception as exc:  # local_file_exists swallows, belt and braces
+                self.log(
+                    f"PhotoFrameViewerApp: stage verification probe failed for "
+                    f"gen={gen_id}: {exc!r}",
+                    level="WARNING",
+                )
+                exists = False
+        self.run_in(
+            self._on_stage_verify_result, 0, gen_id=gen_id, exists=bool(exists)
+        )
+
+    def _on_stage_verify_result(self, kwargs: Any) -> None:
+        """Act on one probe result: promote, re-probe, or give up."""
+        data = kwargs if isinstance(kwargs, dict) else {}
+        gen_id = data.get("gen_id")
+        exists = bool(data.get("exists"))
+
+        if not self._is_active_owner():
+            self._clear_staging_context()
+            return
+
+        if not gen_id or gen_id != self._staging_gen_id:
+            self.log(
+                f"PhotoFrameViewerApp: ignoring stale stage verification result "
+                f"for gen={gen_id!r} (in-flight gen={self._staging_gen_id!r})",
+                level="DEBUG",
+            )
+            return
+
+        self._staging_checks += 1
+        checks = self._staging_checks
+        elapsed = self._staging_elapsed_s()
+
+        if exists:
+            if checks > 1:
+                self.log(
+                    f"PhotoFrameViewerApp: gen={gen_id} verified staged after "
+                    f"{elapsed:.1f}s ({checks} checks)",
+                    level="INFO",
+                )
+            else:
+                self.log(
+                    f"PhotoFrameViewerApp: gen={gen_id} verified staged after "
+                    f"{elapsed:.1f}s",
+                    level="DEBUG",
+                )
+            self._on_stage_settled({"gen_id": gen_id})
+            return
+
+        if elapsed >= self.stage_verify_timeout_s:
+            self._abandon_staging(gen_id, elapsed, checks)
+            return
+
+        self.log(
+            f"PhotoFrameViewerApp: gen={gen_id} not staged yet "
+            f"(elapsed={elapsed:.1f}s check={checks} "
+            f"url_path={self._staging_verify_url_path!r})",
+            level="DEBUG",
+        )
+        self._verify_handle = self.run_in(
+            self._on_stage_verify, self.stage_verify_interval_s, gen_id=gen_id
+        )
+
+    def _abandon_staging(self, gen_id: str, elapsed: float, checks: int) -> None:
+        """Give up on a generation HA never served — publish nothing.
+
+        Leaves ``_staged_filter_name`` alone so the automatic re-stage on the
+        next poll keeps the album title, and leaves ``_current_fingerprint``
+        alone so that poll still sees a change and re-stages.
+        """
+        self.log(
+            f"PhotoFrameViewerApp: staging gen={gen_id} FAILED verification "
+            f"after {elapsed:.1f}s ({checks} checks) — HA never served "
+            f"{self._staging_verify_url_path!r}. The stage shell_command was "
+            f"most likely killed by HA's 60s timeout before the atomic mv; "
+            f"check the HA-side log /config/www/photo-frame/live/.stage.log. "
+            f"Not publishing this generation — the next source poll re-stages.",
+            level="WARNING",
+        )
+        self._call_cleanup(gen_id, reason="stage_verify_failed")
+        self._clear_staging_context()
+
+    def _on_stage_settled(self, kwargs: Any) -> None:
+        """Promote the staged generation to pending (verified, or legacy settle)."""
         gen_id = getattr(self, "_staging_gen_id", None)
-        source_paths = getattr(self, "_staging_source_paths", [])
+        source_paths = list(getattr(self, "_staging_source_paths", None) or [])
         fingerprint = getattr(self, "_staging_fingerprint", None)
+
+        # Release the latch first: every exit path below must leave it clear.
+        self._clear_staging_context()
+
+        if not self._is_active_owner():
+            return
 
         if not gen_id or not source_paths:
             self.log("PhotoFrameViewerApp: stage settled but no staging context", level="WARNING")
