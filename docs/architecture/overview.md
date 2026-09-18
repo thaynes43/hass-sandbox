@@ -54,6 +54,7 @@
 | **State** (app → card) | AppDaemon → HA → Card | `set_state()` on sensor → card reads attributes |
 | **External APIs** | AppDaemon → Internet | Provider adapters in `providers/` make HTTP calls |
 | **Provisioning** | AppDaemon → HA REST API | `ha_provisioner` creates helpers/scripts on startup |
+| **Static asset check** | AppDaemon → HA HTTP | Unauthenticated `HEAD /local/...` to confirm HA is really serving a file an app asked it to stage |
 
 ## Key concepts
 
@@ -77,4 +78,4 @@ The [health check system](../features/health-checks.md) uses the event bus as a 
 
 ### Container separation
 
-HA and AppDaemon run in separate Kubernetes pods. They share a `/media` NFS mount for file exchange. AppDaemon cannot access `/config/www/` directly — it uses HA `shell_command` services for file operations in that directory.
+HA and AppDaemon run in separate Kubernetes pods. They share a `/media` NFS mount for file exchange. AppDaemon cannot access `/config/www/` directly — it uses HA `shell_command` services for file operations in that directory. Because a shell command's result says little about whether the files actually landed, apps confirm the outcome by requesting the same `/local/...` URL the dashboard card will load, and only publish it once Home Assistant answers.
