@@ -39,12 +39,12 @@ If `ha_url` / `ha_url_env` is not configured, verification is impossible: the ap
 
 - `photo_frame_viewer.gen_helpers` — URL generation, fingerprinting, label building
 - `providers.ha_provisioner.HAProvisioner` — HA entity provisioning
-- `providers.ha_provisioner.local_file_status()` — HTTP `HEAD` probe used to verify a staged generation (plus `STATUS_UNREACHABLE` and `DEFAULT_TIMEOUT_S`, which the watchdog margin is derived from)
+- `providers.ha_provisioner.local_file_status()` — HTTP `HEAD` probe used to verify a staged generation (plus `STATUS_UNREACHABLE`; the watchdog margin is derived from `DEFAULT_TIMEOUT_S`, imported from the `providers.ha_provisioner.local_file_check` submodule — it is not re-exported by the package)
 - `providers.secrets.resolve_secret()` — credential resolution
 
 ## Upstream dependencies
 
-- `immich_fetcher` — provides the source photos in `source_dir`
+- `immich_fetcher` — provides the source photos in `source_dir`, and fires `immich_fetcher_batch_ready` with the album title, which the viewer attributes to a generation by source fingerprint
 
 ## Self-provisioned entities
 

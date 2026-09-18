@@ -121,6 +121,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 
 ```
 immich_fetcher
+  └─ fires immich_fetcher_batch_ready (album title -> photo_frame_viewer)
   └─ writes photos to disk
        └─ photo_frame_viewer (reads from same directory)
             └─ depends on: ha_provisioner (relay/picker provisioning,

@@ -25,7 +25,7 @@
 | Provider | Description |
 |----------|-------------|
 | **ai_providers** | LLM and image generation adapters (OpenAI, Gemini, Ollama, ComfyUI) |
-| **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers) |
+| **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers), plus a check that Home Assistant is really serving a staged `/local/...` file |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
 | **school_menu** | Async client for the School Nutrition and Fitness API |
 | **school_schedule** | Finalsite school calendar (ICS) and PowerSchool guardian portal scrapers |
