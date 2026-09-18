@@ -142,3 +142,40 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
   broken replacement, test selector) apply the edit, run pytest, restore in a
   `finally`, and assert the return code is non-zero. 16 mutations over the
   photo-frame verification change ran in ~3s total.
+
+### Any "latch" released only by a callback needs an absolute-deadline watchdog
+- Pattern bug found in review on 2026-09-18 (`photo_frame_viewer` staging):
+  a boolean that blocks work while an async chain runs, released only when the
+  chain's result callback fires, and whose timeout is *evaluated inside that
+  same callback*. If the chain dies (lost `run_in` bounce, cancelled task), the
+  timeout can never fire and the flag blocks the feature until AppDaemon
+  restarts.
+- Fix is two-part: (1) try/except the hand-back and release the flag there,
+  guarded on the id you own so a newer in-flight job is not clobbered;
+  (2) a `run_in` timer armed at `timeout + margin` when the work starts,
+  carrying the job id, no-op for a superseded id and for a non-owner instance
+  (which must still release its own flag). Cancel it on success, on give-up,
+  in `terminate()`, and when a new job starts.
+- Pick the margin above one retry interval + one probe timeout so the normal
+  deadline path still wins under scheduling jitter.
+
+### Mocked `run_in`/`create_task` returning one shared handle hides cancel bugs
+- `MagicMock()` returns the SAME `return_value` for every call, so two handles
+  stored from two `run_in` calls compare equal. Every
+  `assert handle in cancel_timer.call_args_list` then passes even when the code
+  cancels the wrong timer — a mutation check caught exactly this.
+- Give the double distinct handles:
+  `handles = itertools.count(); app.run_in = MagicMock(side_effect=lambda *a, **k: f"handle-{next(handles)}")`.
+
+### HA shell_command file staging: pass an explicit keep-list, prune on the HA side
+- A detached HA-side worker can land its output minutes after the app gave up
+  and already ran its per-gen cleanup — the directory did not exist then, so
+  nothing ever reclaims it. Found 3 such orphans in prod (gens 808/2635/6015).
+- Design: every stage call sends `keep_gens` (space-separated, digits only —
+  it is interpolated into shell); a successful stage deletes every output
+  directory not in `keep_gens` plus its own. Safe because the app's staging
+  latch means the only dir that can become current before the prune runs is the
+  one being staged. Empty list = prune nothing, so old app/old script pairings
+  both degrade to no-ops.
+- Implies **one app instance per staging output dir** — gen ids are per-instance
+  counters, so two instances would prune each other. Document that constraint.

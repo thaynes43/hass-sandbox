@@ -15,6 +15,7 @@ and therefore never published — until HA is verifiably serving it.**
 from __future__ import annotations
 
 import asyncio
+import itertools
 import os
 import sys
 import tempfile
@@ -104,7 +105,12 @@ def _make_app(
     app.listen_state = MagicMock()
     app.listen_event = MagicMock()
     app.run_every = MagicMock()
-    app.run_in = MagicMock()
+    # Distinct handle per call.  A bare MagicMock returns one shared
+    # return_value for every call, which makes the verify timer and the
+    # watchdog indistinguishable and silently turns every "this handle was
+    # cancelled" assertion vacuous.
+    handles = itertools.count()
+    app.run_in = MagicMock(side_effect=lambda *a, **k: f"handle-{next(handles)}")
     app.cancel_timer = MagicMock()
     app.timer_running = MagicMock(return_value=False)
     app.datetime = MagicMock()
@@ -526,3 +532,288 @@ class TestVerificationDisabled:
         assert app._ha_url == ""
         assert app._stage_verification_enabled is False
         assert len(_stage_calls(app)) == 1
+
+
+# ----------------------------------------------------------------------
+# The staging latch can never be stranded
+# ----------------------------------------------------------------------
+
+
+class TestLatchIsNeverStranded:
+    """`_staging_in_progress` blocks every future stage while it is set.
+
+    It is released only by `_on_stage_verify_result`, and the
+    `stage_verify_timeout_s` deadline is only evaluated when a result
+    arrives — so a verification chain that goes quiet would block staging
+    until AppDaemon restarts.  Two independent guards prevent that.
+    """
+
+    def test_failed_result_bounce_releases_the_latch(self):
+        """If the run_in bounce raises, the latch must not be left set."""
+        app = _init_with_current_gen()
+        gen = app._staging_gen_id
+        timer_call = _last_run_in(app, app._on_stage_verify)
+
+        scheduler = app.run_in
+
+        def raising_run_in(callback, delay, **kwargs):
+            if callback == app._on_stage_verify_result:
+                raise RuntimeError("scheduler gone")
+            return scheduler(callback, delay, **kwargs)
+
+        app.run_in = MagicMock(side_effect=raising_run_in)
+
+        with patch(_PROBE, new=AsyncMock(return_value=True)):
+            app._on_stage_verify(dict(timer_call.kwargs))
+            asyncio.run(app.create_task.call_args_list[-1].args[0])
+
+        assert app._staging_in_progress is False
+        assert app._staging_gen_id is None
+        assert app._pending_gen_id is None
+
+        warnings = _logs(app, "WARNING", "could not hand back")
+        assert len(warnings) == 1, warnings
+        assert f"gen={gen}" in warnings[0]
+        assert "RuntimeError" in warnings[0]
+
+    def test_failed_bounce_does_not_clobber_a_newer_staging(self):
+        """A late failure must only release the context it owns."""
+        app = _init_with_current_gen()
+        timer_call = _last_run_in(app, app._on_stage_verify)
+        stale_gen = app._staging_gen_id
+
+        scheduler = app.run_in
+
+        def raising_run_in(callback, delay, **kwargs):
+            if callback == app._on_stage_verify_result:
+                raise RuntimeError("scheduler gone")
+            return scheduler(callback, delay, **kwargs)
+
+        app.run_in = MagicMock(side_effect=raising_run_in)
+
+        with patch(_PROBE, new=AsyncMock(return_value=True)):
+            app._on_stage_verify(dict(timer_call.kwargs))
+            coro = app.create_task.call_args_list[-1].args[0]
+            # A newer generation takes over the context before the probe
+            # coroutine gets as far as handing its result back.
+            app._staging_gen_id = "987"
+            app._staging_in_progress = True
+            asyncio.run(coro)
+
+        assert app._staging_gen_id == "987", (
+            f"a failure for gen={stale_gen} must not clear a newer context"
+        )
+        assert app._staging_in_progress is True
+
+    def test_watchdog_is_armed_at_the_absolute_deadline(self):
+        app = _init_with_current_gen()
+        watchdog = _last_run_in(app, app._on_stage_watchdog)
+        assert watchdog.args[1] == (
+            app.stage_verify_timeout_s + app.STAGE_WATCHDOG_MARGIN_S
+        )
+        assert watchdog.kwargs["gen_id"] == app._staging_gen_id
+        assert app._watchdog_handle is not None
+
+    def test_watchdog_margin_exceeds_one_recheck_plus_one_probe(self):
+        """Otherwise the watchdog could pre-empt the normal deadline path."""
+        app = _init_with_current_gen()
+        assert app.STAGE_WATCHDOG_MARGIN_S > app.stage_verify_interval_s + 5.0
+
+    def test_watchdog_abandons_when_no_result_ever_arrives(self):
+        app = _init_with_current_gen()
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        app.call_service.reset_mock()
+        app.log.reset_mock()
+
+        _replace_source_files(app.source_dir, ["FLORIDA_1.jpg", "FLORIDA_2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 2, "filter": "Florida"}, {}
+        )
+        failed_gen = app._staging_gen_id
+        url_before = app._last_published_local_url
+
+        # No probe result ever comes back; only the watchdog fires.
+        app._on_stage_watchdog(dict(_last_run_in(app, app._on_stage_watchdog).kwargs))
+
+        assert app._pending_gen_id is None
+        assert app._staging_in_progress is False
+        assert app._staging_gen_id is None
+        assert app._last_published_local_url == url_before
+        assert app._staged_filter_name == "Florida"
+        assert any(c.kwargs.get("gen_id") == failed_gen for c in _cleanup_calls(app))
+
+        warnings = _logs(app, "WARNING", "FAILED verification")
+        assert len(warnings) == 1, warnings
+        assert "reason=watchdog" in warnings[0]
+        assert "/config/www/photo-frame/live/.stage.log" in warnings[0]
+
+        # And the normal recovery still happens.
+        app.call_service.reset_mock()
+        app._poll_for_changes(reason="poll")
+        stage = _stage_calls(app)
+        assert len(stage) == 1
+        assert stage[0].kwargs["gen_id"] != failed_gen
+
+    def test_deadline_abandon_reports_its_own_reason(self):
+        app = _init_with_current_gen()
+        _verify_round(app, exists=False, elapsed_s=app.stage_verify_timeout_s + 1)
+        warnings = _logs(app, "WARNING", "FAILED verification")
+        assert len(warnings) == 1
+        assert "reason=deadline" in warnings[0]
+
+    def test_watchdog_for_a_superseded_gen_is_a_noop(self):
+        app = _init_with_current_gen()
+        in_flight = app._staging_gen_id
+        app.call_service.reset_mock()
+
+        app._on_stage_watchdog({"gen_id": "999"})
+
+        assert app._staging_gen_id == in_flight
+        assert app._staging_in_progress is True
+        assert _cleanup_calls(app) == []
+
+    def test_watchdog_without_a_gen_id_is_a_noop(self):
+        app = _init_with_current_gen()
+        in_flight = app._staging_gen_id
+        app.call_service.reset_mock()
+
+        app._on_stage_watchdog({})
+
+        assert app._staging_gen_id == in_flight
+        assert app._staging_in_progress is True
+        assert _cleanup_calls(app) == []
+
+    def test_zombie_watchdog_releases_the_latch_without_abandoning(self):
+        app = _init_with_current_gen()
+        gen = app._staging_gen_id
+        newer = _make_app()
+        newer.initialize()
+        app.call_service.reset_mock()
+
+        app._on_stage_watchdog({"gen_id": gen})
+
+        assert app._staging_in_progress is False
+        assert app._pending_gen_id is None
+        assert _cleanup_calls(app) == [], "a zombie must not drive cleanup"
+
+    def test_watchdog_is_cancelled_on_successful_verification(self):
+        app = _init_with_current_gen()
+        handle = app._watchdog_handle
+        app.timer_running = MagicMock(return_value=True)
+        app.cancel_timer = MagicMock()
+
+        _verify_round(app, exists=True)
+
+        assert app._watchdog_handle is None
+        assert handle in [c.args[0] for c in app.cancel_timer.call_args_list]
+
+    def test_watchdog_is_cancelled_on_abandon(self):
+        app = _init_with_current_gen()
+        handle = app._watchdog_handle
+        app.timer_running = MagicMock(return_value=True)
+        app.cancel_timer = MagicMock()
+
+        _verify_round(app, exists=False, elapsed_s=app.stage_verify_timeout_s + 1)
+
+        assert app._watchdog_handle is None
+        assert handle in [c.args[0] for c in app.cancel_timer.call_args_list]
+
+    def test_watchdog_is_cancelled_on_terminate(self):
+        app = _init_with_current_gen()
+        handle = app._watchdog_handle
+        app.timer_running = MagicMock(return_value=True)
+        app.cancel_timer = MagicMock()
+
+        app.terminate()
+
+        assert app._watchdog_handle is None
+        assert handle in [c.args[0] for c in app.cancel_timer.call_args_list]
+
+    def test_new_stage_cancels_a_live_watchdog(self):
+        """The cancel is unconditional so no timer is ever orphaned."""
+        app = _init_with_current_gen()
+        handle = app._watchdog_handle
+        assert handle is not None
+        app.timer_running = MagicMock(return_value=True)
+        app.cancel_timer = MagicMock()
+
+        # In production the latch prevents a second stage while one is in
+        # flight; call it directly to prove the cancel does not rely on that.
+        app._stage_new_generation(app._read_source_file_list(), "fp-xyz")
+
+        assert handle in [c.args[0] for c in app.cancel_timer.call_args_list]
+        assert app._watchdog_handle is not None, "a fresh watchdog must be armed"
+
+    def test_watchdog_not_armed_when_verification_is_disabled(self):
+        app = _init_with_current_gen(extra_args={"ha_url": ""})
+        armed = [
+            c for c in app.run_in.call_args_list
+            if c.args and c.args[0] == app._on_stage_watchdog
+        ]
+        assert armed == [], "nothing to watch when there is no chain"
+        assert app._watchdog_handle is None
+
+
+# ----------------------------------------------------------------------
+# keep_gens: the HA-side prune's keep list
+# ----------------------------------------------------------------------
+
+
+class TestKeepGens:
+    """A generation we abandon can still be completed by the detached worker
+    minutes later, after our cleanup already ran against a directory that did
+    not exist.  Each successful stage therefore tells the HA-side script which
+    generations to keep, and the script prunes everything else.
+    """
+
+    def test_builder_keeps_digit_ids_in_order(self):
+        assert PhotoFrameViewerApp._build_keep_gens("7", "9") == "7 9"
+
+    def test_builder_drops_duplicates(self):
+        assert PhotoFrameViewerApp._build_keep_gens("7", "7") == "7"
+
+    def test_builder_drops_blanks_and_non_digits(self):
+        assert PhotoFrameViewerApp._build_keep_gens(
+            None, "", "   ", "abc", "1x", "-3", "4.5", "../etc", "8; rm -rf /"
+        ) == ""
+
+    def test_builder_keeps_only_the_digit_ids(self):
+        assert PhotoFrameViewerApp._build_keep_gens("abc", "12", None, "7") == "12 7"
+
+    def test_stage_call_sends_the_current_gen(self):
+        app = _init_with_current_gen("3")
+        stage = _stage_calls(app)
+        assert len(stage) == 1
+        assert stage[0].kwargs["keep_gens"] == "3"
+
+    def test_keep_gens_is_empty_on_a_first_ever_stage(self):
+        app = _make_app(current_url="")
+        app.initialize()
+        stage = _stage_calls(app)
+        assert stage[0].kwargs["gen_id"] == "1"
+        assert stage[0].kwargs["keep_gens"] == "", (
+            "nothing to keep yet — the script must prune nothing"
+        )
+
+    def test_replaced_pending_gen_is_not_kept(self):
+        """A pending gen this stage supersedes is cleaned up, not kept."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        replaced = app._pending_gen_id
+        assert replaced is not None
+
+        _replace_source_files(app.source_dir, ["A.jpg", "B.jpg", "C.jpg"])
+        app._pending_fingerprint = "force_mismatch"
+        app.call_service.reset_mock()
+        app._poll_for_changes(reason="poll")
+
+        keep = _stage_calls(app)[0].kwargs["keep_gens"]
+        assert keep == "3"
+        assert replaced not in keep.split()
+
+    def test_keep_gens_is_logged_with_the_staging_line(self):
+        app = _init_with_current_gen("3")
+        messages = _logs(app, "INFO", "staging gen=")
+        assert len(messages) == 1, messages
+        assert "keep_gens='3'" in messages[0]

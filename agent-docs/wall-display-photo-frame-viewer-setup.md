@@ -91,12 +91,14 @@ shell_command:
     live_root="/config/www/photo-frame/live";
     src="{{ source_dir }}";
     gen="{{ gen_id }}";
+    keep="{{ keep_gens | default("") }}";
     dest="$live_root/$gen";
     tmp="$live_root/.staging-$gen";
     lock="$live_root/.stage.lock";
     log="$live_root/.stage.log";
 
     [ -n "$gen" ] || { echo "gen_id empty"; exit 2; };
+    case "$keep" in *[!0-9\ ]*) keep="";; esac;
     [ -d "$live_root" ] || mkdir -p "$live_root";
     if [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 65536 ]; then : > "$log"; fi;
 
@@ -115,6 +117,15 @@ shell_command:
         cp -a "$src"/. "$tmp"/;
         mv "$tmp" "$dest";
         echo "$(date +%FT%T) gen=$gen staged $(ls "$dest" | wc -l) files";
+        if [ -n "$keep" ]; then
+          for d in "$live_root"/*/; do
+            [ -d "$d" ] || continue;
+            n=$(basename "$d");
+            case " $keep $gen " in *" $n "*) continue;; esac;
+            rm -rf -- "$d";
+            echo "$(date +%FT%T) gen=$gen pruned unreferenced generation $n";
+          done;
+        fi;
       else
         rm -rf -- "$tmp";
         echo "$(date +%FT%T) gen=$gen source empty or missing: $src";
@@ -141,10 +152,31 @@ about the command's return value because it verifies over HTTP (below).  All
 output goes to `/config/www/photo-frame/live/.stage.log`, which self-truncates
 at 64 KB — that file is the only record of why a stage failed.
 
+**Why the keep-list prune.** Detaching creates a second leak: a generation the
+app abandons can still be completed by its worker minutes later — the app's
+`photo_frame_cleanup_gen` already ran while the directory did not exist yet — and
+nothing would ever reclaim it.  (Three orphans of exactly this class were found
+in prod on 2026-09-18: gens 808/2635/6015, left behind by earlier gen-counter
+epochs.)  So every stage call now carries `keep_gens`, a space-separated list of
+the generations the app still needs, and a successful stage deletes every other
+generation directory it finds — the one it just staged is always kept.  The list
+is safe because the app's staging latch blocks a second stage while one is in
+flight, so the only generation that can become current before the prune runs is
+the one being staged.  The script refuses a non-numeric `keep` value and prunes
+nothing when the field is empty, so an old app paired with this script is a
+no-op, as is an old script paired with the new app (it ignores the extra
+variable).
+
+**Constraint: one viewer instance per `live` directory.**  Generation ids are
+plain per-instance counters, so two instances sharing a live root already
+collided on directory names; with the prune they would now also delete each
+other's generations.  A second display needs its own `ha_local_url_base` and its
+own pair of shell commands.
+
 The app works with **both** this command and the old inline one; with the old
 one a >60s stall simply fails verification and the next poll re-stages.
 
-### Staging verification (app side)
+#### Staging verification (app side)
 
 `PhotoFrameViewerApp` never marks a generation pending — and therefore never
 publishes it — until HA is verifiably serving it.  After firing the stage
@@ -155,6 +187,12 @@ command it issues an HTTP `HEAD` against the exact URL the card will load
 atomic directory `mv`, so one file implies the whole generation).  On deadline
 the app logs a `WARNING` naming `.stage.log`, cleans up the dead gen, publishes
 nothing, and the next source poll re-stages automatically.
+
+Staging is latched for the whole verification window, and `stage_verify_timeout_s`
+is only evaluated when a probe *result* arrives — so an absolute-deadline
+watchdog (`stage_verify_timeout_s` + 15s) abandons the gen and releases the latch
+even if the chain stops responding.  Without it one lost callback would block
+every future stage until AppDaemon restarted.
 
 `/local/...` is unauthenticated static content, so the probe sends no
 `Authorization` header; the HTTP call lives in

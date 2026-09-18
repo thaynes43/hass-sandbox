@@ -64,6 +64,15 @@ class PhotoFrameViewerApp(hass.Hass):
         {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     )
 
+    # How long after `stage_verify_timeout_s` the absolute-deadline watchdog
+    # fires.  The normal deadline is only evaluated when a probe *result*
+    # arrives, so it cannot help if the verification chain stops responding.
+    # 15s comfortably exceeds one re-check interval plus one HEAD timeout
+    # (5 + 5 = 10s at the defaults), which means ordinary scheduling jitter
+    # still lets the normal path declare the failure first and the watchdog
+    # only ever fires when the chain is genuinely broken.
+    STAGE_WATCHDOG_MARGIN_S: float = 15.0
+
     DEFAULTS: dict[str, Any] = {
         "source_dir": "/media/immich-photos",
         "ha_local_url_base": "/local/photo-frame/live",
@@ -203,6 +212,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self._staging_verify_url_path: str = ""
         self._staging_checks: int = 0
         self._verify_handle: Optional[Any] = None
+        self._watchdog_handle: Optional[Any] = None
 
         # Pending generation (staged but not yet displayed)
         self._pending_gen_id: Optional[str] = None
@@ -340,6 +350,7 @@ class PhotoFrameViewerApp(hass.Hass):
             "_periodic_handle",
             "_pause_auto_resume_handle",
             "_verify_handle",
+            "_watchdog_handle",
         ):
             handle = getattr(self, attr, None)
             setattr(self, attr, None)
@@ -873,6 +884,7 @@ class PhotoFrameViewerApp(hass.Hass):
         gen_id = str(self._next_gen_counter)
         self._next_gen_counter += 1
         self._cancel_verify_timer()
+        self._cancel_watchdog()
         self._staging_in_progress = True
 
         # If there's an existing pending gen that was never adopted, clean it up
@@ -892,9 +904,25 @@ class PhotoFrameViewerApp(hass.Hass):
             )
             self._call_cleanup(old_pending, reason="replace_pending")
 
+        # Generations the HA-side prune must NOT delete.  A generation we
+        # abandon can still be completed minutes later by the detached worker
+        # (our cleanup ran while the directory did not exist yet), and nothing
+        # would ever reclaim it — same class of orphan as the stale gens left
+        # behind by earlier gen-counter epochs.  Letting each successful stage
+        # prune everything it is not told to keep reclaims all of them.
+        #
+        # Why the list is safe: the staging latch blocks any other staging
+        # while this one is in flight, so the only generation that can become
+        # current before the worker's prune runs is the one being staged —
+        # which the script always keeps — and the current generation is in the
+        # list.  The pending gen is included for completeness; in practice it
+        # is None here because the block above already replaced (and cleaned
+        # up) any pending generation this stage supersedes.
+        keep_gens = self._build_keep_gens(self._current_gen_id, self._pending_gen_id)
+
         self.log(
             f"PhotoFrameViewerApp: staging gen={gen_id} from {self.source_dir} "
-            f"({len(source_paths)} files)",
+            f"({len(source_paths)} files) keep_gens={keep_gens!r}",
             level="INFO",
         )
 
@@ -913,16 +941,50 @@ class PhotoFrameViewerApp(hass.Hass):
         # (adapi.call_service creates a task and returns immediately) instead
         # of pinning this app's worker thread for up to the 60s internal
         # function timeout — which used to starve the slideshow tick.
+        # An HA-side script that predates keep_gens simply ignores the extra
+        # service-data field; an app that predates it sends none and the
+        # script then prunes nothing.  Both directions degrade safely.
         self.call_service(
             f"shell_command/{self.stage_shell_command}",
             callback=self._on_stage_service_result,
             source_dir=self.ha_source_dir,
             gen_id=gen_id,
+            keep_gens=keep_gens,
         )
 
         self._verify_handle = self.run_in(
             self._on_stage_verify, self.stage_settle_delay_s, gen_id=gen_id
         )
+
+        # Absolute-deadline backstop.  stage_verify_timeout_s is only evaluated
+        # when a probe result arrives, so a verification chain that stops
+        # responding (a lost run_in bounce, a cancelled task) would otherwise
+        # hold the staging latch until AppDaemon restarts and block every
+        # future stage.  Only armed when there is a chain to watch.
+        if self._stage_verification_enabled:
+            self._watchdog_handle = self.run_in(
+                self._on_stage_watchdog,
+                self.stage_verify_timeout_s + self.STAGE_WATCHDOG_MARGIN_S,
+                gen_id=gen_id,
+            )
+
+    @staticmethod
+    def _build_keep_gens(*gen_ids: Optional[str]) -> str:
+        """Space-separated generation ids for the HA-side prune's keep list.
+
+        Digits only — the value is interpolated into a shell script (which
+        also refuses a non-numeric keep list itself).  Blanks, duplicates and
+        anything non-numeric are dropped; an empty result means "prune
+        nothing", which is what the script does when the field is empty.
+        """
+        keep: list[str] = []
+        for raw in gen_ids:
+            candidate = str(raw or "").strip()
+            if not candidate.isdigit():
+                continue
+            if candidate not in keep:
+                keep.append(candidate)
+        return " ".join(keep)
 
     def _on_stage_service_result(self, result: Any = None) -> None:
         """AppDaemon service-call completion callback — informational only.
@@ -957,9 +1019,21 @@ class PhotoFrameViewerApp(hass.Hass):
         except Exception:
             pass
 
+    def _cancel_watchdog(self) -> None:
+        handle = self._watchdog_handle
+        self._watchdog_handle = None
+        if handle is None:
+            return
+        try:
+            if self.timer_running(handle):
+                self.cancel_timer(handle)
+        except Exception:
+            pass
+
     def _clear_staging_context(self) -> None:
         """Release the staging latch and forget the in-flight generation."""
         self._cancel_verify_timer()
+        self._cancel_watchdog()
         self._staging_in_progress = False
         self._staging_gen_id = None
         self._staging_source_paths = []
@@ -1004,21 +1078,38 @@ class PhotoFrameViewerApp(hass.Hass):
         the settle path (``get_state``/``call_service``) must run on the app's
         worker thread, not the event loop.
         """
-        url_path = self._staging_verify_url_path
         exists = False
-        if url_path:
-            try:
+        try:
+            url_path = self._staging_verify_url_path
+            if url_path:
                 exists = await local_file_exists(self._ha_url, url_path)
-            except Exception as exc:  # local_file_exists swallows, belt and braces
-                self.log(
-                    f"PhotoFrameViewerApp: stage verification probe failed for "
-                    f"gen={gen_id}: {exc!r}",
-                    level="WARNING",
-                )
-                exists = False
-        self.run_in(
-            self._on_stage_verify_result, 0, gen_id=gen_id, exists=bool(exists)
-        )
+        except Exception as exc:  # local_file_exists swallows, belt and braces
+            self.log(
+                f"PhotoFrameViewerApp: stage verification probe failed for "
+                f"gen={gen_id}: {exc!r}",
+                level="WARNING",
+            )
+            exists = False
+
+        # The latch is released only by _on_stage_verify_result, so failing to
+        # hand the result back would strand it: stage_verify_timeout_s is only
+        # evaluated when a result arrives.  The watchdog armed in
+        # _stage_new_generation is the backstop, but release here too so the
+        # next poll can re-stage immediately instead of waiting it out.
+        try:
+            self.run_in(
+                self._on_stage_verify_result, 0, gen_id=gen_id, exists=bool(exists)
+            )
+        except Exception as exc:
+            self.log(
+                f"PhotoFrameViewerApp: could not hand back the stage "
+                f"verification result for gen={gen_id}: {exc!r} — releasing the "
+                f"staging latch so the next poll can re-stage",
+                level="WARNING",
+            )
+            # Guard on the gen: a newer staging may already own the context.
+            if gen_id == self._staging_gen_id:
+                self._clear_staging_context()
 
     def _on_stage_verify_result(self, kwargs: Any) -> None:
         """Act on one probe result: promote, re-probe, or give up."""
@@ -1059,7 +1150,7 @@ class PhotoFrameViewerApp(hass.Hass):
             return
 
         if elapsed >= self.stage_verify_timeout_s:
-            self._abandon_staging(gen_id, elapsed, checks)
+            self._abandon_staging(gen_id, elapsed, checks, reason="deadline")
             return
 
         self.log(
@@ -1072,23 +1163,63 @@ class PhotoFrameViewerApp(hass.Hass):
             self._on_stage_verify, self.stage_verify_interval_s, gen_id=gen_id
         )
 
-    def _abandon_staging(self, gen_id: str, elapsed: float, checks: int) -> None:
+    def _on_stage_watchdog(self, kwargs: Any) -> None:
+        """Absolute-deadline backstop for a verification chain that went quiet.
+
+        ``stage_verify_timeout_s`` is only evaluated when a probe result
+        arrives; if the chain breaks (a lost ``run_in`` bounce, a cancelled
+        task) nothing reschedules and the staging latch would block every
+        future stage until AppDaemon restarts.  This timer fires regardless.
+        """
+        self._watchdog_handle = None
+        data = kwargs if isinstance(kwargs, dict) else {}
+        gen_id = data.get("gen_id")
+
+        if not self._is_active_owner():
+            self._clear_staging_context()
+            return
+
+        if not gen_id or gen_id != self._staging_gen_id:
+            # Superseded, or the chain already resolved — nothing to do.
+            self.log(
+                f"PhotoFrameViewerApp: ignoring stale stage watchdog for "
+                f"gen={gen_id!r} (in-flight gen={self._staging_gen_id!r})",
+                level="DEBUG",
+            )
+            return
+
+        self._abandon_staging(
+            gen_id, self._staging_elapsed_s(), self._staging_checks, reason="watchdog"
+        )
+
+    def _abandon_staging(
+        self, gen_id: str, elapsed: float, checks: int, *, reason: str
+    ) -> None:
         """Give up on a generation HA never served — publish nothing.
 
         Leaves ``_staged_filter_name`` alone so the automatic re-stage on the
         next poll keeps the album title, and leaves ``_current_fingerprint``
         alone so that poll still sees a change and re-stages.
         """
+        if reason == "watchdog":
+            hint = (
+                "the verification chain stopped responding, so this "
+                "generation's real state is unknown"
+            )
+        else:
+            hint = (
+                "the stage shell_command was most likely killed by HA's 60s "
+                "timeout before the atomic mv"
+            )
         self.log(
             f"PhotoFrameViewerApp: staging gen={gen_id} FAILED verification "
-            f"after {elapsed:.1f}s ({checks} checks) — HA never served "
-            f"{self._staging_verify_url_path!r}. The stage shell_command was "
-            f"most likely killed by HA's 60s timeout before the atomic mv; "
-            f"check the HA-side log /config/www/photo-frame/live/.stage.log. "
-            f"Not publishing this generation — the next source poll re-stages.",
+            f"(reason={reason}) after {elapsed:.1f}s ({checks} checks) — HA never "
+            f"served {self._staging_verify_url_path!r}: {hint}. Check the HA-side "
+            f"log /config/www/photo-frame/live/.stage.log. Not publishing this "
+            f"generation — the next source poll re-stages.",
             level="WARNING",
         )
-        self._call_cleanup(gen_id, reason="stage_verify_failed")
+        self._call_cleanup(gen_id, reason=f"stage_verify_{reason}")
         self._clear_staging_context()
 
     def _on_stage_settled(self, kwargs: Any) -> None:

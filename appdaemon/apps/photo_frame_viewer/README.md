@@ -24,6 +24,7 @@ Instead, after firing the stage command the app polls the exact URL the card wil
 - `200` means staged. Because the stage script's final step is an atomic directory `mv`, one file existing implies the whole generation exists.
 - Anything else (404, connection error, timeout) means "not yet".
 - On success the generation becomes pending as before. On deadline the app logs a `WARNING`, cleans up the dead generation, publishes nothing, and lets the next source poll re-stage automatically (the album title is preserved for the retry).
+- While a generation is being verified, staging is latched — a new source batch waits for the current one to resolve. Because the deadline is only evaluated when a probe result arrives, an absolute-deadline watchdog (`stage_verify_timeout_s` + 15 s) abandons the generation and releases the latch even if the verification chain stops responding entirely. Without it a single lost callback would block every future stage until AppDaemon restarted.
 
 `/local/...` is unauthenticated static content, so the probe sends **no** `Authorization` header. The HTTP call itself lives in `providers/ha_provisioner/local_file_check.py` (security policy S2).
 
@@ -107,12 +108,14 @@ shell_command:
     live_root="/config/www/photo-frame/live";
     src="{{ source_dir }}";
     gen="{{ gen_id }}";
+    keep="{{ keep_gens | default("") }}";
     dest="$live_root/$gen";
     tmp="$live_root/.staging-$gen";
     lock="$live_root/.stage.lock";
     log="$live_root/.stage.log";
 
     [ -n "$gen" ] || { echo "gen_id empty"; exit 2; };
+    case "$keep" in *[!0-9\ ]*) keep="";; esac;
     [ -d "$live_root" ] || mkdir -p "$live_root";
     if [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 65536 ]; then : > "$log"; fi;
 
@@ -131,6 +134,15 @@ shell_command:
         cp -a "$src"/. "$tmp"/;
         mv "$tmp" "$dest";
         echo "$(date +%FT%T) gen=$gen staged $(ls "$dest" | wc -l) files";
+        if [ -n "$keep" ]; then
+          for d in "$live_root"/*/; do
+            [ -d "$d" ] || continue;
+            n=$(basename "$d");
+            case " $keep $gen " in *" $n "*) continue;; esac;
+            rm -rf -- "$d";
+            echo "$(date +%FT%T) gen=$gen pruned unreferenced generation $n";
+          done;
+        fi;
       else
         rm -rf -- "$tmp";
         echo "$(date +%FT%T) gen=$gen source empty or missing: $src";
@@ -145,6 +157,10 @@ shell_command:
 ```
 
 **Why detached.** Home Assistant kills every `shell_command` at a hard 60-second timeout. The source is an NFS mount that intermittently stalls ~100 s mid-copy, so the inline version was killed before its atomic `mv` and the generation directory never appeared. Detaching the copy into a background subshell lets it finish the `mv` regardless of how long HA waits. The command's return value no longer matters to the app — it verifies over HTTP instead — so returning immediately costs nothing. Progress and failures go to `/config/www/photo-frame/live/.stage.log` (self-truncating at 64 KB), which is the only place the copy's outcome is recorded. The `flock` serialises concurrent stages, and the old `-mmin +60` sweep still reaps abandoned `.staging-*` directories.
+
+**Why the keep-list prune.** Detaching creates a second leak: a generation the app abandons can still be completed by its worker minutes later — the app's `photo_frame_cleanup_gen` already ran against a directory that did not exist yet — and nothing would ever reclaim it. So every stage call carries `keep_gens`, a space-separated list of the generations the app still needs, and a successful stage deletes every other generation directory it finds (the one it just staged is always kept). That reclaims late-landing orphans and any left over from earlier gen-counter epochs. The list is safe because the app's staging latch blocks a second stage while one is in flight, so the only generation that can become current before the prune runs is the one being staged. The script refuses a non-numeric `keep` value and prunes nothing when the field is empty, so an old app paired with this script is merely a no-op, as is an old script paired with the new app (it ignores the extra variable).
+
+**One viewer instance per `live` directory.** Generation ids are plain per-instance counters, so two instances sharing a live root already collided on directory names; with the prune they would now also delete each other's generations. Give each display its own `ha_local_url_base` (and matching shell commands) if you run more than one.
 
 The app works with **both** the old inline command and this detached one. With the old command a >60 s stall simply fails verification and the next poll re-stages.
 
