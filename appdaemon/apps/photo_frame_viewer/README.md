@@ -40,7 +40,7 @@ If `ha_url` / `ha_url_env` is not configured, verification is impossible: the ap
 - `photo_frame_viewer.gen_helpers` — URL generation, fingerprinting, label building
 - `providers.ha_provisioner.HAProvisioner` — HA entity provisioning
 - `providers.ha_provisioner.local_file_status()` — HTTP `HEAD` probe used to verify a staged generation (plus `STATUS_UNREACHABLE`; the watchdog margin is derived from `DEFAULT_TIMEOUT_S`, imported from the `providers.ha_provisioner.local_file_check` submodule — it is not re-exported by the package)
-- `providers.secrets.resolve_secret()` — credential resolution
+- `providers.secrets.resolve_arg_secret()` — resolves `ha_url` / `ha_url_env` (and, through `HAProvisioner`, the token env var)
 
 ## Upstream dependencies
 
@@ -89,6 +89,7 @@ photo_frame_viewer_wall_display:
 | `stage_verify_timeout_s` | `240` | Give up on a generation this long after the stage call and re-stage |
 | `fallback_image_path` | `/config/www/immich-album/no-image.jpg` | Fallback when source is empty |
 | `options_max` | `100` | Max options in picker |
+| `refresh_options_every_s` | `60` | Accepted for backward compatibility and validated (min 10), but currently **unused** — picker options are refreshed when a generation is adopted, not on a timer |
 | `auto_cycle` | `true` | Auto-advance images |
 | `reset_timer_on_manual_nav` | `true` | Restart timer on manual selection |
 | `default_interval_s` | `10` | Slideshow interval in seconds |
@@ -119,6 +120,7 @@ shell_command:
 
     [ -n "$gen" ] || { echo "gen_id empty"; exit 2; };
     case "$keep" in *[!0-9\ ]*) keep="";; esac;
+    case "$gen" in *[!0-9]*) keep="";; esac;
     [ -d "$live_root" ] || mkdir -p "$live_root";
     if [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 65536 ]; then : > "$log"; fi;
 
@@ -141,6 +143,8 @@ shell_command:
           for d in "$live_root"/*/; do
             [ -d "$d" ] || continue;
             n=$(basename "$d");
+            case "$n" in *[!0-9]*) continue;; esac;
+            [ "$n" -lt "$gen" ] || continue;
             case " $keep $gen " in *" $n "*) continue;; esac;
             rm -rf -- "$d";
             echo "$(date +%FT%T) gen=$gen pruned unreferenced generation $n";
@@ -161,7 +165,7 @@ shell_command:
 
 **Why detached.** Home Assistant kills every `shell_command` at a hard 60-second timeout. The source is an NFS mount that intermittently stalls ~100 s mid-copy, so the inline version was killed before its atomic `mv` and the generation directory never appeared. Detaching the copy into a background subshell lets it finish the `mv` regardless of how long HA waits. The command's return value no longer matters to the app — it verifies over HTTP instead — so returning immediately costs nothing. Progress and failures go to `/config/www/photo-frame/live/.stage.log` (self-truncating at 64 KB), which is the only place the copy's outcome is recorded. The `flock` serialises concurrent stages, and the old `-mmin +60` sweep still reaps abandoned `.staging-*` directories.
 
-**Why the keep-list prune.** Detaching creates a second leak: a generation the app abandons can still be completed by its worker minutes later — the app's `photo_frame_cleanup_gen` already ran against a directory that did not exist yet — and nothing would ever reclaim it. So every stage call carries `keep_gens`, a space-separated list of the generations the app still needs, and a successful stage deletes every other generation directory it finds (the one it just staged is always kept). That reclaims late-landing orphans and any left over from earlier gen-counter epochs. The list is safe because the app's staging latch blocks a second stage while one is in flight, so the only generation that can become current before the prune runs is the one being staged. The script refuses a non-numeric `keep` value and prunes nothing when the field is empty, so an old app paired with this script is merely a no-op, as is an old script paired with the new app (it ignores the extra variable).
+**Why the keep-list prune.** Detaching creates a second leak: a generation the app abandons can still be completed by its worker minutes later — the app's `photo_frame_cleanup_gen` already ran against a directory that did not exist yet — and nothing would ever reclaim it. So every stage call carries `keep_gens`, a space-separated list of the generations the app still needs, and a successful stage deletes every other generation directory **numbered lower than the one it just staged** (which is itself always kept). That reclaims late-landing orphans on the next stage. The list alone is *not* a sufficient safety argument: `_abandon_staging` releases the app's latch while the abandoned generation's detached worker may still be alive, so two workers can be queued on the lock with different keep lists, and `flock` gives waiters no ordering. Restricting the prune to **older** generations closes that: a stale worker can never delete a generation staged after it, whatever its keep list says, so the live generation is safe for any `stage_verify_timeout_s` (not only while it exceeds the script's 150 s lock wait). The price is deliberate: a leftover from an earlier gen-counter epoch that carries a *higher* number is left alone — a harmless leak, chosen over any chance of deleting what is on screen. Non-numeric directories are never pruned, and a non-numeric `gen` prunes nothing. The script refuses a non-numeric `keep` value and prunes nothing when the field is empty, so an old app paired with this script is merely a no-op, as is an old script paired with the new app (it ignores the extra variable).
 
 **One viewer instance per `live` directory.** Generation ids are plain per-instance counters, so two instances sharing a live root already collided on directory names; with the prune they would now also delete each other's generations. Give each display its own `ha_local_url_base` (and matching shell commands) if you run more than one.
 

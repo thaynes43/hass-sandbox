@@ -99,6 +99,7 @@ shell_command:
 
     [ -n "$gen" ] || { echo "gen_id empty"; exit 2; };
     case "$keep" in *[!0-9\ ]*) keep="";; esac;
+    case "$gen" in *[!0-9]*) keep="";; esac;
     [ -d "$live_root" ] || mkdir -p "$live_root";
     if [ -f "$log" ] && [ "$(wc -c < "$log")" -gt 65536 ]; then : > "$log"; fi;
 
@@ -121,6 +122,8 @@ shell_command:
           for d in "$live_root"/*/; do
             [ -d "$d" ] || continue;
             n=$(basename "$d");
+            case "$n" in *[!0-9]*) continue;; esac;
+            [ "$n" -lt "$gen" ] || continue;
             case " $keep $gen " in *" $n "*) continue;; esac;
             rm -rf -- "$d";
             echo "$(date +%FT%T) gen=$gen pruned unreferenced generation $n";
@@ -159,10 +162,20 @@ nothing would ever reclaim it.  (Three orphans of exactly this class were found
 in prod on 2026-09-18: gens 808/2635/6015, left behind by earlier gen-counter
 epochs.)  So every stage call now carries `keep_gens`, a space-separated list of
 the generations the app still needs, and a successful stage deletes every other
-generation directory it finds — the one it just staged is always kept.  The list
-is safe because the app's staging latch blocks a second stage while one is in
-flight, so the only generation that can become current before the prune runs is
-the one being staged.  The script refuses a non-numeric `keep` value and prunes
+generation directory **numbered lower than the one it just staged** (which is
+itself always kept).  The keep list alone is *not* a sufficient safety argument:
+`_abandon_staging` releases the app's latch while the abandoned generation's
+detached worker may still be alive, so two workers can be queued on the lock
+with different keep lists, and `flock` gives waiters no ordering — a stale worker
+winning late could otherwise `rm -rf` the generation on screen, and nothing would
+re-stage it because the source fingerprint still matches.  Restricting the prune
+to **older** generations closes that for any `stage_verify_timeout_s` (not only
+while it exceeds the script's 150 s lock wait): a stale worker can never delete a
+generation staged after it.  The price is deliberate — a leftover from an earlier
+gen-counter epoch carrying a *higher* number (like 808/2635/6015 above) is left
+alone: a harmless leak, chosen over any chance of deleting what is on screen.
+Non-numeric directories are never pruned and a non-numeric `gen` prunes nothing.
+The script refuses a non-numeric `keep` value and prunes
 nothing when the field is empty, so an old app paired with this script is a
 no-op, as is an old script paired with the new app (it ignores the extra
 variable).
@@ -312,6 +325,7 @@ photo_frame_viewer_wall_display:
 | `stage_settle_delay_s` | `3` | Delay before the **first** staging verification check |
 | `stage_verify_interval_s` | `5` | Delay between subsequent verification checks |
 | `stage_verify_timeout_s` | `240` | Abandon a gen this long after the stage call and let the next poll re-stage |
+| `refresh_options_every_s` | `60` | Accepted for backward compatibility and validated (min 10), but currently **unused** — picker options are refreshed when a generation is adopted, not on a timer |
 | `default_interval_s` | `10` | Default slideshow interval (overridden by user via relay) |
 | `state_dir` | `/media/photo-frame-viewer/<prefix>` | Directory for persisting interval across restarts |
 | `entity_prefix` | derived from instance name | Override entity ID prefix (see below) |

@@ -938,14 +938,22 @@ class PhotoFrameViewerApp(hass.Hass):
         # abandon can still be completed minutes later by the detached worker
         # (our cleanup ran while the directory did not exist yet), and nothing
         # would ever reclaim it — same class of orphan as the stale gens left
-        # behind by earlier gen-counter epochs.  Letting each successful stage
-        # prune everything it is not told to keep reclaims all of them.
+        # behind by earlier gen-counter epochs.  Each successful stage prunes
+        # the OLDER generations it is not told to keep, which reclaims a
+        # late-landed orphan on the next stage.
         #
-        # Why the list is safe: the staging latch blocks any other staging
-        # while this one is in flight, so the only generation that can become
-        # current before the worker's prune runs is the one being staged —
-        # which the script always keeps — and the current generation is in the
-        # list.  The pending gen is included for completeness; in practice it
+        # Why this is safe: the latch means the current generation is in the
+        # list and the one being staged is always kept by the script.  The
+        # list alone is NOT enough, though - _abandon_staging releases the
+        # latch while the abandoned generation's detached worker may still be
+        # alive, so two workers can be queued on the HA-side lock with
+        # different keep lists and flock gives waiters no ordering.  The
+        # script therefore only ever prunes generations numbered LOWER than
+        # the one it staged: a stale worker can never delete a generation
+        # staged after it, whatever this list says.  That relies on gen ids
+        # being monotonic, which _next_gen_counter guarantees within an
+        # epoch; a higher-numbered leftover from an earlier epoch is simply
+        # left alone.  The pending gen is included for completeness; in practice it
         # is None here because the block above already replaced (and cleaned
         # up) any pending generation this stage supersedes.
         keep_gens = self._build_keep_gens(self._current_gen_id, self._pending_gen_id)
