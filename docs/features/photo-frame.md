@@ -40,6 +40,7 @@ immich_fetcher (AppDaemon)
 photo_frame_viewer (AppDaemon)
   │  stages to /config/www/photo-frame/live/<gen>/
   │  via HA shell_command
+  │  then verifies over HTTP that HA serves /local/photo-frame/live/<gen>/
   ▼
 sensor.wall_display_photo_frame_status
   │  image_url + cache_bust attributes

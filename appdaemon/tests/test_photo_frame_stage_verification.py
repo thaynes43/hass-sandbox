@@ -23,6 +23,8 @@ import time
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # Mock hassapi before importing the app
 mock_hass = MagicMock()
 mock_hass.Hass = type("_MockHass", (), {"__init__": lambda self, *a, **kw: None})
@@ -39,10 +41,13 @@ _SENSOR_ENTITY_ID = "sensor.wall_display_photo_frame_status"
 _PICKER_ENTITY_ID = "input_select.wall_display_photo_frame_image"
 
 # Obviously-fake value (security policy S5) — no real host is ever contacted:
-# local_file_exists is patched in every test that reaches it.
+# local_file_status is patched in every test that reaches it.
 _FAKE_HA_URL = "http://ha.test:8123"
 
-_PROBE = "photo_frame_viewer.photo_frame_viewer_app.local_file_exists"
+_PROBE = "photo_frame_viewer.photo_frame_viewer_app.local_file_status"
+
+# Mirrors providers.ha_provisioner.local_file_check.STATUS_UNREACHABLE.
+_UNREACHABLE = -1
 
 
 # ----------------------------------------------------------------------
@@ -165,7 +170,8 @@ def _logs(app: PhotoFrameViewerApp, level: str, needle: str) -> list[str]:
 def _verify_round(
     app: PhotoFrameViewerApp,
     *,
-    exists: bool,
+    exists: bool | None = None,
+    status: int | None = None,
     elapsed_s: float | None = None,
 ) -> AsyncMock:
     """Drive one full verification round: timer -> HTTP probe -> result.
@@ -173,14 +179,21 @@ def _verify_round(
     Mirrors what AppDaemon does at runtime — fire the scheduled ``run_in``
     callback, run the coroutine it hands to ``create_task``, then deliver the
     result through the ``run_in(..., 0)`` bounce back onto the app thread.
+
+    Pass ``exists`` for the two ordinary answers (200 / 404) or ``status`` for
+    a specific one (a redirect, ``_UNREACHABLE``, ...).
     """
+    if status is None:
+        assert exists is not None, "pass exists= or status="
+        status = 200 if exists else 404
+
     if elapsed_s is not None:
         app._staging_started_at = time.monotonic() - elapsed_s
 
     timer_call = _last_run_in(app, app._on_stage_verify)
     before = len(app.create_task.call_args_list)
 
-    probe = AsyncMock(return_value=exists)
+    probe = AsyncMock(return_value=status)
     with patch(_PROBE, new=probe):
         app._on_stage_verify(dict(timer_call.kwargs))
         created = app.create_task.call_args_list[before:]
@@ -427,7 +440,7 @@ class TestStaleCallbacks:
         app = _init_with_current_gen()
         in_flight = app._staging_gen_id
 
-        app._on_stage_verify_result({"gen_id": "999", "exists": True})
+        app._on_stage_verify_result({"gen_id": "999", "status": 200})
 
         assert app._pending_gen_id is None, (
             "a superseded generation must never be promoted"
@@ -441,7 +454,7 @@ class TestStaleCallbacks:
         app.create_task.reset_mock()
 
         app._on_stage_verify({})
-        app._on_stage_verify_result({"exists": True})
+        app._on_stage_verify_result({"status": 200})
 
         assert app.create_task.call_count == 0
         assert app._pending_gen_id is None
@@ -469,7 +482,7 @@ class TestStaleCallbacks:
         newer = _make_app()
         newer.initialize()
 
-        app._on_stage_verify_result({"gen_id": gen, "exists": True})
+        app._on_stage_verify_result({"gen_id": gen, "status": 200})
 
         assert app._pending_gen_id is None
         assert app._staging_in_progress is False
@@ -817,3 +830,245 @@ class TestKeepGens:
         messages = _logs(app, "INFO", "staging gen=")
         assert len(messages) == 1, messages
         assert "keep_gens='3'" in messages[0]
+
+
+# ----------------------------------------------------------------------
+# shell_command calls are all fire-and-forget
+# ----------------------------------------------------------------------
+
+
+class TestShellCommandsAreNonBlocking:
+    """A synchronous `call_service` pins the app's worker thread for up to
+    AppDaemon's 60s internal-function timeout.  Nothing reads either shell
+    command's result, and both run on latency-sensitive paths — the cleanup
+    runs from `_finalize_pending` on the `_on_tick` path and from
+    `_abandon_staging` exactly when HA may already be slow to answer.
+    """
+
+    def test_cleanup_call_is_fire_and_forget(self):
+        app = _init_with_current_gen()
+        _verify_round(app, exists=True)
+        app.call_service.reset_mock()
+
+        app._call_cleanup("7", reason="test")
+
+        cleanup = _cleanup_calls(app)
+        assert len(cleanup) == 1
+        callback = cleanup[0].kwargs.get("callback")
+        assert callable(callback), "cleanup must not block the app thread"
+        assert callback == app._on_cleanup_service_result
+        assert cleanup[0].kwargs["gen_id"] == "7"
+
+    def test_cleanup_on_the_tick_path_is_fire_and_forget(self):
+        """The gen swap runs inside _on_tick — it must not block there."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app.call_service.reset_mock()
+
+        app._on_tick({})
+
+        cleanup = _cleanup_calls(app)
+        assert len(cleanup) == 1
+        assert cleanup[0].kwargs["gen_id"] == "3"
+        assert callable(cleanup[0].kwargs.get("callback"))
+
+    def test_abandon_cleanup_is_fire_and_forget(self):
+        app = _init_with_current_gen()
+        _verify_round(app, exists=False, elapsed_s=app.stage_verify_timeout_s + 1)
+
+        cleanup = _cleanup_calls(app)
+        assert len(cleanup) == 1
+        assert callable(cleanup[0].kwargs.get("callback"))
+
+    def test_every_shell_command_call_passes_a_callback(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        _replace_source_files(app.source_dir, ["NEXT.jpg"])
+        app._poll_for_changes(reason="poll")
+
+        shell_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args and str(c.args[0]).startswith("shell_command/")
+        ]
+        assert len(shell_calls) >= 3, shell_calls
+        for call in shell_calls:
+            assert callable(call.kwargs.get("callback")), (
+                f"{call.args[0]} still blocks the app thread"
+            )
+
+    def test_input_select_calls_are_left_alone(self):
+        """Only shell_command calls are fire-and-forget; state calls are not."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+
+        select_calls = [
+            c for c in app.call_service.call_args_list
+            if c.args and str(c.args[0]).startswith("input_select/")
+        ]
+        assert select_calls, "expected the gen swap to drive the picker"
+        for call in select_calls:
+            assert "callback" not in call.kwargs
+
+    def test_result_callbacks_only_log_at_debug(self):
+        app = _init_with_current_gen()
+        app.log.reset_mock()
+
+        app._on_stage_service_result({"ok": True})
+        app._on_cleanup_service_result(None)
+
+        levels = {c.kwargs.get("level") for c in app.log.call_args_list}
+        assert levels == {"DEBUG"}, levels
+        messages = [str(c.args[0]) for c in app.log.call_args_list]
+        assert any("photo_frame_stage_gen" in m for m in messages)
+        assert any("photo_frame_cleanup_gen" in m for m in messages)
+
+
+# ----------------------------------------------------------------------
+# The probe reports WHAT HA answered, not just yes/no
+# ----------------------------------------------------------------------
+
+
+class TestProbeStatusIsReported:
+    """`_abandon_staging` used to read identically for "the copy never landed"
+    (404 — the next poll fixes it) and "ha_url is wrong / HA is down" (never
+    self-heals, display silently frozen, and `.stage.log` says
+    `staged 20 files` and sends the operator to the wrong subsystem).
+    """
+
+    def test_status_is_remembered_for_the_in_flight_gen(self):
+        app = _init_with_current_gen()
+        assert app._staging_last_status is None
+
+        _verify_round(app, status=404)
+        assert app._staging_last_status == 404
+
+        _verify_round(app, status=_UNREACHABLE)
+        assert app._staging_last_status == _UNREACHABLE
+
+    def test_status_is_plumbed_from_the_probe_to_the_result(self):
+        app = _init_with_current_gen()
+        _verify_round(app, status=301)
+        result_call = _last_run_in(app, app._on_stage_verify_result)
+        assert result_call.kwargs["status"] == 301
+
+    def test_200_still_promotes_the_generation(self):
+        app = _init_with_current_gen()
+        gen = app._staging_gen_id
+        _verify_round(app, status=200)
+        assert app._pending_gen_id == gen
+
+    @pytest.mark.parametrize("status", [404, 301, 401, 500, _UNREACHABLE])
+    def test_non_200_never_promotes(self, status):
+        app = _init_with_current_gen()
+        _verify_round(app, status=status)
+        assert app._pending_gen_id is None
+        assert app._staging_in_progress is True
+
+    def test_missing_or_unparseable_status_is_treated_as_unreachable(self):
+        """Never fall back to "staged" — that is how broken images got published."""
+        app = _init_with_current_gen()
+        gen = app._staging_gen_id
+
+        app._on_stage_verify_result({"gen_id": gen})
+        assert app._pending_gen_id is None
+        assert app._staging_last_status == _UNREACHABLE
+
+        app._on_stage_verify_result({"gen_id": gen, "status": "nope"})
+        assert app._pending_gen_id is None
+        assert app._staging_last_status == _UNREACHABLE
+
+        app._on_stage_verify_result({"gen_id": gen, "status": None})
+        assert app._pending_gen_id is None
+        assert app._staging_last_status == _UNREACHABLE
+
+    def test_per_check_debug_line_carries_the_status(self):
+        app = _init_with_current_gen()
+        _verify_round(app, status=403)
+        messages = _logs(app, "DEBUG", "not staged yet")
+        assert len(messages) == 1, messages
+        assert "status=403" in messages[0]
+
+    def test_status_is_reset_between_generations(self):
+        app = _init_with_current_gen("3")
+        _verify_round(app, status=404)
+        assert app._staging_last_status == 404
+
+        _verify_round(app, status=200)
+        assert app._staging_last_status is None, (
+            "a resolved staging must not leak its status into the next one"
+        )
+
+        app._on_tick({})
+        _replace_source_files(app.source_dir, ["NEXT.jpg"])
+        app._poll_for_changes(reason="poll")
+        assert app._staging_last_status is None
+
+    def _abandon_with(self, status: int | None) -> str:
+        """Abandon a generation after observing *status* (None = no result)."""
+        app = _init_with_current_gen()
+        if status is None:
+            app._on_stage_watchdog(
+                dict(_last_run_in(app, app._on_stage_watchdog).kwargs)
+            )
+        else:
+            _verify_round(
+                app, status=status, elapsed_s=app.stage_verify_timeout_s + 1
+            )
+        warnings = _logs(app, "WARNING", "FAILED verification")
+        assert len(warnings) == 1, warnings
+        return warnings[0]
+
+    def test_404_warning_blames_staging_and_points_at_the_log(self):
+        message = self._abandon_with(404)
+        assert "last_status=404" in message
+        assert "404" in message and "did not land" in message
+        assert "/config/www/photo-frame/live/.stage.log" in message
+        assert "ha_url" not in message, (
+            "a 404 is a staging problem — do not send the operator after ha_url"
+        )
+
+    def test_unreachable_warning_blames_ha_url_and_says_it_will_not_self_heal(self):
+        message = self._abandon_with(_UNREACHABLE)
+        assert f"last_status={_UNREACHABLE}" in message
+        assert "could not reach HA" in message
+        assert "ha_url" in message
+        assert "NOT self-heal" in message
+        assert "merely restarting" in message, (
+            "an HA restart is the one unreachable case that does self-heal"
+        )
+        assert "will not explain it" in message
+
+    def test_other_status_warning_blames_ha_url(self):
+        message = self._abandon_with(301)
+        assert "last_status=301" in message
+        assert "HA answered 301" in message
+        assert "ha_url" in message
+        assert "NOT self-heal" in message
+
+    def test_watchdog_without_any_result_says_so(self):
+        message = self._abandon_with(None)
+        assert "last_status=None" in message
+        assert "no probe result was ever observed" in message
+        assert "/config/www/photo-frame/live/.stage.log" in message
+
+    def test_watchdog_after_a_result_reports_that_status(self):
+        app = _init_with_current_gen()
+        _verify_round(app, status=502)
+        app._on_stage_watchdog(dict(_last_run_in(app, app._on_stage_watchdog).kwargs))
+
+        warnings = _logs(app, "WARNING", "FAILED verification")
+        assert len(warnings) == 1
+        assert "reason=watchdog" in warnings[0]
+        assert "last_status=502" in warnings[0]
+
+    def test_warning_never_leaks_a_credential_or_the_base_url(self):
+        for status in (404, 301, _UNREACHABLE):
+            message = self._abandon_with(status)
+            assert "Bearer" not in message
+            assert "token" not in message.lower()
+            assert _FAKE_HA_URL not in message, (
+                "log the url PATH, not the base url (it could embed credentials)"
+            )
+            assert "/local/photo-frame/live/" in message

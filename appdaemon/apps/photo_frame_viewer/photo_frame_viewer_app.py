@@ -21,7 +21,10 @@ from photo_frame_viewer.gen_helpers import (
     parse_gen_id_from_url,
     source_paths_to_gen_paths,
 )
-from providers.ha_provisioner.local_file_check import local_file_exists
+from providers.ha_provisioner.local_file_check import (
+    STATUS_UNREACHABLE,
+    local_file_status,
+)
 from providers.secrets import resolve_arg_secret
 
 
@@ -211,6 +214,12 @@ class PhotoFrameViewerApp(hass.Hass):
         self._staging_started_at: Optional[float] = None
         self._staging_verify_url_path: str = ""
         self._staging_checks: int = 0
+        # Last HTTP status HA answered for the in-flight generation's probe
+        # (``None`` until the first result arrives).  What makes the difference
+        # between "the copy has not landed yet" (404, self-healing) and
+        # "ha_url is wrong or HA is down" (a redirect, or STATUS_UNREACHABLE —
+        # never self-healing) legible in the give-up WARNING.
+        self._staging_last_status: Optional[int] = None
         self._verify_handle: Optional[Any] = None
         self._watchdog_handle: Optional[Any] = None
 
@@ -986,17 +995,26 @@ class PhotoFrameViewerApp(hass.Hass):
                 keep.append(candidate)
         return " ".join(keep)
 
-    def _on_stage_service_result(self, result: Any = None) -> None:
-        """AppDaemon service-call completion callback — informational only.
+    def _on_shell_service_result(self, service: str, result: Any = None) -> None:
+        """Completion callback for a fire-and-forget ``shell_command`` call.
 
-        Runs on the event loop thread.  Deliberately does nothing but log:
-        the staging shell_command's exit status is not trustworthy (see
-        ``_stage_new_generation``), the HTTP probe is.
+        Runs on the event loop thread, so it must not touch HA state — it
+        deliberately does nothing but log at DEBUG.  Nothing reads these
+        results: the staging command's exit status is not trustworthy (see
+        ``_stage_new_generation``, the HTTP probe is the truth) and the cleanup
+        command's is uninteresting.  Passing a callback is what keeps the app's
+        worker thread off the 60s internal-function timeout.
         """
         self.log(
-            f"PhotoFrameViewerApp: stage service call returned {result!r}",
+            f"PhotoFrameViewerApp: shell_command/{service} returned {result!r}",
             level="DEBUG",
         )
+
+    def _on_stage_service_result(self, result: Any = None) -> None:
+        self._on_shell_service_result(self.stage_shell_command, result)
+
+    def _on_cleanup_service_result(self, result: Any = None) -> None:
+        self._on_shell_service_result(self.cleanup_shell_command, result)
 
     # ------------------------------------------------------------------
     # Staging verification
@@ -1041,6 +1059,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self._staging_started_at = None
         self._staging_verify_url_path = ""
         self._staging_checks = 0
+        self._staging_last_status = None
 
     def _on_stage_verify(self, kwargs: Any) -> None:
         """Timer callback: probe HA for the staged generation."""
@@ -1078,18 +1097,18 @@ class PhotoFrameViewerApp(hass.Hass):
         the settle path (``get_state``/``call_service``) must run on the app's
         worker thread, not the event loop.
         """
-        exists = False
+        status = STATUS_UNREACHABLE
         try:
             url_path = self._staging_verify_url_path
             if url_path:
-                exists = await local_file_exists(self._ha_url, url_path)
-        except Exception as exc:  # local_file_exists swallows, belt and braces
+                status = await local_file_status(self._ha_url, url_path)
+        except Exception as exc:  # local_file_status swallows, belt and braces
             self.log(
                 f"PhotoFrameViewerApp: stage verification probe failed for "
                 f"gen={gen_id}: {exc!r}",
                 level="WARNING",
             )
-            exists = False
+            status = STATUS_UNREACHABLE
 
         # The latch is released only by _on_stage_verify_result, so failing to
         # hand the result back would strand it: stage_verify_timeout_s is only
@@ -1098,7 +1117,7 @@ class PhotoFrameViewerApp(hass.Hass):
         # next poll can re-stage immediately instead of waiting it out.
         try:
             self.run_in(
-                self._on_stage_verify_result, 0, gen_id=gen_id, exists=bool(exists)
+                self._on_stage_verify_result, 0, gen_id=gen_id, status=int(status)
             )
         except Exception as exc:
             self.log(
@@ -1115,7 +1134,10 @@ class PhotoFrameViewerApp(hass.Hass):
         """Act on one probe result: promote, re-probe, or give up."""
         data = kwargs if isinstance(kwargs, dict) else {}
         gen_id = data.get("gen_id")
-        exists = bool(data.get("exists"))
+        try:
+            status = int(data.get("status"))
+        except (TypeError, ValueError):
+            status = STATUS_UNREACHABLE
 
         if not self._is_active_owner():
             self._clear_staging_context()
@@ -1130,10 +1152,11 @@ class PhotoFrameViewerApp(hass.Hass):
             return
 
         self._staging_checks += 1
+        self._staging_last_status = status
         checks = self._staging_checks
         elapsed = self._staging_elapsed_s()
 
-        if exists:
+        if status == 200:
             if checks > 1:
                 self.log(
                     f"PhotoFrameViewerApp: gen={gen_id} verified staged after "
@@ -1155,7 +1178,7 @@ class PhotoFrameViewerApp(hass.Hass):
 
         self.log(
             f"PhotoFrameViewerApp: gen={gen_id} not staged yet "
-            f"(elapsed={elapsed:.1f}s check={checks} "
+            f"(elapsed={elapsed:.1f}s check={checks} status={status} "
             f"url_path={self._staging_verify_url_path!r})",
             level="DEBUG",
         )
@@ -1201,21 +1224,44 @@ class PhotoFrameViewerApp(hass.Hass):
         next poll keeps the album title, and leaves ``_current_fingerprint``
         alone so that poll still sees a change and re-stages.
         """
-        if reason == "watchdog":
+        # The hint is driven by what HA actually answered, not by why we gave
+        # up: a 404 is a staging problem and usually self-heals on the next
+        # poll, while a redirect or an unreachable HA means ha_url or HA itself
+        # is wrong — every generation will be abandoned forever, the display
+        # silently freezes, and .stage.log will happily report "staged N files"
+        # and send the operator hunting in the wrong subsystem.
+        last_status = self._staging_last_status
+        log_path = "/config/www/photo-frame/live/.stage.log"
+        if last_status is None:
             hint = (
-                "the verification chain stopped responding, so this "
-                "generation's real state is unknown"
+                "no probe result was ever observed, so this generation's real "
+                f"state is unknown; check {log_path}"
+            )
+        elif last_status == 404:
+            hint = (
+                "HA answered 404 — the generation directory never appeared, so "
+                "the copy did not land; the stage shell_command was most likely "
+                "killed by HA's 60s timeout before the atomic mv, check "
+                f"{log_path}"
+            )
+        elif last_status == STATUS_UNREACHABLE:
+            hint = (
+                "could not reach HA at the configured ha_url (connection error "
+                "or timeout) — check ha_url and whether HA is up; unless HA was "
+                "merely restarting this will NOT self-heal, and "
+                f"{log_path} will not explain it"
             )
         else:
             hint = (
-                "the stage shell_command was most likely killed by HA's 60s "
-                "timeout before the atomic mv"
+                f"HA answered {last_status}, neither 200 nor 404 — ha_url is "
+                "probably wrong (scheme, host or a proxy in front of HA); this "
+                f"will NOT self-heal and {log_path} will not explain it"
             )
         self.log(
             f"PhotoFrameViewerApp: staging gen={gen_id} FAILED verification "
-            f"(reason={reason}) after {elapsed:.1f}s ({checks} checks) — HA never "
-            f"served {self._staging_verify_url_path!r}: {hint}. Check the HA-side "
-            f"log /config/www/photo-frame/live/.stage.log. Not publishing this "
+            f"(reason={reason}) after {elapsed:.1f}s ({checks} checks) "
+            f"last_status={last_status} — HA never served "
+            f"{self._staging_verify_url_path!r}: {hint}. Not publishing this "
             f"generation — the next source poll re-stages.",
             level="WARNING",
         )
@@ -1447,8 +1493,14 @@ class PhotoFrameViewerApp(hass.Hass):
             f"PhotoFrameViewerApp: cleanup gen={gen_id} reason={reason}",
             level="INFO",
         )
+        # Fire-and-forget like the stage call: nothing reads the result, and two
+        # of the three callers are latency-sensitive — _finalize_pending runs on
+        # the _on_tick path (a blocking call stalls the slideshow) and
+        # _abandon_staging runs precisely when HA may already be unhealthy and
+        # slow to answer.
         self.call_service(
             f"shell_command/{self.cleanup_shell_command}",
+            callback=self._on_cleanup_service_result,
             gen_id=gen_id,
         )
 

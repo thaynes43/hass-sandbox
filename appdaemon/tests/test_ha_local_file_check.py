@@ -22,8 +22,10 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from providers.ha_provisioner.local_file_check import (  # noqa: E402
+    STATUS_UNREACHABLE,
     build_local_url,
     local_file_exists,
+    local_file_status,
 )
 
 
@@ -143,3 +145,81 @@ class TestLocalFileExists:
             )
         )
         assert session.head.call_args.kwargs["timeout"].total == 5.0
+
+
+class TestLocalFileStatus:
+    """The status variant exists so callers can tell "HA said no" (404 —
+    usually transient) from "HA said nothing / something else" (a misconfigured
+    ha_url, a proxy, HA down), which never self-heals.
+    """
+
+    @pytest.mark.parametrize("status", [200, 204, 301, 302, 401, 403, 404, 405, 500, 503])
+    def test_returns_the_real_status(self, status):
+        session = _session(status)
+        assert _run(
+            local_file_status("http://ha.test:8123", "/local/p/1/a.jpg", session=session)
+        ) == status
+
+    def test_connection_error_is_unreachable(self):
+        session = _session(error=aiohttp.ClientConnectorError(MagicMock(), OSError("boom")))
+        assert _run(
+            local_file_status("http://ha.test:8123", "/local/p/1/a.jpg", session=session)
+        ) == STATUS_UNREACHABLE
+
+    def test_timeout_is_unreachable(self):
+        session = _session(error=asyncio.TimeoutError())
+        assert _run(
+            local_file_status("http://ha.test:8123", "/local/p/1/a.jpg", session=session)
+        ) == STATUS_UNREACHABLE
+
+    def test_unexpected_exception_is_unreachable_and_does_not_raise(self):
+        session = _session(error=RuntimeError("unexpected"))
+        assert _run(
+            local_file_status("http://ha.test:8123", "/local/p/1/a.jpg", session=session)
+        ) == STATUS_UNREACHABLE
+
+    def test_unusable_url_is_unreachable_without_touching_the_session(self):
+        session = _session(200)
+        assert _run(
+            local_file_status("", "/local/p/1/a.jpg", session=session)
+        ) == STATUS_UNREACHABLE
+        session.head.assert_not_called()
+
+    def test_unreachable_cannot_collide_with_a_real_status(self):
+        assert STATUS_UNREACHABLE < 0
+
+    def test_sends_no_authorization_header(self):
+        session = _session(200)
+        _run(local_file_status("http://ha.test:8123", "/local/p/1/a.jpg", session=session))
+        assert "headers" not in session.head.call_args.kwargs
+        assert "Bearer" not in repr(session.head.call_args)
+
+
+class TestExistsIsAThinWrapper:
+    """`local_file_exists` must keep behaving exactly as before the split."""
+
+    @pytest.mark.parametrize(
+        "status,expected",
+        [(200, True), (204, False), (301, False), (404, False), (500, False)],
+    )
+    def test_only_200_is_true(self, status, expected):
+        session = _session(status)
+        assert _run(
+            local_file_exists("http://ha.test:8123", "/local/p/1/a.jpg", session=session)
+        ) is expected
+
+    def test_unreachable_is_false(self):
+        session = _session(error=asyncio.TimeoutError())
+        assert _run(
+            local_file_exists("http://ha.test:8123", "/local/p/1/a.jpg", session=session)
+        ) is False
+
+    def test_forwards_timeout_and_session(self):
+        session = _session(200)
+        _run(
+            local_file_exists(
+                "http://ha.test:8123", "/local/p/1/a.jpg", timeout_s=1.5, session=session
+            )
+        )
+        session.head.assert_called_once()
+        assert session.head.call_args.kwargs["timeout"].total == 1.5

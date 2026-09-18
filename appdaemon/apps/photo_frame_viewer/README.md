@@ -181,10 +181,23 @@ Register the card JS file as a Lovelace resource with cache-busting `?v=N` query
 Broken images mean a published URL is 404ing. Since the staging-verification change this should no longer be reachable through the staging path — check the AppDaemon log for:
 
 ```
-PhotoFrameViewerApp: staging gen=<n> FAILED verification after <s>s (<k> checks) — HA never served '/local/photo-frame/live/<n>/<file>'
+PhotoFrameViewerApp: staging gen=<n> FAILED verification (reason=<deadline|watchdog>)
+after <s>s (<k> checks) last_status=<n> — HA never served
+'/local/photo-frame/live/<n>/<file>': <hint>
 ```
 
-That line says the app correctly refused to publish the generation. The next source poll re-stages automatically. To find out *why* the stage failed, read the HA-side log inside the HA container:
+That line says the app correctly refused to publish the generation. **`last_status` tells you which subsystem to look at** — this is the whole point of the field, because a frozen display looks identical in both cases:
+
+| `last_status` | Meaning | Self-heals? |
+|---|---|---|
+| `404` | The generation directory never appeared — the copy did not land. A staging problem. | Yes, on the next poll |
+| `-1` | HA could not be reached at all (connection error or timeout). | Only if HA was merely restarting — otherwise **no**: check `ha_url` and whether HA is up |
+| `301` / `302` / `401` / `403` / `405` / `5xx` | HA answered, but not with the file — `ha_url` is almost certainly wrong (scheme, host, or a proxy in front of HA). | **No** — fix the config |
+| `None` | No probe result was ever observed; the verification chain stopped responding and the watchdog gave up. | Unknown |
+
+Only `404` is a staging problem. For anything else, `.stage.log` will cheerfully report `staged 20 files` and send you hunting in the wrong place.
+
+For a `404` (or a `None`), read the HA-side log inside the HA container:
 
 ```bash
 tail -50 /config/www/photo-frame/live/.stage.log
@@ -192,6 +205,7 @@ tail -50 /config/www/photo-frame/live/.stage.log
 
 - `source empty or missing` — the fetcher wrote nothing to `source_dir`.
 - `lock busy, giving up` — a previous stage is still running (a long NFS stall).
+- `pruned unreferenced generation <n>` — normal housekeeping, see the keep-list note above.
 - No line at all for that gen — the copy is still in flight, or the shell was killed before the detached subshell started.
 
 If instead you see `staging verification is DISABLED` at startup, the app has no `ha_url` and is publishing on the old unverified settle delay — configure `ha_url_env`.
