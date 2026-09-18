@@ -438,9 +438,16 @@ class TestStaleCallbacks:
         in_flight = app._staging_gen_id
         app.create_task.reset_mock()
 
+        live_handle = app._verify_handle
+        assert live_handle is not None
+
         app._on_stage_verify({"gen_id": "999"})
 
         assert app.create_task.call_count == 0, "superseded gen must not probe"
+        assert app._verify_handle == live_handle, (
+            "a stale timer must not drop the in-flight generation's handle - "
+            "_cancel_verify_timer() could then never cancel it"
+        )
         assert app._staging_gen_id == in_flight
         assert app._staging_in_progress is True
         assert app._pending_gen_id is None
@@ -715,8 +722,14 @@ class TestLatchIsNeverStranded:
         in_flight = app._staging_gen_id
         app.call_service.reset_mock()
 
+        live_handle = app._watchdog_handle
+        assert live_handle is not None
+
         app._on_stage_watchdog({"gen_id": "999"})
 
+        assert app._watchdog_handle == live_handle, (
+            "a stale watchdog must not drop the in-flight generation's handle"
+        )
         assert app._staging_gen_id == in_flight
         assert app._staging_in_progress is True
         assert _cleanup_calls(app) == []

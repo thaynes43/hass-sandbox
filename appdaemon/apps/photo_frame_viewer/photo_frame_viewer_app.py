@@ -1127,7 +1127,6 @@ class PhotoFrameViewerApp(hass.Hass):
 
     def _on_stage_verify(self, kwargs: Any) -> None:
         """Timer callback: probe HA for the staged generation."""
-        self._verify_handle = None
         data = kwargs if isinstance(kwargs, dict) else {}
         gen_id = data.get("gen_id")
 
@@ -1144,7 +1143,13 @@ class PhotoFrameViewerApp(hass.Hass):
                 f"gen={gen_id!r} (in-flight gen={self._staging_gen_id!r})",
                 level="DEBUG",
             )
+            # Leave _verify_handle alone: it belongs to the in-flight
+            # generation, and dropping it here would stop
+            # _cancel_verify_timer() from ever cancelling that timer.
             return
+
+        # This timer is ours and has fired — only now is the handle spent.
+        self._verify_handle = None
 
         if not self._stage_verification_enabled:
             # Legacy behaviour: no ha_url means we cannot verify anything, so
@@ -1260,7 +1265,6 @@ class PhotoFrameViewerApp(hass.Hass):
         task) nothing reschedules and the staging latch would block every
         future stage until AppDaemon restarts.  This timer fires regardless.
         """
-        self._watchdog_handle = None
         data = kwargs if isinstance(kwargs, dict) else {}
         gen_id = data.get("gen_id")
 
@@ -1275,8 +1279,11 @@ class PhotoFrameViewerApp(hass.Hass):
                 f"gen={gen_id!r} (in-flight gen={self._staging_gen_id!r})",
                 level="DEBUG",
             )
+            # Same rule as the verify timer: a stale watchdog must not drop
+            # the in-flight generation's handle.
             return
 
+        self._watchdog_handle = None
         self._abandon_staging(
             gen_id, self._staging_elapsed_s(), self._staging_checks, reason="watchdog"
         )
