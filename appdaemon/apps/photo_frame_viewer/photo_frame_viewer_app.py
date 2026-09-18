@@ -22,6 +22,7 @@ from photo_frame_viewer.gen_helpers import (
     source_paths_to_gen_paths,
 )
 from providers.ha_provisioner.local_file_check import (
+    DEFAULT_TIMEOUT_S as PROBE_TIMEOUT_S,
     STATUS_UNREACHABLE,
     local_file_status,
 )
@@ -67,14 +68,10 @@ class PhotoFrameViewerApp(hass.Hass):
         {".jpg", ".jpeg", ".png", ".gif", ".webp"}
     )
 
-    # How long after `stage_verify_timeout_s` the absolute-deadline watchdog
-    # fires.  The normal deadline is only evaluated when a probe *result*
-    # arrives, so it cannot help if the verification chain stops responding.
-    # 15s comfortably exceeds one re-check interval plus one HEAD timeout
-    # (5 + 5 = 10s at the defaults), which means ordinary scheduling jitter
-    # still lets the normal path declare the failure first and the watchdog
-    # only ever fires when the chain is genuinely broken.
-    STAGE_WATCHDOG_MARGIN_S: float = 15.0
+    # Fixed slack on top of the *derived* watchdog margin — see
+    # _stage_watchdog_delay_s().  This absorbs scheduling jitter only; the
+    # parts that scale with configuration are computed, not constant.
+    STAGE_WATCHDOG_SLACK_S: float = 5.0
 
     DEFAULTS: dict[str, Any] = {
         "source_dir": "/media/immich-photos",
@@ -220,6 +217,11 @@ class PhotoFrameViewerApp(hass.Hass):
         # "ha_url is wrong or HA is down" (a redirect, or STATUS_UNREACHABLE —
         # never self-healing) legible in the give-up WARNING.
         self._staging_last_status: Optional[int] = None
+        # Album title snapshotted for the generation being staged.  Kept apart
+        # from _staged_filter_name (which means "title for the NEXT stage")
+        # because the verification window can run for minutes while fresh
+        # batch_ready events keep arriving.
+        self._staging_filter_name: str = ""
         self._verify_handle: Optional[Any] = None
         self._watchdog_handle: Optional[Any] = None
 
@@ -899,11 +901,13 @@ class PhotoFrameViewerApp(hass.Hass):
         # If there's an existing pending gen that was never adopted, clean it up
         if self._pending_gen_id is not None:
             old_pending = self._pending_gen_id
-            # Carry forward the filter name so it survives re-staging.
-            # The original batch_ready set _staged_filter_name, which was
-            # consumed by the first settle and stored in _pending_filter_name.
-            # Without this carry-forward, a re-stage (e.g. from an mtime
-            # change) would lose the name and the card title would go stale.
+            # Carry forward the filter name so it survives re-staging.  The
+            # original batch_ready's title was snapshotted at stage time and
+            # settled into _pending_filter_name; without this carry-forward a
+            # re-stage (e.g. from an mtime change) would lose it and the card
+            # title would go stale.  It feeds _staged_filter_name so that the
+            # snapshot below picks it up — and is skipped when a newer batch
+            # has already claimed the slot, since that title is more current.
             if self._pending_filter_name and not self._staged_filter_name:
                 self._staged_filter_name = self._pending_filter_name
             self._clear_pending()
@@ -945,6 +949,13 @@ class PhotoFrameViewerApp(hass.Hass):
         self._staging_verify_url_path = gen_path_to_local_url(
             source_paths[0], self.ha_local_url_base, gen_id
         )
+        # Snapshot the album title for THIS generation and hand
+        # _staged_filter_name back to whatever batch arrives next.  Verification
+        # can hold the latch for minutes, and _on_batch_ready keeps writing
+        # _staged_filter_name throughout; without the snapshot this generation
+        # would be published under the NEXT album's title.
+        self._staging_filter_name = self._staged_filter_name
+        self._staged_filter_name = ""
 
         # `callback=` makes AppDaemon fire-and-forget the service call
         # (adapi.call_service creates a task and returns immediately) instead
@@ -973,9 +984,31 @@ class PhotoFrameViewerApp(hass.Hass):
         if self._stage_verification_enabled:
             self._watchdog_handle = self.run_in(
                 self._on_stage_watchdog,
-                self.stage_verify_timeout_s + self.STAGE_WATCHDOG_MARGIN_S,
+                self._stage_watchdog_delay_s(),
                 gen_id=gen_id,
             )
+
+    def _stage_watchdog_delay_s(self) -> float:
+        """When the absolute-deadline watchdog fires, derived from live config.
+
+        The normal give-up path only runs when a probe *result* arrives.  The
+        last probe can be scheduled as late as ``stage_verify_timeout_s`` and
+        then take a full HEAD timeout to answer, so the watchdog has to sit
+        beyond ``timeout + one re-check interval + one probe timeout``.
+
+        A fixed margin only held at the default ``stage_verify_interval_s``.
+        At, say, 30s the watchdog would fire first and abandon a *healthy*
+        generation — cleaning up a directory the in-flight probe was about to
+        see as 200, and logging a phantom "chain stopped responding".  Since
+        the interval is a documented tunable with no clamp, the margin has to
+        scale with it.
+        """
+        margin = (
+            self.stage_verify_interval_s
+            + PROBE_TIMEOUT_S
+            + self.STAGE_WATCHDOG_SLACK_S
+        )
+        return self.stage_verify_timeout_s + margin
 
     @staticmethod
     def _build_keep_gens(*gen_ids: Optional[str]) -> str:
@@ -1048,6 +1081,19 @@ class PhotoFrameViewerApp(hass.Hass):
         except Exception:
             pass
 
+    def _restore_staged_filter_name(self) -> None:
+        """Hand this generation's album title back for the automatic retry.
+
+        Only when no newer batch has claimed the slot: a batch_ready that
+        arrived during the verification window describes a *newer* album and
+        must win over the title of the generation we are giving up on.
+
+        Must be called before ``_clear_staging_context()``, which drops the
+        snapshot.
+        """
+        if self._staging_filter_name and not self._staged_filter_name:
+            self._staged_filter_name = self._staging_filter_name
+
     def _clear_staging_context(self) -> None:
         """Release the staging latch and forget the in-flight generation."""
         self._cancel_verify_timer()
@@ -1060,6 +1106,7 @@ class PhotoFrameViewerApp(hass.Hass):
         self._staging_verify_url_path = ""
         self._staging_checks = 0
         self._staging_last_status = None
+        self._staging_filter_name = ""
 
     def _on_stage_verify(self, kwargs: Any) -> None:
         """Timer callback: probe HA for the staged generation."""
@@ -1128,6 +1175,8 @@ class PhotoFrameViewerApp(hass.Hass):
             )
             # Guard on the gen: a newer staging may already own the context.
             if gen_id == self._staging_gen_id:
+                # A re-stage follows, so keep the album title like _abandon_staging.
+                self._restore_staged_filter_name()
                 self._clear_staging_context()
 
     def _on_stage_verify_result(self, kwargs: Any) -> None:
@@ -1220,9 +1269,10 @@ class PhotoFrameViewerApp(hass.Hass):
     ) -> None:
         """Give up on a generation HA never served — publish nothing.
 
-        Leaves ``_staged_filter_name`` alone so the automatic re-stage on the
-        next poll keeps the album title, and leaves ``_current_fingerprint``
-        alone so that poll still sees a change and re-stages.
+        Hands this generation's album title back for the automatic re-stage
+        (unless a newer batch already claimed it), and leaves
+        ``_current_fingerprint`` alone so the next poll still sees a change
+        and re-stages.
         """
         # The hint is driven by what HA actually answered, not by why we gave
         # up: a 404 is a staging problem and usually self-heals on the next
@@ -1265,6 +1315,7 @@ class PhotoFrameViewerApp(hass.Hass):
             f"generation — the next source poll re-stages.",
             level="WARNING",
         )
+        self._restore_staged_filter_name()
         self._call_cleanup(gen_id, reason=f"stage_verify_{reason}")
         self._clear_staging_context()
 
@@ -1273,6 +1324,10 @@ class PhotoFrameViewerApp(hass.Hass):
         gen_id = getattr(self, "_staging_gen_id", None)
         source_paths = list(getattr(self, "_staging_source_paths", None) or [])
         fingerprint = getattr(self, "_staging_fingerprint", None)
+        # Read the snapshot before clearing: _staged_filter_name may already
+        # hold a NEWER album's title, set by a batch_ready that arrived while
+        # this generation was being verified.
+        filter_name = str(getattr(self, "_staging_filter_name", "") or "")
 
         # Release the latch first: every exit path below must leave it clear.
         self._clear_staging_context()
@@ -1281,8 +1336,10 @@ class PhotoFrameViewerApp(hass.Hass):
             return
 
         if not gen_id or not source_paths:
+            # Do NOT touch _staged_filter_name here — with no staging context
+            # there is no snapshot to consume, and whatever it holds belongs to
+            # the next stage.
             self.log("PhotoFrameViewerApp: stage settled but no staging context", level="WARNING")
-            self._staged_filter_name = ""
             return
 
         # Build gen paths and label maps for the new generation
@@ -1294,8 +1351,9 @@ class PhotoFrameViewerApp(hass.Hass):
         self._pending_label_to_path = l2p
         self._pending_path_to_label = p2l
         self._pending_fingerprint = fingerprint
-        self._pending_filter_name = self._staged_filter_name
-        self._staged_filter_name = ""
+        # The snapshot taken when THIS generation was staged — not the live
+        # field, which may already describe the next album.
+        self._pending_filter_name = filter_name
 
         self.log(
             f"PhotoFrameViewerApp: gen={gen_id} ready as pending "

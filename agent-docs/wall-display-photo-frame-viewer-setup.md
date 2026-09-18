@@ -190,9 +190,22 @@ nothing, and the next source poll re-stages automatically.
 
 Staging is latched for the whole verification window, and `stage_verify_timeout_s`
 is only evaluated when a probe *result* arrives — so an absolute-deadline
-watchdog (`stage_verify_timeout_s` + 15s) abandons the gen and releases the latch
-even if the chain stops responding.  Without it one lost callback would block
-every future stage until AppDaemon restarted.
+watchdog abandons the gen and releases the latch even if the chain stops
+responding.  Without it one lost callback would block every future stage until
+AppDaemon restarted.  Its delay is **derived**, not constant:
+`stage_verify_timeout_s + stage_verify_interval_s + <provider probe timeout> + 5s`
+slack.  The last probe can be scheduled as late as the timeout and then take a
+full probe timeout to answer, so a fixed margin would pre-empt it at any large
+`stage_verify_interval_s` — abandoning a healthy gen, deleting a directory the
+in-flight probe was about to see as 200, and logging a phantom "chain stopped
+responding".
+
+The album title is snapshotted when a stage starts.  `_on_batch_ready` keeps
+writing the incoming title throughout the (now possibly minutes-long)
+verification window while its poll is a no-op on the latch, so without the
+snapshot the in-flight gen would be published under the *next* album's title.
+A newer title waits for the next stage; if the in-flight gen is abandoned its
+title is handed back for the retry, unless a newer batch already claimed it.
 
 `/local/...` is unauthenticated static content, so the probe sends no
 `Authorization` header; the HTTP call lives in

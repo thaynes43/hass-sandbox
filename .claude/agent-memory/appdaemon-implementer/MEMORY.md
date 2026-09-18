@@ -206,3 +206,28 @@ Cards order: bubble-card (nav) → summary markdown → generated img → best i
   implementation (`_on_shell_service_result(service, result)`), not
   `functools.partial`/closures — bound methods stay identity-comparable, so
   tests can assert exactly which callback was attached.
+
+### Timeout constants must be derived when the inputs they race are tunable
+- Round-3 finding on `photo_frame_viewer`: a watchdog armed at
+  `timeout + FIXED_MARGIN` only outran the normal give-up path at the *default*
+  retry interval. Raise the documented (unclamped) `stage_verify_interval_s` and
+  the backstop fires first, killing a healthy job and logging a phantom fault.
+- Rule: when a backstop timer must lose a race against a normal path, compute
+  its delay from the same live values the normal path uses
+  (`timeout + retry_interval + probe_timeout + named_slack`), and import the
+  probe timeout from the provider that owns it rather than duplicating the
+  literal. Test the *invariant* across several interval values, not the default.
+
+### Don't let a long-running async window read a mutable "latest" field
+- Same app, same review: `_on_batch_ready` wrote `_staged_filter_name`, and the
+  settle step read that live field minutes later — so a generation got published
+  under the *next* album's title once verification stretched the window from 3s
+  to minutes. It was invisible while the window was short.
+- Pattern: snapshot the value into the job's own context when the job starts and
+  free the live field for the next job. On failure, hand the snapshot back only
+  `if not <live field>` so a newer arrival still wins. Clear the snapshot in the
+  context teardown, and read it into a local *before* teardown where the settle
+  path clears first.
+- Watch for tests that encode the old drift: one asserted a title set *after* a
+  stage began still landed on that stage. Fix the sequence (let the prior stage
+  settle first), don't relax the assertion.

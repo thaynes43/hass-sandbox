@@ -49,6 +49,13 @@ _PROBE = "photo_frame_viewer.photo_frame_viewer_app.local_file_status"
 # Mirrors providers.ha_provisioner.local_file_check.STATUS_UNREACHABLE.
 _UNREACHABLE = -1
 
+# The probe timeout the app actually uses, imported rather than duplicated so
+# the watchdog-margin tests keep tracking the provider's default.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from providers.ha_provisioner.local_file_check import (  # noqa: E402
+    DEFAULT_TIMEOUT_S as _PROBE_TIMEOUT_S,
+)
+
 
 # ----------------------------------------------------------------------
 # Fixtures / harness
@@ -348,7 +355,8 @@ class TestVerificationDeadline:
         )
         failed_gen = app._staging_gen_id
         assert failed_gen is not None
-        assert app._staged_filter_name == "Florida"
+        # The title now lives in the staging snapshot, not the next-stage slot.
+        assert app._staging_filter_name == "Florida"
         return failed_gen
 
     def test_deadline_publishes_nothing_and_cleans_up(self):
@@ -621,16 +629,42 @@ class TestLatchIsNeverStranded:
     def test_watchdog_is_armed_at_the_absolute_deadline(self):
         app = _init_with_current_gen()
         watchdog = _last_run_in(app, app._on_stage_watchdog)
-        assert watchdog.args[1] == (
-            app.stage_verify_timeout_s + app.STAGE_WATCHDOG_MARGIN_S
-        )
+        assert watchdog.args[1] == app._stage_watchdog_delay_s()
         assert watchdog.kwargs["gen_id"] == app._staging_gen_id
         assert app._watchdog_handle is not None
 
-    def test_watchdog_margin_exceeds_one_recheck_plus_one_probe(self):
-        """Otherwise the watchdog could pre-empt the normal deadline path."""
+    @pytest.mark.parametrize("interval", [1, 5, 30, 120])
+    def test_watchdog_never_pre_empts_the_normal_deadline(self, interval):
+        """The margin must scale with `stage_verify_interval_s`, not be fixed.
+
+        The last probe can be scheduled as late as `stage_verify_timeout_s` and
+        then take a full probe timeout to answer.  A fixed margin only cleared
+        that bar at the default interval; at a larger one the watchdog would
+        fire first and abandon a *healthy* generation — deleting a directory
+        the in-flight probe was about to see as 200.
+        """
+        app = _init_with_current_gen(extra_args={"stage_verify_interval_s": interval})
+        assert app.stage_verify_interval_s == interval
+
+        delay = app._stage_watchdog_delay_s()
+        latest_possible_result = (
+            app.stage_verify_timeout_s + interval + _PROBE_TIMEOUT_S
+        )
+        assert delay > latest_possible_result, (
+            f"watchdog at {delay}s would pre-empt a result that can legitimately "
+            f"arrive at {latest_possible_result}s (interval={interval})"
+        )
+        assert _last_run_in(app, app._on_stage_watchdog).args[1] == delay
+
+    def test_watchdog_delay_uses_the_providers_probe_timeout(self):
+        """Derived from the real probe timeout, not a duplicated literal."""
         app = _init_with_current_gen()
-        assert app.STAGE_WATCHDOG_MARGIN_S > app.stage_verify_interval_s + 5.0
+        assert app._stage_watchdog_delay_s() == (
+            app.stage_verify_timeout_s
+            + app.stage_verify_interval_s
+            + _PROBE_TIMEOUT_S
+            + app.STAGE_WATCHDOG_SLACK_S
+        )
 
     def test_watchdog_abandons_when_no_result_ever_arrives(self):
         app = _init_with_current_gen()
@@ -1072,3 +1106,180 @@ class TestProbeStatusIsReported:
                 "log the url PATH, not the base url (it could embed credentials)"
             )
             assert "/local/photo-frame/live/" in message
+
+
+# ----------------------------------------------------------------------
+# Album title cannot drift across a long verification window
+# ----------------------------------------------------------------------
+
+
+class TestFilterNameSnapshot:
+    """`_on_batch_ready` keeps writing `_staged_filter_name` while a
+    generation is being verified, and the latch makes its poll a no-op.  The
+    window used to be `stage_settle_delay_s` (3s); verification can now hold it
+    for minutes, so without a snapshot the in-flight generation would be
+    published under the NEXT album's title.
+    """
+
+    def _staged_with_title(self, title: str) -> PhotoFrameViewerApp:
+        """An app with one generation in flight, staged under *title*."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        app.log.reset_mock()
+
+        _replace_source_files(app.source_dir, ["A_1.jpg", "A_2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 2, "filter": title}, {}
+        )
+        assert app._staging_gen_id is not None
+        return app
+
+    def test_stage_moves_the_title_into_the_snapshot(self):
+        app = self._staged_with_title("Album A")
+        assert app._staging_filter_name == "Album A"
+        assert app._staged_filter_name == "", (
+            "_staged_filter_name must be free for the NEXT batch"
+        )
+
+    def test_title_arriving_mid_verification_does_not_steal_the_generation(self):
+        """The core regression: gen N is album A even if B arrives meanwhile."""
+        app = self._staged_with_title("Album A")
+        gen_a = app._staging_gen_id
+
+        # A fresh batch lands while gen A is still being verified.  Its poll is
+        # a no-op because the staging latch is held.
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 9, "filter": "Album B"}, {}
+        )
+        assert app._staging_gen_id == gen_a, "the latch must block the new stage"
+        assert app._staged_filter_name == "Album B"
+        assert app._staging_filter_name == "Album A"
+
+        _verify_round(app, exists=True)
+
+        assert app._pending_gen_id == gen_a
+        assert app._pending_filter_name == "Album A", (
+            "gen A must not be published under album B's title"
+        )
+
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album A"
+
+        # ...and the next stage picks up B.
+        _replace_source_files(app.source_dir, ["B_1.jpg"])
+        app._poll_for_changes(reason="poll")
+        assert app._staging_filter_name == "Album B"
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album B"
+
+    def test_abandon_hands_the_title_back_for_the_retry(self):
+        app = self._staged_with_title("Album A")
+        _verify_round(app, exists=False, elapsed_s=app.stage_verify_timeout_s + 1)
+
+        assert app._staged_filter_name == "Album A"
+        assert app._staging_filter_name == ""
+
+        app.call_service.reset_mock()
+        app._poll_for_changes(reason="poll")
+        assert app._staging_filter_name == "Album A"
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        assert app._displaying_filter_name == "Album A"
+
+    def test_abandon_does_not_clobber_a_newer_title(self):
+        app = self._staged_with_title("Album A")
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 9, "filter": "Album B"}, {}
+        )
+
+        _verify_round(app, exists=False, elapsed_s=app.stage_verify_timeout_s + 1)
+
+        assert app._staged_filter_name == "Album B", (
+            "a batch that arrived during verification describes a newer album"
+        )
+
+        _replace_source_files(app.source_dir, ["B_1.jpg"])
+        app._poll_for_changes(reason="poll")
+        assert app._staging_filter_name == "Album B"
+
+    def test_watchdog_abandon_also_hands_the_title_back(self):
+        app = self._staged_with_title("Album A")
+        app._on_stage_watchdog(dict(_last_run_in(app, app._on_stage_watchdog).kwargs))
+        assert app._staged_filter_name == "Album A"
+
+    def test_failed_result_bounce_hands_the_title_back(self):
+        app = self._staged_with_title("Album A")
+        timer_call = _last_run_in(app, app._on_stage_verify)
+        scheduler = app.run_in
+
+        def raising_run_in(callback, delay, **kwargs):
+            if callback == app._on_stage_verify_result:
+                raise RuntimeError("scheduler gone")
+            return scheduler(callback, delay, **kwargs)
+
+        app.run_in = MagicMock(side_effect=raising_run_in)
+        with patch(_PROBE, new=AsyncMock(return_value=200)):
+            app._on_stage_verify(dict(timer_call.kwargs))
+            asyncio.run(app.create_task.call_args_list[-1].args[0])
+
+        assert app._staging_in_progress is False
+        assert app._staged_filter_name == "Album A"
+
+    def test_snapshot_is_cleared_between_generations(self):
+        app = self._staged_with_title("Album A")
+        _verify_round(app, exists=True)
+        assert app._staging_filter_name == ""
+
+        app._on_tick({})
+        _replace_source_files(app.source_dir, ["C_1.jpg"])
+        app._poll_for_changes(reason="poll")
+        assert app._staging_filter_name == "", (
+            "a stage with no batch_ready must not inherit the previous title"
+        )
+        _verify_round(app, exists=True)
+        assert app._pending_filter_name == ""
+
+    def test_recovered_title_survives_an_untitled_generation(self):
+        """A startup re-stage has no batch_ready; the displayed title stays."""
+        app = _make_app(current_url="/local/photo-frame/live/10/IMG_001.jpg")
+        app.initialize()
+        # As if recovered from the sensor / state file on startup.
+        app._displaying_filter_name = "Robot"
+        assert app._staging_filter_name == "", "the startup stage has no title"
+
+        _verify_round(app, exists=True)
+        assert app._pending_filter_name == ""
+        app._on_tick({})
+        assert app._displaying_filter_name == "Robot", (
+            "an untitled generation must not blank the displayed title"
+        )
+
+    def test_legacy_no_ha_url_path_uses_the_snapshot_too(self):
+        app = _init_with_current_gen("3", extra_args={"ha_url": ""})
+        app._on_stage_verify(dict(_last_run_in(app, app._on_stage_verify).kwargs))
+        app._on_tick({})
+
+        _replace_source_files(app.source_dir, ["L_1.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 1, "filter": "Legacy"}, {}
+        )
+        assert app._staging_filter_name == "Legacy"
+        assert app._staged_filter_name == ""
+
+        app._on_stage_verify(dict(_last_run_in(app, app._on_stage_verify).kwargs))
+        assert app._pending_filter_name == "Legacy"
+        app._on_tick({})
+        assert app._displaying_filter_name == "Legacy"
+
+    def test_no_context_settle_leaves_the_next_title_alone(self):
+        """A settle with nothing in flight must not eat the next batch's title."""
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+        app._staged_filter_name = "Album Next"
+
+        app._on_stage_settled({})
+
+        assert app._staged_filter_name == "Album Next"

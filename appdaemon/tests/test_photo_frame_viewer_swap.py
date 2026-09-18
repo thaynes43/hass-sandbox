@@ -699,10 +699,13 @@ class TestPollPendingFingerprintRace:
         stage_calls = _service_calls(app, "shell_command/photo_frame_stage_gen")
         assert len(stage_calls) == 1, "Should re-stage when files actually changed"
 
-        # The filter name should have been carried forward.
-        assert app._staged_filter_name == "Florida", (
+        # The filter name should have been carried forward — into the staging
+        # snapshot, which is what the settle consumes.  (_staged_filter_name is
+        # the slot for the NEXT batch and is deliberately empty again here.)
+        assert app._staging_filter_name == "Florida", (
             "Filter name must carry forward from replaced pending gen"
         )
+        assert app._staged_filter_name == ""
 
         # Settle and apply — filter name should survive.
         app._on_stage_settled({})
@@ -761,6 +764,12 @@ class TestFilterNameRecovery:
             sensor_attrs={"displaying_filter_name": ""},
         )
         app.initialize()
+        # Let the startup re-stage finish first.  Until it does, the staging
+        # latch is held and a batch_ready cannot stage anything — and the
+        # in-flight generation predates the "Theme Park" files, so it must not
+        # be published under that title.
+        app._on_stage_settled({})
+        app._on_tick({})
 
         # Simulate a batch_ready + stage + apply cycle.
         _replace_source_files(app.source_dir, ["P1.jpg", "P2.jpg"])
