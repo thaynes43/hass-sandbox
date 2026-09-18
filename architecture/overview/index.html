@@ -1132,6 +1132,11 @@
 <td>AppDaemon → HA REST API</td>
 <td><code>ha_provisioner</code> creates helpers/scripts on startup</td>
 </tr>
+<tr>
+<td><strong>Static asset check</strong></td>
+<td>AppDaemon → HA HTTP</td>
+<td>Unauthenticated <code>HEAD /local/...</code> to confirm HA is really serving a file an app asked it to stage</td>
+</tr>
 </tbody>
 </table>
 <h2 id="key-concepts">Key concepts</h2>
@@ -1148,7 +1153,7 @@
 <h3 id="health-monitoring">Health monitoring</h3>
 <p>The <a href="../../features/health-checks/">health check system</a> uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes commands. The controller also mirrors checker status into the cluster's Alertmanager via the <code>alertmanager</code> provider — critical findings page the phone, and recovery resolves the alert once it holds, so a flapping condition pages <a href="../../features/health-checks/#one-page-per-incident">once per incident</a> rather than once per swing.</p>
 <h3 id="container-separation">Container separation</h3>
-<p>HA and AppDaemon run in separate Kubernetes pods. They share a <code>/media</code> NFS mount for file exchange. AppDaemon cannot access <code>/config/www/</code> directly — it uses HA <code>shell_command</code> services for file operations in that directory.</p>
+<p>HA and AppDaemon run in separate Kubernetes pods. They share a <code>/media</code> NFS mount for file exchange. AppDaemon cannot access <code>/config/www/</code> directly — it uses HA <code>shell_command</code> services for file operations in that directory. Because a shell command's result says little about whether the files actually landed, apps confirm the outcome by requesting the same <code>/local/...</code> URL the dashboard card will load, and only publish it once Home Assistant answers.</p>
 
 
 

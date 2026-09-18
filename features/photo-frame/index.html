@@ -1050,10 +1050,12 @@
 <ol>
 <li><strong>Poll</strong> — watches the fetcher's output directory for new photos</li>
 <li><strong>Stage</strong> — atomically copies photos to a versioned generation directory via HA <code>shell_command</code></li>
+<li><strong>Verify</strong> — checks over HTTP that Home Assistant is really serving the new generation before trusting it</li>
 <li><strong>Display</strong> — publishes the current image URL on an HA sensor that the dashboard card reads</li>
 <li><strong>Swap</strong> — on the next slide advance, switches to the new generation and cleans up the old one</li>
 </ol>
 <p>This generation-swap pattern means a paused slideshow keeps its current image visible indefinitely, even after multiple batch refreshes from Immich.</p>
+<p>The verification step exists because copying a batch across NFS can occasionally outlast Home Assistant's 60-second limit on shell commands. Rather than assume a fixed delay is enough, the app polls the exact image URL the card will load and only adopts the new generation once it answers. A staging attempt that never lands is discarded and retried, so the display never shows a broken image.</p>
 <h2 id="architecture">Architecture</h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>Immich Server
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  │
@@ -1064,11 +1066,12 @@
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>photo_frame_viewer (AppDaemon)
 <a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │  stages to /config/www/photo-frame/live/&lt;gen&gt;/
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  │  via HA shell_command
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  ▼
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>sensor.wall_display_photo_frame_status
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>  │  image_url + cache_bust attributes
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  ▼
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>Custom Lovelace card (wall display dashboard)
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  │  then verifies over HTTP that HA serves /local/photo-frame/live/&lt;gen&gt;/
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>  ▼
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>sensor.wall_display_photo_frame_status
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  │  image_url + cache_bust attributes
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  ▼
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>Custom Lovelace card (wall display dashboard)
 </code></pre></div>
 <h2 id="dashboard-card">Dashboard card</h2>
 <p>The viewer uses a <code>custom:photo-display-card</code> element with pause/next/previous controls via a relay script — works on non-admin wall display accounts. Settings are managed through a companion settings popup card.</p>
