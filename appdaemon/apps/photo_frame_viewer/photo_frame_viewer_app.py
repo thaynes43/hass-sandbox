@@ -1468,20 +1468,31 @@ class PhotoFrameViewerApp(hass.Hass):
     # Publish URL + generation swap
     # ------------------------------------------------------------------
 
-    def _set_displaying_filter_name(self, name: str, *, reason: str) -> bool:
+    def _set_displaying_filter_name(
+        self, name: str, *, reason: str, publish: bool = True
+    ) -> bool:
         """Adopt *name* as the album title the card shows.
 
         The single place that changes the displayed title: it persists to the
-        state file and republishes the sensor, so the change reaches the card
-        even when the image URL did not move (a late ``batch_ready`` naming the
-        album already on screen).  Returns ``True`` when something changed.
+        state file and (by default) republishes the sensor, so the change
+        reaches the card even when the image URL did not move (a late
+        ``batch_ready`` naming the album already on screen).
+
+        ``publish=False`` is for the generation swap: the sensor carries the
+        title, ``image_url`` and ``current_gen`` in ONE attribute set, so
+        publishing here - before ``_finalize_pending()`` - would show the new
+        title over the old image for the length of two picker round trips.
+        The swap publishes once, consistently, when it is complete.
+
+        Returns ``True`` when something changed.
         """
         name = str(name or "").strip()
         if not name or name == self._displaying_filter_name:
             return False
         self._displaying_filter_name = name
         self._save_runtime_state()
-        self._publish_sensor_state()
+        if publish:
+            self._publish_sensor_state()
         self.log(
             f"PhotoFrameViewerApp: displaying filter name -> {name!r} "
             f"reason={reason}",
@@ -1501,8 +1512,10 @@ class PhotoFrameViewerApp(hass.Hass):
 
         # Promote the filter name so the card knows which filter is actually
         # being displayed (not the one the fetcher is already fetching next).
+        # publish=False: never emit the new title over the old image - the
+        # swap below publishes title, URL and gen together.
         self._set_displaying_filter_name(
-            self._pending_filter_name, reason=f"apply_{reason}"
+            self._pending_filter_name, reason=f"apply_{reason}", publish=False
         )
 
         pending_labels = self._pending_labels[:]
@@ -1530,6 +1543,10 @@ class PhotoFrameViewerApp(hass.Hass):
                 option=first_label,
             )
             self._publish_selected_local_url(first_label, reason=reason)
+        else:
+            # No labels means _publish_selected_local_url never runs; publish
+            # once here so the promoted title and gen still reach the card.
+            self._publish_sensor_state()
 
     def _publish_selected_local_url(self, label: str, *, reason: str) -> None:
         """Publish the ``/local/...`` URL for the selected label via the virtual sensor."""

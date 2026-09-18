@@ -1529,3 +1529,93 @@ class TestFilterNameRouting:
         # snapshots the title onto that new generation — routing it to the dead
         # context instead would have lost it when the re-stage overwrote it.
         assert app._staging_filter_name == "Album T"
+
+
+# ----------------------------------------------------------------------
+# Review round 5 — the generation swap publishes the sensor consistently
+# ----------------------------------------------------------------------
+
+
+class TestSwapNeverPublishesNewTitleOverOldImage:
+    """The status sensor carries the album title, ``image_url`` and
+    ``current_gen`` in ONE attribute set.  Promoting the title through the
+    shared helper must not publish before ``_finalize_pending()``, or the card
+    shows album B's title over album A's image for the length of two picker
+    round trips.
+    """
+
+    def _pending_album(self, title: str) -> tuple[PhotoFrameViewerApp, str]:
+        app = _init_with_current_gen("3")
+        _verify_round(app, exists=True)
+        app._on_tick({})
+
+        _replace_source_files(app.source_dir, ["B_1.jpg", "B_2.jpg"])
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 2, "filter": title}, {}
+        )
+        _verify_round(app, exists=True)
+        assert app._pending_gen_id is not None
+        assert app._pending_filter_name == title
+        return app, app._pending_gen_id
+
+    def test_every_sensor_publish_during_the_swap_is_self_consistent(self):
+        app, pending_gen = self._pending_album("Album B")
+        old_gen = app._current_gen_id
+        assert old_gen != pending_gen
+
+        seen: list[tuple[str, str]] = []
+        real_publish = app._publish_sensor_state
+
+        def recording_publish():
+            seen.append((app._displaying_filter_name, str(app._current_gen_id)))
+            return real_publish()
+
+        app._publish_sensor_state = recording_publish
+        app._on_tick({})
+
+        assert app._current_gen_id == pending_gen
+        assert app._displaying_filter_name == "Album B"
+        assert seen, "the swap must publish the sensor at least once"
+        assert ("Album B", str(old_gen)) not in seen, (
+            "published the NEW title while current_gen was still the OLD "
+            f"generation: {seen}"
+        )
+        assert seen[-1] == ("Album B", str(pending_gen))
+
+    def test_swap_with_no_labels_still_publishes_the_promoted_title(self):
+        app, pending_gen = self._pending_album("Album B")
+        app._pending_labels = []
+        app._pending_label_to_path = {}
+        app._pending_path_to_label = {}
+
+        seen: list[tuple[str, str]] = []
+        real_publish = app._publish_sensor_state
+
+        def recording_publish():
+            seen.append((app._displaying_filter_name, str(app._current_gen_id)))
+            return real_publish()
+
+        app._publish_sensor_state = recording_publish
+        app._apply_pending_gen(reason="tick")
+
+        assert ("Album B", str(pending_gen)) in seen
+
+    def test_late_title_for_the_album_on_screen_still_publishes(self):
+        """Route 3 keeps the default publish=True: the URL does not move, so
+        the helper's own publish is the only thing that reaches the card."""
+        app, _ = self._pending_album("Album B")
+        app._on_tick({})
+        app._displaying_filter_name = ""
+
+        seen: list[str] = []
+        real_publish = app._publish_sensor_state
+
+        def recording_publish():
+            seen.append(app._displaying_filter_name)
+            return real_publish()
+
+        app._publish_sensor_state = recording_publish
+        app._on_batch_ready(
+            "immich_fetcher_batch_ready", {"count": 2, "filter": "Album B"}, {}
+        )
+        assert seen == ["Album B"]
