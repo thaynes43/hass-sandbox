@@ -9,8 +9,11 @@
 #     Davis after "party music" in the bedroom). The Play Music script sets it to "replace".
 #   - field 'queue' (optional, LLM-facing): "add" / "next" when the request explicitly talks about the
 #     queue ("add Take Five to the queue"); it wins over enqueue_option, so "replace" by default does not
-#     take away the ability to queue something. With "add"/"next" the shuffle step is skipped,
-#     and a request without an area or player is handed back instead of using the default player.
+#     take away the ability to queue something. They only count when a targeted player is already
+#     playing (variable 'queue_effective'; otherwise the request plays now, so the Rumpus volume logic
+#     and its restore automation never see a silent "add"). With an effective add/next the shuffle step
+#     is skipped, and a request without an area or player is handed back instead of using the default
+#     player.
 # Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
 # then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
 # requests would go back to keeping the old queue. Re-apply this file.
@@ -419,7 +422,8 @@ fields:
       the request explicitly talks about the queue: "add" when the user asks to add
       or queue something ("add Take Five to the queue", "queue up some Prince"), and
       "next" when the user asks for it to play next or after this song. Both keep
-      what is playing now. Every other argument, the area included, is given exactly
+      what is playing now; when nothing is playing there, the music simply starts
+      now instead. Every other argument, the area included, is given exactly
       as for a normal request: the queue that is meant is the one in the room the
       request comes from unless another room or player is named.'
     required: false
@@ -478,6 +482,15 @@ sequence:
     response_variable: no_queue_target
 - variables:
     playing_before: '{{ integration_entities(''music_assistant'') | select(''is_state'', ''playing'') | list }}'
+- alias: Local addition - "add"/"next" only count when a targeted player is already playing; otherwise
+    the request simply plays now (adding to a silent player would start nothing, and the additional
+    actions below would still treat it as a new voice session)
+  variables:
+    queue_targets: '{{ ([area | default([], true)] | flatten | map(''area_entities'') | sum(start=[])
+      | select(''in'', integration_entities(''music_assistant'')) | list) + (player_data | default([],
+      true) | list) }}'
+    queue_effective: '{{ queue if queue | default('''', true) in [''next'', ''add''] and queue_targets
+      | select(''in'', playing_before) | list | count > 0 else '''' }}'
 - sequence: !input pre_actions
 - variables:
     play_continuously: !input play_continuously
@@ -490,7 +503,7 @@ sequence:
       album: '{{ album | default(''NA'', true) }}'
       radio_mode: '{{ false if play_continuously == ''Never'' else play_continuously
         == ''Always'' and media_type != ''radio'' or ''NA'' }}'
-      enqueue: '{{ queue if queue | default('''', true) in [''replace'', ''next'', ''add''] else (''NA'' if enqueue_option == ''Music Assistant default'' else enqueue_option) }}'
+      enqueue: '{{ queue_effective if queue_effective != '''' else (''replace'' if queue | default('''', true) in [''replace'', ''next'', ''add''] else (''NA'' if enqueue_option == ''Music Assistant default'' else enqueue_option)) }}'
 - alias: Play music using Music Assistant
   action: music_assistant.play_media
   data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
@@ -499,7 +512,7 @@ sequence:
     only adds to the running queue, whose shuffle setting is somebody's choice)
   if:
   - condition: template
-    value_template: '{{ queue | default('''', true) not in [''next'', ''add''] }}'
+    value_template: '{{ queue_effective == '''' }}'
   then:
   - action: media_player.shuffle_set
     data:

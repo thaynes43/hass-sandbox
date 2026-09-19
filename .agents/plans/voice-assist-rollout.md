@@ -380,7 +380,13 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   add/next request still needs the area, and the blueprint **hands an add/next request without an
   area or player back** ("call this tool again and give the area") instead of using the default
   player. Verified: first call without area → handed back → second call with `movie_room` →
-  queued there; "play Waterloo next" passed the area straight away.
+  queued there; "play Waterloo next" passed the area straight away. Review round 2 caught the
+  other half: an "add" aimed at an **idle** speaker starts nothing, yet the Rumpus volume logic
+  would clamp the PC speakers to 50 % and the restore automation would later clear the queue with
+  the added song in it. So `add`/`next` only count when a targeted player is **already playing**
+  (blueprint variable `queue_effective`); otherwise the request simply plays now, as a normal
+  request. Verified: idle Movie Room + "add Dancing Queen" → `enqueue: replace`, playing, 1 item;
+  then "add Waterloo" → `enqueue: add`, 2 items, current song kept, shuffle step skipped.
 - *Invented track lists did not resolve.* For "party mood" the agent first sent
   `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, so
   **none** of them resolved and the call failed (`Could not resolve [...]`; a list where only some
