@@ -36,8 +36,9 @@ area" is one click. This app is the backstop for that click (owner ruling,
    (`config/entity_registry/get_entries` — the whole registry is too large for
    one WebSocket frame here) for each entity's `platform` (the supplying
    integration), and read `device_class` from state
-   for `cover.*` entities only (the registry's partial dict does not carry it,
-   and `cover` is the only domain with a device-class rule).
+   for `cover.*` entities only (the state attribute is the *effective* class;
+   the registry holds only the user override and the integration default, and
+   `cover` is the only domain with a device-class rule).
 3. Evaluate every exposed entity against the deny rules in `rules.py` — a pure
    module with no AppDaemon or HA imports. Each entity produces **at most one**
    violation: the first rule it breaks.
@@ -112,7 +113,10 @@ positive costs a human a manual re-exposure in the HA UI:
   it. It also means a garage opener that ships *no* `device_class` is invisible
   to rule 3 — add it to `deny_entity_globs` or `deny_domains` instead.
 - **An entity with no registry entry has no `platform`**, so `deny_integrations`
-  cannot match it. Every integration-backed entity has one; entities created
+  cannot match it. The same holds for an exposed id that is not a well-formed
+  `domain.object_id`: it is left out of the registry request (HA validates the
+  id list all-or-nothing) and logged at WARNING; the domain, glob and
+  deny-by-default rules still apply to it. Every integration-backed entity has one; entities created
   purely in state (template sensors defined in YAML, `set_state` virtual
   sensors) do not.
 

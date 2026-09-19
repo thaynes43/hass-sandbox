@@ -20,10 +20,13 @@ readable and writable from AppDaemon:
     primitive HA offers.  Requires an admin token.
 
 ``config/entity_registry/get_entries``
-    Returns the registry entries; each carries ``entity_id`` and ``platform``
-    (the integration that supplies it).  It does **not** carry
-    ``device_class`` — that lives on the entity state — so callers that need a
-    device class read it from state, not from here.
+    Takes the required ``entity_ids`` list and returns ``{entity_id: entry}``
+    with the extended registry entry, or ``None`` for an entity that has no
+    registry entry.  Called in chunks for exactly the exposed ids — never
+    ``config/entity_registry/list``, whose whole-registry reply is too large for
+    one WebSocket frame on this instance.  Only ``platform`` (the supplying
+    integration) is used: the entry's ``device_class`` is merely the user
+    override, so callers that need the effective class read it from state.
 
 All of it is plain ``aiohttp`` through :class:`HaRestClient`; no AppDaemon
 import, so it is unit-testable on its own.  Like the rest of
@@ -104,13 +107,16 @@ class AssistExposureClient:
         which on this instance (~15k entities) is a 9.5 MB frame — over the
         WebSocket client's 4 MB limit (the v1.18.0 startup failure).
         """
-        ids = list(
-            dict.fromkeys(
-                text
-                for text in (str(entity_id).strip().lower() for entity_id in entity_ids)
-                if _ENTITY_ID_RE.match(text)
+        candidates = [str(entity_id).strip().lower() for entity_id in entity_ids]
+        ids = list(dict.fromkeys(text for text in candidates if _ENTITY_ID_RE.match(text)))
+        skipped = sorted({text for text in candidates if text and not _ENTITY_ID_RE.match(text)})
+        if skipped:
+            logger.warning(
+                "Skipping %d malformed entity id(s) in the registry lookup (no platform "
+                "will be known for them): %s",
+                len(skipped),
+                ", ".join(skipped[:10]),
             )
-        )
         platforms: Dict[str, str] = {}
         for offset in range(0, len(ids), REGISTRY_CHUNK_SIZE):
             chunk = ids[offset : offset + REGISTRY_CHUNK_SIZE]
