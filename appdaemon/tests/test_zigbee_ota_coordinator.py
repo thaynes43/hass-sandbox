@@ -1050,3 +1050,42 @@ def test_a_late_no_image_never_ends_the_live_attempt() -> None:
     status = coord.status()
     assert status["in_flight"] == {}
     assert status["skipped_no_image"] == ["hue_a"]
+
+
+def test_a_busy_bounce_does_not_make_the_device_the_next_pick() -> None:
+    """Z2M's still-open operation is often one we abandoned on a stall; the
+    fleet must not spin on that device every time the window lifts."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retry_base_s=100, busy_backoff_s=300)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update or check already in progress",
+            "transaction": decision.transaction,
+        }
+    )
+    clock.advance(299)
+    assert coord.decide() is None
+    clock.advance(2)  # global window lifted
+    retry = coord.decide()
+    assert retry is not None and retry.friendly_name == "hue_a"
+    # Its own schedule moved with the window, so it never jumped the queue.
+    assert coord.status()["failed_attempts_this_run"] == 0
+
+
+def test_every_completion_entry_has_the_same_shape() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    clock.advance(1001)
+    coord.decide()  # times out hue_a and drops its record
+    coord.on_update_response(
+        {"status": "ok", "transaction": decision.transaction, "data": {"id": "hue_a"}}
+    )
+    entries = coord.status()["completed_this_run"]
+    assert entries and all(
+        set(entry) == {"device", "at", "version"} for entry in entries
+    )

@@ -431,6 +431,15 @@ class OtaCoordinator:
             if matches_flight and fl is not None and not fl.adopted:
                 # Our request never started; requeue without burning an attempt.
                 self._in_flight = None
+                rec = self._devices.get(fl.friendly_name)
+                if rec is not None:
+                    # Hold this device at least as long as the global window.
+                    # Z2M's still-open operation is often one we abandoned on
+                    # a stall, and without this the device is the next pick the
+                    # instant the window lifts — the same answer, forever.
+                    rec.next_attempt_ts = max(
+                        rec.next_attempt_ts, self._global_busy_until
+                    )
                 self._last_event = f"Z2M busy; {fl.friendly_name} requeued"
             return
         if matches_flight:
@@ -576,8 +585,14 @@ class OtaCoordinator:
                 self._record_completion(fl.friendly_name, rec, {})
             else:
                 self._recently_completed[fl.friendly_name] = self.now()
+                # Same shape as every other entry; the version is simply not
+                # known here, the record having already been dropped.
                 self._completed.append(
-                    {"device": fl.friendly_name, "at": _at(self.now())}
+                    {
+                        "device": fl.friendly_name,
+                        "at": _at(self.now()),
+                        "version": "",
+                    }
                 )
             self._last_event = f"{fl.friendly_name} updated successfully"
             return
