@@ -135,6 +135,9 @@ DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     "script.voice_primary_bathroom_lights_off",
     "script.voice_primary_bathroom_shower_lights",
     "script.voice_cloffice_bright",
+    # First-floor button mirrors (lights off only): Foyer-Chaos config 1x, Entrance config 1x
+    "script.voice_kitchen_lights_off",
+    "script.voice_entrance_all_off",
     # Secure-direction door tools — the ONLY entries that reach the dangerous set.
     # Safe by construction, not by name: lock-only (front, side, bulkhead; never the
     # mudroom door) and close-only.  Re-read the script BODY in HA when reviewing these:

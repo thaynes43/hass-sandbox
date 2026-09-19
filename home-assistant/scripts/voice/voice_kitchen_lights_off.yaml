@@ -1,0 +1,17 @@
+# script.voice_kitchen_lights_off — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Mirrors a wall-switch config button; see agent-docs/voice-control-map.md (First floor).
+alias: Kitchen Lights All Off
+description: 'Voice tool. Turns off every kitchen light at once: the main recessed lights, the island,
+  the under-cabinet lights and the sink light. Same as pressing the config button on the upstairs foyer
+  ''chaos'' switch. Use for ''turn off all the kitchen lights'' or ''kitchen lights out''. For a single
+  kitchen light, control that light directly.'
+icon: mdi:lightbulb-group-off
+mode: single
+sequence:
+- action: light.turn_off
+  target:
+    entity_id:
+    - light.downstairs_kitchen_sink_inovelli_presence
+    - light.downstairs_kitchen_island_inovelli_dimmer
+    - light.downstairs_kitches_under_cabinet_inovelli_dimmer
+    - light.downstairs_kitchen_lights
