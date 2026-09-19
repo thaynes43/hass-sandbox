@@ -380,13 +380,17 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   add/next request still needs the area, and the blueprint **hands an add/next request without an
   area or player back** ("call this tool again and give the area") instead of using the default
   player. Verified: first call without area → handed back → second call with `movie_room` →
-  queued there; "play Waterloo next" passed the area straight away. Review round 2 caught the
-  other half: an "add" aimed at an **idle** speaker starts nothing, yet the Rumpus volume logic
-  would clamp the PC speakers to 50 % and the restore automation would later clear the queue with
-  the added song in it. So `add`/`next` only count when a targeted player is **already playing**
-  (blueprint variable `queue_effective`); otherwise the request simply plays now, as a normal
-  request. Verified: idle Movie Room + "add Dancing Queen" → `enqueue: replace`, playing, 1 item;
-  then "add Waterloo" → `enqueue: add`, 2 items, current song kept, shuffle step skipped.
+  queued there; "play Waterloo next" passed the area straight away. Review rounds 2 and 3 shaped
+  the rest: an "add" aimed at a speaker that is **not playing** would start nothing, yet the Rumpus
+  volume logic would clamp the PC speakers to 50 % and the restore automation would later clear the
+  queue with the added song in it; and turning such an add into `replace` would destroy a
+  **paused** queue. So `add`/`next` are passed on as they are only when **every** targeted Music
+  Assistant player is already playing (blueprint variable `queue_effective`); otherwise the
+  request becomes `play` — the song starts now and the existing queue is kept behind it. An add is
+  therefore never silent and never destructive. Verified on the Movie Room player: paused
+  227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
+  then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
+  skipped both times. Not verified on the Rumpus KEFs themselves (room occupied).
 - *Invented track lists did not resolve.* For "party mood" the agent first sent
   `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, so
   **none** of them resolved and the call failed (`Could not resolve [...]`; a list where only some
