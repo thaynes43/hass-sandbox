@@ -332,50 +332,18 @@ The satellites' own Music Assistant players (`media_player.home_assistant_voice_
 purpose, so music never lands on a box's speaker. `media_player.unnamed_room` ("Pool") and
 `media_player.shed` have no area either; Back Yard is grouped with Pool.
 
-**Rumpus Room KEFs (Tom's rulings, 2026-09-19: "KEFs, at a set volume", then 50 % by ear).** The
-KEFs are the Rumpus Room PC's speakers over HDMI and sat at 92 % for that when this was built
-(**superseded the same evening:** the speakers set 25 % by themselves on returning to the PC
-input, so "the PC level" below means *whatever level they report*; issue #159), so:
-
-- the Music Assistant KEF entity is in the Rumpus Room area, named "Rumpus Room Speakers" (aliases
-  KEFs / KEF speakers / Rumpus speakers) and exposed;
-- the blueprint is **locally patched** (`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`):
-  a `pre_actions` input that runs before `play_media`, and a `playing_before` variable. The Play
-  Music script uses them to save the speakers' volume into
-  `input_number.rumpus_room_kef_saved_volume` (live-only helper, 0 = nothing saved) and set 50 %
-  **before** playing, and sets 50 % again in the blueprint's after-play `actions`, after waiting
-  (up to 15 s) for the speaker to report `playing` — the KEFs wake from standby at their own 20 %,
-  which overrode the first set in the first live test. Both only
-  when the speakers were not already playing, so a volume someone chose mid-session survives the
-  next request. "The speaker" is resolved as *the first Music Assistant player in the Rumpus Room
-  area*, not by entity id (the KEFs have been re-registered before: `_2`, `_3`, `_4`), and exactly
-  that one player is read, clamped and restored. The volume is read into a variable before
-  anything is written, so two parallel runs (the blueprint is `mode: parallel`) can never save the
-  50 % voice level as the PC level. If the player reports no volume at that moment, the script
-  saves the usual PC level (0.92, a constant in the script) and logs a warning, so the 50 % can
-  always be undone (that constant is now out of step with the 25 % the speakers choose — it only
-  fires when no volume is reported, and the speakers re-assert 25 % on the next switch to the PC
-  input anyway; what to do with it is part of the decision in #159);
-- `automation.rumpus_room_kefs_restore_volume_after_voice_music` clears the queue (soft-fail) and
-  restores the saved volume once that player has been quiet for 10 minutes. Normal path: a state
-  trigger on the KEF entity (verified: fired 10 min after the stop, 50 % → 92 %, helper → 0).
-  Backstop: a 10-minute tick with the same conditions plus "the helper is at least ~10 minutes
-  old", for a request that saved the volume and then never played, an HA restart mid-wait, or a
-  re-registered entity; the helper-age condition keeps a tick from undoing a request that is just
-  starting.
-
-Tom confirmed (2026-09-19) that the KEFs switch back to the PC's HDMI input by themselves as soon
-as the PC makes a sound, so nothing has to manage their input, and that 92 % on the KEFs is normal
-(Windows is the second volume lever and attenuates it) — so restoring it is right. (What the
-recorder showed later that day: the speakers do not keep it; see #159.)
-
-The Music Assistant player only reports its own queue: over ten days of daily PC use on the HDMI
-input it was never `playing` (only `idle`), and it stayed `idle` on 2026-09-19 while Tom had PC
-audio running between the test plays — so "already playing" in the script can only mean voice/MA
-music, and PC audio never makes a request skip the 50 % start. The wait for `playing` sits inside
-the tool call on purpose: it costs a second or two normally and up to 15 s only when playback never
-starts; re-clamping from an automation on every `playing` edge instead would also override a
-volume someone chose and then paused/resumed.
+**Rumpus Room KEFs: no special handling (Tom's ruling, 2026-09-19 evening).** The KEFs are the
+Rumpus PC's speakers over HDMI; the Music Assistant KEF entity is in the Rumpus Room area, named
+"Rumpus Room Speakers" (aliases KEFs / KEF speakers / Rumpus speakers) and exposed, so music lands
+there like in any other room. An earlier version of the Play Music script saved "the PC volume",
+started voice music at 50 % and restored the level with an automation ten minutes after the music
+stopped. It was removed the same day — script `pre_actions`/`actions`, the helper
+`input_number.rumpus_room_kef_saved_volume` and
+`automation.rumpus_room_kefs_restore_volume_after_voice_music` — because it was solving a problem
+that does not exist: the speakers keep their own volume per input (streaming plays at the level
+they remember for it, 50 % at the time; the PC input comes back at its own level by itself), and
+the owner's ruling is to let them play like all the rest and smooth out anything odd later
+(issue #159, closed). The blueprint's `pre_actions` input stays, unused.
 
 **Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
 the bedroom).** Two defects found by that test, plus a third (no default player, routing order
@@ -400,29 +368,16 @@ the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and
   area or player back** ("call this tool again and give the area") instead of using the default
   player. Verified: first call without area → handed back → second call with `movie_room` →
   queued there; "play Waterloo next" passed the area straight away. Review rounds 2 and 3 shaped
-  the rest: an "add" aimed at a speaker that is **not playing** would start nothing, yet the Rumpus
-  volume logic would clamp the PC speakers to 50 % and the restore automation would later clear the
-  queue with the added song in it; and turning such an add into `replace` would destroy a
-  **paused** queue. So `add`/`next` are passed on as they are only when **every** targeted Music
+  the rest: an "add" aimed at a speaker that is **not playing** would start nothing (a silent success),
+  and turning such an add into `replace` would destroy a **paused** queue. So `add`/`next` are passed on as they are only when **every** targeted Music
   Assistant player is already playing (blueprint variable `queue_effective`; unavailable/unknown
   players are not counted, so a stale entity cannot switch queueing off); otherwise the
   request becomes `play` — the song starts now and the existing queue is kept behind it. An add is
   therefore never silent and never destructive. Verified on the Movie Room player: paused
   227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
   then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
-  skipped both times. Verified on the Rumpus KEFs the same evening (house empty; the queue there
-  was the same 227-item Miles Davis artist queue, read back with `get_queue` at every step): add
-  while playing → appended (227 → 228 items), 50 %, saved level untouched; a stop, then add →
-  `play`, song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; then a final
-  stop at 18:34:50, and 10 minutes of idle later (18:44:54) the restore automation put the KEFs
-  back to 25 %, cleared the helper and emptied the queue. The saved level survived the second
-  request because the script only saves when the helper is empty (`numeric_state … below: 0.005`),
-  not because of the "not already playing" condition. **The 25 % is not the 92 % PC level described
-  above, and that assumption does not hold:** recorder history shows the KEFs set 25 % *by
-  themselves* each time they switch back to the PC (`tv`) input after voice music (13:44:47, two
-  minutes after the automation had restored 92 %; again at 14:26:43 from 50 %, before any restore
-  ran), and the save/restore logic has faithfully preserved that level since. Evidence, the owner's
-  decision ("leave 25 %, I'll look at home") and the options afterwards: issue #159.
+  skipped both times. The same two cases were repeated on the Rumpus KEFs that evening (227 →
+  228 → 229 items) before their volume logic was removed.
   Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
   invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
   the KEFs played (before the hand-back that request would have gone to the bedroom default);
@@ -452,9 +407,7 @@ with the house empty, played 5.5 minutes without a stream error although the lin
 changed — "marginal, currently working", not fixed. Plan agreed with Tom: SonosNet off + soundbars
 wired (`backlog/002-sonosnet-off-wired-soundbars.md`).
 
-Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
-were awake for every run after that step was added). Still to
-do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
+Still to do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
 being Music Assistant-only (no turn_on/turn_off). The separate "ChatGPT for Music Assistant" agent
 (`conversation.chatgpt`) belongs to the older JSON-prompt approach and is not used by the script.
 

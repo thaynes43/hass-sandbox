@@ -1,18 +1,13 @@
 # script.llm_script_for_music_assistant_voice_requests ("Play Music") — the one music tool every room
 # agent calls. Blueprint script; this mirrors its inputs (edited live via MCP, 2026-09-19).
-# Blueprint: home-assistant/blueprints/music_assistant_llm_voice_script.yaml (locally patched:
-# pre_actions + playing_before + enqueue_option + the optional LLM field 'queue'). How the target
-# speaker is chosen: .agents/plans/voice-assist-rollout.md (Phase 3). The helper input_number.rumpus_room_kef_saved_volume is live-only (never mirrored).
-# enqueue_option: replace = a spoken request starts a fresh queue (Music Assistant keeps the old queue
-# after a TRACK request otherwise). media_id_prompt = the blueprint default plus: multi-artist lists as
-# "Artist name - Song name", main artist only, at most five songs for a mood request, and retry with
-# fewer songs when the tool could resolve none of them (2026-09-19, after the bedroom party-music test).
-# area_prompt = rewritten as four cases (a room named / a speaker named: no area at all / both named
-# on purpose / neither: the area the request comes from, also for add/next and single songs), because
-# the agent left the area out on some requests and must not add its own room to a named speaker.
-# description = lists the real arguments, including 'queue'.
-# NO default_player (owner ruling 2026-09-19, "hand it back, never guess"): a request without an area
-# or player is returned to the agent by the blueprint; it never falls back to a speaker in another room.
+# Blueprint: home-assistant/blueprints/music_assistant_llm_voice_script.yaml (locally patched, its
+# header lists how). How the target speaker is chosen: .agents/plans/voice-assist-rollout.md (Phase 3).
+# No speaker gets special treatment: the Rumpus Room KEF volume logic (pre_actions/actions, a helper
+# and a restore automation) was removed on the owner's ruling, 2026-09-19 — the KEFs keep their own
+# volume per input and play like every other room.
+# enqueue_option: replace = a spoken request starts a fresh queue. media_id_prompt / area_prompt:
+# rewritten for track-list format and for always passing the room. NO default_player ("hand it back,
+# never guess"): a request without an area or player is returned to the agent by the blueprint.
 alias: Play Music
 use_blueprint:
   path: music-assistant/llm_voice_script.yaml
@@ -33,72 +28,6 @@ use_blueprint:
 
       If the request is "Play the artist Guns and Roses", "shuffle" should be set to false, since the
       request does not mention or request to shuffle. '
-    pre_actions:
-    - alias: The Rumpus Room speaker = the first Music Assistant player in that area (empty when there
-        is none)
-      variables:
-        rumpus_player: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
-          | select(''match'', ''media_player'') | first | default('''', true) }}'
-        rumpus_pc_volume_fallback: 0.92
-    - alias: Read its volume BEFORE touching it (parallel runs must never save the voice level); 0 = no
-        speaker or no reading
-      variables:
-        rumpus_volume_read: '{{ (state_attr(rumpus_player, ''volume_level'') | float(0)) if rumpus_player
-          != '''' else 0 }}'
-    - alias: 'Rumpus Room speaker: remember its volume and start voice music at 50%'
-      if:
-      - condition: template
-        value_template: '{{ rumpus_player != '''' and (''rumpus_room'' in (area | default([], true)) or
-          rumpus_player in player_data) and rumpus_player not in playing_before }}'
-      then:
-      - alias: Save the volume once (0 means nothing saved). No reading (speaker asleep or reconnecting)
-          = save the usual PC level instead, so the 50% below can always be undone
-        if:
-        - condition: numeric_state
-          entity_id: input_number.rumpus_room_kef_saved_volume
-          below: 0.005
-        then:
-        - if:
-          - condition: template
-            value_template: '{{ rumpus_volume_read <= 0.005 }}'
-          then:
-          - action: system_log.write
-            data:
-              level: warning
-              logger: voice.play_music
-              message: Rumpus Room speaker {{ rumpus_player }} reported no volume; saved the fallback
-                {{ rumpus_pc_volume_fallback }} as the level to restore.
-        - action: input_number.set_value
-          target:
-            entity_id: input_number.rumpus_room_kef_saved_volume
-          data:
-            value: '{{ rumpus_volume_read if rumpus_volume_read > 0.005 else rumpus_pc_volume_fallback
-              }}'
-      - action: media_player.volume_set
-        target:
-          entity_id: '{{ rumpus_player }}'
-        data:
-          volume_level: 0.5
-    actions:
-    - variables:
-        rumpus_player: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
-          | select(''match'', ''media_player'') | first | default('''', true) }}'
-    - alias: 'Rumpus Room speaker: set 50% again once playing (it wakes from standby at its own level)'
-      if:
-      - condition: template
-        value_template: '{{ rumpus_player != '''' and (''rumpus_room'' in (area | default([], true)) or
-          rumpus_player in player_data) and rumpus_player not in playing_before }}'
-      then:
-      - alias: 'Wait until the speaker is really playing: waking from standby takes seconds and resets
-          its volume'
-        wait_template: '{{ is_state(rumpus_player, ''playing'') }}'
-        timeout: 00:00:15
-        continue_on_timeout: true
-      - action: media_player.volume_set
-        target:
-          entity_id: '{{ rumpus_player }}'
-        data:
-          volume_level: 0.5
     enqueue_option: replace
     media_id_prompt: 'This argument is mandatory and must always be provided no matter what!
 
