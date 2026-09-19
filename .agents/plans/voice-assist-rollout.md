@@ -260,7 +260,9 @@ spoken-output rules, the question-mark/open-mic rule with its reason, room conte
 tools, the never-by-voice list. Backup and rationale: `agent-docs/voice-agent-prompts.md`.
 Verified text-only (`scripts/voice-bench/run.sh persona_check.py`): personas intact, no trailing
 question marks, brightness spoken as a percentage, lock requests refused in character.
-**Not yet verified by voice** on Kitchen / Movie Room / Rumpus.
+**Not yet verified by voice** on Movie Room / Rumpus; on Kitchen only one spoken music request
+(2026-09-19, played fine) — lights, state questions, door tools and the persona are still unspoken
+there.
 
 Lesson: a synthetic *voice* bench is not read-only on a Whisper pipeline — Piper audio of "Are the
 rumpus room lights on?" became "Either Rumpus rim lights on" and the old agent switched the
@@ -370,8 +372,10 @@ the tool call on purpose: it costs a second or two normally and up to 15 s only 
 starts; re-clamping from an automation on every `playing` edge instead would also override a
 volume someone chose and then paused/resumed.
 
-**Queue and track lists (2026-09-19, after Tom's first spoken music test in the bedroom).** Two
-defects, both fixed live and verified by text as the Movie Room satellite (empty room, AVR path):
+**Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
+the bedroom).** Two defects found by that test, plus a third (no default player, routing order
+item 4 above) found while fixing them; all fixed live and verified by text-as-satellite — mostly on
+the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and Kitchen boxes:
 
 - *Old queue came back.* Music Assistant's default `enqueue` for a **track** request is `play`
   (play now, keep the old queue); artists, albums and playlists default to `replace`
@@ -403,10 +407,14 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
   skipped both times. Verified on the Rumpus KEFs the same evening (house empty; the queue there
   was the same 227-item Miles Davis artist queue, read back with `get_queue` at every step): add
-  while playing → appended (227 → 228 items), 50 %, saved PC level untouched; a stop, then add →
+  while playing → appended (227 → 228 items), 50 %, saved level untouched; a stop, then add →
   `play`, song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; then a final
   stop at 18:34:50, and 10 minutes of idle later (18:44:54) the restore automation put the KEFs
-  back to 25 %, cleared the helper and emptied the queue.
+  back to 25 %, cleared the helper and emptied the queue. Note the 25 %: it is simply the level
+  the KEFs were sitting at that day (seen at 15:33, before any test), **not** the usual 92 % PC
+  level described above — the script saves and restores whatever the player reports, and did so
+  correctly. Why they sat at 25 % is unexplained (Tom's own setting, or the 14:32 restore earlier
+  that day putting back a low reading); Tom has been told.
   Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
   invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
   the KEFs played (before the hand-back that request would have gone to the bedroom default);
