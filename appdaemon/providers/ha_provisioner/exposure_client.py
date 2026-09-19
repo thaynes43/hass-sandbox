@@ -19,11 +19,14 @@ readable and writable from AppDaemon:
     Takes ``assistants``, ``entity_ids`` and ``should_expose`` — the only bulk
     primitive HA offers.  Requires an admin token.
 
-``config/entity_registry/list``
-    Returns the registry entries; each carries ``entity_id`` and ``platform``
-    (the integration that supplies it).  It does **not** carry
-    ``device_class`` — that lives on the entity state — so callers that need a
-    device class read it from state, not from here.
+``config/entity_registry/get_entries``
+    Takes the required ``entity_ids`` list and returns ``{entity_id: entry}``
+    with the extended registry entry, or ``None`` for an entity that has no
+    registry entry.  Called in chunks for exactly the exposed ids — never
+    ``config/entity_registry/list``, whose whole-registry reply is too large for
+    one WebSocket frame on this instance.  Only ``platform`` (the supplying
+    integration) is used: the entry's ``device_class`` is merely the user
+    override, so callers that need the effective class read it from state.
 
 All of it is plain ``aiohttp`` through :class:`HaRestClient`; no AppDaemon
 import, so it is unit-testable on its own.  Like the rest of
@@ -34,6 +37,7 @@ environment variable holding it.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, Iterable, List
 
 from .ha_rest_client import HaRestClient
@@ -43,6 +47,17 @@ logger = logging.getLogger(__name__)
 #: The assistant id used by HA's built-in "Assist" conversation pipelines.
 CONVERSATION_ASSISTANT = "conversation"
 
+
+#: Registry entries requested per WebSocket call (an extended entry is ~1-2 KB,
+#: so 200 stays far below the 4 MB frame limit).  Each call opens and
+#: authenticates its own WebSocket, so do not shrink this without reason: the
+#: cost of a smaller chunk is one more connection per chunk, every check.
+REGISTRY_CHUNK_SIZE = 200
+
+#: HA validates ``entity_ids`` all-or-nothing, so one malformed id would fail the
+#: whole chunk — and with it the whole check.  Ids that do not look like
+#: ``domain.object_id`` are skipped here instead (they get an empty platform).
+_ENTITY_ID_RE = re.compile(r"^(?!.+__)(?!_)[\da-z_]+(?<!_)\.(?!_)[\da-z_]+(?<!_)$")
 
 class AssistExposureClient:
     """Authenticated client for HA's voice-assistant exposure WebSocket API."""
@@ -79,28 +94,48 @@ class AssistExposureClient:
             if isinstance(assistants, dict) and assistants.get(assistant)
         )
 
-    async def list_entity_platforms(self) -> Dict[str, str]:
-        """Return ``{entity_id: platform}`` for every entity in the registry.
+    async def list_entity_platforms(self, entity_ids: Iterable[str]) -> Dict[str, str]:
+        """Return ``{entity_id: platform}`` for the given entities.
 
         ``platform`` is the integration domain (e.g. ``intellicenter``,
         ``gecko``, ``hue``) — the field the guard's integration deny rules
         match on.  Entities that exist only as state (no registry entry) are
         absent; callers should default them to an empty platform.
+
+        Ids are normalised (``strip().lower()``, de-duplicated) before the
+        request and the returned dict is keyed by the NORMALISED id — callers
+        must look results up with the same normalisation.
+
+        Uses ``config/entity_registry/get_entries`` for just these ids, in
+        chunks: ``config/entity_registry/list`` returns the WHOLE registry,
+        which on this instance (~15k entities) is a 9.5 MB frame — over the
+        WebSocket client's 4 MB limit (the v1.18.0 startup failure).
         """
-        result = await self._ws_result({"type": "config/entity_registry/list"})
-        if not isinstance(result, list):
-            raise RuntimeError(
-                "Unexpected entity_registry/list payload: expected a list, "
-                f"got {type(result).__name__}"
+        candidates = [str(entity_id).strip().lower() for entity_id in entity_ids]
+        ids = list(dict.fromkeys(text for text in candidates if _ENTITY_ID_RE.match(text)))
+        skipped = sorted({text for text in candidates if text and not _ENTITY_ID_RE.match(text)})
+        if skipped:
+            logger.warning(
+                "Skipping %d malformed entity id(s) in the registry lookup (no platform "
+                "will be known for them): %s",
+                len(skipped),
+                ", ".join(skipped[:10]),
             )
         platforms: Dict[str, str] = {}
-        for entry in result:
-            if not isinstance(entry, dict):
-                continue
-            entity_id = str(entry.get("entity_id") or "").strip()
-            if not entity_id:
-                continue
-            platforms[entity_id] = str(entry.get("platform") or "").strip().lower()
+        for offset in range(0, len(ids), REGISTRY_CHUNK_SIZE):
+            chunk = ids[offset : offset + REGISTRY_CHUNK_SIZE]
+            result = await self._ws_result(
+                {"type": "config/entity_registry/get_entries", "entity_ids": chunk}
+            )
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    "Unexpected entity_registry/get_entries payload: expected a dict, "
+                    f"got {type(result).__name__}"
+                )
+            for entity_id, entry in result.items():
+                if not isinstance(entry, dict):
+                    continue  # None = no registry entry (state-only entity)
+                platforms[str(entity_id)] = str(entry.get("platform") or "").strip().lower()
         return platforms
 
     # ------------------------------------------------------------------

@@ -197,7 +197,7 @@ zigbee_ota (standalone — MQTT + HASS plugins only)
 
 assist_exposure_guard (standalone — no app depends on it and it depends on no app)
   └─ depends on: providers/ha_provisioner AssistExposureClient
-       (homeassistant/expose_entity{,/list} + config/entity_registry/list over the
+       (homeassistant/expose_entity{,/list} + config/entity_registry/get_entries over the
         admin WebSocket API; requires an admin token)
   └─ pure rule engine in assist_exposure_guard/rules.py (no AppDaemon imports)
   └─ listens for entity_registry_updated (debounced) + a periodic timer

@@ -31,11 +31,16 @@ area" is one click. This app is the backstop for that click (owner ruling,
 1. On startup, every `check_interval_minutes`, and — debounced by
    `registry_debounce_s` — whenever HA fires `entity_registry_updated`, list
    the entities exposed to the `conversation` assistant with the admin
-   WebSocket command `homeassistant/expose_entity/list`.
-2. Fetch the entity registry (`config/entity_registry/list`) for each entity's
-   `platform` (the supplying integration), and read `device_class` from state
-   for `cover.*` entities only (the registry's partial dict does not carry it,
-   and `cover` is the only domain with a device-class rule).
+   WebSocket command `homeassistant/expose_entity/list`. The ids are normalised
+   once (`strip().lower()`, de-duplicated) and that single value is used for
+   every lookup below, in the sensor attributes and in the un-expose call.
+2. Fetch the registry entries of **those entities only**
+   (`config/entity_registry/get_entries` — the whole registry is too large for
+   one WebSocket frame here) for each entity's `platform` (the supplying
+   integration), and read `device_class` from state
+   for `cover.*` entities only (the state attribute is the *effective* class;
+   the registry holds only the user override and the integration default, and
+   `cover` is the only domain with a device-class rule).
 3. Evaluate every exposed entity against the deny rules in `rules.py` — a pure
    module with no AppDaemon or HA imports. Each entity produces **at most one**
    violation: the first rule it breaks.
@@ -100,7 +105,7 @@ run.
 
 ## Known limitations
 
-Both are deliberate fail-open choices — this app is a backstop, and a false
+These are deliberate fail-open choices — this app is a backstop, and a false
 positive costs a human a manual re-exposure in the HA UI:
 
 - **A cover whose `device_class` cannot be read is treated as unclassified**
@@ -110,9 +115,14 @@ positive costs a human a manual re-exposure in the HA UI:
   it. It also means a garage opener that ships *no* `device_class` is invisible
   to rule 3 — add it to `deny_entity_globs` or `deny_domains` instead.
 - **An entity with no registry entry has no `platform`**, so `deny_integrations`
-  cannot match it. Every integration-backed entity has one; entities created
-  purely in state (template sensors defined in YAML, `set_state` virtual
+  cannot match it. Every integration-backed entity has a registry entry; entities
+  created purely in state (template sensors defined in YAML, `set_state` virtual
   sensors) do not.
+- **A malformed exposed id has no `platform` either.** An id that is not a
+  well-formed `domain.object_id` is left out of the registry request (HA
+  validates the id list all-or-nothing) and logged at WARNING by
+  `AssistExposureClient` (the AppDaemon main log, not this app's log); the domain, glob
+  and deny-by-default rules still apply to it.
 
 ## Notifications
 
