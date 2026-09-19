@@ -401,10 +401,12 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   therefore never silent and never destructive. Verified on the Movie Room player: paused
   227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
   then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
-  skipped both times. Verified on the Rumpus KEFs the same evening (house empty): add while
-  playing → appended (228 items), 50 %, saved PC level untouched; add after a stop → `play`,
-  song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; ten minutes after the
-  stop the restore automation put the KEFs back to 25 %, cleared the helper and emptied the queue.
+  skipped both times. Verified on the Rumpus KEFs the same evening (house empty; the queue there
+  was the same 227-item Miles Davis artist queue, read back with `get_queue` at every step): add
+  while playing → appended (227 → 228 items), 50 %, saved PC level untouched; a stop, then add →
+  `play`, song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; then a final
+  stop at 18:34:50, and 10 minutes of idle later (18:44:54) the restore automation put the KEFs
+  back to 25 %, cleared the helper and emptied the queue.
   Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
   invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
   the KEFs played (before the hand-back that request would have gone to the bedroom default);
@@ -428,8 +430,11 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   playlists for "party hits", only library playlists.
 
 The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
-is wireless on SonosNet with marginal links and dropped every stream (`ERROR_LSE`,
-`ERROR_BUFFERING`). Plan agreed with Tom: SonosNet off + soundbars wired (see the handoff).
+is wireless on SonosNet with marginal links and dropped every stream that afternoon (`ERROR_LSE`,
+`ERROR_BUFFERING`). A text re-test at 18:35, after Tom had moved SonosNet from channel 11 to 1 and
+with the house empty, played 5.5 minutes without a stream error although the link numbers had not
+changed — "marginal, currently working", not fixed. Plan agreed with Tom: SonosNet off + soundbars
+wired (`backlog/002-sonosnet-off-wired-soundbars.md`).
 
 Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
 were awake for every run after that step was added). Still to
