@@ -1,7 +1,7 @@
-# script.voice_shades — the one voice tool for the Hunter Douglas shades (created live via MCP, 2026-09-18).
+# script.voice_shades — the one voice tool for the Hunter Douglas shades (created live via MCP, 2026-09-18;
+# kids' rooms, kids' bathroom and the whole-upstairs scenes added 2026-09-19 on Tom's ruling).
 # Fires the same gateway scenes as the ZEN32 buttons and the schedules. Tom's ruling: a plain
 # "open" means tilt-open upstairs and fully open downstairs, like the buttons on each floor.
-# Kids' rooms and the whole-upstairs scene are deliberately absent until that ruling is made.
 alias: Window Shades
 description: 'Voice tool for the Hunter Douglas window shades. ALWAYS use this tool to move shades or
   blinds. It fires the same gateway scene the wall scene-controller buttons use. Pick the room and the
@@ -16,7 +16,8 @@ max: 5
 fields:
   room:
     name: Room
-    description: Which room's shades to move. 'downstairs' moves every first-floor shade at once.
+    description: Which room's shades to move. blue_room is Jackson's room and pink_room is Penelope's
+      room. 'upstairs' moves every second-floor shade at once and 'downstairs' every first-floor shade.
     required: true
     selector:
       select:
@@ -24,6 +25,11 @@ fields:
         - primary_bedroom
         - primary_bathroom
         - cloffice
+        - blue_room
+        - white_room
+        - pink_room
+        - kids_bathroom
+        - upstairs
         - kitchen
         - living_room
         - dining_room
@@ -92,6 +98,31 @@ sequence:
         open: scene.hunter_douglas_gateway_downstairs_open
         tilt: scene.hunter_douglas_gateway_downstairs_tilt_open
         close: scene.hunter_douglas_gateway_downstairs_close
+      blue_room:
+        floor: up
+        open: scene.laundry_gateway_blue_room_open
+        tilt: scene.laundry_gateway_blue_room_tilt_open
+        close: scene.laundry_gateway_blue_room_close
+      white_room:
+        floor: up
+        open: scene.laundry_gateway_white_room_open
+        tilt: scene.laundry_gateway_white_room_tilt_open
+        close: scene.laundry_gateway_white_room_close
+      pink_room:
+        floor: up
+        open: scene.laundry_gateway_pink_room_open
+        tilt: scene.laundry_gateway_pink_room_tilt_open
+        close: scene.laundry_gateway_pink_room_close
+      kids_bathroom:
+        floor: up
+        open: scene.laundry_gateway_2nd_floor_bath_open
+        tilt: scene.laundry_gateway_2nd_floor_bath_tilt_open
+        close: scene.laundry_gateway_2nd_floor_bath_close
+      upstairs:
+        floor: up
+        open: scene.hunter_douglas_gateway_upstairs_open
+        tilt: scene.hunter_douglas_gateway_upstairs_tilt_open
+        close: scene.hunter_douglas_gateway_upstairs_close
     scene_id: '{% set r = scenes.get(room, {}) %}{% if position == ''close'' %}{{ r.get(''close'', '''')
       }}{% elif position == ''privacy'' %}{{ r.get(''privacy'', r.get(''close'', '''')) }}{% elif position
       == ''fully_open'' %}{{ r.get(''open'', '''') }}{% elif position == ''tilt_open'' %}{{ r.get(''tilt'',

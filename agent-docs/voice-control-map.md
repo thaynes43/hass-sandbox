@@ -174,8 +174,9 @@ Wrong handles found on 2026-09-18 — all three corrected on Tom's rulings (2026
 `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the
 five-room suite group; `light.upstairs_primary_bath_lights` now answers only to "bathroom
 recessed lights", and the whole bathroom is the `voice_primary_bathroom_lights_on/_off` pair.
-Still open: `media_player.blue_room_lg_tv` ("Jackson's TV") and `media_player.kids_bathroom` are exposed
-house-wide.
+Kids' rooms: Tom ruled on 2026-09-19 that voice gets everything the ZEN32 does, from any box —
+fan light, fan, nightstand bulb, shades (through `script.voice_shades`), Sonos and TV in all three
+rooms; the ZEN32 relay switches stay unexposed.
 
 Defects found (open): `script.single_button_dimming_start/_stop` unavailable since the
 2026-09-18 restart (`_2` twins healthy) — cloffice hold-dimming dead; ZEN32 big 3x hard reset dead
