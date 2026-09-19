@@ -401,7 +401,14 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   therefore never silent and never destructive. Verified on the Movie Room player: paused
   227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
   then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
-  skipped both times. Not verified on the Rumpus KEFs themselves (room occupied).
+  skipped both times. Verified on the Rumpus KEFs the same evening (house empty): add while
+  playing → appended (228 items), 50 %, saved PC level untouched; add after a stop → `play`,
+  song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; ten minutes after the
+  stop the restore automation put the KEFs back to 25 %, cleared the helper and emptied the queue.
+  Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
+  invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
+  the KEFs played (before the hand-back that request would have gone to the bedroom default);
+  three "play <song> by <artist>" requests as the Kitchen box all carried `kitchen`.
   **Open for the TVs/AVR work below:** `queue_targets` ignores `unavailable`/`unknown` players but
   not `off`/`standby` ones. Every room has exactly one Music Assistant player today and none of
   them reports `off`, but a TV- or AVR-backed MA player added to a room would, while powered down,
