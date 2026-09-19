@@ -12,9 +12,14 @@ over. Music Assistant logged `ERROR_LSE`, `ERROR_BUFFERING`, `ERROR_LOST_CONNECT
 "Player Primary Bedroom disconnected prematurely from stream". It is not a voice defect: the
 bedroom Beam (`media_player.primary_bedroom`, 192.168.0.6) is **wireless on SonosNet** with
 marginal links (34–41; above 45 is good) to the wired Amps and 2,000–3,000 PHY errors per second,
-the worst in the house together with its Sub Mini. Moving SonosNet from channel 11 to channel 1
-(Tom, 2026-09-19; Zigbee is on channel 15, 2.4 GHz airtime is 44–66 % on every AP) did **not**
-help — it is distance and walls, not the channel. The kitchen Amp is wired and plays smoothly.
+the worst in the house together with its Sub Mini. Tom moved SonosNet from channel 11 (shared with
+the Primary Closet AP a few metres from the Beam) to channel 1 that afternoon (Zigbee is on
+channel 15; 2.4 GHz airtime is 44–66 % on every AP). The link numbers and the PHY error rate did
+**not** change, but a re-test at 18:35 **played 5.5 minutes across two tracks without a single
+stream error** — with the house empty, so a quieter 2.4 GHz band and the channel move cannot be
+told apart. Treat the Beam as "marginal, currently working", not as fixed: signal strength is
+still poor and the first evening with people home is the real test. The kitchen Amp is wired and
+plays smoothly.
 
 Years ago Tom disabled the soundbars' switch ports because wired Sonos units caused network loops:
 every wired SonosNet-capable unit bridges Ethernet to the 2.4 GHz mesh, and Sonos's legacy 802.1D

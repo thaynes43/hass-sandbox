@@ -260,7 +260,9 @@ spoken-output rules, the question-mark/open-mic rule with its reason, room conte
 tools, the never-by-voice list. Backup and rationale: `agent-docs/voice-agent-prompts.md`.
 Verified text-only (`scripts/voice-bench/run.sh persona_check.py`): personas intact, no trailing
 question marks, brightness spoken as a percentage, lock requests refused in character.
-**Not yet verified by voice** on Kitchen / Movie Room / Rumpus.
+**Not yet verified by voice** on Movie Room / Rumpus; on Kitchen only one spoken music request
+(2026-09-19, played fine) — lights, state questions, door tools and the persona are still unspoken
+there.
 
 Lesson: a synthetic *voice* bench is not read-only on a Whisper pipeline — Piper audio of "Are the
 rumpus room lights on?" became "Either Rumpus rim lights on" and the old agent switched the
@@ -318,8 +320,8 @@ before the fix). Pause / stop / volume / next are local intents (no LLM, ~0.1 s)
 | Satellite (device area) | Room-less "play X" lands on | Checked |
 |---|---|---|
 | Primary Bedroom | `media_player.primary_bedroom` (Sonos Beam) | text-as-satellite: agent passed `primary_bedroom`, Beam played, "stop the music" paused locally |
-| Kitchen | `media_player.kitchen` (Sonos Amp) | by configuration only |
-| Movie Room | `media_player.movie_room` (Sonos Port — audible only if the AVR is on its input; not checked) | by configuration only |
+| Kitchen | `media_player.kitchen` (Sonos Amp) | Tom's spoken request on 2026-09-19 played there; three text-as-satellite single-song requests carried `kitchen` and played |
+| Movie Room | `media_player.movie_room` (Sonos Port — audible only if the AVR is on its input; not checked) | text-as-satellite, many runs on 2026-09-19 (the empty-room test bed): agent passed `movie_room`, the Port played; never heard by anyone |
 | Rumpus Room | `media_player.ls50_wireless_ii_174476_4` (KEF LS50 W II via Music Assistant), since 2026-09-19 | text-as-satellite: played on the KEFs, "stop the music" paused locally |
 
 Test as a satellite without speaking: `scripts/voice-bench/run.sh bench.py "MODE=pipe REPS=1
@@ -370,8 +372,10 @@ the tool call on purpose: it costs a second or two normally and up to 15 s only 
 starts; re-clamping from an automation on every `playing` edge instead would also override a
 volume someone chose and then paused/resumed.
 
-**Queue and track lists (2026-09-19, after Tom's first spoken music test in the bedroom).** Two
-defects, both fixed live and verified by text as the Movie Room satellite (empty room, AVR path):
+**Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
+the bedroom).** Two defects found by that test, plus a third (no default player, routing order
+item 4 above) found while fixing them; all fixed live and verified by text-as-satellite — mostly on
+the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and Kitchen boxes:
 
 - *Old queue came back.* Music Assistant's default `enqueue` for a **track** request is `play`
   (play now, keep the old queue); artists, albums and playlists default to `replace`
@@ -401,7 +405,20 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   therefore never silent and never destructive. Verified on the Movie Room player: paused
   227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
   then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
-  skipped both times. Not verified on the Rumpus KEFs themselves (room occupied).
+  skipped both times. Verified on the Rumpus KEFs the same evening (house empty; the queue there
+  was the same 227-item Miles Davis artist queue, read back with `get_queue` at every step): add
+  while playing → appended (227 → 228 items), 50 %, saved level untouched; a stop, then add →
+  `play`, song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; then a final
+  stop at 18:34:50, and 10 minutes of idle later (18:44:54) the restore automation put the KEFs
+  back to 25 %, cleared the helper and emptied the queue. Note the 25 %: it is simply the level
+  the KEFs were sitting at that day (seen at 15:33, before any test), **not** the usual 92 % PC
+  level described above — the script saves and restores whatever the player reports, and did so
+  correctly. Why they sat at 25 % is unexplained (Tom's own setting, or the 14:32 restore earlier
+  that day putting back a low reading); Tom has been told.
+  Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
+  invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
+  the KEFs played (before the hand-back that request would have gone to the bedroom default);
+  three "play <song> by <artist>" requests as the Kitchen box all carried `kitchen`.
   **Open for the TVs/AVR work below:** `queue_targets` ignores `unavailable`/`unknown` players but
   not `off`/`standby` ones. Every room has exactly one Music Assistant player today and none of
   them reports `off`, but a TV- or AVR-backed MA player added to a room would, while powered down,
@@ -421,8 +438,11 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   playlists for "party hits", only library playlists.
 
 The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
-is wireless on SonosNet with marginal links and dropped every stream (`ERROR_LSE`,
-`ERROR_BUFFERING`). Plan agreed with Tom: SonosNet off + soundbars wired (see the handoff).
+is wireless on SonosNet with marginal links and dropped every stream that afternoon (`ERROR_LSE`,
+`ERROR_BUFFERING`). A text re-test at 18:35, after Tom had moved SonosNet from channel 11 to 1 and
+with the house empty, played 5.5 minutes without a stream error although the link numbers had not
+changed — "marginal, currently working", not fixed. Plan agreed with Tom: SonosNet off + soundbars
+wired (`backlog/002-sonosnet-off-wired-soundbars.md`).
 
 Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
 were awake for every run after that step was added). Still to
