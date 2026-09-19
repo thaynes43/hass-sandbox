@@ -1,10 +1,11 @@
 # script.voice_primary_bathroom_lights_on — voice tool exposed to Assist (created live via MCP, 2026-09-19).
 # Mirrors a physical control or a ruling; see .agents/plans/voice-assist-rollout.md (Phase 2).
 alias: Primary Bathroom Lights On
-description: 'Voice tool. Turns on all the primary bathroom lights together: vanity, shower, fan light
-  and the recessed lights. Same as pressing the config button on the bathroom recessed-light switch. Use
-  for ''turn on the bathroom lights'' in the primary bathroom or primary suite. The lights turn themselves
-  off a few minutes after the bathroom is empty.'
+description: 'Voice tool. Turns ON all the primary bathroom lights together: vanity, shower, fan light
+  and the recessed lights. It is the ''on'' half of the config button on the bathroom recessed-light switch
+  (that button is a toggle; this tool only ever turns the lights on). Use for ''turn on the bathroom lights''
+  in the primary bathroom or primary suite. To turn them off, use Primary Bathroom Lights Off. The lights
+  also turn themselves off a few minutes after the bathroom is empty.'
 icon: mdi:shower
 mode: single
 sequence:

@@ -111,8 +111,9 @@ DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = ()
 #: model can do.  So every exposed script is named **explicitly** — no
 #: patterns.  A glob here would make a filename the security boundary: anyone
 #: who later creates ``script.voice_<anything>`` would hand the voice agent a
-#: tool nobody reviewed.  These sixteen are hand-curated and reviewed; adding a
-#: seventeenth means adding it to this list in the same PR that creates it.
+#: tool nobody reviewed.  Every entry is hand-curated and reviewed; adding
+#: another means adding it to this list (and to ``apps-prod.yaml`` — a test pins
+#: the two together) in the same PR that creates it.
 #:
 #: The key is still matched with ``fnmatch``, so an operator *can* configure a
 #: pattern — the shipped default simply does not use that power.
@@ -129,10 +130,15 @@ DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     "script.voice_rumpus_room_color_toggle",
     # Parameterised Hunter Douglas gateway scene runner
     "script.voice_shades",
+    # Second-floor room tools (primary bathroom switch config buttons, cloffice preset)
     "script.voice_primary_bathroom_lights_on",
     "script.voice_primary_bathroom_lights_off",
     "script.voice_primary_bathroom_shower_lights",
     "script.voice_cloffice_bright",
+    # Secure-direction door tools — the ONLY entries that reach the dangerous set.
+    # Safe by construction, not by name: lock-only (front, side, bulkhead; never the
+    # mudroom door) and close-only.  Re-read the script BODY in HA when reviewing these:
+    # it is editable from the UI without touching this repo.
     "script.voice_lock_all_doors",
     "script.voice_close_garage_doors",
     # Music Assistant request handler
