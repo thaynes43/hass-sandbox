@@ -23,13 +23,18 @@ and widened in 2026-09 to every Z2M device.
   lookup fails — or comes back empty when devices were known a moment ago,
   which is what an mqtt config entry still starting up renders — the app keeps
   the last good list, starts nothing on that tick and says so in `last_event`.
-  An empty list is never treated as a working state: `identity_source` reads
-  `none`, nothing is queued, and the app logs a warning every tick, because
-  that is what a template that has stopped matching looks like.
-  The retained `zigbee2mqtt/bridge/devices` document is accepted as a second
-  source when it arrives, but it is not relied on: AppDaemon's MQTT plugin
-  subscribes once at plugin start, so the retained copy lands seconds before
-  this app registers its listener and is never replayed on an app restart.
+- **The bridge document is a fallback, not a dependency** — the retained
+  `zigbee2mqtt/bridge/devices` document is accepted when it arrives, but
+  nothing waits for it: AppDaemon's MQTT plugin subscribes once at plugin
+  start, so the retained copy lands seconds before this app registers its
+  listener and is never replayed on an app restart.
+- **Nothing to go on means nothing runs** — with no device list from either
+  source, `identity_source` reads `none`, nothing is queued, and the app logs
+  a warning every tick, because that is what a template that has stopped
+  matching looks like. If the bridge document *did* arrive, it carries the
+  fleet on its own and there is no warning — `identity_source` on the status
+  sensor is then the only sign that the Home Assistant lookup has gone quiet,
+  so it is the attribute to check first when something looks wrong.
 - **One at a time** — an update starts by publishing
   `{"id": <friendly_name>, "transaction": ...}` to
   `zigbee2mqtt/bridge/request/device/ota_update/update`. Nothing else starts
