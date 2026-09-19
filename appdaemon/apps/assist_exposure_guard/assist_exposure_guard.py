@@ -343,13 +343,20 @@ class AssistExposureGuard(hass.Hass):
     async def _check(self, trigger: str) -> None:
         client = self._ensure_client()
 
-        exposed_ids = await client.list_exposed_entities(self._assistant)
+        raw_ids = await client.list_exposed_entities(self._assistant)
+        # Normalise ONCE and use that single value everywhere — the registry
+        # lookup, the state read for device_class and the rule engine — so a
+        # non-canonical id can never be resolved on one path and missed on another.
+        exposed_ids = list(
+            dict.fromkeys(
+                text for text in (str(raw).strip().lower() for raw in raw_ids) if text
+            )
+        )
         platforms = await client.list_entity_platforms(exposed_ids)
         entities = [
             ExposedEntity(
                 entity_id=entity_id,
-                # The provider keys its result by the normalised id HA echoes back.
-                platform=platforms.get(str(entity_id).strip().lower(), ""),
+                platform=platforms.get(entity_id, ""),
                 device_class=await self._device_class(entity_id),
             )
             for entity_id in exposed_ids

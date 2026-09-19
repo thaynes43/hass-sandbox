@@ -118,7 +118,8 @@ positive costs a human a manual re-exposure in the HA UI:
   sensors) do not.
 - **A malformed exposed id has no `platform` either.** An id that is not a
   well-formed `domain.object_id` is left out of the registry request (HA
-  validates the id list all-or-nothing) and logged at WARNING; the domain, glob
+  validates the id list all-or-nothing) and logged at WARNING by
+  `AssistExposureClient` (the AppDaemon main log, not this app's log); the domain, glob
   and deny-by-default rules still apply to it.
 
 ## Notifications

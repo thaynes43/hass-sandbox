@@ -1411,3 +1411,17 @@ def test_a_non_canonical_exposed_id_still_gets_its_platform() -> None:
     _startup(app)
     assert app.set_state.call_args.kwargs["attributes"]["violations_last_run"] == "1"
 
+
+def test_a_non_canonical_garage_cover_id_still_gets_its_device_class() -> None:
+    """Same silent-miss shape as the platform lookup, on the higher-consequence rule."""
+    client = FakeExposureClient(exposed=[" Cover.Garage_Door "])
+    app = _make_app(
+        client=client,
+        extra_args={"enforce": False},
+        device_classes={"cover.garage_door": "garage"},
+    )
+    _startup(app)
+    attributes = app.set_state.call_args.kwargs["attributes"]
+    assert attributes["violations_last_run"] == "1"
+    assert attributes["violating_entities"] == "cover.garage_door"
+
