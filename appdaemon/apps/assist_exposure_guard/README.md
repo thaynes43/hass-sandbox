@@ -44,7 +44,8 @@ area" is one click. This app is the backstop for that click (owner ruling,
 3. Evaluate every exposed entity against the deny rules in `rules.py` — a pure
    module with no AppDaemon or HA imports. Each entity produces **at most one**
    violation: the first rule it breaks.
-4. If `enforce` is true, un-expose every violator with **one**
+4. If `enforce` is true, un-expose every violator HA will accept (see
+   *Partial enforcement*) with **one**
    `homeassistant/expose_entity` command. If it is false, report only.
 5. Notify on **two separate channels** — see *Notifications* below — plus an
    optional mobile push when `notify_service` is set.

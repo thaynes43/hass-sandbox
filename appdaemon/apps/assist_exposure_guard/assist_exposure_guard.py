@@ -432,7 +432,7 @@ class AssistExposureGuard(hass.Hass):
                         level="INFO",
                     )
                 if unapplied:
-                    rejected = ", ".join(v.entity_id for v in unapplied)
+                    rejected = _capped_join([v.entity_id for v in unapplied])
                     enforce_error = (
                         f"Home Assistant cannot accept {len(unapplied)} malformed "
                         f"entity id(s), so they are STILL exposed: {rejected}"
