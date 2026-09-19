@@ -440,7 +440,8 @@ class OtaCoordinator:
                     # fleet spins on it. Z2M's still-open operation is often
                     # one we abandoned on a stall, so give the others a turn.
                     rec.next_attempt_ts = max(
-                        rec.next_attempt_ts, self.now() + self.retry_base_s
+                        rec.next_attempt_ts,
+                        self._global_busy_until + self.retry_base_s,
                     )
                 self._last_event = f"Z2M busy; {fl.friendly_name} requeued"
             return
@@ -700,7 +701,10 @@ class OtaCoordinator:
 
         Every attribute change writes a Home Assistant recorder row, so the
         lists are capped (with a count beside them) and every schedule is an
-        absolute time rather than a countdown — otherwise a 163-device fleet
+        absolute time rather than a countdown. ``cooldown`` holds everything
+        waiting on a schedule, failures and busy bounces alike — its
+        ``attempts`` tells them apart — so no device is ever in the queue
+        without appearing somewhere — otherwise a 163-device fleet
         writes a multi-kB row on every tick just because a timer ticked down.
         """
         ts = self.now()
@@ -714,7 +718,7 @@ class OtaCoordinator:
                     "last_error": (rec.last_error or "")[:ERROR_TEXT_CAP],
                 }
                 for rec in self._devices.values()
-                if rec.attempts > 0 and rec.next_attempt_ts > ts
+                if rec.next_attempt_ts > ts
             ),
             key=lambda item: item["device"],
         )

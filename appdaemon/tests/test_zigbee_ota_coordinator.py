@@ -334,7 +334,7 @@ def test_busy_error_requeues_without_burning_attempt() -> None:
     clock.advance(301)
     # The device is also held past the window so the fleet doesn't spin on it.
     assert coord.decide() is None
-    clock.advance(601)
+    clock.advance(901)
     retry = coord.decide()
     assert retry is not None and retry.friendly_name == "hue_a"
     # No attempt was recorded for the busy bounce.
@@ -768,7 +768,7 @@ def test_pending_is_empty_while_zigbee2mqtt_is_busy() -> None:
     assert status["busy_until"] != ""  # and the sensor says why
     clock.advance(301)
     assert coord.status()["pending"] == []  # still held on its own schedule
-    clock.advance(601)
+    clock.advance(901)
     assert coord.status()["pending"] == ["hue_a"]
 
 
@@ -1084,7 +1084,7 @@ def test_a_busy_bounce_does_not_make_the_device_the_next_pick() -> None:
         {"status": "ok", "transaction": nxt.transaction, "data": {"id": "hue_b"}}
     )
     assert coord.decide() is None
-    clock.advance(600)
+    clock.advance(900)
     later = coord.decide()
     assert later is not None and later.friendly_name == "hue_a"
 
@@ -1109,3 +1109,44 @@ def test_every_completion_entry_has_the_same_shape() -> None:
     entries = coord.status()["completed_this_run"]
     assert len(entries) == 2  # one from each path
     assert all(set(entry) == {"device", "at", "version"} for entry in entries)
+
+
+def test_a_busy_bounced_device_is_visible_while_it_waits() -> None:
+    """No device should sit in the queue without appearing on the sensor."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retry_base_s=900, busy_backoff_s=300)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update or check already in progress",
+            "transaction": decision.transaction,
+        }
+    )
+    clock.advance(301)  # global window gone, device still held
+    status = coord.status()
+    assert status["remaining"] == 1
+    assert status["pending"] == []
+    assert status["busy_until"] == ""
+    assert status["cooldown"][0]["device"] == "hue_a"
+    assert status["cooldown"][0]["attempts"] == 0  # a bounce, not a failure
+
+
+def test_the_busy_reschedule_survives_a_long_busy_backoff() -> None:
+    """The hold must clear the window structurally, not by a ratio of
+    retry_base_s to busy_backoff_s that nothing enforces."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retry_base_s=100, busy_backoff_s=900)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update or check already in progress",
+            "transaction": decision.transaction,
+        }
+    )
+    clock.advance(901)  # the long global window has lifted
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
