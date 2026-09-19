@@ -121,8 +121,14 @@ their ZEN32s do), both thermostats.
 
 How music routing works, the patched blueprint, and why the Rumpus volume logic looks the way it
 does: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**
-(`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`: `pre_actions` and
-`enqueue_option` inputs + `playing_before` variable). Re-importing upstream silently drops it.
+(`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`; its header comment is the full
+list): the `pre_actions` and `enqueue_option` inputs, the `playing_before` variable, the optional
+LLM field `queue` (add / play next, with the "every target already playing, else play now and
+keep the queue" rule), and the **no-target hand-back** (Tom's ruling 2026-09-19: a request without
+a room or speaker is returned to the agent, never sent to a default player — the Play Music script
+sets none). Re-importing upstream silently drops all of it: the Rumpus KEFs would start at PC
+volume, track requests would keep old queues again, and a request whose agent forgot its room
+could play in another room. Re-apply the repo file after any re-import.
 
 ## The ThirdReality voice device (researched 2026-09-19; still in its box)
 
