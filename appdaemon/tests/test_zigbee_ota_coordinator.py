@@ -332,6 +332,9 @@ def test_busy_error_requeues_without_burning_attempt() -> None:
     assert status["busy_until"] != ""
     assert coord.decide() is None  # busy window
     clock.advance(301)
+    # The device is also held past the window so the fleet doesn't spin on it.
+    assert coord.decide() is None
+    clock.advance(601)
     retry = coord.decide()
     assert retry is not None and retry.friendly_name == "hue_a"
     # No attempt was recorded for the busy bounce.
@@ -764,6 +767,8 @@ def test_pending_is_empty_while_zigbee2mqtt_is_busy() -> None:
     assert status["pending"] == []  # decide() would refuse to start it
     assert status["busy_until"] != ""  # and the sensor says why
     clock.advance(301)
+    assert coord.status()["pending"] == []  # still held on its own schedule
+    clock.advance(601)
     assert coord.status()["pending"] == ["hue_a"]
 
 
@@ -1056,9 +1061,10 @@ def test_a_busy_bounce_does_not_make_the_device_the_next_pick() -> None:
     """Z2M's still-open operation is often one we abandoned on a stall; the
     fleet must not spin on that device every time the window lifts."""
     clock = FakeClock()
-    coord = make_coordinator(clock, retry_base_s=100, busy_backoff_s=300)
-    refresh(coord, snapshot("hue_a"))
+    coord = make_coordinator(clock, retry_base_s=900, busy_backoff_s=300)
+    refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
     coord.on_update_response(
         {
             "status": "error",
@@ -1067,25 +1073,39 @@ def test_a_busy_bounce_does_not_make_the_device_the_next_pick() -> None:
         }
     )
     clock.advance(299)
-    assert coord.decide() is None
-    clock.advance(2)  # global window lifted
-    retry = coord.decide()
-    assert retry is not None and retry.friendly_name == "hue_a"
-    # Its own schedule moved with the window, so it never jumped the queue.
+    assert coord.decide() is None  # global window
+    clock.advance(2)
+    # hue_b gets the turn, even though the bounce burned no attempt on hue_a.
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
     assert coord.status()["failed_attempts_this_run"] == 0
+    # hue_a comes back on its own schedule, not the window's.
+    coord.on_update_response(
+        {"status": "ok", "transaction": nxt.transaction, "data": {"id": "hue_b"}}
+    )
+    assert coord.decide() is None
+    clock.advance(600)
+    later = coord.decide()
+    assert later is not None and later.friendly_name == "hue_a"
 
 
 def test_every_completion_entry_has_the_same_shape() -> None:
-    clock = FakeClock()
-    coord = make_coordinator(clock, update_timeout_s=1000)
+    """The success path where the record is already gone must not publish a
+    differently shaped entry — a card reading .version would get undefined."""
+    coord = make_coordinator()
     refresh(coord, snapshot("hue_a", "hue_b"))
-    decision = coord.decide()
-    clock.advance(1001)
-    coord.decide()  # times out hue_a and drops its record
+    first = coord.decide()
+    assert first is not None and first.friendly_name == "hue_a"
+    # hue_a leaves the fleet mid-attempt, so its record is dropped.
+    refresh(coord, snapshot("hue_b"))
     coord.on_update_response(
-        {"status": "ok", "transaction": decision.transaction, "data": {"id": "hue_a"}}
+        {"status": "ok", "transaction": first.transaction, "data": {"id": "hue_a"}}
+    )
+    second = coord.decide()
+    assert second is not None and second.friendly_name == "hue_b"
+    coord.on_update_response(
+        {"status": "ok", "transaction": second.transaction, "data": {"id": "hue_b"}}
     )
     entries = coord.status()["completed_this_run"]
-    assert entries and all(
-        set(entry) == {"device", "at", "version"} for entry in entries
-    )
+    assert len(entries) == 2  # one from each path
+    assert all(set(entry) == {"device", "at", "version"} for entry in entries)

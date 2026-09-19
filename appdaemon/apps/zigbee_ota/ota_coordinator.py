@@ -433,12 +433,14 @@ class OtaCoordinator:
                 self._in_flight = None
                 rec = self._devices.get(fl.friendly_name)
                 if rec is not None:
-                    # Hold this device at least as long as the global window.
-                    # Z2M's still-open operation is often one we abandoned on
-                    # a stall, and without this the device is the next pick the
-                    # instant the window lifts — the same answer, forever.
+                    # Strictly past the global window, not level with it:
+                    # _is_eligible clears both gates in the same tick, and a
+                    # busy bounce burns no attempt, so a device rescheduled to
+                    # the window's own instant still wins the pick and the
+                    # fleet spins on it. Z2M's still-open operation is often
+                    # one we abandoned on a stall, so give the others a turn.
                     rec.next_attempt_ts = max(
-                        rec.next_attempt_ts, self._global_busy_until
+                        rec.next_attempt_ts, self.now() + self.retry_base_s
                     )
                 self._last_event = f"Z2M busy; {fl.friendly_name} requeued"
             return
