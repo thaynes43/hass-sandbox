@@ -1346,3 +1346,32 @@ def test_prod_yaml_enforces_and_pushes() -> None:
     assert config.get("enforce") is True
     assert str(config.get("notify_service", "")).startswith("notify/")
 
+
+def test_dev_yaml_restates_no_rule_list() -> None:
+    """Dev inherits the defaults prod is pinned to; a restated copy would drift unseen."""
+    import yaml
+
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    _Loader.add_multi_constructor("!", lambda loader, suffix, node: None)
+    path = Path(__file__).resolve().parents[1] / "apps" / "apps-dev.yaml"
+    with path.open(encoding="utf-8") as handle:
+        config = yaml.load(handle, Loader=_Loader)["assist_exposure_guard_dev"]
+    restated = {
+        "deny_domains", "deny_cover_device_classes", "deny_integrations", "deny_entity_globs",
+        "switch_allowlist", "script_allowlist_globs", "allow_entities",
+    } & set(config)
+    assert not restated
+
+
+def test_sensor_entity_lists_are_capped_like_the_notification() -> None:
+    from assist_exposure_guard.assist_exposure_guard import MAX_DETAIL_LINES, _capped_join
+
+    assert _capped_join([]) == "none"
+    assert _capped_join(["light.a", "light.b"]) == "light.a, light.b"
+    many = [f"scene.s{i}" for i in range(MAX_DETAIL_LINES + 130)]
+    joined = _capped_join(many)
+    assert joined.count("scene.") == MAX_DETAIL_LINES
+    assert joined.endswith("…and 130 more")
+

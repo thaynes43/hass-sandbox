@@ -21,5 +21,4 @@ sequence:
       - light.basement_rumpus_hue_recessed_08
       - light.basement_rumpus_lamp_hue_ceiling_bulb
       - light.basement_rumpus_lamp_hue_desk_bulb
-    brightness: '{{ state_attr(''light.basement_rumpus_room_lights'', ''brightness'') | int(255) |
-      int }}'
+    brightness: '{{ state_attr(''light.basement_rumpus_room_lights'', ''brightness'') | int(255) }}'

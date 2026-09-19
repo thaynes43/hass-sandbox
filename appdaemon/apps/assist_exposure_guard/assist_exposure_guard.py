@@ -68,6 +68,19 @@ REGISTRY_EVENT = "entity_registry_updated"
 MAX_DETAIL_LINES = 20
 
 
+def _capped_join(entity_ids: List[str]) -> str:
+    """Join ids for a sensor attribute, capped like the log and notification.
+
+    A bulk "expose this area" click can produce hundreds of violations; the exact
+    count lives in ``violations_last_run``, so the attribute only needs a sample.
+    """
+    if not entity_ids:
+        return "none"
+    shown = ", ".join(entity_ids[:MAX_DETAIL_LINES])
+    extra = len(entity_ids) - MAX_DETAIL_LINES
+    return f"{shown}, …and {extra} more" if extra > 0 else shown
+
+
 class AssistExposureGuard(hass.Hass):
     """Enforce the Assist exposure deny rules on a schedule and on registry changes."""
 
@@ -451,7 +464,7 @@ class AssistExposureGuard(hass.Hass):
         stamp = self._now_iso()
         entity_ids = [violation.entity_id for violation in violations]
         self._last_enforced = stamp
-        self._last_enforced_entities = ", ".join(entity_ids) or "none"
+        self._last_enforced_entities = _capped_join(list(entity_ids))
 
         plural = "entity" if len(violations) == 1 else "entities"
         title = (
@@ -603,8 +616,8 @@ class AssistExposureGuard(hass.Hass):
             "violations_last_run": (
                 "unknown" if exposed_count is None else str(len(violations))
             ),
-            "violating_entities": (
-                ", ".join(violation.entity_id for violation in violations) or "none"
+            "violating_entities": _capped_join(
+                [violation.entity_id for violation in violations]
             ),
             # Durable: these describe an action already taken, so they must
             # survive the clean run that the action itself causes.
