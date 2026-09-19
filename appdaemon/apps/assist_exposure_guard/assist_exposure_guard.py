@@ -348,7 +348,8 @@ class AssistExposureGuard(hass.Hass):
         entities = [
             ExposedEntity(
                 entity_id=entity_id,
-                platform=platforms.get(entity_id, ""),
+                # The provider keys its result by the normalised id HA echoes back.
+                platform=platforms.get(str(entity_id).strip().lower(), ""),
                 device_class=await self._device_class(entity_id),
             )
             for entity_id in exposed_ids

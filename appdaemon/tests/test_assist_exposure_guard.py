@@ -1401,3 +1401,13 @@ def test_the_guard_asks_for_registry_entries_of_exposed_entities_only() -> None:
     _startup(app)
     assert client.platform_requests == [["light.kitchen", "sensor.pool_ph"]]
 
+
+def test_a_non_canonical_exposed_id_still_gets_its_platform() -> None:
+    """The provider returns normalised keys; the lookup must normalise too or the
+    integration deny rule silently misses (platform would read as empty)."""
+    client = FakeExposureClient(exposed=[" Sensor.Pool_PH "], platforms={"sensor.pool_ph": "intellicenter"})
+    client.list_entity_platforms = AsyncMock(return_value={"sensor.pool_ph": "intellicenter"})
+    app = _make_app(client=client, extra_args={"enforce": False})
+    _startup(app)
+    assert app.set_state.call_args.kwargs["attributes"]["violations_last_run"] == "1"
+
