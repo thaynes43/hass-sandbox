@@ -174,11 +174,21 @@ automations keep running; "hold" is its own script mirroring Config 2x.
    integrations, name patterns, deny-by-default switches and scripts with allowlists in the
    app YAML), un-expose violators and notify Tom.
 
+### Shades (Tom's ruling)
+
+One parameterized tool, `script.voice_shades(room, position)`, fires the same gateway scenes as
+the ZEN32 buttons and schedules; the `cover.*` groups are no longer exposed (nothing in the house
+actuates them, they cannot say tilt-open, and they use a different RF path). Plain "open" =
+tilt-open upstairs, fully open downstairs — "just like the automations". Verified: mapping
+table evaluated for every branch, a no-op `close` fired the right scene, and the bedroom agent
+calls `script__voice_shades` for "close the bedroom shades". Rooms: primary bedroom/bathroom,
+cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bathroom, downstairs.
+
 ### Progress
 
 | Floor | State |
 |---|---|
-| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Rest of the floor (kids' rooms etc.) waits for its map. |
+| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). Still to propose: bathroom all-lights script, cloffice bright preset + Iris lamp, hall hold, upstairs foyer lights, kids' rooms (needs Tom's ruling — "Jackson's TV" and the kids-bathroom Sonos are already exposed house-wide). |
 | Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; ten `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle, hold lights). Verified read-only (someone was watching a movie): the Movie Room agent lists all six tools correctly. **Not yet exercised by voice.** |
 | First floor | mapped by subagent, proposal pending |
 | Exterior | mapped; proposal pending. Needs: 6 read-only lock/garage mirror sensors, `script.voice_lock_all_doors` (ruling needed: the mudroom↔garage door is *expected unlocked* by the house's own lock-status logic), `script.voice_close_garage_doors`, a front-yard landscape handle; patio/shed lights are `switch.*` and need guard allowlist entries; the back-yard spotlight is fought by its auto-off unless held. |
