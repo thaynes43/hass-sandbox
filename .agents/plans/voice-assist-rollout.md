@@ -143,16 +143,18 @@ automations. Switches are **deny by default**: a switch is exposed only by name,
 
 Voice may **ask** and may move things in the **secure direction only**:
 
-- Status comes from read-only template binary sensors that mirror the lock/garage state
-  (`device_class: lock` / `garage_door`) — created live as Template helpers, never by exposing
-  the lock or cover itself.
+- Status comes from read-only Template **sensor** helpers whose state is the lock's or cover's
+  own word (`locked` / `unlocked`, `open` / `closed`) — never by exposing the lock or cover
+  itself. Not binary sensors: with `device_class: lock` an LLM agent read `on` as "locked" for
+  the (unlocked) mudroom door on 2026-09-19; with text states all 18 answers from three agents
+  matched the truth (`scripts/voice-bench/run.sh door_status_check.py`).
 - `script.voice_lock_all_doors` locks the **three exterior doors** (front, garage side door,
   bulkhead). Tom, 2026-09-19: the mudroom↔garage door is left out — the family keeps it
   unlocked. `script.voice_close_garage_doors` closes both ratgdo covers. Each has a
   `description:` written for the model and no fields. No unlock, open, disarm, pool/spa, oven or
   PDU script is ever exposed. (Built 2026-09-19 together with the six status helpers
-  `binary_sensor.{front_door,side_door,bulkhead,mudroom_door}_lock_status` and
-  `binary_sensor.{tesla,wagoneer}_garage_door_status`.)
+  `sensor.{front_door,side_door,bulkhead,mudroom_door}_lock_state` and
+  `sensor.{tesla,wagoneer}_garage_door_state`.)
 
 ### Ruling 2 — workflow: agent curates, Tom approves, a guard enforces
 

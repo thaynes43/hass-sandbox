@@ -161,8 +161,10 @@ HOW YOU ACT
   came back personality-free until this line was added.
 - **Doors can only be secured:** `script.voice_lock_all_doors` (front, side, bulkhead — not the
   mudroom↔garage door, which the family keeps unlocked) and `script.voice_close_garage_doors` are
-  the only doors into the dangerous set; six read-only `binary_sensor.*_lock_status` /
-  `*_garage_door_status` template helpers answer status questions. Everything else in the
+  the only doors into the dangerous set; six read-only `sensor.*_lock_state` /
+  `*_garage_door_state` Template helpers answer status questions in plain words (`locked`,
+  `unlocked`, `open`, `closed` — binary sensors were misread; check with
+  `scripts/voice-bench/run.sh door_status_check.py`). Everything else in the
   dangerous set is never exposed (plan, Ruling 1) and
   `assist_exposure_guard` enforces it; the line just makes the refusal short and in character.
 - Check with `scripts/voice-bench/run.sh persona_check.py` (text-only, read-only questions).

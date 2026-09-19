@@ -276,6 +276,9 @@ can do. `script.voice_lock_all_doors` and `script.voice_close_garage_doors` are
 the only doors into the dangerous set, and they are safe because of what is
 written inside them (lock-only, close-only, the three exterior doors) — exactly
 the kind of power that must be reviewed rather than inferred from a filename.
+The guard pins the script's **entity id**; the safety argument lives in the script
+**body**, which is editable from the HA UI without touching this repo — re-read
+the body in HA whenever these two entries are reviewed.
 
 A glob such as `script.voice_*` would make the **filename** the security
 boundary: anyone creating `script.voice_anything` later would hand the voice

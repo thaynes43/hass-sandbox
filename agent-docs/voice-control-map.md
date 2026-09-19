@@ -15,7 +15,8 @@ wall switches and scene controllers already give people, and must not fight the 
   `script.inovelli_toggle_mmwave_hold_led_indicator` (staircase:
   `script.inovelli_toggle_hold_group_of_switches`), which disables that zone's motion
   automations, caches the LED colour in `input_text.<zone>_led_color` and paints the hold colour.
-  A voice "hold" must call the same script with the same arguments as the switch mapping.
+  Voice has **no hold tools** (Tom, 2026-09-19); if one is ever added it must call the same
+  script with the same arguments as the switch mapping.
 - Voice on/off = paddle press: a light turned off in an occupied zone stays off until the next
   off→on occupancy edge; a light turned on is turned off `off_delay` after the zone clears.
 
@@ -69,7 +70,9 @@ live ZEN37 hold-dim helper automations and four scripts the buttons call
 
 ## Exterior
 
-No exterior satellite; nothing exterior is exposed yet. Only two switches have any button mapping
+No exterior satellite. Exposed since 2026-09-19 (Ruling 1, "ask + secure only"): the six
+status sensors and the two secure-direction door scripts listed under *Dangerous-set status*
+below — no exterior light, switch or speaker yet. Only two switches have any button mapping
 (Config 2x = hold on the back-yard spotlight and the garage mudroom switch).
 
 Schedules (all unconditional, manual state simply lasts until the next edge):
@@ -101,9 +104,13 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 Dangerous-set status: locks `lock.front_door_lock`, `lock.side_door_lock`, `lock.bulkhead_lock`
 (must be locked) and `lock.mudroom_door_lock` (interior garage↔mudroom door, **expected
 unlocked** by `automation.wall_display_entry_locks_status`); garage doors
-`cover.ratgdov25i_4a0325_door` (Tesla) and `cover.ratgdov25i_dbfa50_door` (Wagoneer). No
-read-only mirror sensors exist yet, and the `input_text.*_entry_locks_status` roll-ups are
-invisible to Assist (no tool reads `input_text`).
+`cover.ratgdov25i_4a0325_door` (Tesla) and `cover.ratgdov25i_dbfa50_door` (Wagoneer). **Built
+2026-09-19:** read-only Template sensor helpers
+`sensor.{front_door,side_door,bulkhead,mudroom_door}_lock_state` and
+`sensor.{tesla,wagoneer}_garage_door_state` (text states — a `device_class: lock` binary sensor
+was misread by the LLM), `script.voice_lock_all_doors` (front, side, bulkhead; lock-only) and
+`script.voice_close_garage_doors` (close-only). The `input_text.*_entry_locks_status` roll-ups
+stay invisible to Assist (no tool reads `input_text`).
 
 Defects found (open): the spa-light auto-hold automation triggers on the non-existent
 `light.westford_spa_light_1`; `input_select.garage_interior_mudroom_mmwave_normal_mode` reads
@@ -152,6 +159,11 @@ hold can be released); the wall buttons use the toggle script. Holds never expir
 hold: primary hall, closet, vanity, shower, water closet, laundry, kids vanity. The motion-cleared
 automations re-read the LED number themselves, so anything that holds must paint the LEDs, not
 just disable automations.
+
+Voice tools on this floor (2026-09-19): `script.voice_primary_bathroom_lights_on` / `_lights_off`
+/ `_shower_lights` (the three bathroom config buttons), `script.voice_cloffice_bright` (cloffice
+ZEN32 big 2x) and the Iris lamp `light.den_hue_iris_light`; shades go through
+`script.voice_shades`.
 
 **Never expose `switch.upstairs_*_scene_controller`** — the ZEN32 relay is line power to the
 Modern Forms fan module.
