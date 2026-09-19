@@ -20,7 +20,9 @@ and widened in 2026-09 to every Z2M device.
   Z2M (`integration_entities('mqtt')` narrowed to entities whose device
   identifiers carry `zigbee2mqtt_`) and manages nothing else, so `update.*`
   never reaches an Immich, HACS, ESPHome or Z-Wave update entity. If that
-  lookup fails, the app starts nothing on that tick and says so in `last_event`.
+  lookup fails — or comes back empty when devices were known a moment ago,
+  which is what an mqtt config entry still starting up renders — the app keeps
+  the last good list, starts nothing on that tick and says so in `last_event`.
   The retained `zigbee2mqtt/bridge/devices` document is accepted as a second
   source when it arrives, but it is not relied on: AppDaemon's MQTT plugin
   subscribes once at plugin start, so the retained copy lands seconds before
@@ -38,8 +40,10 @@ and widened in 2026-09 to every Z2M device.
 - **"No image currently available"** — Z2M's answer when a device advertises an
   update the OTA index has no file for (usually a pulled release). Nothing is
   transferred, so it counts as neither a completed update nor a failure: the
-  device lands in `skipped_no_image` with no retry attempt and no backoff, and
-  is picked up again only if a *different* version is later offered.
+  device lands in `skipped_no_image` with no retry attempt and no backoff. It
+  is picked up again when a different version is offered, when the update stops
+  being offered and later returns, or after `no_image_recheck_s` — upstream
+  often republishes a pulled release under the *same* version number.
 - **Offline devices** (bulbs without power) — skipped while their retained
   `zigbee2mqtt/<device>/availability` topic says `offline`. A failed attempt
   classified as offline-type (`timeout` / `didn't respond`) backs off
@@ -59,14 +63,21 @@ and widened in 2026-09 to every Z2M device.
 | --- | --- |
 | `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending`, `cooldown` (per-device attempts/retry-in/last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
+The lists are capped at 25 entries with a `*_count` beside them, and the
+countdowns are rounded to the minute. Home Assistant writes a recorder row
+every time an attribute changes, and on a 160-device fleet an uncapped list
+with a per-second countdown would write a multi-kB row every tick.
+
 A device is only listed in `completed_this_run` when its installed version
 actually moved (or Z2M reported the update ok). An update Z2M withdrew without
 installing anything shows up under `cleared_without_update` instead.
 
-Booleans and zeros are published as strings (`"true"`, `"0"`). AppDaemon strips
-values equal to `None`/`False` from the state it POSTs to Home Assistant, and in
-Python `0 == False`, so a bare `0` would post no state at all and Home Assistant
-would reject the whole update with a 400.
+Booleans and numbers are published as strings (`"true"`, `"0"`, `"42"`).
+AppDaemon strips values equal to `None`/`False` from the state it POSTs to Home
+Assistant, and in Python `0 == False`, so a bare `0` would post no state at all
+and Home Assistant would reject the whole update with a 400. Every number is
+stringified, not just the zeros, so an attribute never changes type between
+ticks.
 
 ## Associated card
 
@@ -94,6 +105,7 @@ simple entities card.
 | `progress_stall_s` | `2700` | No progress movement for this long → `stalled: true` on the sensor. |
 | `update_timeout_s` | `14400` | Absolute per-attempt cap; after it the attempt is marked failed and the queue moves on. |
 | `busy_backoff_s` | `300` | Wait after Z2M reports another OTA is already running. |
+| `no_image_recheck_s` | `86400` | How long a device Z2M has no firmware file for stays parked before being tried again. |
 | `mqtt_namespace` | `mqtt` | AppDaemon MQTT plugin namespace. |
 | `base_topic` | `zigbee2mqtt` | Z2M base topic. |
 | `status_sensor` | `sensor.zigbee_ota_orchestrator` | Status sensor entity id. |

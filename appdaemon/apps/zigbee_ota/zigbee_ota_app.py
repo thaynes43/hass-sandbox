@@ -55,11 +55,15 @@ def ha_safe(value: Any) -> Any:
     AppDaemon prunes anything equal to ``None`` or ``False`` from the payload it
     POSTs to ``/api/states`` — and in Python ``0 == False``, so zeros disappear
     too. A device count of 0, ``paused: False`` and ``failed_attempts: 0`` are
-    all meaningful here, so booleans and zeros are sent as strings.
+    all meaningful here, so booleans and numbers are all sent as strings. Every
+    number, not just the zeros: an attribute that is a string at 0 and a number
+    otherwise breaks any template that compares it.
     """
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, (int, float)) and value == 0:
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    if isinstance(value, (int, float)):
         return str(value)
     if value is None:
         return ""
@@ -88,6 +92,7 @@ class ZigbeeOtaOrchestrator(hass.Hass):
             online_retry_grace_s=float(args.get("online_retry_grace_s", 60)),
             progress_stall_s=float(args.get("progress_stall_s", 2700)),
             update_timeout_s=float(args.get("update_timeout_s", 14400)),
+            no_image_recheck_s=float(args.get("no_image_recheck_s", 86400)),
         )
         self.log(
             "ZigbeeOtaOrchestrator starting: globs=%s scan_interval=%ss"
@@ -171,6 +176,11 @@ class ZigbeeOtaOrchestrator(hass.Hass):
                 self._coordinator.mark_identity_unavailable(reason)
                 self.log("%s — starting nothing this tick" % reason, level="WARNING")
             else:
+                if not z2m_entities:
+                    self.log(
+                        "Home Assistant reported no Zigbee2MQTT update entities",
+                        level="WARNING",
+                    )
                 if len(z2m_entities) != self._last_z2m_count:
                     self._last_z2m_count = len(z2m_entities)
                     self.log(

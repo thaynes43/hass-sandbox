@@ -283,7 +283,7 @@ def test_device_state_update_obj_feeds_progress() -> None:
     )
     _run(app._tick({}))
     attrs = app.set_state.call_args.kwargs["attributes"]
-    assert attrs["in_flight"]["progress_pct"] == 42
+    assert attrs["in_flight"]["progress_pct"] == "42"
 
 
 def test_none_topic_and_foreign_topics_ignored() -> None:
@@ -410,10 +410,14 @@ def test_status_falsy_attributes_reach_home_assistant() -> None:
     assert attrs["in_flight"] == {}
 
 
-def test_ha_safe_keeps_truthy_values_untouched() -> None:
-    assert ha_safe({"a": 3, "b": "x", "c": [1, {"d": True}]}) == {
-        "a": 3,
+def test_ha_safe_renders_every_number_as_a_string() -> None:
+    """Consistent types: an attribute that is "0" at zero and 300 otherwise
+    breaks any template that compares it."""
+    assert ha_safe({"a": 3, "b": "x", "c": [0, {"d": True, "e": False}]}) == {
+        "a": "3",
         "b": "x",
-        "c": [1, {"d": "true"}],
+        "c": ["0", {"d": "true", "e": "false"}],
     }
+    assert ha_safe(42.0) == "42"  # whole floats read as whole numbers
+    assert ha_safe(42.5) == "42.5"
     assert ha_safe(None) == ""

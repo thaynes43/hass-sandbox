@@ -445,8 +445,9 @@ def test_no_image_device_is_not_requeued_for_the_same_version() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    # The entity still reads "on" until Z2M resets it: never start it again.
-    clock.advance(100000)
+    # The entity still reads "on" until Z2M resets it: don't start it again,
+    # however long the exponential backoff would otherwise have waited.
+    clock.advance(21600)
     refresh(coord, snapshot("hue_a"))
     assert coord.decide() is None
     assert coord.status()["pending"] == []
@@ -503,3 +504,108 @@ def test_no_image_for_an_untracked_device_is_recorded() -> None:
     )
     assert coord.status()["skipped_no_image"] == ["hue_z"]
     assert coord.status()["failed_attempts_this_run"] == 0
+
+
+def test_empty_ha_answer_does_not_wipe_an_established_queue() -> None:
+    """An mqtt config entry still starting up renders [] — not an empty fleet."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "some failure",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    assert coord.status()["cooldown"][0]["attempts"] == 1
+
+    coord.set_z2m_entities(set())
+    status = coord.status()
+    assert status["identity_source"].startswith("stale")
+    assert coord.decide() is None
+    # The queue and its backoff survived the bad answer.
+    coord.refresh_entities(snapshot("hue_a"))
+    assert coord.status()["cooldown"][0]["attempts"] == 1
+
+
+def test_first_empty_ha_answer_is_accepted() -> None:
+    """With nothing known yet, an empty fleet is a legitimate answer."""
+    coord = make_coordinator()
+    coord.set_z2m_entities(set())
+    coord.refresh_entities(snapshot("hue_a"))
+    status = coord.status()
+    assert status["identity_source"] == "home assistant"
+    assert status["pending"] == []
+    assert coord.decide() is None
+
+
+def test_no_image_park_expires_and_retries_the_same_version() -> None:
+    """Upstream often republishes a pulled release under the same version."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, no_image_recheck_s=3600)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    clock.advance(3599)
+    refresh(coord, snapshot("hue_a"))
+    assert coord.decide() is None
+    clock.advance(2)
+    refresh(coord, snapshot("hue_a"))
+    retry = coord.decide()
+    assert retry is not None and retry.friendly_name == "hue_a"
+
+
+def test_no_image_park_is_dropped_when_the_device_leaves_the_fleet() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    refresh(coord, snapshot("hue_b"))  # hue_a removed from Z2M
+    # The run record stays, the gate does not.
+    assert coord.status()["skipped_no_image"] == ["hue_a"]
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    assert "hue_a" in coord.status()["pending"]
+
+
+def test_status_lists_are_capped_with_counts() -> None:
+    coord = make_coordinator(include_globs=["update.*"])
+    names = [f"dev_{i:03d}" for i in range(40)]
+    refresh(coord, snapshot(*names))
+    status = coord.status()
+    assert len(status["pending"]) == 25
+    assert status["pending_count"] == 40
+    assert status["remaining"] == 40
+
+
+def test_countdowns_are_rounded_to_the_minute() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, retry_base_s=905)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "some failure",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    clock.advance(7)
+    assert coord.status()["cooldown"][0]["retry_in_s"] % 60 == 0

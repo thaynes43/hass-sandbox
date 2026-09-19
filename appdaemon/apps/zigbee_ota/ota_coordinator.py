@@ -32,7 +32,12 @@ RESULT_SUCCESS = "success"
 RESULT_OFFLINE = "offline"
 RESULT_ERROR = "error"
 RESULT_BUSY = "busy"
-RESULT_NO_IMAGE = "no_image"
+
+# Attribute lists are capped: Home Assistant writes a recorder row every time
+# the sensor's attributes change, and an uncapped list on a 163-device fleet
+# makes that row multi-kB.
+STATUS_LIST_CAP = 25
+ERROR_TEXT_CAP = 120
 
 _OFFLINE_ERROR_MARKERS = ("respond", "timeout", "timed out", "offline", "unreachable")
 _BUSY_ERROR_MARKERS = ("already in progress",)
@@ -82,6 +87,23 @@ class InFlight:
         return status
 
 
+def _to_minute(seconds: float) -> int:
+    """Round a countdown to the nearest minute.
+
+    The status sensor is read by humans, and a to-the-second countdown would
+    make Home Assistant write a recorder row on every 120s tick.
+    """
+    return int(round(max(0.0, seconds) / 60.0)) * 60
+
+
+@dataclass
+class NoImageSkip:
+    """A device parked because Z2M has no firmware file for what it advertises."""
+
+    latest_version: Optional[str]  # None until the next refresh learns it
+    ts: float
+
+
 @dataclass
 class DeviceRecord:
     entity_id: str
@@ -105,6 +127,7 @@ class OtaCoordinator:
     progress_stall_s: float = 2700.0
     update_timeout_s: float = 14400.0
     completed_suppress_s: float = 600.0
+    no_image_recheck_s: float = 86400.0
     now: Callable[[], float] = time.time
     make_transaction: Callable[[str], str] = None  # type: ignore[assignment]
 
@@ -120,9 +143,8 @@ class OtaCoordinator:
         self._global_busy_until: float = 0.0
         self._completed: list[dict[str, Any]] = []  # this process lifetime only
         self._recently_completed: dict[str, float] = {}
-        # friendly_name -> the latest_version Z2M had no image for (None until
-        # the next refresh learns it)
-        self._no_image: dict[str, Optional[str]] = {}
+        self._no_image: dict[str, NoImageSkip] = {}  # active parks
+        self._skipped_names: list[str] = []  # everything parked this run
         self._cleared: list[str] = []
         self._failed_attempts: int = 0
         self._last_event: str = "startup"
@@ -144,8 +166,20 @@ class OtaCoordinator:
 
     def set_z2m_entities(self, entity_ids: set[str]) -> None:
         """The authoritative set of Zigbee2MQTT ``update.*`` entity ids, read
-        from Home Assistant on every tick."""
-        self._z2m_entity_ids = set(entity_ids)
+        from Home Assistant on every tick.
+
+        An empty answer where devices were known before is treated as a failed
+        lookup, not as an empty fleet: the mqtt config entry still setting up
+        after a Home Assistant restart renders exactly that, and accepting it
+        would drop every queued device along with its retry state.
+        """
+        fresh = set(entity_ids)
+        if not fresh and self._z2m_entity_ids:
+            self.mark_identity_unavailable(
+                "Home Assistant reported no Zigbee2MQTT update entities"
+            )
+            return
+        self._z2m_entity_ids = fresh
         self._identity_stale = None
 
     def mark_identity_unavailable(self, reason: str) -> None:
@@ -199,6 +233,7 @@ class OtaCoordinator:
             )
             return
         seen: set[str] = set()
+        present: set[str] = set()
         adopted_candidate: Optional[str] = None
         for entity_id, payload in snapshot.items():
             if not self._entity_matches(entity_id):
@@ -207,22 +242,17 @@ class OtaCoordinator:
             friendly = attrs.get("friendly_name") or entity_id.split(".", 1)[1]
             if not self._is_z2m(entity_id, friendly):
                 continue
+            present.add(friendly)
             if payload.get("state") != "on":
-                # Update no longer pending: work out whether anything installed.
+                # Nothing is on offer any more, so nothing is being skipped.
+                self._no_image.pop(friendly, None)
+                # Work out whether anything actually installed.
                 existing = self._devices.pop(friendly, None)
                 if existing is not None:
                     self._settle_cleared(friendly, existing, attrs)
                 continue
-            if friendly in self._no_image:
-                offered = str(attrs.get("latest_version"))
-                skipped_version = self._no_image[friendly]
-                if skipped_version is None:
-                    self._no_image[friendly] = offered  # learn it, keep skipping
-                    continue
-                if offered == skipped_version:
-                    continue  # same release Z2M has no file for; don't retry
-                # A different release is on offer now — worth another try.
-                self._no_image.pop(friendly, None)
+            if friendly in self._no_image and self._still_parked(friendly, attrs):
+                continue
             completed_ts = self._recently_completed.get(friendly)
             if (
                 completed_ts is not None
@@ -248,6 +278,9 @@ class OtaCoordinator:
         for friendly in list(self._devices):
             if friendly not in seen:
                 self._devices.pop(friendly)
+        for friendly in list(self._no_image):
+            if friendly not in present:
+                self._no_image.pop(friendly)
 
         if adopted_candidate is not None and self._in_flight is None:
             self._in_flight = InFlight(
@@ -426,6 +459,28 @@ class OtaCoordinator:
             f"retry in {int(backoff)}s"
         )
 
+    def _still_parked(self, friendly: str, attrs: dict[str, Any]) -> bool:
+        """Should a no-image device stay parked this tick?
+
+        It is released when a different version is offered, and re-checked
+        every ``no_image_recheck_s`` — upstream often republishes a pulled
+        release under the *same* version number, which a version comparison
+        alone would never notice.
+        """
+        skip = self._no_image[friendly]
+        if self.now() - skip.ts >= self.no_image_recheck_s:
+            self._no_image.pop(friendly, None)
+            self._last_event = f"{friendly}: re-checking for a firmware image"
+            return False
+        offered = str(attrs.get("latest_version"))
+        if skip.latest_version is None:
+            skip.latest_version = offered  # learn it now, keep skipping
+            return True
+        if offered == skip.latest_version:
+            return True
+        self._no_image.pop(friendly, None)  # a different release is on offer
+        return False
+
     def _settle_cleared(
         self, friendly: str, rec: DeviceRecord, attrs: dict[str, Any]
     ) -> None:
@@ -436,9 +491,6 @@ class OtaCoordinator:
         cannot deliver (a pulled release), and that must not be reported as a
         successful update.
         """
-        if friendly in self._no_image:
-            self._clear_in_flight_for(friendly)
-            return
         installed = attrs.get("installed_version")
         if installed is not None and str(installed) != str(rec.installed_version):
             self._record_completion(friendly, rec, attrs)
@@ -456,9 +508,14 @@ class OtaCoordinator:
         """Park a device Z2M has no firmware file for. No attempt is burned and
         no backoff is scheduled — a retry would only get the same answer."""
         rec = self._devices.pop(friendly, None)
-        # None = version not known yet (a response for a device we weren't
-        # tracking); the next refresh learns it and keeps skipping.
-        self._no_image[friendly] = rec.latest_version if rec is not None else None
+        # latest_version None = not known yet (a response for a device we
+        # weren't tracking); the next refresh learns it and keeps skipping.
+        self._no_image[friendly] = NoImageSkip(
+            latest_version=rec.latest_version if rec is not None else None,
+            ts=self.now(),
+        )
+        if friendly not in self._skipped_names:
+            self._skipped_names.append(friendly)
         self._clear_in_flight_for(friendly)
         self._last_event = f"{friendly} skipped: {error}"
 
@@ -482,15 +539,22 @@ class OtaCoordinator:
     # ------------------------------------------------------------------
 
     def status(self) -> dict[str, Any]:
+        """The status-sensor payload.
+
+        Every attribute change writes a Home Assistant recorder row, so the
+        lists are capped (with a count beside them) and the countdowns are
+        rounded to the minute — otherwise a 163-device fleet writes a
+        multi-kB row on every tick just because a timer ticked down.
+        """
         ts = self.now()
         cooldown = sorted(
             (
                 {
                     "device": rec.friendly_name,
                     "attempts": rec.attempts,
-                    "retry_in_s": max(0, int(rec.next_attempt_ts - ts)),
+                    "retry_in_s": _to_minute(rec.next_attempt_ts - ts),
                     "offline_failure": rec.offline_failure,
-                    "last_error": rec.last_error or "",
+                    "last_error": (rec.last_error or "")[:ERROR_TEXT_CAP],
                 }
                 for rec in self._devices.values()
                 if rec.attempts > 0 and rec.next_attempt_ts > ts
@@ -503,25 +567,30 @@ class OtaCoordinator:
             if self._availability.get(rec.friendly_name) is False
         )
         in_flight_name = self._in_flight.friendly_name if self._in_flight else None
+        pending = sorted(
+            rec.friendly_name
+            for rec in self._devices.values()
+            if rec.next_attempt_ts <= ts and rec.friendly_name != in_flight_name
+        )
         remaining = len(self._devices)
         if in_flight_name is not None and in_flight_name not in self._devices:
             remaining += 1
         return {
             "remaining": remaining,
-            "pending": sorted(
-                rec.friendly_name
-                for rec in self._devices.values()
-                if rec.next_attempt_ts <= ts and rec.friendly_name != in_flight_name
-            ),
+            "pending": pending[:STATUS_LIST_CAP],
+            "pending_count": len(pending),
             "in_flight": self._in_flight.as_status() if self._in_flight else {},
-            "cooldown": cooldown,
-            "offline": offline,
-            "completed_this_run": self._completed[-25:],
+            "cooldown": cooldown[:STATUS_LIST_CAP],
+            "cooldown_count": len(cooldown),
+            "offline": offline[:STATUS_LIST_CAP],
+            "offline_count": len(offline),
+            "completed_this_run": self._completed[-STATUS_LIST_CAP:],
             "completed_count_this_run": len(self._completed),
-            "skipped_no_image": sorted(self._no_image),
-            "cleared_without_update": self._cleared[-25:],
+            "skipped_no_image": self._skipped_names[-STATUS_LIST_CAP:],
+            "skipped_no_image_count": len(self._skipped_names),
+            "cleared_without_update": self._cleared[-STATUS_LIST_CAP:],
             "failed_attempts_this_run": self._failed_attempts,
-            "busy_wait_s": max(0, int(self._global_busy_until - ts)),
+            "busy_wait_s": _to_minute(self._global_busy_until - ts),
             "z2m_devices_known": self._z2m_device_count(),
             "identity_source": self._identity_source(),
             "last_event": self._last_event,
