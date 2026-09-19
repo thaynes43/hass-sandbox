@@ -299,8 +299,11 @@ blueprint), and that script resolves the target in this order:
    says "You are in area X …" (`components/intent/llm.py` in 2026.9), taken from the **area of the
    satellite device**. The `area` argument is an area selector, so HA resolves spoken names and
    aliases to area ids (`helpers/llm.py`, `ScriptTool`);
-4. no area at all (a request that does not come from a satellite) → the blueprint's
-   `default_player`, `media_player.primary_bedroom`.
+4. no area and no player → **handed back, nothing plays** (Tom's ruling 2026-09-19: "hand it back,
+   never guess"). The blueprint returns "call this tool again with the area the request comes from,
+   or ask which room", and the Play Music script no longer sets a `default_player`. Until then the
+   fallback was `media_player.primary_bedroom`, and a room agent that left its area out (seen on
+   "play <song> by <artist>" and on add-to-queue requests) played in the bedroom from another room.
 
 An area with no Music Assistant player in it is a **silent failure**: `play_media` returns success,
 nothing plays, and the agent says it is playing (verified by calling `play_media` at `rumpus_room`
@@ -361,6 +364,60 @@ music, and PC audio never makes a request skip the 50 % start. The wait for `pla
 the tool call on purpose: it costs a second or two normally and up to 15 s only when playback never
 starts; re-clamping from an automation on every `playing` edge instead would also override a
 volume someone chose and then paused/resumed.
+
+**Queue and track lists (2026-09-19, after Tom's first spoken music test in the bedroom).** Two
+defects, both fixed live and verified by text as the Movie Room satellite (empty room, AVR path):
+
+- *Old queue came back.* Music Assistant's default `enqueue` for a **track** request is `play`
+  (play now, keep the old queue); artists, albums and playlists default to `replace`
+  (`controllers/player_queues/config.py`, MA 2.10.3). A mood request is a track list, so whatever an
+  earlier request had queued played next (Miles Davis after "party music"). The blueprint has a
+  third local input, `enqueue_option` (default "Music Assistant default" = upstream behaviour); the
+  Play Music script sets it to `replace`. Verified: a 227-item artist queue became exactly the 5
+  requested tracks. So that "replace by default" does not take queueing away, the blueprint also
+  has an optional LLM-facing field `queue` (`add` / `next`, only when the request talks about the
+  queue); it wins over `enqueue_option`, and for it the shuffle step only runs when the request
+  itself asked to shuffle (the existing queue is kept, and its shuffle setting is somebody's
+  choice; the flip side: an "add" that ends up building the whole queue, because the target's queue
+  was empty, inherits whatever shuffle setting that player was left with). Found while testing it: on "add X to the queue" the agent
+  **left the area out**, and the script's fallback is the default player, so the song went into the
+  bedroom Beam's queue from the Movie Room. Two fixes: the script's `area_prompt` says an
+  add/next request still needs the area, and the blueprint **hands an add/next request without an
+  area or player back** ("call this tool again and give the area") instead of using the default
+  player. Verified: first call without area → handed back → second call with `movie_room` →
+  queued there; "play Waterloo next" passed the area straight away. Review rounds 2 and 3 shaped
+  the rest: an "add" aimed at a speaker that is **not playing** would start nothing, yet the Rumpus
+  volume logic would clamp the PC speakers to 50 % and the restore automation would later clear the
+  queue with the added song in it; and turning such an add into `replace` would destroy a
+  **paused** queue. So `add`/`next` are passed on as they are only when **every** targeted Music
+  Assistant player is already playing (blueprint variable `queue_effective`; unavailable/unknown
+  players are not counted, so a stale entity cannot switch queueing off); otherwise the
+  request becomes `play` — the song starts now and the existing queue is kept behind it. An add is
+  therefore never silent and never destructive. Verified on the Movie Room player: paused
+  227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
+  then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
+  skipped both times. Not verified on the Rumpus KEFs themselves (room occupied).
+  **Open for the TVs/AVR work below:** `queue_targets` ignores `unavailable`/`unknown` players but
+  not `off`/`standby` ones. Every room has exactly one Music Assistant player today and none of
+  them reports `off`, but a TV- or AVR-backed MA player added to a room would, while powered down,
+  keep "every target is playing" from ever holding there, and each add would play now instead of
+  appending. Decide the rule when such a player is added (should a powered-down TV be a music
+  target at all?), then extend the filter.
+- *Invented track lists did not resolve.* For "party mood" the agent first sent
+  `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, so
+  **none** of them resolved and the call failed (`Could not resolve [...]`; a list where only some
+  entries resolve plays those and reports nothing — two later test lists played 4 of 5). Its retry
+  used bare titles, which matched the wrong versions (a KIDZ BOP "Party Rock Anthem"). The
+  script's `media_id_prompt` input now spells out `Artist name - Song name`, main artist only, at
+  most five songs for a mood request (one artist named → `artist` parameter + bare song names),
+  and "retry with fewer, more famous songs" when the tool could resolve none. Verified: five
+  entries in the right form, one call (script run 1.1 s; the 7-track kitchen request had taken
+  4.7 s). Mood → *playlist* is not an option here: `music_assistant.search` returns no provider
+  playlists for "party hits", only library playlists.
+
+The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
+is wireless on SonosNet with marginal links and dropped every stream (`ERROR_LSE`,
+`ERROR_BUFFERING`). Plan agreed with Tom: SonosNet off + soundbars wired (see the handoff).
 
 Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
 were awake for every run after that step was added). Still to

@@ -3,8 +3,27 @@
 # /config/blueprints/script/music-assistant/llm_voice_script.yaml. Local additions (2026-09-19):
 #   - input 'pre_actions': actions run after the target is resolved and BEFORE music_assistant.play_media
 #   - variable 'playing_before': Music Assistant players already playing when the request arrived
-# Re-importing the upstream blueprint drops both; the Play Music script's pre_actions input would then
-# be ignored and the Rumpus Room KEFs would start at whatever volume they are at. Re-apply this file.
+#   - input 'enqueue_option' (2026-09-19, later the same day): passed to play_media as 'enqueue'. Music
+#     Assistant's own default for a TRACK request is "play" = play now and KEEP the old queue, so a voice
+#     request for a few songs was followed by whatever an earlier request had left behind (leftover Miles
+#     Davis after "party music" in the bedroom). The Play Music script sets it to "replace".
+#   - field 'queue' (optional, LLM-facing): "add" / "next" when the request explicitly talks about the
+#     queue ("add Take Five to the queue"); it wins over enqueue_option, so "replace" by default does not
+#     take away the ability to queue something. They are passed on as they are only when EVERY
+#     targeted player is already playing (variable 'queue_effective'); otherwise the request becomes
+#     "play" = the song starts now and the existing queue is kept behind it, so an add is never silent
+#     (the Rumpus volume logic and its restore automation always see music that starts) and never
+#     destroys a paused queue. For add/next the shuffle step only runs when the request asked to shuffle.
+#   - no-target hand-back (owner ruling 2026-09-19, "hand it back, never guess"): ANY request without an
+#     area or a player is returned to the agent ("call again with the area the request comes from, or
+#     ask which room") instead of using the default player. Found when a Movie Room test request without
+#     an area played in the bedroom. The Play Music script also no longer sets a default player, and the
+#     'Default Player' input is documented as unused. A named player that is not a Music Assistant
+#     player is handed back too, even when an area came with it ("that speaker was not found"): it is
+#     never dropped silently in favour of the area.
+# Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
+# then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
+# requests would go back to keeping the old queue. Re-apply this file.
 blueprint:
   name: LLM Script for Music Assistant voice requests
   source_url: https://github.com/music-assistant/voice-support/blob/main/llm-script-blueprint/llm_voice_script.yaml
@@ -91,11 +110,14 @@ blueprint:
       input:
         default_player:
           name: Default Player
-          description: 'The default Music Assistant player which will be used if it
-            is not clear from the request in which area or on which player the request
-            should be played.
+          description: 'NOT USED in this locally patched copy (owner ruling 2026-09-19,
+            "hand it back, never guess"): a request that names no area and no player
+            is returned to the agent before this setting is ever looked at, so
+            setting a player here changes nothing. Upstream: the default Music Assistant
+            player which will be used if it is not clear from the request in which
+            area or on which player the request should be played.
 
-            Leave empty if you do not want a default player.'
+            Leave empty.'
           selector:
             entity:
               filter:
@@ -129,6 +151,33 @@ blueprint:
               custom_value: false
               sort: false
           default: Use player settings
+        enqueue_option:
+          name: Queue behaviour (local addition, 2026-09-19)
+          description: 'What a new voice request does to the queue that is already
+            on the player.
+
+            "Music Assistant default" leaves it to Music Assistant, which REPLACES
+            the queue for artists, albums and playlists but for tracks plays the new
+            songs and then carries on with the old queue.
+
+            "replace" always starts a fresh queue, which is what a spoken "play ..."
+            normally means.
+
+            There is deliberately no "add", "next" or "play" here: those only make
+            sense per request, through the optional "queue" argument the LLM can
+            set, which is the path the safety checks below cover (never silent,
+            never into the default player''s queue, never destroying a paused queue).
+
+            '
+          selector:
+            select:
+              options:
+              - Music Assistant default
+              - replace
+              multiple: false
+              custom_value: false
+              sort: false
+          default: Music Assistant default
     prompt_settings:
       name: Prompt settings for the LLM
       icon: mdi:robot
@@ -372,6 +421,23 @@ fields:
       boolean:
     name: Shuffle
     description: !input shuffle_prompt
+  queue:
+    selector:
+      select:
+        options:
+        - next
+        - add
+    name: Queue
+    description: 'Optional (local addition, 2026-09-19). Leave this argument out for
+      every normal "play ..." request: the music then starts now. Set it ONLY when
+      the request explicitly talks about the queue: "add" when the user asks to add
+      or queue something ("add Take Five to the queue", "queue up some Prince"), and
+      "next" when the user asks for it to play next or after this song. Both keep
+      what is playing now; when nothing is playing there, the song starts now and
+      the rest of that queue follows it. Every other argument, the area included, is given exactly
+      as for a normal request: the queue that is meant is the one in the room the
+      request comes from unless another room or player is named.'
+    required: false
 sequence:
 - variables:
     version: 20250404
@@ -406,6 +472,24 @@ sequence:
         or default_player) | default(''NA'', true) }}'
     invalid_target:
       response: Unable to find valid target
+    no_target_given:
+      response: '{{ (''Nothing is playing and nothing was queued: "'' ~ ([media_player] | flatten
+        | join(", ")) ~ ''" is not a Music Assistant player. Tell the user that speaker was not
+        found. If a room was meant, call this tool again with only the area and without the media_player
+        argument.'') if media_player | default([],
+        true) else ''Nothing is playing and nothing was queued, because no area and no player was
+        given. Call this tool again with the area the request comes from. If you do not know which
+        room the request comes from, ask the user which room they want the music in.'' }}'
+- alias: Local addition (owner ruling 2026-09-19 - "hand it back, never guess") - a request that names
+    no area and no player is returned to the agent instead of falling back to the default player. The
+    agent of a voice box sometimes leaves its area out, and the default player is in another room
+  if:
+  - condition: template
+    value_template: '{{ not (area | default or player_data) or (media_player | default([], true)
+      and not player_data) }}'
+  then:
+  - stop: Request without an area or player, or with a player that is not a Music Assistant player
+    response_variable: no_target_given
 - if:
   - condition: template
     value_template: '{{ not (area | default or player_data or default_player) }}'
@@ -414,9 +498,22 @@ sequence:
     response_variable: invalid_target
 - variables:
     playing_before: '{{ integration_entities(''music_assistant'') | select(''is_state'', ''playing'') | list }}'
+- alias: Local addition - "add"/"next" are passed on as they are only when EVERY targeted player is
+    already playing (players that are unavailable or unknown are not counted as targets, so a dead or
+    stale entity in the area cannot switch queueing off). Otherwise (idle, paused, or a mix) the request becomes "play" - the song starts
+    now and the existing queue is kept behind it - so an add is never silent (the additional actions
+    below treat every request as music that starts) and never destroys the queue it was meant for
+  variables:
+    queue_targets: '{{ (([area | default([], true)] | flatten | map(''area_entities'') | sum(start=[])
+      | select(''in'', integration_entities(''music_assistant'')) | list) + (player_data | default([],
+      true) | list)) | select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'')
+      | reject(''is_state'', ''unknown'') | unique | list }}'
+    queue_effective: '{{ queue if queue | default('''', true) in [''next'', ''add''] and queue_targets
+      | count > 0 and queue_targets | reject(''in'', playing_before) | list | count == 0 else '''' }}'
 - sequence: !input pre_actions
 - variables:
     play_continuously: !input play_continuously
+    enqueue_option: !input enqueue_option
     action_data:
       media_id: '{{ media_id.split('';'') | map(''trim'') | list if '';'' in media_id
         else media_id }}'
@@ -425,13 +522,21 @@ sequence:
       album: '{{ album | default(''NA'', true) }}'
       radio_mode: '{{ false if play_continuously == ''Never'' else play_continuously
         == ''Always'' and media_type != ''radio'' or ''NA'' }}'
+      enqueue: '{{ queue_effective if queue_effective != '''' else (''play'' if queue | default('''', true) in [''next'', ''add''] else (''NA'' if enqueue_option == ''Music Assistant default'' else enqueue_option)) }}'
 - alias: Play music using Music Assistant
   action: music_assistant.play_media
   data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
   target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-- alias: Enable/Disable shuffle on a Music Assistant Media Player
-  action: media_player.shuffle_set
-  data:
-    shuffle: '{{ shuffle }}'
-  target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
+- alias: Enable/Disable shuffle on a Music Assistant Media Player (local change - an add/next request
+    keeps the existing queue, whose shuffle setting is somebody's choice, so it only touches shuffle
+    when the request itself asked to shuffle)
+  if:
+  - condition: template
+    value_template: '{{ queue | default('''', true) not in [''next'', ''add''] or shuffle | default(false,
+      true) | bool(false) }}'
+  then:
+  - action: media_player.shuffle_set
+    data:
+      shuffle: '{{ shuffle }}'
+    target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
 - sequence: !input actions

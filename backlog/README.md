@@ -22,3 +22,4 @@ incremental patching.
 | # | Item | Status | Size |
 |---|------|--------|------|
 | 001 | [Custom card deployment revamp / HACS integration](001-card-deployment-and-hacs-integration.md) | Proposed | Major |
+| 002 | [Sonos: SonosNet off, soundbars back on Ethernet](002-sonosnet-off-wired-soundbars.md) | Planned (waits for Tom at home) | Small |

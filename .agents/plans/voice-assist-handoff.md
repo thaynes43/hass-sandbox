@@ -108,7 +108,7 @@ for tool-call questions, and anything the persona gets wrong. Cover in each room
 
 | Room | Room tools to exercise | Music notes / known gaps |
 |---|---|---|
-| Primary Bedroom (voice-tested by Tom on 2026-09-18 for speed only) | `light.primary_bedroom_lights`, nightstands (Tom/Kellie), fan, shades, `script.voice_primary_bathroom_{lights_on,lights_off,shower_lights}`, `script.voice_cloffice_bright`, Kellie's four bedroom scene scripts, thermostat, TV | Beam routing verified by text. Not yet spoken. |
+| Primary Bedroom (voice-tested by Tom on 2026-09-18 for speed only) | `light.primary_bedroom_lights`, nightstands (Tom/Kellie), fan, shades, `script.voice_primary_bathroom_{lights_on,lights_off,shower_lights}`, `script.voice_cloffice_bright`, Kellie's four bedroom scene scripts, thermostat, TV | Spoken 2026-09-19: routing right, but the Beam dropped every stream (wireless SonosNet link, see *Sonos* below). Two voice-side defects found and fixed the same day (queue replace, track-list format: rollout plan *Phase 3*). Re-test after the Beam is wired. |
 | Kitchen (baseline was ~16 s before tuning; never voice-tested since) | kitchen main/island/under-cabinet/sink, `script.voice_kitchen_lights_off`, `script.voice_entrance_all_off`, living room / study / dining / mudroom / entrance lights, downstairs thermostat, `light.downstairs_bathroom_lights` | **Music never tested here**, routing is by configuration only. |
 | Movie Room | `script.voice_movie_room_{bright,dim,red_night_mode,ambient_scene,color_toggle}`, recessed + ambient lights, LG TV, Shield, `climate.movie_room_breeze` | **Music never tested.** The Sonos Port feeds the AVR: find out with Tom whether it is audible with the AVR off / on another input. If not, the fix is a pre-step like the Rumpus one (power + input on `media_player.str_az5000es*`; there are three duplicate AVR registrations — pick the working one first). |
 | Rumpus Room (`prefer_local_intents` stays true — Tom's ruling) | `script.voice_rumpus_room_{bright,dim,color_toggle}`, lamp, `climate.rumpus_room_breeze` | Verified by text three times and heard by Tom. Starts at **50 %** (his choice), saves the KEFs' PC level in `input_number.rumpus_room_kef_saved_volume`, restores it 10 min after music stops (`automation.rumpus_room_kefs_restore_volume_after_voice_music`). **Not verified:** a request while the KEFs are fully asleep (they wake at their own 20 %; the script waits up to 15 s for `playing` and sets 50 % again). Best tested first thing, before anyone has used that PC. |
@@ -121,39 +121,72 @@ their ZEN32s do), both thermostats.
 
 How music routing works, the patched blueprint, and why the Rumpus volume logic looks the way it
 does: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**
-(`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`: `pre_actions` input +
-`playing_before` variable). Re-importing upstream silently drops it.
+(`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`; its header comment is the full
+list): the `pre_actions` and `enqueue_option` inputs, the `playing_before` variable, the optional
+LLM field `queue` (add / play next, with the "every target already playing, else play now and
+keep the queue" rule), and the **no-target hand-back** (Tom's ruling 2026-09-19: a request without
+a room or speaker is returned to the agent, never sent to a default player — the Play Music script
+sets none). Re-importing upstream silently drops all of it: the Rumpus KEFs would start at PC
+volume, track requests would keep old queues again, and a request whose agent forgot its room
+could play in another room. Re-apply the repo file after any re-import.
 
-## The ThirdReality voice device (not started — nothing verified)
+## The ThirdReality voice device (researched 2026-09-19; still in its box)
 
-Tom's name for it: "ThrdReailty V&M Assistant Dev Edition" (ThirdReality; spelling as typed).
-Earlier the same day he said he would put "a new voice device in the cloffice to experiment with
-… we don't want to miss dimming etc there" — **probably the same device; confirm with Tom.**
+"THIRDREALITY Voice & Music Assistant Dev Edition" (network name `3RSPK-<MAC>`). Tom: it is for
+the cloffice, but **which room it ends up in is decided after onboarding**, and so are its persona,
+agent and pipeline — do not create them first. It needs a **different wake word from the bedroom
+box** (they are in earshot); all four Voice PEs use "Okay Nabu".
 
-What is known: at handoff HA has **no** such device. The only ThirdReality devices are ten Zigbee
-night lights; the only `assist_satellite.*` entities are the four Voice PE boxes; nothing is
-pending in ESPHome for it. Nothing about its hardware, firmware or protocol has been looked up —
-do not assume it is ESPHome or that it behaves like a Voice PE.
+What the research found (vendor repo `github.com/thirdreality/voice-music-assistant`; most vendor
+and forum sites are blocked by the pod's egress allowlist, so treat details as unverified until the
+unit is on the network):
 
-First steps, in order:
-1. Ask Tom (one question): is it powered and on the network, and how did/does it onboard (its own
-   app, ESPHome, Matter, Wyoming …)? Then research the device properly (vendor docs / repo) before
-   touching anything — egress is allowlisted, so a blocked fetch means "propose the domain", not
-   "work around it".
-2. See how HA discovers it (`ha_get_integration`, discovered config flows, the ESPHome pod
-   dashboard in ns `home-automation`, mcp-unifi `search_clients` for its MAC/IP).
-3. When it is an Assist satellite: area **Primary Cloffice**, its own pipeline (HA Cloud STT/TTS,
-   `prefer_local_intents: true`) and its own OpenAI agent subentry — copy the bedroom agent's
-   settings (`gpt-5.6-terra`, reasoning none, verbosity low, priority) and the shared prompt block
-   from `agent-docs/voice-agent-prompts.md`; **ask Tom for its persona**.
-4. Cloffice controls to cover (map: control-map *Second floor*): `light.upstairs_primary_cloffice_lights`
-   incl. dimming, `script.voice_cloffice_bright`, `light.den_hue_iris_light` (the Iris),
-   `cover.cloffice_shade_combined` via `script.voice_shades`. Known defect there:
-   `script.single_button_dimming_start/_stop` are unavailable since the 2026-09-18 restart, so
-   hold-to-dim on the wall switch is dead (issue #144).
-5. Music from that box: the Primary Cloffice area has **no** Music Assistant player, so a room-less
-   "play X" would succeed silently and play nothing (the exact Rumpus defect). Decide with Tom
-   which speaker it should use (the bedroom Beam is next door) before he finds out by ear.
+- **Not an ESPHome device.** An Amlogic A113X Linux box whose C++ daemon *speaks* the ESPHome
+  native API (TCP 6053, mDNS `_esphomelib._tcp`). No YAML, no adoption, no self-compile; firmware
+  updates come from the vendor through an HA `update` entity. HA gives it a normal
+  `assist_satellite` (announce, start_conversation, timers); pipeline and wake word are set in that
+  entity's Configure dialog.
+- **Onboarding:** USB-C power (no adapter included) → Home ring blinks yellow (else hold Home 15 s)
+  → HA **phone app** → Discovered → "3RSPK-… Improv via BLE" → **HNETIoT** (2.4 GHz only) → it
+  reappears as "3RSPK-… ESPHome" → Add. Checked 2026-09-19: the IoT VLAN has internet (the
+  firmware refuses to start its voice service until NTP succeeds), IoT→HA 8123 is allowed for the
+  TTS fetch, and HA sits on the IoT L2 at 192.168.50.249, so discovery works like the Voice PEs.
+- **Wake words shipped:** okay_nabu, hey_jarvis, hey_mycroft, hey_home_assistant, okay_computer,
+  hey_luna, alexa (+ two novelty ones), two slots, plus a fixed "stop". Custom ones need a firmware
+  rebuild. Suggested to Tom: Hey Jarvis. Update to firmware ≥ 1.2.3 before judging the mic (quiet
+  mic / garbled audio bugs before that; settings did not survive a power cycle before 1.2.2).
+- **Music:** its `media_player` has no `play_media`; music goes through Music Assistant's
+  **Sendspin** provider, which is already enabled (MA 2.10.3; the four Voice PEs are Sendspin
+  players). MA is hostNetwork with an IoT-VLAN address (192.168.50.104, a plain DHCP lease) and
+  dials out to `_sendspin._tcp` devices on the same subnet, so no firewall rule is involved *if*
+  the box advertises itself; if it dials in instead it is sent to 192.168.40.59:8927, which
+  "Block Local Access from IoT" stops (fix = one narrow allow rule, ask Tom first). The Primary
+  Cloffice area has no MA player today, so decide with Tom where room-less music should land.
+- **Known problems to plan for:** it does not reconnect after an HA restart until it is
+  power-cycled (vendor issue #15, open) — this HA rolls on every upgrade, so build a workaround
+  once it is in; it ships with unauthenticated root ADB on TCP 5555 and a default root SSH
+  password — raise locking it down with Tom once it is online. Give it a DHCP reservation.
+- Cloffice controls to cover (control-map *Second floor*): `light.upstairs_primary_cloffice_lights`
+  incl. dimming, `script.voice_cloffice_bright`, `light.den_hue_iris_light`,
+  `cover.cloffice_shade_combined` via `script.voice_shades`. Hold-to-dim on the wall switch is dead
+  since the 2026-09-18 restart (issue #144).
+
+## Sonos: SonosNet off + wired soundbars (agreed with Tom 2026-09-19, waits for him to be home)
+
+Why it is in this file: the first spoken bedroom music test kept stopping. The Beam
+(`media_player.primary_bedroom`, 192.168.0.6) is wireless on SonosNet with marginal links (34–41)
+to the wired Amps and 2–3k PHY errors/s; moving SonosNet from channel 11 to 1 did not help. Tom's
+decision: run the Sonos app's **Disable SonosNet** wizard (system-wide, app ≥ 85 — it cannot be
+done over VPN, the app needs his phone on the home Wi-Fi) and re-enable the soundbars' switch
+ports: **Switch Pro Max 48 PoE ports 3, 5, 6, 7** (disabled years ago because of Sonos loops).
+Tom makes the port changes in the UniFi app (the mcp-unifi port tools do not work, haynes-ops
+#2984); the agent verifies SonosNet is off on all 19 units first
+(`http://<ip>:1400/status/wireless` → `SonosNetDisabled`, via curl from the HA pod), then watches
+one port at a time. **Everything needed to run it is in `backlog/002-sonosnet-off-wired-soundbars.md`**:
+topology table, the exact port settings, the verification commands, the monitoring baseline and
+abort signals, and what is still owed afterwards (two dead-Ethernet units have no disabled port;
+DHCP reservations; re-test bedroom music). Never use the per-device "Disable Wi-Fi" on a soundbar:
+it cuts off its surrounds and Sub.
 
 ## Still open after testing
 
