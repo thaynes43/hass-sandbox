@@ -53,12 +53,13 @@ def verdict(answer, truth, label):
     words = [(m.start(), CANON.get(m.group(1), m.group(1))) for m in STATE_WORD.finditer(text)]
     if not words:
         return "MISMATCH"
-    at = text.find(key)
-    if at < 0:
-        said = words[0][1] if len({w for _, w in words}) == 1 else None
-    else:
-        after = [w for pos, w in words if pos > at]
-        said = after[0] if after else words[-1][1]
+    named = re.search(rf"\b{re.escape(key)}\b", text)  # word boundary: "side" must not match "outside"
+    if named is None:
+        if len({w for _, w in words}) == 1:
+            return "ok" if words[0][1] == truth else "MISMATCH"
+        return "SKIP"  # door not named and the answer mixes states: cannot judge honestly
+    after = [w for pos, w in words if pos > named.start()]
+    said = after[0] if after else words[-1][1]
     return "ok" if said == truth else "MISMATCH"
 
 
@@ -78,6 +79,10 @@ async def main():
                     counts["MISSING"] += 1
                     print(f"{name:8s} MISSING  truth=?         | {label}: source entity unavailable, not asked")
                     continue
+                if t not in OPPOSITE:  # unavailable / opening / jammed ...: nothing to judge, do not spend a call
+                    counts["SKIP"] += 1
+                    print(f"{name:8s} SKIP     truth={str(t):9s} | {label}: not a settled state, not asked")
+                    continue
                 kind = "locked" if t in ("locked", "unlocked") else "open"
                 q = f"Is the {label} {kind} right now"
                 try:
@@ -90,8 +95,9 @@ async def main():
                 v = verdict(answer, t, label)
                 counts[v] += 1
                 print(f"{name:8s} {v:8s} truth={str(t):9s} | {q:44s} -> {answer[:110]}")
-    clean = counts["MISMATCH"] == 0 and counts["MISSING"] == 0 and counts["ok"] > 0
-    print(f"RESULT: {'ALL OK' if clean else 'NOT OK'} {counts}")
+    expected = len(MIRRORS) * (1 + len(AGENTS))  # every mirror AND every agent answer judged ok
+    clean = counts["ok"] == expected
+    print(f"RESULT: {'ALL OK' if clean else 'NOT OK'} {counts} (need ok={expected})")
 
 
 # Self-test of the judge (runs with the check; cheap and catches a broken heuristic):
@@ -105,6 +111,8 @@ assert verdict("The front, side and bulkhead doors are all locked.", "locked", "
 assert verdict("The Tesla garage door opener reports closed.", "closed", "Tesla garage door") == "ok"
 assert verdict("The only unlocked door is the mudroom door.", "unlocked", "mudroom door") == "ok"
 assert verdict("I could not find that.", "locked", "front door") == "MISMATCH"
+assert verdict("Outside, the front door is locked and the bulkhead is locked; the side door is unlocked.", "unlocked", "side door") == "ok"
+assert verdict("Both garage doors are closed, and all the doors are locked.", "locked", "front door") == "SKIP"
 assert verdict("It is opening.", "opening", "Tesla garage door") == "SKIP"
 
 asyncio.run(main())

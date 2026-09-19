@@ -1,9 +1,10 @@
 # script.voice_primary_bathroom_shower_lights — voice tool exposed to Assist (created live via MCP, 2026-09-19).
 # Mirrors a physical control or a ruling; see .agents/plans/voice-assist-rollout.md (Phase 2).
 alias: Primary Bathroom Shower Lights
-description: Voice tool. Turns on the shower light and the fan light in the primary bathroom and keeps
-  the bathroom lights on longer while someone showers. Same as pressing the config button on the shower
-  switch. Use for 'turn on the shower lights'. To turn them off again, use Primary Bathroom Lights Off.
+description: Voice tool. Turns ON the shower light and the fan light in the primary bathroom and keeps
+  the bathroom lights on longer while someone showers. It is the 'on' half of the config button on the
+  shower switch (that button is a toggle; this tool only ever turns them on). Use for 'turn on the shower
+  lights'. To turn them off again, use Primary Bathroom Lights Off.
 icon: mdi:shower-head
 mode: single
 sequence:
