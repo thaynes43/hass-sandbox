@@ -292,9 +292,14 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 `script.llm_script_for_music_assistant_voice_requests` ("Play Music", the Music Assistant LLM
 blueprint), and that script resolves the target in this order:
 
-1. a Music Assistant player named in the request (`media_player` argument, entity_id or friendly name);
+1. a Music Assistant player named in the request (`media_player` argument, entity_id or friendly
+   name). The agent then passes **no area** (the script targets the union of both, so its own room
+   would start playing too), and a named speaker that is **not** a Music Assistant player stops
+   the request ("that speaker was not found") even when an area or other, valid speakers came with
+   it — it is never dropped silently (blueprint variable `unresolved_players`);
 2. a room named in the request (`area` argument) → `music_assistant.play_media` targeted at the
-   area, i.e. **every Music Assistant player assigned to that HA area**;
+   area, i.e. **every Music Assistant player assigned to that HA area** (a room *and* a speaker,
+   both named on purpose, target both);
 3. nothing named → the agent passes the area it is in. It knows that because HA's Assist API prompt
    says "You are in area X …" (`components/intent/llm.py` in 2026.9), taken from the **area of the
    satellite device**. The `area` argument is an area selector, so HA resolves spoken names and

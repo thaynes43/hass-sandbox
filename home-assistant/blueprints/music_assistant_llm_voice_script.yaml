@@ -19,8 +19,9 @@
 #     ask which room") instead of using the default player. Found when a Movie Room test request without
 #     an area played in the bedroom. The Play Music script also no longer sets a default player, and the
 #     'Default Player' input is documented as unused. A named player that is not a Music Assistant
-#     player is handed back too, even when an area came with it ("that speaker was not found"): it is
-#     never dropped silently in favour of the area.
+#     player is handed back too, even when an area or other, valid speakers came with it ("that
+#     speaker was not found"; variable 'unresolved_players' = the named ones that are neither a Music
+#     Assistant entity id nor a friendly name): it is never dropped silently.
 # Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
 # then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
 # requests would go back to keeping the old queue. Re-apply this file.
@@ -466,6 +467,9 @@ sequence:
       {% endfor %}
 
       {{ ns.players }}'
+    unresolved_players: '{% set ma = integration_entities(''music_assistant'') %} {{ [media_player
+      | default([], true)] | flatten | reject(''in'', ma) | reject(''in'', ma | map(''state_attr'',
+      ''friendly_name'') | list) | list }}'
     target_data:
       area_id: '{{ area | default(''NA'', true) }}'
       entity_id: '{{ ''NA'' if area | default and not player_data else (player_data
@@ -473,20 +477,19 @@ sequence:
     invalid_target:
       response: Unable to find valid target
     no_target_given:
-      response: '{{ (''Nothing is playing and nothing was queued: "'' ~ ([media_player] | flatten
-        | join(", ")) ~ ''" is not a Music Assistant player. Tell the user that speaker was not
-        found. If a room was meant, call this tool again with only the area and without the media_player
-        argument.'') if media_player | default([],
-        true) else ''Nothing is playing and nothing was queued, because no area and no player was
-        given. Call this tool again with the area the request comes from. If you do not know which
-        room the request comes from, ask the user which room they want the music in.'' }}'
+      response: '{{ (''Nothing is playing and nothing was queued: "'' ~ (unresolved_players | join(", "))
+        ~ ''" is not a Music Assistant player. Tell the user that speaker was not found. If a room
+        was meant, call this tool again with only the area and without that name in media_player.'')
+        if unresolved_players | count > 0 else ''Nothing is playing and nothing was queued, because
+        no area and no player was given. Call this tool again with the area the request comes from.
+        If you do not know which room the request comes from, ask the user which room they want the
+        music in.'' }}'
 - alias: Local addition (owner ruling 2026-09-19 - "hand it back, never guess") - a request that names
     no area and no player is returned to the agent instead of falling back to the default player. The
     agent of a voice box sometimes leaves its area out, and the default player is in another room
   if:
   - condition: template
-    value_template: '{{ not (area | default or player_data) or (media_player | default([], true)
-      and not player_data) }}'
+    value_template: '{{ not (area | default or player_data) or unresolved_players | count > 0 }}'
   then:
   - stop: Request without an area or player, or with a player that is not a Music Assistant player
     response_variable: no_target_given

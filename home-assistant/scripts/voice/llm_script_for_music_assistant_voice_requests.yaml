@@ -136,18 +136,23 @@ use_blueprint:
       name - Song name" form.
 
       This is a mandatory argument and must always be provided.'
-    area_prompt: 'The area or areas for which the music is requested. If the request names a speaker (a
-      player), do not pass an area at all: pass only "media_player", otherwise the music starts in both
-      places. If the request names neither a room nor a speaker, use the area the request comes from:
-      you were told which area you are in, so pass it, also for a single named song and also when the
-      request is to add something to the queue or to play it next ("the queue" is not a target). A request
-      without an area and without a player is handed back and nothing plays.
+    area_prompt: 'The area or areas for which the music is requested.
 
-      If the area can not be determined from the request, or the device the request comes from, do not
-      use this parameter; ask the user which room they want the music in.
+      - The request names a room (or rooms): pass those areas.
 
-      Only use both the "area" parameter and the "media_player" parameter together if both are specifically
-      used in the request.'
+      - The request names a speaker (a player) and no room: pass only "media_player" and no area at all,
+      otherwise the music also starts in the room you are in.
+
+      - The request names both a room and a speaker, each specifically: pass both; the music then plays
+      in that room and on that speaker.
+
+      - The request names neither: pass the area the request comes from. You were told which area you
+      are in, so pass it, also for a single named song and also when the request is to add something to
+      the queue or to play it next ("the queue" is not a target). A request without an area and without
+      a player is handed back and nothing plays.
+
+      If you do not know which room the request comes from, do not use this parameter; ask the user which
+      room they want the music in.'
 description: 'This script is used to play music based on a voice request. The tool takes the following
   arguments: media_type, artist, album, media_id, media_description, area, media_player, shuffle, queue.
   media_id, media_type and media_description are always required and must always be supplied as arguments
