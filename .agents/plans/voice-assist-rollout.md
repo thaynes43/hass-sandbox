@@ -165,9 +165,9 @@ so the voice vocabulary is the one humans already use. Concepts, not entities: a
 buttons treat as one thing (Movie Room "ambient lights" = gradients + floor lamps + play bars)
 is one voice handle, and looks/modes are **zero-argument `script.voice_*` scripts that call
 exactly what the scene-controller button calls**. Voice on/off behaves like the paddle —
-automations keep running. **No hold tools** (Tom, 2026-09-19: holds are not used day to day,
-except the back-yard flood light when the hot tub is in use — that one is an open question); the
-two basement hold scripts created on 2026-09-18 were removed again.
+automations keep running. **No hold tools** (Tom, 2026-09-19: holds are not used day to day);
+the two basement hold scripts created on 2026-09-18 were removed again. The one exception is
+**hot tub mode** (below).
 
 1. Per floor: subagents map physical controls → human concepts → automation ownership (what
    turns it on/off, off-delays, hold helpers). Maps live in `agent-docs/voice-control-map.md`.
@@ -184,6 +184,20 @@ two basement hold scripts created on 2026-09-18 were removed again.
    list exposed entities, apply the deny rules above (domains, garage-class covers,
    integrations, name patterns, deny-by-default switches and scripts with allowlists in the
    app YAML), un-expose violators and notify Tom.
+
+### Hot tub mode (Tom's ruling, 2026-09-19)
+
+The hold the family actually uses keeps the bright back-yard flood light **off** while people are
+in the hot tub. `automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold` does it: spa
+lights on → auto-hold the spotlight switch (LED 130, the three spotlight automations disabled)
+and turn the spotlight off; spa lights off → clear the hold. It had been dead since 2026-06-01
+(it triggered on `light.westford_spa_light_1`, which no longer exists) and was switched off; it
+now triggers on `light.back_yard_westford_spa_light_1` / `_2` (release when both are off), is
+enabled, and was verified end to end (LED 210 → 130 → 210, automations off → on).
+`script.voice_hot_tub_mode_on` / `_off` make the same two calls so an agent can act on "I'm going
+in the hot tub" / "we're out of the hot tub"; both verified by running them. They are exposed once
+the guard release that allowlists them (v1.18.4) is rolled out — until then the guard would
+un-expose them.
 
 ### Shades (Tom's ruling)
 
@@ -261,8 +275,6 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 - Voice-test Kitchen, Movie Room and Rumpus Room; say whether Rumpus should keep
   `prefer_local_intents: true` (exact phrases answer instantly but without the Jarvis voice).
 - Second floor: still open — the upstairs foyer lights.
-- Hot tub: whether voice should get a flood-light tool (back-yard spotlight on + hold, and a
-  release) — the one hold the family actually uses.
 - First floor and exterior proposals (maps are in `agent-docs/voice-control-map.md`).
 
 ## Phases 3 and 5

@@ -86,6 +86,9 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 | Back-yard motion-light relay | 00:00 | sunrise |
 | Lamp post (`light.front_yard_lamp_post_hue_edison`) | nothing | nothing |
 
+- **Hot tub mode** (fixed 2026-09-19): `automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold`
+  auto-holds the spotlight switch and turns the flood light off while either spa light is on, and
+  releases when both are off; `script.voice_hot_tub_mode_on/_off` make the same calls for voice.
 - **Back-yard spotlight** (`light.downstairs_kitchen_back_yard_spotlight`) is the contested one:
   three automations (slider opens, camera person/animal, auto-off after 5 min clear with a hard
   45 min cap) — all disabled while the paddle hold is engaged. A plain voice turn-on is fought.
@@ -112,8 +115,8 @@ was misread by the LLM), `script.voice_lock_all_doors` (front, side, bulkhead; l
 `script.voice_close_garage_doors` (close-only). The `input_text.*_entry_locks_status` roll-ups
 stay invisible to Assist (no tool reads `input_text`).
 
-Defects found (open): the spa-light auto-hold automation triggers on the non-existent
-`light.westford_spa_light_1`; `input_select.garage_interior_mudroom_mmwave_normal_mode` reads
+Defects found (open; the dead spa-light auto-hold trigger was fixed on 2026-09-19):
+`input_select.garage_interior_mudroom_mmwave_normal_mode` reads
 "Occupancy (default)" while the switch is `Disabled`, so the next Config 2x re-enables local
 mmWave control instead of holding; the spotlight mapping passes an `input_number` as
 `prev_led_color_helper` (written with `input_text.set_value`, so it never updates);

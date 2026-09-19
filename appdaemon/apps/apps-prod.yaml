@@ -1521,6 +1521,8 @@ assist_exposure_guard:
     - "script.voice_cloffice_bright"
     - "script.voice_lock_all_doors"
     - "script.voice_close_garage_doors"
+    - "script.voice_hot_tub_mode_on"
+    - "script.voice_hot_tub_mode_off"
     - "script.llm_script_for_music_assistant_voice_requests"
     - "script.kellie_mobile_primary_bedroom_relaxed"
     - "script.kellie_mobile_primary_bedroom_focused"

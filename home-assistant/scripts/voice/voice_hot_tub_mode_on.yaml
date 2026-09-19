@@ -1,0 +1,24 @@
+# script.voice_hot_tub_mode_on — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Same calls as automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold; see
+# .agents/plans/voice-assist-rollout.md (hot tub mode).
+alias: Hot Tub Mode On
+description: Voice tool. Call this whenever someone says they are going in, getting in, or using the hot
+  tub or spa ('I'm going in the hot tub', 'we're getting in the spa', 'hot tub time', 'hot tub mode').
+  It turns the bright back yard flood light off and puts it on hold, so motion in the yard cannot switch
+  it on while people are in the tub. It does not control the hot tub itself. The hold ends with Hot Tub
+  Mode Off, or by itself when the spa lights are switched off.
+icon: mdi:hot-tub
+mode: single
+sequence:
+- action: script.inovelli_set_mmwave_hold_led_indicator
+  data:
+    switch_name: downstairs_kitchen_back_yard_spotlight
+    hold_color: input_text.inovelli_auto_hold
+    prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
+    automation_entity_ids:
+    - automation.switch_back_yard_slider_opens_turn_on_spotlight
+    - automation.switch_back_yard_camera_detects_motion_turn_on_lights
+    - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+- action: light.turn_off
+  target:
+    entity_id: light.downstairs_kitchen_back_yard_spotlight

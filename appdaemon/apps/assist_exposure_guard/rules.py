@@ -141,6 +141,10 @@ DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     # it is editable from the UI without touching this repo.
     "script.voice_lock_all_doors",
     "script.voice_close_garage_doors",
+    # Hot tub mode: holds the back-yard flood light off (same calls as the spa-lights automation).
+    # Disables three spotlight automations by design; touches no spa/pool equipment.
+    "script.voice_hot_tub_mode_on",
+    "script.voice_hot_tub_mode_off",
     # Music Assistant request handler
     "script.llm_script_for_music_assistant_voice_requests",
     # Primary bedroom modes
