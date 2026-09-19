@@ -198,7 +198,8 @@ def test_entity_flipping_off_without_a_new_version_is_not_a_completion() -> None
     status = coord.status()
     assert status["completed_count_this_run"] == 0
     assert status["completed_this_run"] == []
-    assert status["cleared_without_update"] == ["hue_a"]
+    assert [e["device"] for e in status["cleared_without_update"]] == ["hue_a"]
+    assert status["cleared_without_update_count"] == 1
     assert status["pending"] == ["hue_b"]
 
 
@@ -556,7 +557,7 @@ def test_an_empty_device_list_never_reads_as_healthy() -> None:
 def test_no_image_park_expires_and_retries_the_same_version() -> None:
     """Upstream often republishes a pulled release under the same version."""
     clock = FakeClock()
-    coord = make_coordinator(clock, no_image_recheck_s=3600)
+    coord = make_coordinator(clock, park_recheck_s=3600)
     refresh(coord, snapshot("hue_a"))
     decision = coord.decide()
     coord.on_update_response(
@@ -773,3 +774,71 @@ def test_bridge_devices_are_counted_when_home_assistant_answers_empty() -> None:
     assert status["identity_source"] == "zigbee2mqtt bridge"
     assert status["z2m_devices_known"] == 2
     assert status["pending"] == ["hue_a"]
+
+
+def test_unknown_device_is_parked_not_retried_forever() -> None:
+    """A Home Assistant rename makes the id we send name no Z2M device."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device 'hue_a' does not exist",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert status["unknown_to_z2m"] == ["hue_a"]
+    assert status["unknown_to_z2m_count"] == 1
+    assert status["skipped_no_image"] == []
+    assert status["failed_attempts_this_run"] == 0
+    assert status["cooldown"] == []
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+    # Still parked a day of backoff cycles later.
+    clock.advance(21600)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    assert "hue_a" not in coord.status()["pending"]
+
+
+def test_renaming_the_device_back_recovers_immediately() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device 'hue_a' does not exist",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    refresh(coord, snapshot("hue_real_name"))
+    retry = coord.decide()
+    assert retry is not None and retry.friendly_name == "hue_real_name"
+
+
+def test_cleared_without_update_keeps_the_most_recent_entries() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    for _ in range(2):
+        refresh(coord, snapshot("hue_a"))
+        clock.advance(10)
+        refresh(coord, {"update.hue_a": entity("hue_a", state="off")})
+        clock.advance(10)
+    status = coord.status()
+    assert status["cleared_without_update_count"] == 2  # not deduplicated
+    assert status["cleared_without_update"][-1]["at"] > (
+        status["cleared_without_update"][0]["at"]
+    )
+
+
+def test_a_failed_lookup_reports_its_reason_on_the_first_tick() -> None:
+    coord = make_coordinator()
+    coord.mark_identity_unavailable("HA unreachable")
+    coord.refresh_entities(snapshot("hue_a"))
+    assert "HA unreachable" in coord.status()["last_event"]

@@ -92,7 +92,7 @@ class ZigbeeOtaOrchestrator(hass.Hass):
             online_retry_grace_s=float(args.get("online_retry_grace_s", 60)),
             progress_stall_s=float(args.get("progress_stall_s", 2700)),
             update_timeout_s=float(args.get("update_timeout_s", 14400)),
-            no_image_recheck_s=float(args.get("no_image_recheck_s", 86400)),
+            park_recheck_s=float(args.get("park_recheck_s", 86400)),
         )
         self.log(
             "ZigbeeOtaOrchestrator starting: globs=%s scan_interval=%ss"

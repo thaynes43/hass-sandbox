@@ -47,6 +47,14 @@ _BUSY_ERROR_MARKERS = ("already in progress",)
 # typically a release the maintainers pulled. Nothing is transferred, so it is
 # neither a completed update nor a failure worth retrying.
 _NO_IMAGE_ERROR_MARKERS = ("no image",)
+# Z2M answers "Device 'X' does not exist" when the id it was sent names no
+# device — which happens when the Home Assistant friendly_name has been
+# renamed away from the Zigbee2MQTT device name. Retrying can only repeat it.
+_UNKNOWN_DEVICE_MARKERS = ("does not exist",)
+
+# Why a device is parked (no attempt burned, no backoff scheduled).
+PARK_NO_IMAGE = "no image"
+PARK_UNKNOWN = "unknown to zigbee2mqtt"
 
 # How the Z2M device list was learned, for the status sensor.
 IDENTITY_NONE = "none"
@@ -102,9 +110,10 @@ def _at(ts: float) -> str:
 
 
 @dataclass
-class NoImageSkip:
-    """A device parked because Z2M has no firmware file for what it advertises."""
+class ParkedDevice:
+    """A device Z2M cannot install right now, for a reason retrying won't fix."""
 
+    reason: str
     latest_version: Optional[str]  # None until the next refresh learns it
     ts: float
 
@@ -132,7 +141,7 @@ class OtaCoordinator:
     progress_stall_s: float = 2700.0
     update_timeout_s: float = 14400.0
     completed_suppress_s: float = 600.0
-    no_image_recheck_s: float = 86400.0
+    park_recheck_s: float = 86400.0
     now: Callable[[], float] = time.time
     make_transaction: Callable[[str], str] = None  # type: ignore[assignment]
 
@@ -148,8 +157,8 @@ class OtaCoordinator:
         self._global_busy_until: float = 0.0
         self._completed: list[dict[str, Any]] = []  # this process lifetime only
         self._recently_completed: dict[str, float] = {}
-        self._no_image: dict[str, NoImageSkip] = {}  # active parks
-        self._cleared: list[str] = []
+        self._parked: dict[str, ParkedDevice] = {}  # not installable right now
+        self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
         self._last_event: str = "startup"
 
@@ -239,15 +248,16 @@ class OtaCoordinator:
         include glob can never publish an OTA request for, say, an Immich or
         HACS update entity.
         """
+        if self._identity_stale is not None:
+            # The device list could not be refreshed this tick. Re-deriving the
+            # queue from a snapshot we can't match against a trustworthy list
+            # would drop devices that are still there. Checked first so
+            # last_event keeps the reason mark_identity_unavailable just set.
+            return
         if not self.identity_ready:
             self._last_event = (
                 "no Zigbee2MQTT device list yet — nothing queued"
             )
-            return
-        if self._identity_stale is not None:
-            # The device list could not be refreshed this tick. Re-deriving the
-            # queue from a snapshot we can't match against a trustworthy list
-            # would drop devices that are still there.
             return
         seen: set[str] = set()
         present: set[str] = set()
@@ -277,13 +287,13 @@ class OtaCoordinator:
             self.set_availability(friendly, True)
             if state != "on":
                 # Nothing is on offer any more, so nothing is being skipped.
-                self._no_image.pop(friendly, None)
+                self._parked.pop(friendly, None)
                 # Work out whether anything actually installed.
                 existing = self._devices.pop(friendly, None)
                 if existing is not None:
                     self._settle_cleared(friendly, existing, attrs)
                 continue
-            if friendly in self._no_image and self._still_parked(friendly, attrs):
+            if friendly in self._parked and self._still_parked(friendly, attrs):
                 continue
             completed_ts = self._recently_completed.get(friendly)
             if (
@@ -310,9 +320,9 @@ class OtaCoordinator:
         for friendly in list(self._devices):
             if friendly not in seen:
                 self._devices.pop(friendly)
-        for friendly in list(self._no_image):
+        for friendly in list(self._parked):
             if friendly not in present:
-                self._no_image.pop(friendly)
+                self._parked.pop(friendly)
 
         if adopted_candidate is not None and self._in_flight is None:
             self._in_flight = InFlight(
@@ -376,7 +386,15 @@ class OtaCoordinator:
             # carries a file again: not a completion, and not worth retrying.
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
-                self._record_skip(target, error)
+                self._record_skip(target, PARK_NO_IMAGE, error)
+            return
+        if any(marker in lowered for marker in _UNKNOWN_DEVICE_MARKERS):
+            # The id we sent names no Z2M device — almost always a Home
+            # Assistant rename. The availability and progress topics for this
+            # name can never match either, so retrying is pointless.
+            target = fl.friendly_name if (matches_flight and fl is not None) else friendly
+            if target:
+                self._record_skip(target, PARK_UNKNOWN, error)
             return
         if any(marker in lowered for marker in _BUSY_ERROR_MARKERS):
             # Another OTA (ours after a local timeout, or manual) is running.
@@ -504,14 +522,15 @@ class OtaCoordinator:
         """Should a no-image device stay parked this tick?
 
         It is released when a different version is offered, and re-checked
-        every ``no_image_recheck_s`` — upstream often republishes a pulled
+        every ``park_recheck_s`` — upstream often republishes a pulled
         release under the *same* version number, which a version comparison
-        alone would never notice.
+        alone would never notice. (A device renamed back in Home Assistant
+        recovers immediately: the new name was never parked.)
         """
-        skip = self._no_image[friendly]
-        if self.now() - skip.ts >= self.no_image_recheck_s:
-            self._no_image.pop(friendly, None)
-            self._last_event = f"{friendly}: re-checking for a firmware image"
+        skip = self._parked[friendly]
+        if self.now() - skip.ts >= self.park_recheck_s:
+            self._parked.pop(friendly, None)
+            self._last_event = f"{friendly}: re-checking (parked: {skip.reason})"
             return False
         offered = str(attrs.get("latest_version"))
         if skip.latest_version is None:
@@ -519,7 +538,7 @@ class OtaCoordinator:
             return True
         if offered == skip.latest_version:
             return True
-        self._no_image.pop(friendly, None)  # a different release is on offer
+        self._parked.pop(friendly, None)  # a different release is on offer
         return False
 
     def _settle_cleared(
@@ -537,21 +556,21 @@ class OtaCoordinator:
             self._record_completion(friendly, rec, attrs)
             return
         self._clear_in_flight_for(friendly)
-        if friendly not in self._cleared:
-            self._cleared.append(friendly)
+        self._cleared.append({"device": friendly, "at": _at(self.now())})
         self._last_event = f"{friendly}: update withdrawn without installing"
 
     def _clear_in_flight_for(self, friendly: str) -> None:
         if self._in_flight is not None and self._in_flight.friendly_name == friendly:
             self._in_flight = None
 
-    def _record_skip(self, friendly: str, error: str) -> None:
-        """Park a device Z2M has no firmware file for. No attempt is burned and
+    def _record_skip(self, friendly: str, reason: str, error: str) -> None:
+        """Park a device Z2M cannot install right now. No attempt is burned and
         no backoff is scheduled — a retry would only get the same answer."""
         rec = self._devices.pop(friendly, None)
         # latest_version None = not known yet (a response for a device we
         # weren't tracking); the next refresh learns it and keeps skipping.
-        self._no_image[friendly] = NoImageSkip(
+        self._parked[friendly] = ParkedDevice(
+            reason=reason,
             latest_version=rec.latest_version if rec is not None else None,
             ts=self.now(),
         )
@@ -605,6 +624,16 @@ class OtaCoordinator:
             for rec in self._devices.values()
             if self._availability.get(rec.friendly_name) is False
         )
+        no_image = sorted(
+            name
+            for name, park in self._parked.items()
+            if park.reason == PARK_NO_IMAGE
+        )
+        unknown = sorted(
+            name
+            for name, park in self._parked.items()
+            if park.reason == PARK_UNKNOWN
+        )
         in_flight_name = self._in_flight.friendly_name if self._in_flight else None
         pending = sorted(
             rec.friendly_name
@@ -625,9 +654,12 @@ class OtaCoordinator:
             "offline_count": len(offline),
             "completed_this_run": self._completed[-STATUS_LIST_CAP:],
             "completed_count_this_run": len(self._completed),
-            "skipped_no_image": sorted(self._no_image)[:STATUS_LIST_CAP],
-            "skipped_no_image_count": len(self._no_image),
+            "skipped_no_image": no_image[:STATUS_LIST_CAP],
+            "skipped_no_image_count": len(no_image),
+            "unknown_to_z2m": unknown[:STATUS_LIST_CAP],
+            "unknown_to_z2m_count": len(unknown),
             "cleared_without_update": self._cleared[-STATUS_LIST_CAP:],
+            "cleared_without_update_count": len(self._cleared),
             "failed_attempts_this_run": self._failed_attempts,
             "busy_until": _at(self._global_busy_until) if ts < self._global_busy_until else "",
             "z2m_devices_known": self._z2m_device_count(),

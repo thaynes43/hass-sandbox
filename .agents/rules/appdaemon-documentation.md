@@ -194,7 +194,8 @@ health_check_controller (listens for health_check_command events from all checke
 countdown_app
   └─ depends on: ai_providers (image generation), ha_provisioner (relay script provisioning)
 
-zigbee_ota (standalone — MQTT + HASS plugins only)
+zigbee_ota (standalone — MQTT + HASS plugins only; device identity comes
+            from the HA device registry via a template render each tick)
   └─ publishes sensor.zigbee_ota_orchestrator
 
 assist_exposure_guard (standalone — no app depends on it and it depends on no app)

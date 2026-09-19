@@ -45,8 +45,14 @@ and widened in 2026-09 to every Z2M device.
   transferred, so it counts as neither a completed update nor a failure: the
   device lands in `skipped_no_image` with no retry attempt and no backoff. It
   is picked up again when a different version is offered, when the update stops
-  being offered and later returns, or after `no_image_recheck_s` — upstream
-  often republishes a pulled release under the *same* version number.
+  being offered and later returns, or after `park_recheck_s` — upstream often
+  republishes a pulled release under the *same* version number.
+- **"Device 'X' does not exist"** — Z2M's answer when the name it was sent
+  matches no device, which means the Home Assistant friendly name has been
+  renamed away from the Zigbee2MQTT device name. The availability and progress
+  topics for that name can never match either, so the device is parked in
+  `unknown_to_z2m` rather than retried forever. Renaming it back recovers on
+  the next tick.
 - **`unavailable` is not `off`** — Z2M marks a device's `update.*` entity
   unavailable whenever the device is out of touch (switched off at the wall, a
   Home Assistant restart). Only an explicit `off` means the update went away;
@@ -71,7 +77,7 @@ and widened in 2026-09 to every Z2M device.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (per-device attempts / `retry_at` / last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (per-device attempts / `retry_at` / last error), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
 The lists are capped at 25 entries with a `*_count` beside them, and every
 schedule is an absolute time (`retry_at`, `busy_until`, `started_at`) rather
@@ -117,7 +123,7 @@ simple entities card.
 | `progress_stall_s` | `2700` | No progress movement for this long → `stalled: true` on the sensor. |
 | `update_timeout_s` | `14400` | Absolute per-attempt cap; after it the attempt is marked failed and the queue moves on. |
 | `busy_backoff_s` | `300` | Wait after Z2M reports another OTA is already running. |
-| `no_image_recheck_s` | `86400` | How long a device Z2M has no firmware file for stays parked before being tried again. |
+| `park_recheck_s` | `86400` | How long a device Z2M cannot install (no image, or a name it doesn't know) stays parked before being tried again. |
 | `mqtt_namespace` | `mqtt` | AppDaemon MQTT plugin namespace. |
 | `base_topic` | `zigbee2mqtt` | Z2M base topic. |
 | `status_sensor` | `sensor.zigbee_ota_orchestrator` | Status sensor entity id. |
