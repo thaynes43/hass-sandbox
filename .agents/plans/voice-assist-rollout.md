@@ -362,6 +362,30 @@ the tool call on purpose: it costs a second or two normally and up to 15 s only 
 starts; re-clamping from an automation on every `playing` edge instead would also override a
 volume someone chose and then paused/resumed.
 
+**Queue and track lists (2026-09-19, after Tom's first spoken music test in the bedroom).** Two
+defects, both fixed live and verified by text as the Movie Room satellite (empty room, AVR path):
+
+- *Old queue came back.* Music Assistant's default `enqueue` for a **track** request is `play`
+  (play now, keep the old queue); artists, albums and playlists default to `replace`
+  (`controllers/player_queues/config.py`, MA 2.10.3). A mood request is a track list, so whatever an
+  earlier request had queued played next (Miles Davis after "party music"). The blueprint has a
+  third local input, `enqueue_option` (default "Music Assistant default" = upstream behaviour); the
+  Play Music script sets it to `replace`. Verified: a 227-item artist queue became exactly the 5
+  requested tracks.
+- *Invented track lists did not resolve.* For "party mood" the agent first sent
+  `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, and
+  **one unresolvable entry fails the whole call**. Its retry used bare titles, which matched the
+  wrong versions (a KIDZ BOP "Party Rock Anthem"). The script's `media_id_prompt` input now spells
+  out `Artist name - Song name`, main artist only, at most five songs for a mood request, and
+  "retry with fewer, more famous songs" when the tool cannot resolve. Verified: five entries in
+  the right form, resolved in one call (script run 1.1 s; the 7-track kitchen request had taken
+  4.7 s). Mood → *playlist* is not an option here: `music_assistant.search` returns no provider
+  playlists for "party hits", only library playlists.
+
+The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
+is wireless on SonosNet with marginal links and dropped every stream (`ERROR_LSE`,
+`ERROR_BUFFERING`). Plan agreed with Tom: SonosNet off + soundbars wired (see the handoff).
+
 Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
 were awake for every run after that step was added). Still to
 do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players

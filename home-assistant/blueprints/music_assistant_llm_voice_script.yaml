@@ -3,8 +3,13 @@
 # /config/blueprints/script/music-assistant/llm_voice_script.yaml. Local additions (2026-09-19):
 #   - input 'pre_actions': actions run after the target is resolved and BEFORE music_assistant.play_media
 #   - variable 'playing_before': Music Assistant players already playing when the request arrived
-# Re-importing the upstream blueprint drops both; the Play Music script's pre_actions input would then
-# be ignored and the Rumpus Room KEFs would start at whatever volume they are at. Re-apply this file.
+#   - input 'enqueue_option' (2026-09-19, later the same day): passed to play_media as 'enqueue'. Music
+#     Assistant's own default for a TRACK request is "play" = play now and KEEP the old queue, so a voice
+#     request for a few songs was followed by whatever an earlier request had left behind (leftover Miles
+#     Davis after "party music" in the bedroom). The Play Music script sets it to "replace".
+# Re-importing the upstream blueprint drops all three; the Play Music script's pre_actions input would
+# then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
+# requests would go back to keeping the old queue. Re-apply this file.
 blueprint:
   name: LLM Script for Music Assistant voice requests
   source_url: https://github.com/music-assistant/voice-support/blob/main/llm-script-blueprint/llm_voice_script.yaml
@@ -129,6 +134,31 @@ blueprint:
               custom_value: false
               sort: false
           default: Use player settings
+        enqueue_option:
+          name: Queue behaviour (local addition, 2026-09-19)
+          description: 'What a new voice request does to the queue that is already
+            on the player.
+
+            "Music Assistant default" leaves it to Music Assistant, which REPLACES
+            the queue for artists, albums and playlists but for tracks plays the new
+            songs and then carries on with the old queue.
+
+            "replace" always starts a fresh queue, which is what a spoken "play ..."
+            normally means.
+
+            '
+          selector:
+            select:
+              options:
+              - Music Assistant default
+              - replace
+              - play
+              - next
+              - add
+              multiple: false
+              custom_value: false
+              sort: false
+          default: Music Assistant default
     prompt_settings:
       name: Prompt settings for the LLM
       icon: mdi:robot
@@ -417,6 +447,7 @@ sequence:
 - sequence: !input pre_actions
 - variables:
     play_continuously: !input play_continuously
+    enqueue_option: !input enqueue_option
     action_data:
       media_id: '{{ media_id.split('';'') | map(''trim'') | list if '';'' in media_id
         else media_id }}'
@@ -425,6 +456,7 @@ sequence:
       album: '{{ album | default(''NA'', true) }}'
       radio_mode: '{{ false if play_continuously == ''Never'' else play_continuously
         == ''Always'' and media_type != ''radio'' or ''NA'' }}'
+      enqueue: '{{ ''NA'' if enqueue_option == ''Music Assistant default'' else enqueue_option }}'
 - alias: Play music using Music Assistant
   action: music_assistant.play_media
   data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
