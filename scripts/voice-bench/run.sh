@@ -2,6 +2,8 @@
 # Run one of the voice-bench scripts INSIDE the Home Assistant pod.
 #   scripts/voice-bench/run.sh bench.py "MODE=voice REPS=3 PIPELINE=<pipeline id>"
 #   scripts/voice-bench/run.sh bench.py "MODE=conv AGENT=conversation.bedroom_assist QUERIES='Is the fan on?|Why is the sky blue?'"
+#   scripts/voice-bench/run.sh bench.py "MODE=pipe REPS=1 PIPELINE=<id> DEVICE_ID=<satellite device id> QUERIES='Play some jazz'"
+#       # text AS that satellite (the agent is told its area); prints tool calls with their arguments. It really acts.
 #   scripts/voice-bench/run.sh debug_runs.py "N=4 PIPELINE=<pipeline id>"   # real runs from a satellite
 #   scripts/voice-bench/run.sh openai_agents.py                             # agent subentry settings + account model ids
 #   scripts/voice-bench/run.sh persona_check.py                            # text-only persona + spoken-rules check, all four room agents

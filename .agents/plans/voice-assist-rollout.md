@@ -281,16 +281,89 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 - The cloffice Voice PE, when Tom has it on the network: adopt in ESPHome, area Primary Cloffice,
   own agent + pipeline, persona from Tom.
 
-## Phases 3 and 5
+## Phase 3 — music (routing mapped and the Rumpus Room fixed 2026-09-19; TVs/AVR still open)
 
-Not started as a phase, but music requests work: on 2026-09-19 "Play some Miles Davis in the
-primary bathroom" through the bedroom pipeline called the Play Music script
-(`script.llm_script_for_music_assistant_voice_requests`, the Music Assistant LLM blueprint — the
-room agent fills the arguments itself) and the Sonos played it; "stop the music" paused it. The
-separate "ChatGPT for Music Assistant" agent belongs to the older JSON-prompt approach and is not
-used by that script. 3: Music Assistant + its agent (`conversation.chatgpt`, gpt-5-mini low,
-`max_tokens: 150`) — note that `HassMediaSearchAndPlay` always goes to the LLM, the Sonos players
-are Music Assistant-only (no turn_on/turn_off), and the AVR/KEF/Frame entities are duplicated.
-5: MCP servers as LLM tool sources — HA's `mcp` client speaks streamable HTTP then SSE, no
-stdio, OAuth only (no static bearer field); `llm_hass_api` is a real multi-select and merged
-tools get namespaced.
+**How a box picks the speaker.** The box picks nothing. Its room agent calls the one shared tool,
+`script.llm_script_for_music_assistant_voice_requests` ("Play Music", the Music Assistant LLM
+blueprint), and that script resolves the target in this order:
+
+1. a Music Assistant player named in the request (`media_player` argument, entity_id or friendly name);
+2. a room named in the request (`area` argument) → `music_assistant.play_media` targeted at the
+   area, i.e. **every Music Assistant player assigned to that HA area**;
+3. nothing named → the agent passes the area it is in. It knows that because HA's Assist API prompt
+   says "You are in area X …" (`components/intent/llm.py` in 2026.9), taken from the **area of the
+   satellite device**. The `area` argument is an area selector, so HA resolves spoken names and
+   aliases to area ids (`helpers/llm.py`, `ScriptTool`);
+4. no area at all (a request that does not come from a satellite) → the blueprint's
+   `default_player`, `media_player.primary_bedroom`.
+
+An area with no Music Assistant player in it is a **silent failure**: `play_media` returns success,
+nothing plays, and the agent says it is playing (verified by calling `play_media` at `rumpus_room`
+before the fix). Pause / stop / volume / next are local intents (no LLM, ~0.1 s) and act on
+**exposed** media players, preferring the satellite's area.
+
+| Satellite (device area) | Room-less "play X" lands on | Checked |
+|---|---|---|
+| Primary Bedroom | `media_player.primary_bedroom` (Sonos Beam) | text-as-satellite: agent passed `primary_bedroom`, Beam played, "stop the music" paused locally |
+| Kitchen | `media_player.kitchen` (Sonos Amp) | by configuration only |
+| Movie Room | `media_player.movie_room` (Sonos Port — audible only if the AVR is on its input; not checked) | by configuration only |
+| Rumpus Room | `media_player.ls50_wireless_ii_174476_4` (KEF LS50 W II via Music Assistant), since 2026-09-19 | text-as-satellite: played on the KEFs, "stop the music" paused locally |
+
+Test as a satellite without speaking: `scripts/voice-bench/run.sh bench.py "MODE=pipe REPS=1
+PIPELINE=<id> DEVICE_ID=<satellite device id> QUERIES='Play some Miles Davis'"` — the timeline
+prints the tool call with its arguments. It really plays; check the room is empty and stop it.
+
+The satellites' own Music Assistant players (`media_player.home_assistant_voice_*`) have no area on
+purpose, so music never lands on a box's speaker. `media_player.unnamed_room` ("Pool") and
+`media_player.shed` have no area either; Back Yard is grouped with Pool.
+
+**Rumpus Room KEFs (Tom's rulings, 2026-09-19: "KEFs, at a set volume", then 50 % by ear).** The
+KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
+
+- the Music Assistant KEF entity is in the Rumpus Room area, named "Rumpus Room Speakers" (aliases
+  KEFs / KEF speakers / Rumpus speakers) and exposed;
+- the blueprint is **locally patched** (`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`):
+  a `pre_actions` input that runs before `play_media`, and a `playing_before` variable. The Play
+  Music script uses them to save the speakers' volume into
+  `input_number.rumpus_room_kef_saved_volume` (live-only helper, 0 = nothing saved) and set 50 %
+  **before** playing, and sets 50 % again in the blueprint's after-play `actions`, after waiting
+  (up to 15 s) for the speaker to report `playing` — the KEFs wake from standby at their own 20 %,
+  which overrode the first set in the first live test. Both only
+  when the speakers were not already playing, so a volume someone chose mid-session survives the
+  next request. "The speaker" is resolved as *the first Music Assistant player in the Rumpus Room
+  area*, not by entity id (the KEFs have been re-registered before: `_2`, `_3`, `_4`), and exactly
+  that one player is read, clamped and restored. The volume is read into a variable before
+  anything is written, so two parallel runs (the blueprint is `mode: parallel`) can never save the
+  50 % voice level as the PC level. If the player reports no volume at that moment, the script
+  saves the usual PC level (0.92, a constant in the script) and logs a warning, so the 50 % can
+  always be undone;
+- `automation.rumpus_room_kefs_restore_volume_after_voice_music` clears the queue (soft-fail) and
+  restores the saved volume once that player has been quiet for 10 minutes. Normal path: a state
+  trigger on the KEF entity (verified: fired 10 min after the stop, 50 % → 92 %, helper → 0).
+  Backstop: a 10-minute tick with the same conditions plus "the helper is at least ~10 minutes
+  old", for a request that saved the volume and then never played, an HA restart mid-wait, or a
+  re-registered entity; the helper-age condition keeps a tick from undoing a request that is just
+  starting.
+
+Tom confirmed (2026-09-19) that the KEFs switch back to the PC's HDMI input by themselves as soon
+as the PC makes a sound, so nothing has to manage their input, and that 92 % on the KEFs is normal
+(Windows is the second volume lever and attenuates it) — so restoring it is right.
+
+The Music Assistant player only reports its own queue: over ten days of daily PC use on the HDMI
+input it was never `playing` (only `idle`), and it stayed `idle` on 2026-09-19 while Tom had PC
+audio running between the test plays — so "already playing" in the script can only mean voice/MA
+music, and PC audio never makes a request skip the 50 % start. The wait for `playing` sits inside
+the tool call on purpose: it costs a second or two normally and up to 15 s only when playback never
+starts; re-clamping from an automation on every `playing` edge instead would also override a
+volume someone chose and then paused/resumed.
+
+Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
+were awake for every run after that step was added). Still to
+do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
+being Music Assistant-only (no turn_on/turn_off). The separate "ChatGPT for Music Assistant" agent
+(`conversation.chatgpt`) belongs to the older JSON-prompt approach and is not used by the script.
+
+## Phase 5 — MCP servers as LLM tool sources (not started)
+
+HA's `mcp` client speaks streamable HTTP then SSE, no stdio, OAuth only (no static bearer field);
+`llm_hass_api` is a real multi-select and merged tools get namespaced.

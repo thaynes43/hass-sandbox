@@ -12,6 +12,7 @@ MODES = os.environ.get("MODE", "stt").split(",")
 PIPELINE = os.environ.get("PIPELINE", "01jbaynz8ff9fd97wfy9240zr9")
 SENTENCE = os.environ.get("SENTENCE", "What is the temperature in the bedroom?")
 REPS = int(os.environ.get("REPS", "3"))
+DEVICE_ID = os.environ.get("DEVICE_ID", "")  # a satellite's device id (pipe/voice modes)
 WAV = "/tmp/bench_in.wav"
 SPEECH_SECS = 0.0
 
@@ -93,6 +94,8 @@ async def ws_run(s, start_stage, sentence=None):
         await ws.receive_json()
         msg = {"id": 1, "type": "assist_pipeline/run", "start_stage": start_stage, "end_stage": "tts", "pipeline": PIPELINE}
         msg["input"] = {"text": sentence} if start_stage == "intent" else {"sample_rate": 16000}
+        if DEVICE_ID:  # act as that satellite: the agent is told its area, local intents prefer it
+            msg["device_id"] = DEVICE_ID
         t0 = time.monotonic()
         await ws.send_json(msg)
         rows, first_delta, tts_url, speech_end = [], None, None, None
@@ -135,7 +138,7 @@ async def ws_run(s, start_stage, sentence=None):
                     first_delta = now
                     rows.append((now, "first-text-delta", ""))
                 if delta.get("tool_calls"):
-                    rows.append((now, "tool-call", ",".join(t.get("tool_name", "?") for t in delta["tool_calls"])))
+                    rows.append((now, "tool-call", ",".join(f"{t.get('tool_name', '?')}{json.dumps(t.get('tool_args', {}))}" for t in delta["tool_calls"])))
                 continue
             summ = ""
             if et == "stt-end":
