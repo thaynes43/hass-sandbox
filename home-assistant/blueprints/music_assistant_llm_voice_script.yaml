@@ -23,9 +23,9 @@
 #     speaker was not found"; variable 'unresolved_players' = the named ones that are neither a Music
 #     Assistant entity id nor a friendly name): it is never dropped silently. 'player_data' flattens
 #     media_player like 'unresolved_players' does, so a bare string is one name, not its characters.
-# Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
-# then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
-# requests would go back to keeping the old queue. Re-apply this file.
+# Re-importing the upstream blueprint drops all of them: track requests would go back to keeping the
+# old queue and a request without a room could not be handed back. Re-apply this file. ('pre_actions'
+# is unused since the Rumpus Room KEF volume logic was removed on the owner's ruling, 2026-09-19.)
 blueprint:
   name: LLM Script for Music Assistant voice requests
   source_url: https://github.com/music-assistant/voice-support/blob/main/llm-script-blueprint/llm_voice_script.yaml
