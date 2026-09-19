@@ -344,7 +344,7 @@ class AssistExposureGuard(hass.Hass):
         client = self._ensure_client()
 
         exposed_ids = await client.list_exposed_entities(self._assistant)
-        platforms = await client.list_entity_platforms()
+        platforms = await client.list_entity_platforms(exposed_ids)
         entities = [
             ExposedEntity(
                 entity_id=entity_id,

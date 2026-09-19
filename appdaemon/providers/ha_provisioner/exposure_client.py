@@ -19,7 +19,7 @@ readable and writable from AppDaemon:
     Takes ``assistants``, ``entity_ids`` and ``should_expose`` — the only bulk
     primitive HA offers.  Requires an admin token.
 
-``config/entity_registry/list``
+``config/entity_registry/get_entries``
     Returns the registry entries; each carries ``entity_id`` and ``platform``
     (the integration that supplies it).  It does **not** carry
     ``device_class`` — that lives on the entity state — so callers that need a
@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 #: The assistant id used by HA's built-in "Assist" conversation pipelines.
 CONVERSATION_ASSISTANT = "conversation"
 
+
+#: Registry entries requested per WebSocket call (an extended entry is ~1-2 KB).
+REGISTRY_CHUNK_SIZE = 200
 
 class AssistExposureClient:
     """Authenticated client for HA's voice-assistant exposure WebSocket API."""
@@ -79,28 +82,35 @@ class AssistExposureClient:
             if isinstance(assistants, dict) and assistants.get(assistant)
         )
 
-    async def list_entity_platforms(self) -> Dict[str, str]:
-        """Return ``{entity_id: platform}`` for every entity in the registry.
+    async def list_entity_platforms(self, entity_ids: Iterable[str]) -> Dict[str, str]:
+        """Return ``{entity_id: platform}`` for the given entities.
 
         ``platform`` is the integration domain (e.g. ``intellicenter``,
         ``gecko``, ``hue``) — the field the guard's integration deny rules
         match on.  Entities that exist only as state (no registry entry) are
         absent; callers should default them to an empty platform.
+
+        Uses ``config/entity_registry/get_entries`` for just these ids, in
+        chunks: ``config/entity_registry/list`` returns the WHOLE registry,
+        which on this instance (~15k entities) is a 9.5 MB frame — over the
+        WebSocket client's 4 MB limit (the v1.18.0 startup failure).
         """
-        result = await self._ws_result({"type": "config/entity_registry/list"})
-        if not isinstance(result, list):
-            raise RuntimeError(
-                "Unexpected entity_registry/list payload: expected a list, "
-                f"got {type(result).__name__}"
-            )
+        ids = [str(entity_id).strip() for entity_id in entity_ids if str(entity_id).strip()]
         platforms: Dict[str, str] = {}
-        for entry in result:
-            if not isinstance(entry, dict):
-                continue
-            entity_id = str(entry.get("entity_id") or "").strip()
-            if not entity_id:
-                continue
-            platforms[entity_id] = str(entry.get("platform") or "").strip().lower()
+        for offset in range(0, len(ids), REGISTRY_CHUNK_SIZE):
+            chunk = ids[offset : offset + REGISTRY_CHUNK_SIZE]
+            result = await self._ws_result(
+                {"type": "config/entity_registry/get_entries", "entity_ids": chunk}
+            )
+            if not isinstance(result, dict):
+                raise RuntimeError(
+                    "Unexpected entity_registry/get_entries payload: expected a dict, "
+                    f"got {type(result).__name__}"
+                )
+            for entity_id, entry in result.items():
+                if not isinstance(entry, dict):
+                    continue  # None = no registry entry (state-only entity)
+                platforms[str(entity_id)] = str(entry.get("platform") or "").strip().lower()
         return platforms
 
     # ------------------------------------------------------------------

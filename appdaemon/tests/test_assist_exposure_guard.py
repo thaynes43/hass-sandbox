@@ -410,6 +410,7 @@ class FakeExposureClient:
     ) -> None:
         self.exposed = list(exposed or [])
         self.platforms = dict(platforms or {})
+        self.platform_requests: List[List[str]] = []
         self.list_error = list_error
         self.set_error = set_error
         self.last_assistant = ""
@@ -421,8 +422,9 @@ class FakeExposureClient:
         self.last_assistant = assistant
         return list(self.exposed)
 
-    async def list_entity_platforms(self) -> Dict[str, str]:
-        return dict(self.platforms)
+    async def list_entity_platforms(self, entity_ids: Any) -> Dict[str, str]:
+        self.platform_requests.append(list(entity_ids))
+        return {k: v for k, v in self.platforms.items() if k in set(self.platform_requests[-1])}
 
     async def set_exposure(
         self, entity_ids: Any, should_expose: bool, assistant: str
@@ -1387,4 +1389,15 @@ def test_sensor_entity_lists_are_capped_like_the_notification() -> None:
     joined = _capped_join(many)
     assert joined.count("scene.") == MAX_DETAIL_LINES
     assert joined.endswith("…and 130 more")
+
+
+def test_the_guard_asks_for_registry_entries_of_exposed_entities_only() -> None:
+    """The whole registry is a 9.5 MB frame on the live instance (v1.18.0 failure)."""
+    client = FakeExposureClient(
+        exposed=["light.kitchen", "sensor.pool_ph"],
+        platforms={"light.kitchen": "hue", "sensor.pool_ph": "intellicenter", "light.unexposed": "hue"},
+    )
+    app = _make_app(client=client)
+    _startup(app)
+    assert client.platform_requests == [["light.kitchen", "sensor.pool_ph"]]
 

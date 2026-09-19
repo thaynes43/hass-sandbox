@@ -136,32 +136,66 @@ def test_list_exposed_entities_rejects_an_unexpected_payload(monkeypatch) -> Non
 def test_list_entity_platforms_maps_entity_id_to_platform(monkeypatch) -> None:
     fake = _FakeHaRestClient(
         _ok(
-            [
-                {"entity_id": "sensor.pool_ph", "platform": "IntelliCenter"},
-                {"entity_id": "light.kitchen", "platform": "hue"},
-                {"entity_id": "sensor.no_platform"},
-                {"entity_id": "", "platform": "junk"},
-                "not-a-dict",
-            ]
+            {
+                "sensor.pool_ph": {"entity_id": "sensor.pool_ph", "platform": "IntelliCenter"},
+                "light.kitchen": {"entity_id": "light.kitchen", "platform": "hue"},
+                "sensor.no_platform": {"entity_id": "sensor.no_platform"},
+                "binary_sensor.state_only": None,
+            }
         )
     )
     client = _make_client(monkeypatch)
+    ids = ["sensor.pool_ph", "light.kitchen", "sensor.no_platform", "binary_sensor.state_only", " "]
     with _patch_rest_client(fake):
-        platforms = _run(client.list_entity_platforms())
+        platforms = _run(client.list_entity_platforms(ids))
 
     assert platforms == {
         "sensor.pool_ph": "intellicenter",
         "light.kitchen": "hue",
         "sensor.no_platform": "",
     }
-    assert fake.sent == [{"type": "config/entity_registry/list"}]
+    # Only the exposed ids are requested — never the whole registry, whose
+    # 9.5 MB frame broke the WebSocket client on the live instance (v1.18.0).
+    assert fake.sent == [
+        {
+            "type": "config/entity_registry/get_entries",
+            "entity_ids": ["sensor.pool_ph", "light.kitchen", "sensor.no_platform", "binary_sensor.state_only"],
+        }
+    ]
 
 
-def test_list_entity_platforms_rejects_a_non_list_payload(monkeypatch) -> None:
-    fake = _FakeHaRestClient(_ok({"entities": []}))
+def test_list_entity_platforms_requests_in_bounded_chunks(monkeypatch) -> None:
+    from providers.ha_provisioner.exposure_client import REGISTRY_CHUNK_SIZE
+
+    ids = [f"light.l{i}" for i in range(REGISTRY_CHUNK_SIZE + 5)]
+    fake = _FakeHaRestClient(
+        [
+            _ok({i: {"platform": "hue"} for i in ids[:REGISTRY_CHUNK_SIZE]}),
+            _ok({i: {"platform": "mqtt"} for i in ids[REGISTRY_CHUNK_SIZE:]}),
+        ]
+    )
     client = _make_client(monkeypatch)
-    with _patch_rest_client(fake), pytest.raises(RuntimeError, match="expected a list"):
-        _run(client.list_entity_platforms())
+    with _patch_rest_client(fake):
+        platforms = _run(client.list_entity_platforms(ids))
+
+    assert [len(m["entity_ids"]) for m in fake.sent] == [REGISTRY_CHUNK_SIZE, 5]
+    assert all(m["type"] == "config/entity_registry/get_entries" for m in fake.sent)
+    assert len(platforms) == len(ids) and platforms[ids[-1]] == "mqtt"
+
+
+def test_list_entity_platforms_with_nothing_exposed_sends_nothing(monkeypatch) -> None:
+    fake = _FakeHaRestClient(_ok({}))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake):
+        assert _run(client.list_entity_platforms([])) == {}
+    assert fake.sent == []
+
+
+def test_list_entity_platforms_rejects_a_non_dict_payload(monkeypatch) -> None:
+    fake = _FakeHaRestClient(_ok([{"entity_id": "light.kitchen"}]))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake), pytest.raises(RuntimeError, match="expected a dict"):
+        _run(client.list_entity_platforms(["light.kitchen"]))
 
 
 # ---------------------------------------------------------------------------
