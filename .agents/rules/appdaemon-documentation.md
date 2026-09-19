@@ -78,7 +78,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `health_checks` | `appdaemon/apps/health_checks/README.md` | System health monitoring: controller + network protocol checkers + dashboard cards |
 | `media_dashboard_app` | `appdaemon/apps/media_dashboard_app/README.md` | Media dashboard: Plex new arrivals, in-theaters, coming-soon with showtimes and thumbs up/down |
 | `countdown_app` | `appdaemon/apps/countdown_app/README.md` | Multiple countdowns with AI-generated backgrounds, auto-rotation, text styling |
-| `zigbee_ota` | `appdaemon/apps/zigbee_ota/README.md` | Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry |
+| `zigbee_ota` | `appdaemon/apps/zigbee_ota/README.md` | Sequential OTA firmware rollout across every Zigbee2MQTT device, one at a time, with offline-device retry |
 | `assist_exposure_guard` | `appdaemon/apps/assist_exposure_guard/README.md` | Enforces the Assist (voice assistant) exposure deny list: un-exposes locks/garage covers/scripts and notifies |
 
 ### Providers
