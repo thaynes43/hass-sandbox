@@ -165,9 +165,9 @@ so the voice vocabulary is the one humans already use. Concepts, not entities: a
 buttons treat as one thing (Movie Room "ambient lights" = gradients + floor lamps + play bars)
 is one voice handle, and looks/modes are **zero-argument `script.voice_*` scripts that call
 exactly what the scene-controller button calls**. Voice on/off behaves like the paddle —
-automations keep running. **No hold tools** (Tom, 2026-09-19: holds are not used day to day,
-except the back-yard flood light when the hot tub is in use — that one is an open question); the
-two basement hold scripts created on 2026-09-18 were removed again.
+automations keep running. **No hold tools** (Tom, 2026-09-19: holds are not used day to day);
+the two basement hold scripts created on 2026-09-18 were removed again. The one exception is
+**hot tub mode** (below).
 
 1. Per floor: subagents map physical controls → human concepts → automation ownership (what
    turns it on/off, off-delays, hold helpers). Maps live in `agent-docs/voice-control-map.md`.
@@ -185,6 +185,25 @@ two basement hold scripts created on 2026-09-18 were removed again.
    integrations, name patterns, deny-by-default switches and scripts with allowlists in the
    app YAML), un-expose violators and notify Tom.
 
+### Hot tub mode (Tom's ruling, 2026-09-19)
+
+The hold the family actually uses keeps the bright back-yard flood light **off** while people are
+in the hot tub. `automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold` does it: spa
+lights on → auto-hold the spotlight switch (LED 130, the three spotlight automations disabled)
+and turn the spotlight off; spa lights off → clear the hold. It had been dead since 2026-06-01
+(it triggered on `light.westford_spa_light_1`, which no longer exists) and was switched off; it
+now triggers on `light.back_yard_westford_spa_light_1` / `_2` (release when both are off), is
+enabled, and was verified end to end (LED 210 → 130 → 210, automations off → on).
+`script.voice_hot_tub_mode_on` / `_off` hold the parameters — the automation just calls them — so
+an agent can act on "I'm going in the hot tub" / "we're out of the hot tub". Mode Off refuses
+(and says so in its response) while a spa light is still on; the automation releases when
+neither spa light is on any more, so an `unavailable` bulb cannot wedge the hold. A hold engaged
+by voice with the spa lights never on stays until someone says they are out (the tool's
+description tells the agent to remind them). Verified live: spa light on → LED 130 + three
+automations off; Mode Off refused; spa light off → LED 210 + automations on. They are exposed once
+the guard release that allowlists them (v1.18.4) is rolled out — until then the guard would
+un-expose them.
+
 ### Shades (Tom's ruling)
 
 One parameterized tool, `script.voice_shades(room, position)`, fires the same gateway scenes as
@@ -199,7 +218,7 @@ cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bath
 
 | Floor | State |
 |---|---|
-| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). 2026-09-19: primary bathroom scripts mirror the switch config buttons (`voice_primary_bathroom_lights_on` = recessed Config 1x: all four loads + shower delay; `_lights_off` = vanity Config 1x; `_shower_lights` = shower Config 1x), the recessed group no longer claims "bathroom lights"; cloffice gets `voice_cloffice_bright` (ZEN32 big 2x, 100 % 2823 K) and the Iris lamp — dimming already works on the exposed group. A Voice PE for the cloffice is coming (Tom); it will need adopting in ESPHome, the Primary Cloffice area, its own agent + pipeline and a persona. The rest of the floor is pending — see *Waiting on Tom*. |
+| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). 2026-09-19: primary bathroom scripts mirror the switch config buttons (`voice_primary_bathroom_lights_on` = recessed Config 1x: all four loads + shower delay; `_lights_off` = vanity Config 1x; `_shower_lights` = shower Config 1x), the recessed group no longer claims "bathroom lights"; cloffice gets `voice_cloffice_bright` (ZEN32 big 2x, 100 % 2823 K) and the Iris lamp — dimming already works on the exposed group. A Voice PE for the cloffice is coming (Tom); it will need adopting in ESPHome, the Primary Cloffice area, its own agent + pipeline and a persona. **Kids' rooms (Tom, 2026-09-19: "everything the ZEN32 does")**: fan light, fan, Sonos and TV in Blue (Jackson), White and Pink (Penelope) rooms, the two nightstand bulbs, area aliases "Jackson's room" / "Penelope's room", and `voice_shades` now knows `blue_room`, `white_room`, `pink_room`, `kids_bathroom` and `upstairs`. The ZEN32 relay switches stay unexposed (fan mains power). Still pending: upstairs foyer lights — see *Waiting on Tom*. |
 | Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; eight `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle; the two hold tools were removed on Tom's word). Verified read-only (someone was watching a movie): on 2026-09-18 the Movie Room agent listed all six of its tools correctly (five remain after the hold removal). **Not yet exercised by voice.** |
 | First floor | mapped (`agent-docs/voice-control-map.md`); proposal pending — see *Waiting on Tom* |
 | Exterior | mapped (`agent-docs/voice-control-map.md`). **Built 2026-09-19** under Ruling 1: `script.voice_lock_all_doors` (front, side, bulkhead — not the mudroom↔garage door), `script.voice_close_garage_doors` and the six read-only lock/garage status helpers. Still pending a proposal: exterior lights (a front-yard landscape handle is missing; patio/shed lights are `switch.*` and need guard allowlist entries) and the hot-tub flood light (the back-yard spotlight is fought by its auto-off unless held — see *Waiting on Tom*). |
@@ -260,11 +279,7 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 
 - Voice-test Kitchen, Movie Room and Rumpus Room; say whether Rumpus should keep
   `prefer_local_intents: true` (exact phrases answer instantly but without the Jarvis voice).
-- Second floor: a hold is NOT wanted for the primary hallway (ruling above); still open: the
-  upstairs foyer lights and the kids'-rooms ruling (Jackson's TV and the kids-bathroom Sonos are
-  exposed house-wide today).
-- Hot tub: whether voice should get a flood-light tool (back-yard spotlight on + hold, and a
-  release) — the one hold the family actually uses.
+- Second floor: still open — the upstairs foyer lights.
 - First floor and exterior proposals (maps are in `agent-docs/voice-control-map.md`).
 
 ## Phases 3 and 5

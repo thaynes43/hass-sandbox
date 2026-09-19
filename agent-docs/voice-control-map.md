@@ -86,6 +86,10 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 | Back-yard motion-light relay | 00:00 | sunrise |
 | Lamp post (`light.front_yard_lamp_post_hue_edison`) | nothing | nothing |
 
+- **Hot tub mode** (fixed 2026-09-19): `automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold`
+  auto-holds the spotlight switch and turns the flood light off while either spa light is on, and
+  releases when neither is on any more; it calls `script.voice_hot_tub_mode_on/_off`, which hold the
+  parameters and are also the voice tools (Mode Off refuses while a spa light is on).
 - **Back-yard spotlight** (`light.downstairs_kitchen_back_yard_spotlight`) is the contested one:
   three automations (slider opens, camera person/animal, auto-off after 5 min clear with a hard
   45 min cap) — all disabled while the paddle hold is engaged. A plain voice turn-on is fought.
@@ -112,8 +116,8 @@ was misread by the LLM), `script.voice_lock_all_doors` (front, side, bulkhead; l
 `script.voice_close_garage_doors` (close-only). The `input_text.*_entry_locks_status` roll-ups
 stay invisible to Assist (no tool reads `input_text`).
 
-Defects found (open): the spa-light auto-hold automation triggers on the non-existent
-`light.westford_spa_light_1`; `input_select.garage_interior_mudroom_mmwave_normal_mode` reads
+Defects found (open; the dead spa-light auto-hold trigger was fixed on 2026-09-19):
+`input_select.garage_interior_mudroom_mmwave_normal_mode` reads
 "Occupancy (default)" while the switch is `Disabled`, so the next Config 2x re-enables local
 mmWave control instead of holding; the spotlight mapping passes an `input_number` as
 `prev_led_color_helper` (written with `input_text.set_value`, so it never updates);
@@ -174,8 +178,9 @@ Wrong handles found on 2026-09-18 — all three corrected on Tom's rulings (2026
 `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the
 five-room suite group; `light.upstairs_primary_bath_lights` now answers only to "bathroom
 recessed lights", and the whole bathroom is the `voice_primary_bathroom_lights_on/_off` pair.
-Still open: `media_player.blue_room_lg_tv` ("Jackson's TV") and `media_player.kids_bathroom` are exposed
-house-wide.
+Kids' rooms: Tom ruled on 2026-09-19 that voice gets everything the ZEN32 does, from any box —
+fan light, fan, nightstand bulb, shades (through `script.voice_shades`), Sonos and TV in all three
+rooms; the ZEN32 relay switches stay unexposed.
 
 Defects found (open): `script.single_button_dimming_start/_stop` unavailable since the
 2026-09-18 restart (`_2` twins healthy) — cloffice hold-dimming dead; ZEN32 big 3x hard reset dead
