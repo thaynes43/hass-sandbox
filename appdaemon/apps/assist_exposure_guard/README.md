@@ -31,7 +31,9 @@ area" is one click. This app is the backstop for that click (owner ruling,
 1. On startup, every `check_interval_minutes`, and — debounced by
    `registry_debounce_s` — whenever HA fires `entity_registry_updated`, list
    the entities exposed to the `conversation` assistant with the admin
-   WebSocket command `homeassistant/expose_entity/list`.
+   WebSocket command `homeassistant/expose_entity/list`. The ids are normalised
+   once (`strip().lower()`, de-duplicated) and that single value is used for
+   every lookup below, in the sensor attributes and in the un-expose call.
 2. Fetch the registry entries of **those entities only**
    (`config/entity_registry/get_entries` — the whole registry is too large for
    one WebSocket frame here) for each entity's `platform` (the supplying
@@ -103,7 +105,7 @@ run.
 
 ## Known limitations
 
-Both are deliberate fail-open choices — this app is a backstop, and a false
+These are deliberate fail-open choices — this app is a backstop, and a false
 positive costs a human a manual re-exposure in the HA UI:
 
 - **A cover whose `device_class` cannot be read is treated as unclassified**
