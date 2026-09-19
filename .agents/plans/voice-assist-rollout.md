@@ -371,14 +371,25 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   earlier request had queued played next (Miles Davis after "party music"). The blueprint has a
   third local input, `enqueue_option` (default "Music Assistant default" = upstream behaviour); the
   Play Music script sets it to `replace`. Verified: a 227-item artist queue became exactly the 5
-  requested tracks.
+  requested tracks. So that "replace by default" does not take queueing away, the blueprint also
+  has an optional LLM-facing field `queue` (`add` / `next`, only when the request talks about the
+  queue); it wins over `enqueue_option`, and the shuffle step is skipped for it (the running
+  queue's shuffle is somebody's choice). Found while testing it: on "add X to the queue" the agent
+  **left the area out**, and the script's fallback is the default player, so the song went into the
+  bedroom Beam's queue from the Movie Room. Two fixes: the script's `area_prompt` says an
+  add/next request still needs the area, and the blueprint **hands an add/next request without an
+  area or player back** ("call this tool again and give the area") instead of using the default
+  player. Verified: first call without area → handed back → second call with `movie_room` →
+  queued there; "play Waterloo next" passed the area straight away.
 - *Invented track lists did not resolve.* For "party mood" the agent first sent
-  `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, and
-  **one unresolvable entry fails the whole call**. Its retry used bare titles, which matched the
-  wrong versions (a KIDZ BOP "Party Rock Anthem"). The script's `media_id_prompt` input now spells
-  out `Artist name - Song name`, main artist only, at most five songs for a mood request, and
-  "retry with fewer, more famous songs" when the tool cannot resolve. Verified: five entries in
-  the right form, resolved in one call (script run 1.1 s; the 7-track kitchen request had taken
+  `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, so
+  **none** of them resolved and the call failed (`Could not resolve [...]`; a list where only some
+  entries resolve plays those and reports nothing — two later test lists played 4 of 5). Its retry
+  used bare titles, which matched the wrong versions (a KIDZ BOP "Party Rock Anthem"). The
+  script's `media_id_prompt` input now spells out `Artist name - Song name`, main artist only, at
+  most five songs for a mood request (one artist named → `artist` parameter + bare song names),
+  and "retry with fewer, more famous songs" when the tool could resolve none. Verified: five
+  entries in the right form, one call (script run 1.1 s; the 7-track kitchen request had taken
   4.7 s). Mood → *playlist* is not an option here: `music_assistant.search` returns no provider
   playlists for "party hits", only library playlists.
 

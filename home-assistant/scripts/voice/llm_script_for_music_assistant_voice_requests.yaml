@@ -1,12 +1,15 @@
 # script.llm_script_for_music_assistant_voice_requests ("Play Music") — the one music tool every room
 # agent calls. Blueprint script; this mirrors its inputs (edited live via MCP, 2026-09-19).
 # Blueprint: home-assistant/blueprints/music_assistant_llm_voice_script.yaml (locally patched:
-# pre_actions + playing_before + enqueue_option). How the target speaker is chosen: .agents/plans/voice-assist-rollout.md
-# (Phase 3). The helper input_number.rumpus_room_kef_saved_volume is live-only (never mirrored).
+# pre_actions + playing_before + enqueue_option + the optional LLM field 'queue'). How the target
+# speaker is chosen: .agents/plans/voice-assist-rollout.md (Phase 3). The helper input_number.rumpus_room_kef_saved_volume is live-only (never mirrored).
 # enqueue_option: replace = a spoken request starts a fresh queue (Music Assistant keeps the old queue
 # after a TRACK request otherwise). media_id_prompt = the blueprint default plus: multi-artist lists as
 # "Artist name - Song name", main artist only, at most five songs for a mood request, and retry with
-# fewer songs when the tool cannot resolve one (2026-09-19, after the bedroom party-music test).
+# fewer songs when the tool could resolve none of them (2026-09-19, after the bedroom party-music test).
+# area_prompt = the blueprint default plus "add to the queue / play next still needs the area": the agent
+# left the area out on such requests, which would have landed in the default player's queue (the
+# blueprint now hands that request back instead). description = mentions the 'queue' argument.
 alias: Play Music
 use_blueprint:
   path: music-assistant/llm_voice_script.yaml
@@ -110,10 +113,12 @@ use_blueprint:
       If all songs are from the same artist, use the artist for the "artist" parameter, and only use the
       song names as track name.
 
-      - If the request is a mood, a genre, an activity or otherwise open ("party music", "something relaxing",
-      "music everyone will like"): choose at most five very well known songs that fit, and give them as
-      tracks in that same "Artist name - Song name" form. Searching for a playlist by mood does not work
-      here.
+      - If the request is a mood, a genre, an activity or otherwise open and names no artist ("party music",
+      "something relaxing", "music everyone will like"): choose at most five very well known songs by
+      different artists that fit, and give them as tracks in that same "Artist name - Song name" form.
+      Searching for a playlist by mood does not work here. If such a request names an artist ("something
+      upbeat by Prince"), it is a request for that one artist: put the artist in the "artist" parameter
+      and give at most five of their song names, without the artist, as the track names.
 
       - If the search is about an album: Then media_id is the album name or a list of album names (use
       a semicolon as separator).
@@ -125,13 +130,25 @@ use_blueprint:
 
       - If the search is a radio channel: Then media_id is the requested channel.
 
-      If this tool answers that it could not resolve the media, one of the entries was not found and nothing
-      is playing: call it again with fewer and more famous songs in the same "Artist name - Song name"
-      form.
+      If this tool answers that it could not resolve the media, none of the entries was found and nothing
+      is playing: call it again with fewer and more famous songs, the artist first, in the same "Artist
+      name - Song name" form.
 
       This is a mandatory argument and must always be provided.'
+    area_prompt: 'The area or areas for which the music is requested. If the request does not mention
+      a target (either an area or a player), use the area the request comes from. This also holds when
+      the request is to add something to the queue or to play it next: "the queue" is not a target, so
+      still give the area the request comes from.
+
+      If the area can not be determined from the request, or the device the request comes from, do not
+      use this parameter.
+
+      Only use both the "area" parameter and the "media_player" parameter together if both are specifically
+      used in the request.'
 description: 'This script is used to play music based on a voice request. The tool takes the following
-  arguments: media_type, artist, album, media_id, radio_mode, area. media_id and media_type are always
-  required and must always be supplied as arguments to this tool. An area or Music Assistant media player
-  can optionally be provided in the voice request as well. Use the parameters as described in the description
-  of each parameter. Use this tool whenever the user requests to play music.'
+  arguments: media_type, artist, album, media_id, radio_mode, area, shuffle, queue. media_id and media_type
+  are always required and must always be supplied as arguments to this tool. An area or Music Assistant
+  media player can optionally be provided in the voice request as well. A normal request starts the music
+  now and replaces whatever was queued; only when the user explicitly asks to add something to the queue
+  or to play it next, set the queue argument. Use the parameters as described in the description of each
+  parameter. Use this tool whenever the user requests to play music.'
