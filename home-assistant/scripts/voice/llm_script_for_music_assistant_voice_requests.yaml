@@ -7,9 +7,10 @@
 # after a TRACK request otherwise). media_id_prompt = the blueprint default plus: multi-artist lists as
 # "Artist name - Song name", main artist only, at most five songs for a mood request, and retry with
 # fewer songs when the tool could resolve none of them (2026-09-19, after the bedroom party-music test).
-# area_prompt = the blueprint default plus "add to the queue / play next still needs the area": the agent
-# left the area out on such requests, which would have landed in the default player's queue (the
-# blueprint now hands that request back instead). description = mentions the 'queue' argument.
+# area_prompt = rewritten as four cases (a room named / a speaker named: no area at all / both named
+# on purpose / neither: the area the request comes from, also for add/next and single songs), because
+# the agent left the area out on some requests and must not add its own room to a named speaker.
+# description = lists the real arguments, including 'queue'.
 # NO default_player (owner ruling 2026-09-19, "hand it back, never guess"): a request without an area
 # or player is returned to the agent by the blueprint; it never falls back to a speaker in another room.
 alias: Play Music
