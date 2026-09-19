@@ -743,3 +743,33 @@ def test_pending_lists_only_what_the_picker_would_start() -> None:
     assert status["pending_count"] == 1
     assert status["offline"] == ["hue_a"]
     assert status["remaining"] == 2  # still needs firmware, just not now
+
+
+def test_pending_is_empty_while_zigbee2mqtt_is_busy() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update or check already in progress",
+            "transaction": decision.transaction,
+        }
+    )
+    status = coord.status()
+    assert status["pending"] == []  # decide() would refuse to start it
+    assert status["busy_until"] != ""  # and the sensor says why
+    clock.advance(301)
+    assert coord.status()["pending"] == ["hue_a"]
+
+
+def test_bridge_devices_are_counted_when_home_assistant_answers_empty() -> None:
+    coord = make_coordinator()
+    coord.set_known_devices({"hue_a", "hue_b"})
+    coord.set_z2m_entities(set())
+    coord.refresh_entities(snapshot("hue_a"))
+    status = coord.status()
+    assert status["identity_source"] == "zigbee2mqtt bridge"
+    assert status["z2m_devices_known"] == 2
+    assert status["pending"] == ["hue_a"]

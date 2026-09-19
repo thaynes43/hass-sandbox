@@ -428,3 +428,24 @@ def test_ha_safe_renders_every_number_as_a_string() -> None:
     assert ha_safe(42.0) == "42"  # whole floats read as whole numbers
     assert ha_safe(42.5) == "42.5"
     assert ha_safe(None) == ""
+
+
+def test_an_empty_identity_answer_is_logged_every_tick() -> None:
+    """The template no longer matching is silent otherwise: nothing is queued,
+    nothing fails, and the app would just sit there."""
+    app = _make_app(
+        update_snapshot={"update.hue_a": _entity("hue_a")}, z2m_entities=[]
+    )
+    _run(app._tick({}))
+    _run(app._tick({}))
+    warnings = [
+        call
+        for call in app.log.call_args_list
+        if call.kwargs.get("level") == "WARNING"
+        and "no Zigbee2MQTT update entities" in call.args[0]
+    ]
+    assert len(warnings) == 2
+    assert _published_requests(app) == []
+    attrs = app.set_state.call_args.kwargs["attributes"]
+    assert attrs["identity_source"] == "none"
+    assert attrs["z2m_devices_known"] == "0"

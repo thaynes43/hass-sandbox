@@ -440,6 +440,7 @@ class OtaCoordinator:
         """
         return (
             rec.next_attempt_ts <= ts
+            and ts >= self._global_busy_until
             # Unknown availability counts as online: with nothing said either
             # way, the request itself is the probe (failure lands in cooldown).
             and self._availability.get(rec.friendly_name, True)
@@ -635,7 +636,9 @@ class OtaCoordinator:
         }
 
     def _z2m_device_count(self) -> int:
-        if self._z2m_entity_ids is not None:
+        # Truthiness, matching _identity_source: an empty HA answer must not
+        # report 0 devices while the bridge document is what's being used.
+        if self._z2m_entity_ids:
             return len(self._z2m_entity_ids)
         return len(self._known_z2m_devices)
 
