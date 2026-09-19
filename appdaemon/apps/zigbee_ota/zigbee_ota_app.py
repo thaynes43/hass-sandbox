@@ -4,10 +4,12 @@ firmware updates (one device at a time) until the fleet is clean.
 The decision logic lives in :mod:`ota_coordinator`; this app is the I/O shim:
 
 - Home Assistant ``update.*`` entities (via the HASS plugin) are the source of
-  truth for which devices still need firmware.
-- Retained Zigbee2MQTT topics (via the MQTT plugin) provide the device list,
-  per-device availability (offline bulbs are skipped and retried when they
-  regain power) and live progress.
+  truth for which devices still need firmware, and a Home Assistant template
+  is what tells the app which of them are Zigbee2MQTT devices.
+- Retained Zigbee2MQTT topics (via the MQTT plugin) provide per-device
+  availability (offline devices are skipped and retried when they regain
+  power), live progress, and — when it happens to arrive — a second copy of
+  the device list.
 - Updates are started by publishing to
   ``<base_topic>/bridge/request/device/ota_update/update`` and finish when the
   matching ``.../response/device/ota_update/update`` arrives.
@@ -28,6 +30,45 @@ from zigbee_ota.ota_coordinator import OtaCoordinator
 SENSOR_ENTITY_ID = "sensor.zigbee_ota_orchestrator"
 PAUSE_ENTITY_ID = "input_boolean.zigbee_ota_pause"
 
+# Which update entities belong to Zigbee2MQTT. Z2M's MQTT discovery gives every
+# device a Home Assistant device whose identifiers carry the Z2M IEEE address
+# (``('mqtt', 'zigbee2mqtt_0x943469fffe05cb47')``), which nothing else does.
+# Asking Home Assistant every tick is the reliable route: the retained
+# ``bridge/devices`` document is delivered when AppDaemon's MQTT plugin
+# subscribes — seconds before this app registers its listener — and is never
+# replayed for an app restart.
+Z2M_UPDATE_ENTITY_TEMPLATE = (
+    "{% set found = namespace(ids=[]) %}"
+    "{%- for e in integration_entities('mqtt') -%}"
+    "{%- if e.startswith('update.') and "
+    "'zigbee2mqtt_' in (device_attr(e, 'identifiers') | string) -%}"
+    "{%- set found.ids = found.ids + [e] -%}"
+    "{%- endif -%}"
+    "{%- endfor -%}"
+    "{{ found.ids | tojson }}"
+)
+
+
+def ha_safe(value: Any) -> Any:
+    """Render a value so Home Assistant actually receives it.
+
+    AppDaemon prunes anything equal to ``None`` or ``False`` from the payload it
+    POSTs to ``/api/states`` — and in Python ``0 == False``, so zeros disappear
+    too. A device count of 0, ``paused: False`` and ``failed_attempts: 0`` are
+    all meaningful here, so booleans and zeros are sent as strings.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)) and value == 0:
+        return str(value)
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        return {key: ha_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [ha_safe(item) for item in value]
+    return value
+
 
 class ZigbeeOtaOrchestrator(hass.Hass):
     def initialize(self) -> None:
@@ -37,6 +78,7 @@ class ZigbeeOtaOrchestrator(hass.Hass):
         self._scan_interval_s = int(args.get("scan_interval_s", 120))
         self._status_sensor = args.get("status_sensor", SENSOR_ENTITY_ID)
         self._pause_entity = args.get("pause_entity", PAUSE_ENTITY_ID)
+        self._last_z2m_count = -1  # only log the device count when it changes
         self._coordinator = OtaCoordinator(
             include_globs=list(args.get("include_globs", ["update.*"])),
             exclude_globs=list(args.get("exclude_globs", [])),
@@ -123,6 +165,18 @@ class ZigbeeOtaOrchestrator(hass.Hass):
 
     async def _tick(self, kwargs: dict[str, Any]) -> None:
         try:
+            z2m_entities = await self._z2m_update_entities()
+            if z2m_entities is None:
+                reason = "Zigbee2MQTT device list unavailable from Home Assistant"
+                self._coordinator.mark_identity_unavailable(reason)
+                self.log("%s — starting nothing this tick" % reason, level="WARNING")
+            else:
+                if len(z2m_entities) != self._last_z2m_count:
+                    self._last_z2m_count = len(z2m_entities)
+                    self.log(
+                        "Managing %d Zigbee2MQTT update entities" % self._last_z2m_count
+                    )
+                self._coordinator.set_z2m_entities(z2m_entities)
             # Domain queries can't combine with attribute="all" in AppDaemon,
             # so take the full state dump and filter to update.* ourselves.
             snapshot = await self.get_state() or {}
@@ -156,6 +210,40 @@ class ZigbeeOtaOrchestrator(hass.Hass):
         except Exception as exc:  # noqa: BLE001 - keep the orchestrator alive
             self.log("tick failed: %s" % exc, level="ERROR")
 
+    async def _z2m_update_entities(self) -> Optional[set[str]]:
+        """Ask Home Assistant which ``update.*`` entities are Z2M devices.
+
+        Returns ``None`` when the answer can't be trusted — the caller then
+        starts nothing on this tick rather than guessing.
+        """
+        try:
+            rendered = await self.render_template(Z2M_UPDATE_ENTITY_TEMPLATE)
+        except Exception as exc:  # noqa: BLE001 - HA may be restarting
+            self.log("Z2M entity lookup failed: %s" % exc, level="WARNING")
+            return None
+        if isinstance(rendered, str):
+            try:
+                rendered = json.loads(rendered)
+            except (ValueError, TypeError):
+                self.log(
+                    "Z2M entity lookup returned unparseable output: %s"
+                    % rendered[:200],
+                    level="WARNING",
+                )
+                return None
+        if not isinstance(rendered, (list, tuple, set)):
+            self.log(
+                "Z2M entity lookup returned %s, expected a list"
+                % type(rendered).__name__,
+                level="WARNING",
+            )
+            return None
+        return {
+            item
+            for item in rendered
+            if isinstance(item, str) and item.startswith("update.")
+        }
+
     async def _paused(self) -> bool:
         """Optional kill switch: create input_boolean.zigbee_ota_pause in HA and
         turn it on to stop new updates (an in-flight update still finishes)."""
@@ -171,12 +259,17 @@ class ZigbeeOtaOrchestrator(hass.Hass):
         remaining = status.pop("remaining")
         self.set_state(
             self._status_sensor,
-            state=remaining,
-            attributes={
-                "friendly_name": "Zigbee OTA Orchestrator",
-                "icon": "mdi:progress-download",
-                **status,
-            },
+            # str(): AppDaemon prunes values equal to None/False from the POST
+            # body, and 0 == False, so a bare 0 would post no state at all and
+            # Home Assistant answers 400.
+            state=str(remaining),
+            attributes=ha_safe(
+                {
+                    "friendly_name": "Zigbee OTA Orchestrator",
+                    "icon": "mdi:progress-download",
+                    **status,
+                }
+            ),
         )
 
     # ------------------------------------------------------------------

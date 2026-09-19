@@ -43,13 +43,19 @@ def make_coordinator(clock: FakeClock | None = None, **overrides: Any) -> OtaCoo
     return OtaCoordinator(**defaults)
 
 
-def entity(name: str, state: str = "on", in_progress: bool = False) -> dict[str, Any]:
+def entity(
+    name: str,
+    state: str = "on",
+    in_progress: bool = False,
+    installed: str = "100",
+    latest: str = "200",
+) -> dict[str, Any]:
     return {
         "state": state,
         "attributes": {
             "friendly_name": name,
-            "installed_version": "100",
-            "latest_version": "200",
+            "installed_version": installed,
+            "latest_version": latest,
             "in_progress": in_progress,
         },
     }
@@ -57,6 +63,20 @@ def entity(name: str, state: str = "on", in_progress: bool = False) -> dict[str,
 
 def snapshot(*names: str, **kw: Any) -> dict[str, dict[str, Any]]:
     return {f"update.{name}": entity(name, **kw) for name in names}
+
+
+def refresh(
+    coord: OtaCoordinator,
+    snap: dict[str, dict[str, Any]],
+    z2m: Any = None,
+) -> None:
+    """Feed a snapshot, vouching for every entity in it as a Z2M device.
+
+    Home Assistant is the identity source in production, so tests that aren't
+    about identity supply it here; pass ``z2m`` to narrow it.
+    """
+    coord.set_z2m_entities(set(snap) if z2m is None else set(z2m))
+    coord.refresh_entities(snap)
 
 
 # ---------------------------------------------------------------------------
@@ -71,28 +91,58 @@ def test_refresh_filters_globs_state_and_known_devices() -> None:
     snap["update.hue_c"] = entity("hue_c")  # matches glob, unknown to Z2M
     snap["update.inovelli_x"] = entity("inovelli_x")  # fails glob
     snap["update.hue_off"] = entity("hue_off", state="off")  # nothing pending
-    coord.refresh_entities(snap)
+    coord.refresh_entities(snap)  # bridge/devices is the only identity source
     status = coord.status()
     assert status["pending"] == ["hue_a", "hue_b"]
     assert status["remaining"] == 2
+    assert status["identity_source"] == "zigbee2mqtt bridge"
 
 
-def test_empty_known_devices_means_no_z2m_filter() -> None:
+def test_no_identity_source_queues_nothing() -> None:
+    """Fail closed: without a Z2M device list the queue stays empty."""
     coord = make_coordinator()
     coord.refresh_entities(snapshot("hue_a"))
+    status = coord.status()
+    assert status["pending"] == []
+    assert status["remaining"] == 0
+    assert status["identity_source"] == "none"
+    assert coord.decide() is None
+
+
+def test_ha_identity_filters_non_z2m_entities() -> None:
+    """A broad glob must not reach an entity Home Assistant says isn't Z2M."""
+    coord = make_coordinator(include_globs=["update.*"])
+    snap = snapshot("hue_a")
+    snap["update.tom_haynes_version"] = entity("Immich - Tom Version")
+    refresh(coord, snap, z2m=["update.hue_a"])
     assert coord.status()["pending"] == ["hue_a"]
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+
+
+def test_identity_lookup_failure_blocks_new_starts() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a"))
+    coord.mark_identity_unavailable("HA unreachable")
+    assert coord.decide() is None
+    status = coord.status()
+    assert status["identity_source"] == "stale (HA unreachable)"
+    assert "HA unreachable" in status["last_event"]
+    # The queue survives; a fresh lookup releases the hold.
+    refresh(coord, snapshot("hue_a"))
+    assert coord.decide() is not None
 
 
 def test_exclude_globs() -> None:
     coord = make_coordinator(exclude_globs=["update.*_b"])
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     assert coord.status()["pending"] == ["hue_a"]
 
 
 def test_vanished_entities_drop_from_queue() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
-    coord.refresh_entities(snapshot("hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_b"))
     assert coord.status()["pending"] == ["hue_b"]
 
 
@@ -103,7 +153,7 @@ def test_vanished_entities_drop_from_queue() -> None:
 
 def test_decide_starts_one_update_alphabetically() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_b", "hue_a"))
+    refresh(coord, snapshot("hue_b", "hue_a"))
     decision = coord.decide()
     assert decision == StartUpdate(friendly_name="hue_a", transaction="t-hue_a")
     assert coord.decide() is None  # one at a time
@@ -112,37 +162,56 @@ def test_decide_starts_one_update_alphabetically() -> None:
 
 def test_success_response_advances_to_next_device() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     coord.decide()
     coord.on_update_response(
         {"status": "ok", "transaction": "t-hue_a", "data": {"id": "hue_a"}}
     )
     status = coord.status()
     assert status["completed_count_this_run"] == 1
-    assert status["in_flight"] is None
+    assert status["in_flight"] == {}
     decision = coord.decide()
     assert decision is not None and decision.friendly_name == "hue_b"
 
 
-def test_entity_flipping_off_outside_flight_counts_as_done() -> None:
+def test_entity_flipping_off_with_new_version_counts_as_done() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
-    coord.refresh_entities({**snapshot("hue_b"), "update.hue_a": entity("hue_a", state="off")})
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    refresh(
+        coord,
+        {
+            **snapshot("hue_b"),
+            "update.hue_a": entity("hue_a", state="off", installed="200"),
+        },
+    )
     status = coord.status()
     assert status["completed_count_this_run"] == 1
+    assert status["completed_this_run"][0]["version"] == "200"
+    assert status["pending"] == ["hue_b"]
+
+
+def test_entity_flipping_off_without_a_new_version_is_not_a_completion() -> None:
+    """Z2M withdrawing a pulled release is not a successful update."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    refresh(coord, {**snapshot("hue_b"), "update.hue_a": entity("hue_a", state="off")})
+    status = coord.status()
+    assert status["completed_count_this_run"] == 0
+    assert status["completed_this_run"] == []
+    assert status["cleared_without_update"] == ["hue_a"]
     assert status["pending"] == ["hue_b"]
 
 
 def test_completed_device_not_requeued_from_stale_snapshot() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock)
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     coord.decide()
     coord.on_update_response(
         {"status": "ok", "transaction": "t-hue_a", "data": {"id": "hue_a"}}
     )
     # HA snapshot still says "on" for a few seconds after Z2M success.
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     assert decision is not None and decision.friendly_name == "hue_b"
     # After the suppression window a genuinely still-pending entity requeues.
@@ -150,7 +219,7 @@ def test_completed_device_not_requeued_from_stale_snapshot() -> None:
     coord.on_update_response(
         {"status": "ok", "transaction": "t-hue_b", "data": {"id": "hue_b"}}
     )
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     retry = coord.decide()
     assert retry is not None and retry.friendly_name == "hue_a"
 
@@ -158,7 +227,7 @@ def test_completed_device_not_requeued_from_stale_snapshot() -> None:
 def test_fresh_devices_run_before_retried_ones() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock)
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     coord.decide()  # hue_a in flight
     coord.on_update_response(
         {"status": "error", "error": "boom", "transaction": "t-hue_a", "data": {"id": "hue_a"}}
@@ -176,7 +245,7 @@ def test_fresh_devices_run_before_retried_ones() -> None:
 def test_generic_error_backs_off_exponentially_with_cap() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock, retry_base_s=100, retry_max_s=350)
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     expected_backoffs = [100, 200, 350, 350]
     for expected in expected_backoffs:
         decision = coord.decide()
@@ -198,7 +267,7 @@ def test_generic_error_backs_off_exponentially_with_cap() -> None:
 def test_offline_error_marks_offline_and_online_event_fast_tracks_retry() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock)
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     decision = coord.decide()
     coord.on_update_response(
         {
@@ -218,7 +287,7 @@ def test_offline_error_marks_offline_and_online_event_fast_tracks_retry() -> Non
 
 def test_offline_devices_are_skipped_until_online() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     coord.set_availability("hue_a", False)
     decision = coord.decide()
     assert decision is not None and decision.friendly_name == "hue_b"
@@ -226,7 +295,7 @@ def test_offline_devices_are_skipped_until_online() -> None:
 
 def test_all_offline_means_no_decision() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     coord.set_availability("hue_a", False)
     assert coord.decide() is None
     assert coord.status()["offline"] == ["hue_a"]
@@ -234,7 +303,7 @@ def test_all_offline_means_no_decision() -> None:
 
 def test_unknown_availability_is_eligible() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     assert coord.decide() is not None
 
 
@@ -246,7 +315,7 @@ def test_unknown_availability_is_eligible() -> None:
 def test_busy_error_requeues_without_burning_attempt() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock)
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     decision = coord.decide()
     coord.on_update_response(
         {
@@ -256,7 +325,7 @@ def test_busy_error_requeues_without_burning_attempt() -> None:
         }
     )
     status = coord.status()
-    assert status["in_flight"] is None
+    assert status["in_flight"] == {}
     assert status["busy_wait_s"] > 0
     assert coord.decide() is None  # busy window
     clock.advance(301)
@@ -273,7 +342,7 @@ def test_busy_error_requeues_without_burning_attempt() -> None:
 
 def test_adopts_external_in_progress_update() -> None:
     coord = make_coordinator()
-    coord.refresh_entities(snapshot("hue_a", "hue_b") | {
+    refresh(coord, snapshot("hue_a", "hue_b") | {
         "update.hue_c": entity("hue_c", in_progress=True)
     })
     status = coord.status()
@@ -284,11 +353,11 @@ def test_adopts_external_in_progress_update() -> None:
 
 def test_adopted_update_finishes_via_device_update_obj() -> None:
     coord = make_coordinator()
-    coord.refresh_entities({"update.hue_c": entity("hue_c", in_progress=True)})
+    refresh(coord, {"update.hue_c": entity("hue_c", in_progress=True)})
     coord.on_device_update_obj("hue_c", {"state": "updating", "progress": 50})
     coord.on_device_update_obj("hue_c", {"state": "idle"})
     status = coord.status()
-    assert status["in_flight"] is None
+    assert status["in_flight"] == {}
     assert status["completed_count_this_run"] == 1
 
 
@@ -300,7 +369,7 @@ def test_adopted_update_finishes_via_device_update_obj() -> None:
 def test_progress_tracking_and_stall_flag() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock, progress_stall_s=100)
-    coord.refresh_entities(snapshot("hue_a"))
+    refresh(coord, snapshot("hue_a"))
     coord.decide()
     coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 5, "remaining": 900})
     fl = coord.status()["in_flight"]
@@ -317,7 +386,7 @@ def test_progress_tracking_and_stall_flag() -> None:
 def test_absolute_timeout_fails_attempt_and_late_ok_still_completes() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock, update_timeout_s=1000)
-    coord.refresh_entities(snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     clock.advance(1001)
     next_decision = coord.decide()  # times out hue_a, starts hue_b
@@ -330,3 +399,107 @@ def test_absolute_timeout_fails_attempt_and_late_ok_still_completes() -> None:
     status = coord.status()
     assert status["completed_count_this_run"] == 1
     assert "hue_a" not in status["pending"]
+
+
+# ---------------------------------------------------------------------------
+# "No image currently available"
+# ---------------------------------------------------------------------------
+
+
+NO_IMAGE = "Update of 'hue_a' failed (No image currently available)"
+
+
+def test_no_image_is_not_a_failure_and_burns_no_retry() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert status["failed_attempts_this_run"] == 0
+    assert status["cooldown"] == []
+    assert status["skipped_no_image"] == ["hue_a"]
+    assert status["in_flight"] == {}
+    # The queue moves straight on to the next device.
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_no_image_device_is_not_requeued_for_the_same_version() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    # The entity still reads "on" until Z2M resets it: never start it again.
+    clock.advance(100000)
+    refresh(coord, snapshot("hue_a"))
+    assert coord.decide() is None
+    assert coord.status()["pending"] == []
+
+
+def test_no_image_device_retries_when_a_new_version_is_offered() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    refresh(coord, {"update.hue_a": entity("hue_a", latest="300")})
+    retry = coord.decide()
+    assert retry is not None and retry.friendly_name == "hue_a"
+
+
+def test_no_image_clearing_is_not_reported_as_completed() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    # Z2M resets the device's update state; HA's entity follows.
+    refresh(coord, {"update.hue_a": entity("hue_a", state="off")})
+    status = coord.status()
+    assert status["completed_count_this_run"] == 0
+    assert status["completed_this_run"] == []
+    assert status["skipped_no_image"] == ["hue_a"]
+    assert status["remaining"] == 0
+
+
+def test_no_image_for_an_untracked_device_is_recorded() -> None:
+    """A manual install from the Z2M frontend hitting the same dead end."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a"))
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update of 'hue_z' failed (No image currently available)",
+            "data": {"id": "hue_z"},
+        }
+    )
+    assert coord.status()["skipped_no_image"] == ["hue_z"]
+    assert coord.status()["failed_attempts_this_run"] == 0

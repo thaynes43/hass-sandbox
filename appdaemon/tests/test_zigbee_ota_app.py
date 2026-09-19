@@ -22,7 +22,7 @@ sys.modules["hassapi"] = mock_hass
 _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root / "apps"))
 
-from zigbee_ota.zigbee_ota_app import ZigbeeOtaOrchestrator  # noqa: E402
+from zigbee_ota.zigbee_ota_app import ZigbeeOtaOrchestrator, ha_safe  # noqa: E402
 
 
 def _run(coro: Any) -> Any:
@@ -57,7 +57,14 @@ def _make_app(
     extra_args: dict | None = None,
     update_snapshot: dict | None = None,
     pause_state: str | None = None,
+    z2m_entities: Any = None,
+    template_error: Exception | None = None,
 ) -> ZigbeeOtaOrchestrator:
+    """Build the app with AppDaemon mocked out.
+
+    ``z2m_entities`` is what Home Assistant answers when asked which update
+    entities are Zigbee2MQTT devices; by default every entity in the snapshot.
+    """
     app = ZigbeeOtaOrchestrator(MagicMock(), MagicMock())
     args = dict(DEFAULT_ARGS)
     if extra_args:
@@ -65,6 +72,7 @@ def _make_app(
     app.args = args
 
     snapshot = update_snapshot if update_snapshot is not None else {}
+    vouched = list(snapshot) if z2m_entities is None else list(z2m_entities)
 
     async def fake_get_state(entity: str | None = None, **kwargs: Any) -> Any:
         if entity is None:
@@ -76,6 +84,13 @@ def _make_app(
             }
         return pause_state
 
+    async def fake_render_template(template: str, **kwargs: Any) -> Any:
+        if template_error is not None:
+            raise template_error
+        # AppDaemon literal_evals the rendered text before handing it back.
+        return list(vouched)
+
+    app.render_template = MagicMock(side_effect=fake_render_template)
     app.get_state = MagicMock(side_effect=fake_get_state)
     app.set_state = MagicMock()
     app.call_service = MagicMock()
@@ -132,7 +147,7 @@ def test_tick_publishes_to_bridge_request_topic_and_status_sensor() -> None:
     app.set_state.assert_called_once()
     sensor_call = app.set_state.call_args
     assert sensor_call.args[0] == "sensor.zigbee_ota_orchestrator"
-    assert sensor_call.kwargs["state"] == 1
+    assert sensor_call.kwargs["state"] == "1"
     assert sensor_call.kwargs["attributes"]["in_flight"]["device"] == "hue_a"
 
 
@@ -154,7 +169,7 @@ def test_paused_via_input_boolean_blocks_new_updates() -> None:
     )
     _run(app._tick({}))
     assert _published_requests(app) == []
-    assert app.set_state.call_args.kwargs["attributes"]["paused"] is True
+    assert app.set_state.call_args.kwargs["attributes"]["paused"] == "true"
 
 
 def test_tick_survives_get_state_failure() -> None:
@@ -178,7 +193,8 @@ def test_bridge_devices_updates_known_set_and_filters_queue() -> None:
         update_snapshot={
             "update.hue_a": _entity("hue_a"),
             "update.hue_ghost": _entity("hue_ghost"),
-        }
+        },
+        z2m_entities=[],  # HA vouches for nothing; bridge/devices is the source
     )
     devices = [
         {"friendly_name": "hue_a", "type": "Router"},
@@ -279,3 +295,125 @@ def test_none_topic_and_foreign_topics_ignored() -> None:
         )
     )
     app.call_service.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Device identity (fail closed)
+# ---------------------------------------------------------------------------
+
+
+def test_non_z2m_entities_never_get_an_ota_request() -> None:
+    """A broad glob plus a non-Z2M update entity must publish nothing for it."""
+    app = _make_app(
+        extra_args={"include_globs": ["update.*"]},
+        update_snapshot={
+            "update.hue_a": _entity("hue_a"),
+            "update.tom_haynes_version": _entity("Immich - Tom Version"),
+        },
+        z2m_entities=["update.hue_a"],
+    )
+    _run(app._tick({}))
+    requests = _published_requests(app)
+    assert [req["id"] for req in requests] == ["hue_a"]
+
+
+def test_no_identity_answer_starts_nothing_on_the_first_tick() -> None:
+    app = _make_app(
+        extra_args={"include_globs": ["update.*"]},
+        update_snapshot={"update.hue_a": _entity("hue_a")},
+        template_error=RuntimeError("HA restarting"),
+    )
+    _run(app._tick({}))
+    assert _published_requests(app) == []
+    attrs = app.set_state.call_args.kwargs["attributes"]
+    assert attrs["identity_source"].startswith("stale")
+    assert "device list" in attrs["last_event"]
+
+
+def test_identity_lookup_failure_holds_an_established_queue() -> None:
+    """A working queue must not keep starting updates once HA stops answering."""
+    app = _make_app(
+        update_snapshot={
+            "update.hue_a": _entity("hue_a"),
+            "update.hue_b": _entity("hue_b"),
+        }
+    )
+    _run(app._tick({}))
+    first = _published_requests(app)[0]
+    assert first["id"] == "hue_a"
+
+    async def boom(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("HA restarting")
+
+    app.render_template = MagicMock(side_effect=boom)
+    _run(
+        app._on_mqtt_message(
+            "MQTT_MESSAGE",
+            {
+                "topic": "zigbee2mqtt/bridge/response/device/ota_update/update",
+                "payload": json.dumps(
+                    {
+                        "status": "ok",
+                        "transaction": first["transaction"],
+                        "data": {"id": "hue_a"},
+                    }
+                ),
+            },
+            {},
+        )
+    )
+    _run(app._tick({}))
+    assert len(_published_requests(app)) == 1  # hue_b held back
+    attrs = app.set_state.call_args.kwargs["attributes"]
+    assert attrs["identity_source"].startswith("stale")
+    assert "holding" in attrs["last_event"]
+
+
+def test_unparseable_identity_answer_starts_nothing() -> None:
+    app = _make_app(update_snapshot={"update.hue_a": _entity("hue_a")})
+    app.render_template = MagicMock(
+        side_effect=lambda *a, **kw: _as_coro("not a list at all")
+    )
+    _run(app._tick({}))
+    assert _published_requests(app) == []
+
+
+def _as_coro(value: Any) -> Any:
+    async def _inner() -> Any:
+        return value
+
+    return _inner()
+
+
+# ---------------------------------------------------------------------------
+# Status sensor payload
+# ---------------------------------------------------------------------------
+
+
+def test_status_state_is_a_string_so_zero_survives() -> None:
+    """AppDaemon drops values equal to None/False, and 0 == False, so an int 0
+    state posts no state at all and Home Assistant answers 400."""
+    app = _make_app(update_snapshot={})
+    _run(app._tick({}))
+    assert app.set_state.call_args.kwargs["state"] == "0"
+
+
+def test_status_falsy_attributes_reach_home_assistant() -> None:
+    app = _make_app(update_snapshot={})
+    _run(app._tick({}))
+    attrs = app.set_state.call_args.kwargs["attributes"]
+    assert attrs["paused"] == "false"
+    assert attrs["failed_attempts_this_run"] == "0"
+    assert attrs["completed_count_this_run"] == "0"
+    assert attrs["busy_wait_s"] == "0"
+    assert attrs["z2m_devices_known"] == "0"
+    assert attrs["in_flight"] == {}
+
+
+def test_ha_safe_keeps_truthy_values_untouched() -> None:
+    assert ha_safe({"a": 3, "b": "x", "c": [1, {"d": True}]}) == {
+        "a": 3,
+        "b": "x",
+        "c": [1, {"d": "true"}],
+    }
+    assert ha_safe(None) == ""

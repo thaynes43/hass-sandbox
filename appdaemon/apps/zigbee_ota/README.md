@@ -3,18 +3,28 @@
 ## What it does
 
 Sequentially installs pending Zigbee2MQTT OTA firmware updates — one device at
-a time — until every matching device is on the latest firmware. Built for the
-2026-08 Hue fleet refresh (~90 bulbs at 45–90 min each), but generic to any
-Zigbee2MQTT device exposing a Home Assistant `update.*` entity.
+a time — until every device is on the latest firmware. It covers the **whole
+Zigbee2MQTT fleet**, battery-powered sensors included; `exclude_globs` is the
+opt-out. Built for the 2026-08 Hue fleet refresh (~90 bulbs at 45–90 min each),
+and widened in 2026-09 to every Z2M device.
 
 ## How it works
 
 - **Queue** — re-derived every `scan_interval_s` from Home Assistant `update.*`
   entities (state `on` = firmware pending) matched against `include_globs` /
-  `exclude_globs`, and validated against the retained
-  `zigbee2mqtt/bridge/devices` document so only real Z2M devices are touched.
-  Because the queue is derived state, restarts are harmless: the app picks up
-  wherever the fleet actually is (only in-memory retry counters reset).
+  `exclude_globs`. Because the queue is derived state, restarts are harmless:
+  the app picks up wherever the fleet actually is (only in-memory retry counters
+  reset).
+- **Only Zigbee2MQTT devices, ever** — the glob is just the first filter. On
+  every tick the app asks Home Assistant which `update.*` entities belong to
+  Z2M (`integration_entities('mqtt')` narrowed to entities whose device
+  identifiers carry `zigbee2mqtt_`) and manages nothing else, so `update.*`
+  never reaches an Immich, HACS, ESPHome or Z-Wave update entity. If that
+  lookup fails, the app starts nothing on that tick and says so in `last_event`.
+  The retained `zigbee2mqtt/bridge/devices` document is accepted as a second
+  source when it arrives, but it is not relied on: AppDaemon's MQTT plugin
+  subscribes once at plugin start, so the retained copy lands seconds before
+  this app registers its listener and is never replayed on an app restart.
 - **One at a time** — an update starts by publishing
   `{"id": <friendly_name>, "transaction": ...}` to
   `zigbee2mqtt/bridge/request/device/ota_update/update`. Nothing else starts
@@ -25,6 +35,11 @@ Zigbee2MQTT device exposing a Home Assistant `update.*` entity.
   `in_progress` (started from the Z2M frontend or HA), the app waits for it
   instead of dueling; a Z2M "already in progress" error just requeues without
   burning a retry attempt.
+- **"No image currently available"** — Z2M's answer when a device advertises an
+  update the OTA index has no file for (usually a pulled release). Nothing is
+  transferred, so it counts as neither a completed update nor a failure: the
+  device lands in `skipped_no_image` with no retry attempt and no backoff, and
+  is picked up again only if a *different* version is later offered.
 - **Offline devices** (bulbs without power) — skipped while their retained
   `zigbee2mqtt/<device>/availability` topic says `offline`. A failed attempt
   classified as offline-type (`timeout` / `didn't respond`) backs off
@@ -42,7 +57,16 @@ Zigbee2MQTT device exposing a Home Assistant `update.*` entity.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending`, `cooldown` (per-device attempts/retry-in/last error), `offline`, `completed_this_run`, `failed_attempts_this_run`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending`, `cooldown` (per-device attempts/retry-in/last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+
+A device is only listed in `completed_this_run` when its installed version
+actually moved (or Z2M reported the update ok). An update Z2M withdrew without
+installing anything shows up under `cleared_without_update` instead.
+
+Booleans and zeros are published as strings (`"true"`, `"0"`). AppDaemon strips
+values equal to `None`/`False` from the state it POSTs to Home Assistant, and in
+Python `0 == False`, so a bare `0` would post no state at all and Home Assistant
+would reject the whole update with a 400.
 
 ## Associated card
 
@@ -51,9 +75,9 @@ simple entities card.
 
 ## Dependencies
 
-- AppDaemon **HASS plugin** (reads `update.*` entities, writes the status
-  sensor) and **MQTT plugin** (namespace `mqtt`, already subscribed to
-  `zigbee2mqtt/#`). No HTTP providers, no secrets.
+- AppDaemon **HASS plugin** (reads `update.*` entities, renders the Z2M device
+  template, writes the status sensor) and **MQTT plugin** (namespace `mqtt`,
+  already subscribed to `zigbee2mqtt/#`). No HTTP providers, no secrets.
 - Zigbee2MQTT ≥ 2.x with availability enabled (for the offline gate) and HA
   discovery (for the `update.*` entities).
 
@@ -61,8 +85,8 @@ simple entities card.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `include_globs` | `["update.*"]` | fnmatch globs an `update.*` entity must match to be managed. Prod uses `["update.*hue*"]`. |
-| `exclude_globs` | `[]` | Globs to exclude after include matching. |
+| `include_globs` | `["update.*"]` | fnmatch globs an `update.*` entity must match to be managed. Prod uses the default — every Zigbee2MQTT device. Non-Z2M entities are filtered out regardless. |
+| `exclude_globs` | `[]` | Globs to exclude after include matching — the opt-out for a device that should be left alone. Prod uses `[]`. |
 | `scan_interval_s` | `120` | Queue refresh / decision tick interval. |
 | `retry_base_s` | `900` | First retry backoff after a failed attempt. |
 | `retry_max_s` | `21600` | Backoff cap. |
@@ -83,6 +107,7 @@ Nothing else — no secrets, no shell commands, no helpers required.
 ## Upstream/downstream dependencies
 
 - **Upstream**: Zigbee2MQTT bridge topics (request/response/devices), per-device
-  availability + state topics, HA `update.*` entities from Z2M discovery.
+  availability + state topics, HA `update.*` entities from Z2M discovery, and
+  the HA device registry (which entities are Z2M).
 - **Downstream**: `sensor.zigbee_ota_orchestrator` consumers (dashboards,
   monitoring). No other app depends on this one.

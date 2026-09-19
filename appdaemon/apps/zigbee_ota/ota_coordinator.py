@@ -7,6 +7,11 @@ currently updating) is re-derived from Home Assistant update entities and
 retained Zigbee2MQTT topics on every refresh, so a restart never loses the
 queue — only per-attempt retry counters reset, which is safe (the worst case
 is retrying a failed device sooner than its backoff would have).
+
+The coordinator fails closed on device identity: it manages an ``update.*``
+entity only when an identity source has vouched for it being a Zigbee2MQTT
+device, so the include glob can be as broad as ``update.*`` without ever
+touching an Immich, HACS, ESPHome or Z-Wave update entity.
 """
 
 from __future__ import annotations
@@ -27,9 +32,20 @@ RESULT_SUCCESS = "success"
 RESULT_OFFLINE = "offline"
 RESULT_ERROR = "error"
 RESULT_BUSY = "busy"
+RESULT_NO_IMAGE = "no_image"
 
 _OFFLINE_ERROR_MARKERS = ("respond", "timeout", "timed out", "offline", "unreachable")
 _BUSY_ERROR_MARKERS = ("already in progress",)
+# Z2M answers "No image currently available" (and, older, "No image available")
+# when the device advertises an update but the OTA index has no file for it —
+# typically a release the maintainers pulled. Nothing is transferred, so it is
+# neither a completed update nor a failure worth retrying.
+_NO_IMAGE_ERROR_MARKERS = ("no image",)
+
+# How the Z2M device list was learned, for the status sensor.
+IDENTITY_NONE = "none"
+IDENTITY_HA = "home assistant"
+IDENTITY_BRIDGE = "zigbee2mqtt bridge"
 
 
 @dataclass
@@ -52,14 +68,18 @@ class InFlight:
     stalled: bool = False
 
     def as_status(self) -> dict[str, Any]:
-        return {
+        status: dict[str, Any] = {
             "device": self.friendly_name,
             "adopted": self.adopted,
-            "progress_pct": self.progress,
-            "remaining_s": self.remaining_s,
             "started_ts": self.started_ts,
             "stalled": self.stalled,
         }
+        # Omit rather than report None: Home Assistant drops null attributes.
+        if self.progress is not None:
+            status["progress_pct"] = self.progress
+        if self.remaining_s is not None:
+            status["remaining_s"] = self.remaining_s
+        return status
 
 
 @dataclass
@@ -93,11 +113,17 @@ class OtaCoordinator:
             self.make_transaction = lambda name: f"zota-{int(self.now())}-{abs(hash(name)) % 10000}"
         self._devices: dict[str, DeviceRecord] = {}  # friendly_name -> record
         self._known_z2m_devices: set[str] = set()
+        self._z2m_entity_ids: Optional[set[str]] = None
+        self._identity_stale: Optional[str] = None
         self._availability: dict[str, bool] = {}
         self._in_flight: Optional[InFlight] = None
         self._global_busy_until: float = 0.0
         self._completed: list[dict[str, Any]] = []  # this process lifetime only
         self._recently_completed: dict[str, float] = {}
+        # friendly_name -> the latest_version Z2M had no image for (None until
+        # the next refresh learns it)
+        self._no_image: dict[str, Optional[str]] = {}
+        self._cleared: list[str] = []
         self._failed_attempts: int = 0
         self._last_event: str = "startup"
 
@@ -106,8 +132,38 @@ class OtaCoordinator:
     # ------------------------------------------------------------------
 
     def set_known_devices(self, friendly_names: set[str]) -> None:
-        """Friendly names from the retained zigbee2mqtt/bridge/devices doc."""
+        """Friendly names from the retained zigbee2mqtt/bridge/devices doc.
+
+        A secondary identity source: AppDaemon's MQTT plugin subscribes once at
+        plugin start, so the retained document is usually delivered seconds
+        before this app registers its listener and is never replayed. When it
+        does arrive it is trusted; the Home Assistant lookup below is what the
+        app actually relies on.
+        """
         self._known_z2m_devices = set(friendly_names)
+
+    def set_z2m_entities(self, entity_ids: set[str]) -> None:
+        """The authoritative set of Zigbee2MQTT ``update.*`` entity ids, read
+        from Home Assistant on every tick."""
+        self._z2m_entity_ids = set(entity_ids)
+        self._identity_stale = None
+
+    def mark_identity_unavailable(self, reason: str) -> None:
+        """The Home Assistant lookup failed this tick. Keep the last known-good
+        set for reference but start nothing until a fresh one arrives."""
+        self._identity_stale = reason
+        self._last_event = f"holding: {reason}"
+
+    @property
+    def identity_ready(self) -> bool:
+        """True when some trustworthy source says which devices are Z2M."""
+        return self._z2m_entity_ids is not None or bool(self._known_z2m_devices)
+
+    def _is_z2m(self, entity_id: str, friendly: str) -> bool:
+        """Fail closed: an entity is managed only when a source vouches for it."""
+        if self._z2m_entity_ids is not None and entity_id in self._z2m_entity_ids:
+            return True
+        return friendly in self._known_z2m_devices
 
     def set_availability(self, friendly_name: str, online: bool) -> bool:
         """Track availability. Returns True when an offline-failed device came
@@ -130,11 +186,18 @@ class OtaCoordinator:
         """Re-derive the queue from a Home Assistant update-domain snapshot.
 
         ``snapshot`` maps entity_id -> {"state": "on"/"off", "attributes": {...}}.
-        Devices are matched to Zigbee2MQTT via the entity friendly_name, which
-        Z2M discovery sets to the device friendly name. Entities that don't
-        correspond to a known Z2M device are ignored even if they match the
-        include globs (protects against non-Z2M update entities).
+        An entity is only managed when an identity source vouches for it being a
+        Zigbee2MQTT device — the Home Assistant lookup (:meth:`set_z2m_entities`)
+        or the retained bridge document (:meth:`set_known_devices`). With no
+        source at all the queue is left untouched and stays empty, so a broad
+        include glob can never publish an OTA request for, say, an Immich or
+        HACS update entity.
         """
+        if not self.identity_ready:
+            self._last_event = (
+                "no Zigbee2MQTT device list yet — nothing queued"
+            )
+            return
         seen: set[str] = set()
         adopted_candidate: Optional[str] = None
         for entity_id, payload in snapshot.items():
@@ -142,14 +205,24 @@ class OtaCoordinator:
                 continue
             attrs = payload.get("attributes") or {}
             friendly = attrs.get("friendly_name") or entity_id.split(".", 1)[1]
-            if self._known_z2m_devices and friendly not in self._known_z2m_devices:
+            if not self._is_z2m(entity_id, friendly):
                 continue
             if payload.get("state") != "on":
-                # Update no longer pending: if we were tracking it, it finished.
+                # Update no longer pending: work out whether anything installed.
                 existing = self._devices.pop(friendly, None)
                 if existing is not None:
-                    self._record_completion(friendly, existing, attrs)
+                    self._settle_cleared(friendly, existing, attrs)
                 continue
+            if friendly in self._no_image:
+                offered = str(attrs.get("latest_version"))
+                skipped_version = self._no_image[friendly]
+                if skipped_version is None:
+                    self._no_image[friendly] = offered  # learn it, keep skipping
+                    continue
+                if offered == skipped_version:
+                    continue  # same release Z2M has no file for; don't retry
+                # A different release is on offer now — worth another try.
+                self._no_image.pop(friendly, None)
             completed_ts = self._recently_completed.get(friendly)
             if (
                 completed_ts is not None
@@ -233,6 +306,13 @@ class OtaCoordinator:
             return
         error = str(payload.get("error") or "unknown error")
         lowered = error.lower()
+        if any(marker in lowered for marker in _NO_IMAGE_ERROR_MARKERS):
+            # Nothing was transferred and nothing will be until the OTA index
+            # carries a file again: not a completion, and not worth retrying.
+            target = fl.friendly_name if (matches_flight and fl is not None) else friendly
+            if target:
+                self._record_skip(target, error)
+            return
         if any(marker in lowered for marker in _BUSY_ERROR_MARKERS):
             # Another OTA (ours after a local timeout, or manual) is running.
             self._global_busy_until = self.now() + self.busy_backoff_s
@@ -267,6 +347,11 @@ class OtaCoordinator:
                 ):
                     fl.stalled = True
                 return None
+        if not self.identity_ready:
+            return None
+        if self._identity_stale is not None:
+            # The device list could not be refreshed this tick; don't guess.
+            return None
         if ts < self._global_busy_until:
             return None
         candidate = self._next_candidate(ts)
@@ -341,6 +426,42 @@ class OtaCoordinator:
             f"retry in {int(backoff)}s"
         )
 
+    def _settle_cleared(
+        self, friendly: str, rec: DeviceRecord, attrs: dict[str, Any]
+    ) -> None:
+        """A tracked device's update entity went back to ``off``.
+
+        That only means new firmware is installed when the installed version
+        actually moved. Z2M also clears the flag when it withdraws an update it
+        cannot deliver (a pulled release), and that must not be reported as a
+        successful update.
+        """
+        if friendly in self._no_image:
+            self._clear_in_flight_for(friendly)
+            return
+        installed = attrs.get("installed_version")
+        if installed is not None and str(installed) != str(rec.installed_version):
+            self._record_completion(friendly, rec, attrs)
+            return
+        self._clear_in_flight_for(friendly)
+        if friendly not in self._cleared:
+            self._cleared.append(friendly)
+        self._last_event = f"{friendly}: update withdrawn without installing"
+
+    def _clear_in_flight_for(self, friendly: str) -> None:
+        if self._in_flight is not None and self._in_flight.friendly_name == friendly:
+            self._in_flight = None
+
+    def _record_skip(self, friendly: str, error: str) -> None:
+        """Park a device Z2M has no firmware file for. No attempt is burned and
+        no backoff is scheduled — a retry would only get the same answer."""
+        rec = self._devices.pop(friendly, None)
+        # None = version not known yet (a response for a device we weren't
+        # tracking); the next refresh learns it and keeps skipping.
+        self._no_image[friendly] = rec.latest_version if rec is not None else None
+        self._clear_in_flight_for(friendly)
+        self._last_event = f"{friendly} skipped: {error}"
+
     def _record_completion(
         self, friendly: str, rec: DeviceRecord, attrs: dict[str, Any]
     ) -> None:
@@ -354,8 +475,7 @@ class OtaCoordinator:
                 ),
             }
         )
-        if self._in_flight is not None and self._in_flight.friendly_name == friendly:
-            self._in_flight = None
+        self._clear_in_flight_for(friendly)
 
     # ------------------------------------------------------------------
     # Status
@@ -370,7 +490,7 @@ class OtaCoordinator:
                     "attempts": rec.attempts,
                     "retry_in_s": max(0, int(rec.next_attempt_ts - ts)),
                     "offline_failure": rec.offline_failure,
-                    "last_error": rec.last_error,
+                    "last_error": rec.last_error or "",
                 }
                 for rec in self._devices.values()
                 if rec.attempts > 0 and rec.next_attempt_ts > ts
@@ -393,12 +513,30 @@ class OtaCoordinator:
                 for rec in self._devices.values()
                 if rec.next_attempt_ts <= ts and rec.friendly_name != in_flight_name
             ),
-            "in_flight": self._in_flight.as_status() if self._in_flight else None,
+            "in_flight": self._in_flight.as_status() if self._in_flight else {},
             "cooldown": cooldown,
             "offline": offline,
             "completed_this_run": self._completed[-25:],
             "completed_count_this_run": len(self._completed),
+            "skipped_no_image": sorted(self._no_image),
+            "cleared_without_update": sorted(self._cleared)[-25:],
             "failed_attempts_this_run": self._failed_attempts,
             "busy_wait_s": max(0, int(self._global_busy_until - ts)),
+            "z2m_devices_known": self._z2m_device_count(),
+            "identity_source": self._identity_source(),
             "last_event": self._last_event,
         }
+
+    def _z2m_device_count(self) -> int:
+        if self._z2m_entity_ids is not None:
+            return len(self._z2m_entity_ids)
+        return len(self._known_z2m_devices)
+
+    def _identity_source(self) -> str:
+        if self._identity_stale is not None:
+            return f"stale ({self._identity_stale})"
+        if self._z2m_entity_ids is not None:
+            return IDENTITY_HA
+        if self._known_z2m_devices:
+            return IDENTITY_BRIDGE
+        return IDENTITY_NONE

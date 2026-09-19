@@ -1399,23 +1399,29 @@ countdown_app:
   countdown_refresh_s: 60
 
 # ---------------------------------------------------------------------------
-# Zigbee OTA orchestrator — sequential Zigbee2MQTT firmware rollout
+# Zigbee OTA orchestrator — sequential firmware rollout across every Z2M device
 # ---------------------------------------------------------------------------
 zigbee_ota_updater:
   module: zigbee_ota.zigbee_ota_app
   class: ZigbeeOtaOrchestrator
   disable: true
-  # Only Hue devices for now; widen the glob to roll out other Z2M firmware.
+  # Every Zigbee2MQTT device, battery sensors included.  The glob is only the
+  # first filter: the app asks Home Assistant each tick which update entities
+  # actually belong to Zigbee2MQTT and manages nothing else, so "update.*"
+  # never reaches an Immich, HACS, ESPHome or Z-Wave update.  exclude_globs is
+  # the opt-out if a device should be left alone.
   include_globs:
-    - "update.*hue*"
+    - "update.*"
+  exclude_globs: []
   scan_interval_s: 120
   # Failed attempts back off 15min -> 30min -> ... capped at 6h; a device that
   # comes back online retries within online_retry_grace_s instead.
   retry_base_s: 900
   retry_max_s: 21600
   online_retry_grace_s: 60
-  # Hue bulbs take 45-90min; warn (stalled flag) after 45min without progress,
-  # give up on the attempt after 4h without a terminal response.
+  # A Hue bulb takes 45-90min and is the slowest thing in the mesh; warn
+  # (stalled flag) after 45min without progress, give up on the attempt after
+  # 4h without a terminal response.
   progress_stall_s: 2700
   update_timeout_s: 14400
 
