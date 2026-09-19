@@ -239,9 +239,9 @@ CURATED_SWITCHES = (
 def test_allowlisted_switches_stay_exposed(entity_id: str) -> None:
     """A shipped-allowlist switch passes; a sibling relay is still denied."""
     assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
-    # The allowlist is by name, so a neighbouring relay is not swept in with it.
+    # The allowlist is by name, so the real shed-fan relay (occupancy-owned, not a light) is not swept in.
     sibling = evaluate_entity(
-        ExposedEntity("switch.back_yard_shed_fan_relay"), DEFAULT_RULES
+        ExposedEntity("switch.shed_fan_power_switch"), DEFAULT_RULES
     )
     assert sibling is not None
     assert sibling.rule == RULE_SWITCH_DEFAULT_DENY

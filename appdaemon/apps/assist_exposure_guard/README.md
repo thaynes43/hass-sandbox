@@ -243,11 +243,11 @@ deny_entity_globs:
   - "light.ratgdov25i_*"
   - "switch.spa_intouch3_switch"
   - "switch.nrz120804q_*"
-# Exterior light relays — the switch is the light, nothing else is on it.
+# Exterior light relays — each switch only powers a light circuit.
 switch_allowlist:
   - "switch.back_yard_retaining_wall_lights_relay"  # patio retaining-wall lights
   - "switch.shed_exterior_lights_shelly_relay"      # shed flowerbox lights
-  - "switch.back_yard_backyard_motion_light_relay"  # back-yard motion flood light power
+  - "switch.back_yard_backyard_motion_light_relay"  # powers the back-yard MOTION flood fixture: off = no motion light until its 00:00 schedule
 # No patterns on purpose — see below.
 script_allowlist_globs:
   - "script.voice_movie_room_bright"
