@@ -174,11 +174,22 @@ class ZigbeeOtaOrchestrator(hass.Hass):
             if z2m_entities is None:
                 reason = "Zigbee2MQTT device list unavailable from Home Assistant"
                 self._coordinator.mark_identity_unavailable(reason)
+                self._last_z2m_count = -1
                 self.log("%s — starting nothing this tick" % reason, level="WARNING")
             elif not self._coordinator.set_z2m_entities(z2m_entities):
+                self._last_z2m_count = -1
                 self.log(
                     "Home Assistant reported no Zigbee2MQTT update entities; "
                     "keeping the last known list and starting nothing",
+                    level="WARNING",
+                )
+            elif not z2m_entities:
+                # Never silent: this is what a template that stopped matching
+                # looks like, and it manages nothing until someone notices.
+                self._last_z2m_count = -1
+                self.log(
+                    "Home Assistant reported no Zigbee2MQTT update entities; "
+                    "managing nothing until that changes",
                     level="WARNING",
                 )
             elif len(z2m_entities) != self._last_z2m_count:

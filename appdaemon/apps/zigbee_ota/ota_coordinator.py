@@ -196,8 +196,14 @@ class OtaCoordinator:
 
     @property
     def identity_ready(self) -> bool:
-        """True when some trustworthy source says which devices are Z2M."""
-        return self._z2m_entity_ids is not None or bool(self._known_z2m_devices)
+        """True when some trustworthy source names at least one Z2M device.
+
+        An empty list is deliberately not ready: it manages nothing, so
+        treating it as a working state would let the app sit there looking
+        healthy while silently doing nothing — and would re-derive (and so
+        empty) the queue on every tick.
+        """
+        return bool(self._z2m_entity_ids) or bool(self._known_z2m_devices)
 
     def _is_z2m(self, entity_id: str, friendly: str) -> bool:
         """Fail closed: an entity is managed only when a source vouches for it."""
@@ -426,18 +432,26 @@ class OtaCoordinator:
         self._last_event = f"starting update for {candidate.friendly_name}"
         return StartUpdate(friendly_name=candidate.friendly_name, transaction=transaction)
 
-    def _next_candidate(self, ts: float) -> Optional[DeviceRecord]:
-        eligible = [
-            rec
-            for rec in self._devices.values()
-            if rec.next_attempt_ts <= ts
-            # Unknown availability counts as online: with no retained message
-            # yet the request itself is the probe (failure lands in cooldown).
+    def _is_eligible(self, rec: DeviceRecord, ts: float) -> bool:
+        """Can this device be started right now?
+
+        The status sensor's ``pending`` list uses this too — a device listed as
+        ready that the picker would never choose is just confusing.
+        """
+        return (
+            rec.next_attempt_ts <= ts
+            # Unknown availability counts as online: with nothing said either
+            # way, the request itself is the probe (failure lands in cooldown).
             and self._availability.get(rec.friendly_name, True)
             and (
                 self._in_flight is None
                 or self._in_flight.friendly_name != rec.friendly_name
             )
+        )
+
+    def _next_candidate(self, ts: float) -> Optional[DeviceRecord]:
+        eligible = [
+            rec for rec in self._devices.values() if self._is_eligible(rec, ts)
         ]
         if not eligible:
             return None
@@ -594,7 +608,7 @@ class OtaCoordinator:
         pending = sorted(
             rec.friendly_name
             for rec in self._devices.values()
-            if rec.next_attempt_ts <= ts and rec.friendly_name != in_flight_name
+            if self._is_eligible(rec, ts)
         )
         remaining = len(self._devices)
         if in_flight_name is not None and in_flight_name not in self._devices:
@@ -628,7 +642,7 @@ class OtaCoordinator:
     def _identity_source(self) -> str:
         if self._identity_stale is not None:
             return f"stale ({self._identity_stale})"
-        if self._z2m_entity_ids is not None:
+        if self._z2m_entity_ids:
             return IDENTITY_HA
         if self._known_z2m_devices:
             return IDENTITY_BRIDGE

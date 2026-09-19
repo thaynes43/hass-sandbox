@@ -23,6 +23,9 @@ and widened in 2026-09 to every Z2M device.
   lookup fails — or comes back empty when devices were known a moment ago,
   which is what an mqtt config entry still starting up renders — the app keeps
   the last good list, starts nothing on that tick and says so in `last_event`.
+  An empty list is never treated as a working state: `identity_source` reads
+  `none`, nothing is queued, and the app logs a warning every tick, because
+  that is what a template that has stopped matching looks like.
   The retained `zigbee2mqtt/bridge/devices` document is accepted as a second
   source when it arrives, but it is not relied on: AppDaemon's MQTT plugin
   subscribes once at plugin start, so the retained copy lands seconds before
@@ -68,7 +71,7 @@ and widened in 2026-09 to every Z2M device.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending`, `cooldown` (per-device attempts / `retry_at` / last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (per-device attempts / `retry_at` / last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
 The lists are capped at 25 entries with a `*_count` beside them, and every
 schedule is an absolute time (`retry_at`, `busy_until`, `started_at`) rather

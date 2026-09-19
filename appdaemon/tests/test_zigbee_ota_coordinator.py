@@ -536,15 +536,21 @@ def test_empty_ha_answer_does_not_wipe_an_established_queue() -> None:
     assert coord.status()["cooldown"][0]["attempts"] == 1
 
 
-def test_first_empty_ha_answer_is_accepted() -> None:
-    """With nothing known yet, an empty fleet is a legitimate answer."""
+def test_an_empty_device_list_never_reads_as_healthy() -> None:
+    """An empty list manages nothing, so it must not look like a working one —
+    otherwise a template that stopped matching sits there silently forever."""
     coord = make_coordinator()
-    coord.set_z2m_entities(set())
+    assert coord.set_z2m_entities(set()) is True  # nothing known yet
     coord.refresh_entities(snapshot("hue_a"))
     status = coord.status()
-    assert status["identity_source"] == "home assistant"
+    assert status["identity_source"] == "none"
+    assert status["z2m_devices_known"] == 0
     assert status["pending"] == []
     assert coord.decide() is None
+    # And a later empty answer still can't quietly empty an established queue.
+    refresh(coord, snapshot("hue_a"))
+    assert coord.set_z2m_entities(set()) is False
+    assert coord.status()["remaining"] == 1
 
 
 def test_no_image_park_expires_and_retries_the_same_version() -> None:
@@ -723,3 +729,17 @@ def test_absolute_times_carry_a_utc_offset() -> None:
     coord.decide()
     started = coord.status()["in_flight"]["started_at"]
     assert started[-6] in "+-" or started.endswith("Z")
+
+
+def test_pending_lists_only_what_the_picker_would_start() -> None:
+    """An offline device counted as pending claims work that never starts."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="unavailable")
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["pending"] == ["hue_b"]
+    assert status["pending_count"] == 1
+    assert status["offline"] == ["hue_a"]
+    assert status["remaining"] == 2  # still needs firmware, just not now
