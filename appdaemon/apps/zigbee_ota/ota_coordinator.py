@@ -407,6 +407,14 @@ class OtaCoordinator:
         if matches_flight:
             offline = any(marker in lowered for marker in _OFFLINE_ERROR_MARKERS)
             self._finish_in_flight(RESULT_OFFLINE if offline else RESULT_ERROR, error=error)
+            return
+        rec = self._devices.get(friendly) if friendly else None
+        if rec is not None:
+            # Z2M's late answer for an attempt we already gave up on. Keep the
+            # reason visible without touching the backoff already scheduled —
+            # the attempt was counted when we abandoned it.
+            rec.last_error = error
+            self._last_event = f"{friendly}, after we gave up: {error}"
 
     # ------------------------------------------------------------------
     # Decisions
@@ -450,6 +458,12 @@ class OtaCoordinator:
                         f"{int(self.progress_stall_s)}s"
                     ),
                 )
+                # Releasing the slot is optimistic: Z2M has no cancel API, so
+                # its operation for that device may still be open until its
+                # own timeout fires. Nothing is on the air (no byte was ever
+                # transferred), but stagger the next device by the busy window
+                # rather than starting one in the very same tick.
+                self._global_busy_until = ts + self.busy_backoff_s
             else:
                 if (
                     fl.last_progress_ts

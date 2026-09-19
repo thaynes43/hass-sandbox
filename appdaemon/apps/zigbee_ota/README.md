@@ -41,6 +41,14 @@ and widened in 2026-09 to every Z2M device.
   until the matching `.../response/device/ota_update/update` arrives (Z2M sends
   it on completion or failure). Progress (`progress`/`remaining`) is read from
   the device state topic's `update` object.
+
+  The two timeouts below are the exception, and they are optimistic by
+  necessity: Z2M has no cancel API, so giving up on an attempt cannot close
+  Z2M's side of it. Both only fire on an attempt that has transferred nothing
+  or gone silent for hours, and the next device is staggered by
+  `busy_backoff_s` — but if Z2M's operation is somehow still open, a second
+  one can exist alongside it. An attempt that is actively transferring is
+  never released early, and neither is an adopted one.
 - **Externally started updates are adopted** — if an update is already
   `in_progress` (started from the Z2M frontend or HA), the app waits for it
   instead of dueling; a Z2M "already in progress" error just requeues without

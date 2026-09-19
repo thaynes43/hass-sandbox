@@ -853,6 +853,10 @@ def test_an_update_that_never_starts_gives_the_slot_back() -> None:
     decision = coord.decide()
     assert decision is not None and decision.friendly_name == "hue_a"
     clock.advance(101)
+    # Staggered by the busy window rather than started in the same tick.
+    assert coord.decide() is None
+    assert coord.status()["busy_until"] != ""
+    clock.advance(301)
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
     status = coord.status()
@@ -892,3 +896,27 @@ def test_an_adopted_update_is_never_abandoned_early() -> None:
     clock.advance(900)
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_late_answer_for_an_abandoned_attempt_is_recorded() -> None:
+    """Z2M can answer long after we gave up; the reason shouldn't vanish."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    clock.advance(101)
+    coord.decide()  # abandons hue_a
+    attempts_before = coord.status()["cooldown"][0]["attempts"]
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device didn't respond to OTA request",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert "hue_a" in status["last_event"]
+    assert status["cooldown"][0]["last_error"] == "Device didn't respond to OTA request"
+    assert status["cooldown"][0]["attempts"] == attempts_before  # not double-counted
+    assert status["failed_attempts_this_run"] == 1
