@@ -1,0 +1,18 @@
+# script.voice_entrance_all_off — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Mirrors a wall-switch config button; see agent-docs/voice-control-map.md (First floor).
+alias: Entrance All Off
+description: 'Voice tool. The ''on the way out'' switch: turns off the entrance lights, the mudroom lights
+  and all three downstairs bathroom lights. Same as pressing the config button on the entrance wall switch.
+  Use for ''turn everything off by the door'', ''we''re heading out, lights off at the entrance'' or ''entrance
+  all off''. It only turns lights off.'
+icon: mdi:door-closed
+mode: single
+sequence:
+- action: light.turn_off
+  target:
+    entity_id:
+    - light.downstairs_entrance_lights
+    - light.downstairs_mudroom_lights
+    - light.downstairs_bathroom_vanity_inovelli_presence
+    - light.downstairs_bathroom_fan_light_inovelli_on_off
+    - light.downstairs_bathroom_shower_inovelli_on_off

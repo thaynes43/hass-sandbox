@@ -242,6 +242,8 @@ CURATED_SCRIPTS = (
     "script.voice_primary_bathroom_lights_off",
     "script.voice_primary_bathroom_shower_lights",
     "script.voice_cloffice_bright",
+    "script.voice_kitchen_lights_off",
+    "script.voice_entrance_all_off",
     "script.voice_lock_all_doors",
     "script.voice_close_garage_doors",
     "script.voice_hot_tub_mode_on",

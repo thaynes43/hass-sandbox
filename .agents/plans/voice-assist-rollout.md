@@ -220,7 +220,7 @@ cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bath
 |---|---|
 | Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). 2026-09-19: primary bathroom scripts mirror the switch config buttons (`voice_primary_bathroom_lights_on` = recessed Config 1x: all four loads + shower delay; `_lights_off` = vanity Config 1x; `_shower_lights` = shower Config 1x), the recessed group no longer claims "bathroom lights"; cloffice gets `voice_cloffice_bright` (ZEN32 big 2x, 100 % 2823 K) and the Iris lamp — dimming already works on the exposed group. A Voice PE for the cloffice is coming (Tom); it will need adopting in ESPHome, the Primary Cloffice area, its own agent + pipeline and a persona. **Kids' rooms (Tom, 2026-09-19: "everything the ZEN32 does")**: fan light, fan, Sonos and TV in Blue (Jackson), White and Pink (Penelope) rooms, the two nightstand bulbs, area aliases "Jackson's room" / "Penelope's room", and `voice_shades` now knows `blue_room`, `white_room`, `pink_room`, `kids_bathroom` and `upstairs`. The ZEN32 relay switches stay unexposed (fan mains power). Still pending: upstairs foyer lights — see *Waiting on Tom*. |
 | Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; eight `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle; the two hold tools were removed on Tom's word). Verified read-only (someone was watching a movie): on 2026-09-18 the Movie Room agent listed all six of its tools correctly (five remain after the hold removal). **Not yet exercised by voice.** |
-| First floor | mapped (`agent-docs/voice-control-map.md`); proposal pending — see *Waiting on Tom* |
+| First floor | **Applied 2026-09-19** (Tom approved): kitchen main/island/under-cabinet/sink lights, living room recessed/lamp/sconces/fan light/fan, `climate.first_floor_ecobee`, study lights/bookshelf/fan light/fan/Sonos, dining table + cove, mudroom, entrance, the foyer chandelier, and a new HA group `light.downstairs_bathroom_lights` (vanity + fan light + shower). Two button mirrors, lights-off only: `script.voice_kitchen_lights_off` (Foyer-Chaos config 1x) and `script.voice_entrance_all_off` (Entrance config 1x) — exposed once the guard release that allowlists them (v1.18.5) is rolled out. Area aliases "Office" and "Downstairs bathroom". Never: ovens/fridge, locks, fan-controller relays, dining strip, permit-join, printer. TVs / the Frame wait for the music phase. |
 | Exterior | mapped (`agent-docs/voice-control-map.md`). **Built 2026-09-19** under Ruling 1: `script.voice_lock_all_doors` (front, side, bulkhead — not the mudroom↔garage door), `script.voice_close_garage_doors` and the six read-only lock/garage status helpers. Still pending a proposal: exterior lights (a front-yard landscape handle is missing; patio/shed lights are `switch.*` and need guard allowlist entries) and the hot-tub flood light (the back-yard spotlight is fought by its auto-off unless held — see *Waiting on Tom*). |
 
 ### Known defects to fix while executing
@@ -277,14 +277,21 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 
 ## Waiting on Tom (ask one at a time — the single list; the tables above only say "pending")
 
-- Voice-test Kitchen, Movie Room and Rumpus Room; say whether Rumpus should keep
-  `prefer_local_intents: true` (exact phrases answer instantly but without the Jarvis voice).
-- Second floor: still open — the upstairs foyer lights.
-- First floor and exterior proposals (maps are in `agent-docs/voice-control-map.md`).
+- Voice-test all four rooms (Rumpus keeps `prefer_local_intents: true` — Tom, 2026-09-19).
+- Exterior lights proposal (map in `agent-docs/voice-control-map.md`): porch/front door/front-yard
+  landscape/lamp post/driveway/back-yard/garage lights; patio and shed lights are `switch.*` and
+  need guard allowlist entries.
+- The cloffice Voice PE, when Tom has it on the network: adopt in ESPHome, area Primary Cloffice,
+  own agent + pipeline, persona from Tom.
 
 ## Phases 3 and 5
 
-Not started. 3: Music Assistant + its agent (`conversation.chatgpt`, gpt-5-mini low,
+Not started as a phase, but music requests work: on 2026-09-19 "Play some Miles Davis in the
+primary bathroom" through the bedroom pipeline called the Play Music script
+(`script.llm_script_for_music_assistant_voice_requests`, the Music Assistant LLM blueprint — the
+room agent fills the arguments itself) and the Sonos played it; "stop the music" paused it. The
+separate "ChatGPT for Music Assistant" agent belongs to the older JSON-prompt approach and is not
+used by that script. 3: Music Assistant + its agent (`conversation.chatgpt`, gpt-5-mini low,
 `max_tokens: 150`) — note that `HassMediaSearchAndPlay` always goes to the LLM, the Sonos players
 are Music Assistant-only (no turn_on/turn_off), and the AVR/KEF/Frame entities are duplicated.
 5: MCP servers as LLM tool sources — HA's `mcp` client speaks streamable HTTP then SSE, no
