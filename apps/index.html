@@ -1028,6 +1028,10 @@
 <td><strong>zigbee_ota</strong></td>
 <td>Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry</td>
 </tr>
+<tr>
+<td><strong>assist_exposure_guard</strong></td>
+<td>Keeps locks, garage doors, cameras and unvetted scripts out of the voice assistants' exposure list, un-exposing anything dangerous and notifying</td>
+</tr>
 </tbody>
 </table>
 <h2 id="shared-providers">Shared providers</h2>
@@ -1045,7 +1049,7 @@
 </tr>
 <tr>
 <td><strong>ha_provisioner</strong></td>
-<td>Idempotent HA entity provisioning (scripts, helpers), plus a check that Home Assistant is really serving a staged <code>/local/...</code> file</td>
+<td>Idempotent HA entity provisioning (scripts, helpers), reading and writing the voice-assistant exposure list, plus a check that Home Assistant is really serving a staged <code>/local/...</code> file</td>
 </tr>
 <tr>
 <td><strong>photo_providers</strong></td>
@@ -1107,6 +1111,9 @@
 <a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
 <a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin)
 <a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>  └─ publishes sensor.zigbee_ota_orchestrator
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>  └─ publishes sensor.assist_exposure_guard + a persistent notification
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Per-app documentation</p>
