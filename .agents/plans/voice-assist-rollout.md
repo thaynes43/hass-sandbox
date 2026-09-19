@@ -4,11 +4,14 @@ Owner ask (Tom, 2026-09-18): make the Home Assistant Voice PE satellites respond
 OpenAI-backed agents, bedroom first, then expose things safely, fix music, roll out to the
 other three satellites, and research MCP tool sources.
 
-**Status: phase 1 done 2026-09-18** — bedroom retuned, Tom voice-tested it ("fast enough now")
-and approved the agent cleanup. Nothing outside the bedroom pipeline has been changed.
-**Phase 2: rulings made; primary suite, basement and shades applied, other floors pending.**
-**Phase 4: all four rooms on gpt-5.6-terra with modernised prompts (2026-09-19).** Phases 3 and 5
-not started.
+**Cold start? Read `.agents/plans/voice-assist-handoff.md` first** — state at the 2026-09-19
+handoff, the room-by-room test plan Tom asked for, and the ThirdReality voice device.
+
+**Status (2026-09-19):** phase 1 (bedroom) done and voice-tested by Tom. Phase 2: every floor and
+the exterior applied under Tom's rulings; guard `assist_exposure_guard` v1.18.6 deployed. Phase 4:
+all four rooms on gpt-5.6-terra with modernised prompts, firmware on ESPHome 2026.8.2. Phase 3:
+music routing mapped, Rumpus Room fixed; TVs/AVR/Frame open. Phase 5 not started. Next: test each
+room with Tom (music included), then the ThirdReality device in the cloffice.
 
 ## Inventory (verified 2026-09-18, HA core-2026.9.2)
 
@@ -277,9 +280,11 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 
 ## Waiting on Tom (ask one at a time — the single list; the tables above only say "pending")
 
-- Voice-test all four rooms (Rumpus keeps `prefer_local_intents: true` — Tom, 2026-09-19).
-- The cloffice Voice PE, when Tom has it on the network: adopt in ESPHome, area Primary Cloffice,
-  own agent + pipeline, persona from Tom.
+- Voice-test all four rooms **with Tom, one room at a time, music in every room** (his ask,
+  2026-09-19; Rumpus keeps `prefer_local_intents: true`). Plan: `voice-assist-handoff.md`.
+- The cloffice voice device — Tom named it "ThrdReailty V&M Assistant Dev Edition" (ThirdReality);
+  not in HA yet and nothing about it is verified. Area Primary Cloffice, own agent + pipeline,
+  persona from Tom, and a speaker decision (that area has no Music Assistant player).
 
 ## Phase 3 — music (routing mapped and the Rumpus Room fixed 2026-09-19; TVs/AVR still open)
 
