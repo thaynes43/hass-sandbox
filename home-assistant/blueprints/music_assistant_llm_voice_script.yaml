@@ -19,8 +19,10 @@
 #     ask which room") instead of using the default player. Found when a Movie Room test request without
 #     an area played in the bedroom. The Play Music script also no longer sets a default player, and the
 #     'Default Player' input is documented as unused. A named player that is not a Music Assistant
-#     player is handed back too, even when an area came with it ("that speaker was not found"): it is
-#     never dropped silently in favour of the area.
+#     player is handed back too, even when an area or other, valid speakers came with it ("that
+#     speaker was not found"; variable 'unresolved_players' = the named ones that are neither a Music
+#     Assistant entity id nor a friendly name): it is never dropped silently. 'player_data' flattens
+#     media_player like 'unresolved_players' does, so a bare string is one name, not its characters.
 # Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
 # then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
 # requests would go back to keeping the old queue. Re-apply this file.
@@ -447,8 +449,8 @@ sequence:
 
       {% set ma_names = ma | map(''state_attr'', ''friendly_name'') | list %}
 
-      {% set ns = namespace(players=[]) %} {% for player in media_player | default([],
-      true) %}
+      {% set ns = namespace(players=[]) %} {% for player in [media_player | default([],
+      true)] | flatten %}
 
       {% if player in ma %}
 
@@ -466,6 +468,9 @@ sequence:
       {% endfor %}
 
       {{ ns.players }}'
+    unresolved_players: '{% set ma = integration_entities(''music_assistant'') %} {{ [media_player
+      | default([], true)] | flatten | reject(''in'', ma) | reject(''in'', ma | map(''state_attr'',
+      ''friendly_name'') | list) | list }}'
     target_data:
       area_id: '{{ area | default(''NA'', true) }}'
       entity_id: '{{ ''NA'' if area | default and not player_data else (player_data
@@ -473,11 +478,11 @@ sequence:
     invalid_target:
       response: Unable to find valid target
     no_target_given:
-      response: '{{ (''Nothing is playing and nothing was queued: "'' ~ ([media_player] | flatten
-        | join(", ")) ~ ''" is not a Music Assistant player. Tell the user that speaker was not
-        found. If a room was meant, call this tool again with only the area and without the media_player
-        argument.'') if media_player | default([],
-        true) else ''Nothing is playing and nothing was queued, because no area and no player was
+      response: '{{ (''Nothing is playing and nothing was queued. Not found as a Music Assistant
+        player: "'' ~ (unresolved_players | join(''", "'')) ~ ''". Tell the user which speaker
+        was not found. To play anyway, call this tool again without that name: keep the speakers
+        that were found, or give only the area if a room was meant.'') if unresolved_players | count
+        > 0 else ''Nothing is playing and nothing was queued, because no area and no player was
         given. Call this tool again with the area the request comes from. If you do not know which
         room the request comes from, ask the user which room they want the music in.'' }}'
 - alias: Local addition (owner ruling 2026-09-19 - "hand it back, never guess") - a request that names
@@ -485,8 +490,7 @@ sequence:
     agent of a voice box sometimes leaves its area out, and the default player is in another room
   if:
   - condition: template
-    value_template: '{{ not (area | default or player_data) or (media_player | default([], true)
-      and not player_data) }}'
+    value_template: '{{ not (area | default or player_data) or unresolved_players | count > 0 }}'
   then:
   - stop: Request without an area or player, or with a player that is not a Music Assistant player
     response_variable: no_target_given
