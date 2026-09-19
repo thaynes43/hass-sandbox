@@ -190,9 +190,9 @@ cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bath
 
 | Floor | State |
 |---|---|
-| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). Still to propose: bathroom all-lights script, cloffice bright preset + Iris lamp, hall hold, upstairs foyer lights, kids' rooms (needs Tom's ruling — "Jackson's TV" and the kids-bathroom Sonos are already exposed house-wide). |
+| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). The rest of the floor is pending — see *Waiting on Tom*. |
 | Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; ten `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle, hold lights). Verified read-only (someone was watching a movie): the Movie Room agent lists all six tools correctly. **Not yet exercised by voice.** |
-| First floor | mapped by subagent, proposal pending |
+| First floor | mapped (`agent-docs/voice-control-map.md`); proposal pending — see *Waiting on Tom* |
 | Exterior | mapped; proposal pending. Needs: 6 read-only lock/garage mirror sensors, `script.voice_lock_all_doors` (ruling needed: the mudroom↔garage door is *expected unlocked* by the house's own lock-status logic), `script.voice_close_garage_doors`, a front-yard landscape handle; patio/shed lights are `switch.*` and need guard allowlist entries; the back-yard spotlight is fought by its auto-off unless held. |
 
 ### Known defects to fix while executing
@@ -235,10 +235,28 @@ Lesson: a synthetic *voice* bench is not read-only on a Whisper pipeline — Pip
 rumpus room lights on?" became "Either Rumpus rim lights on" and the old agent switched the
 lights on in an empty room (restored). Bench other rooms with text.
 
-Open: Voice PE firmware. The four boxes are self-compiled (ESPHome 2026.1.2, 2026-01-31) and
-get no OTA; upstream is voice-pe 26.9.0 (26.4.0 fixed TTS responses timing out before playing).
-The ESPHome pod (2026.8.2) meets the 2026.6.0 minimum. Plan: recompile + OTA one box as a pilot
-at a time Tom picks, then the rest.
+Voice PE firmware (done 2026-09-19, one box at a time, Tom's go-ahead): the four boxes are
+self-compiled from the k8s ESPHome pod, so they get no OTA and have no update entities. All four
+went from ESPHome 2026.1.2 (built 2026-01-31) to 2026.8.2 via `esphome compile` + `esphome upload
+--device OTA` run with `kubectl exec` in the pod (yaml `home-assistant-voice-03` = Rumpus, `-04`
+= Kitchen, `-097e30` = Movie Room, `-099cd4` = Bedroom; compile ~10 min under `nohup` with a log
+file, upload ~10 s, reboot ~1 min; settings and pipeline selects survived). Upstream `dev` now
+requires ESPHome 2026.9.0, so the pod (2026.8.2) fell back to its cached package checkout
+(`0579e7b`, 2026-07-08) — that includes the 26.4.0 fix for TTS responses timing out before they
+play and everything in 26.6.0. **Follow-up** (tracked in
+https://github.com/thaynes43/haynes-ops/issues/2969): once the ESPHome pod is on 2026.9.x,
+recompile the four boxes again to reach voice-pe 26.9.0.
+
+## Waiting on Tom (ask one at a time — the single list; the tables above only say "pending")
+
+- Voice-test Kitchen, Movie Room and Rumpus Room; say whether Rumpus should keep
+  `prefer_local_intents: true` (exact phrases answer instantly but without the Jarvis voice).
+- Second floor: all-lights script for the primary bathroom (mirrors the recessed switch Config
+  1x), cloffice bright preset + Iris lamp, a hold for the primary hallway, upstairs foyer lights,
+  and the kids'-rooms ruling (Jackson's TV and the kids-bathroom Sonos are exposed house-wide today).
+- First floor and exterior proposals (maps are in `agent-docs/voice-control-map.md`); the
+  exterior needs a ruling on whether "lock all doors" includes the mudroom↔garage door, which
+  the house's own lock-status logic treats as expected-unlocked.
 
 ## Phases 3 and 5
 
