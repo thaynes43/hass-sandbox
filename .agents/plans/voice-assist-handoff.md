@@ -182,10 +182,11 @@ ports: **Switch Pro Max 48 PoE ports 3, 5, 6, 7** (disabled years ago because of
 Tom makes the port changes in the UniFi app (the mcp-unifi port tools do not work, haynes-ops
 #2984); the agent verifies SonosNet is off on all 19 units first
 (`http://<ip>:1400/status/wireless` → `SonosNetDisabled`, via curl from the HA pod), then watches
-one port at a time. Port settings, topology, monitoring baseline and what is still owed afterwards
-(two dead-Ethernet units have no disabled port; DHCP reservations; re-test bedroom music) are in
-the agent memory `sonosnet-off-wired-soundbars`. Never use the per-device "Disable Wi-Fi" on a
-soundbar: it cuts off its surrounds and Sub.
+one port at a time. **Everything needed to run it is in `backlog/002-sonosnet-off-wired-soundbars.md`**:
+topology table, the exact port settings, the verification commands, the monitoring baseline and
+abort signals, and what is still owed afterwards (two dead-Ethernet units have no disabled port;
+DHCP reservations; re-test bedroom music). Never use the per-device "Disable Wi-Fi" on a soundbar:
+it cuts off its surrounds and Sub.
 
 ## Still open after testing
 
