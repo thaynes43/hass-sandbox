@@ -143,12 +143,19 @@ automations. Switches are **deny by default**: a switch is exposed only by name,
 
 Voice may **ask** and may move things in the **secure direction only**:
 
-- Status comes from read-only template binary sensors that mirror the lock/garage state
-  (`device_class: lock` / `garage_door`) — created live as Template helpers, never by exposing
-  the lock or cover itself.
-- `script.voice_lock_all_doors` (the four door locks; not the ratgdo "lock remotes" entities)
-  and `script.voice_close_garage_doors` — each with a `description:` written for the model and
-  no fields. No unlock, open, disarm, pool/spa, oven or PDU script is ever exposed.
+- Status comes from read-only Template **sensor** helpers whose state is the lock's or cover's
+  own word (`locked` / `unlocked`, `open` / `closed`) — never by exposing the lock or cover
+  itself. Not binary sensors: with `device_class: lock` an LLM agent read `on` as "locked" for
+  the (unlocked) mudroom door on 2026-09-19; with text states all six mirrors equal their sources and
+  all 24 answers (four agents × six doors, each asked by name) matched the truth
+  (`scripts/voice-bench/run.sh door_status_check.py`, which prints a verdict per line).
+- `script.voice_lock_all_doors` locks the **three exterior doors** (front, garage side door,
+  bulkhead). Tom, 2026-09-19: the mudroom↔garage door is left out — the family keeps it
+  unlocked. `script.voice_close_garage_doors` closes both ratgdo covers. Each has a
+  `description:` written for the model and no fields. No unlock, open, disarm, pool/spa, oven or
+  PDU script is ever exposed. (Built 2026-09-19 together with the six status helpers
+  `sensor.{front_door,side_door,bulkhead,mudroom_door}_lock_state` and
+  `sensor.{tesla,wagoneer}_garage_door_state`.)
 
 ### Ruling 2 — workflow: agent curates, Tom approves, a guard enforces
 
@@ -158,7 +165,9 @@ so the voice vocabulary is the one humans already use. Concepts, not entities: a
 buttons treat as one thing (Movie Room "ambient lights" = gradients + floor lamps + play bars)
 is one voice handle, and looks/modes are **zero-argument `script.voice_*` scripts that call
 exactly what the scene-controller button calls**. Voice on/off behaves like the paddle —
-automations keep running; "hold" is its own script mirroring Config 2x.
+automations keep running. **No hold tools** (Tom, 2026-09-19: holds are not used day to day,
+except the back-yard flood light when the hot tub is in use — that one is an open question); the
+two basement hold scripts created on 2026-09-18 were removed again.
 
 1. Per floor: subagents map physical controls → human concepts → automation ownership (what
    turns it on/off, off-delays, hold helpers). Maps live in `agent-docs/voice-control-map.md`.
@@ -190,10 +199,10 @@ cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bath
 
 | Floor | State |
 |---|---|
-| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). The rest of the floor is pending — see *Waiting on Tom*. |
-| Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; ten `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle, hold lights). Verified read-only (someone was watching a movie): the Movie Room agent lists all six tools correctly. **Not yet exercised by voice.** |
+| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). 2026-09-19: primary bathroom scripts mirror the switch config buttons (`voice_primary_bathroom_lights_on` = recessed Config 1x: all four loads + shower delay; `_lights_off` = vanity Config 1x; `_shower_lights` = shower Config 1x), the recessed group no longer claims "bathroom lights"; cloffice gets `voice_cloffice_bright` (ZEN32 big 2x, 100 % 2823 K) and the Iris lamp — dimming already works on the exposed group. A Voice PE for the cloffice is coming (Tom); it will need adopting in ESPHome, the Primary Cloffice area, its own agent + pipeline and a persona. The rest of the floor is pending — see *Waiting on Tom*. |
+| Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; eight `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle; the two hold tools were removed on Tom's word). Verified read-only (someone was watching a movie): on 2026-09-18 the Movie Room agent listed all six of its tools correctly (five remain after the hold removal). **Not yet exercised by voice.** |
 | First floor | mapped (`agent-docs/voice-control-map.md`); proposal pending — see *Waiting on Tom* |
-| Exterior | mapped; proposal pending. Needs: 6 read-only lock/garage mirror sensors, `script.voice_lock_all_doors` (ruling needed: the mudroom↔garage door is *expected unlocked* by the house's own lock-status logic), `script.voice_close_garage_doors`, a front-yard landscape handle; patio/shed lights are `switch.*` and need guard allowlist entries; the back-yard spotlight is fought by its auto-off unless held. |
+| Exterior | mapped (`agent-docs/voice-control-map.md`). **Built 2026-09-19** under Ruling 1: `script.voice_lock_all_doors` (front, side, bulkhead — not the mudroom↔garage door), `script.voice_close_garage_doors` and the six read-only lock/garage status helpers. Still pending a proposal: exterior lights (a front-yard landscape handle is missing; patio/shed lights are `switch.*` and need guard allowlist entries) and the hot-tub flood light (the back-yard spotlight is fought by its auto-off unless held — see *Waiting on Tom*). |
 
 ### Known defects to fix while executing
 
@@ -251,12 +260,12 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 
 - Voice-test Kitchen, Movie Room and Rumpus Room; say whether Rumpus should keep
   `prefer_local_intents: true` (exact phrases answer instantly but without the Jarvis voice).
-- Second floor: all-lights script for the primary bathroom (mirrors the recessed switch Config
-  1x), cloffice bright preset + Iris lamp, a hold for the primary hallway, upstairs foyer lights,
-  and the kids'-rooms ruling (Jackson's TV and the kids-bathroom Sonos are exposed house-wide today).
-- First floor and exterior proposals (maps are in `agent-docs/voice-control-map.md`); the
-  exterior needs a ruling on whether "lock all doors" includes the mudroom↔garage door, which
-  the house's own lock-status logic treats as expected-unlocked.
+- Second floor: a hold is NOT wanted for the primary hallway (ruling above); still open: the
+  upstairs foyer lights and the kids'-rooms ruling (Jackson's TV and the kids-bathroom Sonos are
+  exposed house-wide today).
+- Hot tub: whether voice should get a flood-light tool (back-yard spotlight on + hold, and a
+  release) — the one hold the family actually uses.
+- First floor and exterior proposals (maps are in `agent-docs/voice-control-map.md`).
 
 ## Phases 3 and 5
 

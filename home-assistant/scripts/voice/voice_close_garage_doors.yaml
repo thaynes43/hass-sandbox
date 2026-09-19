@@ -1,0 +1,14 @@
+# script.voice_close_garage_doors — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Mirrors a physical control or a ruling; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Close Garage Doors
+description: Voice tool. Closes both garage doors (the Tesla door and the Wagoneer door). It can only
+  close, never open. Use for 'close the garage', 'shut the garage doors' or 'is the garage closed, if
+  not close it'.
+icon: mdi:garage
+mode: single
+sequence:
+- action: cover.close_cover
+  target:
+    entity_id:
+    - cover.ratgdov25i_4a0325_door
+    - cover.ratgdov25i_dbfa50_door

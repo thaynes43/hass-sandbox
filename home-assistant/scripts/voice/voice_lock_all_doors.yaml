@@ -1,0 +1,15 @@
+# script.voice_lock_all_doors — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Mirrors a physical control or a ruling; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Lock All Doors
+description: 'Voice tool. Locks the three exterior doors: front door, garage side door and bulkhead. It
+  can only lock, never unlock. The mudroom door to the garage is deliberately left alone because the family
+  keeps it unlocked. Use for ''lock the doors'', ''lock up'' or ''lock all the doors''.'
+icon: mdi:lock
+mode: single
+sequence:
+- action: lock.lock
+  target:
+    entity_id:
+    - lock.front_door_lock
+    - lock.side_door_lock
+    - lock.bulkhead_lock
