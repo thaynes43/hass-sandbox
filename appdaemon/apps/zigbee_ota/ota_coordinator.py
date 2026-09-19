@@ -423,6 +423,22 @@ class OtaCoordinator:
                     RESULT_ERROR,
                     error=f"no terminal response after {int(self.update_timeout_s)}s",
                 )
+            elif (
+                fl.progress is None
+                and ts - fl.started_ts > self.progress_stall_s
+            ):
+                # Never sent a single byte. A sleeping battery device Z2M still
+                # counts as online (its passive availability timeout is 25h)
+                # would otherwise hold the fleet's only slot for the full
+                # update_timeout_s. Offline-type, so the device is fast-tracked
+                # the moment it checks in again.
+                self._finish_in_flight(
+                    RESULT_OFFLINE,
+                    error=(
+                        "no transfer started within "
+                        f"{int(self.progress_stall_s)}s"
+                    ),
+                )
             else:
                 if (
                     fl.last_progress_ts

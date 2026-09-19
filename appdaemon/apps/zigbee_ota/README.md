@@ -72,11 +72,17 @@ and widened in 2026-09 to every Z2M device.
   device publishes `online` again the retry is fast-tracked to
   `online_retry_grace_s`. Other failures use the same backoff without the
   fast-track.
-- **Safety valves** — a per-attempt absolute timeout (`update_timeout_s`)
-  prevents a lost response from freezing the queue forever (a late success is
-  still recorded); a `stalled` flag is raised after `progress_stall_s` without
-  progress movement; turning on `input_boolean.zigbee_ota_pause` (create it in
-  HA if needed) stops new updates while letting the in-flight one finish.
+- **Safety valves** — an attempt that has not transferred a single byte after
+  `progress_stall_s` is abandoned and the device goes back in the queue as an
+  offline-type failure. That matters most for battery devices: Z2M counts a
+  sleeping end-device as online for 25 hours, and without this it would hold
+  the fleet's one slot for the full `update_timeout_s`. An attempt that *is*
+  transferring gets more patience — it only raises a `stalled` flag after
+  `progress_stall_s` without movement, and the per-attempt absolute timeout
+  (`update_timeout_s`) is what stops a lost response freezing the queue
+  forever (a late success is still recorded). Turning on
+  `input_boolean.zigbee_ota_pause` (create it in HA if needed) stops new
+  updates while letting the in-flight one finish.
 
 ## Self-provisioned entities
 
@@ -125,7 +131,7 @@ simple entities card.
 | `retry_base_s` | `900` | First retry backoff after a failed attempt. |
 | `retry_max_s` | `21600` | Backoff cap. |
 | `online_retry_grace_s` | `60` | Retry delay once an offline-failed device comes back online. |
-| `progress_stall_s` | `2700` | No progress movement for this long → `stalled: true` on the sensor. |
+| `progress_stall_s` | `2700` | No progress movement for this long → `stalled: true` on the sensor. An attempt that never started transferring at all is abandoned at this point instead. |
 | `update_timeout_s` | `14400` | Absolute per-attempt cap; after it the attempt is marked failed and the queue moves on. |
 | `busy_backoff_s` | `300` | Wait after Z2M reports another OTA is already running. |
 | `park_recheck_s` | `86400` | How long a device Z2M cannot install (no image, or a name it doesn't know) stays parked before being tried again. |

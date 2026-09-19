@@ -842,3 +842,35 @@ def test_a_failed_lookup_reports_its_reason_on_the_first_tick() -> None:
     coord.mark_identity_unavailable("HA unreachable")
     coord.refresh_entities(snapshot("hue_a"))
     assert "HA unreachable" in coord.status()["last_event"]
+
+
+def test_an_update_that_never_starts_gives_the_slot_back() -> None:
+    """A sleeping battery device must not hold the fleet's only slot for the
+    full absolute timeout — Z2M counts it online for 25h."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100, update_timeout_s=14400)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    clock.advance(101)
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+    status = coord.status()
+    assert status["cooldown"][0]["device"] == "hue_a"
+    assert status["cooldown"][0]["offline_failure"] is True
+    # Offline-classified, so checking in again fast-tracks the retry instead
+    # of serving out the full backoff (see the fast-track test above).
+    assert status["in_flight"]["device"] == "hue_b"
+
+
+def test_a_transfer_in_progress_keeps_the_slot_until_the_absolute_timeout() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100, update_timeout_s=1000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 60})
+    clock.advance(101)
+    assert coord.decide() is None  # stalled, but patient
+    assert coord.status()["in_flight"]["stalled"] is True
+    clock.advance(900)
+    assert coord.decide() is not None  # absolute timeout takes over
