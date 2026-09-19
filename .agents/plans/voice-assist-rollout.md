@@ -333,7 +333,9 @@ purpose, so music never lands on a box's speaker. `media_player.unnamed_room` ("
 `media_player.shed` have no area either; Back Yard is grouped with Pool.
 
 **Rumpus Room KEFs (Tom's rulings, 2026-09-19: "KEFs, at a set volume", then 50 % by ear).** The
-KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
+KEFs are the Rumpus Room PC's speakers over HDMI and sat at 92 % for that when this was built
+(**superseded the same evening:** the speakers set 25 % by themselves on returning to the PC
+input, so "the PC level" below means *whatever level they report*; issue #159), so:
 
 - the Music Assistant KEF entity is in the Rumpus Room area, named "Rumpus Room Speakers" (aliases
   KEFs / KEF speakers / Rumpus speakers) and exposed;
@@ -351,7 +353,9 @@ KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
   anything is written, so two parallel runs (the blueprint is `mode: parallel`) can never save the
   50 % voice level as the PC level. If the player reports no volume at that moment, the script
   saves the usual PC level (0.92, a constant in the script) and logs a warning, so the 50 % can
-  always be undone;
+  always be undone (that constant is now out of step with the 25 % the speakers choose — it only
+  fires when no volume is reported, and the speakers re-assert 25 % on the next switch to the PC
+  input anyway; what to do with it is part of the decision in #159);
 - `automation.rumpus_room_kefs_restore_volume_after_voice_music` clears the queue (soft-fail) and
   restores the saved volume once that player has been quiet for 10 minutes. Normal path: a state
   trigger on the KEF entity (verified: fired 10 min after the stop, 50 % → 92 %, helper → 0).
@@ -362,7 +366,8 @@ KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
 
 Tom confirmed (2026-09-19) that the KEFs switch back to the PC's HDMI input by themselves as soon
 as the PC makes a sound, so nothing has to manage their input, and that 92 % on the KEFs is normal
-(Windows is the second volume lever and attenuates it) — so restoring it is right.
+(Windows is the second volume lever and attenuates it) — so restoring it is right. (What the
+recorder showed later that day: the speakers do not keep it; see #159.)
 
 The Music Assistant player only reports its own queue: over ten days of daily PC use on the HDMI
 input it was never `playing` (only `idle`), and it stayed `idle` on 2026-09-19 while Tom had PC
