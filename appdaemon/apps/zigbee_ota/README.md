@@ -100,7 +100,7 @@ and widened in 2026-09 to every Z2M device.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (everything waiting on a schedule — per-device attempts / `retry_at` / last error; `attempts: 0` is a Z2M-busy bounce, not a failure), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (everything waiting on a schedule — per-device attempts / `retry_at` / last error; `attempts: 0` means it was bounced by a busy Z2M rather than having failed), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
 The lists are capped at 25 entries with a `*_count` beside them, and every
 schedule is an absolute time (`retry_at`, `busy_until`, `started_at`) rather

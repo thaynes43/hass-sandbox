@@ -443,6 +443,11 @@ class OtaCoordinator:
                         rec.next_attempt_ts,
                         self._global_busy_until + self.retry_base_s,
                     )
+                    # Z2M answered, so whatever earlier failure marked this
+                    # device offline is over. Leaving the flag set would let
+                    # the next availability flap collapse the hold above to
+                    # online_retry_grace_s and restart the spin.
+                    rec.offline_failure = False
                 self._last_event = f"Z2M busy; {fl.friendly_name} requeued"
             return
         if matches_flight:
@@ -701,11 +706,14 @@ class OtaCoordinator:
 
         Every attribute change writes a Home Assistant recorder row, so the
         lists are capped (with a count beside them) and every schedule is an
-        absolute time rather than a countdown. ``cooldown`` holds everything
-        waiting on a schedule, failures and busy bounces alike — its
-        ``attempts`` tells them apart — so no device is ever in the queue
-        without appearing somewhere — otherwise a 163-device fleet
+        absolute time rather than a countdown — otherwise a 163-device fleet
         writes a multi-kB row on every tick just because a timer ticked down.
+
+        ``cooldown`` holds every device waiting on a schedule, whether it
+        failed or was only bounced by a busy Z2M; ``attempts`` says which.
+        The one gap is a global busy window: a device whose own schedule has
+        elapsed is then in neither list, and ``busy_until`` is what explains
+        it.
         """
         ts = self.now()
         cooldown = sorted(

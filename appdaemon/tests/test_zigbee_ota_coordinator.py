@@ -1150,3 +1150,39 @@ def test_the_busy_reschedule_survives_a_long_busy_backoff() -> None:
     clock.advance(901)  # the long global window has lifted
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_an_availability_flap_does_not_collapse_a_busy_hold() -> None:
+    """A busy bounce isn't an offline failure, so the offline fast-track must
+    not apply to it — availability flaps are routine on battery devices."""
+    clock = FakeClock()
+    coord = make_coordinator(
+        clock, retry_base_s=900, busy_backoff_s=300, online_retry_grace_s=60
+    )
+    refresh(coord, snapshot("hue_a"))
+    first = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device didn't respond to OTA request (timeout)",
+            "transaction": first.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    clock.advance(901)
+    second = coord.decide()
+    assert second is not None and second.friendly_name == "hue_a"
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update or check already in progress",
+            "transaction": second.transaction,
+        }
+    )
+    # The device flaps: unavailable for a tick, then back.
+    refresh(coord, snapshot("hue_a", state="unavailable"))
+    refresh(coord, snapshot("hue_a"))
+    clock.advance(61)
+    assert coord.decide() is None  # the hold stands
+    clock.advance(1200)
+    assert coord.decide() is not None
