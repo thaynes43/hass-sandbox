@@ -1299,3 +1299,50 @@ def test_a_custom_assistant_is_passed_through() -> None:
 
     assert client.last_assistant == "cloud.alexa"
     assert client.set_exposure_calls[0]["assistant"] == "cloud.alexa"
+
+
+# ===========================================================================
+# apps-prod.yaml restates every rule list, and a present key is authoritative —
+# so the code defaults are dead code in production unless the two stay equal.
+# ===========================================================================
+
+
+def _load_prod_guard_config() -> Dict[str, Any]:
+    import yaml
+
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    # apps-prod.yaml uses !secret / !include style tags elsewhere in the file.
+    _Loader.add_multi_constructor("!", lambda loader, suffix, node: None)
+    path = Path(__file__).resolve().parents[1] / "apps" / "apps-prod.yaml"
+    with path.open(encoding="utf-8") as handle:
+        return yaml.load(handle, Loader=_Loader)["assist_exposure_guard"]
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "deny_domains",
+        "deny_cover_device_classes",
+        "deny_integrations",
+        "deny_entity_globs",
+        "switch_allowlist",
+        "script_allowlist_globs",
+        "allow_entities",
+    ],
+)
+def test_prod_yaml_rule_lists_equal_the_code_defaults(key: str) -> None:
+    """Hardening a default without editing prod (or the reverse) must fail here."""
+    config = _load_prod_guard_config()
+    prod_rules = GuardRules.from_config(config)
+    assert sorted(getattr(prod_rules, key)) == sorted(getattr(DEFAULT_RULES, key)), (
+        f"apps-prod.yaml `{key}` and the rules.py default have drifted apart"
+    )
+
+
+def test_prod_yaml_enforces_and_pushes() -> None:
+    config = _load_prod_guard_config()
+    assert config.get("enforce") is True
+    assert str(config.get("notify_service", "")).startswith("notify/")
+

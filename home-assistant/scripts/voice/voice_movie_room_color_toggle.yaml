@@ -10,4 +10,4 @@ sequence:
 - action: script.toggle_hue_colors
   data:
     lights_to_control: light.basement_movie_room_lights
-    brightness: '{{ state_attr(''light.basement_movie_room_lights'', ''brightness'') | default(255) }}'
+    brightness: '{{ state_attr(''light.basement_movie_room_lights'', ''brightness'') | int(255) }}'
