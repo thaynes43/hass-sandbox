@@ -1,0 +1,16 @@
+# script.voice_movie_room_ambient_scene — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Movie Room Ambient Scene
+description: Voice tool. Cycles the Movie Room ambient lights (gradient strips, floor lamps and play bars)
+  to the next colour scene, keeping the play bars matched to the gradients. Same as pressing button 4
+  on the Movie Room scene controller. Use for 'change the ambient colours', 'next ambient scene' or 'change
+  the mood lighting' in the movie room. To simply turn the ambient lights on or off, control the Movie
+  Room ambient lights instead.
+icon: mdi:palette
+mode: single
+sequence:
+- action: script.cycle_gradient_scene_using_same_light_color
+  data:
+    select_entities: select.basement_movie_hue_gradient_65_gradient_scene, select.basement_movie_hue_gradient_75_gradient_scene,
+      select.basement_movie_hue_left_floor_lamp_gradient_scene, select.basement_movie_hue_right_floor_lamp_gradient_scene
+    light_entities: light.basement_movie_hue_play_01, light.basement_movie_hue_play_02

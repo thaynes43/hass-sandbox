@@ -1,0 +1,13 @@
+# script.voice_movie_room_color_toggle — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Movie Room Color Toggle
+description: Voice tool. Toggles the Movie Room recessed lights between colour and white at their current
+  brightness. Same as pressing button 2 on the Movie Room scene controller. Use for 'change the light
+  colours' or 'toggle colours' in the movie room.
+icon: mdi:palette-swatch
+mode: single
+sequence:
+- action: script.toggle_hue_colors
+  data:
+    lights_to_control: light.basement_movie_room_lights
+    brightness: '{{ state_attr(''light.basement_movie_room_lights'', ''brightness'') | int(255) }}'

@@ -6,7 +6,7 @@ other three satellites, and research MCP tool sources.
 
 **Status: phase 1 done 2026-09-18** — bedroom retuned, Tom voice-tested it ("fast enough now")
 and approved the agent cleanup. Nothing outside the bedroom pipeline has been changed.
-Phases 2–5 not started.
+**Phase 2: workshop held, plan below, execution in progress.** Phases 3–5 not started.
 
 ## Inventory (verified 2026-09-18, HA core-2026.9.2)
 
@@ -104,17 +104,112 @@ So "turn on the closet lights" never touches OpenAI; state questions and music r
 do, and each costs two model round trips (tool call, then the spoken answer). Replies under 60
 characters are not TTS-streamed (`STREAM_RESPONSE_CHARS`), so time-to-last-token is what counts.
 
-## Findings parked for phase 2 (exposure)
+## Phase 2 — safe exposure plan (rulings by Tom, 2026-09-18)
 
-- The built-in agent answers "what is the temperature in the bedroom" with *"can't get the
-  temperature for 'Set Primary Bedroom to Relax' (a script)"* — an exposed script in the area
-  shadows the temperature sensor. Harmless on the LLM pipelines (state questions go to the LLM
-  anyway) but it is what the default "Home Assistant" pipeline says.
-- Hard limits to design around: more than 128 exposed scripts/tools breaks the conversation
-  engine outright; HA's own guidance for small local models is under 25 exposed entities.
+### What the installed source (2026.9.2) says — the constraints
 
-## Phases 2–5
+- **Exposure is the only security boundary, and it is one global list.** Every LLM tool call
+  goes through `intent.async_match_targets`, which drops unexposed entities. There is no
+  per-pipeline, per-agent or per-satellite exposure, no permission layer, and no native
+  confirmation step. `mcp_server` sees the same list.
+- **An exposed lock can be unlocked and an exposed garage door opened, with no PIN.**
+  `OnOffIntentHandler` maps `HassTurnOff` on a lock to `lock.unlock` and `HassTurnOn` on a cover
+  to `cover.open_cover`; the shipped prompt even teaches the model to do it. `cover` is in
+  `DEFAULT_EXPOSED_DOMAINS`, so "expose new entities" (currently **off** — keep it off) would
+  expose a garage door by itself. Alarm panels have no intent path, but any exposed **script** is
+  an unrestricted tool: whatever the script does, the model can do.
+- Tools exist only for integrations that ship an `llm.py` (light, climate, fan, media_player,
+  script, todo, calendar, vacuum, humidifier, lawn_mower, assist_satellite, intent,
+  intent_script). The model never sees entity ids or states up front — only names/aliases,
+  domain and area — and reads state on demand with `GetLiveContext`.
+- The only bulk primitive is the admin WS call `homeassistant/expose_entity` with a list of
+  entity ids. Assist ignores labels entirely. Aliases are an ordered list (2026.9) whose `null`
+  entry stands for the computed name — drop it and the entity answers only to spoken aliases,
+  with no rename anywhere in the UI.
+- Automation `conversation:` sentence triggers run before everything else on every pipeline
+  and never reach the LLM — the deterministic path for anything that must not be improvised.
 
-Not started. 2: safe exposure workshop → written plan here. 3: Music Assistant + its agent
-(`conversation.chatgpt`, gpt-5-mini low, `max_tokens: 150`). 4: roll out to rumpus/kitchen/movie.
-5: MCP servers as LLM tool sources.
+### Ruling 1 — the dangerous set: "ask + secure only"
+
+Never exposed, in any form: `lock.*`, garage/gate/door covers and the two ratgdo
+`button.*_toggle_door` (and the whole `button` domain), `alarm_control_panel.*`, `siren.*`,
+`camera.*`, the `water_heater` domain (it is the two GE ovens, the toaster oven and the pool
+heater), everything from the `intellicenter` and Gecko spa integrations, rack/USP PDU outlets,
+e-bike chargers, washer/dryer/printer/server-room-AC power, UniFi firewall/VPN switches,
+`zigbee2mqtt_bridge_permit_join`, camera privacy/detection switches, lock/oven config switches,
+automations. Switches are **deny by default**: a switch is exposed only by name, never by area.
+
+Voice may **ask** and may move things in the **secure direction only**:
+
+- Status comes from read-only template binary sensors that mirror the lock/garage state
+  (`device_class: lock` / `garage_door`) — created live as Template helpers, never by exposing
+  the lock or cover itself.
+- `script.voice_lock_all_doors` (the four door locks; not the ratgdo "lock remotes" entities)
+  and `script.voice_close_garage_doors` — each with a `description:` written for the model and
+  no fields. No unlock, open, disarm, pool/spa, oven or PDU script is ever exposed.
+
+### Ruling 2 — workflow: agent curates, Tom approves, a guard enforces
+
+Corrected by Tom on 2026-09-18 after a proposal that batched Kitchen + Rumpus + Movie Room from
+raw area listings: **one floor at a time, slowly, and map what already controls things first**
+so the voice vocabulary is the one humans already use. Concepts, not entities: a concept the
+buttons treat as one thing (Movie Room "ambient lights" = gradients + floor lamps + play bars)
+is one voice handle, and looks/modes are **zero-argument `script.voice_*` scripts that call
+exactly what the scene-controller button calls**. Voice on/off behaves like the paddle —
+automations keep running; "hold" is its own script mirroring Config 2x.
+
+1. Per floor: subagents map physical controls → human concepts → automation ownership (what
+   turns it on/off, off-delays, hold helpers). Maps live in `agent-docs/voice-control-map.md`.
+2. The agent proposes that floor's concepts in one `AskUserQuestion`; on approval it creates the
+   `script.voice_*` tools live (mirrored under `home-assistant/scripts/voice/`), exposes the
+   handles, and sets spoken aliases. An alias list without the `null` entry drops the machine
+   name from what the model sees, without renaming anything in the UI.
+3. Never exposed regardless of floor: staircases, storage, zero-delay motion lights, the
+   satellites' own LED/mute/media entities, duplicate AVR/KEF registrations (music phase).
+4. Housekeeping done: four dead exposures removed; areas and floors now have spoken aliases
+   ("Bedroom", "Living room", "Upstairs", "Downstairs", …) — without them "the bedroom" did not
+   resolve and every temperature question fell through to the LLM.
+5. **AppDaemon guard** (`assist_exposure_guard`): on a schedule and on entity-registry changes,
+   list exposed entities, apply the deny rules above (domains, garage-class covers,
+   integrations, name patterns, deny-by-default switches and scripts with allowlists in the
+   app YAML), un-expose violators and notify Tom.
+
+### Shades (Tom's ruling)
+
+One parameterized tool, `script.voice_shades(room, position)`, fires the same gateway scenes as
+the ZEN32 buttons and schedules; the `cover.*` groups are no longer exposed (nothing in the house
+actuates them, they cannot say tilt-open, and they use a different RF path). Plain "open" =
+tilt-open upstairs, fully open downstairs — "just like the automations". Verified: mapping
+table evaluated for every branch, a no-op `close` fired the right scene, and the bedroom agent
+calls `script__voice_shades` for "close the bedroom shades". Rooms: primary bedroom/bathroom,
+cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bathroom, downstairs.
+
+### Progress
+
+| Floor | State |
+|---|---|
+| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Corrections after the floor map (Tom ruled): "bedroom lights" is now the new HA group `light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the five-room suite group; "nightstand lights" moved to the Z2M group `light.upstairs_primary_nightstand_lights` that the ZEN32 and the mode scripts drive (the HA group is no longer exposed). Still to propose: bathroom all-lights script, cloffice bright preset + Iris lamp, hall hold, upstairs foyer lights, kids' rooms (needs Tom's ruling — "Jackson's TV" and the kids-bathroom Sonos are already exposed house-wide). |
+| Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; ten `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle, hold lights). Verified read-only (someone was watching a movie): the Movie Room agent lists all six tools correctly. **Not yet exercised by voice.** |
+| First floor | mapped by subagent, proposal pending |
+| Exterior | mapped; proposal pending. Needs: 6 read-only lock/garage mirror sensors, `script.voice_lock_all_doors` (ruling needed: the mudroom↔garage door is *expected unlocked* by the house's own lock-status logic), `script.voice_close_garage_doors`, a front-yard landscape handle; patio/shed lights are `switch.*` and need guard allowlist entries; the back-yard spotlight is fought by its auto-off unless held. |
+
+### Known defects to fix while executing
+
+- "What is the temperature in the bedroom" on the built-in agent lands on a script:
+  `HassClimateGetTemperature` is climate-only, `climate.second_floor_ecobee` (the only climate
+  entity in Primary Bedroom) is not exposed, and the four bedroom mode scripts are all named
+  "Set Primary Bedroom to …". Expose the Ecobee; rename the scripts so the room is not the
+  leading token.
+- Only Primary Bedroom has room-mode scripts; Kitchen, Rumpus Room and Movie Room get a set in
+  phase 4.
+- `fan.primary_bedroom_fan_fan` speaks as "Primary Bedroom Fan Fan".
+
+## Phases 3–5
+
+Not started. 3: Music Assistant + its agent (`conversation.chatgpt`, gpt-5-mini low,
+`max_tokens: 150`) — note that `HassMediaSearchAndPlay` always goes to the LLM, and 36 of the 90
+media players are Music Assistant speakers. 4: roll the bedroom tuning out to
+rumpus/kitchen/movie (Kitchen and Movie Room run gpt-5-mini at **medium** reasoning; Kitchen and
+Rumpus still use faster_whisper). 5: MCP servers as LLM tool sources — HA's `mcp` client speaks
+streamable HTTP then SSE, no stdio, OAuth only (no static bearer field); `llm_hass_api` is a
+real multi-select and merged tools get namespaced.

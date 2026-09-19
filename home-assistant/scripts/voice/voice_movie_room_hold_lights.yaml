@@ -1,0 +1,19 @@
+# script.voice_movie_room_hold_lights — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Movie Room Hold Lights
+description: Voice tool. Toggles the Movie Room lighting hold. While held, the occupancy automation will
+  not turn the Movie Room lights off when the room looks empty, and the wall switch LED bar changes colour.
+  Calling it again releases the hold. Same as double-pressing the config button on the Movie Room wall
+  switch. Use for 'hold the lights', 'keep the lights on', 'stop the lights turning off' or 'release the
+  hold' in the movie room.
+icon: mdi:hand-back-left
+mode: single
+sequence:
+- action: script.inovelli_toggle_mmwave_hold_led_indicator
+  data:
+    switch_name: basement_movie_inovelli_presence
+    normal_mode_input_select: input_select.basement_movie_room_mmwave_normal_mode
+    hold_color: input_text.inovelli_manual_hold
+    prev_led_color_helper: input_text.basement_movie_led_color
+    automation_entity_ids:
+    - automation.light_inovelli_movie_room_motion_cleared_lights_off

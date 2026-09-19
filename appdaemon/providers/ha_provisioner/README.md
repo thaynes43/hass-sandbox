@@ -31,6 +31,16 @@ Admin-level HA REST operations beyond provisioning. Mirrors `HAProvisioner`'s co
 
 AppDaemon cancels in-flight service calls after ~60 seconds, and a config-entry reload (e.g. UniFi Protect re-establishing its websocket) can exceed that. Going through the REST API keeps the timeout under our control and returns HA's actual response instead of a cancelled future.
 
+### `AssistExposureClient(ha_url, ha_token_env)`
+
+Read and change Home Assistant's **Assist exposure list** — the only security boundary in front of the LLM voice agents. Same construction pattern as `HaAdminClient`, and likewise requires an **admin** token: all three WebSocket commands below are decorated `@websocket_api.require_admin`.
+
+- `await list_exposed_entities(assistant="conversation") -> list[str]` — `homeassistant/expose_entity/list`. HA answers `{"exposed_entities": {entity_id: {assistant: True}}}` and only includes assistants whose `should_expose` is truthy, so an entity absent from the map (or whose map lacks the assistant) is simply not exposed. Returns a sorted list.
+- `await list_entity_platforms() -> dict[str, str]` — `config/entity_registry/list`, reduced to `{entity_id: platform}` (the supplying integration, lowercased). The registry's partial dict does **not** carry `device_class`; read that from entity state instead.
+- `await set_exposure(entity_ids, should_expose, assistant="conversation") -> int` — `homeassistant/expose_entity`, the only bulk primitive HA offers. Sends one command for the whole list and returns how many ids were sent; an empty list is a no-op with no round trip.
+
+Every call raises `RuntimeError` when HA answers `success: false`, so a failed un-expose can never be mistaken for a successful one. Used by the `assist_exposure_guard` app.
+
 ### `await local_file_status(ha_url, url_path, timeout_s=5.0, session=None) -> int`
 
 Unauthenticated `HEAD` probe against a HA `/local/...` static URL, returning the HTTP status HA answered. Never raises: a connection error, a timeout, or a URL that cannot be built all return the module constant `STATUS_UNREACHABLE` (`-1`), which is deliberately negative so it can never collide with a real status.

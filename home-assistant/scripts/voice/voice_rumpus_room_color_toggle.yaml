@@ -1,0 +1,24 @@
+# script.voice_rumpus_room_color_toggle — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Rumpus Room Color Toggle
+description: Voice tool. Toggles all the Rumpus Room bulbs (recessed lights and both lamp bulbs) between
+  colour and white at their current brightness. Same as triple-tapping button 2 on the Rumpus Room scene
+  controller. Use for 'change the light colours' or 'toggle colours' in the rumpus room.
+icon: mdi:palette-swatch
+mode: single
+sequence:
+- action: script.toggle_hue_colors_for_multiple_targets
+  data:
+    target:
+      entity_id:
+      - light.basement_rumpus_hue_recessed_01
+      - light.basement_rumpus_hue_recessed_02
+      - light.basement_rumpus_hue_recessed_03
+      - light.basement_rumpus_hue_recessed_04
+      - light.basement_rumpus_hue_recessed_05
+      - light.basement_rumpus_hue_recessed_06
+      - light.basement_rumpus_hue_recessed_07
+      - light.basement_rumpus_hue_recessed_08
+      - light.basement_rumpus_lamp_hue_ceiling_bulb
+      - light.basement_rumpus_lamp_hue_desk_bulb
+    brightness: '{{ state_attr(''light.basement_rumpus_room_lights'', ''brightness'') | int(255) }}'

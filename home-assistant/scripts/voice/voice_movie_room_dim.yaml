@@ -1,0 +1,15 @@
+# script.voice_movie_room_dim — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Movie Room Dim
+description: Voice tool. Dims the Movie Room recessed lights to 33% warm white (2750 K). Same as double-tapping
+  the bottom paddle of the Movie Room wall switch. Use for 'dim the lights', 'movie lighting' or 'lights
+  down' in the movie room. Does not change the ambient lights.
+icon: mdi:brightness-4
+mode: single
+sequence:
+- action: light.turn_on
+  target:
+    entity_id: light.basement_movie_room_lights
+  data:
+    color_temp_kelvin: 2750
+    brightness_pct: 33

@@ -5,6 +5,7 @@ Shared library (NOT an AppDaemon app) that apps use on startup to
 auto-create required HA entities (scripts, helpers) via the HA REST API.
 """
 
+from .exposure_client import CONVERSATION_ASSISTANT, AssistExposureClient
 from .ha_admin_client import HaAdminClient
 from .local_file_check import (
     STATUS_UNREACHABLE,
@@ -17,6 +18,8 @@ from .provisioner import HAProvisioner
 __all__ = [
     "HAProvisioner",
     "HaAdminClient",
+    "AssistExposureClient",
+    "CONVERSATION_ASSISTANT",
     "STATUS_UNREACHABLE",
     "build_local_url",
     "local_file_exists",

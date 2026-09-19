@@ -19,13 +19,14 @@
 | **media_dashboard_app** | Media dashboard: Plex movies, Plex shows, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
 | **countdown_app** | Multiple countdowns with AI-generated backgrounds, auto-rotation, and text styling |
 | **zigbee_ota** | Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry |
+| **assist_exposure_guard** | Keeps locks, garage doors, cameras and unvetted scripts out of the voice assistants' exposure list, un-exposing anything dangerous and notifying |
 
 ## Shared providers
 
 | Provider | Description |
 |----------|-------------|
 | **ai_providers** | LLM and image generation adapters (OpenAI, Gemini, Ollama, ComfyUI) |
-| **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers), plus a check that Home Assistant is really serving a staged `/local/...` file |
+| **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers), reading and writing the voice-assistant exposure list, plus a check that Home Assistant is really serving a staged `/local/...` file |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
 | **school_menu** | Async client for the School Nutrition and Fitness API |
 | **school_schedule** | Finalsite school calendar (ICS) and PowerSchool guardian portal scrapers |
@@ -72,6 +73,9 @@ countdown_app (standalone — generates images via ai_providers)
 
 zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin)
   └─ publishes sensor.zigbee_ota_orchestrator
+
+assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)
+  └─ publishes sensor.assist_exposure_guard + a persistent notification
 ```
 
 !!! note "Per-app documentation"

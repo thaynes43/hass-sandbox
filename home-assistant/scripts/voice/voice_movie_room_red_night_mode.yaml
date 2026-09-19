@@ -1,0 +1,18 @@
+# script.voice_movie_room_red_night_mode — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Movie Room Red Night Mode
+description: Voice tool. Sets the Movie Room recessed lights to dim red (15%). Same as double-tapping
+  button 2 on the Movie Room scene controller. Use for 'red mode', 'red lights' or 'night mode' in the
+  movie room.
+icon: mdi:weather-night
+mode: single
+sequence:
+- action: light.turn_on
+  target:
+    entity_id: light.basement_movie_room_lights
+  data:
+    rgb_color:
+    - 255
+    - 0
+    - 0
+    brightness_pct: 15
