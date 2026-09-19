@@ -293,3 +293,28 @@ def test_the_token_is_never_echoed_in_an_error(monkeypatch) -> None:
             assert "test-token" not in str(exc)
         else:  # pragma: no cover - the call above must raise
             pytest.fail("expected RuntimeError")
+
+
+def test_set_exposure_leaves_malformed_ids_out_so_the_batch_still_applies(monkeypatch, caplog) -> None:
+    """HA validates entity_ids all-or-nothing: one bad id must not stop the garage
+    opener in the same batch from being un-exposed."""
+    fake = _FakeHaRestClient(_ok(None))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake):
+        sent = _run(
+            client.set_exposure(
+                ["cover.garage_door", "switch.foo bar", " Lock.Front_Door ", "cover.garage_door"], False
+            )
+        )
+    assert sent == 2
+    assert fake.sent[0]["entity_ids"] == ["cover.garage_door", "lock.front_door"]
+    assert "malformed entity id" in caplog.text and "switch.foo bar" in caplog.text
+
+
+def test_set_exposure_with_only_malformed_ids_sends_nothing(monkeypatch) -> None:
+    fake = _FakeHaRestClient(_ok(None))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake):
+        assert _run(client.set_exposure(["not an id"], False)) == 0
+    assert fake.sent == []
+

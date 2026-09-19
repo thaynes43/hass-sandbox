@@ -122,7 +122,10 @@ positive costs a human a manual re-exposure in the HA UI:
   well-formed `domain.object_id` is left out of the registry request (HA
   validates the id list all-or-nothing) and logged at WARNING by
   `AssistExposureClient` (the AppDaemon main log, not this app's log); the domain, glob
-  and deny-by-default rules still apply to it.
+  and deny-by-default rules still apply to it. It also cannot be un-exposed
+  by this app (HA rejects malformed ids), so it is left out of the un-expose
+  batch — the rest of the batch still applies — and keeps being reported until
+  it is removed by hand.
 
 ## Notifications
 

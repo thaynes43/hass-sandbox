@@ -152,9 +152,23 @@ class AssistExposureClient:
 
         Returns the number of entity ids sent.  An empty list is a no-op — HA
         accepts it, but skipping the round trip keeps a clean run free of
-        WebSocket traffic.
+        WebSocket traffic.  Ids are normalised and de-duplicated like the read
+        path, and malformed ones are left out with a WARNING so they cannot make
+        HA reject the batch.
         """
-        ids = [str(entity_id).strip() for entity_id in entity_ids if str(entity_id).strip()]
+        candidates = [str(entity_id).strip().lower() for entity_id in entity_ids]
+        ids = list(dict.fromkeys(text for text in candidates if _ENTITY_ID_RE.match(text)))
+        malformed = sorted({text for text in candidates if text and not _ENTITY_ID_RE.match(text)})
+        if malformed:
+            # HA validates ``entity_ids`` all-or-nothing: one malformed id would
+            # make it reject the whole command, and then NOTHING is un-exposed
+            # that run — a garage opener in the same batch included.
+            logger.warning(
+                "Leaving %d malformed entity id(s) out of the exposure change (HA would "
+                "reject the whole batch): %s",
+                len(malformed),
+                ", ".join(malformed[:10]),
+            )
         if not ids:
             return 0
         logger.info(
