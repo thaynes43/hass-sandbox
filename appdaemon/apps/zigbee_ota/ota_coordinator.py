@@ -379,14 +379,25 @@ class OtaCoordinator:
                 and friendly is not None
                 and friendly == fl.friendly_name
             )
+        # An answer about a device that is in flight again under a different
+        # transaction concerns an attempt we already settled. It can be
+        # reported, but it must not touch the live attempt's record, its park
+        # or its slot — doing so is how a settled answer sabotages the retry
+        # it has nothing to do with.
+        stale_for_live_device = (
+            not matches_flight
+            and fl is not None
+            and friendly is not None
+            and friendly == fl.friendly_name
+        )
         if status == "ok":
             if matches_flight:
                 self._finish_in_flight(RESULT_SUCCESS)
+            elif stale_for_live_device:
+                self._last_event = f"{friendly}: late success for a settled attempt"
             elif friendly in self._devices:
-                # A late success for an attempt we already gave up on. Record
-                # it, but leave any live flight alone: the same device may be
-                # in flight again under a new transaction, and ending that
-                # here would free the slot while Z2M is still transferring.
+                # A late success for an attempt we already gave up on, for a
+                # device that is not running one right now.
                 rec = self._devices.pop(friendly)
                 self._record_completion(friendly, rec, {})
                 self._last_event = f"{friendly} completed outside tracked attempt"
@@ -396,6 +407,9 @@ class OtaCoordinator:
         if any(marker in lowered for marker in _NO_IMAGE_ERROR_MARKERS):
             # Nothing was transferred and nothing will be until the OTA index
             # carries a file again: not a completion, and not worth retrying.
+            if stale_for_live_device:
+                self._last_event = f"{friendly}: late no-image for a settled attempt"
+                return
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
                 self._record_skip(target, PARK_NO_IMAGE, error, matches_flight)
@@ -404,6 +418,9 @@ class OtaCoordinator:
             # The id we sent names no Z2M device — almost always a Home
             # Assistant rename. The availability and progress topics for this
             # name can never match either, so retrying is pointless.
+            if stale_for_live_device:
+                self._last_event = f"{friendly}: late unknown-device for a settled attempt"
+                return
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
                 self._record_skip(target, PARK_UNKNOWN, error, matches_flight)
@@ -419,6 +436,9 @@ class OtaCoordinator:
         if matches_flight:
             offline = any(marker in lowered for marker in _OFFLINE_ERROR_MARKERS)
             self._finish_in_flight(RESULT_OFFLINE if offline else RESULT_ERROR, error=error)
+            return
+        if stale_for_live_device:
+            self._last_event = f"{friendly}: late failure for a settled attempt"
             return
         rec = self._devices.get(friendly) if friendly else None
         if rec is not None:

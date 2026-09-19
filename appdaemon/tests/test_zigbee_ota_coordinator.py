@@ -995,8 +995,17 @@ def test_a_late_success_never_ends_the_live_attempt() -> None:
     )
     status = coord.status()
     assert status["in_flight"]["device"] == "hue_a"  # live attempt untouched
-    assert status["completed_count_this_run"] == 1
+    assert "settled attempt" in status["last_event"]  # reported, not applied
     assert coord.decide() is None  # and nothing else starts
+
+    # The live attempt still settles normally, with its version recorded.
+    coord.on_update_response(
+        {"status": "ok", "transaction": second.transaction, "data": {"id": "hue_a"}}
+    )
+    status = coord.status()
+    assert status["in_flight"] == {}
+    assert status["completed_count_this_run"] == 1
+    assert status["completed_this_run"][0]["version"] == "200"
 
 
 def test_a_late_no_image_never_ends_the_live_attempt() -> None:
@@ -1025,5 +1034,19 @@ def test_a_late_no_image_never_ends_the_live_attempt() -> None:
     )
     status = coord.status()
     assert status["in_flight"]["device"] == "hue_a"
-    assert status["skipped_no_image"] == ["hue_a"]
+    assert status["skipped_no_image"] == []  # the live attempt is not parked
+    assert "settled attempt" in status["last_event"]
     assert coord.decide() is None
+
+    # The live attempt still settles, and parks the device properly.
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": second.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert status["in_flight"] == {}
+    assert status["skipped_no_image"] == ["hue_a"]
