@@ -349,6 +349,14 @@ Tom confirmed (2026-09-19) that the KEFs switch back to the PC's HDMI input by t
 as the PC makes a sound, so nothing has to manage their input, and that 92 % on the KEFs is normal
 (Windows is the second volume lever and attenuates it) — so restoring it is right.
 
+The Music Assistant player only reports its own queue: over ten days of daily PC use on the HDMI
+input it was never `playing` (only `idle`), and it stayed `idle` on 2026-09-19 while Tom had PC
+audio running between the test plays — so "already playing" in the script can only mean voice/MA
+music, and PC audio never makes a request skip the 50 % start. The wait for `playing` sits inside
+the tool call on purpose: it costs a second or two normally and up to 15 s only when playback never
+starts; re-clamping from an automation on every `playing` edge instead would also override a
+volume someone chose and then paused/resumed.
+
 Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
 were awake for every run after that step was added). Still to
 do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
