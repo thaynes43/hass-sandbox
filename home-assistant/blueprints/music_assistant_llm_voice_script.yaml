@@ -154,15 +154,17 @@ blueprint:
             "replace" always starts a fresh queue, which is what a spoken "play ..."
             normally means.
 
+            There is deliberately no "add", "next" or "play" here: those only make
+            sense per request, through the optional "queue" argument the LLM can
+            set, which is the path the safety checks below cover (never silent,
+            never into the default player''s queue, never destroying a paused queue).
+
             '
           selector:
             select:
               options:
               - Music Assistant default
               - replace
-              - play
-              - next
-              - add
               multiple: false
               custom_value: false
               sort: false
