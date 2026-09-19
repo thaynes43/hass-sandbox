@@ -136,11 +136,12 @@ use_blueprint:
       name - Song name" form.
 
       This is a mandatory argument and must always be provided.'
-    area_prompt: 'The area or areas for which the music is requested. If the request does not mention
-      a target (either an area or a player), use the area the request comes from: you were told which
-      area you are in, so always pass it, also for a single named song and also when the request is to
-      add something to the queue or to play it next ("the queue" is not a target). A request without an
-      area and without a player is handed back and nothing plays.
+    area_prompt: 'The area or areas for which the music is requested. If the request names a speaker (a
+      player), do not pass an area at all: pass only "media_player", otherwise the music starts in both
+      places. If the request names neither a room nor a speaker, use the area the request comes from:
+      you were told which area you are in, so pass it, also for a single named song and also when the
+      request is to add something to the queue or to play it next ("the queue" is not a target). A request
+      without an area and without a player is handed back and nothing plays.
 
       If the area can not be determined from the request, or the device the request comes from, do not
       use this parameter; ask the user which room they want the music in.
@@ -148,9 +149,10 @@ use_blueprint:
       Only use both the "area" parameter and the "media_player" parameter together if both are specifically
       used in the request.'
 description: 'This script is used to play music based on a voice request. The tool takes the following
-  arguments: media_type, artist, album, media_id, radio_mode, area, shuffle, queue. media_id and media_type
-  are always required and must always be supplied as arguments to this tool. An area or Music Assistant
-  media player can optionally be provided in the voice request as well. A normal request starts the music
-  now and replaces whatever was queued; only when the user explicitly asks to add something to the queue
-  or to play it next, set the queue argument. Use the parameters as described in the description of each
-  parameter. Use this tool whenever the user requests to play music.'
+  arguments: media_type, artist, album, media_id, media_description, area, media_player, shuffle, queue.
+  media_id, media_type and media_description are always required and must always be supplied as arguments
+  to this tool. An area or Music Assistant media player can optionally be provided in the voice request
+  as well. A normal request starts the music now and replaces whatever was queued; only when the user
+  explicitly asks to add something to the queue or to play it next, set the queue argument. Use the parameters
+  as described in the description of each parameter. Use this tool whenever the user requests to play
+  music.'
