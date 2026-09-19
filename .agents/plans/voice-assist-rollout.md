@@ -410,11 +410,14 @@ the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and
   while playing → appended (227 → 228 items), 50 %, saved level untouched; a stop, then add →
   `play`, song starts, queue kept (229), still 50 %, the saved 25 % not overwritten; then a final
   stop at 18:34:50, and 10 minutes of idle later (18:44:54) the restore automation put the KEFs
-  back to 25 %, cleared the helper and emptied the queue. Note the 25 %: it is simply the level
-  the KEFs were sitting at that day (seen at 15:33, before any test), **not** the usual 92 % PC
-  level described above — the script saves and restores whatever the player reports, and did so
-  correctly. Why they sat at 25 % is unexplained (Tom's own setting, or the 14:32 restore earlier
-  that day putting back a low reading); Tom has been told.
+  back to 25 %, cleared the helper and emptied the queue. The saved level survived the second
+  request because the script only saves when the helper is empty (`numeric_state … below: 0.005`),
+  not because of the "not already playing" condition. **The 25 % is not the 92 % PC level described
+  above, and that assumption does not hold:** recorder history shows the KEFs set 25 % *by
+  themselves* each time they switch back to the PC (`tv`) input after voice music (13:44:47, two
+  minutes after the automation had restored 92 %; again at 14:26:43 from 50 %, before any restore
+  ran), and the save/restore logic has faithfully preserved that level since. Evidence, the owner's
+  decision ("leave 25 %, I'll look at home") and the options afterwards: issue #159.
   Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
   invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
   the KEFs played (before the hand-back that request would have gone to the bedroom default);
