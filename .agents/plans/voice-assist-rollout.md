@@ -329,8 +329,9 @@ KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
   a `pre_actions` input that runs before `play_media`, and a `playing_before` variable. The Play
   Music script uses them to save the speakers' volume into
   `input_number.rumpus_room_kef_saved_volume` (live-only helper, 0 = nothing saved) and set 50 %
-  **before** playing, and sets 50 % again in the blueprint's after-play `actions` — the KEFs wake
-  from standby at their own 20 %, which overrode the first set in the first live test. Both only
+  **before** playing, and sets 50 % again in the blueprint's after-play `actions`, after waiting
+  (up to 15 s) for the speaker to report `playing` — the KEFs wake from standby at their own 20 %,
+  which overrode the first set in the first live test. Both only
   when the speakers were not already playing, so a volume someone chose mid-session survives the
   next request. "The speaker" is resolved as *the first Music Assistant player in the Rumpus Room
   area*, not by entity id (the KEFs have been re-registered before: `_2`, `_3`, `_4`), and exactly

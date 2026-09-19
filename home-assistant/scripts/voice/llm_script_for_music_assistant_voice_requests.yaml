@@ -25,15 +25,17 @@ use_blueprint:
       If the request is "Play the artist Guns and Roses", "shuffle" should be set to false, since the
       request does not mention or request to shuffle. '
     pre_actions:
-    - alias: The Rumpus Room speaker = the first Music Assistant player in that area; read its volume
-        BEFORE touching it (parallel runs must never save the voice level)
+    - alias: The Rumpus Room speaker = the first Music Assistant player in that area (empty when there
+        is none)
       variables:
         rumpus_player: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
           | select(''match'', ''media_player'') | first | default('''', true) }}'
-        rumpus_volume_read: '{{ state_attr(area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
-          | select(''match'', ''media_player'') | first | default('''', true), ''volume_level'') | float(0)
-          }}'
         rumpus_pc_volume_fallback: 0.92
+    - alias: Read its volume BEFORE touching it (parallel runs must never save the voice level); 0 = no
+        speaker or no reading
+      variables:
+        rumpus_volume_read: '{{ (state_attr(rumpus_player, ''volume_level'') | float(0)) if rumpus_player
+          != '''' else 0 }}'
     - alias: 'Rumpus Room speaker: remember its volume and start voice music at 50%'
       if:
       - condition: template
@@ -78,6 +80,11 @@ use_blueprint:
         value_template: '{{ rumpus_player != '''' and (''rumpus_room'' in (area | default([], true)) or
           rumpus_player in player_data) and rumpus_player not in playing_before }}'
       then:
+      - alias: 'Wait until the speaker is really playing: waking from standby takes seconds and resets
+          its volume'
+        wait_template: '{{ is_state(rumpus_player, ''playing'') }}'
+        timeout: 00:00:15
+        continue_on_timeout: true
       - action: media_player.volume_set
         target:
           entity_id: '{{ rumpus_player }}'
