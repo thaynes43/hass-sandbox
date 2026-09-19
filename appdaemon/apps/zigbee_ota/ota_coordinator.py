@@ -519,7 +519,7 @@ class OtaCoordinator:
             "completed_this_run": self._completed[-25:],
             "completed_count_this_run": len(self._completed),
             "skipped_no_image": sorted(self._no_image),
-            "cleared_without_update": sorted(self._cleared)[-25:],
+            "cleared_without_update": self._cleared[-25:],
             "failed_attempts_this_run": self._failed_attempts,
             "busy_wait_s": max(0, int(self._global_busy_until - ts)),
             "z2m_devices_known": self._z2m_device_count(),
