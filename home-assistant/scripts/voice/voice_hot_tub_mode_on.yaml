@@ -5,8 +5,10 @@ alias: Hot Tub Mode On
 description: Voice tool. Call this whenever someone says they are going in, getting in, or using the hot
   tub or spa ('I'm going in the hot tub', 'we're getting in the spa', 'hot tub time', 'hot tub mode').
   It turns the bright back yard flood light off and puts it on hold, so motion in the yard cannot switch
-  it on while people are in the tub. It does not control the hot tub itself. The hold ends with Hot Tub
-  Mode Off, or by itself when the spa lights are switched off.
+  it on while people are in the tub. It does not control the hot tub itself. The hold stays until Hot
+  Tub Mode Off is called; it also ends by itself when the spa lights are switched off after having been
+  on. If the spa lights were never turned on, remind the person to say they are out of the hot tub when
+  they are done.
 icon: mdi:hot-tub
 mode: single
 sequence:

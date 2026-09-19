@@ -88,7 +88,8 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 
 - **Hot tub mode** (fixed 2026-09-19): `automation.switch_back_yard_spa_lights_manage_spotlight_auto_hold`
   auto-holds the spotlight switch and turns the flood light off while either spa light is on, and
-  releases when both are off; `script.voice_hot_tub_mode_on/_off` make the same calls for voice.
+  releases when neither is on any more; it calls `script.voice_hot_tub_mode_on/_off`, which hold the
+  parameters and are also the voice tools (Mode Off refuses while a spa light is on).
 - **Back-yard spotlight** (`light.downstairs_kitchen_back_yard_spotlight`) is the contested one:
   three automations (slider opens, camera person/animal, auto-off after 5 min clear with a hard
   45 min cap) — all disabled while the paddle hold is engaged. A plain voice turn-on is fought.

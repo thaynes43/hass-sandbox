@@ -5,10 +5,27 @@ alias: Hot Tub Mode Off
 description: Voice tool. Call this when someone says they are out of, done with, or finished using the
   hot tub or spa ('we're out of the hot tub', 'hot tub mode off', 'done with the spa'). It releases the
   hold on the back yard flood light so the normal back yard motion lighting works again. It does not control
-  the hot tub itself and does not turn the flood light on.
+  the hot tub itself and does not turn the flood light on. If a spa light is still on it does nothing
+  and says so in its response, because someone is probably still in the tub; the hold then ends by itself
+  when the spa lights are switched off.
 icon: mdi:hot-tub
 mode: single
 sequence:
+- if:
+  - condition: state
+    entity_id:
+    - light.back_yard_westford_spa_light_1
+    - light.back_yard_westford_spa_light_2
+    state: 'on'
+    match: any
+  then:
+  - variables:
+      result:
+        released: false
+        reason: A spa light is still on, so the flood light hold was kept. It ends by itself when the
+          spa lights are switched off.
+  - stop: Spa lights still on - hold kept
+    response_variable: result
 - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
   data:
     switch_name: downstairs_kitchen_back_yard_spotlight
@@ -18,3 +35,8 @@ sequence:
     - automation.switch_back_yard_slider_opens_turn_on_spotlight
     - automation.switch_back_yard_camera_detects_motion_turn_on_lights
     - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+- variables:
+    result:
+      released: true
+- stop: Hold released
+  response_variable: result

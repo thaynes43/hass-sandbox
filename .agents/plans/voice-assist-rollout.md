@@ -194,8 +194,13 @@ and turn the spotlight off; spa lights off → clear the hold. It had been dead 
 (it triggered on `light.westford_spa_light_1`, which no longer exists) and was switched off; it
 now triggers on `light.back_yard_westford_spa_light_1` / `_2` (release when both are off), is
 enabled, and was verified end to end (LED 210 → 130 → 210, automations off → on).
-`script.voice_hot_tub_mode_on` / `_off` make the same two calls so an agent can act on "I'm going
-in the hot tub" / "we're out of the hot tub"; both verified by running them. They are exposed once
+`script.voice_hot_tub_mode_on` / `_off` hold the parameters — the automation just calls them — so
+an agent can act on "I'm going in the hot tub" / "we're out of the hot tub". Mode Off refuses
+(and says so in its response) while a spa light is still on; the automation releases when
+neither spa light is on any more, so an `unavailable` bulb cannot wedge the hold. A hold engaged
+by voice with the spa lights never on stays until someone says they are out (the tool's
+description tells the agent to remind them). Verified live: spa light on → LED 130 + three
+automations off; Mode Off refused; spa light off → LED 210 + automations on. They are exposed once
 the guard release that allowlists them (v1.18.4) is rolled out — until then the guard would
 un-expose them.
 

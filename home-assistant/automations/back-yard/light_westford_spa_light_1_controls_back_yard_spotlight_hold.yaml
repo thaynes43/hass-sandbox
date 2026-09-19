@@ -1,22 +1,22 @@
 alias: '[Switch] : [Back Yard] : [Spa Lights] : [Manage Spotlight Auto Hold]'
-description: 'When either spa light turns on, put the backyard spotlight on auto hold and turn it off,
-  so the bright flood light cannot come on while someone is in the hot tub. When both spa lights are off
-  again, clear that auto hold and let the normal backyard automations decide whether the spotlight should
-  come back on. (2026-09-19: trigger entities corrected to light.back_yard_westford_spa_light_1/_2 - the
-  old id light.westford_spa_light_1 stopped existing in June, so this had been dead since.)'
+description: 'When either spa light turns on, run Hot Tub Mode On: the backyard spotlight goes on auto
+  hold and is turned off, so the bright flood light cannot come on while someone is in the hot tub. When
+  a spa light leaves ''on'' and neither one is on any more (off or unavailable), run Hot Tub Mode Off
+  to clear the hold. The hold parameters live in script.voice_hot_tub_mode_on/_off only. (2026-09-19:
+  trigger entities corrected - the old id light.westford_spa_light_1 stopped existing in June.)'
 triggers:
-- entity_id:
+- trigger: state
+  entity_id:
   - light.back_yard_westford_spa_light_1
   - light.back_yard_westford_spa_light_2
   to: 'on'
   id: spa_on
-  trigger: state
-- entity_id:
+- trigger: state
+  entity_id:
   - light.back_yard_westford_spa_light_1
   - light.back_yard_westford_spa_light_2
-  to: 'off'
+  from: 'on'
   id: spa_off
-  trigger: state
 conditions: []
 actions:
 - choose:
@@ -24,35 +24,18 @@ actions:
     - condition: trigger
       id: spa_on
     sequence:
-    - action: script.inovelli_set_mmwave_hold_led_indicator
-      data:
-        switch_name: downstairs_kitchen_back_yard_spotlight
-        hold_color: input_text.inovelli_auto_hold
-        prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
-        automation_entity_ids:
-        - automation.switch_back_yard_slider_opens_turn_on_spotlight
-        - automation.switch_back_yard_camera_detects_motion_turn_on_lights
-        - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
-    - action: light.turn_off
-      target:
-        entity_id: light.downstairs_kitchen_back_yard_spotlight
-      data: {}
+    - action: script.voice_hot_tub_mode_on
   - conditions:
     - condition: trigger
       id: spa_off
-    - condition: state
-      entity_id:
-      - light.back_yard_westford_spa_light_1
-      - light.back_yard_westford_spa_light_2
-      state: 'off'
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id:
+        - light.back_yard_westford_spa_light_1
+        - light.back_yard_westford_spa_light_2
+        state: 'on'
+        match: any
     sequence:
-    - action: script.inovelli_clear_mmwave_hold_restore_led_indicator
-      data:
-        switch_name: downstairs_kitchen_back_yard_spotlight
-        hold_color: input_text.inovelli_auto_hold
-        prev_led_color_helper: input_number.outdoor_light_inovelli_led_color
-        automation_entity_ids:
-        - automation.switch_back_yard_slider_opens_turn_on_spotlight
-        - automation.switch_back_yard_camera_detects_motion_turn_on_lights
-        - automation.switch_back_yard_camera_stops_detecting_motion_turn_off_spotlight
+    - action: script.voice_hot_tub_mode_off
 mode: restart

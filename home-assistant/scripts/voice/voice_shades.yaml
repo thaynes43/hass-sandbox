@@ -130,9 +130,9 @@ sequence:
       r.get(''open'', '''') }}{% endif %}'
 - if:
   - condition: template
-    value_template: '{{ scene_id | length == 0 }}'
+    value_template: '{{ scene_id | length == 0 or expand(scene_id) | length == 0 }}'
   then:
-  - stop: Unknown room or position for the shades
+  - stop: Unknown room or position for the shades, or the gateway scene does not exist
     error: true
 - action: scene.turn_on
   data:
