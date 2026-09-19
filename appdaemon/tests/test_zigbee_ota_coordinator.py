@@ -970,3 +970,60 @@ def test_the_absolute_timeout_also_staggers_the_next_device() -> None:
     clock.advance(301)
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_late_success_never_ends_the_live_attempt() -> None:
+    """Z2M's ok for an abandoned transaction must not free the slot while the
+    same device is in flight again."""
+    clock = FakeClock()
+    coord = make_coordinator(
+        clock,
+        progress_stall_s=100,
+        retry_base_s=100,
+        make_transaction=lambda name: f"t-{name}-{int(clock.ts)}",
+    )
+    refresh(coord, snapshot("hue_a"))
+    first = coord.decide()
+    clock.advance(101)
+    coord.decide()  # abandons hue_a
+    clock.advance(301)
+    second = coord.decide()
+    assert second is not None and second.friendly_name == "hue_a"
+
+    coord.on_update_response(
+        {"status": "ok", "transaction": first.transaction, "data": {"id": "hue_a"}}
+    )
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"  # live attempt untouched
+    assert status["completed_count_this_run"] == 1
+    assert coord.decide() is None  # and nothing else starts
+
+
+def test_a_late_no_image_never_ends_the_live_attempt() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(
+        clock,
+        progress_stall_s=100,
+        retry_base_s=100,
+        make_transaction=lambda name: f"t-{name}-{int(clock.ts)}",
+    )
+    refresh(coord, snapshot("hue_a"))
+    first = coord.decide()
+    clock.advance(101)
+    coord.decide()
+    clock.advance(301)
+    second = coord.decide()
+    assert second is not None and second.friendly_name == "hue_a"
+
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": first.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"
+    assert status["skipped_no_image"] == ["hue_a"]
+    assert coord.decide() is None

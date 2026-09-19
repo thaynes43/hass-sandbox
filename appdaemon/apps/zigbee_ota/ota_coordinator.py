@@ -383,7 +383,10 @@ class OtaCoordinator:
             if matches_flight:
                 self._finish_in_flight(RESULT_SUCCESS)
             elif friendly in self._devices:
-                # e.g. we timed the attempt out locally but Z2M finished it.
+                # A late success for an attempt we already gave up on. Record
+                # it, but leave any live flight alone: the same device may be
+                # in flight again under a new transaction, and ending that
+                # here would free the slot while Z2M is still transferring.
                 rec = self._devices.pop(friendly)
                 self._record_completion(friendly, rec, {})
                 self._last_event = f"{friendly} completed outside tracked attempt"
@@ -395,7 +398,7 @@ class OtaCoordinator:
             # carries a file again: not a completion, and not worth retrying.
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
-                self._record_skip(target, PARK_NO_IMAGE, error)
+                self._record_skip(target, PARK_NO_IMAGE, error, matches_flight)
             return
         if any(marker in lowered for marker in _UNKNOWN_DEVICE_MARKERS):
             # The id we sent names no Z2M device — almost always a Home
@@ -403,7 +406,7 @@ class OtaCoordinator:
             # name can never match either, so retrying is pointless.
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
-                self._record_skip(target, PARK_UNKNOWN, error)
+                self._record_skip(target, PARK_UNKNOWN, error, matches_flight)
             return
         if any(marker in lowered for marker in _BUSY_ERROR_MARKERS):
             # Another OTA (ours after a local timeout, or manual) is running.
@@ -610,6 +613,7 @@ class OtaCoordinator:
         installed = attrs.get("installed_version")
         if installed is not None and str(installed) != str(rec.installed_version):
             self._record_completion(friendly, rec, attrs)
+            self._clear_in_flight_for(friendly)
             return
         self._clear_in_flight_for(friendly)
         self._cleared.append({"device": friendly, "at": _at(self.now())})
@@ -619,7 +623,9 @@ class OtaCoordinator:
         if self._in_flight is not None and self._in_flight.friendly_name == friendly:
             self._in_flight = None
 
-    def _record_skip(self, friendly: str, reason: str, error: str) -> None:
+    def _record_skip(
+        self, friendly: str, reason: str, error: str, end_flight: bool
+    ) -> None:
         """Park a device Z2M cannot install right now. No attempt is burned and
         no backoff is scheduled — a retry would only get the same answer."""
         rec = self._devices.pop(friendly, None)
@@ -630,7 +636,8 @@ class OtaCoordinator:
             latest_version=rec.latest_version if rec is not None else None,
             ts=self.now(),
         )
-        self._clear_in_flight_for(friendly)
+        if end_flight:
+            self._clear_in_flight_for(friendly)
         self._last_event = f"{friendly} skipped: {error}"
 
     def _record_completion(
@@ -646,7 +653,6 @@ class OtaCoordinator:
                 ),
             }
         )
-        self._clear_in_flight_for(friendly)
 
     # ------------------------------------------------------------------
     # Status

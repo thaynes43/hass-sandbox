@@ -47,8 +47,10 @@ and widened in 2026-09 to every Z2M device.
   Z2M's side of it. Both only fire on an attempt that has transferred nothing
   or gone silent for hours, and the next device is staggered by
   `busy_backoff_s` — but if Z2M's operation is somehow still open, a second
-  one can exist alongside it. An attempt that is actively transferring is
-  never released early, and neither is an adopted one.
+  one can exist alongside it. `progress_stall_s` only ever gives up on an
+  attempt that transferred nothing at all, and never on an adopted one;
+  `update_timeout_s` is the blunt backstop and will release an attempt that
+  was still transferring when it went silent four hours ago.
 - **Externally started updates are adopted** — if an update is already
   `in_progress` (started from the Z2M frontend or HA), the app waits for it
   instead of dueling; a Z2M "already in progress" error just requeues without
