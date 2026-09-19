@@ -1363,6 +1363,19 @@ def test_dev_yaml_restates_no_rule_list() -> None:
         "switch_allowlist", "script_allowlist_globs", "allow_entities",
     } & set(config)
     assert not restated
+    # The only thing between a dev run and the single live exposure list.
+    assert config.get("enforce") is False
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(False, False), ("false", False), ("False", False), ("no", False), ("off", False), (0, False),
+     (True, True), ("true", True), ("yes", True), (1, True), (None, True), ("garbage", False), ("", False)],
+)
+def test_enforce_flag_parsing_never_reads_a_quoted_false_as_true(value: Any, expected: bool) -> None:
+    from assist_exposure_guard.assist_exposure_guard import _as_bool
+
+    assert _as_bool(value, True) is expected
 
 
 def test_sensor_entity_lists_are_capped_like_the_notification() -> None:

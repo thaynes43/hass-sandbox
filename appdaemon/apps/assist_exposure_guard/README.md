@@ -265,6 +265,8 @@ It is, however, the enforcement half of the voice-assistant rollout: the
 curation half (per-room exposure proposals, spoken aliases, the hand-written
 `script.voice_*` tools) is applied by hand in HA. **When a curated room adds a
 switch or a script, add it to `switch_allowlist` / `script_allowlist_globs` in
-`apps-prod.yaml` in the same PR** — otherwise this app un-exposes it within
-`check_interval_minutes`. That coupling is the point: a new voice tool gets
+BOTH `rules.py` (the default) and `apps-prod.yaml`, in the same PR** —
+`test_prod_yaml_rule_lists_equal_the_code_defaults` fails when only one of the
+two is edited (fix the drift, never the test), and without the entry this app
+un-exposes the new tool within `check_interval_minutes`. That coupling is the point: a new voice tool gets
 reviewed here or it does not reach a voice agent.

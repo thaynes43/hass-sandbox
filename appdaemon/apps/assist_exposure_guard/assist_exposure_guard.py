@@ -68,6 +68,24 @@ REGISTRY_EVENT = "entity_registry_updated"
 MAX_DETAIL_LINES = 20
 
 
+def _as_bool(value: Any, default: bool) -> bool:
+    """Parse a YAML flag without ``bool("false") is True``.
+
+    ``enforce`` is the only thing between a dev run and the single live
+    exposure list, so a quoted ``"false"`` must not read as enabled.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip().lower()
+        # Anything unrecognised reads as report-only: the non-destructive mode
+        # still notifies, whereas a typo that enabled writes would not be seen.
+        return text in ("true", "yes", "on", "1")
+    return bool(value)
+
+
 def _capped_join(entity_ids: List[str]) -> str:
     """Join ids for a sensor attribute, capped like the log and notification.
 
@@ -104,7 +122,7 @@ class AssistExposureGuard(hass.Hass):
         # NOTE: AppDaemon injects the app key as args["name"]; never use
         # "name" as a config key here.
         self._assistant = str(args.get("assistant", self.DEFAULTS["assistant"])).strip()
-        self._enforce = bool(args.get("enforce", self.DEFAULTS["enforce"]))
+        self._enforce = _as_bool(args.get("enforce"), self.DEFAULTS["enforce"])
         self._interval_s = max(
             60,
             int(

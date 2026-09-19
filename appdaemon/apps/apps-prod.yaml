@@ -1495,7 +1495,8 @@ assist_exposure_guard:
     - "switch.spa_intouch3_switch"
     - "switch.nrz120804q_*"
   # The switch domain is DENY BY DEFAULT — a switch is exposed by name, never
-  # by area.  Add entity ids here as rooms are curated.
+  # by area.  Add entity ids here AND in the rules.py default as rooms are
+  # curated: a test pins every list in this entry to the code defaults.
   switch_allowlist: []
   # An exposed script is an unrestricted tool: whatever the script does, the
   # model can do.  Every allowed script is therefore named EXPLICITLY — no
