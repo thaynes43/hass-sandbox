@@ -136,7 +136,7 @@ questions, and conflating them made enforcement erase its own evidence.
 | Notification | id | Says | Cleared by |
 |---|---|---|---|
 | Enforcement record | `<notification_id>_enforced` | "I un-exposed these, at this time" — an action already taken | **Only the user.** Never auto-dismissed |
-| Current state | `<notification_id>` | "These are exposed right now and should not be" (`enforce: false`), or "UN-EXPOSE FAILED — still exposed", or "the check could not run" | The next clean run |
+| Current state | `<notification_id>` | "These are exposed right now and should not be" (`enforce: false`), or "UN-EXPOSE FAILED — still exposed", or "the check could not run" | The next clean run, or the run that un-exposes the last violator |
 
 Why they must be separate: `homeassistant/expose_entity` makes HA fire
 `entity_registry_updated`, which arms this app's own `registry_debounce_s`

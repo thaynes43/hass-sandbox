@@ -60,8 +60,8 @@ class ExposureChange:
     not a well-formed ``domain.object_id`` and would have made HA reject the
     whole batch.
 
-    Both are **normalised** (``strip().lower()``, de-duplicated, order
-    preserved), so a caller that normalised its own ids the same way can test
+    Both are **normalised** (``strip().lower()``) and de-duplicated; ``sent`` keeps
+    the input order and ``skipped`` is sorted, so a caller that normalised its own ids the same way can test
     membership directly.
 
     Returning this rather than a count is the point: a caller that assumes

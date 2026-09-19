@@ -1618,3 +1618,18 @@ def test_a_non_canonical_garage_cover_id_still_gets_its_device_class() -> None:
     assert attributes["violations_last_run"] == "1"
     assert attributes["violating_entities"] == "cover.garage_door"
 
+
+def test_the_unapplied_id_list_in_last_error_is_capped() -> None:
+    """last_error is republished every run (a malformed id cannot self-heal), so a
+    bulk of them must not become a tens-of-KB attribute."""
+    from assist_exposure_guard.assist_exposure_guard import MAX_DETAIL_LINES
+
+    bad = [f"switch.bad id {i}" for i in range(MAX_DETAIL_LINES + 40)]
+    client = FakeExposureClient(exposed=bad, unacceptable_ids=bad)
+    app = _make_app(client=client)
+    _startup(app)
+
+    last_error = _published_attributes(app)["last_error"]
+    assert last_error.count("switch.bad id") == MAX_DETAIL_LINES
+    assert "…and 40 more" in last_error
+
