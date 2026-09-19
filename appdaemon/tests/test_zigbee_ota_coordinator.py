@@ -1216,3 +1216,50 @@ def test_a_parked_device_updating_externally_is_still_adopted() -> None:
     assert status["in_flight"]["device"] == "hue_a"
     assert status["in_flight"]["adopted"] is True
     assert coord.decide() is None  # hue_b must not start alongside it
+
+
+def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_success() -> None:
+    """HA's entity lags Z2M by a few seconds and still reads in_progress."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "ok",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)  # stale
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_an_adopted_update_with_no_record_is_released_when_it_ends() -> None:
+    """Adoption above the park skip makes "adopted, no DeviceRecord" normal."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"]["device"] == "hue_a"
+
+    # The external install ends; the entity stops offering an update.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="off")
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"

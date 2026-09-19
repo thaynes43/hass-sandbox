@@ -292,24 +292,42 @@ class OtaCoordinator:
                 existing = self._devices.pop(friendly, None)
                 if existing is not None:
                     self._settle_cleared(friendly, existing, attrs)
+                elif (
+                    self._in_flight is not None
+                    and self._in_flight.friendly_name == friendly
+                ):
+                    # An adopted update can be in flight with no record of its
+                    # own — an external install on a parked or unqueued device.
+                    # The entity going off is its terminal signal too, and
+                    # without this the slot is held until update_timeout_s.
+                    self._in_flight = None
+                    self._last_event = f"{friendly}: external update ended"
                 continue
-            if attrs.get("in_progress") and (
-                self._in_flight is None or self._in_flight.friendly_name != friendly
+            completed_ts = self._recently_completed.get(friendly)
+            # HA's update entity can lag Z2M's success by a few seconds, and
+            # that stale snapshot still carries in_progress: true.
+            just_finished = (
+                completed_ts is not None
+                and self.now() - completed_ts < self.completed_suppress_s
+            )
+            if (
+                attrs.get("in_progress")
+                and not just_finished
+                and (
+                    self._in_flight is None
+                    or self._in_flight.friendly_name != friendly
+                )
             ):
-                # Checked before the skips below: an externally started update
-                # must be adopted even for a device we would otherwise pass
-                # over, or decide() starts a second one alongside it. Z2M's
-                # in-progress guard is per device and would not reject it.
+                # Checked before the park skip below: an externally started
+                # update must be adopted even for a device we would otherwise
+                # pass over, or decide() starts a second one alongside it.
+                # Z2M's in-progress guard is per device and would not reject
+                # the second request.
                 adopted_candidate = friendly
             if friendly in self._parked and self._still_parked(friendly, attrs):
                 continue
-            completed_ts = self._recently_completed.get(friendly)
-            if (
-                completed_ts is not None
-                and self.now() - completed_ts < self.completed_suppress_s
-            ):
-                # HA's update entity can lag Z2M's success by a few seconds;
-                # don't re-queue a device we just finished off a stale snapshot.
+            if just_finished:
+                # Don't re-queue a device we just finished off a stale snapshot.
                 continue
             seen.add(friendly)
             rec = self._devices.get(friendly)
