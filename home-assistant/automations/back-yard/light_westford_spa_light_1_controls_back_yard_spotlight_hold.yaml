@@ -38,4 +38,5 @@ actions:
         match: any
     sequence:
     - action: script.voice_hot_tub_mode_off
-mode: restart
+mode: queued
+max: 5
