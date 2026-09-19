@@ -41,8 +41,14 @@ from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
 #: directly actuatable through intents; ``camera``/``siren``/``alarm_control_panel``
 #: are privacy/safety devices; ``button``/``input_button`` are single-press
 #: actuators with no state to reason about (the ratgdo ``*_toggle_door``
-#: buttons live here); ``automation``/``update``/``number``/``select`` let a
-#: model reconfigure the house rather than operate it.
+#: buttons live here); ``automation``/``update``/``number``/``select`` and the
+#: ``input_*`` helpers let a model reconfigure the house rather than operate it
+#: (mode toggles, off-delays, hold colours).  ``scene`` is an arbitrary
+#: state-applier like a script — ``HassTurnOn`` reaches ``scene.turn_on``, a
+#: scene can reproduce a ``lock`` state, and HA auto-exposes the domain when
+#: "expose new entities" is on.  Voice reaches scenes only through a curated
+#: script (``script.voice_shades``); allow a single scene or helper by name
+#: with ``allow_entities``.
 DEFAULT_DENY_DOMAINS: Tuple[str, ...] = (
     "lock",
     "alarm_control_panel",
@@ -57,6 +63,12 @@ DEFAULT_DENY_DOMAINS: Tuple[str, ...] = (
     "number",
     "select",
     "lawn_mower",
+    "scene",
+    "input_boolean",
+    "input_select",
+    "input_number",
+    "input_text",
+    "input_datetime",
 )
 
 #: ``cover`` as a domain is allowed (window shades are a sensible voice

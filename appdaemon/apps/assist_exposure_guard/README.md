@@ -180,7 +180,8 @@ deliberately disables a rule.
 
 ```yaml
 deny_domains: [lock, alarm_control_panel, siren, camera, button, input_button,
-               valve, water_heater, automation, update, number, select, lawn_mower]
+               valve, water_heater, automation, update, number, select, lawn_mower,
+               scene, input_boolean, input_select, input_number, input_text, input_datetime]
 deny_cover_device_classes: [garage, gate, door]
 deny_integrations: [intellicenter, gecko]
 deny_entity_globs:

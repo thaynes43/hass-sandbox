@@ -85,7 +85,6 @@ def test_every_default_deny_domain_is_a_violation(domain: str) -> None:
         "climate.second_floor_ecobee",
         "fan.primary_bedroom_fan_fan",
         "sensor.primary_bedroom_wave_plus_temperature",
-        "scene.movie_night",
         "todo.shopping_list",
         "weather.forecast_home",
         "binary_sensor.front_door_is_locked",
@@ -93,6 +92,31 @@ def test_every_default_deny_domain_is_a_violation(domain: str) -> None:
 )
 def test_benign_domains_are_allowed(entity_id: str) -> None:
     assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
+
+
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        # A scene is a state-applier like a script: it can reproduce a lock state,
+        # and HA auto-exposes the domain when "expose new entities" is on.
+        "scene.laundry_gateway_main_bedroom_open",
+        "scene.unlock_everything",
+        "input_boolean.cleaners_mode",
+        "input_select.basement_movie_room_occupancy_off_delay",
+        "input_number.outdoor_light_inovelli_led_color",
+        "input_text.inovelli_manual_hold",
+    ],
+)
+def test_scenes_and_input_helpers_are_denied_by_default(entity_id: str) -> None:
+    violation = evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES)
+    assert violation is not None
+    assert violation.rule == RULE_DOMAIN
+
+
+def test_a_single_scene_can_be_allowed_by_name() -> None:
+    rules = GuardRules.from_config({"allow_entities": ["scene.movie_night"]})
+    assert evaluate_entity(ExposedEntity("scene.movie_night"), rules) is None
+    assert evaluate_entity(ExposedEntity("scene.other"), rules) is not None
 
 
 @pytest.mark.parametrize("device_class", ["garage", "gate", "door"])

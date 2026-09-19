@@ -1458,6 +1458,15 @@ assist_exposure_guard:
     - number
     - select
     - lawn_mower
+    # A scene is an arbitrary state-applier (it can reproduce a lock state) and HA
+    # auto-exposes the domain; input_* helpers reconfigure automations. Allow one
+    # by name with allow_entities.
+    - scene
+    - input_boolean
+    - input_select
+    - input_number
+    - input_text
+    - input_datetime
   # `cover` itself is fine (window shades); these device classes are not.
   deny_cover_device_classes:
     - garage
