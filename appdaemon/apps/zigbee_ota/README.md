@@ -81,7 +81,8 @@ and widened in 2026-09 to every Z2M device.
   exponentially (`retry_base_s` doubling to `retry_max_s`), but the moment the
   device publishes `online` again the retry is fast-tracked to
   `online_retry_grace_s`. Other failures use the same backoff without the
-  fast-track.
+  fast-track, and so does a device that has since been bounced by a busy Z2M —
+  the bounce clears the offline mark, because Z2M answered.
 - **Safety valves** — an attempt *this app started* that has not transferred a
   single byte after `progress_stall_s` is abandoned and the device goes back in
   the queue as an offline-type failure. (An adopted update is never abandoned

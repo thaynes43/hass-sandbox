@@ -1179,10 +1179,40 @@ def test_an_availability_flap_does_not_collapse_a_busy_hold() -> None:
             "transaction": second.transaction,
         }
     )
-    # The device flaps: unavailable for a tick, then back.
+    # The device flaps: unavailable for a tick, then back. Without the fix
+    # this collapses its schedule to now + online_retry_grace_s.
     refresh(coord, snapshot("hue_a", state="unavailable"))
     refresh(coord, snapshot("hue_a"))
-    clock.advance(61)
+    # Sample strictly between the global window (+300s) and the hold (+1200s),
+    # or the global gate answers for both and the test proves nothing.
+    clock.advance(400)
     assert coord.decide() is None  # the hold stands
-    clock.advance(1200)
+    clock.advance(900)
     assert coord.decide() is not None
+
+
+def test_a_parked_device_updating_externally_is_still_adopted() -> None:
+    """Adoption must win over every skip: Z2M's in-progress guard is per
+    device, so a second request alongside it would not be rejected."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    assert coord.status()["skipped_no_image"] == ["hue_a"]
+
+    # Someone installs it from the Z2M frontend anyway.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"
+    assert status["in_flight"]["adopted"] is True
+    assert coord.decide() is None  # hue_b must not start alongside it

@@ -293,6 +293,14 @@ class OtaCoordinator:
                 if existing is not None:
                     self._settle_cleared(friendly, existing, attrs)
                 continue
+            if attrs.get("in_progress") and (
+                self._in_flight is None or self._in_flight.friendly_name != friendly
+            ):
+                # Checked before the skips below: an externally started update
+                # must be adopted even for a device we would otherwise pass
+                # over, or decide() starts a second one alongside it. Z2M's
+                # in-progress guard is per device and would not reject it.
+                adopted_candidate = friendly
             if friendly in self._parked and self._still_parked(friendly, attrs):
                 continue
             completed_ts = self._recently_completed.get(friendly)
@@ -310,10 +318,6 @@ class OtaCoordinator:
                 self._devices[friendly] = rec
             rec.installed_version = str(attrs.get("installed_version"))
             rec.latest_version = str(attrs.get("latest_version"))
-            if attrs.get("in_progress") and (
-                self._in_flight is None or self._in_flight.friendly_name != friendly
-            ):
-                adopted_candidate = friendly
 
         # Drop devices that disappeared from the snapshot entirely (renamed,
         # removed from Z2M, or no longer matching) — the queue is derived state.
