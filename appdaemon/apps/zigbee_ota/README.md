@@ -72,9 +72,11 @@ and widened in 2026-09 to every Z2M device.
   device publishes `online` again the retry is fast-tracked to
   `online_retry_grace_s`. Other failures use the same backoff without the
   fast-track.
-- **Safety valves** — an attempt that has not transferred a single byte after
-  `progress_stall_s` is abandoned and the device goes back in the queue as an
-  offline-type failure. That matters most for battery devices: Z2M counts a
+- **Safety valves** — an attempt *this app started* that has not transferred a
+  single byte after `progress_stall_s` is abandoned and the device goes back in
+  the queue as an offline-type failure. (An adopted update is never abandoned
+  early: Z2M's in-progress guard is per device, so starting something else
+  would put two transfers on the mesh.) That matters most for battery devices: Z2M counts a
   sleeping end-device as online for 25 hours, and without this it would hold
   the fleet's one slot for the full `update_timeout_s`. An attempt that *is*
   transferring gets more patience — it only raises a `stalled` flag after

@@ -424,14 +424,25 @@ class OtaCoordinator:
                     error=f"no terminal response after {int(self.update_timeout_s)}s",
                 )
             elif (
-                fl.progress is None
+                not fl.adopted
+                and fl.progress is None
                 and ts - fl.started_ts > self.progress_stall_s
             ):
-                # Never sent a single byte. A sleeping battery device Z2M still
-                # counts as online (its passive availability timeout is 25h)
-                # would otherwise hold the fleet's only slot for the full
-                # update_timeout_s. Offline-type, so the device is fast-tracked
-                # the moment it checks in again.
+                # Our request never sent a single byte. A sleeping battery
+                # device that Z2M still counts as online (its passive
+                # availability timeout is 25h) would otherwise hold the
+                # fleet's only slot for the full update_timeout_s.
+                #
+                # Never for an adopted update: Z2M's in-progress guard is per
+                # device, so abandoning one and starting another in the same
+                # tick would put two transfers on the mesh — the exact thing
+                # adoption exists to prevent. update_timeout_s is the backstop
+                # there, because an adopted update's terminal signal is the
+                # device's update object rather than a response we can match.
+                #
+                # Offline-type so the device is fast-tracked if its entity
+                # goes unavailable and comes back; otherwise it simply rejoins
+                # the queue on the normal backoff ladder.
                 self._finish_in_flight(
                     RESULT_OFFLINE,
                     error=(

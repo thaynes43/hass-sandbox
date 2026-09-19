@@ -874,3 +874,21 @@ def test_a_transfer_in_progress_keeps_the_slot_until_the_absolute_timeout() -> N
     assert coord.status()["in_flight"]["stalled"] is True
     clock.advance(900)
     assert coord.decide() is not None  # absolute timeout takes over
+
+
+def test_an_adopted_update_is_never_abandoned_early() -> None:
+    """Z2M's in-progress guard is per device: dropping an adopted update and
+    starting another would put two transfers on the mesh at once."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100, update_timeout_s=1000)
+    snap = snapshot("hue_b")
+    snap["update.hue_c"] = entity("hue_c", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"]["adopted"] is True
+    clock.advance(101)  # no progress published yet
+    assert coord.decide() is None  # hue_b must NOT start
+    assert coord.status()["in_flight"]["device"] == "hue_c"
+    # The absolute timeout is still the backstop.
+    clock.advance(900)
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
