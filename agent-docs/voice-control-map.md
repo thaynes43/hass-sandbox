@@ -144,22 +144,25 @@ voice currently has the `cover.*` groups, which can open/close but have no spoke
 **tilt-open — the everyday morning position**. Upstairs 1x = tilt-open, 2x = open (inverted vs
 downstairs).
 
-Hold scripts for voice should be the deterministic pair, not the toggle:
-`script.inovelli_set_mmwave_hold_led_indicator` / `script.inovelli_clear_mmwave_hold_restore_led_indicator`
-(omit `hold_color` on clear so a wall hold can be released). Holds never expire. Rooms with a
+Holds (reference only — Tom ruled on 2026-09-19 that voice gets **no hold tools**; the one
+possible exception, the hot-tub flood light, is an open question in the plan): the deterministic
+pair is `script.inovelli_set_mmwave_hold_led_indicator` /
+`script.inovelli_clear_mmwave_hold_restore_led_indicator` (omit `hold_color` on clear so a wall
+hold can be released); the wall buttons use the toggle script. Holds never expire. Rooms with a
 hold: primary hall, closet, vanity, shower, water closet, laundry, kids vanity. The motion-cleared
-automations re-read the LED number themselves, so a voice hold must paint the LEDs, not just
-disable automations.
+automations re-read the LED number themselves, so anything that holds must paint the LEDs, not
+just disable automations.
 
 **Never expose `switch.upstairs_*_scene_controller`** — the ZEN32 relay is line power to the
 Modern Forms fan module.
 
-Wrong handles currently exposed (Tom's own earlier picks — needs his ruling):
-`light.primary_bedroom_nightstand_lights` (HA group; everything else drives the Z2M group
-`light.upstairs_primary_nightstand_lights`), `light.primary_suite_lights` carrying the aliases
-"Bedroom lights" (it is cloffice + bed + bath + hall + closet, without nook/nightstands),
-`light.upstairs_primary_bath_lights` aliased as the whole bathroom (it is 1 of 4 loads).
-`media_player.blue_room_lg_tv` ("Jackson's TV") and `media_player.kids_bathroom` are exposed
+Wrong handles found on 2026-09-18 — all three corrected on Tom's rulings (2026-09-18/19):
+"nightstand lights" moved from the HA group to the Z2M group
+`light.upstairs_primary_nightstand_lights`; "bedroom lights" is the new HA group
+`light.primary_bedroom_lights` (ceiling + nook + nightstands) instead of an alias on the
+five-room suite group; `light.upstairs_primary_bath_lights` now answers only to "bathroom
+recessed lights", and the whole bathroom is the `voice_primary_bathroom_lights_on/_off` pair.
+Still open: `media_player.blue_room_lg_tv` ("Jackson's TV") and `media_player.kids_bathroom` are exposed
 house-wide.
 
 Defects found (open): `script.single_button_dimming_start/_stop` unavailable since the
