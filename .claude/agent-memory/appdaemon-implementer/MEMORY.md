@@ -14,7 +14,7 @@ detail there, never inline here.
 
 - [Testing discipline](appdaemon-testing-discipline.md) — mutation-check every new test; give mocked `run_in`/`create_task` distinct handles; never encode a sequence the producer cannot emit
 - [health_checks test idioms](health-checks-test-idioms.md) — bridge/controller helpers, async `call_service`, `create_task` coroutines that never run, capturing the bridge snapshot
-- Run the suite: `source <a venv>/bin/activate && cd appdaemon && python -m pytest tests/ -q --tb=short` — ~3 min, so run it in the background. Agent worktrees have no `.venv`; borrow one from another worktree
+- Run the suite: `source <a venv>/bin/activate && cd appdaemon && python -m pytest tests/ -q --tb=short` — ~3 min, so run it in the background. Agent worktrees have no `.venv`, and neither does `~/repos/hass-sandbox` — borrow one from another `~/work/hass-sandbox-*/` worktree
 - Suite size: 3841 passed + 6 integration-skipped as of `assist_exposure_guard` (2026-09-18)
 
 ## Per-app / per-provider notes

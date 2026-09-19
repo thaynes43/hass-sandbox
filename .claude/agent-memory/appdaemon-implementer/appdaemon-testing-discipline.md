@@ -19,6 +19,13 @@ return code is non-zero. 16 mutations over the photo-frame change ran in ~3 s
 total; 21 over `assist_exposure_guard` ran in ~4 s. It has caught a real
 missing `switch_allowlist` check and a wrong-timer cancel.
 
+**Shell gotcha when scripting one:** in this pod only `python3` is on PATH
+outside a venv. A compound command that mutates a file with a `python - <<EOF`
+heredoc *before* `source .../activate` dies with `python: command not found`,
+the mutation never lands, and the pytest run that follows passes — looking like
+the test failed to detect the break. Use `python3` for the mutation step, and
+check the mutation actually applied (grep the line) before trusting the result.
+
 ## Mocked `run_in`/`create_task` returning one shared handle hides cancel bugs
 
 `MagicMock()` returns the **same** `return_value` for every call, so two
