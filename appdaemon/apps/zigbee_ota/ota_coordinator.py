@@ -94,8 +94,11 @@ def _at(ts: float) -> str:
     Absolute, never a countdown: Home Assistant writes a recorder row every
     time an attribute changes, and a countdown changes on every tick by
     definition. "Retrying at 14:32" is also easier to read than "in 871s".
+
+    Timezone-aware, because a naive string reads as UTC in a Home Assistant
+    template and can't be compared with ``now()``.
     """
-    return datetime.fromtimestamp(ts).isoformat(timespec="seconds")
+    return datetime.fromtimestamp(ts).astimezone().isoformat(timespec="seconds")
 
 
 @dataclass
@@ -165,9 +168,10 @@ class OtaCoordinator:
         """
         self._known_z2m_devices = set(friendly_names)
 
-    def set_z2m_entities(self, entity_ids: set[str]) -> None:
+    def set_z2m_entities(self, entity_ids: set[str]) -> bool:
         """The authoritative set of Zigbee2MQTT ``update.*`` entity ids, read
-        from Home Assistant on every tick.
+        from Home Assistant on every tick. Returns False when the answer was
+        rejected and the previous list is still in force.
 
         An empty answer where devices were known before is treated as a failed
         lookup, not as an empty fleet: the mqtt config entry still setting up
@@ -179,9 +183,10 @@ class OtaCoordinator:
             self.mark_identity_unavailable(
                 "Home Assistant reported no Zigbee2MQTT update entities"
             )
-            return
+            return False
         self._z2m_entity_ids = fresh
         self._identity_stale = None
+        return True
 
     def mark_identity_unavailable(self, reason: str) -> None:
         """The Home Assistant lookup failed this tick. Keep the last known-good
@@ -256,8 +261,14 @@ class OtaCoordinator:
                 # switched off at the wall, a Home Assistant restart). That
                 # says nothing about the firmware, so keep everything we know
                 # — the queue entry, its backoff, its no-image park — and wait.
+                # Home Assistant is also the reliable feed for the offline
+                # gate: the retained availability topics are delivered to the
+                # MQTT plugin before this app has a listener, so a device that
+                # was already offline at startup has no MQTT record at all.
+                self.set_availability(friendly, False)
                 seen.add(friendly)
                 continue
+            self.set_availability(friendly, True)
             if state != "on":
                 # Nothing is on offer any more, so nothing is being skipped.
                 self._no_image.pop(friendly, None)
@@ -555,9 +566,9 @@ class OtaCoordinator:
         """The status-sensor payload.
 
         Every attribute change writes a Home Assistant recorder row, so the
-        lists are capped (with a count beside them) and the countdowns are
-        rounded to the minute — otherwise a 163-device fleet writes a
-        multi-kB row on every tick just because a timer ticked down.
+        lists are capped (with a count beside them) and every schedule is an
+        absolute time rather than a countdown — otherwise a 163-device fleet
+        writes a multi-kB row on every tick just because a timer ticked down.
         """
         ts = self.now()
         cooldown = sorted(

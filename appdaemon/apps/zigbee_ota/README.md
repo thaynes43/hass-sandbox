@@ -49,8 +49,10 @@ and widened in 2026-09 to every Z2M device.
   Home Assistant restart). Only an explicit `off` means the update went away;
   `unavailable` and `unknown` leave the queue entry, its backoff and any
   no-image park exactly as they were.
-- **Offline devices** (bulbs without power) — skipped while their retained
-  `zigbee2mqtt/<device>/availability` topic says `offline`. A failed attempt
+- **Offline devices** (bulbs without power) — skipped while Home Assistant
+  reports the update entity `unavailable` or the retained
+  `zigbee2mqtt/<device>/availability` topic says `offline`. Home Assistant is
+  the feed that is always there; MQTT is the faster one. A failed attempt
   classified as offline-type (`timeout` / `didn't respond`) backs off
   exponentially (`retry_base_s` doubling to `retry_max_s`), but the moment the
   device publishes `online` again the retry is fast-tracked to

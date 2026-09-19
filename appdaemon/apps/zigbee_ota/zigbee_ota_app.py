@@ -175,18 +175,17 @@ class ZigbeeOtaOrchestrator(hass.Hass):
                 reason = "Zigbee2MQTT device list unavailable from Home Assistant"
                 self._coordinator.mark_identity_unavailable(reason)
                 self.log("%s — starting nothing this tick" % reason, level="WARNING")
-            else:
-                if not z2m_entities:
-                    self.log(
-                        "Home Assistant reported no Zigbee2MQTT update entities",
-                        level="WARNING",
-                    )
-                if len(z2m_entities) != self._last_z2m_count:
-                    self._last_z2m_count = len(z2m_entities)
-                    self.log(
-                        "Managing %d Zigbee2MQTT update entities" % self._last_z2m_count
-                    )
-                self._coordinator.set_z2m_entities(z2m_entities)
+            elif not self._coordinator.set_z2m_entities(z2m_entities):
+                self.log(
+                    "Home Assistant reported no Zigbee2MQTT update entities; "
+                    "keeping the last known list and starting nothing",
+                    level="WARNING",
+                )
+            elif len(z2m_entities) != self._last_z2m_count:
+                self._last_z2m_count = len(z2m_entities)
+                self.log(
+                    "Managing %d Zigbee2MQTT update entities" % self._last_z2m_count
+                )
             # Domain queries can't combine with attribute="all" in AppDaemon,
             # so take the full state dump and filter to update.* ourselves.
             snapshot = await self.get_state() or {}

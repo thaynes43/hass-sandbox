@@ -278,7 +278,9 @@ def test_offline_error_marks_offline_and_online_event_fast_tracks_retry() -> Non
         }
     )
     assert coord.decide() is None  # 900s cooldown
-    # Bulb regains power: retry collapses to the online grace window.
+    refresh(coord, snapshot("hue_a", state="unavailable"))
+    # Bulb regains power: the retained MQTT message beats Home Assistant's
+    # entity state, and the retry collapses to the online grace window.
     assert coord.set_availability("hue_a", True) is True
     clock.advance(61)
     retry = coord.decide()
@@ -637,13 +639,13 @@ def test_unavailable_entity_keeps_its_queue_entry_and_backoff() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    coord.set_availability("hue_a", False)
     assert coord.status()["cooldown"][0]["attempts"] == 1
 
+    # No MQTT availability message needed: the entity state is the feed.
     refresh(coord, snapshot("hue_a", state="unavailable"))
     status = coord.status()
     assert status["cooldown"][0]["attempts"] == 1  # backoff survived
-    assert status["offline"] == ["hue_a"]  # still visible as offline
+    assert status["offline"] == ["hue_a"]  # visible as offline
     assert status["completed_this_run"] == []
     assert status["cleared_without_update"] == []
     assert coord.decide() is None
@@ -676,3 +678,48 @@ def test_whole_fleet_unavailable_keeps_the_queue() -> None:
     status = coord.status()
     assert status["remaining"] == 2
     assert status["cleared_without_update"] == []
+
+
+def test_unavailable_entity_is_never_selected_without_an_mqtt_message() -> None:
+    """The retained availability topics reach the MQTT plugin before this app
+    has a listener and are never replayed, so a device that goes offline
+    unseen must still be gated — Home Assistant's entity state is the feed."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="unavailable")
+    refresh(coord, snap)
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_b"
+    assert coord.status()["offline"] == ["hue_a"]
+
+
+def test_entity_becoming_available_again_fast_tracks_an_offline_retry() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device didn't respond to OTA request (timeout)",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    refresh(coord, snapshot("hue_a", state="unavailable"))
+    assert coord.decide() is None
+    refresh(coord, snapshot("hue_a"))  # powered back on
+    clock.advance(61)
+    retry = coord.decide()
+    assert retry is not None and retry.friendly_name == "hue_a"
+
+
+def test_absolute_times_carry_a_utc_offset() -> None:
+    """A naive string reads as UTC in a Home Assistant template."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a"))
+    coord.decide()
+    started = coord.status()["in_flight"]["started_at"]
+    assert started[-6] in "+-" or started.endswith("Z")

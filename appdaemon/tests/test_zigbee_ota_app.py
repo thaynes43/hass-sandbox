@@ -242,28 +242,35 @@ def test_ota_response_routes_to_coordinator_and_triggers_next() -> None:
 
 
 def test_availability_json_and_plain_payloads() -> None:
-    app = _make_app(update_snapshot={"update.hue_a": _entity("hue_a")})
-    _run(
-        app._on_mqtt_message(
-            "MQTT_MESSAGE",
-            {
-                "topic": "zigbee2mqtt/hue_a/availability",
-                "payload": json.dumps({"state": "offline"}),
-            },
-            {},
-        )
+    """Both retained payload shapes are understood. MQTT is the fast feed;
+    Home Assistant's entity state is the one that is always there."""
+    app = _make_app(
+        update_snapshot={
+            "update.hue_a": _entity("hue_a"),
+            "update.hue_b": _entity("hue_b"),
+        }
     )
-    _run(app._tick({}))
-    assert _published_requests(app) == []  # offline device is skipped
-    _run(
-        app._on_mqtt_message(
-            "MQTT_MESSAGE",
-            {"topic": "zigbee2mqtt/hue_a/availability", "payload": "online"},
-            {},
+    _run(app._tick({}))  # hue_a in flight, hue_b queued
+    for offline_payload in (json.dumps({"state": "offline"}), "offline"):
+        _run(
+            app._on_mqtt_message(
+                "MQTT_MESSAGE",
+                {
+                    "topic": "zigbee2mqtt/hue_b/availability",
+                    "payload": offline_payload,
+                },
+                {},
+            )
         )
-    )
-    _run(app._tick({}))
-    assert len(_published_requests(app)) == 1
+        assert app._coordinator.status()["offline"] == ["hue_b"]
+        _run(
+            app._on_mqtt_message(
+                "MQTT_MESSAGE",
+                {"topic": "zigbee2mqtt/hue_b/availability", "payload": "online"},
+                {},
+            )
+        )
+        assert app._coordinator.status()["offline"] == []
 
 
 def test_device_state_update_obj_feeds_progress() -> None:
