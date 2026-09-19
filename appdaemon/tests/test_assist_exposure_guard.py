@@ -152,6 +152,7 @@ def test_other_integrations_are_untouched() -> None:
         "switch.front_door_camera_privacy_mode",
         "switch.garage_camera_detections_person",
         "switch.ratgdov25i_4a0325_led",
+        "light.ratgdov25i_4a0325_light",
         "switch.spa_intouch3_switch",
         "switch.nrz120804q_config_led",
     ],

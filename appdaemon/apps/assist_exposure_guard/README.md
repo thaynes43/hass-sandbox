@@ -174,6 +174,7 @@ deny_entity_globs:
   - "switch.*_privacy_mode"
   - "switch.*_detections_*"
   - "switch.ratgdov25i_*"
+  - "light.ratgdov25i_*"
   - "switch.spa_intouch3_switch"
   - "switch.nrz120804q_*"
 switch_allowlist: []

@@ -84,6 +84,8 @@ DEFAULT_DENY_ENTITY_GLOBS: Tuple[str, ...] = (
     "switch.*_privacy_mode",
     "switch.*_detections_*",
     "switch.ratgdov25i_*",
+    # Garage opener bulbs: `light` is an allowed domain, but these are part of the opener.
+    "light.ratgdov25i_*",
     "switch.spa_intouch3_switch",
     "switch.nrz120804q_*",
 )

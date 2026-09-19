@@ -148,25 +148,40 @@ Voice may **ask** and may move things in the **secure direction only**:
   and `script.voice_close_garage_doors` — each with a `description:` written for the model and
   no fields. No unlock, open, disarm, pool/spa, oven or PDU script is ever exposed.
 
-### Ruling 2 — workflow: agent curates per room, Tom approves, a guard enforces
+### Ruling 2 — workflow: agent curates, Tom approves, a guard enforces
 
-1. Per room the agent proposes a list under the rules below; Tom approves it in one
-   `AskUserQuestion`; the agent applies it with one `homeassistant/expose_entity` call and sets
-   spoken aliases. Order: Primary Bedroom suite, Kitchen, Rumpus Room, Movie Room, then the
-   remaining rooms.
-2. What gets exposed: room-level light groups (single fixtures only when they have a spoken
-   identity of their own, e.g. "Tom's nightstand"), fans, the room-level `cover.*_shades`
-   roll-ups (not individual shades), the two Ecobees and the fan "breeze" climates, one Music
-   Assistant speaker per room plus TVs that have a real name and area, room-mode scripts, and a
-   room temperature/humidity sensor. Every exposed entity gets an area and at least one spoken
-   alias; vague aliases ("Night", "Lamp") are replaced.
-3. Housekeeping first: remove the four dead exposures
-   (`binary_sensor.den_window_window_door_is_open_2`, three disabled `hey_regina` entities).
-4. **AppDaemon guard** (`assist_exposure_guard`, new app): on a schedule and on entity-registry
-   changes, list exposed entities, apply the deny rules above (domains, garage-class covers,
-   integrations, name patterns, deny-by-default switches with an explicit allowlist in the app
-   YAML), un-expose violators and notify Tom. It is the backstop against a future
-   "expose everything in this area" click.
+Corrected by Tom on 2026-09-18 after a proposal that batched Kitchen + Rumpus + Movie Room from
+raw area listings: **one floor at a time, slowly, and map what already controls things first**
+so the voice vocabulary is the one humans already use. Concepts, not entities: a concept the
+buttons treat as one thing (Movie Room "ambient lights" = gradients + floor lamps + play bars)
+is one voice handle, and looks/modes are **zero-argument `script.voice_*` scripts that call
+exactly what the scene-controller button calls**. Voice on/off behaves like the paddle —
+automations keep running; "hold" is its own script mirroring Config 2x.
+
+1. Per floor: subagents map physical controls → human concepts → automation ownership (what
+   turns it on/off, off-delays, hold helpers). Maps live in `agent-docs/voice-control-map.md`.
+2. The agent proposes that floor's concepts in one `AskUserQuestion`; on approval it creates the
+   `script.voice_*` tools live (mirrored under `home-assistant/scripts/voice/`), exposes the
+   handles, and sets spoken aliases. An alias list without the `null` entry drops the machine
+   name from what the model sees, without renaming anything in the UI.
+3. Never exposed regardless of floor: staircases, storage, zero-delay motion lights, the
+   satellites' own LED/mute/media entities, duplicate AVR/KEF registrations (music phase).
+4. Housekeeping done: four dead exposures removed; areas and floors now have spoken aliases
+   ("Bedroom", "Living room", "Upstairs", "Downstairs", …) — without them "the bedroom" did not
+   resolve and every temperature question fell through to the LLM.
+5. **AppDaemon guard** (`assist_exposure_guard`): on a schedule and on entity-registry changes,
+   list exposed entities, apply the deny rules above (domains, garage-class covers,
+   integrations, name patterns, deny-by-default switches and scripts with allowlists in the
+   app YAML), un-expose violators and notify Tom.
+
+### Progress
+
+| Floor | State |
+|---|---|
+| Second floor — primary suite | **Applied 2026-09-18** (Tom approved): + `climate.second_floor_ecobee`, `cover.primary_bedroom_shades`, `cover.1_6`, `cover.cloffice_shade_combined`, bedroom humidity, `media_player.primary_bedroom_lg_tv`; fan/nightstand aliases fixed. "What is the temperature in the bedroom" now answers locally in 0.05 s. Rest of the floor (kids' rooms etc.) waits for its map. |
+| Basement | **Applied 2026-09-18** (Tom approved): kept recessed/ambient/TV/Shield/Sonos/AC; + rumpus lamp, `climate.rumpus_room_breeze`, concessions + hall lights; ten `script.voice_{movie,rumpus}_room_*` tools (bright, dim, red night mode, ambient scene, color toggle, hold lights). Verified read-only (someone was watching a movie): the Movie Room agent lists all six tools correctly. **Not yet exercised by voice.** |
+| First floor | mapped by subagent, proposal pending |
+| Exterior | mapped; proposal pending. Needs: 6 read-only lock/garage mirror sensors, `script.voice_lock_all_doors` (ruling needed: the mudroom↔garage door is *expected unlocked* by the house's own lock-status logic), `script.voice_close_garage_doors`, a front-yard landscape handle; patio/shed lights are `switch.*` and need guard allowlist entries; the back-yard spotlight is fought by its auto-off unless held. |
 
 ### Known defects to fix while executing
 

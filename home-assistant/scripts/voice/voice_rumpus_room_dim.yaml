@@ -1,0 +1,17 @@
+# script.voice_rumpus_room_dim — voice tool exposed to Assist (created live via MCP, 2026-09-18).
+# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Rumpus Room Dim
+description: Voice tool. Sets the Rumpus Room recessed lights and the lamp to 50% warm white (2750 K).
+  Same as double-tapping button 2 on the Rumpus Room scene controller. Use for 'dim the lights', 'half
+  brightness' or 'lights down' in the rumpus room.
+icon: mdi:brightness-4
+mode: single
+sequence:
+- action: light.turn_on
+  target:
+    entity_id:
+    - light.basement_rumpus_room_lights
+    - light.basement_rumpus_room_lamp
+  data:
+    color_temp_kelvin: 2750
+    brightness_pct: 50
