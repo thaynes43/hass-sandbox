@@ -102,6 +102,10 @@ class AssistExposureClient:
         match on.  Entities that exist only as state (no registry entry) are
         absent; callers should default them to an empty platform.
 
+        Ids are normalised (``strip().lower()``, de-duplicated) before the
+        request and the returned dict is keyed by the NORMALISED id — callers
+        must look results up with the same normalisation.
+
         Uses ``config/entity_registry/get_entries`` for just these ids, in
         chunks: ``config/entity_registry/list`` returns the WHOLE registry,
         which on this instance (~15k entities) is a 9.5 MB frame — over the

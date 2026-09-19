@@ -113,12 +113,13 @@ positive costs a human a manual re-exposure in the HA UI:
   it. It also means a garage opener that ships *no* `device_class` is invisible
   to rule 3 — add it to `deny_entity_globs` or `deny_domains` instead.
 - **An entity with no registry entry has no `platform`**, so `deny_integrations`
-  cannot match it. The same holds for an exposed id that is not a well-formed
-  `domain.object_id`: it is left out of the registry request (HA validates the
-  id list all-or-nothing) and logged at WARNING; the domain, glob and
-  deny-by-default rules still apply to it. Every integration-backed entity has one; entities created
-  purely in state (template sensors defined in YAML, `set_state` virtual
+  cannot match it. Every integration-backed entity has a registry entry; entities
+  created purely in state (template sensors defined in YAML, `set_state` virtual
   sensors) do not.
+- **A malformed exposed id has no `platform` either.** An id that is not a
+  well-formed `domain.object_id` is left out of the registry request (HA
+  validates the id list all-or-nothing) and logged at WARNING; the domain, glob
+  and deny-by-default rules still apply to it.
 
 ## Notifications
 
