@@ -34,6 +34,7 @@ environment variable holding it.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, Iterable, List
 
 from .ha_rest_client import HaRestClient
@@ -44,8 +45,16 @@ logger = logging.getLogger(__name__)
 CONVERSATION_ASSISTANT = "conversation"
 
 
-#: Registry entries requested per WebSocket call (an extended entry is ~1-2 KB).
+#: Registry entries requested per WebSocket call (an extended entry is ~1-2 KB,
+#: so 200 stays far below the 4 MB frame limit).  Each call opens and
+#: authenticates its own WebSocket, so do not shrink this without reason: the
+#: cost of a smaller chunk is one more connection per chunk, every check.
 REGISTRY_CHUNK_SIZE = 200
+
+#: HA validates ``entity_ids`` all-or-nothing, so one malformed id would fail the
+#: whole chunk — and with it the whole check.  Ids that do not look like
+#: ``domain.object_id`` are skipped here instead (they get an empty platform).
+_ENTITY_ID_RE = re.compile(r"^(?!.+__)(?!_)[\da-z_]+(?<!_)\.(?!_)[\da-z_]+(?<!_)$")
 
 class AssistExposureClient:
     """Authenticated client for HA's voice-assistant exposure WebSocket API."""
@@ -95,7 +104,13 @@ class AssistExposureClient:
         which on this instance (~15k entities) is a 9.5 MB frame — over the
         WebSocket client's 4 MB limit (the v1.18.0 startup failure).
         """
-        ids = [str(entity_id).strip() for entity_id in entity_ids if str(entity_id).strip()]
+        ids = list(
+            dict.fromkeys(
+                text
+                for text in (str(entity_id).strip().lower() for entity_id in entity_ids)
+                if _ENTITY_ID_RE.match(text)
+            )
+        )
         platforms: Dict[str, str] = {}
         for offset in range(0, len(ids), REGISTRY_CHUNK_SIZE):
             chunk = ids[offset : offset + REGISTRY_CHUNK_SIZE]

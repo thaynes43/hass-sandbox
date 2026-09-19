@@ -183,6 +183,18 @@ def test_list_entity_platforms_requests_in_bounded_chunks(monkeypatch) -> None:
     assert len(platforms) == len(ids) and platforms[ids[-1]] == "mqtt"
 
 
+def test_list_entity_platforms_skips_malformed_ids_instead_of_failing_the_chunk(monkeypatch) -> None:
+    """HA validates entity_ids all-or-nothing; one bad id must not fail the whole check."""
+    fake = _FakeHaRestClient(_ok({"light.kitchen": {"platform": "hue"}}))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake):
+        platforms = _run(
+            client.list_entity_platforms(["light.kitchen", "not an id", "nodomain", "light.", ".x", "Light.Kitchen "])
+        )
+    assert platforms == {"light.kitchen": "hue"}
+    assert fake.sent[0]["entity_ids"] == ["light.kitchen"]  # normalised and de-duplicated
+
+
 def test_list_entity_platforms_with_nothing_exposed_sends_nothing(monkeypatch) -> None:
     fake = _FakeHaRestClient(_ok({}))
     client = _make_client(monkeypatch)

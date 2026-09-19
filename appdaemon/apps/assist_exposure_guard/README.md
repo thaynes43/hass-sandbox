@@ -32,8 +32,10 @@ area" is one click. This app is the backstop for that click (owner ruling,
    `registry_debounce_s` — whenever HA fires `entity_registry_updated`, list
    the entities exposed to the `conversation` assistant with the admin
    WebSocket command `homeassistant/expose_entity/list`.
-2. Fetch the entity registry (`config/entity_registry/list`) for each entity's
-   `platform` (the supplying integration), and read `device_class` from state
+2. Fetch the registry entries of **those entities only**
+   (`config/entity_registry/get_entries` — the whole registry is too large for
+   one WebSocket frame here) for each entity's `platform` (the supplying
+   integration), and read `device_class` from state
    for `cover.*` entities only (the registry's partial dict does not carry it,
    and `cover` is the only domain with a device-class rule).
 3. Evaluate every exposed entity against the deny rules in `rules.py` — a pure
