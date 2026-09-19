@@ -203,18 +203,39 @@ def test_switch_allowlist_permits_a_named_switch() -> None:
     assert evaluate_entity(ExposedEntity("switch.other_thing"), rules) is not None
 
 
-@pytest.mark.parametrize(
-    "entity_id",
-    [
-        "script.voice_lock_all_doors",
-        "script.voice_close_garage_doors",
-        "script.llm_script_for_music_assistant_voice_requests",
-        "script.kellie_mobile_primary_bedroom_bedtime",
-        "script.kellie_mobile_primary_bedroom_sleep",
-    ],
+CURATED_SCRIPTS = (
+    "script.voice_movie_room_bright",
+    "script.voice_movie_room_dim",
+    "script.voice_movie_room_red_night_mode",
+    "script.voice_movie_room_ambient_scene",
+    "script.voice_movie_room_color_toggle",
+    "script.voice_movie_room_hold_lights",
+    "script.voice_rumpus_room_bright",
+    "script.voice_rumpus_room_dim",
+    "script.voice_rumpus_room_color_toggle",
+    "script.voice_rumpus_room_hold_lights",
+    "script.voice_shades",
+    "script.llm_script_for_music_assistant_voice_requests",
+    "script.kellie_mobile_primary_bedroom_relaxed",
+    "script.kellie_mobile_primary_bedroom_focused",
+    "script.kellie_mobile_primary_bedroom_bedtime",
+    "script.kellie_mobile_primary_bedroom_sleep",
 )
+
+
+@pytest.mark.parametrize("entity_id", CURATED_SCRIPTS)
 def test_allowlisted_scripts_stay_exposed(entity_id: str) -> None:
     assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
+
+
+def test_the_shipped_script_allowlist_is_exactly_the_curated_set() -> None:
+    assert DEFAULT_RULES.script_allowlist_globs == CURATED_SCRIPTS
+
+
+def test_the_shipped_script_allowlist_contains_no_patterns() -> None:
+    """A glob would make a filename the security boundary — see README."""
+    for entry in DEFAULT_RULES.script_allowlist_globs:
+        assert not any(ch in entry for ch in "*?["), entry
 
 
 @pytest.mark.parametrize(
@@ -224,7 +245,13 @@ def test_allowlisted_scripts_stay_exposed(entity_id: str) -> None:
         "script.disarm_alarm",
         "script.unlock_front_door",
         "script.kellie_mobile_kitchen_bedtime",
-        "script.voicemail_check",  # 'voice_' prefix must not match 'voicemail'
+        "script.voicemail_check",
+        # A new script named to look curated must NOT be allowed: the list is
+        # the boundary, not the filename.
+        "script.voice_anything",
+        "script.voice_lock_all_doors",
+        "script.voice_movie_room_bright_2",
+        "script.kellie_mobile_primary_bedroom_party",
     ],
 )
 def test_non_allowlisted_scripts_are_violations(entity_id: str) -> None:
@@ -234,9 +261,10 @@ def test_non_allowlisted_scripts_are_violations(entity_id: str) -> None:
 
 
 def test_script_allowlist_globs_are_configurable() -> None:
+    """The key stays fnmatch-capable even though the default uses no patterns."""
     rules = GuardRules.from_config({"script_allowlist_globs": ["script.ok_*"]})
     assert evaluate_entity(ExposedEntity("script.ok_thing"), rules) is None
-    assert evaluate_entity(ExposedEntity("script.voice_lock_all_doors"), rules) is not None
+    assert evaluate_entity(ExposedEntity("script.voice_shades"), rules) is not None
 
 
 @pytest.mark.parametrize(
@@ -392,6 +420,8 @@ def _make_app(
     extra_args: Optional[Dict[str, Any]] = None,
     client: Optional[FakeExposureClient] = None,
     device_classes: Optional[Dict[str, str]] = None,
+    build_client_error: Optional[Exception] = None,
+    seed_attributes: Optional[Dict[str, Any]] = None,
 ) -> AssistExposureGuard:
     app = AssistExposureGuard(MagicMock(), MagicMock())
     args = dict(BASE_ARGS)
@@ -400,12 +430,18 @@ def _make_app(
     app.args = args
 
     classes = dict(device_classes or {})
+    sensor = str(args.get("status_sensor", "sensor.assist_exposure_guard"))
+
+    def _get_state(entity_id: str, **kwargs: Any) -> Any:
+        # Startup reads the status sensor back to recover the enforcement
+        # record; everything else is a cover device_class read.
+        if entity_id == sensor:
+            return {"attributes": dict(seed_attributes)} if seed_attributes else None
+        return classes.get(entity_id)
 
     # AWAITED in the app — an AsyncMock, never a bare MagicMock, or the await
     # raises and every assertion below passes for the wrong reason.
-    app.get_state = AsyncMock(
-        side_effect=lambda entity_id, **kwargs: classes.get(entity_id)
-    )
+    app.get_state = AsyncMock(side_effect=_get_state)
     app.set_state = MagicMock()
     app.call_service = MagicMock()
     app.listen_event = MagicMock()
@@ -419,7 +455,13 @@ def _make_app(
     app.log = MagicMock()
 
     app.initialize()
-    app._build_client = lambda: client if client is not None else FakeExposureClient()
+
+    def _build() -> Any:
+        if build_client_error is not None:
+            raise build_client_error
+        return client if client is not None else FakeExposureClient()
+
+    app._build_client = _build
     return app
 
 
@@ -429,6 +471,23 @@ def _startup(app: AssistExposureGuard) -> None:
 
 def _service_calls(app: AssistExposureGuard, service: str) -> List[Any]:
     return [call for call in app.call_service.call_args_list if call.args[0] == service]
+
+
+def _creates(app: AssistExposureGuard, notification_id: str) -> List[Any]:
+    return [
+        call
+        for call in _service_calls(app, "persistent_notification/create")
+        if call.kwargs["notification_id"] == notification_id
+    ]
+
+
+def _device_class_reads(app: AssistExposureGuard) -> List[str]:
+    """Cover reads only — drop the startup read of the status sensor."""
+    return [
+        call.args[0]
+        for call in app.get_state.call_args_list
+        if call.args[0] != app._status_sensor
+    ]
 
 
 def _published_attributes(app: AssistExposureGuard) -> Dict[str, Any]:
@@ -472,6 +531,71 @@ def test_startup_registers_the_registry_listener_and_timer_then_checks() -> None
     # The startup check ran: a status sensor was published.
     app.set_state.assert_called_once()
     assert app.set_state.call_args.kwargs["state"] == "1"
+
+
+# --- finding 2: a bad client must not leave the guard inert and silent -----
+
+
+def test_a_failing_client_build_still_wires_the_triggers() -> None:
+    """The regression this guards.
+
+    Building the client during startup means a bad token aborts before
+    listen_event/run_every run — the guard is then permanently inert AND
+    invisible, the worst failure mode a security backstop has.
+    """
+    app = _make_app(build_client_error=ValueError("Required secret env var 'TOKEN'"))
+    _startup(app)
+
+    app.listen_event.assert_called_once_with(
+        app._on_registry_updated, "entity_registry_updated"
+    )
+    app.run_every.assert_called_once_with(app._on_interval, "now+900", 900)
+
+
+def test_a_failing_client_build_reports_itself_and_does_not_raise() -> None:
+    app = _make_app(build_client_error=ValueError("Required secret env var 'TOKEN'"))
+    _startup(app)
+
+    assert app.set_state.call_args.kwargs["state"] == "unknown"
+    attributes = _published_attributes(app)
+    assert "Required secret env var" in attributes["last_error"]
+
+    failures = _creates(app, CURRENT_ID)
+    assert len(failures) == 1
+    assert failures[0].kwargs["title"] == "Assist exposure guard: check failed"
+    assert "NOT being enforced" in failures[0].kwargs["message"]
+    assert any(call.kwargs.get("level") == "ERROR" for call in app.log.call_args_list)
+
+
+def test_the_client_is_built_lazily_and_retried_on_the_next_tick() -> None:
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    attempts = {"n": 0}
+
+    def _build() -> Any:
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise ValueError("Required secret env var 'TOKEN' is not set.")
+        return client
+
+    app = _make_app()
+    app._build_client = _build
+    _startup(app)
+    assert app._client is None  # not latched into a dead state
+
+    _run(app._run_check("interval"))
+    assert attempts["n"] == 2
+    assert len(client.set_exposure_calls) == 1
+
+
+def test_a_built_client_is_reused_across_checks() -> None:
+    client = FakeExposureClient(exposed=["light.kitchen"])
+    builds = itertools.count()
+    app = _make_app()
+    app._build_client = lambda: (next(builds), client)[1]
+    _startup(app)
+    _run(app._run_check("interval"))
+
+    assert next(builds) == 1  # built exactly once
 
 
 # --- enforcement -----------------------------------------------------------
@@ -552,8 +676,10 @@ def test_cover_device_class_is_read_from_state_for_covers_only() -> None:
     )
     _startup(app)
 
-    read = [call.args[0] for call in app.get_state.call_args_list]
-    assert read == ["cover.garage_door", "cover.primary_bedroom_shades"]
+    assert _device_class_reads(app) == [
+        "cover.garage_door",
+        "cover.primary_bedroom_shades",
+    ]
     assert client.set_exposure_calls[0]["entity_ids"] == ["cover.garage_door"]
 
 
@@ -570,38 +696,136 @@ def test_unreadable_device_class_does_not_abort_the_run() -> None:
 # --- notifications ---------------------------------------------------------
 
 
-def test_notification_lists_entities_and_reasons_under_a_stable_id() -> None:
+ENFORCED_ID = "assist_exposure_guard_enforced"
+CURRENT_ID = "assist_exposure_guard"
+
+
+def test_enforcement_is_recorded_under_its_own_notification_id() -> None:
     client = FakeExposureClient(exposed=["lock.front_door", "script.open_the_garage"])
     app = _make_app(client=client)
     _startup(app)
 
-    creates = _service_calls(app, "persistent_notification/create")
-    assert len(creates) == 1
-    kwargs = creates[0].kwargs
-    assert kwargs["notification_id"] == "assist_exposure_guard"
-    assert kwargs["title"] == "Assist exposure guard: 2 unsafe entities"
+    assert _creates(app, CURRENT_ID) == []
+    records = _creates(app, ENFORCED_ID)
+    assert len(records) == 1
+    kwargs = records[0].kwargs
+    assert kwargs["title"] == "Assist exposure guard: un-exposed 2 entities"
     assert "lock.front_door" in kwargs["message"]
     assert "domain 'lock' is never exposed" in kwargs["message"]
     assert "script.open_the_garage" in kwargs["message"]
-    assert "Un-exposed from 'conversation'" in kwargs["message"]
+    assert "until you dismiss it" in kwargs["message"]
 
 
-def test_notification_title_is_singular_for_one_violation() -> None:
+def test_enforcement_record_is_singular_for_one_violation() -> None:
     app = _make_app(client=FakeExposureClient(exposed=["lock.front_door"]))
     _startup(app)
-    creates = _service_calls(app, "persistent_notification/create")
-    assert creates[0].kwargs["title"] == "Assist exposure guard: 1 unsafe entity"
+    assert (
+        _creates(app, ENFORCED_ID)[0].kwargs["title"]
+        == "Assist exposure guard: un-exposed 1 entity"
+    )
 
 
-def test_notification_truncates_a_bulk_exposure_but_keeps_an_exact_count() -> None:
+def test_enforcement_record_truncates_a_bulk_exposure_but_keeps_an_exact_count() -> None:
     locks = [f"lock.door_{i}" for i in range(MAX_DETAIL_LINES + 5)]
     app = _make_app(client=FakeExposureClient(exposed=locks))
     _startup(app)
 
-    kwargs = _service_calls(app, "persistent_notification/create")[0].kwargs
-    assert kwargs["title"] == f"Assist exposure guard: {len(locks)} unsafe entities"
+    kwargs = _creates(app, ENFORCED_ID)[0].kwargs
+    assert kwargs["title"] == (
+        f"Assist exposure guard: un-exposed {len(locks)} entities"
+    )
     assert "…and 5 more" in kwargs["message"]
     assert kwargs["message"].count("lock.door_") == MAX_DETAIL_LINES
+
+
+# --- finding 1: enforcement must not erase its own evidence ----------------
+
+
+def test_the_clean_recheck_that_enforcement_causes_keeps_the_record() -> None:
+    """The regression this guards.
+
+    set_exposure makes HA fire entity_registry_updated, which arms this app's
+    own debounce. The re-check finds a clean list — because the app just
+    cleaned it — and previously that dismissed the report and zeroed the
+    counts, deleting the only evidence anything happened.
+    """
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app(client=client)
+    _startup(app)
+
+    enforced_at = app._last_enforced
+    assert enforced_at != "never"
+    assert _creates(app, ENFORCED_ID)
+
+    # HA fires the registry event the un-expose caused; the debounce runs.
+    client.exposed = []
+    app.call_service.reset_mock()
+    app._on_registry_updated("entity_registry_updated", {"action": "update"}, {})
+    _run(app._on_debounced({}))
+
+    # The enforcement record is untouched…
+    dismissals = _service_calls(app, "persistent_notification/dismiss")
+    assert [call.kwargs["notification_id"] for call in dismissals] == [CURRENT_ID]
+    assert _creates(app, ENFORCED_ID) == []
+
+    # …and so are the durable attributes.
+    attributes = _published_attributes(app)
+    assert attributes["last_enforced"] == enforced_at
+    assert attributes["last_enforced_entities"] == "lock.front_door"
+    # while the current-state attributes correctly report a clean list
+    assert attributes["violations_last_run"] == "0"
+    assert attributes["violating_entities"] == "none"
+
+
+def test_durable_attributes_default_to_never_before_any_enforcement() -> None:
+    app = _make_app(client=FakeExposureClient(exposed=["light.kitchen"]))
+    _startup(app)
+    attributes = _published_attributes(app)
+    assert attributes["last_enforced"] == "never"
+    assert attributes["last_enforced_entities"] == "none"
+
+
+def test_a_second_enforcement_replaces_the_record_with_a_fresh_one() -> None:
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app(client=client)
+    _startup(app)
+    first = app._last_enforced
+
+    client.exposed = ["siren.alarm"]
+    app.call_service.reset_mock()
+    app._last_enforced = "2020-01-01T00:00:00+00:00"  # force a visible change
+    _run(app._run_check("interval"))
+
+    records = _creates(app, ENFORCED_ID)
+    assert len(records) == 1  # same id — replaces, never stacks
+    assert app._last_enforced != "2020-01-01T00:00:00+00:00"
+    assert app._last_enforced_entities == "siren.alarm"
+    # The body carries the NEW timestamp, not the one it replaced.
+    assert records[0].kwargs["message"].startswith(app._last_enforced)
+    assert "siren.alarm" in records[0].kwargs["message"]
+    assert "lock.front_door" not in records[0].kwargs["message"]
+    assert first != "never"
+
+
+def test_report_only_mode_uses_the_clearable_current_state_channel() -> None:
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app({"enforce": False}, client=client)
+    _startup(app)
+
+    assert _creates(app, ENFORCED_ID) == []
+    reports = _creates(app, CURRENT_ID)
+    assert len(reports) == 1
+    assert "enforce is off" in reports[0].kwargs["message"]
+
+    # Nothing was enforced, so the durable attributes stay empty…
+    assert _published_attributes(app)["last_enforced"] == "never"
+
+    # …and a later clean run clears this one, because it IS current state.
+    client.exposed = ["light.kitchen"]
+    app.call_service.reset_mock()
+    _run(app._run_check("interval"))
+    dismissals = _service_calls(app, "persistent_notification/dismiss")
+    assert [call.kwargs["notification_id"] for call in dismissals] == [CURRENT_ID]
 
 
 def test_no_violations_dismisses_a_notification_that_may_exist() -> None:
@@ -611,7 +835,7 @@ def test_no_violations_dismisses_a_notification_that_may_exist() -> None:
     assert _service_calls(app, "persistent_notification/create") == []
     dismissals = _service_calls(app, "persistent_notification/dismiss")
     assert len(dismissals) == 1
-    assert dismissals[0].kwargs["notification_id"] == "assist_exposure_guard"
+    assert dismissals[0].kwargs["notification_id"] == CURRENT_ID
 
 
 def test_a_second_clean_run_does_not_dismiss_again() -> None:
@@ -623,18 +847,63 @@ def test_a_second_clean_run_does_not_dismiss_again() -> None:
     assert _service_calls(app, "persistent_notification/dismiss") == []
 
 
-def test_violations_then_a_clean_run_dismisses_the_notification() -> None:
-    client = FakeExposureClient(exposed=["lock.front_door"])
-    app = _make_app(client=client)
+def test_the_enforcement_record_is_seeded_back_after_a_reload() -> None:
+    """An AppDaemon reload builds a new instance; the record must survive."""
+    app = _make_app(
+        client=FakeExposureClient(exposed=["light.kitchen"]),
+        seed_attributes={
+            "last_enforced": "2026-09-18T10:00:00-04:00",
+            "last_enforced_entities": "lock.front_door, siren.alarm",
+        },
+    )
     _startup(app)
-    assert len(_service_calls(app, "persistent_notification/create")) == 1
 
-    client.exposed = ["light.kitchen"]
-    app.call_service.reset_mock()
-    _run(app._run_check("interval"))
+    attributes = _published_attributes(app)
+    assert attributes["last_enforced"] == "2026-09-18T10:00:00-04:00"
+    assert attributes["last_enforced_entities"] == "lock.front_door, siren.alarm"
 
-    assert _service_calls(app, "persistent_notification/create") == []
-    assert len(_service_calls(app, "persistent_notification/dismiss")) == 1
+
+def test_seeding_survives_a_missing_or_unreadable_sensor() -> None:
+    app = _make_app(client=FakeExposureClient(exposed=["light.kitchen"]))
+    app.get_state = AsyncMock(side_effect=RuntimeError("no such entity"))
+    _startup(app)
+    assert _published_attributes(app)["last_enforced"] == "never"
+
+
+def test_seeding_ignores_a_sensor_with_no_previous_record() -> None:
+    app = _make_app(
+        client=FakeExposureClient(exposed=["light.kitchen"]),
+        seed_attributes={"last_enforced": "never", "violations_last_run": "0"},
+    )
+    _startup(app)
+    assert _published_attributes(app)["last_enforced"] == "never"
+
+
+def test_seeding_from_a_sensor_predating_the_record_keeps_never() -> None:
+    """A sensor written by an older version has no last_enforced key at all.
+
+    Seeding must not turn that absence into an empty string: AppDaemon keeps
+    empty strings, so the attribute would render blank instead of `never`.
+    """
+    app = _make_app(
+        client=FakeExposureClient(exposed=["light.kitchen"]),
+        seed_attributes={"violations_last_run": "0", "violating_entities": "none"},
+    )
+    _startup(app)
+    attributes = _published_attributes(app)
+    assert attributes["last_enforced"] == "never"
+    assert attributes["last_enforced_entities"] == "none"
+
+
+def test_seeding_recovers_the_time_even_when_the_entity_list_is_missing() -> None:
+    app = _make_app(
+        client=FakeExposureClient(exposed=["light.kitchen"]),
+        seed_attributes={"last_enforced": "2026-09-18T10:00:00-04:00"},
+    )
+    _startup(app)
+    attributes = _published_attributes(app)
+    assert attributes["last_enforced"] == "2026-09-18T10:00:00-04:00"
+    assert attributes["last_enforced_entities"] == "none"
 
 
 def test_mobile_notify_service_is_used_when_configured() -> None:
@@ -647,6 +916,91 @@ def test_mobile_notify_service_is_used_when_configured() -> None:
     pushes = _service_calls(app, "notify/mobile_app_toms_phone")
     assert len(pushes) == 1
     assert "lock.front_door" in pushes[0].kwargs["message"]
+
+
+def test_an_unchanged_report_only_finding_pushes_the_phone_once() -> None:
+    """The persistent notification refreshes every run; the phone must not.
+
+    A standing report-only finding (or a wedged HA) would otherwise buzz every
+    check_interval_minutes until the owner mutes the app — and a muted app
+    reports nothing at all.
+    """
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app(
+        {"enforce": False, "notify_service": "notify/phone"}, client=client
+    )
+    _startup(app)
+    assert len(_service_calls(app, "notify/phone")) == 1
+
+    _run(app._run_check("interval"))
+    _run(app._run_check("interval"))
+
+    # Still one push, but the persistent notification was refreshed each time.
+    assert len(_service_calls(app, "notify/phone")) == 1
+    assert len(_creates(app, CURRENT_ID)) == 3
+
+
+def test_a_changed_report_only_finding_pushes_again() -> None:
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app(
+        {"enforce": False, "notify_service": "notify/phone"}, client=client
+    )
+    _startup(app)
+
+    client.exposed = ["lock.front_door", "siren.alarm"]
+    _run(app._run_check("interval"))
+    assert len(_service_calls(app, "notify/phone")) == 2
+
+
+def test_a_finding_that_clears_and_returns_pushes_again() -> None:
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app(
+        {"enforce": False, "notify_service": "notify/phone"}, client=client
+    )
+    _startup(app)
+
+    client.exposed = ["light.kitchen"]
+    _run(app._run_check("interval"))
+    client.exposed = ["lock.front_door"]
+    _run(app._run_check("interval"))
+
+    assert len(_service_calls(app, "notify/phone")) == 2
+
+
+def test_a_repeating_check_failure_pushes_the_phone_once() -> None:
+    client = FakeExposureClient(list_error=RuntimeError("HA unreachable"))
+    app = _make_app({"notify_service": "notify/phone"}, client=client)
+    _startup(app)
+    _run(app._run_check("interval"))
+    _run(app._run_check("interval"))
+
+    assert len(_service_calls(app, "notify/phone")) == 1
+    assert len(_creates(app, CURRENT_ID)) == 3
+
+
+def test_a_different_check_failure_pushes_again() -> None:
+    """"HA unreachable" and "unauthorized" need different responses."""
+    client = FakeExposureClient(list_error=RuntimeError("HA unreachable"))
+    app = _make_app({"notify_service": "notify/phone"}, client=client)
+    _startup(app)
+
+    client.list_error = RuntimeError("unauthorized")
+    _run(app._run_check("interval"))
+
+    pushes = _service_calls(app, "notify/phone")
+    assert len(pushes) == 2
+    assert "unauthorized" in pushes[1].kwargs["message"]
+
+
+def test_every_enforcement_pushes_the_phone() -> None:
+    """Enforcement is an event, not a condition — each one is news."""
+    client = FakeExposureClient(exposed=["lock.front_door"])
+    app = _make_app({"notify_service": "notify/phone"}, client=client)
+    _startup(app)
+    client.exposed = ["lock.front_door"]  # re-exposed by hand, caught again
+    _run(app._run_check("interval"))
+
+    assert len(_service_calls(app, "notify/phone")) == 2
 
 
 def test_no_mobile_notify_service_by_default() -> None:
@@ -700,6 +1054,35 @@ def test_status_sensor_reports_violations_and_trigger() -> None:
     assert attributes["violating_entities"] == "lock.front_door"
     assert attributes["enforce"] == "true"
     assert attributes["last_trigger"] == "startup"
+
+
+def _publish_debug_line(app: AssistExposureGuard) -> str:
+    lines = [
+        call.args[0]
+        for call in app.log.call_args_list
+        if call.kwargs.get("level") == "DEBUG" and call.args[0].startswith("Published ")
+    ]
+    assert lines, "no DEBUG publish line was logged"
+    return lines[-1]
+
+
+def test_the_publish_debug_line_reports_state_and_violations_separately() -> None:
+    """`state=` must be the sensor state (exposed count), not the violation count."""
+    app = _make_app(client=FakeExposureClient(exposed=["lock.front_door", "light.a"]))
+    _startup(app)
+
+    line = _publish_debug_line(app)
+    assert "state=2" in line
+    assert "violations=1" in line
+
+
+def test_the_publish_debug_line_says_unknown_when_the_check_failed() -> None:
+    app = _make_app(client=FakeExposureClient(list_error=RuntimeError("boom")))
+    _startup(app)
+
+    line = _publish_debug_line(app)
+    assert "state=unknown" in line
+    assert "violations=unknown" in line
 
 
 def test_custom_status_sensor_entity_id_is_honoured() -> None:

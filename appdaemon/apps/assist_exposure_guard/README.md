@@ -41,12 +41,8 @@ area" is one click. This app is the backstop for that click (owner ruling,
    violation: the first rule it breaks.
 4. If `enforce` is true, un-expose every violator with **one**
    `homeassistant/expose_entity` command. If it is false, report only.
-5. Raise a persistent notification under a stable `notification_id` (so it
-   updates rather than stacks) listing entity ids and reasons, plus an optional
-   mobile push when `notify_service` is set. A clean run dismisses it. If the
-   un-expose call itself fails, the notification says **UN-EXPOSE FAILED** and
-   names the entities that are *still* exposed — the most urgent state this app
-   can be in, and one it must never report silently.
+5. Notify on **two separate channels** — see *Notifications* below — plus an
+   optional mobile push when `notify_service` is set.
 6. Publish `sensor.assist_exposure_guard` so the guard's own health is visible.
 
 ## Rule evaluation order
@@ -59,7 +55,7 @@ area" is one click. This app is the backstop for that click (owner ruling,
 | 4 | `deny_integrations` | Every entity whose registry `platform` matches |
 | 5 | `deny_entity_globs` | `fnmatch` patterns over the entity id |
 | 6 | `switch_allowlist` | The `switch` domain is **deny by default** — a switch is exposed by name, never by area |
-| 7 | `script_allowlist_globs` | An exposed script is an unrestricted tool |
+| 7 | `script_allowlist_globs` | An exposed script is an unrestricted tool — the shipped default names every allowed script explicitly, no patterns |
 
 Ordering matters for the notification text: a PDU outlet is reported as
 "matches denied pattern `switch.usp_pdu_pro_*`" rather than the generic
@@ -76,7 +72,13 @@ it to `switch_allowlist`.
 
 | Entity | Type | Purpose |
 |--------|------|---------|
-| `sensor.assist_exposure_guard` | `set_state` virtual sensor | Number of exposed entities; attributes carry `violations_last_run`, `violating_entities`, `last_run`, `last_trigger`, `enforce`, `assistant`, `last_error` |
+| `sensor.assist_exposure_guard` | `set_state` virtual sensor | Number of exposed entities; attributes carry `violations_last_run`, `violating_entities`, `last_enforced`, `last_enforced_entities`, `last_run`, `last_trigger`, `enforce`, `assistant`, `last_error` |
+
+`last_enforced` (ISO time, or `never`) and `last_enforced_entities` are the
+durable half: they describe an action already taken, so they survive the clean
+run that enforcement itself triggers, and are re-seeded from the sensor on
+startup so an AppDaemon reload does not wipe them. Everything else describes
+the current list and resets each run.
 
 State and `violations_last_run` read `unknown` only when the check itself could
 not run (HA unreachable, non-admin token). An enforcement failure keeps the
@@ -109,18 +111,40 @@ positive costs a human a manual re-exposure in the HA UI:
   purely in state (template sensors defined in YAML, `set_state` virtual
   sensors) do not.
 
-## Notification lifetime
+## Notifications
 
-The persistent notification reflects the **current** state of the exposure
-list, not the history of it. With `enforce: true` the violators are un-exposed
-during the same run, so the very next check is clean and dismisses the
-notification — typically within `check_interval_minutes`. If nobody is looking
-at Home Assistant in that window the notification is gone by the time they are.
+There are **two** persistent notifications, because they answer two different
+questions, and conflating them made enforcement erase its own evidence.
 
-Set `notify_service` if that matters: a mobile push is the durable record of
-"something was exposed and I took it away", and the app sends one alongside
-every persistent notification. The AppDaemon log keeps the same information at
-`WARNING` regardless.
+| Notification | id | Says | Cleared by |
+|---|---|---|---|
+| Enforcement record | `<notification_id>_enforced` | "I un-exposed these, at this time" — an action already taken | **Only the user.** Never auto-dismissed |
+| Current state | `<notification_id>` | "These are exposed right now and should not be" (`enforce: false`), or "UN-EXPOSE FAILED — still exposed", or "the check could not run" | The next clean run |
+
+Why they must be separate: `homeassistant/expose_entity` makes HA fire
+`entity_registry_updated`, which arms this app's own `registry_debounce_s`
+timer. That re-check finds a clean list — because the app just cleaned it — so
+anything auto-cleared on a clean run is gone within ~30 seconds of being
+written. An enforcement report is a record, not a state, so it lives on its own
+id and survives. A second enforcement replaces the body under the same id with
+a freshly timestamped one, so the record stays one entry rather than a stack.
+
+The same reasoning applies to the sensor: `violations_last_run` and
+`violating_entities` describe the current list and go to `0` / `none` on that
+clean re-check, while **`last_enforced` and `last_enforced_entities` persist**.
+They are also re-seeded from the sensor on startup, so an AppDaemon reload does
+not erase the record either.
+
+`notify_service` mirrors notifications to a phone — the only copy nothing can
+clear, so it is set in `apps-prod.yaml`. Pushes are deduplicated by condition,
+not by run: every **enforcement** pushes (each is a distinct event), but an
+unchanged current-state condition — the same report-only finding, or the same
+check failure repeating while HA is down — pushes **once**. It pushes again
+when the violating entity set changes, when the error text changes, or after
+the condition clears and returns. Without that, a standing finding would buzz
+every `check_interval_minutes` until the owner muted the app, and a muted app
+reports nothing at all. The persistent notification is still refreshed every
+run, so its timestamp stays current.
 
 ## Associated card
 
@@ -136,8 +160,8 @@ None. The sensor is intended for an entities card or a template badge.
 | `check_interval_minutes` | no | `15` | Periodic re-check. Floored at 60 s |
 | `registry_debounce_s` | no | `30` | Quiet period after an `entity_registry_updated` burst |
 | `enforce` | no | `true` | `true` un-exposes violators; `false` reports only |
-| `notify_service` | no | *(unset)* | Extra push, e.g. `notify/mobile_app_toms_iphone_air`. Accepts `notify.x`, `notify/x` or a bare `x` |
-| `notification_id` | no | `assist_exposure_guard` | Persistent-notification id (stable so it updates in place) |
+| `notify_service` | no | *(unset in code; set in `apps-prod.yaml`)* | Mirror every notification to a phone, e.g. `notify/mobile_app_toms_iphone_air`. Accepts `notify.x`, `notify/x` or a bare `x` |
+| `notification_id` | no | `assist_exposure_guard` | Current-state notification id. The enforcement record uses `<notification_id>_enforced` |
 | `status_sensor` | no | `sensor.assist_exposure_guard` | Status sensor entity id |
 | `registry_event` | no | `entity_registry_updated` | Event that triggers a debounced re-check |
 | `deny_domains` | no | see below | Domains never exposed |
@@ -178,12 +202,40 @@ deny_entity_globs:
   - "switch.spa_intouch3_switch"
   - "switch.nrz120804q_*"
 switch_allowlist: []
+# No patterns on purpose — see below.
 script_allowlist_globs:
-  - "script.voice_*"
+  - "script.voice_movie_room_bright"
+  - "script.voice_movie_room_dim"
+  - "script.voice_movie_room_red_night_mode"
+  - "script.voice_movie_room_ambient_scene"
+  - "script.voice_movie_room_color_toggle"
+  - "script.voice_movie_room_hold_lights"
+  - "script.voice_rumpus_room_bright"
+  - "script.voice_rumpus_room_dim"
+  - "script.voice_rumpus_room_color_toggle"
+  - "script.voice_rumpus_room_hold_lights"
+  - "script.voice_shades"
   - "script.llm_script_for_music_assistant_voice_requests"
-  - "script.kellie_mobile_primary_bedroom_*"
+  - "script.kellie_mobile_primary_bedroom_relaxed"
+  - "script.kellie_mobile_primary_bedroom_focused"
+  - "script.kellie_mobile_primary_bedroom_bedtime"
+  - "script.kellie_mobile_primary_bedroom_sleep"
 allow_entities: []
 ```
+
+### Why the script list has no patterns
+
+An exposed script is an unrestricted tool: whatever the script does, the model
+can do — and these are not "secure-direction-only". `script.voice_*_hold_lights`
+disables automations by design, which is exactly the kind of power that must be
+reviewed rather than inferred from a filename.
+
+A glob such as `script.voice_*` would make the **filename** the security
+boundary: anyone creating `script.voice_anything` later would hand the voice
+agent a tool nobody looked at. So every allowed script is named explicitly.
+Adding a new voice tool means adding it to this list in the same PR that
+creates the script. (The config key is still `fnmatch`-matched, so an operator
+*can* configure a pattern — the shipped default simply does not.)
 
 ## Manual setup required
 
@@ -193,8 +245,11 @@ Two operational notes:
 
 - **The token must be admin.** `homeassistant/expose_entity` and
   `homeassistant/expose_entity/list` are decorated `@websocket_api.require_admin`.
-  The AppDaemon long-lived token already is; a non-admin token fails the whole
-  check and the failure lands in `sensor.assist_exposure_guard`'s `last_error`.
+  The AppDaemon long-lived token already is; a non-admin token (or a missing
+  one) fails the whole check, which raises the "check failed" notification and
+  lands in `sensor.assist_exposure_guard`'s `last_error`. The app still starts:
+  the client is built lazily so a credential problem cannot leave the guard
+  permanently inert and silent — it retries on the next scheduled check.
 - **There is only one exposure list.** A dev instance of this app therefore
   reads and could write production state — run it with `enforce: false`.
 
@@ -203,8 +258,9 @@ Two operational notes:
 Standalone. Nothing else in this repo reads its sensor or its events.
 
 It is, however, the enforcement half of the voice-assistant rollout: the
-curation half (per-room exposure proposals, spoken aliases, the
-`script.voice_*` secure-direction-only scripts) is applied by hand in HA. When
-a curated room adds a switch or a script, add it to `switch_allowlist` /
-`script_allowlist_globs` in `apps-prod.yaml` — otherwise this app will
-un-expose it within `check_interval_minutes`.
+curation half (per-room exposure proposals, spoken aliases, the hand-written
+`script.voice_*` tools) is applied by hand in HA. **When a curated room adds a
+switch or a script, add it to `switch_allowlist` / `script_allowlist_globs` in
+`apps-prod.yaml` in the same PR** — otherwise this app un-exposes it within
+`check_interval_minutes`. That coupling is the point: a new voice tool gets
+reviewed here or it does not reach a voice agent.

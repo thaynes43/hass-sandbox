@@ -17,7 +17,8 @@ per entity with the most specific reason available:
 4. ``deny_integrations``   — every entity from a given integration (registry ``platform``)
 5. ``deny_entity_globs``   — ``fnmatch`` patterns over the entity id
 6. ``switch_allowlist``    — the ``switch`` domain is DENY BY DEFAULT
-7. ``script_allowlist_globs`` — an exposed script is an unrestricted LLM tool
+7. ``script_allowlist_globs`` — an exposed script is an unrestricted LLM tool,
+   so the shipped default names every allowed script explicitly
 
 Why these defaults (ruling by the owner, 2026-09-18): HA's
 ``OnOffIntentHandler`` maps ``HassTurnOff`` on a lock to ``lock.unlock`` and
@@ -94,13 +95,37 @@ DEFAULT_DENY_ENTITY_GLOBS: Tuple[str, ...] = (
 #: Empty by default — populate it in apps.yaml as rooms are curated.
 DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = ()
 
-#: An exposed script is an unrestricted tool, so scripts are allowlisted by
-#: pattern.  ``script.voice_*`` is the naming convention for the purpose-built,
-#: secure-direction-only voice scripts (lock all doors, close garage doors).
+#: An exposed script is an unrestricted tool: whatever the script does, the
+#: model can do.  So every exposed script is named **explicitly** — no
+#: patterns.  A glob here would make a filename the security boundary: anyone
+#: who later creates ``script.voice_<anything>`` would hand the voice agent a
+#: tool nobody reviewed.  These sixteen are hand-curated and reviewed; adding a
+#: seventeenth means adding it to this list in the same PR that creates it.
+#:
+#: The key is still matched with ``fnmatch``, so an operator *can* configure a
+#: pattern — the shipped default simply does not use that power.
 DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
-    "script.voice_*",
+    # Basement room-mode tools (movie room)
+    "script.voice_movie_room_bright",
+    "script.voice_movie_room_dim",
+    "script.voice_movie_room_red_night_mode",
+    "script.voice_movie_room_ambient_scene",
+    "script.voice_movie_room_color_toggle",
+    "script.voice_movie_room_hold_lights",
+    # Basement room-mode tools (rumpus room)
+    "script.voice_rumpus_room_bright",
+    "script.voice_rumpus_room_dim",
+    "script.voice_rumpus_room_color_toggle",
+    "script.voice_rumpus_room_hold_lights",
+    # Parameterised Hunter Douglas gateway scene runner
+    "script.voice_shades",
+    # Music Assistant request handler
     "script.llm_script_for_music_assistant_voice_requests",
-    "script.kellie_mobile_primary_bedroom_*",
+    # Primary bedroom modes
+    "script.kellie_mobile_primary_bedroom_relaxed",
+    "script.kellie_mobile_primary_bedroom_focused",
+    "script.kellie_mobile_primary_bedroom_bedtime",
+    "script.kellie_mobile_primary_bedroom_sleep",
 )
 
 #: Per-entity escape hatch that beats every deny rule.  Empty by default.

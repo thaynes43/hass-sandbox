@@ -17,10 +17,17 @@ This app is the backstop for that click:
 2. Evaluate them against the deny rules in :mod:`rules` (a pure module).
 3. If ``enforce`` is true, un-expose every violator with one WebSocket
    command.  If it is false, report only.
-4. Either way, raise a persistent notification (stable ``notification_id``, so
-   it updates rather than stacks) and optionally a mobile push.
+4. Notify on two separate channels, because they answer different questions:
+   an **enforcement record** under ``<notification_id>_enforced`` (an action
+   already taken — never auto-cleared, only the user dismisses it) and a
+   **current-state** notification under ``<notification_id>`` (report-only
+   findings, a failed un-expose, or a failed check — cleared by the next clean
+   run).  Conflating them made enforcement erase its own evidence:
+   ``expose_entity`` itself fires ``entity_registry_updated``, whose debounced
+   re-check finds the list clean seconds later.
 5. Publish ``sensor.assist_exposure_guard`` so the state of the guard itself
-   is visible on a dashboard.
+   is visible on a dashboard — with ``last_enforced``/``last_enforced_entities``
+   outliving that clean re-check.
 
 The app needs no HA entities of its own beyond that sensor, which ``set_state``
 creates implicitly — there is nothing for ``ha_provisioner`` to provision.  All
@@ -120,12 +127,27 @@ class AssistExposureGuard(hass.Hass):
                 "the exposure WebSocket commands need an admin token"
             )
 
+        self._enforced_notification_id = f"{self._notification_id}_enforced"
+
         self._client: Optional[AssistExposureClient] = None
         self._debounce_handle: Any = None
         self._check_in_flight = False
-        # Assume a notification may have survived an AppDaemon restart, so the
-        # first clean run clears a stale one rather than leaving it on screen.
+        # Tracks the CURRENT-STATE notification only (report-only findings, a
+        # failed un-expose, or a failed check).  Seeded True so the first clean
+        # run clears one that outlived an AppDaemon restart.  The enforcement
+        # record under `_enforced_notification_id` is never touched by this.
         self._notification_active = True
+        # Durable record of the last enforcement.  It must survive the clean
+        # run that enforcement itself causes, so it lives here rather than
+        # being derived from the current exposure list.
+        self._last_enforced = "never"
+        self._last_enforced_entities = "none"
+        # Fingerprint of the current-state condition already pushed to a phone.
+        # The persistent notification is idempotent (same id, updated in
+        # place), but a mobile push is not: an unchanged report-only finding or
+        # a wedged HA would otherwise buzz every check_interval_minutes until
+        # the owner mutes the app — and a muted app reports nothing at all.
+        self._pushed_fingerprint = ""
 
         self.log(
             f"AssistExposureGuard initializing — assistant={self._assistant!r} "
@@ -144,7 +166,16 @@ class AssistExposureGuard(hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
-        self._client = self._build_client()
+        """Wire the triggers FIRST, then check.
+
+        The client is built lazily inside the guarded check path on purpose: a
+        bad token or URL makes ``AssistExposureClient`` raise, and building it
+        here would abort startup before ``listen_event``/``run_every`` ran,
+        leaving the guard permanently inert *and* silent — the worst possible
+        failure for a security backstop.  Wired first, a construction failure
+        is just one failed check that reports itself and retries on the next
+        tick.
+        """
         self.listen_event(self._on_registry_updated, self._registry_event)
         self.run_every(self._on_interval, f"now+{self._interval_s}", self._interval_s)
         self.log(
@@ -152,7 +183,49 @@ class AssistExposureGuard(hass.Hass):
             f"checking every {self._interval_s}s",
             level="INFO",
         )
+        await self._seed_enforcement_record()
         await self._run_check("startup")
+
+    async def _seed_enforcement_record(self) -> None:
+        """Recover ``last_enforced*`` from the sensor left by a previous run.
+
+        An AppDaemon reload builds a brand-new instance, and the enforcement
+        record must not be erased by one — the persistent notification it
+        pairs with is HA-side and survives.  The sensor is the app's own, so
+        reading it back is the cheapest durable store available here.
+        """
+        try:
+            attributes = await self.get_state(self._status_sensor, attribute="all")
+        except Exception as exc:  # noqa: BLE001 — a missing sensor is normal
+            self.log(f"No previous status sensor to seed from: {exc!r}", level="DEBUG")
+            return
+        if not isinstance(attributes, dict):
+            return
+        previous = attributes.get("attributes")
+        if not isinstance(previous, dict):
+            return
+        last_enforced = str(previous.get("last_enforced") or "").strip()
+        if not last_enforced or last_enforced == "never":
+            return
+        self._last_enforced = last_enforced
+        self._last_enforced_entities = str(
+            previous.get("last_enforced_entities") or "none"
+        ).strip() or "none"
+        self.log(
+            f"Recovered enforcement record from {self._status_sensor}: "
+            f"last_enforced={self._last_enforced!r}",
+            level="INFO",
+        )
+
+    def _ensure_client(self) -> AssistExposureClient:
+        """Build the client on first use; a failure here is a failed check.
+
+        Left as ``None`` on failure so the next tick retries rather than
+        latching the app into a dead state.
+        """
+        if self._client is None:
+            self._client = self._build_client()
+        return self._client
 
     def _build_client(self) -> AssistExposureClient:
         """Seam for tests: the only place the real client is constructed."""
@@ -227,6 +300,9 @@ class AssistExposureGuard(hass.Hass):
                 f"Exposure check failed (trigger={trigger!r}): {message}",
                 level="ERROR",
             )
+            # A guard that cannot run is indistinguishable from a guard with
+            # nothing to do unless it says so somewhere a human looks.
+            self._notify_check_failed(trigger, message)
             self._publish_status(
                 exposed_count=None, violations=[], trigger=trigger, error=message
             )
@@ -234,9 +310,7 @@ class AssistExposureGuard(hass.Hass):
             self._check_in_flight = False
 
     async def _check(self, trigger: str) -> None:
-        client = self._client
-        if client is None:  # pragma: no cover — startup always sets it first
-            raise RuntimeError("Exposure client not initialised")
+        client = self._ensure_client()
 
         exposed_ids = await client.list_exposed_entities(self._assistant)
         platforms = await client.list_entity_platforms()
@@ -308,7 +382,18 @@ class AssistExposureGuard(hass.Hass):
                     level="INFO",
                 )
 
-        self._notify(violations, enforced=enforced, enforce_error=enforce_error)
+        if enforced:
+            # Enforcement is self-erasing if it reports through the
+            # current-state channel: set_exposure makes HA fire
+            # entity_registry_updated, this app's own debounce re-checks, the
+            # list is now clean, and the report would be dismissed and the
+            # counts zeroed — deleting the only evidence that anything
+            # happened. So an enforcement is recorded, not reported: its own
+            # notification id, never auto-cleared, plus durable attributes.
+            self._record_enforcement(violations)
+        else:
+            self._notify_unenforced(violations, enforce_error)
+
         self._publish_status(
             exposed_count=len(entities),
             violations=violations,
@@ -346,13 +431,58 @@ class AssistExposureGuard(hass.Hass):
     # Notification
     # ------------------------------------------------------------------
 
-    def _notify(
-        self,
-        violations: List[Violation],
-        *,
-        enforced: bool,
-        enforce_error: str = "",
+    def _violation_lines(self, violations: List[Violation]) -> List[str]:
+        lines = [
+            f"- {violation.entity_id} — {violation.reason}"
+            for violation in violations[:MAX_DETAIL_LINES]
+        ]
+        if len(violations) > MAX_DETAIL_LINES:
+            lines.append(f"- …and {len(violations) - MAX_DETAIL_LINES} more")
+        return lines
+
+    def _record_enforcement(self, violations: List[Violation]) -> None:
+        """Record an enforcement that already happened — a log, not a report.
+
+        Written under its own ``notification_id`` and **never** dismissed by
+        this app: only the user clears it.  A later enforcement replaces the
+        body with a freshly timestamped one under the same id, so the record
+        stays a single entry rather than a stack.
+        """
+        stamp = self._now_iso()
+        entity_ids = [violation.entity_id for violation in violations]
+        self._last_enforced = stamp
+        self._last_enforced_entities = ", ".join(entity_ids) or "none"
+
+        plural = "entity" if len(violations) == 1 else "entities"
+        title = (
+            f"Assist exposure guard: un-exposed {len(violations)} {plural}"
+        )
+        lines = [
+            f"{stamp} — removed from {self._assistant!r} because they must never "
+            f"be voice-callable. They are no longer exposed; this notice stays "
+            f"until you dismiss it.",
+            "",
+        ]
+        lines += self._violation_lines(violations)
+        message = "\n".join(lines)
+
+        self.call_service(
+            "persistent_notification/create",
+            title=title,
+            message=message,
+            notification_id=self._enforced_notification_id,
+        )
+        self.log(
+            f"Enforcement recorded under {self._enforced_notification_id!r}: "
+            f"{len(violations)} entity(s) un-exposed at {stamp}",
+            level="INFO",
+        )
+        self._push_mobile(title, message)
+
+    def _notify_unenforced(
+        self, violations: List[Violation], enforce_error: str = ""
     ) -> None:
+        """Report violations that are STILL exposed — current state, clearable."""
         plural = "entity" if len(violations) == 1 else "entities"
         title = f"Assist exposure guard: {len(violations)} unsafe {plural}"
         if enforce_error:
@@ -362,25 +492,40 @@ class AssistExposureGuard(hass.Hass):
                 f"({enforce_error}). Remove them in Settings → Voice assistants → "
                 f"Expose:"
             )
-        elif enforced:
-            header = (
-                f"Un-exposed from {self._assistant!r} — these must never be "
-                f"voice-callable:"
-            )
         else:
             header = (
                 f"Exposed to {self._assistant!r} but must not be "
                 f"(enforce is off — nothing was changed):"
             )
-        lines = [header]
-        lines += [
-            f"- {violation.entity_id} — {violation.reason}"
-            for violation in violations[:MAX_DETAIL_LINES]
-        ]
-        if len(violations) > MAX_DETAIL_LINES:
-            lines.append(f"- …and {len(violations) - MAX_DETAIL_LINES} more")
-        message = "\n".join(lines)
+        message = "\n".join([header] + self._violation_lines(violations))
+        self._publish_current_state_notification(
+            title,
+            message,
+            fingerprint="unenforced|"
+            + ",".join(violation.entity_id for violation in violations)
+            + f"|{enforce_error}",
+        )
+        self.log(
+            f"Persistent notification {self._notification_id!r} updated: "
+            f"{len(violations)} violation(s) still exposed "
+            f"(enforce_error={bool(enforce_error)})",
+            level="INFO",
+        )
 
+    def _notify_check_failed(self, trigger: str, error: str) -> None:
+        """Make a guard that cannot run visible, not just quietly absent."""
+        self._publish_current_state_notification(
+            "Assist exposure guard: check failed",
+            f"{self._now_iso()} — the exposure check (trigger {trigger!r}) could "
+            f"not run: {error}\n\nThe deny rules are NOT being enforced until "
+            f"this clears. It retries on the next scheduled check.",
+            fingerprint=f"check_failed|{error}",
+        )
+
+    def _publish_current_state_notification(
+        self, title: str, message: str, *, fingerprint: str
+    ) -> None:
+        """Refresh the current-state notification; push to a phone only on change."""
         self.call_service(
             "persistent_notification/create",
             title=title,
@@ -388,20 +533,30 @@ class AssistExposureGuard(hass.Hass):
             notification_id=self._notification_id,
         )
         self._notification_active = True
+        if fingerprint != self._pushed_fingerprint:
+            self._pushed_fingerprint = fingerprint
+            self._push_mobile(title, message)
+
+    def _push_mobile(self, title: str, message: str) -> None:
+        if not self._notify_service:
+            return
+        self.call_service(self._notify_service, title=title, message=message)
         self.log(
-            f"Persistent notification {self._notification_id!r} updated: "
-            f"{len(violations)} violation(s) enforced={enforced}",
+            f"Mobile notification sent via {self._notify_service!r}",
             level="INFO",
         )
 
-        if self._notify_service:
-            self.call_service(self._notify_service, title=title, message=message)
-            self.log(
-                f"Mobile notification sent via {self._notify_service!r}",
-                level="INFO",
-            )
-
     def _clear_notification(self) -> None:
+        """Clear the CURRENT-STATE notification only.
+
+        The enforcement record under ``_enforced_notification_id`` is
+        deliberately untouched: the clean run that reaches here is usually the
+        *result* of an enforcement, and dismissing the record would erase the
+        only evidence of it.
+        """
+        # Always reset the push dedup: the condition is over, so if it comes
+        # back it is news again.
+        self._pushed_fingerprint = ""
         if not self._notification_active:
             return
         self.call_service(
@@ -451,24 +606,33 @@ class AssistExposureGuard(hass.Hass):
             "violating_entities": (
                 ", ".join(violation.entity_id for violation in violations) or "none"
             ),
-            "last_run": datetime.now().astimezone().isoformat(timespec="seconds"),
+            # Durable: these describe an action already taken, so they must
+            # survive the clean run that the action itself causes.
+            "last_enforced": self._last_enforced,
+            "last_enforced_entities": self._last_enforced_entities,
+            "last_run": self._now_iso(),
             "last_trigger": trigger,
             "last_error": error or "none",
         }
+        state = "unknown" if exposed_count is None else str(exposed_count)
         self.set_state(
             self._status_sensor,
-            state="unknown" if exposed_count is None else str(exposed_count),
+            state=state,
             attributes=attributes,
         )
         self.log(
-            f"Published {self._status_sensor} state={attributes['violations_last_run']} "
-            f"violations exposed={exposed_count}",
+            f"Published {self._status_sensor} state={state} "
+            f"violations={attributes['violations_last_run']}",
             level="DEBUG",
         )
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _now_iso() -> str:
+        return datetime.now().astimezone().isoformat(timespec="seconds")
 
     @staticmethod
     def _normalise_service(service: str) -> str:

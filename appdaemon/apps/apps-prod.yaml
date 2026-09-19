@@ -1440,9 +1440,10 @@ assist_exposure_guard:
   check_interval_minutes: 15
   # true = un-expose violators automatically; false = report only.
   enforce: true
-  # Optional mobile push in addition to the persistent notification, e.g.
-  # notify/mobile_app_toms_iphone_air.  Unset = persistent notification only.
-  # notify_service: ""
+  # Mobile push alongside the persistent notification.  It is the durable
+  # record: the enforcement notice is kept until dismissed, but a report-only
+  # or failed-check notice is cleared by the next clean run.
+  notify_service: notify/mobile_app_toms_iphone_air
   deny_domains:
     - lock
     - alarm_control_panel
@@ -1487,12 +1488,29 @@ assist_exposure_guard:
   # The switch domain is DENY BY DEFAULT — a switch is exposed by name, never
   # by area.  Add entity ids here as rooms are curated.
   switch_allowlist: []
-  # An exposed script is an unrestricted tool, so scripts are allowlisted by
-  # pattern.  script.voice_* is the naming convention for the purpose-built
-  # secure-direction-only voice scripts (lock all doors, close garage doors).
+  # An exposed script is an unrestricted tool: whatever the script does, the
+  # model can do.  Every allowed script is therefore named EXPLICITLY — no
+  # patterns.  A glob would make a filename the security boundary, so anyone
+  # creating script.voice_<anything> later would hand the voice agent a tool
+  # nobody reviewed.  These are hand-curated, reviewed tools; adding another
+  # one means adding it to this list in the same PR that creates it.
+  # (The key is still fnmatch-matched, so a pattern remains possible.)
   script_allowlist_globs:
-    - "script.voice_*"
+    - "script.voice_movie_room_bright"
+    - "script.voice_movie_room_dim"
+    - "script.voice_movie_room_red_night_mode"
+    - "script.voice_movie_room_ambient_scene"
+    - "script.voice_movie_room_color_toggle"
+    - "script.voice_movie_room_hold_lights"
+    - "script.voice_rumpus_room_bright"
+    - "script.voice_rumpus_room_dim"
+    - "script.voice_rumpus_room_color_toggle"
+    - "script.voice_rumpus_room_hold_lights"
+    - "script.voice_shades"
     - "script.llm_script_for_music_assistant_voice_requests"
-    - "script.kellie_mobile_primary_bedroom_*"
+    - "script.kellie_mobile_primary_bedroom_relaxed"
+    - "script.kellie_mobile_primary_bedroom_focused"
+    - "script.kellie_mobile_primary_bedroom_bedtime"
+    - "script.kellie_mobile_primary_bedroom_sleep"
   # Per-entity escape hatch that beats every deny rule above.
   allow_entities: []
