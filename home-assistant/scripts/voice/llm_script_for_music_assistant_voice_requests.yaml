@@ -1,0 +1,67 @@
+# script.llm_script_for_music_assistant_voice_requests ("Play Music") — the one music tool every room
+# agent calls. Blueprint script; this mirrors its inputs (edited live via MCP, 2026-09-19).
+# Blueprint: home-assistant/blueprints/music_assistant_llm_voice_script.yaml (locally patched:
+# pre_actions + playing_before). How the target speaker is chosen: .agents/plans/voice-assist-rollout.md
+# (Phase 3). The helper input_number.rumpus_room_kef_saved_volume is live-only (never mirrored).
+alias: Play Music
+use_blueprint:
+  path: music-assistant/llm_voice_script.yaml
+  input:
+    default_player: media_player.primary_bedroom
+    play_continuously: Use player settings
+    shuffle_prompt: 'This argument is mandatory and must always be provided no matter what! It is a boolean
+      value, not a function.
+
+      If the request mentions shuffling the music, then the "shuffle" is set to true. Otherwise, "shuffle"
+      is set to false.
+
+      For example, if the request is "Shuffle music by Muse", then "shuffle" should be set to true.
+
+      If the request is "Play music by Billy Talent", "shuffle" would be false since the request did not
+      mention or request to shuffle.
+
+      If the request is "Shuffle the playlist Liked Songs", then "shuffle" should be set to true.
+
+      If the request is "Play the artist Guns and Roses", "shuffle" should be set to false, since the
+      request does not mention or request to shuffle. '
+    pre_actions:
+    - alias: 'Rumpus Room KEFs: remember their volume and start voice music at 50%'
+      if:
+      - condition: template
+        value_template: '{{ (''rumpus_room'' in (area | default([], true)) or ''media_player.ls50_wireless_ii_174476_4''
+          in player_data) and ''media_player.ls50_wireless_ii_174476_4'' not in playing_before }}'
+      then:
+      - alias: Save the current volume once (0 means nothing saved)
+        if:
+        - condition: numeric_state
+          entity_id: input_number.rumpus_room_kef_saved_volume
+          below: 0.005
+        then:
+        - action: input_number.set_value
+          target:
+            entity_id: input_number.rumpus_room_kef_saved_volume
+          data:
+            value: '{{ state_attr(''media_player.ls50_wireless_ii_174476_4'', ''volume_level'') | float(0)
+              }}'
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.ls50_wireless_ii_174476_4
+        data:
+          volume_level: 0.5
+    actions:
+    - alias: 'Rumpus Room KEFs: set 50% again once playing (they wake from standby at their own level)'
+      if:
+      - condition: template
+        value_template: '{{ (''rumpus_room'' in (area | default([], true)) or ''media_player.ls50_wireless_ii_174476_4''
+          in player_data) and ''media_player.ls50_wireless_ii_174476_4'' not in playing_before }}'
+      then:
+      - action: media_player.volume_set
+        target:
+          entity_id: media_player.ls50_wireless_ii_174476_4
+        data:
+          volume_level: 0.5
+description: 'This script is used to play music based on a voice request. The tool takes the following
+  arguments: media_type, artist, album, media_id, radio_mode, area. media_id and media_type are always
+  required and must always be supplied as arguments to this tool. An area or Music Assistant media player
+  can optionally be provided in the voice request as well. Use the parameters as described in the description
+  of each parameter. Use this tool whenever the user requests to play music.'

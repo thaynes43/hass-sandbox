@@ -58,7 +58,12 @@ No voice hold tools: Tom ruled them out on 2026-09-19 (holds are not used day to
 
 Media: TV auto-off `automation.media_basement_movie_room_no_occupancy_tv_off` (20 min, spoken
 warnings on the satellite). Nothing turns the TV/AVR on. Three duplicate AVR registrations
-(`media_player.str_az5000es`, `_2`, `_2210`) and two KEF ones — do not expose until phase 3.
+(`media_player.str_az5000es`, `_2`, `_2210`) — do not expose until phase 3. The KEF LS50s (the
+Rumpus Room PC's speakers over HDMI) have three registrations: the two non-Music-Assistant ones
+(`media_player.ls50_wireless_ii_174476_2`, `_3`) stay unexposed; the Music Assistant one
+(`media_player.ls50_wireless_ii_174476_4`, "Rumpus Room Speakers") is in the Rumpus Room area and
+exposed since 2026-09-19 so that box's music has somewhere to play — it starts at 50 % and the
+PC level is restored afterwards (`.agents/plans/voice-assist-rollout.md`, Phase 3).
 
 Defects found (open): Movie ZEN37 buttons 3 ×2 / 4 ×2 call
 `number.movie_room_breeze_target_temperature`, which does not exist (the Cielo controller has
