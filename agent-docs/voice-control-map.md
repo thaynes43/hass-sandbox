@@ -192,19 +192,28 @@ presence switches as unmapped.
 
 ## First floor
 
-Only four things here are exposed today: `light.downstairs_livingroom_lamp`,
-`media_player.kitchen`, `media_player.living_room` and the global Play Music script. There are no
-room/lighting scenes anywhere in the house — all 51 scenes are PowerView shades or holiday sets.
+Exposed since 2026-09-19 (before that only the living room lamp, the kitchen and living room
+Sonos and the global Play Music script were): the kitchen main / island / under-cabinet / sink
+lights, the living room recessed lights, sconces, fan light, fan and lamp, `climate.first_floor_ecobee`,
+the study lights, bookshelf, fan light, fan and `media_player.study`, the dining table and cove
+lights, the mudroom and entrance lights, the foyer chandelier and the bathroom group
+`light.downstairs_bathroom_lights`. There are no room/lighting scenes anywhere in the house — all
+51 scenes are PowerView shades or holiday sets.
+
+Voice tools on this floor (2026-09-19): `script.voice_kitchen_lights_off` (= Upstairs Foyer Chaos
+Config 1x, every kitchen light off) and `script.voice_entrance_all_off` (= Entrance Config 1x,
+entrance + mudroom + the three bathroom loads off). Both are literal copies of the button actions
+and are on the `assist_exposure_guard` script allowlist from v1.18.5.
 
 | Area | Physical controls (mapped buttons only) | Concepts → handle | Ownership / voice caveat |
 |---|---|---|---|
-| Kitchen | recessed Inovelli Config 1x = toggle island; upstairs "Foyer Chaos" Config 1x = **all kitchen lights off** (sink + island + under-cabinet + group); sink/island/under-cabinet unmapped | main `light.downstairs_kitchen_lights` (10 Hue + switch), island `…_island_inovelli_dimmer`, under-cabinet `…_kitches_under_cabinet_inovelli_dimmer` (sic), sink `…_kitchen_sink_inovelli_presence`; **no "all kitchen lights" handle** | fully manual, nothing fights |
+| Kitchen | recessed Inovelli Config 1x = toggle island; upstairs "Foyer Chaos" Config 1x = **all kitchen lights off** (sink + island + under-cabinet + group); sink/island/under-cabinet unmapped | main `light.downstairs_kitchen_lights` (10 Hue + switch), island `…_island_inovelli_dimmer`, under-cabinet `…_kitches_under_cabinet_inovelli_dimmer` (sic), sink `…_kitchen_sink_inovelli_presence`; all off = `script.voice_kitchen_lights_off` | fully manual, nothing fights |
 | Livingroom | ZEN32: big = `light.livingroom_fan_light`; TL/TR = `fan.livingroom_fan_fan` on/off; BL = `scene.laundry_gateway_family_room_open` (2x tilt-open); BR = close | recessed `light.downstairs_livingroom_lights`, lamp, sconce `…_sconce_inovelli_dimmer`, fan light, fan, `climate.first_floor_ecobee`; **no unified "living room lights"** | manual; lamp: `automation.lamp_todo` sunset → 20 % 2500 K, off 02:00 |
 | Study | ZEN32, same layout → `light.study_fan_light`, `fan.study_fan_fan`, `scene.laundry_gateway_office_*` | main `light.downstairs_study_lights`, bookshelf `…_study_bookshelf_inovelli_dimmer` | manual |
 | Dining Room | none mapped | table `light.downstairs_dining_room_table_light`, cove `…_cove_inovelli_dimmer` | ZEN20 strip outlets 4+5 on at sunset, off 23:00 |
 | Mudroom | Config 2x = hold | `light.downstairs_mudroom_lights` | occupancy on/off (2 min) **and** the switch still has local mmWave — relights within seconds while occupied |
-| Entrance | Config 1x = **all off on the way out** (entrance + mudroom + 3 bath loads); Config 2x = hold | `light.downstairs_entrance_lights` | occupancy on, off after 2 min; voice off sticks until re-entry |
-| First Floor Bathroom | vanity Config 2x = hold | three separate loads, **no room group**; `cover.1_4` | vanity is firmware-driven; shower + fan light off after 2 min |
+| Entrance | Config 1x = **all off on the way out** (entrance + mudroom + 3 bath loads); Config 2x = hold | `light.downstairs_entrance_lights`; all off = `script.voice_entrance_all_off` | occupancy on, off after 2 min; voice off sticks until re-entry |
+| First Floor Bathroom | vanity Config 2x = hold | three separate loads grouped as `light.downstairs_bathroom_lights` (HA light group, 2026-09-19); `cover.1_4` | vanity is firmware-driven; shower + fan light off after 2 min |
 | Foyer | three "chaos" Inovellis, unmapped | chandelier `light.foyer_chaos_light_switches`; the overhead recessed are `light.upstairs_foyer_lights` — "foyer lights" is ambiguous | manual |
 
 - **Shades:** the `cover.*_shades` groups are status/LED-tracking only; every wall button and both
