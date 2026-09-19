@@ -183,17 +183,19 @@ class ZigbeeOtaOrchestrator(hass.Hass):
                     "keeping the last known list and starting nothing",
                     level="WARNING",
                 )
-            elif not z2m_entities:
+            elif not self._coordinator.identity_ready:
                 # Never silent: this is what a template that stopped matching
                 # looks like, and it manages nothing until someone notices.
+                # identity_ready, not the answer itself — the retained bridge
+                # document can carry the fleet on its own.
                 self._last_z2m_count = -1
                 self.log(
                     "Home Assistant reported no Zigbee2MQTT update entities; "
                     "managing nothing until that changes",
                     level="WARNING",
                 )
-            elif len(z2m_entities) != self._last_z2m_count:
-                self._last_z2m_count = len(z2m_entities)
+            elif self._coordinator.z2m_device_count != self._last_z2m_count:
+                self._last_z2m_count = self._coordinator.z2m_device_count
                 self.log(
                     "Managing %d Zigbee2MQTT update entities" % self._last_z2m_count
                 )

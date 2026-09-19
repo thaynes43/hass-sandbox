@@ -188,6 +188,35 @@ def test_tick_survives_get_state_failure() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_bridge_devices_source_does_not_log_an_empty_fleet_warning() -> None:
+    """The retained document can carry the fleet on its own; warning then
+    would cry wolf every tick while updates are actually running."""
+    app = _make_app(
+        update_snapshot={"update.hue_a": _entity("hue_a")}, z2m_entities=[]
+    )
+    _run(
+        app._on_mqtt_message(
+            "MQTT_MESSAGE",
+            {
+                "topic": "zigbee2mqtt/bridge/devices",
+                "payload": json.dumps([{"friendly_name": "hue_a", "type": "Router"}]),
+            },
+            {},
+        )
+    )
+    _run(app._tick({}))
+    assert len(_published_requests(app)) == 1
+    warnings = [
+        call
+        for call in app.log.call_args_list
+        if call.kwargs.get("level") == "WARNING"
+    ]
+    assert warnings == []
+    attrs = app.set_state.call_args.kwargs["attributes"]
+    assert attrs["identity_source"] == "zigbee2mqtt bridge"
+    assert attrs["z2m_devices_known"] == "1"
+
+
 def test_bridge_devices_updates_known_set_and_filters_queue() -> None:
     app = _make_app(
         update_snapshot={

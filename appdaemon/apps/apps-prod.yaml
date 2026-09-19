@@ -1419,6 +1419,10 @@ zigbee_ota_updater:
   retry_base_s: 900
   retry_max_s: 21600
   online_retry_grace_s: 60
+  # A device Zigbee2MQTT cannot install -- a pulled release with no image, or
+  # a name it does not know -- is parked rather than retried, and re-checked
+  # once a day.
+  park_recheck_s: 86400
   # A Hue bulb takes 45-90min and is the slowest thing in the mesh; warn
   # (stalled flag) after 45min without progress, give up on the attempt after
   # 4h without a terminal response.

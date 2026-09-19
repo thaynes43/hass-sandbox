@@ -524,8 +524,10 @@ class OtaCoordinator:
         It is released when a different version is offered, and re-checked
         every ``park_recheck_s`` — upstream often republishes a pulled
         release under the *same* version number, which a version comparison
-        alone would never notice. (A device renamed back in Home Assistant
-        recovers immediately: the new name was never parked.)
+        alone would never notice. Both releases exist for ``PARK_NO_IMAGE``;
+        a ``PARK_UNKNOWN`` park recovers instead when the device is renamed
+        back, because the corrected name was never parked. Re-checking one
+        costs a single immediate "does not exist" and burns no attempt.
         """
         skip = self._parked[friendly]
         if self.now() - skip.ts >= self.park_recheck_s:
@@ -662,12 +664,13 @@ class OtaCoordinator:
             "cleared_without_update_count": len(self._cleared),
             "failed_attempts_this_run": self._failed_attempts,
             "busy_until": _at(self._global_busy_until) if ts < self._global_busy_until else "",
-            "z2m_devices_known": self._z2m_device_count(),
+            "z2m_devices_known": self.z2m_device_count,
             "identity_source": self._identity_source(),
             "last_event": self._last_event,
         }
 
-    def _z2m_device_count(self) -> int:
+    @property
+    def z2m_device_count(self) -> int:
         # Truthiness, matching _identity_source: an empty HA answer must not
         # report 0 devices while the bridge document is what's being used.
         if self._z2m_entity_ids:
