@@ -163,6 +163,9 @@ class OtaCoordinator:
         self._global_busy_until: float = 0.0
         self._completed: list[dict[str, Any]] = []  # this process lifetime only
         self._recently_completed: dict[str, float] = {}
+        # Every terminal outcome, not just the successful ones: the stale
+        # in_progress snapshot that blocks adoption follows a failure too.
+        self._recently_settled: dict[str, float] = {}
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -336,19 +339,19 @@ class OtaCoordinator:
                         )
                 continue
             completed_ts = self._recently_completed.get(friendly)
-            since_completion = (
-                self.now() - completed_ts if completed_ts is not None else None
-            )
             just_finished = (
-                since_completion is not None
-                and since_completion < self.completed_suppress_s
+                completed_ts is not None
+                and self.now() - completed_ts < self.completed_suppress_s
             )
-            # HA's update entity can lag Z2M's success by a few seconds, and
-            # that stale snapshot still carries in_progress: true — but only
-            # for seconds, so this window is far shorter than the requeue one.
+            # HA's update entity lags Z2M by a few seconds, and that stale
+            # snapshot still carries in_progress: true. Keyed on the last
+            # settle of any kind — a failed attempt leaves the same stale flag,
+            # and there the entity stays "on", so a phantom adoption would only
+            # be released by the four-hour timeout.
+            settled_ts = self._recently_settled.get(friendly)
             stale_in_progress = (
-                since_completion is not None
-                and since_completion < ADOPTION_SUPPRESS_S
+                settled_ts is not None
+                and self.now() - settled_ts < ADOPTION_SUPPRESS_S
             )
             if (
                 attrs.get("in_progress")
@@ -648,6 +651,7 @@ class OtaCoordinator:
         if fl is None:
             return
         self._in_flight = None
+        self._recently_settled[fl.friendly_name] = self.now()
         rec = self._devices.get(fl.friendly_name)
         if result == RESULT_SUCCESS:
             if rec is not None:
@@ -734,6 +738,7 @@ class OtaCoordinator:
         """Park a device Z2M cannot install right now. No attempt is burned and
         no backoff is scheduled — a retry would only get the same answer."""
         rec = self._devices.pop(friendly, None)
+        self._recently_settled[friendly] = self.now()
         # latest_version None = not known yet (a response for a device we
         # weren't tracking); the next refresh learns it and keeps skipping.
         self._parked[friendly] = ParkedDevice(

@@ -1194,7 +1194,8 @@ def test_an_availability_flap_does_not_collapse_a_busy_hold() -> None:
 def test_a_parked_device_updating_externally_is_still_adopted() -> None:
     """Adoption must win over every skip: Z2M's in-progress guard is per
     device, so a second request alongside it would not be rejected."""
-    coord = make_coordinator()
+    clock = FakeClock()
+    coord = make_coordinator(clock)
     refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     assert decision is not None and decision.friendly_name == "hue_a"
@@ -1208,7 +1209,8 @@ def test_a_parked_device_updating_externally_is_still_adopted() -> None:
     )
     assert coord.status()["skipped_no_image"] == ["hue_a"]
 
-    # Someone installs it from the Z2M frontend anyway.
+    # Someone installs it from the Z2M frontend, minutes later.
+    clock.advance(120)
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1240,7 +1242,8 @@ def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_success() -> None:
 
 def test_an_adopted_update_with_no_record_is_released_when_it_ends() -> None:
     """Adoption above the park skip makes "adopted, no DeviceRecord" normal."""
-    coord = make_coordinator()
+    clock = FakeClock()
+    coord = make_coordinator(clock)
     refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     coord.on_update_response(
@@ -1251,6 +1254,7 @@ def test_an_adopted_update_with_no_record_is_released_when_it_ends() -> None:
             "data": {"id": "hue_a"},
         }
     )
+    clock.advance(120)  # the external install starts minutes later
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1285,7 +1289,8 @@ def test_a_genuine_external_install_is_adopted_after_the_stale_window() -> None:
 
 
 def test_an_external_install_on_a_parked_device_is_recorded() -> None:
-    coord = make_coordinator()
+    clock = FakeClock()
+    coord = make_coordinator(clock)
     refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     coord.on_update_response(
@@ -1296,6 +1301,7 @@ def test_an_external_install_on_a_parked_device_is_recorded() -> None:
             "data": {"id": "hue_a"},
         }
     )
+    clock.advance(120)  # the external install starts minutes later
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1313,6 +1319,59 @@ def test_an_external_install_on_a_parked_device_is_recorded() -> None:
 
 
 def test_an_external_install_that_changed_nothing_is_not_recorded() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    clock.advance(120)  # the external install starts minutes later
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="off")  # still on 100
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"] == {}
+    assert status["completed_this_run"] == []
+    assert "no version change" in status["last_event"]
+
+
+def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_failure() -> None:
+    """Worse than the success case: the entity stays "on", so a phantom
+    adoption would only be released by the four-hour timeout."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 30})
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "some failure",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    # The tick that follows the response still sees in_progress: true.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"] == {}
+    assert status["failed_attempts_this_run"] == 1  # not a second one
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_park() -> None:
     coord = make_coordinator()
     refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
@@ -1327,10 +1386,6 @@ def test_an_external_install_that_changed_nothing_is_not_recorded() -> None:
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
-    snap = snapshot("hue_b")
-    snap["update.hue_a"] = entity("hue_a", state="off")  # still on 100
-    refresh(coord, snap)
-    status = coord.status()
-    assert status["in_flight"] == {}
-    assert status["completed_this_run"] == []
-    assert "no version change" in status["last_event"]
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
