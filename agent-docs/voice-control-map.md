@@ -77,8 +77,13 @@ live ZEN37 hold-dim helper automations and four scripts the buttons call
 
 No exterior satellite. Exposed since 2026-09-19 (Ruling 1, "ask + secure only"): the six
 status sensors and the two secure-direction door scripts listed under *Dangerous-set status*
-below — no exterior light, switch or speaker yet. Only two switches have any button mapping
-(Config 2x = hold on the back-yard spotlight and the garage mudroom switch).
+below. Lights since 2026-09-19 (Tom approved): the porch group, front door light,
+`light.landscape_lights` (new HA group: Lily + Calla), lamp post, driveway, back-yard dimmer,
+garage interior lights and the back-yard flood/spotlight — spoken names are aliases, nothing was
+renamed. Three light relays (`switch.back_yard_retaining_wall_lights_relay`,
+`switch.shed_exterior_lights_shelly_relay`, `switch.back_yard_backyard_motion_light_relay`) are on
+the guard's `switch_allowlist` from v1.18.6. No exterior speaker yet. Only two switches have any
+button mapping (Config 2x = hold on the back-yard spotlight and the garage mudroom switch).
 
 Schedules (all unconditional, manual state simply lasts until the next edge):
 
@@ -103,10 +108,10 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
 - Shed fan is occupancy-owned (door/motion → on, 5 min still → off).
 - Holiday scenes/automations (Halloween, Christmas) are enabled by hand, have no mode helper and
   reference several entities that are unavailable or gone out of season.
-- Front yard has two groups (`light.front_yard_hue_lily_lights`, `…_calla_lights`) and no
-  single "landscape lights" handle.
-- Patio/shed lights and the shed fan are `switch.*` — deny-by-default in the guard, so exposing
-  them needs a `switch_allowlist` entry.
+- Front yard has two Z2M groups (`light.front_yard_hue_lily_lights`, `…_calla_lights`); the
+  single voice handle is the HA group `light.landscape_lights` (2026-09-19).
+- Patio/shed lights and the motion flood relay are `switch.*` and allowlisted by id (v1.18.6);
+  the shed fan stays denied (occupancy-owned, and not a light).
 - Every `fan.*` outside is spa equipment. Opener bulbs `light.ratgdov25i_*_light` pass a
   domain-based deny list and should be denied by name.
 

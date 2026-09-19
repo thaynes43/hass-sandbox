@@ -1497,7 +1497,10 @@ assist_exposure_guard:
   # The switch domain is DENY BY DEFAULT — a switch is exposed by name, never
   # by area.  Add entity ids here AND in the rules.py default as rooms are
   # curated: a test pins every list in this entry to the code defaults.
-  switch_allowlist: []
+  switch_allowlist:
+    - "switch.back_yard_retaining_wall_lights_relay"
+    - "switch.shed_exterior_lights_shelly_relay"
+    - "switch.back_yard_backyard_motion_light_relay"
   # An exposed script is an unrestricted tool: whatever the script does, the
   # model can do.  Every allowed script is therefore named EXPLICITLY — no
   # patterns.  A glob would make a filename the security boundary, so anyone
