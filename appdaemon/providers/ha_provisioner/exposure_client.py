@@ -17,7 +17,9 @@ readable and writable from AppDaemon:
 
 ``homeassistant/expose_entity``
     Takes ``assistants``, ``entity_ids`` and ``should_expose`` — the only bulk
-    primitive HA offers.  Requires an admin token.
+    primitive HA offers.  Requires an admin token.  Validated all-or-nothing,
+    so malformed ids are filtered out here and reported back to the caller in
+    an :class:`ExposureChange` rather than silently dropped.
 
 ``config/entity_registry/get_entries``
     Takes the required ``entity_ids`` list and returns ``{entity_id: entry}``
@@ -38,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List
 
 from .ha_rest_client import HaRestClient
@@ -46,6 +49,33 @@ logger = logging.getLogger(__name__)
 
 #: The assistant id used by HA's built-in "Assist" conversation pipelines.
 CONVERSATION_ASSISTANT = "conversation"
+
+
+@dataclass
+class ExposureChange:
+    """What :meth:`AssistExposureClient.set_exposure` actually did.
+
+    ``sent`` holds the normalised ids that went to Home Assistant in the
+    command it accepted; ``skipped`` holds the ids left out because they are
+    not a well-formed ``domain.object_id`` and would have made HA reject the
+    whole batch.
+
+    Both are **normalised** (``strip().lower()``, de-duplicated, order
+    preserved), so a caller that normalised its own ids the same way can test
+    membership directly.
+
+    Returning this rather than a count is the point: a caller that assumes
+    "no exception means everything applied" will report an entity as
+    un-exposed while it is still exposed — which on this app's durable
+    enforcement record is a false all-clear on a security boundary.
+
+    There is deliberately no ``__len__`` or ``__bool__``: collapsing this back
+    to one number is the habit that produced the bug it exists to prevent.
+    Callers read ``sent`` and ``skipped``.
+    """
+
+    sent: List[str] = field(default_factory=list)
+    skipped: List[str] = field(default_factory=list)
 
 
 #: Registry entries requested per WebSocket call (an extended entry is ~1-2 KB,
@@ -147,14 +177,20 @@ class AssistExposureClient:
         entity_ids: Iterable[str],
         should_expose: bool,
         assistant: str = CONVERSATION_ASSISTANT,
-    ) -> int:
+    ) -> ExposureChange:
         """Expose or un-expose ``entity_ids`` for ``assistant`` in one command.
 
-        Returns the number of entity ids sent.  An empty list is a no-op — HA
-        accepts it, but skipping the round trip keeps a clean run free of
-        WebSocket traffic.  Ids are normalised and de-duplicated like the read
-        path, and malformed ones are left out with a WARNING so they cannot make
-        HA reject the batch.
+        Returns an :class:`ExposureChange` naming what was ``sent`` and what
+        was ``skipped`` — **not** a count.  The distinction is load-bearing:
+        ids are normalised and de-duplicated like the read path, and malformed
+        ones are left out (HA validates ``entity_ids`` all-or-nothing, so one
+        bad id would make it reject the whole batch and nothing at all would
+        change).  A caller that treats "no exception" as "everything applied"
+        would then report a still-exposed entity as handled.
+
+        An empty ``sent`` is a no-op: HA accepts an empty list, but skipping
+        the round trip keeps a clean run free of WebSocket traffic.  ``skipped``
+        is still populated, so the caller can report those ids.
         """
         candidates = [str(entity_id).strip().lower() for entity_id in entity_ids]
         ids = list(dict.fromkeys(text for text in candidates if _ENTITY_ID_RE.match(text)))
@@ -170,7 +206,7 @@ class AssistExposureClient:
                 ", ".join(malformed[:10]),
             )
         if not ids:
-            return 0
+            return ExposureChange(sent=[], skipped=malformed)
         logger.info(
             "Setting Assist exposure should_expose=%s for %d entity(s) on %r",
             bool(should_expose),
@@ -185,7 +221,9 @@ class AssistExposureClient:
                 "should_expose": bool(should_expose),
             }
         )
-        return len(ids)
+        # Only reached when HA answered success — _ws_result raises otherwise —
+        # so every id in `ids` really was applied.
+        return ExposureChange(sent=ids, skipped=malformed)
 
     # ------------------------------------------------------------------
     # Internals

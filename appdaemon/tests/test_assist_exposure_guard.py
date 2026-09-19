@@ -52,6 +52,7 @@ from assist_exposure_guard.rules import (  # noqa: E402
     evaluate,
     evaluate_entity,
 )
+from providers.ha_provisioner.exposure_client import ExposureChange  # noqa: E402
 
 DEFAULT_RULES = GuardRules.from_config({})
 
@@ -407,12 +408,16 @@ class FakeExposureClient:
         platforms: Optional[Dict[str, str]] = None,
         list_error: Optional[Exception] = None,
         set_error: Optional[Exception] = None,
+        unacceptable_ids: Optional[List[str]] = None,
     ) -> None:
         self.exposed = list(exposed or [])
         self.platforms = dict(platforms or {})
         self.platform_requests: List[List[str]] = []
         self.list_error = list_error
         self.set_error = set_error
+        # Ids the real client filters out of the batch because HA would reject
+        # the whole command for them — they stay exposed.
+        self.unacceptable_ids = set(unacceptable_ids or [])
         self.last_assistant = ""
         self.set_exposure_calls: List[Dict[str, Any]] = []
 
@@ -428,7 +433,7 @@ class FakeExposureClient:
 
     async def set_exposure(
         self, entity_ids: Any, should_expose: bool, assistant: str
-    ) -> int:
+    ) -> ExposureChange:
         ids = list(entity_ids)
         self.set_exposure_calls.append(
             {
@@ -439,7 +444,10 @@ class FakeExposureClient:
         )
         if self.set_error is not None:
             raise self.set_error
-        return len(ids)
+        return ExposureChange(
+            sent=[i for i in ids if i not in self.unacceptable_ids],
+            skipped=[i for i in ids if i in self.unacceptable_ids],
+        )
 
 
 def _make_app(
@@ -782,6 +790,12 @@ def test_the_clean_recheck_that_enforcement_causes_keeps_the_record() -> None:
     enforced_at = app._last_enforced
     assert enforced_at != "never"
     assert _creates(app, ENFORCED_ID)
+    # Everything found was fixed, so the enforcing run itself clears any stale
+    # current-state notice — and only that one.
+    assert [
+        call.kwargs["notification_id"]
+        for call in _service_calls(app, "persistent_notification/dismiss")
+    ] == [CURRENT_ID]
 
     # HA fires the registry event the un-expose caused; the debounce runs.
     client.exposed = []
@@ -789,9 +803,8 @@ def test_the_clean_recheck_that_enforcement_causes_keeps_the_record() -> None:
     app._on_registry_updated("entity_registry_updated", {"action": "update"}, {})
     _run(app._on_debounced({}))
 
-    # The enforcement record is untouched…
-    dismissals = _service_calls(app, "persistent_notification/dismiss")
-    assert [call.kwargs["notification_id"] for call in dismissals] == [CURRENT_ID]
+    # The enforcement record is untouched — nothing left to dismiss or create.
+    assert _service_calls(app, "persistent_notification/dismiss") == []
     assert _creates(app, ENFORCED_ID) == []
 
     # …and so are the durable attributes.
@@ -801,6 +814,186 @@ def test_the_clean_recheck_that_enforcement_causes_keeps_the_record() -> None:
     # while the current-state attributes correctly report a clean list
     assert attributes["violations_last_run"] == "0"
     assert attributes["violating_entities"] == "none"
+
+
+# --- an id HA will not accept is still exposed, and must be reported as such
+
+
+MALFORMED = "switch.foo bar"
+
+
+def test_a_partly_applied_batch_records_only_what_really_changed() -> None:
+    """The regression this guards.
+
+    ``set_exposure`` leaves malformed ids out of the batch — HA validates
+    ``entity_ids`` all-or-nothing — so it can return without raising while one
+    entity is untouched and STILL exposed. Recording that one as un-exposed
+    would be a false all-clear on the app's most durable surface.
+    """
+    client = FakeExposureClient(
+        exposed=["lock.front_door", MALFORMED], unacceptable_ids=[MALFORMED]
+    )
+    app = _make_app(client=client)
+    _startup(app)
+
+    # Both were sent to the client…
+    assert client.set_exposure_calls[0]["entity_ids"] == ["lock.front_door", MALFORMED]
+
+    # …but the enforcement record covers ONLY the one that applied.
+    records = _creates(app, ENFORCED_ID)
+    assert len(records) == 1
+    assert records[0].kwargs["title"] == "Assist exposure guard: un-exposed 1 entity"
+    assert "lock.front_door" in records[0].kwargs["message"]
+    assert MALFORMED not in records[0].kwargs["message"]
+
+    # And the one that did not apply is reported as still exposed.
+    notices = _creates(app, CURRENT_ID)
+    assert len(notices) == 1
+    assert "UN-EXPOSE FAILED" in notices[0].kwargs["title"]
+    assert "STILL EXPOSED" in notices[0].kwargs["message"]
+    assert MALFORMED in notices[0].kwargs["message"]
+    assert "lock.front_door" not in notices[0].kwargs["message"]
+
+
+def test_a_partly_applied_batch_publishes_consistent_sensor_attributes() -> None:
+    client = FakeExposureClient(
+        exposed=["lock.front_door", MALFORMED], unacceptable_ids=[MALFORMED]
+    )
+    app = _make_app(client=client)
+    _startup(app)
+
+    attributes = _published_attributes(app)
+    # Durable record: only what was actually un-exposed.
+    assert attributes["last_enforced_entities"] == "lock.front_door"
+    assert attributes["last_enforced"] != "never"
+    # Current state: both were violations this run, and the error names the
+    # one that is still exposed.
+    assert attributes["violations_last_run"] == "2"
+    assert MALFORMED in attributes["violating_entities"]
+    assert MALFORMED in attributes["last_error"]
+    assert "lock.front_door" in attributes["violating_entities"]
+
+
+def test_a_partly_applied_batch_logs_the_unapplied_ids_as_an_error() -> None:
+    client = FakeExposureClient(
+        exposed=["lock.front_door", MALFORMED], unacceptable_ids=[MALFORMED]
+    )
+    app = _make_app(client=client)
+    _startup(app)
+
+    errors = [
+        call.args[0]
+        for call in app.log.call_args_list
+        if call.kwargs.get("level") == "ERROR"
+    ]
+    assert any(MALFORMED in line for line in errors)
+
+
+def test_an_unapplied_id_keeps_being_reported_every_run() -> None:
+    """It cannot self-heal — only a human removing it ends this."""
+    client = FakeExposureClient(exposed=[MALFORMED], unacceptable_ids=[MALFORMED])
+    app = _make_app(client=client)
+    _startup(app)
+    app.call_service.reset_mock()
+
+    _run(app._run_check("interval"))
+
+    notices = _creates(app, CURRENT_ID)
+    assert len(notices) == 1
+    assert MALFORMED in notices[0].kwargs["message"]
+    assert _creates(app, ENFORCED_ID) == []
+
+
+def test_a_wholly_unacceptable_batch_writes_no_enforcement_record() -> None:
+    client = FakeExposureClient(exposed=[MALFORMED], unacceptable_ids=[MALFORMED])
+    app = _make_app(client=client)
+    _startup(app)
+
+    assert _creates(app, ENFORCED_ID) == []
+    assert app._last_enforced == "never"
+    assert app._last_enforced_entities == "none"
+
+    notices = _creates(app, CURRENT_ID)
+    assert len(notices) == 1
+    assert MALFORMED in notices[0].kwargs["message"]
+
+
+def test_a_fully_applied_batch_writes_no_still_exposed_notice() -> None:
+    """The normal path is unchanged."""
+    client = FakeExposureClient(exposed=["lock.front_door", "siren.alarm"])
+    app = _make_app(client=client)
+    _startup(app)
+
+    assert _creates(app, CURRENT_ID) == []
+    records = _creates(app, ENFORCED_ID)
+    assert len(records) == 1
+    assert records[0].kwargs["title"] == "Assist exposure guard: un-exposed 2 entities"
+    assert _published_attributes(app)["last_enforced_entities"] == (
+        "lock.front_door, siren.alarm"
+    )
+    assert _published_attributes(app)["last_error"] == "none"
+
+
+def test_fixing_the_bad_id_clears_the_still_exposed_notice() -> None:
+    """A stale "STILL EXPOSED" would otherwise outlive the problem.
+
+    The next clean run would clear it, but that can be a whole check interval
+    away for an entity whose change fires no registry event.
+    """
+    client = FakeExposureClient(
+        exposed=["lock.front_door", MALFORMED], unacceptable_ids=[MALFORMED]
+    )
+    app = _make_app(client=client)
+    _startup(app)
+    assert _creates(app, CURRENT_ID)
+
+    # The id is renamed by hand; both violations now apply.
+    client.exposed = ["lock.front_door", "switch.foo_bar"]
+    client.unacceptable_ids = set()
+    app.call_service.reset_mock()
+    _run(app._run_check("interval"))
+
+    assert _creates(app, CURRENT_ID) == []
+    assert [
+        call.kwargs["notification_id"]
+        for call in _service_calls(app, "persistent_notification/dismiss")
+    ] == [CURRENT_ID]
+    assert len(_creates(app, ENFORCED_ID)) == 1
+
+
+def test_a_non_canonical_id_is_recognised_as_applied() -> None:
+    """The partition depends on the caller and the provider normalising alike.
+
+    If they ever drift, every violation reads as unapplied: the app would
+    un-expose things correctly while reporting them as STILL EXPOSED forever,
+    and write no enforcement record at all.
+    """
+    client = FakeExposureClient(exposed=[" Cover.Garage_Door "])
+    app = _make_app(client=client, device_classes={"cover.garage_door": "garage"})
+    _startup(app)
+
+    assert client.set_exposure_calls[0]["entity_ids"] == ["cover.garage_door"]
+    records = _creates(app, ENFORCED_ID)
+    assert len(records) == 1
+    assert "cover.garage_door" in records[0].kwargs["message"]
+    assert _creates(app, CURRENT_ID) == []
+    assert _published_attributes(app)["last_enforced_entities"] == "cover.garage_door"
+
+
+def test_report_only_mode_is_unaffected_by_the_partition() -> None:
+    client = FakeExposureClient(
+        exposed=["lock.front_door", MALFORMED], unacceptable_ids=[MALFORMED]
+    )
+    app = _make_app({"enforce": False}, client=client)
+    _startup(app)
+
+    assert client.set_exposure_calls == []
+    assert _creates(app, ENFORCED_ID) == []
+    notices = _creates(app, CURRENT_ID)
+    assert len(notices) == 1
+    assert "enforce is off" in notices[0].kwargs["message"]
+    assert "lock.front_door" in notices[0].kwargs["message"]
+    assert MALFORMED in notices[0].kwargs["message"]
 
 
 def test_durable_attributes_default_to_never_before_any_enforcement() -> None:

@@ -37,7 +37,9 @@ Read and change Home Assistant's **Assist exposure list** — the only security 
 
 - `await list_exposed_entities(assistant="conversation") -> list[str]` — `homeassistant/expose_entity/list`. HA answers `{"exposed_entities": {entity_id: {assistant: True}}}` and only includes assistants whose `should_expose` is truthy, so an entity absent from the map (or whose map lacks the assistant) is simply not exposed. Returns a sorted list.
 - `await list_entity_platforms(entity_ids) -> dict[str, str]` — `config/entity_registry/get_entries` for exactly those ids (chunks of 200), reduced to `{entity_id: platform}` (the supplying integration, lowercased). Never `config/entity_registry/list`: the whole registry is a 9.5 MB frame on the live instance, over the WebSocket client's 4 MB limit. Ids are normalised first (`strip().lower()`, de-duplicated) and **the result is keyed by the normalised id**, so look results up with the same normalisation. Ids that are not well-formed are skipped with a WARNING (HA validates the list all-or-nothing); entities without a registry entry are absent from the result. Read `device_class` from entity state, not from here.
-- `await set_exposure(entity_ids, should_expose, assistant="conversation") -> int` — `homeassistant/expose_entity`, the only bulk primitive HA offers. Sends one command for the whole list and returns how many ids were sent; an empty list is a no-op with no round trip. Ids are normalised and de-duplicated like the read path; malformed ids are left out with a WARNING, because HA validates the list all-or-nothing and would otherwise reject the whole batch.
+- `await set_exposure(entity_ids, should_expose, assistant="conversation") -> ExposureChange` — `homeassistant/expose_entity`, the only bulk primitive HA offers. Sends one command for the whole list. Ids are normalised and de-duplicated like the read path; malformed ids are left out with a WARNING, because HA validates the list all-or-nothing and would otherwise reject the whole batch. An empty `sent` is a no-op with no round trip.
+
+  It returns an **`ExposureChange`**, not a count: `sent` is the normalised ids HA accepted, `skipped` is the ids left out. Callers must partition their own work by `sent` — a caller that reads "no exception" as "everything applied" will report a skipped entity as handled while it is still exposed, which on a security boundary is a false all-clear. There is deliberately no `__len__` or `__bool__` on it: collapsing the result back to one number is the habit that caused the bug.
 
 Every call raises `RuntimeError` when HA answers `success: false`, so a failed un-expose can never be mistaken for a successful one. Used by the `assist_exposure_guard` app.
 
@@ -77,6 +79,7 @@ Rules: lowercase, non-alphanumeric chars become underscores, consecutive undersc
 |------|---------|
 | `provisioner.py` | `HAProvisioner` — high-level idempotent ensure API |
 | `ha_admin_client.py` | `HaAdminClient` — config-entry inspection/reload + server-side template rendering |
+| `exposure_client.py` | `AssistExposureClient` + `ExposureChange` — read/write the Assist exposure list, and per-id registry platform lookups |
 | `ha_rest_client.py` | `HaRestClient` — low-level async HTTP + WebSocket wrapper |
 | `local_file_check.py` | `local_file_status()` / `local_file_exists()` / `build_local_url()` — unauthenticated `/local/...` probe |
 | `__init__.py` | Package exports |

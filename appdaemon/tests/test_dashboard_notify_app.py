@@ -1188,9 +1188,15 @@ class TestStartupReconcile:
         })
         app.initialize()
 
-        with patch.object(app, "_request_notification_generation") as mock_req:
-            with patch.object(app, "_request_placeholder_generation"):
-                app._startup_reconcile({})
+        # Pin the clock like the sibling test below. The window's `end` is
+        # EXCLUSIVE (`current_minutes < end_minutes`), so "00:00-23:59" is
+        # inactive for the whole 23:59 minute — this test failed for 60
+        # seconds a day against the real wall clock, and duly did when a full
+        # suite run crossed midnight on 2026-09-19.
+        with patch("time.time", return_value=1741525200.0):  # daytime
+            with patch.object(app, "_request_notification_generation") as mock_req:
+                with patch.object(app, "_request_placeholder_generation"):
+                    app._startup_reconcile({})
 
         mock_req.assert_called_once()
 

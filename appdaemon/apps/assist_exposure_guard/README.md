@@ -123,9 +123,9 @@ positive costs a human a manual re-exposure in the HA UI:
   validates the id list all-or-nothing) and logged at WARNING by
   `AssistExposureClient` (the AppDaemon main log, not this app's log); the domain, glob
   and deny-by-default rules still apply to it. It also cannot be un-exposed
-  by this app (HA rejects malformed ids), so it is left out of the un-expose
-  batch — the rest of the batch still applies — and keeps being reported until
-  it is removed by hand.
+  by this app, so it is left out of the un-expose batch — the rest of the
+  batch still applies. See *Partial enforcement* below: it is reported as
+  **still exposed** every run until a human removes or renames it.
 
 ## Notifications
 
@@ -150,6 +150,29 @@ The same reasoning applies to the sensor: `violations_last_run` and
 clean re-check, while **`last_enforced` and `last_enforced_entities` persist**.
 They are also re-seeded from the sensor on startup, so an AppDaemon reload does
 not erase the record either.
+
+### Partial enforcement
+
+A run can un-expose some violators and leave others. HA validates
+`entity_ids` all-or-nothing, so `AssistExposureClient.set_exposure` filters
+malformed ids out of the batch rather than letting one of them make HA reject
+the lot — and it returns an `ExposureChange` naming what it `sent` and what it
+`skipped`. **Both notifications can therefore appear from the same run**, and
+the guard partitions the violations by what actually applied:
+
+- the ones in `sent` get the enforcement record, sized and listed from those
+  ids only — it never claims an entity was un-exposed while it is still
+  exposed;
+- everything else goes down the current-state path: the "UN-EXPOSE FAILED —
+  STILL EXPOSED" notice naming the ids, a phone push, and `last_error`
+  spelling out that HA would not accept them. That repeats every run, because
+  nothing here can fix it — only a human removing or renaming the entity can.
+  When that happens, the next run applies the change and clears the notice.
+
+If **nothing** applied, no enforcement record is written at all. The sensor
+stays consistent across the split: `last_enforced_entities` lists only what
+changed, while `violating_entities` and `violations_last_run` describe
+everything the run found.
 
 `notify_service` mirrors notifications to a phone — the only copy nothing can
 clear, so it is set in `apps-prod.yaml`. Pushes are deduplicated by condition,
