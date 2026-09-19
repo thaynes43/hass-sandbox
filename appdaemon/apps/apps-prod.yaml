@@ -1418,3 +1418,80 @@ zigbee_ota_updater:
   # give up on the attempt after 4h without a terminal response.
   progress_stall_s: 2700
   update_timeout_s: 14400
+
+# ---------------------------------------------------------------------------
+# Assist exposure guard — keep the dangerous set out of the voice agents
+# ---------------------------------------------------------------------------
+# HA's Assist exposure list is the ONLY security boundary in front of the LLM
+# voice agents: an exposed lock can be unlocked by voice with no PIN, an
+# exposed garage cover can be opened, and any exposed script is an
+# unrestricted tool.  This app is the backstop against an accidental
+# "expose everything in this area" click.
+#
+# Every deny list below is the app default, restated here so the security
+# policy is readable without opening the code.  Override any of them to change
+# the policy; an explicitly empty list ([]) clears that rule entirely.
+assist_exposure_guard:
+  module: assist_exposure_guard.assist_exposure_guard
+  class: AssistExposureGuard
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  check_interval_minutes: 15
+  # true = un-expose violators automatically; false = report only.
+  enforce: true
+  # Optional mobile push in addition to the persistent notification, e.g.
+  # notify/mobile_app_toms_iphone_air.  Unset = persistent notification only.
+  # notify_service: ""
+  deny_domains:
+    - lock
+    - alarm_control_panel
+    - siren
+    - camera
+    - button
+    - input_button
+    - valve
+    - water_heater
+    - automation
+    - update
+    - number
+    - select
+    - lawn_mower
+  # `cover` itself is fine (window shades); these device classes are not.
+  deny_cover_device_classes:
+    - garage
+    - gate
+    - door
+  # Entity-registry `platform` — pool and spa control surfaces.
+  deny_integrations:
+    - intellicenter
+    - gecko
+  deny_entity_globs:
+    - "switch.power_distribution_*"
+    - "switch.usp_pdu_pro_*"
+    - "switch.*ebike*"
+    - "switch.*mombike*"
+    - "switch.dryer_power"
+    - "switch.washer_power"
+    - "switch.*printer*"
+    - "switch.server_room_ac_power_switch"
+    - "switch.unifi_network_*"
+    - "switch.*unifi_network_*"
+    - "switch.zigbee2mqtt_bridge_permit_join"
+    - "switch.*_privacy_mode"
+    - "switch.*_detections_*"
+    - "switch.ratgdov25i_*"
+    - "switch.spa_intouch3_switch"
+    - "switch.nrz120804q_*"
+  # The switch domain is DENY BY DEFAULT — a switch is exposed by name, never
+  # by area.  Add entity ids here as rooms are curated.
+  switch_allowlist: []
+  # An exposed script is an unrestricted tool, so scripts are allowlisted by
+  # pattern.  script.voice_* is the naming convention for the purpose-built
+  # secure-direction-only voice scripts (lock all doors, close garage doors).
+  script_allowlist_globs:
+    - "script.voice_*"
+    - "script.llm_script_for_music_assistant_voice_requests"
+    - "script.kellie_mobile_primary_bedroom_*"
+  # Per-entity escape hatch that beats every deny rule above.
+  allow_entities: []

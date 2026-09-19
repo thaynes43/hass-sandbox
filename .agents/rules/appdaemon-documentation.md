@@ -79,6 +79,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `media_dashboard_app` | `appdaemon/apps/media_dashboard_app/README.md` | Media dashboard: Plex new arrivals, in-theaters, coming-soon with showtimes and thumbs up/down |
 | `countdown_app` | `appdaemon/apps/countdown_app/README.md` | Multiple countdowns with AI-generated backgrounds, auto-rotation, text styling |
 | `zigbee_ota` | `appdaemon/apps/zigbee_ota/README.md` | Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry |
+| `assist_exposure_guard` | `appdaemon/apps/assist_exposure_guard/README.md` | Enforces the Assist (voice assistant) exposure deny list: un-exposes locks/garage covers/scripts and notifies |
 
 ### Providers
 
@@ -89,7 +90,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers/gemini` | `appdaemon/providers/ai_providers/gemini/README.md` | Google Gemini adapter (text, multimodal, image) |
 | `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal) |
 | `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image) |
-| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
+| `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `AssistExposureClient` (voice-assistant exposure list read/write + entity-registry platforms) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
@@ -193,6 +194,14 @@ countdown_app
 
 zigbee_ota (standalone — MQTT + HASS plugins only)
   └─ publishes sensor.zigbee_ota_orchestrator
+
+assist_exposure_guard (standalone — no app depends on it and it depends on no app)
+  └─ depends on: providers/ha_provisioner AssistExposureClient
+       (homeassistant/expose_entity{,/list} + config/entity_registry/list over the
+        admin WebSocket API; requires an admin token)
+  └─ pure rule engine in assist_exposure_guard/rules.py (no AppDaemon imports)
+  └─ listens for entity_registry_updated (debounced) + a periodic timer
+  └─ publishes sensor.assist_exposure_guard + a persistent notification
 ```
 
 ## When creating a new app or provider
