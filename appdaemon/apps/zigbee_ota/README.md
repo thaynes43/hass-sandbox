@@ -143,7 +143,7 @@ simple entities card.
 | `online_retry_grace_s` | `60` | Retry delay once an offline-failed device comes back online. |
 | `progress_stall_s` | `2700` | No progress movement for this long → `stalled: true` on the sensor. An attempt that never started transferring at all is abandoned at this point instead. |
 | `update_timeout_s` | `14400` | Absolute per-attempt cap; after it the attempt is marked failed and the queue moves on. |
-| `busy_backoff_s` | `300` | Wait after Z2M reports another OTA is already running. |
+| `busy_backoff_s` | `300` | Wait after Z2M reports another OTA is already running, and the stagger after either timeout gives up on an attempt. |
 | `park_recheck_s` | `86400` | How long a device Z2M cannot install (no image, or a name it doesn't know) stays parked before being tried again. |
 | `mqtt_namespace` | `mqtt` | AppDaemon MQTT plugin namespace. |
 | `base_topic` | `zigbee2mqtt` | Z2M base topic. |

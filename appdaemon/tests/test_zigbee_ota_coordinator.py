@@ -392,8 +392,10 @@ def test_absolute_timeout_fails_attempt_and_late_ok_still_completes() -> None:
     refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     clock.advance(1001)
-    next_decision = coord.decide()  # times out hue_a, starts hue_b
+    assert coord.decide() is None  # times out hue_a, staggers
     assert coord.status()["failed_attempts_this_run"] == 1
+    clock.advance(301)
+    next_decision = coord.decide()
     assert next_decision is not None and next_decision.friendly_name == "hue_b"
     # Z2M eventually reports the original update finished fine.
     coord.on_update_response(
@@ -877,7 +879,9 @@ def test_a_transfer_in_progress_keeps_the_slot_until_the_absolute_timeout() -> N
     assert coord.decide() is None  # stalled, but patient
     assert coord.status()["in_flight"]["stalled"] is True
     clock.advance(900)
-    assert coord.decide() is not None  # absolute timeout takes over
+    assert coord.decide() is None  # absolute timeout fires, staggered
+    clock.advance(301)
+    assert coord.decide() is not None
 
 
 def test_an_adopted_update_is_never_abandoned_early() -> None:
@@ -892,8 +896,10 @@ def test_an_adopted_update_is_never_abandoned_early() -> None:
     clock.advance(101)  # no progress published yet
     assert coord.decide() is None  # hue_b must NOT start
     assert coord.status()["in_flight"]["device"] == "hue_c"
-    # The absolute timeout is still the backstop.
+    # The absolute timeout is still the backstop (plus the busy stagger).
     clock.advance(900)
+    assert coord.decide() is None
+    clock.advance(301)
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -920,3 +926,47 @@ def test_a_late_answer_for_an_abandoned_attempt_is_recorded() -> None:
     assert status["cooldown"][0]["last_error"] == "Device didn't respond to OTA request"
     assert status["cooldown"][0]["attempts"] == attempts_before  # not double-counted
     assert status["failed_attempts_this_run"] == 1
+
+
+def test_a_late_answer_never_kills_the_next_attempt() -> None:
+    """Z2M's answer for an abandoned transaction must not land on the retry."""
+    clock = FakeClock()
+    coord = make_coordinator(
+        clock,
+        progress_stall_s=100,
+        retry_base_s=100,
+        make_transaction=lambda name: f"t-{name}-{int(clock.ts)}",
+    )
+    refresh(coord, snapshot("hue_a"))
+    first = coord.decide()
+    clock.advance(101)
+    coord.decide()  # abandons hue_a, sets the busy window
+    clock.advance(301)
+    second = coord.decide()
+    assert second is not None and second.transaction != first.transaction
+
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device didn't respond to OTA request",
+            "transaction": first.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"  # the live attempt survives
+    assert status["failed_attempts_this_run"] == 1  # not double-counted
+
+
+def test_the_absolute_timeout_also_staggers_the_next_device() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 40})
+    clock.advance(1001)
+    assert coord.decide() is None  # timed out, but staggered
+    assert coord.status()["busy_until"] != ""
+    clock.advance(301)
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"

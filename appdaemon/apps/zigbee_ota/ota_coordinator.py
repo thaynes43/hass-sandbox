@@ -366,10 +366,19 @@ class OtaCoordinator:
         friendly = data.get("id")
         transaction = payload.get("transaction")
         fl = self._in_flight
-        matches_flight = fl is not None and (
-            (transaction is not None and transaction == fl.transaction)
-            or (friendly is not None and friendly == fl.friendly_name)
-        )
+        if transaction is not None:
+            # A transaction identifies exactly one attempt. Never fall back to
+            # the name when one is present: Z2M's late answer for an attempt we
+            # already abandoned would otherwise be applied to the device's
+            # *next* attempt, burning it and freeing the slot while Z2M is
+            # still working.
+            matches_flight = fl is not None and transaction == fl.transaction
+        else:
+            matches_flight = (
+                fl is not None
+                and friendly is not None
+                and friendly == fl.friendly_name
+            )
         if status == "ok":
             if matches_flight:
                 self._finish_in_flight(RESULT_SUCCESS)
@@ -431,6 +440,10 @@ class OtaCoordinator:
                     RESULT_ERROR,
                     error=f"no terminal response after {int(self.update_timeout_s)}s",
                 )
+                # Same optimism as the never-started branch below, with more
+                # reason for it: this attempt may have been transferring right
+                # up until it went silent. Stagger the next device.
+                self._global_busy_until = ts + self.busy_backoff_s
             elif (
                 not fl.adopted
                 and fl.progress is None
