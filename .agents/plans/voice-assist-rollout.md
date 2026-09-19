@@ -376,8 +376,10 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   Play Music script sets it to `replace`. Verified: a 227-item artist queue became exactly the 5
   requested tracks. So that "replace by default" does not take queueing away, the blueprint also
   has an optional LLM-facing field `queue` (`add` / `next`, only when the request talks about the
-  queue); it wins over `enqueue_option`, and the shuffle step is skipped for it (the running
-  queue's shuffle is somebody's choice). Found while testing it: on "add X to the queue" the agent
+  queue); it wins over `enqueue_option`, and for it the shuffle step only runs when the request
+  itself asked to shuffle (the existing queue is kept, and its shuffle setting is somebody's
+  choice; the flip side: an "add" that ends up building the whole queue, because the target's queue
+  was empty, inherits whatever shuffle setting that player was left with). Found while testing it: on "add X to the queue" the agent
   **left the area out**, and the script's fallback is the default player, so the song went into the
   bedroom Beam's queue from the Movie Room. Two fixes: the script's `area_prompt` says an
   add/next request still needs the area, and the blueprint **hands an add/next request without an
@@ -395,6 +397,12 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
   then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
   skipped both times. Not verified on the Rumpus KEFs themselves (room occupied).
+  **Open for the TVs/AVR work below:** `queue_targets` ignores `unavailable`/`unknown` players but
+  not `off`/`standby` ones. Every room has exactly one Music Assistant player today and none of
+  them reports `off`, but a TV- or AVR-backed MA player added to a room would, while powered down,
+  keep "every target is playing" from ever holding there, and each add would play now instead of
+  appending. Decide the rule when such a player is added (should a powered-down TV be a music
+  target at all?), then extend the filter.
 - *Invented track lists did not resolve.* For "party mood" the agent first sent
   `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, so
   **none** of them resolved and the call failed (`Could not resolve [...]`; a list where only some
