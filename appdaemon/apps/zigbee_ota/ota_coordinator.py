@@ -19,6 +19,7 @@ from __future__ import annotations
 import fnmatch
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Callable, Optional
 
 
@@ -76,7 +77,7 @@ class InFlight:
         status: dict[str, Any] = {
             "device": self.friendly_name,
             "adopted": self.adopted,
-            "started_ts": self.started_ts,
+            "started_at": _at(self.started_ts),
             "stalled": self.stalled,
         }
         # Omit rather than report None: Home Assistant drops null attributes.
@@ -87,13 +88,14 @@ class InFlight:
         return status
 
 
-def _to_minute(seconds: float) -> int:
-    """Round a countdown to the nearest minute.
+def _at(ts: float) -> str:
+    """Render an absolute moment for the status sensor.
 
-    The status sensor is read by humans, and a to-the-second countdown would
-    make Home Assistant write a recorder row on every 120s tick.
+    Absolute, never a countdown: Home Assistant writes a recorder row every
+    time an attribute changes, and a countdown changes on every tick by
+    definition. "Retrying at 14:32" is also easier to read than "in 871s".
     """
-    return int(round(max(0.0, seconds) / 60.0)) * 60
+    return datetime.fromtimestamp(ts).isoformat(timespec="seconds")
 
 
 @dataclass
@@ -144,7 +146,6 @@ class OtaCoordinator:
         self._completed: list[dict[str, Any]] = []  # this process lifetime only
         self._recently_completed: dict[str, float] = {}
         self._no_image: dict[str, NoImageSkip] = {}  # active parks
-        self._skipped_names: list[str] = []  # everything parked this run
         self._cleared: list[str] = []
         self._failed_attempts: int = 0
         self._last_event: str = "startup"
@@ -232,6 +233,11 @@ class OtaCoordinator:
                 "no Zigbee2MQTT device list yet — nothing queued"
             )
             return
+        if self._identity_stale is not None:
+            # The device list could not be refreshed this tick. Re-deriving the
+            # queue from a snapshot we can't match against a trustworthy list
+            # would drop devices that are still there.
+            return
         seen: set[str] = set()
         present: set[str] = set()
         adopted_candidate: Optional[str] = None
@@ -243,7 +249,16 @@ class OtaCoordinator:
             if not self._is_z2m(entity_id, friendly):
                 continue
             present.add(friendly)
-            if payload.get("state") != "on":
+            state = payload.get("state")
+            if state not in ("on", "off"):
+                # unavailable/unknown: Z2M discovery marks the update entity
+                # unavailable whenever the device is out of touch (a bulb
+                # switched off at the wall, a Home Assistant restart). That
+                # says nothing about the firmware, so keep everything we know
+                # — the queue entry, its backoff, its no-image park — and wait.
+                seen.add(friendly)
+                continue
+            if state != "on":
                 # Nothing is on offer any more, so nothing is being skipped.
                 self._no_image.pop(friendly, None)
                 # Work out whether anything actually installed.
@@ -441,7 +456,7 @@ class OtaCoordinator:
             else:
                 self._recently_completed[fl.friendly_name] = self.now()
                 self._completed.append(
-                    {"device": fl.friendly_name, "ts": self.now()}
+                    {"device": fl.friendly_name, "at": _at(self.now())}
                 )
             self._last_event = f"{fl.friendly_name} updated successfully"
             return
@@ -514,8 +529,6 @@ class OtaCoordinator:
             latest_version=rec.latest_version if rec is not None else None,
             ts=self.now(),
         )
-        if friendly not in self._skipped_names:
-            self._skipped_names.append(friendly)
         self._clear_in_flight_for(friendly)
         self._last_event = f"{friendly} skipped: {error}"
 
@@ -526,7 +539,7 @@ class OtaCoordinator:
         self._completed.append(
             {
                 "device": friendly,
-                "ts": self.now(),
+                "at": _at(self.now()),
                 "version": str(
                     attrs.get("installed_version") or rec.latest_version or ""
                 ),
@@ -552,7 +565,7 @@ class OtaCoordinator:
                 {
                     "device": rec.friendly_name,
                     "attempts": rec.attempts,
-                    "retry_in_s": _to_minute(rec.next_attempt_ts - ts),
+                    "retry_at": _at(rec.next_attempt_ts),
                     "offline_failure": rec.offline_failure,
                     "last_error": (rec.last_error or "")[:ERROR_TEXT_CAP],
                 }
@@ -586,11 +599,11 @@ class OtaCoordinator:
             "offline_count": len(offline),
             "completed_this_run": self._completed[-STATUS_LIST_CAP:],
             "completed_count_this_run": len(self._completed),
-            "skipped_no_image": self._skipped_names[-STATUS_LIST_CAP:],
-            "skipped_no_image_count": len(self._skipped_names),
+            "skipped_no_image": sorted(self._no_image)[:STATUS_LIST_CAP],
+            "skipped_no_image_count": len(self._no_image),
             "cleared_without_update": self._cleared[-STATUS_LIST_CAP:],
             "failed_attempts_this_run": self._failed_attempts,
-            "busy_wait_s": _to_minute(self._global_busy_until - ts),
+            "busy_until": _at(self._global_busy_until) if ts < self._global_busy_until else "",
             "z2m_devices_known": self._z2m_device_count(),
             "identity_source": self._identity_source(),
             "last_event": self._last_event,

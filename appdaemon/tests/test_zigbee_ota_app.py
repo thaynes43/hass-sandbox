@@ -405,7 +405,7 @@ def test_status_falsy_attributes_reach_home_assistant() -> None:
     assert attrs["paused"] == "false"
     assert attrs["failed_attempts_this_run"] == "0"
     assert attrs["completed_count_this_run"] == "0"
-    assert attrs["busy_wait_s"] == "0"
+    assert attrs["busy_until"] == ""
     assert attrs["z2m_devices_known"] == "0"
     assert attrs["in_flight"] == {}
 

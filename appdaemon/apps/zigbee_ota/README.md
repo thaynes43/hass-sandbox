@@ -44,6 +44,11 @@ and widened in 2026-09 to every Z2M device.
   is picked up again when a different version is offered, when the update stops
   being offered and later returns, or after `no_image_recheck_s` — upstream
   often republishes a pulled release under the *same* version number.
+- **`unavailable` is not `off`** — Z2M marks a device's `update.*` entity
+  unavailable whenever the device is out of touch (switched off at the wall, a
+  Home Assistant restart). Only an explicit `off` means the update went away;
+  `unavailable` and `unknown` leave the queue entry, its backoff and any
+  no-image park exactly as they were.
 - **Offline devices** (bulbs without power) — skipped while their retained
   `zigbee2mqtt/<device>/availability` topic says `offline`. A failed attempt
   classified as offline-type (`timeout` / `didn't respond`) backs off
@@ -61,12 +66,14 @@ and widened in 2026-09 to every Z2M device.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending`, `cooldown` (per-device attempts/retry-in/last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending`, `cooldown` (per-device attempts / `retry_at` / last error), `offline`, `completed_this_run`, `skipped_no_image`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
-The lists are capped at 25 entries with a `*_count` beside them, and the
-countdowns are rounded to the minute. Home Assistant writes a recorder row
-every time an attribute changes, and on a 160-device fleet an uncapped list
-with a per-second countdown would write a multi-kB row every tick.
+The lists are capped at 25 entries with a `*_count` beside them, and every
+schedule is an absolute time (`retry_at`, `busy_until`, `started_at`) rather
+than a countdown. Home Assistant writes a recorder row every time an attribute
+changes, so on a 160-device fleet an uncapped list — or a countdown, which
+changes by definition on every tick — would write a multi-kB row every 2
+minutes.
 
 A device is only listed in `completed_this_run` when its installed version
 actually moved (or Z2M reported the update ok). An update Z2M withdrew without

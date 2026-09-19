@@ -326,7 +326,7 @@ def test_busy_error_requeues_without_burning_attempt() -> None:
     )
     status = coord.status()
     assert status["in_flight"] == {}
-    assert status["busy_wait_s"] > 0
+    assert status["busy_until"] != ""
     assert coord.decide() is None  # busy window
     clock.advance(301)
     retry = coord.decide()
@@ -482,12 +482,15 @@ def test_no_image_clearing_is_not_reported_as_completed() -> None:
             "data": {"id": "hue_a"},
         }
     )
+    assert coord.status()["skipped_no_image"] == ["hue_a"]
     # Z2M resets the device's update state; HA's entity follows.
     refresh(coord, {"update.hue_a": entity("hue_a", state="off")})
     status = coord.status()
     assert status["completed_count_this_run"] == 0
     assert status["completed_this_run"] == []
-    assert status["skipped_no_image"] == ["hue_a"]
+    # Nothing is on offer any more, so nothing is being skipped either.
+    assert status["skipped_no_image"] == []
+    assert status["cleared_without_update"] == []
     assert status["remaining"] == 0
 
 
@@ -577,9 +580,9 @@ def test_no_image_park_is_dropped_when_the_device_leaves_the_fleet() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    refresh(coord, snapshot("hue_b"))  # hue_a removed from Z2M
-    # The run record stays, the gate does not.
     assert coord.status()["skipped_no_image"] == ["hue_a"]
+    refresh(coord, snapshot("hue_b"))  # hue_a removed from Z2M
+    assert coord.status()["skipped_no_image"] == []
     refresh(coord, snapshot("hue_a", "hue_b"))
     assert "hue_a" in coord.status()["pending"]
 
@@ -594,9 +597,11 @@ def test_status_lists_are_capped_with_counts() -> None:
     assert status["remaining"] == 40
 
 
-def test_countdowns_are_rounded_to_the_minute() -> None:
+def test_schedules_are_absolute_so_ticking_does_not_change_attributes() -> None:
+    """Every attribute change is a Home Assistant recorder row, so a countdown
+    would write one on every tick just by counting down."""
     clock = FakeClock()
-    coord = make_coordinator(clock, retry_base_s=905)
+    coord = make_coordinator(clock)
     refresh(coord, snapshot("hue_a"))
     decision = coord.decide()
     coord.on_update_response(
@@ -607,5 +612,67 @@ def test_countdowns_are_rounded_to_the_minute() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    clock.advance(7)
-    assert coord.status()["cooldown"][0]["retry_in_s"] % 60 == 0
+    before = coord.status()
+    clock.advance(240)  # two ticks later
+    refresh(coord, snapshot("hue_a"))
+    assert coord.status() == before
+
+
+# ---------------------------------------------------------------------------
+# unavailable / unknown are not "the update went away"
+# ---------------------------------------------------------------------------
+
+
+def test_unavailable_entity_keeps_its_queue_entry_and_backoff() -> None:
+    """Z2M marks the update entity unavailable when a device loses power."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Device didn't respond to OTA request (timeout)",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    coord.set_availability("hue_a", False)
+    assert coord.status()["cooldown"][0]["attempts"] == 1
+
+    refresh(coord, snapshot("hue_a", state="unavailable"))
+    status = coord.status()
+    assert status["cooldown"][0]["attempts"] == 1  # backoff survived
+    assert status["offline"] == ["hue_a"]  # still visible as offline
+    assert status["completed_this_run"] == []
+    assert status["cleared_without_update"] == []
+    assert coord.decide() is None
+
+
+def test_unavailable_entity_does_not_release_a_no_image_park() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    refresh(coord, snapshot("hue_a", state="unavailable"))
+    assert coord.status()["skipped_no_image"] == ["hue_a"]
+    refresh(coord, snapshot("hue_a"))
+    assert coord.decide() is None  # still parked
+
+
+def test_whole_fleet_unavailable_keeps_the_queue() -> None:
+    """A Home Assistant restart flips every entity to unavailable at once."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    assert coord.status()["remaining"] == 2
+    refresh(coord, snapshot("hue_a", "hue_b", state="unavailable"))
+    status = coord.status()
+    assert status["remaining"] == 2
+    assert status["cleared_without_update"] == []
