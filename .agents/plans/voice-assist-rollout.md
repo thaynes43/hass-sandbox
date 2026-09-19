@@ -13,7 +13,7 @@ all four rooms on gpt-5.6-terra with modernised prompts, firmware on ESPHome 202
 music routing mapped, Rumpus Room fixed; TVs/AVR/Frame open. Phase 5 not started. Next: test each
 room with Tom (music included), then the ThirdReality device in the cloffice.
 
-## Inventory (verified 2026-09-18, HA core-2026.9.2)
+## Inventory (as found on 2026-09-18, HA core-2026.9.2 — the STARTING point; models and prompts were replaced in Phase 4, current ids are in `voice-assist-handoff.md`)
 
 | Satellite | Pipeline select | Pipeline | Agent |
 |---|---|---|---|

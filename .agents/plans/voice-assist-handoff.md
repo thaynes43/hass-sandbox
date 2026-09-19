@@ -52,8 +52,21 @@ turns up, and then the new device. Tom speaks to the box; you read what actually
 | Movie Room | `28c4d487734253cfec7955cbdee0f539` | `01jk451rswcggg0xt1d5yfxr7b` | `media_player.movie_room` (Sonos Port) |
 | Rumpus Room | `f5875cab40e9e50a156e1e2e69040a85` | `01jtvee3cf1vfbczk2dmst64qy` | `media_player.ls50_wireless_ii_174476_4` (KEFs, "Rumpus Room Speakers") |
 
-Agent entity ids and subentry ids: the Inventory table at the top of the rollout plan, or
-`scripts/voice-bench/run.sh openai_agents.py`.
+The four room agents (OpenAI `openai_conversation` **subentries**; checked live 2026-09-19). Read
+settings with `scripts/voice-bench/run.sh openai_agents.py`; write them with
+`ha_config_set_helper(helper_type="config_subentry", entry_id=…, subentry_type="conversation",
+subentry_id=…, config={…})`:
+
+| Room | Agent entity | Config entry id | Subentry id |
+|---|---|---|---|
+| Primary Bedroom | `conversation.bedroom_assist` | `01JBM33KVTM1FHF795G01R2C4X` | `01M2TXW9MYTV11R6B8S138SY22` |
+| Kitchen | `conversation.chatgpt_2` | `01JBM33KVTM1FHF795G01R2C4X` | `01JZ8DWMCR7G2EJN8KVNVCR7QF` |
+| Movie Room | `conversation.chatgpt_5` | `01JK456T3JV6CPBG2ZQ2FS10GE` | `01JZ8DWMCRND9599AR8EFJVN0A` |
+| Rumpus Room | `conversation.rumpus_room_chatgpt_4` | `01JK456T3JV6CPBG2ZQ2FS10GE` | `01JZ8DWMCR5ZFTVM61SG13HVFR` |
+
+(`conversation.chatgpt`, "ChatGPT for Music Assistant", is the older JSON-prompt agent; the Play
+Music script does not use it.) The Inventory table in the rollout plan is the **2026-09-18
+starting point** (old models); the rows above and *Phase 4* there are current.
 
 ## Tools you will use in every room
 
