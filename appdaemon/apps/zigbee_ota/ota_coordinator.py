@@ -40,6 +40,12 @@ RESULT_BUSY = "busy"
 STATUS_LIST_CAP = 25
 ERROR_TEXT_CAP = 120
 
+# How long a fresh completion suppresses adopting an in_progress flag on the
+# same device. The staleness this guards is one MQTT -> HA -> AppDaemon hop
+# plus a bulb rebooting into `unavailable`: tens of seconds. The much longer
+# completed_suppress_s would ignore a genuine external install for minutes.
+ADOPTION_SUPPRESS_S = 60.0
+
 _OFFLINE_ERROR_MARKERS = ("respond", "timeout", "timed out", "offline", "unreachable")
 _BUSY_ERROR_MARKERS = ("already in progress",)
 # Z2M answers "No image currently available" (and, older, "No image available")
@@ -287,7 +293,7 @@ class OtaCoordinator:
             self.set_availability(friendly, True)
             if state != "on":
                 # Nothing is on offer any more, so nothing is being skipped.
-                self._parked.pop(friendly, None)
+                parked = self._parked.pop(friendly, None)
                 # Work out whether anything actually installed.
                 existing = self._devices.pop(friendly, None)
                 if existing is not None:
@@ -296,23 +302,57 @@ class OtaCoordinator:
                     self._in_flight is not None
                     and self._in_flight.friendly_name == friendly
                 ):
-                    # An adopted update can be in flight with no record of its
-                    # own — an external install on a parked or unqueued device.
-                    # The entity going off is its terminal signal too, and
+                    # An update can be in flight with no record of its own —
+                    # an external install on a parked device, or our own
+                    # attempt whose record an earlier refresh dropped. The
+                    # entity going off is its terminal signal either way, and
                     # without this the slot is held until update_timeout_s.
+                    adopted = self._in_flight.adopted
                     self._in_flight = None
-                    self._last_event = f"{friendly}: external update ended"
+                    installed = attrs.get("installed_version")
+                    if (
+                        parked is not None
+                        and parked.latest_version is not None
+                        and installed is not None
+                        and str(installed) == parked.latest_version
+                    ):
+                        # The version it was parked on is now installed: proof
+                        # enough to count it, which is the only way an external
+                        # install on a parked device is ever recorded.
+                        self._record_completion(
+                            friendly,
+                            DeviceRecord(
+                                entity_id=entity_id,
+                                friendly_name=friendly,
+                                latest_version=parked.latest_version,
+                            ),
+                            attrs,
+                        )
+                    else:
+                        self._last_event = (
+                            f"{friendly}: "
+                            + ("external update" if adopted else "attempt")
+                            + " ended; no version change to confirm"
+                        )
                 continue
             completed_ts = self._recently_completed.get(friendly)
-            # HA's update entity can lag Z2M's success by a few seconds, and
-            # that stale snapshot still carries in_progress: true.
+            since_completion = (
+                self.now() - completed_ts if completed_ts is not None else None
+            )
             just_finished = (
-                completed_ts is not None
-                and self.now() - completed_ts < self.completed_suppress_s
+                since_completion is not None
+                and since_completion < self.completed_suppress_s
+            )
+            # HA's update entity can lag Z2M's success by a few seconds, and
+            # that stale snapshot still carries in_progress: true — but only
+            # for seconds, so this window is far shorter than the requeue one.
+            stale_in_progress = (
+                since_completion is not None
+                and since_completion < ADOPTION_SUPPRESS_S
             )
             if (
                 attrs.get("in_progress")
-                and not just_finished
+                and not stale_in_progress
                 and (
                     self._in_flight is None
                     or self._in_flight.friendly_name != friendly

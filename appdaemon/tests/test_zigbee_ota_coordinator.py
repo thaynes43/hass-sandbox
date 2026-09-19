@@ -1263,3 +1263,74 @@ def test_an_adopted_update_with_no_record_is_released_when_it_ends() -> None:
     assert coord.status()["in_flight"] == {}
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_genuine_external_install_is_adopted_after_the_stale_window() -> None:
+    """The adoption gate guards seconds of snapshot lag, not ten minutes."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {"status": "ok", "transaction": decision.transaction, "data": {"id": "hue_a"}}
+    )
+    clock.advance(120)  # past the adoption window, inside completed_suppress_s
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"
+    assert status["in_flight"]["adopted"] is True
+    assert coord.decide() is None  # hue_b must not start alongside it
+
+
+def test_an_external_install_on_a_parked_device_is_recorded() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"]["device"] == "hue_a"
+
+    # It finishes: the version it was parked on is now installed.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="off", installed="200")
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"] == {}
+    assert status["completed_count_this_run"] == 1
+    assert status["completed_this_run"][0]["device"] == "hue_a"
+    assert status["completed_this_run"][0]["version"] == "200"
+
+
+def test_an_external_install_that_changed_nothing_is_not_recorded() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="off")  # still on 100
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"] == {}
+    assert status["completed_this_run"] == []
+    assert "no version change" in status["last_event"]
