@@ -104,8 +104,14 @@ DEFAULT_DENY_ENTITY_GLOBS: Tuple[str, ...] = (
 )
 
 #: The ``switch`` domain is deny-by-default: a switch is exposed only by name.
-#: Empty by default — populate it in apps.yaml as rooms are curated.
-DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = ()
+#: Populate it here as rooms are curated — and in ``apps-prod.yaml``, which a
+#: test pins to this default.
+DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = (
+    # Exterior light relays — the switch is the light, nothing else is on it.
+    "switch.back_yard_retaining_wall_lights_relay",  # patio retaining-wall lights
+    "switch.shed_exterior_lights_shelly_relay",  # shed flowerbox lights
+    "switch.back_yard_backyard_motion_light_relay",  # back-yard motion flood light power
+)
 
 #: An exposed script is an unrestricted tool: whatever the script does, the
 #: model can do.  So every exposed script is named **explicitly** — no

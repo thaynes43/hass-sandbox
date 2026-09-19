@@ -209,7 +209,7 @@ None. The sensor is intended for an entities card or a template badge.
 | `deny_cover_device_classes` | no | `garage`, `gate`, `door` | Cover device classes never exposed |
 | `deny_integrations` | no | `intellicenter`, `gecko` | Registry `platform` values never exposed |
 | `deny_entity_globs` | no | see below | `fnmatch` patterns over the entity id |
-| `switch_allowlist` | no | `[]` | The only switches allowed to be exposed |
+| `switch_allowlist` | no | see below | The only switches allowed to be exposed |
 | `script_allowlist_globs` | no | see below | The only scripts allowed to be exposed |
 | `allow_entities` | no | `[]` | Per-entity override beating every deny rule |
 
@@ -243,7 +243,11 @@ deny_entity_globs:
   - "light.ratgdov25i_*"
   - "switch.spa_intouch3_switch"
   - "switch.nrz120804q_*"
-switch_allowlist: []
+# Exterior light relays — the switch is the light, nothing else is on it.
+switch_allowlist:
+  - "switch.back_yard_retaining_wall_lights_relay"  # patio retaining-wall lights
+  - "switch.shed_exterior_lights_shelly_relay"      # shed flowerbox lights
+  - "switch.back_yard_backyard_motion_light_relay"  # back-yard motion flood light power
 # No patterns on purpose — see below.
 script_allowlist_globs:
   - "script.voice_movie_room_bright"

@@ -228,6 +228,29 @@ def test_switch_allowlist_permits_a_named_switch() -> None:
     assert evaluate_entity(ExposedEntity("switch.other_thing"), rules) is not None
 
 
+CURATED_SWITCHES = (
+    "switch.back_yard_retaining_wall_lights_relay",
+    "switch.shed_exterior_lights_shelly_relay",
+    "switch.back_yard_backyard_motion_light_relay",
+)
+
+
+@pytest.mark.parametrize("entity_id", CURATED_SWITCHES)
+def test_allowlisted_switches_stay_exposed(entity_id: str) -> None:
+    """A shipped-allowlist switch passes; a sibling relay is still denied."""
+    assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
+    # The allowlist is by name, so a neighbouring relay is not swept in with it.
+    sibling = evaluate_entity(
+        ExposedEntity("switch.back_yard_shed_fan_relay"), DEFAULT_RULES
+    )
+    assert sibling is not None
+    assert sibling.rule == RULE_SWITCH_DEFAULT_DENY
+
+
+def test_the_shipped_switch_allowlist_is_exactly_the_curated_set() -> None:
+    assert DEFAULT_RULES.switch_allowlist == CURATED_SWITCHES
+
+
 CURATED_SCRIPTS = (
     "script.voice_movie_room_bright",
     "script.voice_movie_room_dim",
