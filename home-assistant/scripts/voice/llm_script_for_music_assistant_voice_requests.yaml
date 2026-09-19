@@ -25,13 +25,22 @@ use_blueprint:
       If the request is "Play the artist Guns and Roses", "shuffle" should be set to false, since the
       request does not mention or request to shuffle. '
     pre_actions:
-    - alias: 'Rumpus Room KEFs: remember their volume and start voice music at 50%'
+    - alias: Rumpus Room speakers = the Music Assistant players in that area; read their volume BEFORE
+        touching it (parallel runs must never save the voice level)
+      variables:
+        rumpus_players: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
+          | select(''match'', ''media_player'') | list }}'
+        rumpus_volume_before: '{{ (area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
+          | select(''match'', ''media_player'') | map(''state_attr'', ''volume_level'') | select(''number'')
+          | list | first) | default(0, true) }}'
+    - alias: 'Rumpus Room speakers: remember their volume and start voice music at 50%'
       if:
       - condition: template
-        value_template: '{{ (''rumpus_room'' in (area | default([], true)) or ''media_player.ls50_wireless_ii_174476_4''
-          in player_data) and ''media_player.ls50_wireless_ii_174476_4'' not in playing_before }}'
+        value_template: '{{ rumpus_players | count > 0 and (''rumpus_room'' in (area | default([], true))
+          or rumpus_players | select(''in'', player_data) | list | count > 0) and rumpus_players | select(''in'',
+          playing_before) | list | count == 0 }}'
       then:
-      - alias: Save the current volume once (0 means nothing saved)
+      - alias: Save the volume once (0 means nothing saved)
         if:
         - condition: numeric_state
           entity_id: input_number.rumpus_room_kef_saved_volume
@@ -41,23 +50,26 @@ use_blueprint:
           target:
             entity_id: input_number.rumpus_room_kef_saved_volume
           data:
-            value: '{{ state_attr(''media_player.ls50_wireless_ii_174476_4'', ''volume_level'') | float(0)
-              }}'
+            value: '{{ rumpus_volume_before }}'
       - action: media_player.volume_set
         target:
-          entity_id: media_player.ls50_wireless_ii_174476_4
+          entity_id: '{{ rumpus_players }}'
         data:
           volume_level: 0.5
     actions:
-    - alias: 'Rumpus Room KEFs: set 50% again once playing (they wake from standby at their own level)'
+    - variables:
+        rumpus_players: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
+          | select(''match'', ''media_player'') | list }}'
+    - alias: 'Rumpus Room speakers: set 50% again once playing (they wake from standby at their own level)'
       if:
       - condition: template
-        value_template: '{{ (''rumpus_room'' in (area | default([], true)) or ''media_player.ls50_wireless_ii_174476_4''
-          in player_data) and ''media_player.ls50_wireless_ii_174476_4'' not in playing_before }}'
+        value_template: '{{ rumpus_players | count > 0 and (''rumpus_room'' in (area | default([], true))
+          or rumpus_players | select(''in'', player_data) | list | count > 0) and rumpus_players | select(''in'',
+          playing_before) | list | count == 0 }}'
       then:
       - action: media_player.volume_set
         target:
-          entity_id: media_player.ls50_wireless_ii_174476_4
+          entity_id: '{{ rumpus_players }}'
         data:
           volume_level: 0.5
 description: 'This script is used to play music based on a voice request. The tool takes the following

@@ -1,11 +1,15 @@
 # automation.rumpus_room_kefs_restore_volume_after_voice_music (created live via MCP, 2026-09-19).
 # Pairs with the Play Music script's pre_actions; see .agents/plans/voice-assist-rollout.md (Phase 3).
+# Templates instead of a fixed entity id / native `for:` are deliberate: the speakers are resolved from the area.
 alias: 'Rumpus Room KEFs: restore volume after voice music'
 description: The KEFs are the Rumpus Room PC's speakers over HDMI and sit at a high fixed level for that.
   The Play Music script (blueprint inputs pre_actions + actions) saves that volume in input_number.rumpus_room_kef_saved_volume
-  and starts voice music at 50%. Ten minutes after the music stops this puts the saved volume back, and
-  clears the queue first so a later 'resume' cannot start at the restored level. 0 in the helper means
-  nothing is saved.
+  and starts voice music at 50%. This puts the saved volume back once the room's Music Assistant players
+  have been quiet for 10 minutes, and clears the queue first so a later 'resume' cannot start at the restored
+  level. 0 in the helper means nothing is saved. The state trigger is the normal path; the 10-minute tick
+  is the backstop for a request that saved the volume but never played, an HA restart mid-wait, or a re-registered
+  speaker entity (the players are resolved from the area, not from one entity id). The helper must also
+  be 10 minutes old so a tick can never undo a request that is just starting.
 triggers:
 - trigger: state
   entity_id: media_player.ls50_wireless_ii_174476_4
@@ -15,27 +19,30 @@ triggers:
   - 'off'
   for: 00:10:00
   id: stopped
-- trigger: homeassistant
-  event: start
-  id: ha_start
+- trigger: time_pattern
+  minutes: /10
+  id: backstop
 conditions:
 - condition: numeric_state
   entity_id: input_number.rumpus_room_kef_saved_volume
   above: 0.005
-- condition: state
-  entity_id: media_player.ls50_wireless_ii_174476_4
-  state:
-  - idle
-  - paused
-  - 'off'
+- alias: Every Rumpus Room Music Assistant player quiet for ~10 min, and the volume was saved ~10 min
+    ago or more
+  condition: template
+  value_template: '{% set ns = namespace(quiet=rumpus_players | count > 0) %}{% for p in rumpus_players
+    %}{% if states(p) not in [''idle'', ''paused'', ''off''] or (now() - states[p].last_changed).total_seconds()
+    < 590 %}{% set ns.quiet = false %}{% endif %}{% endfor %}{{ ns.quiet and (now() - states.input_number.rumpus_room_kef_saved_volume.last_changed).total_seconds()
+    > 590 }}'
 actions:
-- alias: Empty the queue so nothing can resume at the restored volume
+- alias: Empty the queue so nothing can resume at the restored volume (a failure here must not block the
+    restore)
   action: media_player.clear_playlist
+  continue_on_error: true
   target:
-    entity_id: media_player.ls50_wireless_ii_174476_4
+    entity_id: '{{ rumpus_players }}'
 - action: media_player.volume_set
   target:
-    entity_id: media_player.ls50_wireless_ii_174476_4
+    entity_id: '{{ rumpus_players }}'
   data:
     volume_level: '{{ states(''input_number.rumpus_room_kef_saved_volume'') | float(0.5) }}'
 - alias: Mark nothing saved
@@ -45,3 +52,6 @@ actions:
   data:
     value: 0
 mode: single
+variables:
+  rumpus_players: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
+    | select(''match'', ''media_player'') | list }}'

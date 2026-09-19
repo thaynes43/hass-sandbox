@@ -327,16 +327,28 @@ KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
   KEFs / KEF speakers / Rumpus speakers) and exposed;
 - the blueprint is **locally patched** (`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`):
   a `pre_actions` input that runs before `play_media`, and a `playing_before` variable. The Play
-  Music script uses them to save the KEFs' volume into `input_number.rumpus_room_kef_saved_volume`
-  (live-only helper, 0 = nothing saved) and set 50 % **before** playing, and sets 50 % again in the
-  blueprint's after-play `actions` — the KEFs wake from standby at their own 20 %, which overrode
-  the first set in the first live test. Both only when the KEFs were not already playing, so a
-  volume someone chose mid-session survives the next request;
-- `automation.rumpus_room_kefs_restore_volume_after_voice_music` clears the queue and restores the
-  saved volume 10 minutes after the music stops.
+  Music script uses them to save the speakers' volume into
+  `input_number.rumpus_room_kef_saved_volume` (live-only helper, 0 = nothing saved) and set 50 %
+  **before** playing, and sets 50 % again in the blueprint's after-play `actions` — the KEFs wake
+  from standby at their own 20 %, which overrode the first set in the first live test. Both only
+  when the speakers were not already playing, so a volume someone chose mid-session survives the
+  next request. "The speakers" are resolved as *the Music Assistant players in the Rumpus Room
+  area*, not by entity id (the KEFs have been re-registered before: `_2`, `_3`, `_4`), and the
+  volume is read into a variable before anything is written, so two parallel runs (the blueprint
+  is `mode: parallel`) can never save the 50 % voice level as the PC level;
+- `automation.rumpus_room_kefs_restore_volume_after_voice_music` clears the queue (soft-fail) and
+  restores the saved volume once those players have been quiet for 10 minutes. Normal path: a state
+  trigger on the KEF entity (verified: fired 10 min after the stop, 50 % → 92 %, helper → 0).
+  Backstop: a 10-minute tick with the same conditions plus "the helper is at least ~10 minutes
+  old", for a request that saved the volume and then never played, an HA restart mid-wait, or a
+  re-registered entity; the helper-age condition keeps a tick from undoing a request that is just
+  starting.
 
-Open: no HA entity exposes the KEFs' input, so nothing switches them back from Wi-Fi to HDMI after
-music; the wake-from-standby path of the after-play volume set has not been re-tested. Still to
+Tom confirmed (2026-09-19) that the KEFs switch back to the PC's HDMI input by themselves as soon
+as the PC makes a sound, so nothing has to manage their input.
+
+Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
+were awake for every run after that step was added). Still to
 do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
 being Music Assistant-only (no turn_on/turn_off). The separate "ChatGPT for Music Assistant" agent
 (`conversation.chatgpt`) belongs to the older JSON-prompt approach and is not used by the script.
