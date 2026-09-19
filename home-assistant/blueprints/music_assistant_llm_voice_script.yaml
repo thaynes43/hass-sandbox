@@ -13,11 +13,13 @@
 #     targeted player is already playing (variable 'queue_effective'); otherwise the request becomes
 #     "play" = the song starts now and the existing queue is kept behind it, so an add is never silent
 #     (the Rumpus volume logic and its restore automation always see music that starts) and never
-#     destroys a paused queue. The shuffle step is skipped for add/next.
+#     destroys a paused queue. For add/next the shuffle step only runs when the request asked to shuffle.
 #   - no-target hand-back (owner ruling 2026-09-19, "hand it back, never guess"): ANY request without an
 #     area or a player is returned to the agent ("call again with the area the request comes from, or
 #     ask which room") instead of using the default player. Found when a Movie Room test request without
-#     an area played in the bedroom. The Play Music script also no longer sets a default player.
+#     an area played in the bedroom. The Play Music script also no longer sets a default player, and the
+#     'Default Player' input is documented as unused. A named player that is not a Music Assistant
+#     player gets its own hand-back message ("that speaker was not found").
 # Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
 # then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
 # requests would go back to keeping the old queue. Re-apply this file.
@@ -107,11 +109,14 @@ blueprint:
       input:
         default_player:
           name: Default Player
-          description: 'The default Music Assistant player which will be used if it
-            is not clear from the request in which area or on which player the request
-            should be played.
+          description: 'NOT USED in this locally patched copy (owner ruling 2026-09-19,
+            "hand it back, never guess"): a request that names no area and no player
+            is returned to the agent before this setting is ever looked at, so
+            setting a player here changes nothing. Upstream: the default Music Assistant
+            player which will be used if it is not clear from the request in which
+            area or on which player the request should be played.
 
-            Leave empty if you do not want a default player.'
+            Leave empty.'
           selector:
             entity:
               filter:
@@ -467,10 +472,12 @@ sequence:
     invalid_target:
       response: Unable to find valid target
     no_target_given:
-      response: Nothing is playing and nothing was queued, because no area and no
-        player was given. Call this tool again with the area the request comes from
-        (or the player that was named). If you do not know which room the request
-        comes from, ask the user which room they want the music in.
+      response: '{{ (''Nothing is playing and nothing was queued: "'' ~ ([media_player] | flatten
+        | join(", ")) ~ ''" is not a Music Assistant player. Tell the user that speaker was not
+        found, or call this tool again with the area that was meant.'') if media_player | default([],
+        true) else ''Nothing is playing and nothing was queued, because no area and no player was
+        given. Call this tool again with the area the request comes from. If you do not know which
+        room the request comes from, ask the user which room they want the music in.'' }}'
 - alias: Local addition (owner ruling 2026-09-19 - "hand it back, never guess") - a request that names
     no area and no player is returned to the agent instead of falling back to the default player. The
     agent of a voice box sometimes leaves its area out, and the default player is in another room
@@ -517,11 +524,13 @@ sequence:
   action: music_assistant.play_media
   data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
   target: '{{ dict(target_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'
-- alias: Enable/Disable shuffle on a Music Assistant Media Player (local change - not when the request
-    only adds to the running queue, whose shuffle setting is somebody's choice)
+- alias: Enable/Disable shuffle on a Music Assistant Media Player (local change - an add/next request
+    keeps the existing queue, whose shuffle setting is somebody's choice, so it only touches shuffle
+    when the request itself asked to shuffle)
   if:
   - condition: template
-    value_template: '{{ queue | default('''', true) not in [''next'', ''add''] }}'
+    value_template: '{{ queue | default('''', true) not in [''next'', ''add''] or shuffle | default(false,
+      true) | bool(false) }}'
   then:
   - action: media_player.shuffle_set
     data:
