@@ -416,7 +416,6 @@ fields:
     selector:
       select:
         options:
-        - replace
         - next
         - add
     name: Queue
@@ -486,13 +485,15 @@ sequence:
 - variables:
     playing_before: '{{ integration_entities(''music_assistant'') | select(''is_state'', ''playing'') | list }}'
 - alias: Local addition - "add"/"next" are passed on as they are only when EVERY targeted player is
-    already playing. Otherwise (idle, paused, or a mix) the request becomes "play" - the song starts
+    already playing (players that are unavailable or unknown are not counted as targets, so a dead or
+    stale entity in the area cannot switch queueing off). Otherwise (idle, paused, or a mix) the request becomes "play" - the song starts
     now and the existing queue is kept behind it - so an add is never silent (the additional actions
     below treat every request as music that starts) and never destroys the queue it was meant for
   variables:
     queue_targets: '{{ (([area | default([], true)] | flatten | map(''area_entities'') | sum(start=[])
       | select(''in'', integration_entities(''music_assistant'')) | list) + (player_data | default([],
-      true) | list)) | select(''match'', ''media_player\.'') | unique | list }}'
+      true) | list)) | select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'')
+      | reject(''is_state'', ''unknown'') | unique | list }}'
     queue_effective: '{{ queue if queue | default('''', true) in [''next'', ''add''] and queue_targets
       | count > 0 and queue_targets | reject(''in'', playing_before) | list | count == 0 else '''' }}'
 - sequence: !input pre_actions
@@ -507,7 +508,7 @@ sequence:
       album: '{{ album | default(''NA'', true) }}'
       radio_mode: '{{ false if play_continuously == ''Never'' else play_continuously
         == ''Always'' and media_type != ''radio'' or ''NA'' }}'
-      enqueue: '{{ queue_effective if queue_effective != '''' else (''play'' if queue | default('''', true) in [''next'', ''add''] else (''replace'' if queue | default('''', true) == ''replace'' else (''NA'' if enqueue_option == ''Music Assistant default'' else enqueue_option))) }}'
+      enqueue: '{{ queue_effective if queue_effective != '''' else (''play'' if queue | default('''', true) in [''next'', ''add''] else (''NA'' if enqueue_option == ''Music Assistant default'' else enqueue_option)) }}'
 - alias: Play music using Music Assistant
   action: music_assistant.play_media
   data: '{{ dict(action_data.items() | rejectattr(''1'', ''eq'', ''NA'')) }}'

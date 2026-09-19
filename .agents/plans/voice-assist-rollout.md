@@ -385,7 +385,8 @@ defects, both fixed live and verified by text as the Movie Room satellite (empty
   volume logic would clamp the PC speakers to 50 % and the restore automation would later clear the
   queue with the added song in it; and turning such an add into `replace` would destroy a
   **paused** queue. So `add`/`next` are passed on as they are only when **every** targeted Music
-  Assistant player is already playing (blueprint variable `queue_effective`); otherwise the
+  Assistant player is already playing (blueprint variable `queue_effective`; unavailable/unknown
+  players are not counted, so a stale entity cannot switch queueing off); otherwise the
   request becomes `play` — the song starts now and the existing queue is kept behind it. An add is
   therefore never silent and never destructive. Verified on the Movie Room player: paused
   227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
