@@ -15,14 +15,15 @@ This app is the backstop for that click:
    fires ``entity_registry_updated``, list the entities exposed to the
    ``conversation`` assistant.
 2. Evaluate them against the deny rules in :mod:`rules` (a pure module).
-3. If ``enforce`` is true, un-expose every violator with one WebSocket
-   command.  If it is false, report only.
+3. If ``enforce`` is true, un-expose every violator Home Assistant will accept
+   with one WebSocket command (a malformed id is left out and stays reported —
+   see *Partial enforcement* in the README).  If it is false, report only.
 4. Notify on two separate channels, because they answer different questions:
    an **enforcement record** under ``<notification_id>_enforced`` (an action
    already taken — never auto-cleared, only the user dismisses it) and a
    **current-state** notification under ``<notification_id>`` (report-only
    findings, a failed un-expose, or a failed check — cleared by the next clean
-   run).  Conflating them made enforcement erase its own evidence:
+   run, or by the run that un-exposes the last violator).  Conflating them made enforcement erase its own evidence:
    ``expose_entity`` itself fires ``entity_registry_updated``, whose debounced
    re-check finds the list clean seconds later.
 5. Publish ``sensor.assist_exposure_guard`` so the state of the guard itself

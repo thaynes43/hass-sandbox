@@ -80,7 +80,8 @@ it to `switch_allowlist`.
 |--------|------|---------|
 | `sensor.assist_exposure_guard` | `set_state` virtual sensor | Number of exposed entities; attributes carry `violations_last_run`, `violating_entities`, `last_enforced`, `last_enforced_entities`, `last_run`, `last_trigger`, `enforce`, `assistant`, `last_error` |
 
-Both entity-list attributes are capped at 20 ids plus "…and N more" (the exact count is
+Every attribute that lists entity ids (`violating_entities`, `last_enforced_entities` and
+the ids named in `last_error`) is capped at 20 ids plus "…and N more" (the exact count is
 `violations_last_run`), so a bulk mis-exposure cannot publish a tens-of-KB attribute.
 
 `last_enforced` (ISO time, or `never`) and `last_enforced_entities` are the
