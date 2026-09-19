@@ -22,6 +22,7 @@ sys.path.insert(0, str(_repo_root))
 from providers.ha_provisioner.exposure_client import (  # noqa: E402
     CONVERSATION_ASSISTANT,
     AssistExposureClient,
+    ExposureChange,
 )
 
 _REST_CLIENT_PATH = "providers.ha_provisioner.exposure_client.HaRestClient"
@@ -220,13 +221,15 @@ def test_set_exposure_sends_one_command_with_every_entity(monkeypatch) -> None:
     fake = _FakeHaRestClient(_ok(None))
     client = _make_client(monkeypatch)
     with _patch_rest_client(fake):
-        count = _run(
+        change = _run(
             client.set_exposure(
                 ["lock.front_door", " cover.garage_door ", ""], should_expose=False
             )
         )
 
-    assert count == 2
+    assert change == ExposureChange(
+        sent=["lock.front_door", "cover.garage_door"], skipped=[]
+    )
     assert fake.sent == [
         {
             "type": "homeassistant/expose_entity",
@@ -241,7 +244,8 @@ def test_set_exposure_on_an_empty_list_makes_no_call(monkeypatch) -> None:
     fake = _FakeHaRestClient(_ok(None))
     client = _make_client(monkeypatch)
     with _patch_rest_client(fake):
-        assert _run(client.set_exposure([], should_expose=False)) == 0
+        change = _run(client.set_exposure([], should_expose=False))
+    assert change == ExposureChange(sent=[], skipped=[])
     assert fake.sent == []
 
 
@@ -293,3 +297,33 @@ def test_the_token_is_never_echoed_in_an_error(monkeypatch) -> None:
             assert "test-token" not in str(exc)
         else:  # pragma: no cover - the call above must raise
             pytest.fail("expected RuntimeError")
+
+
+def test_set_exposure_leaves_malformed_ids_out_so_the_batch_still_applies(monkeypatch, caplog) -> None:
+    """HA validates entity_ids all-or-nothing: one bad id must not stop the garage
+    opener in the same batch from being un-exposed."""
+    fake = _FakeHaRestClient(_ok(None))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake):
+        change = _run(
+            client.set_exposure(
+                ["cover.garage_door", "switch.foo bar", " Lock.Front_Door ", "cover.garage_door"], False
+            )
+        )
+    # The caller must be able to see what was left behind: reporting a skipped
+    # id as un-exposed is a false all-clear on a security boundary.
+    assert change.sent == ["cover.garage_door", "lock.front_door"]
+    assert change.skipped == ["switch.foo bar"]
+    assert fake.sent[0]["entity_ids"] == ["cover.garage_door", "lock.front_door"]
+    assert "malformed entity id" in caplog.text and "switch.foo bar" in caplog.text
+
+
+def test_set_exposure_with_only_malformed_ids_sends_nothing(monkeypatch) -> None:
+    fake = _FakeHaRestClient(_ok(None))
+    client = _make_client(monkeypatch)
+    with _patch_rest_client(fake):
+        change = _run(client.set_exposure(["not an id"], False))
+    # No round trip, but the caller still learns which id was dropped.
+    assert change == ExposureChange(sent=[], skipped=["not an id"])
+    assert fake.sent == []
+

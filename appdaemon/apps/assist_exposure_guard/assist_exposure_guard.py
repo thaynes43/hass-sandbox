@@ -15,14 +15,15 @@ This app is the backstop for that click:
    fires ``entity_registry_updated``, list the entities exposed to the
    ``conversation`` assistant.
 2. Evaluate them against the deny rules in :mod:`rules` (a pure module).
-3. If ``enforce`` is true, un-expose every violator with one WebSocket
-   command.  If it is false, report only.
+3. If ``enforce`` is true, un-expose every violator Home Assistant will accept
+   with one WebSocket command (a malformed id is left out and stays reported —
+   see *Partial enforcement* in the README).  If it is false, report only.
 4. Notify on two separate channels, because they answer different questions:
    an **enforcement record** under ``<notification_id>_enforced`` (an action
    already taken — never auto-cleared, only the user dismisses it) and a
    **current-state** notification under ``<notification_id>`` (report-only
    findings, a failed un-expose, or a failed check — cleared by the next clean
-   run).  Conflating them made enforcement erase its own evidence:
+   run, or by the run that un-exposes the last violator).  Conflating them made enforcement erase its own evidence:
    ``expose_entity`` itself fires ``entity_registry_updated``, whose debounced
    re-check finds the list clean seconds later.
 5. Publish ``sensor.assist_exposure_guard`` so the state of the guard itself
@@ -394,7 +395,14 @@ class AssistExposureGuard(hass.Hass):
                 level="WARNING",
             )
 
-        enforced = False
+        # Partition by what the write ACTUALLY did, never by "it did not
+        # raise". set_exposure leaves malformed ids out of the batch (HA
+        # validates entity_ids all-or-nothing), so a clean return can still
+        # mean "one of these is untouched and still exposed". Recording that
+        # one as un-exposed would be a false all-clear on this app's most
+        # durable surface.
+        applied: List[Violation] = []
+        unapplied: List[Violation] = list(violations)
         enforce_error = ""
         if self._enforce:
             # Enforcement failure is caught here rather than in _run_check so
@@ -402,7 +410,7 @@ class AssistExposureGuard(hass.Hass):
             # take them away" is the most urgent state this app can be in, and
             # an ERROR log alone is easy to miss.
             try:
-                count = await client.set_exposure(
+                change = await client.set_exposure(
                     [violation.entity_id for violation in violations],
                     should_expose=False,
                     assistant=self._assistant,
@@ -415,13 +423,28 @@ class AssistExposureGuard(hass.Hass):
                     level="ERROR",
                 )
             else:
-                enforced = True
-                self.log(
-                    f"Un-exposed {count} entity(s) from {self._assistant!r}",
-                    level="INFO",
-                )
+                sent = set(change.sent)
+                applied = [v for v in violations if v.entity_id in sent]
+                unapplied = [v for v in violations if v.entity_id not in sent]
+                if applied:
+                    self.log(
+                        f"Un-exposed {len(applied)} entity(s) from "
+                        f"{self._assistant!r}",
+                        level="INFO",
+                    )
+                if unapplied:
+                    rejected = _capped_join([v.entity_id for v in unapplied])
+                    enforce_error = (
+                        f"Home Assistant cannot accept {len(unapplied)} malformed "
+                        f"entity id(s), so they are STILL exposed: {rejected}"
+                    )
+                    self.log(
+                        f"Left {len(unapplied)} of {len(violations)} violation(s) "
+                        f"exposed — {enforce_error}",
+                        level="ERROR",
+                    )
 
-        if enforced:
+        if applied:
             # Enforcement is self-erasing if it reports through the
             # current-state channel: set_exposure makes HA fire
             # entity_registry_updated, this app's own debounce re-checks, the
@@ -429,9 +452,20 @@ class AssistExposureGuard(hass.Hass):
             # counts zeroed — deleting the only evidence that anything
             # happened. So an enforcement is recorded, not reported: its own
             # notification id, never auto-cleared, plus durable attributes.
-            self._record_enforcement(violations)
-        else:
-            self._notify_unenforced(violations, enforce_error)
+            # It covers ONLY what really changed.
+            self._record_enforcement(applied)
+
+        if unapplied:
+            # Still exposed after this run: report-only mode, a failed write,
+            # or ids HA will not accept. Current state, so it repeats every
+            # run and clears itself once the entity is gone.
+            self._notify_unenforced(unapplied, enforce_error)
+        elif applied:
+            # Everything that was wrong is now fixed, so a "STILL EXPOSED"
+            # notice left by an earlier partial run would be a lie. The next
+            # clean run would clear it, but that can be a whole check interval
+            # away for an entity whose change fires no registry event.
+            self._clear_notification()
 
         self._publish_status(
             exposed_count=len(entities),

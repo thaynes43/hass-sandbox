@@ -4,6 +4,7 @@
 #   scripts/voice-bench/run.sh bench.py "MODE=conv AGENT=conversation.bedroom_assist QUERIES='Is the fan on?|Why is the sky blue?'"
 #   scripts/voice-bench/run.sh debug_runs.py "N=4 PIPELINE=<pipeline id>"   # real runs from a satellite
 #   scripts/voice-bench/run.sh openai_agents.py                             # agent subentry settings + account model ids
+#   scripts/voice-bench/run.sh persona_check.py                            # text-only persona + spoken-rules check, all four room agents
 # The HA token comes from the AppDaemon pod's env and travels over stdin: it never
 # appears in argv, in the transcript, or on disk.
 set -euo pipefail

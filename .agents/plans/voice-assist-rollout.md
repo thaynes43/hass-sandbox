@@ -6,7 +6,9 @@ other three satellites, and research MCP tool sources.
 
 **Status: phase 1 done 2026-09-18** — bedroom retuned, Tom voice-tested it ("fast enough now")
 and approved the agent cleanup. Nothing outside the bedroom pipeline has been changed.
-**Phase 2: workshop held, plan below, execution in progress.** Phases 3–5 not started.
+**Phase 2: rulings made; primary suite, basement and shades applied, other floors pending.**
+**Phase 4: all four rooms on gpt-5.6-terra with modernised prompts (2026-09-19).** Phases 3 and 5
+not started.
 
 ## Inventory (verified 2026-09-18, HA core-2026.9.2)
 
@@ -204,12 +206,45 @@ cloffice (+ privacy), kitchen, living room, dining room, study, first-floor bath
   phase 4.
 - `fan.primary_bedroom_fan_fan` speaks as "Primary Bedroom Fan Fan".
 
-## Phases 3–5
+## Phase 4 — all four rooms on the tuned setup (applied 2026-09-19)
+
+Tom asked for the newest fast model, so the candidates were re-measured on a throwaway agent
+(text-only, reasoning off, priority tier, 6 runs × 3 questions): every GPT-5.6 tier answers a
+tool-call question in ~2 s, the same as gpt-5.4-mini — latency is the two round trips, not model
+size. **Chosen: `gpt-5.6-terra`** (no outliers in 18 runs; luna had two 4–5 s outliers, sol one).
+
+| Room | Before (voice run, s after end of speech) | After (text run, tool-call question) |
+|---|---|---|
+| Kitchen (Regina) | ~16 (Whisper 1.6–3.1 + gpt-5-mini medium 12–13) | 2.2–3.0 |
+| Movie Room | 7–11 (gpt-5-mini medium) | 2.1–2.8 |
+| Rumpus Room (Jarvis) | ~7.5 (Whisper 1.7 + gpt-5-mini low) | 2.1–2.9 |
+| Primary Bedroom | 2.2–4.5 (gpt-5.4-mini) | 2.5–3.2 |
+
+Applied: all four agents → `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
+`service_tier: priority`, web search kept; Kitchen and Rumpus pipelines → HA Cloud STT; Rumpus
+`prefer_local_intents` false → true (like the other three — exact phrases now answer locally
+without the Jarvis voice; revert if Tom misses it). Prompts: Tom's personas kept verbatim
+(Rumpus lost only its stale "GPT 4o tool_calls JSON" protocol) plus one shared block —
+spoken-output rules, the question-mark/open-mic rule with its reason, room context, the new voice
+tools, the never-by-voice list. Backup and rationale: `agent-docs/voice-agent-prompts.md`.
+Verified text-only (`scripts/voice-bench/run.sh persona_check.py`): personas intact, no trailing
+question marks, brightness spoken as a percentage, lock requests refused in character.
+**Not yet verified by voice** on Kitchen / Movie Room / Rumpus.
+
+Lesson: a synthetic *voice* bench is not read-only on a Whisper pipeline — Piper audio of "Are the
+rumpus room lights on?" became "Either Rumpus rim lights on" and the old agent switched the
+lights on in an empty room (restored). Bench other rooms with text.
+
+Open: Voice PE firmware. The four boxes are self-compiled (ESPHome 2026.1.2, 2026-01-31) and
+get no OTA; upstream is voice-pe 26.9.0 (26.4.0 fixed TTS responses timing out before playing).
+The ESPHome pod (2026.8.2) meets the 2026.6.0 minimum. Plan: recompile + OTA one box as a pilot
+at a time Tom picks, then the rest.
+
+## Phases 3 and 5
 
 Not started. 3: Music Assistant + its agent (`conversation.chatgpt`, gpt-5-mini low,
-`max_tokens: 150`) — note that `HassMediaSearchAndPlay` always goes to the LLM, and 36 of the 90
-media players are Music Assistant speakers. 4: roll the bedroom tuning out to
-rumpus/kitchen/movie (Kitchen and Movie Room run gpt-5-mini at **medium** reasoning; Kitchen and
-Rumpus still use faster_whisper). 5: MCP servers as LLM tool sources — HA's `mcp` client speaks
-streamable HTTP then SSE, no stdio, OAuth only (no static bearer field); `llm_hass_api` is a
-real multi-select and merged tools get namespaced.
+`max_tokens: 150`) — note that `HassMediaSearchAndPlay` always goes to the LLM, the Sonos players
+are Music Assistant-only (no turn_on/turn_off), and the AVR/KEF/Frame entities are duplicated.
+5: MCP servers as LLM tool sources — HA's `mcp` client speaks streamable HTTP then SSE, no
+stdio, OAuth only (no static bearer field); `llm_hass_api` is a real multi-select and merged
+tools get namespaced.

@@ -44,7 +44,8 @@ area" is one click. This app is the backstop for that click (owner ruling,
 3. Evaluate every exposed entity against the deny rules in `rules.py` — a pure
    module with no AppDaemon or HA imports. Each entity produces **at most one**
    violation: the first rule it breaks.
-4. If `enforce` is true, un-expose every violator with **one**
+4. If `enforce` is true, un-expose every violator HA will accept (see
+   *Partial enforcement*) with **one**
    `homeassistant/expose_entity` command. If it is false, report only.
 5. Notify on **two separate channels** — see *Notifications* below — plus an
    optional mobile push when `notify_service` is set.
@@ -79,7 +80,8 @@ it to `switch_allowlist`.
 |--------|------|---------|
 | `sensor.assist_exposure_guard` | `set_state` virtual sensor | Number of exposed entities; attributes carry `violations_last_run`, `violating_entities`, `last_enforced`, `last_enforced_entities`, `last_run`, `last_trigger`, `enforce`, `assistant`, `last_error` |
 
-Both entity-list attributes are capped at 20 ids plus "…and N more" (the exact count is
+Every attribute that lists entity ids (`violating_entities`, `last_enforced_entities` and
+the ids named in `last_error`) is capped at 20 ids plus "…and N more" (the exact count is
 `violations_last_run`), so a bulk mis-exposure cannot publish a tens-of-KB attribute.
 
 `last_enforced` (ISO time, or `never`) and `last_enforced_entities` are the
@@ -122,7 +124,10 @@ positive costs a human a manual re-exposure in the HA UI:
   well-formed `domain.object_id` is left out of the registry request (HA
   validates the id list all-or-nothing) and logged at WARNING by
   `AssistExposureClient` (the AppDaemon main log, not this app's log); the domain, glob
-  and deny-by-default rules still apply to it.
+  and deny-by-default rules still apply to it. It also cannot be un-exposed
+  by this app, so it is left out of the un-expose batch — the rest of the
+  batch still applies. See *Partial enforcement* below: it is reported as
+  **still exposed** every run until a human removes or renames it.
 
 ## Notifications
 
@@ -132,7 +137,7 @@ questions, and conflating them made enforcement erase its own evidence.
 | Notification | id | Says | Cleared by |
 |---|---|---|---|
 | Enforcement record | `<notification_id>_enforced` | "I un-exposed these, at this time" — an action already taken | **Only the user.** Never auto-dismissed |
-| Current state | `<notification_id>` | "These are exposed right now and should not be" (`enforce: false`), or "UN-EXPOSE FAILED — still exposed", or "the check could not run" | The next clean run |
+| Current state | `<notification_id>` | "These are exposed right now and should not be" (`enforce: false`), or "UN-EXPOSE FAILED — still exposed", or "the check could not run" | The next clean run, or the run that un-exposes the last violator |
 
 Why they must be separate: `homeassistant/expose_entity` makes HA fire
 `entity_registry_updated`, which arms this app's own `registry_debounce_s`
@@ -147,6 +152,29 @@ The same reasoning applies to the sensor: `violations_last_run` and
 clean re-check, while **`last_enforced` and `last_enforced_entities` persist**.
 They are also re-seeded from the sensor on startup, so an AppDaemon reload does
 not erase the record either.
+
+### Partial enforcement
+
+A run can un-expose some violators and leave others. HA validates
+`entity_ids` all-or-nothing, so `AssistExposureClient.set_exposure` filters
+malformed ids out of the batch rather than letting one of them make HA reject
+the lot — and it returns an `ExposureChange` naming what it `sent` and what it
+`skipped`. **Both notifications can therefore appear from the same run**, and
+the guard partitions the violations by what actually applied:
+
+- the ones in `sent` get the enforcement record, sized and listed from those
+  ids only — it never claims an entity was un-exposed while it is still
+  exposed;
+- everything else goes down the current-state path: the "UN-EXPOSE FAILED —
+  STILL EXPOSED" notice naming the ids, a phone push, and `last_error`
+  spelling out that HA would not accept them. That repeats every run, because
+  nothing here can fix it — only a human removing or renaming the entity can.
+  When that happens, the next run applies the change and clears the notice.
+
+If **nothing** applied, no enforcement record is written at all. The sensor
+stays consistent across the split: `last_enforced_entities` lists only what
+changed, while `violating_entities` and `violations_last_run` describe
+everything the run found.
 
 `notify_service` mirrors notifications to a phone — the only copy nothing can
 clear, so it is set in `apps-prod.yaml`. Pushes are deduplicated by condition,

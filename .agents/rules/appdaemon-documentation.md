@@ -111,6 +111,8 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `agent-docs/appdaemon-app-decoupling.md` | Event-based app decoupling pattern for split dev/prod deployment |
 | `agent-docs/hue-power-on-behavior.md` | Hue startup attributes: why the HA `power_on_behavior` select is not enough, `hue_power_on_behavior: recover`, new-bulb onboarding |
 | `agent-docs/shepherd-runbooks/` | Per-checker Shepherd triage runbooks (one per `checker_id`); format and sanctioned-action ladder in that directory's `README.md` |
+| `agent-docs/voice-agent-prompts.md` | Live backup of the four room voice-agent prompts (persona + shared block) and the rationale for each shared rule |
+| `agent-docs/voice-control-map.md` | What already controls each floor (buttons → concepts → automation ownership, holds) for the voice-exposure work |
 
 ### Root
 
