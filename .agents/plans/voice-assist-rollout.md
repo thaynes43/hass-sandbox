@@ -299,8 +299,11 @@ blueprint), and that script resolves the target in this order:
    says "You are in area X …" (`components/intent/llm.py` in 2026.9), taken from the **area of the
    satellite device**. The `area` argument is an area selector, so HA resolves spoken names and
    aliases to area ids (`helpers/llm.py`, `ScriptTool`);
-4. no area at all (a request that does not come from a satellite) → the blueprint's
-   `default_player`, `media_player.primary_bedroom`.
+4. no area and no player → **handed back, nothing plays** (Tom's ruling 2026-09-19: "hand it back,
+   never guess"). The blueprint returns "call this tool again with the area the request comes from,
+   or ask which room", and the Play Music script no longer sets a `default_player`. Until then the
+   fallback was `media_player.primary_bedroom`, and a room agent that left its area out (seen on
+   "play <song> by <artist>" and on add-to-queue requests) played in the bedroom from another room.
 
 An area with no Music Assistant player in it is a **silent failure**: `play_media` returns success,
 nothing plays, and the agent says it is playing (verified by calling `play_media` at `rumpus_room`

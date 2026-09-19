@@ -13,8 +13,11 @@
 #     targeted player is already playing (variable 'queue_effective'); otherwise the request becomes
 #     "play" = the song starts now and the existing queue is kept behind it, so an add is never silent
 #     (the Rumpus volume logic and its restore automation always see music that starts) and never
-#     destroys a paused queue. The shuffle step is skipped for add/next, and such a request without an
-#     area or player is handed back instead of using the default player.
+#     destroys a paused queue. The shuffle step is skipped for add/next.
+#   - no-target hand-back (owner ruling 2026-09-19, "hand it back, never guess"): ANY request without an
+#     area or a player is returned to the agent ("call again with the area the request comes from, or
+#     ask which room") instead of using the default player. Found when a Movie Room test request without
+#     an area played in the bedroom. The Play Music script also no longer sets a default player.
 # Re-importing the upstream blueprint drops all of them; the Play Music script's pre_actions input would
 # then be ignored and the Rumpus Room KEFs would start at whatever volume they are at, and track
 # requests would go back to keeping the old queue. Re-apply this file.
@@ -463,25 +466,26 @@ sequence:
         or default_player) | default(''NA'', true) }}'
     invalid_target:
       response: Unable to find valid target
-    no_queue_target:
-      response: Nothing was added. To add to a queue or play something next, call
-        this tool again and give the area the request comes from (or the player that
-        was named).
+    no_target_given:
+      response: Nothing is playing and nothing was queued, because no area and no
+        player was given. Call this tool again with the area the request comes from
+        (or the player that was named). If you do not know which room the request
+        comes from, ask the user which room they want the music in.
+- alias: Local addition (owner ruling 2026-09-19 - "hand it back, never guess") - a request that names
+    no area and no player is returned to the agent instead of falling back to the default player. The
+    agent of a voice box sometimes leaves its area out, and the default player is in another room
+  if:
+  - condition: template
+    value_template: '{{ not (area | default or player_data) }}'
+  then:
+  - stop: Request without an area or player
+    response_variable: no_target_given
 - if:
   - condition: template
     value_template: '{{ not (area | default or player_data or default_player) }}'
   then:
   - stop: No valid target for Music Assistant Voice script found
     response_variable: invalid_target
-- alias: Local addition - "add"/"next" must never fall back to the default player (it would land in
-    another room's queue); hand the request back so the agent repeats it with its area
-  if:
-  - condition: template
-    value_template: '{{ queue | default('''', true) in [''next'', ''add''] and not (area
-      | default or player_data) }}'
-  then:
-  - stop: Add-to-queue request without an area or player
-    response_variable: no_queue_target
 - variables:
     playing_before: '{{ integration_entities(''music_assistant'') | select(''is_state'', ''playing'') | list }}'
 - alias: Local addition - "add"/"next" are passed on as they are only when EVERY targeted player is

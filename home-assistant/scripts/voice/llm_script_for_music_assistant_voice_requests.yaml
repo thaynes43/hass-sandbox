@@ -10,11 +10,12 @@
 # area_prompt = the blueprint default plus "add to the queue / play next still needs the area": the agent
 # left the area out on such requests, which would have landed in the default player's queue (the
 # blueprint now hands that request back instead). description = mentions the 'queue' argument.
+# NO default_player (owner ruling 2026-09-19, "hand it back, never guess"): a request without an area
+# or player is returned to the agent by the blueprint; it never falls back to a speaker in another room.
 alias: Play Music
 use_blueprint:
   path: music-assistant/llm_voice_script.yaml
   input:
-    default_player: media_player.primary_bedroom
     play_continuously: Use player settings
     shuffle_prompt: 'This argument is mandatory and must always be provided no matter what! It is a boolean
       value, not a function.
@@ -136,12 +137,13 @@ use_blueprint:
 
       This is a mandatory argument and must always be provided.'
     area_prompt: 'The area or areas for which the music is requested. If the request does not mention
-      a target (either an area or a player), use the area the request comes from. This also holds when
-      the request is to add something to the queue or to play it next: "the queue" is not a target, so
-      still give the area the request comes from.
+      a target (either an area or a player), use the area the request comes from: you were told which
+      area you are in, so always pass it, also for a single named song and also when the request is to
+      add something to the queue or to play it next ("the queue" is not a target). A request without an
+      area and without a player is handed back and nothing plays.
 
       If the area can not be determined from the request, or the device the request comes from, do not
-      use this parameter.
+      use this parameter; ask the user which room they want the music in.
 
       Only use both the "area" parameter and the "media_player" parameter together if both are specifically
       used in the request.'
