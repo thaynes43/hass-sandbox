@@ -1,0 +1,20 @@
+# script.voice_primary_bathroom_lights_on — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Mirrors a physical control or a ruling; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Primary Bathroom Lights On
+description: 'Voice tool. Turns on all the primary bathroom lights together: vanity, shower, fan light
+  and the recessed lights. Same as pressing the config button on the bathroom recessed-light switch. Use
+  for ''turn on the bathroom lights'' in the primary bathroom or primary suite. The lights turn themselves
+  off a few minutes after the bathroom is empty.'
+icon: mdi:shower
+mode: single
+sequence:
+- action: light.turn_on
+  target:
+    entity_id:
+    - light.upstairs_primary_bath_vanity_inovelli_presence
+    - light.upstairs_primary_bath_shower_inovelli_presence
+    - light.upstairs_primary_bath_fan_light_inovelli_on_off
+    - light.upstairs_primary_bath_lights
+- action: input_boolean.turn_on
+  target:
+    entity_id: input_boolean.upstairs_primary_bathroom_use_shower_delay

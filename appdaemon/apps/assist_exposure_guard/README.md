@@ -251,12 +251,16 @@ script_allowlist_globs:
   - "script.voice_movie_room_red_night_mode"
   - "script.voice_movie_room_ambient_scene"
   - "script.voice_movie_room_color_toggle"
-  - "script.voice_movie_room_hold_lights"
   - "script.voice_rumpus_room_bright"
   - "script.voice_rumpus_room_dim"
   - "script.voice_rumpus_room_color_toggle"
-  - "script.voice_rumpus_room_hold_lights"
   - "script.voice_shades"
+  - "script.voice_primary_bathroom_lights_on"
+  - "script.voice_primary_bathroom_lights_off"
+  - "script.voice_primary_bathroom_shower_lights"
+  - "script.voice_cloffice_bright"
+  - "script.voice_lock_all_doors"
+  - "script.voice_close_garage_doors"
   - "script.llm_script_for_music_assistant_voice_requests"
   - "script.kellie_mobile_primary_bedroom_relaxed"
   - "script.kellie_mobile_primary_bedroom_focused"
@@ -268,9 +272,10 @@ allow_entities: []
 ### Why the script list has no patterns
 
 An exposed script is an unrestricted tool: whatever the script does, the model
-can do — and these are not "secure-direction-only". `script.voice_*_hold_lights`
-disables automations by design, which is exactly the kind of power that must be
-reviewed rather than inferred from a filename.
+can do. `script.voice_lock_all_doors` and `script.voice_close_garage_doors` are
+the only doors into the dangerous set, and they are safe because of what is
+written inside them (lock-only, close-only, the three exterior doors) — exactly
+the kind of power that must be reviewed rather than inferred from a filename.
 
 A glob such as `script.voice_*` would make the **filename** the security
 boundary: anyone creating `script.voice_anything` later would hand the voice

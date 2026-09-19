@@ -49,11 +49,11 @@ Button → voice script (all `script.voice_*`, zero-argument, mirrored in
 | Movie ZEN37 2 ×2 | recessed red 15 % | `voice_movie_room_red_night_mode` |
 | Movie ZEN37 2 ×1 | `script.toggle_hue_colors` on recessed | `voice_movie_room_color_toggle` |
 | Movie ZEN37 4 ×1 | `script.cycle_gradient_scene_using_same_light_color` (4 gradient selects + 2 play bars) | `voice_movie_room_ambient_scene` |
-| Movie Inovelli config ×2 | hold | `voice_movie_room_hold_lights` |
 | Rumpus ZEN37 1 ×2 | lights + lamp 2750 K 100 % | `voice_rumpus_room_bright` |
 | Rumpus ZEN37 2 ×2 | lights + lamp 2750 K 50 % | `voice_rumpus_room_dim` |
 | Rumpus ZEN37 2 ×3 | `script.toggle_hue_colors_for_multiple_targets` over 10 bulbs | `voice_rumpus_room_color_toggle` |
-| Rumpus Inovelli config ×2 | hold (both motion automations) | `voice_rumpus_room_hold_lights` |
+
+No voice hold tools: Tom ruled them out on 2026-09-19 (holds are not used day to day).
 
 Media: TV auto-off `automation.media_basement_movie_room_no_occupancy_tv_off` (20 min, spoken
 warnings on the satellite). Nothing turns the TV/AVR on. Three duplicate AVR registrations

@@ -1,0 +1,15 @@
+# script.voice_cloffice_bright — voice tool exposed to Assist (created live via MCP, 2026-09-19).
+# Mirrors a physical control or a ruling; see .agents/plans/voice-assist-rollout.md (Phase 2).
+alias: Cloffice Bright
+description: Voice tool. Sets the cloffice lights to full brightness work light (2823 K, 100%). Same as
+  double-tapping the big button on the cloffice scene controller. Use for 'bright mode', 'work light'
+  or 'full brightness' in the cloffice. For any other brightness, dim the Cloffice lights directly.
+icon: mdi:brightness-7
+mode: single
+sequence:
+- action: light.turn_on
+  target:
+    entity_id: light.upstairs_primary_cloffice_lights
+  data:
+    color_temp_kelvin: 2823
+    brightness_pct: 100

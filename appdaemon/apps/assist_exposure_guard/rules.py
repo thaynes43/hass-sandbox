@@ -123,14 +123,18 @@ DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     "script.voice_movie_room_red_night_mode",
     "script.voice_movie_room_ambient_scene",
     "script.voice_movie_room_color_toggle",
-    "script.voice_movie_room_hold_lights",
     # Basement room-mode tools (rumpus room)
     "script.voice_rumpus_room_bright",
     "script.voice_rumpus_room_dim",
     "script.voice_rumpus_room_color_toggle",
-    "script.voice_rumpus_room_hold_lights",
     # Parameterised Hunter Douglas gateway scene runner
     "script.voice_shades",
+    "script.voice_primary_bathroom_lights_on",
+    "script.voice_primary_bathroom_lights_off",
+    "script.voice_primary_bathroom_shower_lights",
+    "script.voice_cloffice_bright",
+    "script.voice_lock_all_doors",
+    "script.voice_close_garage_doors",
     # Music Assistant request handler
     "script.llm_script_for_music_assistant_voice_requests",
     # Primary bedroom modes
