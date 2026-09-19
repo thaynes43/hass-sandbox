@@ -146,8 +146,9 @@ Voice may **ask** and may move things in the **secure direction only**:
 - Status comes from read-only Template **sensor** helpers whose state is the lock's or cover's
   own word (`locked` / `unlocked`, `open` / `closed`) — never by exposing the lock or cover
   itself. Not binary sensors: with `device_class: lock` an LLM agent read `on` as "locked" for
-  the (unlocked) mudroom door on 2026-09-19; with text states all 18 answers from three agents
-  matched the truth (`scripts/voice-bench/run.sh door_status_check.py`).
+  the (unlocked) mudroom door on 2026-09-19; with text states all six mirrors equal their sources and
+  all 24 answers (four agents × six doors, each asked by name) matched the truth
+  (`scripts/voice-bench/run.sh door_status_check.py`, which prints a verdict per line).
 - `script.voice_lock_all_doors` locks the **three exterior doors** (front, garage side door,
   bulkhead). Tom, 2026-09-19: the mudroom↔garage door is left out — the family keeps it
   unlocked. `script.voice_close_garage_doors` closes both ratgdo covers. Each has a
