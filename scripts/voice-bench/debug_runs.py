@@ -26,7 +26,8 @@ async def main():
                     if dl.get("tool_calls"): info="tool:"+",".join(x.get("tool_name","?") for x in dl["tool_calls"])
                     elif dl.get("content") and not seen_delta: seen_delta=True; info="first text"
                     else: continue
-                if e["type"]=="run-start": info=f"stt={d.get('pipeline')} tts_stream={ (d.get('tts_output') or {}).get('stream_response')}"
+                if e["type"]=="run-start": info=f"pipeline={d.get('pipeline')} tts_stream={ (d.get('tts_output') or {}).get('stream_response')}"
+                if e["type"]=="stt-start": info=f"engine={d.get('engine')}"
                 if e["type"]=="stt-end": info=repr(d.get("stt_output",{}).get("text"))
                 if e["type"]=="intent-end":
                     sp=d.get("intent_output",{}).get("response",{}).get("speech",{}).get("plain",{}).get("speech","")

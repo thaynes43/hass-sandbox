@@ -11,7 +11,7 @@ DIR=$(cd "$(dirname "$0")" && pwd)
 SCRIPT=${1:?script name}
 ENVS=${2:-}
 NS=home-automation
-HA_TOKEN="$(kubectl exec -n $NS deploy/appdaemon -c app -- sh -c 'printf %s "$TOKEN"' 2>/dev/null)"
-[ -n "$HA_TOKEN" ] || { echo "could not read the HA token from the appdaemon pod" >&2; exit 1; }
+HA_TOKEN="$(kubectl exec -n $NS deploy/appdaemon -c app -- sh -c 'printf %s "$TOKEN"' 2>/dev/null)" || true
+[ -n "$HA_TOKEN" ] || { echo "could not read the HA token from the appdaemon pod (is kubectl pointed at the right cluster, is the pod up?)" >&2; exit 1; }
 { printf '%s\n' "$HA_TOKEN"; cat "$DIR/$SCRIPT"; } | kubectl exec -i -n $NS deploy/home-assistant -c app -- \
   sh -c "read -r HA_TOKEN; export HA_TOKEN; cat > /tmp/vb.py; env $ENVS python3 /tmp/vb.py; rc=\$?; rm -f /tmp/vb.py; exit \$rc"

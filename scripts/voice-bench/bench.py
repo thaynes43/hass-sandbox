@@ -1,6 +1,6 @@
 """Assist latency bench. Runs INSIDE the HA pod; token arrives in env HA_TOKEN (never printed).
 
-MODE=stt|tts|pipe|voice (comma separated), see bottom.
+MODE=stt|tts|pipe|voice|conv (comma separated), see bottom and run.sh.
 """
 import asyncio, json, os, subprocess, sys, time, uuid
 import aiohttp
@@ -80,6 +80,7 @@ async def bench_tts(s):
                             first = time.monotonic()
                         n += len(chunk)
                 t2 = time.monotonic()
+                first = first or t2  # empty body: keep the row, let the sweep finish
                 res.append(f"url {t1-t0:4.2f} ttfb {first-t0:4.2f} total {t2-t0:4.2f} ({n//1024}k)")
             print(f"TTS {eng:26s} {label:5s} | " + " | ".join(res))
 
@@ -99,7 +100,8 @@ async def ws_run(s, start_stage, sentence=None):
 
         async def feed(handler):
             nonlocal speech_end
-            pcm = open(WAV, "rb").read()[44:]
+            raw = open(WAV, "rb").read()
+            pcm = raw[raw.find(b"data", 12) + 8:]  # ffmpeg adds a LIST chunk, so the header is not 44 bytes
             step = 3200  # 100 ms
             start = time.monotonic()
             for i in range(0, len(pcm), step):
@@ -151,6 +153,12 @@ async def ws_run(s, start_stage, sentence=None):
                 break
         if feeder:
             feeder.cancel()
+            try:
+                await feeder
+            except asyncio.CancelledError:
+                pass
+            except Exception as ex:  # a broken feed must not read as a slow STT engine
+                print(f"  !! audio feeder failed, discard this run: {type(ex).__name__}: {ex}")
         ref = speech_end or t0
         label = "since end-of-speech" if speech_end else "since text submitted"
         print(f"  timeline ({label}):")
@@ -164,6 +172,7 @@ async def ws_run(s, start_stage, sentence=None):
                     if first is None:
                         first = time.monotonic()
                     n += len(chunk)
+            first = first or time.monotonic()
             print(f"    tts fetch: first audio byte +{first-t1:.2f}s after request, complete +{time.monotonic()-t1:.2f}s ({n//1024}k)")
 
 

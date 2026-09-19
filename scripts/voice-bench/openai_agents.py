@@ -9,9 +9,13 @@ for e in d["data"]["entries"]:
         continue
     print("== entry", e["entry_id"], e["title"])
     for s in e.get("subentries", []):
-        data = {k: v for k, v in s["data"].items() if k != "prompt"}
+        data = {k: v for k, v in s["data"].items()
+                if k != "prompt" and not any(x in k.lower() for x in ("key", "token", "secret", "password"))}
         print("  ", s["subentry_type"], "|", s["title"], "|", s["subentry_id"], "|", json.dumps(data))
-    key = e["data"]["api_key"]
+    key = e["data"].get("api_key")
+    if not key:
+        print("  models: entry has no api_key, skipped")
+        continue
     req = urllib.request.Request("https://api.openai.com/v1/models", headers={"Authorization": "Bearer " + key})
     try:
         r = json.load(urllib.request.urlopen(req, timeout=20))
