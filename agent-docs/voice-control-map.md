@@ -113,6 +113,63 @@ mmWave control instead of holding; the spotlight mapping passes an `input_number
 `automation.notify_garage_ratgdo_door_open_close_tom_iphone` is off; 14 exterior automations
 have no repo mirror.
 
-## First floor / Second floor
+## Second floor
+
+Three control layers — only one is visible to HA:
+
+1. **Zigbee binding / Smart Bulb Mode** (paddle groupcasts straight to the Hue group; HA sees no
+   press): primary bed, nook, hall, closet, bath recessed, all upstairs-foyer switches. Nothing to
+   mirror — wall and voice are peers setting the same group.
+2. **HA automation on a button event**: Inovelli **config button** 1x/2x only (no paddle
+   multi-taps are mapped anywhere on this floor) and the five ZEN32 scene controllers.
+3. **Device-local mmWave** (`MmwaveControlWiredDevice` ≠ Disabled): primary bath vanity
+   (Wasteful Occupancy), water closet, kids bath vanity, laundry. HA owns only the off.
+
+| Room | Physical concept → target | Ownership / voice caveat |
+|---|---|---|
+| Primary Bedroom | ZEN32: big = toggle `light.upstairs_primary_nightstand_lights` (Z2M); TL/TR = fan on/off; BL 1x/2x = `scene.laundry_gateway_main_bedroom_tilt_open` / `_open`; BR = `_close`. Bed + nook dimmers are binding-only | no occupancy lighting; nightstands timer 19:00 on / 02:00 off (targets the HA group `light.primary_bedroom_nightstand_lights`, its only consumers) |
+| Primary Bathroom | recessed Config 1x = **all four loads** (vanity, shower, fan light, `light.upstairs_primary_bath_lights`) on/off + shower delay; vanity Config 1x = all off; shower Config 1x = shower + fan light | off automation: 0 s, or 5 min when `input_boolean.upstairs_primary_bathroom_use_shower_delay` is armed — and **any** turn-on of shower/fan light/recessed (voice included) arms it |
+| Primary Cloffice | ZEN32: big 1x/2x = toggle / 100 % 2823 K `light.upstairs_primary_cloffice_lights`; TL/TR = Kellie's / Tom's **bedroom** nightstand bulb @20 %, 2x = `light.den_hue_iris_light`; BL = cloffice tilt-open / open; BR = close / **privacy** scene | nothing automated but the night light |
+| Primary Closet | Config 2x hold only | door contact turns the light on/off instantly, no delay |
+| Primary Hallway | Config 2x hold only | motion on (ungated) + off after 2 min; 93 state changes/24 h — voice lasts minutes without a hold |
+| Upstairs Foyer | six Inovellis, binding only | `light.upstairs_foyer_lights` has no automation and is not exposed |
+| Blue / White / Pink rooms | ZEN32: big 1x = `light.<room>_fan_light`, 2x = nightstand bulb (Jackson / Penelope; White has none), TL/TR = `fan.<room>_fan_fan` on/off, BL = tilt-open / open scenes, BR = close | no occupancy, timers or holds; Blue Room TV off at 01:00 |
+| Kids Bathroom | vanity local mmWave, Config 2x hold | off after 5 min |
+| Laundry | fully device-local mmWave | hold works only via the mmWave select |
+
+Shades: three parallel handles. Every ZEN32 button and both schedules (tilt-open 06:45
+weekdays / 09:00 weekends, close at sunset, each sent twice) use the **gateway scenes**
+(`scene.laundry_gateway_<room>_{open,close,tilt_open}`, `scene.upstairs_gateway_cloffice_*`);
+voice currently has the `cover.*` groups, which can open/close but have no spoken path to
+**tilt-open — the everyday morning position**. Upstairs 1x = tilt-open, 2x = open (inverted vs
+downstairs).
+
+Hold scripts for voice should be the deterministic pair, not the toggle:
+`script.inovelli_set_mmwave_hold_led_indicator` / `script.inovelli_clear_mmwave_hold_restore_led_indicator`
+(omit `hold_color` on clear so a wall hold can be released). Holds never expire. Rooms with a
+hold: primary hall, closet, vanity, shower, water closet, laundry, kids vanity. The motion-cleared
+automations re-read the LED number themselves, so a voice hold must paint the LEDs, not just
+disable automations.
+
+**Never expose `switch.upstairs_*_scene_controller`** — the ZEN32 relay is line power to the
+Modern Forms fan module.
+
+Wrong handles currently exposed (Tom's own earlier picks — needs his ruling):
+`light.primary_bedroom_nightstand_lights` (HA group; everything else drives the Z2M group
+`light.upstairs_primary_nightstand_lights`), `light.primary_suite_lights` carrying the aliases
+"Bedroom lights" (it is cloffice + bed + bath + hall + closet, without nook/nightstands),
+`light.upstairs_primary_bath_lights` aliased as the whole bathroom (it is 1 of 4 loads).
+`media_player.blue_room_lg_tv` ("Jackson's TV") and `media_player.kids_bathroom` are exposed
+house-wide.
+
+Defects found (open): `script.single_button_dimming_start/_stop` unavailable since the
+2026-09-18 restart (`_2` twins healthy) — cloffice hold-dimming dead; ZEN32 big 3x hard reset dead
+on all five controllers (relay-control selects disabled by integration); kids' fan watchdogs off
+and malformed (`unavailable_fan_entity:` key, non-existent `fan.blue_room_fan_light`);
+`automation.watchdog_reset_unknown_night_light` off; bath fan-light Config 1x off does not clear
+the shower-delay boolean; `button-mappings.md` wrongly lists Primary Hall and the two foyer
+presence switches as unmapped.
+
+## First floor
 
 Mapping in progress (2026-09-18).
