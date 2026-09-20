@@ -183,6 +183,11 @@ class OtaCoordinator:
         # Carried across ticks where the entity says nothing (absent from the
         # dump, or unavailable) and expired after TRANSFER_MARK_TTL_S.
         self._transferring: dict[str, float] = {}
+        # Devices whose transfer Z2M has explicitly reported over. Written
+        # only on the response paths — _finish_in_flight also serves the two
+        # decide() timeouts, where the mark is the whole guard and must
+        # stand. Cleared when the entity stops saying in_progress.
+        self._response_settled: set[str] = set()
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -326,6 +331,7 @@ class OtaCoordinator:
                 # Nothing is on offer any more, so nothing is being skipped
                 # and nothing is being transferred.
                 transferring.pop(friendly, None)
+                self._response_settled.discard(friendly)
                 self._abandoned.discard(friendly)
                 parked = self._parked.pop(friendly, None)
                 # Work out whether anything actually installed.
@@ -375,13 +381,14 @@ class OtaCoordinator:
                 and self.now() - completed_ts < self.completed_suppress_s
             )
             in_progress = bool(attrs.get("in_progress"))
-            if in_progress:
+            if in_progress and friendly not in self._response_settled:
                 # Recorded whatever else we decide about this device. Z2M's
                 # in-progress guard is per device, so a transfer we are not
                 # tracking is still a transfer on the mesh.
                 transferring[friendly] = self.now()
-            else:
+            elif not in_progress:
                 transferring.pop(friendly, None)
+                self._response_settled.discard(friendly)
             if not in_progress:
                 # Home Assistant has caught up: whatever we settled is no
                 # longer showing, so a future in_progress is a real install.
@@ -454,6 +461,7 @@ class OtaCoordinator:
             self._parked.pop(friendly, None)
             self._absent.pop(friendly, None)
             self._transferring.pop(friendly, None)
+            self._response_settled.discard(friendly)
         self._abandoned -= gone
 
         if adopted_candidate is not None and self._in_flight is None:
@@ -525,7 +533,7 @@ class OtaCoordinator:
         if status == "ok":
             if matches_flight:
                 if fl is not None:
-                    self._transferring.pop(fl.friendly_name, None)
+                    self._transfer_reported_over(fl.friendly_name)
                 self._finish_in_flight(RESULT_SUCCESS)
             elif stale_for_live_device:
                 self._last_event = f"{friendly}: late success for a settled attempt"
@@ -533,7 +541,7 @@ class OtaCoordinator:
                 # A late success for an attempt we already gave up on, for a
                 # device that is not running one right now.
                 rec = self._devices.pop(friendly)
-                self._transferring.pop(friendly, None)
+                self._transfer_reported_over(friendly)
                 self._record_completion(friendly, rec, {})
                 self._last_event = f"{friendly} completed outside tracked attempt"
             return
@@ -547,7 +555,7 @@ class OtaCoordinator:
                 return
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
-                self._transferring.pop(target, None)
+                self._transfer_reported_over(target)
                 self._record_skip(target, PARK_NO_IMAGE, error, matches_flight)
             return
         if any(marker in lowered for marker in _UNKNOWN_DEVICE_MARKERS):
@@ -559,7 +567,7 @@ class OtaCoordinator:
                 return
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
-                self._transferring.pop(target, None)
+                self._transfer_reported_over(target)
                 self._record_skip(target, PARK_UNKNOWN, error, matches_flight)
             return
         if any(marker in lowered for marker in _BUSY_ERROR_MARKERS):
@@ -601,18 +609,23 @@ class OtaCoordinator:
             # Assistant's lagging entity still says. Only the two decide()
             # timeouts leave the mark standing, and there it is the guard.
             if fl is not None:
-                self._transferring.pop(fl.friendly_name, None)
+                self._transfer_reported_over(fl.friendly_name)
             offline = any(marker in lowered for marker in _OFFLINE_ERROR_MARKERS)
             self._finish_in_flight(RESULT_OFFLINE if offline else RESULT_ERROR, error=error)
             return
         if stale_for_live_device:
             self._last_event = f"{friendly}: late failure for a settled attempt"
             return
+        if friendly:
+            # Z2M has reported this device's operation over, even though the
+            # attempt it names is one a decide() timeout already abandoned.
+            # That is exactly where the mark is the only guard, so leaving it
+            # standing would hold the fleet for the full TTL for nothing.
+            self._transfer_reported_over(friendly)
         rec = self._devices.get(friendly) if friendly else None
         if rec is not None:
-            # Z2M's late answer for an attempt we already gave up on. Keep the
-            # reason visible without touching the backoff already scheduled —
-            # the attempt was counted when we abandoned it.
+            # Keep the reason visible without touching the backoff already
+            # scheduled — the attempt was counted when we abandoned it.
             rec.last_error = error
             self._last_event = f"{friendly}, after we gave up: {error}"
 
@@ -705,6 +718,17 @@ class OtaCoordinator:
         )
         self._last_event = f"starting update for {candidate.friendly_name}"
         return StartUpdate(friendly_name=candidate.friendly_name, transaction=transaction)
+
+    def _transfer_reported_over(self, friendly: str) -> None:
+        """Z2M has answered for this device, so its operation has ended.
+
+        The mark is dropped, and remembered as dropped: the tick this
+        response triggers runs at the peak of Home Assistant's lag, so the
+        snapshot it reads still says ``in_progress`` and would otherwise
+        reinstate the mark with a fresh timestamp.
+        """
+        self._transferring.pop(friendly, None)
+        self._response_settled.add(friendly)
 
     def _others_transferring(self) -> list[str]:
         """Managed devices reporting a transfer that is not the in-flight one.
