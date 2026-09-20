@@ -14,7 +14,10 @@ and widened in 2026-09 to every Z2M device.
   entities (state `on` = firmware pending) matched against `include_globs` /
   `exclude_globs`. Because the queue is derived state, restarts are harmless:
   the app picks up wherever the fleet actually is (only in-memory retry counters
-  reset).
+  reset). A device is only retired once it has been missing from the state dump
+  for a whole `scan_interval_s` — entity restore is not atomic, so a single
+  partial dump would otherwise throw away every device's backoff and every
+  parked device on a Home Assistant restart.
 - **Only Zigbee2MQTT devices, ever** — the glob is just the first filter. On
   every tick the app asks Home Assistant which `update.*` entities belong to
   Z2M (`integration_entities('mqtt')` narrowed to entities whose device

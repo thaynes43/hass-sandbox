@@ -140,11 +140,14 @@ def test_exclude_globs() -> None:
 
 
 def test_vanished_entities_drop_from_queue() -> None:
-    """Two absences, not one — a single missing snapshot is a partial dump."""
-    coord = make_coordinator()
+    """Absent for a whole scan interval, not just one refresh — a single
+    missing snapshot is a partial dump."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
     refresh(coord, snapshot("hue_a", "hue_b"))
     refresh(coord, snapshot("hue_b"))
     assert coord.status()["pending"] == ["hue_a", "hue_b"]  # still provisional
+    clock.advance(121)
     refresh(coord, snapshot("hue_b"))
     assert coord.status()["pending"] == ["hue_b"]
 
@@ -586,7 +589,8 @@ def test_no_image_park_expires_and_retries_the_same_version() -> None:
 
 
 def test_no_image_park_is_dropped_when_the_device_leaves_the_fleet() -> None:
-    coord = make_coordinator()
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
     refresh(coord, snapshot("hue_a", "hue_b"))
     decision = coord.decide()
     coord.on_update_response(
@@ -599,7 +603,8 @@ def test_no_image_park_is_dropped_when_the_device_leaves_the_fleet() -> None:
     )
     assert coord.status()["skipped_no_image"] == ["hue_a"]
     refresh(coord, snapshot("hue_b"))  # hue_a removed from Z2M
-    refresh(coord, snapshot("hue_b"))  # confirmed on the second tick
+    clock.advance(121)
+    refresh(coord, snapshot("hue_b"))  # confirmed a scan interval later
     assert coord.status()["skipped_no_image"] == []
     refresh(coord, snapshot("hue_a", "hue_b"))
     assert "hue_a" in coord.status()["pending"]
@@ -1543,7 +1548,8 @@ def test_the_abandoned_mark_is_pruned_when_a_device_leaves_the_fleet() -> None:
     clock.advance(101)
     coord.decide()  # abandons hue_a
     refresh(coord, snapshot("hue_b"))  # hue_a leaves Z2M
-    refresh(coord, snapshot("hue_b"))  # confirmed on the second tick
+    clock.advance(121)
+    refresh(coord, snapshot("hue_b"))  # confirmed a scan interval later
     assert coord._abandoned == set()
 
 
@@ -1587,13 +1593,14 @@ def test_a_partial_state_dump_keeps_records_parks_and_backoff() -> None:
     assert after["cooldown"][0]["attempts"] == 1
 
 
-def test_a_device_that_really_left_is_retired_on_the_second_tick() -> None:
+def test_a_device_that_really_left_is_retired_after_the_grace() -> None:
     clock = FakeClock()
-    coord = make_coordinator(clock)
+    coord = make_coordinator(clock, retire_grace_s=120)
     refresh(coord, snapshot("hue_a", "hue_b"))
     assert coord.status()["remaining"] == 2
     refresh(coord, snapshot("hue_b"))
     assert coord.status()["remaining"] == 2  # one absence proves nothing
+    clock.advance(121)
     refresh(coord, snapshot("hue_b"))
     status = coord.status()
     assert status["remaining"] == 1
@@ -1603,13 +1610,40 @@ def test_a_device_that_really_left_is_retired_on_the_second_tick() -> None:
 def test_a_renamed_device_does_not_leave_an_immortal_record() -> None:
     """A display-name rename keeps the entity id, so the old name is never
     seen again and must still be retired."""
-    coord = make_coordinator(include_globs=["update.*"])
+    clock = FakeClock()
+    coord = make_coordinator(clock, include_globs=["update.*"], retire_grace_s=120)
     snap = {"update.hue_a": entity("old name")}
     refresh(coord, snap)
     assert coord.status()["pending"] == ["old name"]
     snap = {"update.hue_a": entity("new name")}
     refresh(coord, snap)
+    clock.advance(121)
     refresh(coord, snap)
     status = coord.status()
     assert status["pending"] == ["new name"]
     assert status["remaining"] == 1
+
+
+def test_two_refreshes_in_the_same_instant_do_not_retire_anything() -> None:
+    """A scheduled tick landing mid-restore can publish a request whose Z2M
+    answer drives a second refresh milliseconds later; both see the same
+    partial dump, and counting refreshes would retire the whole fleet."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
+    refresh(coord, snapshot("hue_a", "hue_b", "hue_c"))
+    assert coord.status()["remaining"] == 3
+    refresh(coord, snapshot("hue_c"))  # partial dump
+    refresh(coord, snapshot("hue_c"))  # response-driven tick, same instant
+    assert coord.status()["remaining"] == 3
+
+
+def test_a_stale_absence_mark_does_not_retire_a_requeued_device() -> None:
+    """A record popped outside a refresh must not carry its mark forward."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_b"))  # hue_a absent once
+    clock.advance(500)
+    refresh(coord, snapshot("hue_a", "hue_b"))  # back, mark cleared
+    refresh(coord, snapshot("hue_b"))  # absent again, only just now
+    assert coord.status()["remaining"] == 2

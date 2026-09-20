@@ -142,6 +142,11 @@ class OtaCoordinator:
     update_timeout_s: float = 14400.0
     completed_suppress_s: float = 600.0
     park_recheck_s: float = 86400.0
+    # How long a device must stay absent before it is retired. Set from the
+    # app's scan_interval_s: refreshes are not evenly spaced (an MQTT response
+    # drives one immediately), so counting them would let two land
+    # milliseconds apart on the same partial dump.
+    retire_grace_s: float = 120.0
     now: Callable[[], float] = time.time
     make_transaction: Callable[[str], str] = None  # type: ignore[assignment]
 
@@ -163,8 +168,8 @@ class OtaCoordinator:
         # any use, and outlasting it is exactly what makes a genuine external
         # install invisible.
         self._abandoned: set[str] = set()
-        # friendly_name -> consecutive refreshes it has been absent from
-        self._absent: dict[str, int] = {}
+        # friendly_name -> when it was first absent from a refresh
+        self._absent: dict[str, float] = {}
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -390,15 +395,26 @@ class OtaCoordinator:
         # registry (verified on this install: 6591 entities, none outside the
         # state machine), so mid-restart the identity set and the dump shrink
         # together and nothing distinguishes a device that is gone from one
-        # whose state has not come back yet. Two consecutive absences do:
-        # a restore catches up within a tick, and a real removal is retired
-        # one tick later than it used to be, which costs nothing.
-        for friendly in set(self._devices) | set(self._parked) | self._abandoned:
-            if friendly in present:
-                self._absent.pop(friendly, None)
-            else:
-                self._absent[friendly] = self._absent.get(friendly, 0) + 1
-        gone = {name for name, count in self._absent.items() if count >= 2}
+        # whose state has not come back yet. Staying absent for a whole scan
+        # interval does: a restore catches up well inside one, and a real
+        # removal is retired a tick later than it used to be, which costs
+        # nothing.
+        tracked = set(self._devices) | set(self._parked) | self._abandoned
+        # Rebuilt, not updated in place: a record popped outside a refresh (a
+        # success, or a late ok) would otherwise keep a stale mark and be
+        # retired on its first absence the next time it is queued.
+        self._absent = {
+            name: ts
+            for name, ts in self._absent.items()
+            if name in tracked and name not in present
+        }
+        for friendly in tracked - present:
+            self._absent.setdefault(friendly, self.now())
+        gone = {
+            name
+            for name, ts in self._absent.items()
+            if self.now() - ts >= self.retire_grace_s
+        }
         for friendly in gone:
             self._devices.pop(friendly, None)
             self._parked.pop(friendly, None)
