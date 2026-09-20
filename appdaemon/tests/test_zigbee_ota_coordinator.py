@@ -1875,3 +1875,49 @@ def test_a_transferring_mark_that_is_never_confirmed_expires() -> None:
     assert coord.status()["transferring"] == []
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_terminal_response_clears_the_transferring_mark() -> None:
+    """Z2M has answered, so its operation is over however long Home
+    Assistant's entity takes to catch up — and a device that reboots into
+    unavailable after its own update would otherwise hold the fleet."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["transferring"] == ["hue_a"]
+
+    coord.on_update_response(
+        {"status": "ok", "transaction": decision.transaction, "data": {"id": "hue_a"}}
+    )
+    assert coord.status()["transferring"] == []
+    # It reboots into unavailable, as devices do after an update.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="unavailable")
+    refresh(coord, snap)
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_no_image_reply_clears_the_transferring_mark_too() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    assert coord.status()["transferring"] == []
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"

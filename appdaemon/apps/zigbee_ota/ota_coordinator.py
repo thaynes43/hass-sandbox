@@ -524,6 +524,8 @@ class OtaCoordinator:
         )
         if status == "ok":
             if matches_flight:
+                if fl is not None:
+                    self._transferring.pop(fl.friendly_name, None)
                 self._finish_in_flight(RESULT_SUCCESS)
             elif stale_for_live_device:
                 self._last_event = f"{friendly}: late success for a settled attempt"
@@ -531,6 +533,7 @@ class OtaCoordinator:
                 # A late success for an attempt we already gave up on, for a
                 # device that is not running one right now.
                 rec = self._devices.pop(friendly)
+                self._transferring.pop(friendly, None)
                 self._record_completion(friendly, rec, {})
                 self._last_event = f"{friendly} completed outside tracked attempt"
             return
@@ -544,6 +547,7 @@ class OtaCoordinator:
                 return
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
+                self._transferring.pop(target, None)
                 self._record_skip(target, PARK_NO_IMAGE, error, matches_flight)
             return
         if any(marker in lowered for marker in _UNKNOWN_DEVICE_MARKERS):
@@ -555,6 +559,7 @@ class OtaCoordinator:
                 return
             target = fl.friendly_name if (matches_flight and fl is not None) else friendly
             if target:
+                self._transferring.pop(target, None)
                 self._record_skip(target, PARK_UNKNOWN, error, matches_flight)
             return
         if any(marker in lowered for marker in _BUSY_ERROR_MARKERS):
@@ -592,6 +597,11 @@ class OtaCoordinator:
                 self._last_event = f"Z2M busy; {fl.friendly_name} requeued"
             return
         if matches_flight:
+            # A terminal answer means Z2M's operation is over, whatever Home
+            # Assistant's lagging entity still says. Only the two decide()
+            # timeouts leave the mark standing, and there it is the guard.
+            if fl is not None:
+                self._transferring.pop(fl.friendly_name, None)
             offline = any(marker in lowered for marker in _OFFLINE_ERROR_MARKERS)
             self._finish_in_flight(RESULT_OFFLINE if offline else RESULT_ERROR, error=error)
             return
@@ -882,12 +892,15 @@ class OtaCoordinator:
         ``cooldown`` holds every device waiting on a schedule, whether it
         failed or was only bounced by a busy Z2M; ``attempts`` says which.
         A device appears in exactly one of ``in_flight``, ``pending`` and
-        ``cooldown``, with three gaps: during a global busy window a device
+        ``cooldown``, with four gaps: during a global busy window a device
         whose own schedule has elapsed is in none of them (``busy_until``
         explains it); a cooling-down device adopted from an external install
         shows only under ``in_flight``; and a device whose backoff has
         elapsed while it is still unavailable shows only under ``offline``,
-        which is the overnight steady state on a fleet with battery sensors.
+        which is the overnight steady state on a fleet with battery sensors;
+        and while ``transferring`` holds something, every device with an
+        elapsed schedule is in none of the three, which is the state to read
+        when the fleet looks stalled and ``busy_until`` is empty.
         """
         ts = self.now()
         in_flight_name = self._in_flight.friendly_name if self._in_flight else None
