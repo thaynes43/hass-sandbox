@@ -18,7 +18,7 @@
 | **health_checks** | System health monitoring with decoupled checkers, auto-repair, and custom dashboard cards |
 | **media_dashboard_app** | Media dashboard: Plex movies, Plex shows, in-theaters, coming-soon with poster art, showtimes, and like/dismiss preferences |
 | **countdown_app** | Multiple countdowns with AI-generated backgrounds, auto-rotation, and text styling |
-| **zigbee_ota** | Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry |
+| **zigbee_ota** | Sequential OTA firmware rollout across every Zigbee2MQTT device, one at a time, with offline-device retry |
 | **assist_exposure_guard** | Keeps locks, garage doors, cameras and unvetted scripts out of the voice assistants' exposure list, un-exposing anything dangerous and notifying |
 
 ## Shared providers
@@ -71,7 +71,8 @@ countdown_app (standalone — generates images via ai_providers)
   └─ publishes sensor.countdown_status
        └─ countdown-card / countdown-config-card (reads sensor)
 
-zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin)
+zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin;
+            asks Home Assistant which update entities are Zigbee2MQTT devices)
   └─ publishes sensor.zigbee_ota_orchestrator
 
 assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)

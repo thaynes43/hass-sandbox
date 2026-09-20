@@ -27,7 +27,8 @@
                                      │  ├─ health_checks  │
                                      │  ├─ media_dashboard│
                                      │  ├─ countdown_app  │
-                                     │  └─ school_lunch_* │
+                                     │  ├─ school_lunch_* │
+                                     │  └─ zigbee_ota     │
                                      │                    │
                                      │  providers/        │
                                      │  ├─ ai_providers   │
@@ -55,6 +56,7 @@
 | **External APIs** | AppDaemon → Internet | Provider adapters in `providers/` make HTTP calls |
 | **Provisioning** | AppDaemon → HA REST API | `ha_provisioner` creates helpers/scripts on startup |
 | **Static asset check** | AppDaemon → HA HTTP | Unauthenticated `HEAD /local/...` to confirm HA is really serving a file an app asked it to stage |
+| **Entity classification** | AppDaemon → HA | `render_template()` over the device registry — `zigbee_ota` asks each tick which `update.*` entities are really Zigbee2MQTT devices, which is what makes a fleet-wide glob safe |
 
 ## Key concepts
 
