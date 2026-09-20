@@ -237,6 +237,9 @@ and are on the `assist_exposure_guard` script allowlist from v1.18.5.
 - **Media:** the Sonos players are `music_assistant` only (native `sonos` entry ignored) — no
   turn_on/turn_off. The Frame TV has two entities (`…_the_frame_75_2` dlna, `…_the_frame_75` MA).
   The Play Music script already reaches every first-floor Sonos by area.
+  Since 2026-09-19 two more music tools work from any box: `script.voice_move_music` ("move the
+  music to the living room": same song, new room) and `script.voice_group_music` ("play this in
+  the kitchen too" / "stop it in the kitchen": a synced Sonos group).
 - **Never expose:** the two locks, the Café ovens/fridge (`water_heater.*`) and appliance
   switches, `switch.downstairs_{livingroom,study}_scene_controller` (fan mains power),
   `switch.zigbee2mqtt_bridge_permit_join` (sits in Dining Room), the dining strip outlets, printer

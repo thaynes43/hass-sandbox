@@ -345,6 +345,18 @@ they remember for it, 50 % at the time; the PC input comes back at its own level
 the owner's ruling is to let them play like all the rest and smooth out anything odd later
 (issue #159, closed). The blueprint's `pre_actions` input stays, unused.
 
+**Moving and sharing music (2026-09-19 evening).** Tom asked the kitchen box to move the music to
+the living room and got a different song: the agents only had Play Music, which starts something
+new. Two more voice tools, both area-based like Play Music and both on the guard allowlist since
+v1.18.7: `script.voice_move_music` (`music_assistant.transfer_queue`: the same song carries on in
+the new room, the old room stops) and `script.voice_group_music` (`media_player.join` / `unjoin`
+on the Music Assistant players = a native Sonos group: the same song in several rooms in sync, and
+rooms leaving again). Verified by direct calls with Tom listening: kitchen joined the living room
+on the same track and left again with the living room still playing; a move living room → kitchen
+continued at the same position. Seen once and not reproduced: on the first ungroup Music Assistant
+2.10.3 logged `maximum recursion depth exceeded` in its stream feeder and the living room player
+then accepted requests without playing until Music Assistant was restarted.
+
 **Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
 the bedroom).** Two defects found by that test, plus a third (no default player, routing order
 item 4 above) found while fixing them; all fixed live and verified by text-as-satellite — mostly on

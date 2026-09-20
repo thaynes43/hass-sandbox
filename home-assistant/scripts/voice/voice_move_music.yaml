@@ -1,0 +1,74 @@
+# script.voice_move_music ("Move Music") — voice tool, created live via MCP 2026-09-19 after Tom asked the
+# kitchen box to move the music to the living room and got a different song: the agents only had Play
+# Music, which starts something new. This one calls music_assistant.transfer_queue, so the same song
+# carries on in the new room. Rooms are HA areas; the speaker is the area's Music Assistant player.
+# Must be on the assist_exposure_guard script allowlist (v1.18.7) before it is exposed.
+alias: Move Music
+description: 'Voice tool that MOVES the music that is already playing from one room to another: the same
+  song carries on in the new room and stops in the old one. Use it for ''move the music to the living
+  room'', ''take this to the kitchen'', ''stop it here and play it in the bedroom''. Do NOT use Play Music
+  for that: Play Music starts something new. from_area is the room the music is playing in now (the room
+  the request comes from unless the user names another room); to_area is the room it should move to. To
+  have the same music in several rooms at once use Group Music instead.'
+icon: mdi:transfer
+mode: queued
+max: 3
+fields:
+  from_area:
+    name: From room
+    description: The room the music is playing in now. Use the room the request comes from unless the
+      user names another room.
+    required: true
+    selector:
+      area: {}
+  to_area:
+    name: To room
+    description: The room the music should move to.
+    required: true
+    selector:
+      area: {}
+sequence:
+- variables:
+    src: '{{ area_entities(from_area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
+      ''media_player\.'') | reject(''is_state'', ''unavailable'') | first | default('''', true) }}'
+    dst: '{{ area_entities(to_area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
+      ''media_player\.'') | reject(''is_state'', ''unavailable'') | first | default('''', true) }}'
+- if:
+  - condition: template
+    value_template: '{{ src == '''' or dst == '''' }}'
+  then:
+  - variables:
+      result:
+        response: 'Nothing was moved: there is no Music Assistant speaker in {{ area_name(from_area) if
+          src == '''' else area_name(to_area) }}.'
+  - stop: No speaker in one of the rooms
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ src == dst }}'
+  then:
+  - variables:
+      result:
+        response: 'Nothing was moved: both rooms are the same speaker.'
+  - stop: Same speaker
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ states(src) not in [''playing'', ''paused''] }}'
+  then:
+  - variables:
+      result:
+        response: 'Nothing was moved: nothing is playing in {{ area_name(from_area) }}.'
+  - stop: Nothing playing in the source room
+    response_variable: result
+- action: music_assistant.transfer_queue
+  target:
+    entity_id: '{{ dst }}'
+  data:
+    source_player: '{{ src }}'
+    auto_play: true
+- variables:
+    result:
+      response: The music moved from {{ area_name(from_area) }} to {{ area_name(to_area) }}.
+- stop: Moved
+  response_variable: result

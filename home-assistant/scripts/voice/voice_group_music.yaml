@@ -1,0 +1,93 @@
+# script.voice_group_music ("Group Music") — voice tool, created live via MCP 2026-09-19: the same music
+# in several rooms in sync (media_player.join on the Music Assistant players, i.e. a native Sonos group),
+# and taking rooms out again (media_player.unjoin). Rooms are HA areas. The KEFs cannot join a Sonos
+# group; Music Assistant refuses that and the tool reports it.
+# Must be on the assist_exposure_guard script allowlist (v1.18.7) before it is exposed.
+alias: Group Music
+description: Voice tool that plays the music of one room in OTHER rooms too, in sync (the same song everywhere),
+  or takes rooms out of that group again. Use it for 'play this in the living room too', 'play it in the
+  kitchen and the study as well', 'play this everywhere downstairs' (name the rooms), and for 'stop it
+  in the living room but keep it here' or 'just the kitchen now' (action remove). source_area is the room
+  whose music should be shared (the room the request comes from unless the user names another room); areas
+  are the rooms to add or to remove. Use Move Music instead when the music should leave the first room.
+icon: mdi:speaker-multiple
+mode: queued
+max: 3
+fields:
+  source_area:
+    name: Source room
+    description: The room whose music is shared. Use the room the request comes from unless the user names
+      another room.
+    required: true
+    selector:
+      area: {}
+  areas:
+    name: Rooms
+    description: The rooms to add to the group, or to take out of it.
+    required: true
+    selector:
+      area:
+        multiple: true
+  action:
+    name: Action
+    description: add = these rooms play the source room's music too; remove = these rooms stop and leave
+      the group.
+    required: true
+    selector:
+      select:
+        options:
+        - add
+        - remove
+sequence:
+- variables:
+    src: '{{ area_entities(source_area) | select(''in'', integration_entities(''music_assistant'')) |
+      select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'') | first | default('''',
+      true) }}'
+    members: '{% set ns = namespace(p=[]) %}{% for a in [areas] | flatten %}{% set ns.p = ns.p + (area_entities(a)
+      | select(''in'', integration_entities(''music_assistant'')) | select(''match'', ''media_player\.'')
+      | reject(''is_state'', ''unavailable'') | list) %}{% endfor %}{{ ns.p | unique | list }}'
+- variables:
+    targets: '{{ members | reject(''eq'', src) | list }}'
+- if:
+  - condition: template
+    value_template: '{{ src == '''' or targets | count == 0 }}'
+  then:
+  - variables:
+      result:
+        response: 'Nothing changed: {{ ''there is no Music Assistant speaker in '' ~ area_name(source_area)
+          if src == '''' else ''none of those rooms has a Music Assistant speaker other than the source
+          room'' }}.'
+  - stop: No usable speakers
+    response_variable: result
+- choose:
+  - conditions:
+    - condition: template
+      value_template: '{{ action == ''add'' }}'
+    sequence:
+    - if:
+      - condition: template
+        value_template: '{{ states(src) not in [''playing'', ''paused''] }}'
+      then:
+      - variables:
+          result:
+            response: 'Nothing changed: nothing is playing in {{ area_name(source_area) }}.'
+      - stop: Nothing playing in the source room
+        response_variable: result
+    - action: media_player.join
+      target:
+        entity_id: '{{ src }}'
+      data:
+        group_members: '{{ targets }}'
+    - variables:
+        result:
+          response: The music from {{ area_name(source_area) }} now also plays in {{ [areas] | flatten
+            | map('area_name') | join(', ') }}.
+  default:
+  - action: media_player.unjoin
+    target:
+      entity_id: '{{ targets }}'
+  - variables:
+      result:
+        response: '{{ [areas] | flatten | map(''area_name'') | join('', '') }} left the group and stopped.'
+- stop: Done
+  response_variable: result
