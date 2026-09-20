@@ -1,7 +1,7 @@
 # 002 — Sonos: SonosNet off, soundbars back on Ethernet
 
-**Status:** In progress — mostly done 2026-09-19 evening (see *Outcome*); left: the Primary Bedroom
-Beam and the Movie Room Port still have no Ethernet link
+**Status:** Done for the soundbars (2026-09-19, see *Outcome*); only the Movie Room Port is still on
+Wi-Fi (no Ethernet link), which nobody has asked to change
 **Size:** Small (about an hour with Tom present; no code)
 **Raised:** 2026-09-19, during the first spoken music test of the Primary Bedroom voice box
 
@@ -19,11 +19,13 @@ not applied and turned out not to be needed). Verified after each step:
 - every up port on the switch forwarding, none blocking; broadcast+multicast at or below the
   afternoon baseline (uplinks 3–12 pps). No loop, no storm.
 
-Still on Wi-Fi: the **Primary Bedroom Beam** (the one that dropped streams) and the **Movie Room
-Port** — their Ethernet ports show no link, so their cables are unplugged or land elsewhere (ports
-26, 30, 45 of the Pro Max 48 are enabled on Default with nothing linked); and the Shed SYMFONISK
-(always was). Still owed once the bedroom Beam is wired: confirm Ethernet, re-test bedroom music,
-DHCP reservations for the wired units.
+**Primary Bedroom Beam (20:20):** its cable turned out to be plugged into the TV; Tom moved it to
+the Beam. It reports Ethernet, the Sub Mini re-bonded on its home-theater link by itself (it is
+deliberately not wired), and a re-test as the bedroom voice box played about two minutes with no
+stream error in the Music Assistant log. That closes the problem this item was raised for.
+
+Still on Wi-Fi: the **Movie Room Port** (no Ethernet link; its cable is unplugged or lands
+elsewhere) and the Shed SYMFONISK (always was). Optional: DHCP reservations for the wired units.
 
 ## Problem
 
@@ -69,7 +71,7 @@ Two rules that must not be broken:
 
 | Unit | IP | Today | Notes |
 |---|---|---|---|
-| Primary Bedroom Beam | .6 | home Wi-Fi since 2026-09-19 (SonosNet off), Ethernet still dead | master of Sub Mini .77; the stuttering one |
+| Primary Bedroom Beam | .6 | **wired since 2026-09-19 20:20** (its cable had been in the TV) | master of Sub Mini .77; the stuttering one |
 | Pink Room Beam | .24 | **wired since 2026-09-19, Pro Max 48 port 5** | standalone |
 | Blue Room Beam | .81 | **wired since 2026-09-19, Pro Max 48 port 3** | standalone; weakest mesh links in the house (28–34) |
 | White Room Beam | .231 | **wired since 2026-09-19, Pro Max 48 port 7** | standalone |
@@ -129,7 +131,7 @@ chosen.
 
 ## Open questions
 
-- Where the Primary Bedroom Beam's and the Movie Room Port's cables go (ports 3/5/6/7 are identified, see *Outcome*).
+- Where the Movie Room Port's cable goes, if it should be wired at all.
 - Whether to also retro-fit storm control and loop protection on the six Amp ports.
 - IGMP snooping on the Default network is off; sources mostly recommend on for Sonos. Not part of
   this item: change it separately, on its own, if at all.

@@ -22,4 +22,4 @@ incremental patching.
 | # | Item | Status | Size |
 |---|------|--------|------|
 | 001 | [Custom card deployment revamp / HACS integration](001-card-deployment-and-hacs-integration.md) | Proposed | Major |
-| 002 | [Sonos: SonosNet off, soundbars back on Ethernet](002-sonosnet-off-wired-soundbars.md) | In progress (4 of 6 wired 2026-09-19; bedroom Beam + Movie Room Port left) | Small |
+| 002 | [Sonos: SonosNet off, soundbars back on Ethernet](002-sonosnet-off-wired-soundbars.md) | Done for the soundbars 2026-09-19 (Movie Room Port still on Wi-Fi) | Small |
