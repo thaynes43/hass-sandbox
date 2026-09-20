@@ -39,25 +39,29 @@ actions:
     and an idle group is exactly what leaks TV audio later) or when it plays/pauses music that is not
     the TV input. This room when it counts, otherwise - or when the sentence says ''everywhere'', ''all'',
     ''house'' or ''ungroup'' - every such player. script.voice_stop_music applies the same rule for requests
-    that reach the AI agent'
+    that reach the AI agent. An explicit ''here'' always wins: ''stop all the music in here'' is this
+    room, not the house'
   variables:
     active: '{% set said = '' '' ~ (trigger.sentence | default('''', true) | lower) ~ '' '' %}{% set everywhere
-      = ''everywhere'' in said or '' all '' in said or ''house'' in said or ''ungroup'' in said %}{% set
-      ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'') | select(''match'',
-      ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p)
-      in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p]
-      %}{% endif %}{% endfor %}{{ [here] if not everywhere and here in ns.p else ns.p }}'
+      = '' here '' not in said and (''everywhere'' in said or '' all '' in said or ''house'' in said or
+      ''ungroup'' in said) %}{% set ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'')
+      | select(''match'', ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or [])
+      | count > 1 or (states(p) in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'')
+      %}{% set ns.p = ns.p + [p] %}{% endif %}{% endfor %}{{ [here] if not everywhere and here in ns.p
+      else ns.p }}'
 - variables:
     leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
       or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
 - variables:
     followers: '{% set ns = namespace(f=[]) %}{% for l in leaders %}{% set ns.f = ns.f + ((state_attr(l,
       ''group_members'') or []) | reject(''eq'', l) | list) %}{% endfor %}{{ ns.f | unique | list }}'
-- alias: 'A leader that is on its TV input keeps playing the TV: only its followers are released'
+- alias: 'A leader that is on its TV input keeps playing the TV: only its followers are released. A grouped
+    leader is stopped even when it reports idle (Music Assistant''s paused-group state), or its queue
+    would stay loaded'
   variables:
     stop_list: '{% set ns = namespace(s=[]) %}{% for l in leaders %}{% if state_attr(l, ''source'') !=
-      ''TV'' and states(l) in [''playing'', ''paused''] %}{% set ns.s = ns.s + [l] %}{% endif %}{% endfor
-      %}{{ ns.s }}'
+      ''TV'' and (states(l) in [''playing'', ''paused''] or (state_attr(l, ''group_members'') or []) |
+      count > 1) %}{% set ns.s = ns.s + [l] %}{% endif %}{% endfor %}{{ ns.s }}'
 - if:
   - condition: template
     value_template: '{{ stop_list | count == 0 and followers | count == 0 }}'
