@@ -288,6 +288,8 @@ re-queries the device:
 ```yaml
 action: mqtt.publish
 data:
+  # the z2m *friendly name*, not the HA entity slug — they coincide for the Inovelli
+  # presence switches, but not for every device (see agent-docs/hue-power-on-behavior.md)
   topic: zigbee2mqtt/<switch_name>/set
   payload: >-
     {"mmwave_detection_areas": {"area1": {"width_min": -150, "width_max": 300,
@@ -307,6 +309,13 @@ kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m \
 ```
 
 If `mmwave_detection_areas.area1` still shows the old box, the command did not land — re-publish.
+
+**No output is not a pass.** z2m logs that publish at `info` (verified on this cluster, which
+runs `log_level: info`), so an empty grep means the line is outside the window, not that
+nothing was published — z2m is chatty and the container log rotates, so `--since=3h` can still
+start minutes ago. Widen `--since`, and if it is still empty, force a fresh publish rather than
+trusting silence. HA's cached attributes cannot settle this, which is the whole point of
+reading the device's own answer.
 
 ### Interference (mask) areas
 
