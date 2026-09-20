@@ -25,7 +25,7 @@ deliberately not wired), and a re-test as the bedroom voice box played about two
 stream error in the Music Assistant log. That closes the problem this item was raised for.
 
 Still on Wi-Fi: the **Movie Room Port** (no Ethernet link; its cable is unplugged or lands
-elsewhere) and the Shed SYMFONISK (always was). Optional: DHCP reservations for the wired units.
+elsewhere) and the Shed SYMFONISK (always was).
 
 ## Problem
 
@@ -122,8 +122,7 @@ chosen.
    `get_device_by_mac`, saved to a file, read with `jq`; it contains `x_authkey` — never paste it).
    Abort = Tom disables the port again. Ignore the pre-existing noise on Pro Max 48 port 13 and
    Livingroom Flex port 4. Then ports 5, 6, 7.
-5. **Afterwards:** find the two dead-Ethernet units without a disabled port; DHCP reservations for
-   the newly wired units; re-test bedroom music as the satellite
+5. **Afterwards:** find the two dead-Ethernet units without a disabled port; re-test bedroom music as the satellite
    (`scripts/voice-bench/run.sh bench.py "MODE=pipe … DEVICE_ID=9140746b067691b4aeb5a66c38a642db …"`)
    and watch the Music Assistant log for a full minute; re-check *About My System → ConnectionType*
    after Sonos firmware updates (the old per-device setting used to revert; no such report for the
