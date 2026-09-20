@@ -58,7 +58,9 @@ sequence:
     music'' sentences locally: a player counts when it is GROUPED (Music Assistant reports a paused Sonos
     group as idle, and an idle group is what leaks TV audio into other rooms later) or when it plays/pauses
     music that is not its TV input. A grouped leader is stopped even when it reports idle (that IS the
-    paused-group state): releasing only its followers would leave its queue loaded'
+    paused-group state): releasing only its followers would leave its queue loaded. A named room means
+    EVERY Music Assistant speaker in it, not the first one area_entities happens to return: no area holds
+    two today, but the contract is that the room stops'
   variables:
     room_area:
       primary_bedroom: primary_bedroom
@@ -78,12 +80,12 @@ sequence:
     named: '{{ wanted_room not in ['''', ''everywhere''] }}'
     here: '{{ (area_entities(room_area.get(wanted_room, '''')) | select(''in'', integration_entities(''music_assistant''))
       | select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'',
-      ''unknown'') | first | default('''', true)) if named else '''' }}'
+      ''unknown'') | list) if named else [] }}'
     counting: '{% set ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'') | select(''match'',
       ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p)
       in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p]
       %}{% endif %}{% endfor %}{{ ns.p }}'
-    active: '{{ ([here] if here in counting else []) if named else counting }}'
+    active: '{{ (here | select(''in'', counting) | list) if named else counting }}'
     leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
       or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
     followers: '{% set ns = namespace(f=[]) %}{% for l in leaders %}{% set ns.f = ns.f + ((state_attr(l,
@@ -133,9 +135,11 @@ sequence:
     ''stopped'' is exactly what the HassTurnOff path used to give. A player that is still PAUSED was not
     stopped either (a stopped Music Assistant player reports idle): pause versus stop is the whole point
     of this tool. Followers are checked too: when the leader is a soundbar on its TV input no stop command
-    is sent at all, and a released speaker that really fell silent reports idle'
+    is sent at all, and a released speaker that really fell silent reports idle. 3 s, like Group Music:
+    Music Assistant''s group_members lags the unjoin, and a shorter wait reports a stop that worked as
+    STILL GROUPED'
   delay:
-    seconds: 2
+    seconds: 3
 - variables:
     still_playing: '{{ (stop_list + followers) | unique | select(''is_state'', [''playing'', ''paused''])
       | list }}'
@@ -144,13 +148,14 @@ sequence:
       endfor %}{{ ns.g }}'
 - variables:
     result:
-      response: '{% set done = (stop_list + followers) | reject(''in'', still_playing) | reject(''in'',
-        still_grouped) | map(''area_name'') | select(''string'') | unique | list %}{{ (''Stopped the music
-        in '' ~ done | join('', '') ~ (''; the speakers are no longer grouped'' if followers | count >
-        0 and still_grouped | count == 0 else '''') ~ ''.'') if done else ''Nothing was stopped.'' }}{{
-        ('' NOT STOPPED: '' ~ (still_playing | map(''area_name'') | select(''string'') | unique | join('',
-        '') or ''a speaker without a room'') ~ ''.'') if still_playing else '''' }}{{ ('' STILL GROUPED:
-        '' ~ (still_grouped | map(''area_name'') | select(''string'') | unique | join('', '') or ''a speaker
-        without a room'') ~ ''.'') if still_grouped else '''' }}'
+      response: '{% set ok = (stop_list + followers) | unique | reject(''in'', still_playing) | reject(''in'',
+        still_grouped) | list %}{% set done = ok | map(''area_name'') | select(''string'') | unique |
+        list %}{{ (''Stopped the music in '' ~ (done | join('', '') or ''a speaker without a room'') ~
+        (''; the speakers are no longer grouped'' if followers | count > 0 and still_grouped | count ==
+        0 else '''') ~ ''.'') if ok else ''Nothing was stopped.'' }}{{ ('' NOT STOPPED: '' ~ (still_playing
+        | map(''area_name'') | select(''string'') | unique | join('', '') or ''a speaker without a room'')
+        ~ ''.'') if still_playing else '''' }}{{ ('' STILL GROUPED: '' ~ (still_grouped | map(''area_name'')
+        | select(''string'') | unique | join('', '') or ''a speaker without a room'') ~ ''.'') if still_grouped
+        else '''' }}'
 - stop: Stopped
   response_variable: result
