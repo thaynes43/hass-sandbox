@@ -40,15 +40,16 @@ actions:
     the TV input. This room when it counts, otherwise - or when the sentence says ''everywhere'', ''all'',
     ''house'' or ''ungroup'' - every such player. script.voice_stop_music applies the same rule for requests
     that reach the AI agent. An explicit ''here'' always wins: ''stop all the music in here'' is this
-    room, not the house'
+    room, not the house (the sentence is normalised to bare words first: speech-to-text punctuates, and
+    ''in here.'' must still count as here)'
   variables:
-    active: '{% set said = '' '' ~ (trigger.sentence | default('''', true) | lower) ~ '' '' %}{% set everywhere
-      = '' here '' not in said and (''everywhere'' in said or '' all '' in said or ''house'' in said or
-      ''ungroup'' in said) %}{% set ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'')
-      | select(''match'', ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or [])
-      | count > 1 or (states(p) in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'')
-      %}{% set ns.p = ns.p + [p] %}{% endif %}{% endfor %}{{ [here] if not everywhere and here in ns.p
-      else ns.p }}'
+    active: '{% set said = '' '' ~ (trigger.sentence | default('''', true) | lower | regex_replace(''[^a-z0-9]+'',
+      '' '') | trim) ~ '' '' %}{% set everywhere = '' here '' not in said and ('' everywhere '' in said
+      or '' all '' in said or '' house '' in said or '' ungroup '' in said) %}{% set ns = namespace(p=[])
+      %}{% for p in integration_entities(''music_assistant'') | select(''match'', ''media_player\.'')
+      | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p) in [''playing'',
+      ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p] %}{% endif %}{%
+      endfor %}{{ [here] if not everywhere and here in ns.p else ns.p }}'
 - variables:
     leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
       or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
