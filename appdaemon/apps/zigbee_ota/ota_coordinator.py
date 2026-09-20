@@ -287,7 +287,11 @@ class OtaCoordinator:
                 # gate: the retained availability topics are delivered to the
                 # MQTT plugin before this app has a listener, so a device that
                 # was already offline at startup has no MQTT record at all.
-                self._abandoned.discard(friendly)
+                # Deliberately NOT discarding from _abandoned here: an
+                # unavailable entity is an absence of information, and the
+                # device dropping off the mesh is exactly what makes a
+                # transfer go silent, so this flap is the expected condition
+                # around the timeout this suppression exists for.
                 self.set_availability(friendly, False)
                 seen.add(friendly)
                 continue
@@ -385,6 +389,7 @@ class OtaCoordinator:
         for friendly in list(self._parked):
             if friendly not in present:
                 self._parked.pop(friendly)
+        self._abandoned &= present
 
         if adopted_candidate is not None and self._in_flight is None:
             self._in_flight = InFlight(

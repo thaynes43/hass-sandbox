@@ -1505,3 +1505,38 @@ def test_the_never_started_abort_does_not_re_adopt_either() -> None:
     assert coord.status()["in_flight"] == {}
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_an_unavailable_tick_does_not_reopen_the_adoption_gate() -> None:
+    """The device dropping off the mesh is what makes a transfer go silent,
+    so that flap is the expected condition around the timeout — releasing
+    the mark on it would undo the suppression exactly when it is needed."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 40})
+    clock.advance(1001)
+    assert coord.decide() is None  # timed out
+    clock.advance(301)
+    # It flaps out and back with the stale in_progress still set.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="unavailable")
+    refresh(coord, snap)
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_the_abandoned_mark_is_pruned_when_a_device_leaves_the_fleet() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    clock.advance(101)
+    coord.decide()  # abandons hue_a
+    refresh(coord, snapshot("hue_b"))  # hue_a leaves Z2M
+    assert coord._abandoned == set()
