@@ -9,46 +9,64 @@ description: 'Home Assistant''s built-in intent treats ''stop the music'' as PAU
   in the bathroom (Tom, 2026-09-19). This sentence trigger runs before the built-in intents: ''stop''
   really stops the music where the request comes from (or, if nothing plays there, wherever music is playing)
   and dissolves the group. ''Pause'' is untouched and keeps the group. A soundbar that is playing TV audio
-  is never touched.'
+  is never touched. 2026-09-20: ''stop ALL (the) music'', ''turn off all the music'' and ''ungroup the
+  speakers'' were not matched, fell through to the AI agent and got HassTurnOff / HassMediaPause (nothing
+  stopped, or the whole group paused); they are matched here now and mean everywhere. Other phrasings
+  reach the agent, which has script.voice_stop_music.'
 triggers:
 - trigger: conversation
   command:
-  - stop [the] music
-  - stop [the] music [in] here
-  - stop [the] music everywhere
-  - stop playing [[the] music]
+  - stop [all] [of] [the] music
+  - stop [all] [the] music [in] here
+  - stop [all] [the] music everywhere
+  - stop [the] music [in] [the] [whole] house
+  - stop playing [[all] [the] music]
   - stop [the] song
-  - turn off the music
-  - turn the music off
+  - turn off [all] the music
+  - turn [all] the music off
+  - turn the music off everywhere
   - music off
+  - ungroup the speakers
+  - stop [the] music and ungroup [the speakers]
 actions:
 - variables:
     area: '{{ area_id(trigger.device_id) if trigger.device_id else '''' }}'
 - variables:
     here: '{{ (area_entities(area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
       ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')
-      | first | default('''', true)) if area else '''' }}'
+      | list) if area else [] }}'
 - alias: 'Scope: a player counts when it is GROUPED (Music Assistant reports a paused Sonos group as idle,
     and an idle group is exactly what leaks TV audio later) or when it plays/pauses music that is not
-    the TV input. This room when it counts, otherwise - or when the sentence says ''everywhere'' - every
-    such player'
+    the TV input. This room when it counts, otherwise - or when the sentence says ''everywhere'', ''all'',
+    ''house'' or ''ungroup'' - every such player. script.voice_stop_music applies the same rule for requests
+    that reach the AI agent. An explicit ''here'' always wins: ''stop all the music in here'' is this
+    room, not the house (the sentence is normalised to bare words first: speech-to-text punctuates, and
+    ''in here.'' must still count as here). ''This room'' means EVERY Music Assistant speaker in it, not
+    the first one area_entities returns - the same rule script.voice_stop_music uses; with | first here,
+    a room whose second speaker was the one playing would fall through to the else branch and stop the
+    WHOLE HOUSE on a 0.2 s local ''Stopped.'''
   variables:
-    active: '{% set everywhere = ''everywhere'' in (trigger.sentence | default('''', true) | lower) %}{%
-      set ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'') | select(''match'',
-      ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p)
-      in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p]
-      %}{% endif %}{% endfor %}{{ [here] if not everywhere and here in ns.p else ns.p }}'
+    active: '{% set said = '' '' ~ (trigger.sentence | default('''', true) | lower | regex_replace(''[^a-z0-9]+'',
+      '' '') | trim) ~ '' '' %}{% set everywhere = '' here '' not in said and ('' everywhere '' in said
+      or '' all '' in said or '' house '' in said or '' ungroup '' in said) %}{% set ns = namespace(p=[])
+      %}{% for p in integration_entities(''music_assistant'') | select(''match'', ''media_player\.'')
+      | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p) in [''playing'',
+      ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p] %}{% endif %}{%
+      endfor %}{% set inroom = here | select(''in'', ns.p) | list %}{{ inroom if not everywhere and inroom
+      | count > 0 else ns.p }}'
 - variables:
     leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
       or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
 - variables:
     followers: '{% set ns = namespace(f=[]) %}{% for l in leaders %}{% set ns.f = ns.f + ((state_attr(l,
       ''group_members'') or []) | reject(''eq'', l) | list) %}{% endfor %}{{ ns.f | unique | list }}'
-- alias: 'A leader that is on its TV input keeps playing the TV: only its followers are released'
+- alias: 'A leader that is on its TV input keeps playing the TV: only its followers are released. A grouped
+    leader is stopped even when it reports idle (Music Assistant''s paused-group state), or its queue
+    would stay loaded'
   variables:
     stop_list: '{% set ns = namespace(s=[]) %}{% for l in leaders %}{% if state_attr(l, ''source'') !=
-      ''TV'' and states(l) in [''playing'', ''paused''] %}{% set ns.s = ns.s + [l] %}{% endif %}{% endfor
-      %}{{ ns.s }}'
+      ''TV'' and (states(l) in [''playing'', ''paused''] or (state_attr(l, ''group_members'') or []) |
+      count > 1) %}{% set ns.s = ns.s + [l] %}{% endif %}{% endfor %}{{ ns.s }}'
 - if:
   - condition: template
     value_template: '{{ stop_list | count == 0 and followers | count == 0 }}'

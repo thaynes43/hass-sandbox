@@ -13,17 +13,21 @@
 # Rooms are a FIXED LIST (select), not an area selector: with an area field Home Assistant 2026.9 crashes
 # the whole voice request (IndexError in helpers/llm.py, the box blinks red) when the agent passes a room
 # name it cannot match exactly, e.g. "bathroom" for the area "Primary Bathroom" (first voice test, 2026-09-19).
+# 2026-09-20: when the leaving room is the group LEADER the queue is handed to a room that stays, but it
+# only starts playing there if the group WAS playing (auto_play = was_playing): 'ungroup the speakers' on a
+# paused group had started the music again. Stop / ungroup requests belong to script.voice_stop_music.
 alias: Group Music
-description: Voice tool that plays the music of one room in OTHER rooms too, in sync (the same song everywhere),
-  or takes rooms out of that group again. Use it for 'play this in the living room too', 'play the music
-  in the bedroom and the bathroom', 'play it in the kitchen and the study as well' (name the rooms) with
-  action add, and for 'stop it in the living room but keep it here', 'stop it in here but keep it in the
-  living room' or 'just the kitchen now' with action remove. source_room is the room where the music is
-  playing NOW (the room the request comes from, or the room it was just moved to, unless the user names
-  another); rooms are the rooms to add, or the rooms that should stop (that may be the room the request
-  comes from). When the user lists the rooms that should play ('in the bedroom and the bathroom') and
-  one of them is the source room, pass the others. Use Move Music instead when the music should simply
-  go from one room to another.
+description: 'Voice tool that plays the music of one room in OTHER rooms too, in sync (the same song everywhere),
+  or takes rooms out of that group again. Use it for ''play this in the living room too'', ''play the
+  music in the bedroom and the bathroom'', ''play it in the kitchen and the study as well'' (name the
+  rooms) with action add, and for ''stop it in the living room but keep it here'', ''stop it in here but
+  keep it in the living room'' or ''just the kitchen now'' with action remove. source_room is the room
+  where the music is playing NOW (the room the request comes from, or the room it was just moved to, unless
+  the user names another); rooms are the rooms to add, or the rooms that should stop (that may be the
+  room the request comes from). When the user lists the rooms that should play (''in the bedroom and the
+  bathroom'') and one of them is the source room, pass the others. Use Move Music instead when the music
+  should simply go from one room to another. Do NOT use this tool to stop the music or to ''ungroup the
+  speakers'': use Stop Music for that.'
 icon: mdi:speaker-multiple
 mode: queued
 max: 3
@@ -221,6 +225,7 @@ sequence:
         leader: '{{ group | first | default('''', true) }}'
         remaining: '{{ group | reject(''in'', members) | list }}'
         outside: '{{ members | reject(''in'', group) | list }}'
+        was_playing: '{{ is_state(group | first | default('''', true), ''playing'') }}'
     - alias: A named room that is not in the group is simply stopped, whichever branch below runs, so
         'stop the music in the study' is true afterwards
       if:
@@ -256,7 +261,9 @@ sequence:
             entity_id: '{{ group | reject(''eq'', leader) | list }}'
       default:
       - alias: 'The leader leaves but others stay: dissolve the group, hand the queue to the first room
-          that stays, regroup the rest around it'
+          that stays, regroup the rest around it. The queue only starts playing there if the group WAS
+          playing: a paused group must stay silent (Tom, 2026-09-20: ''ungroup the speakers'' on a paused
+          group started the music again)'
         action: media_player.unjoin
         continue_on_error: true
         target:
@@ -268,7 +275,7 @@ sequence:
           entity_id: '{{ remaining | first }}'
         data:
           source_player: '{{ leader }}'
-          auto_play: true
+          auto_play: '{{ was_playing }}'
         continue_on_error: true
       - if:
         - condition: template
@@ -284,9 +291,10 @@ sequence:
             group_members: '{{ remaining[1:] }}'
     - variables:
         result:
-          response: '{{ members | map(''area_name'') | join('', '') }} stopped{{ (''; the music carries
-            on in '' ~ remaining | map(''area_name'') | join('', '')) if remaining | count > 0 and leader
-            in members else '''' }}.'
+          response: '{{ members | map(''area_name'') | join('', '') }} stopped{{ (((''; the music carries
+            on in '' if was_playing else ''; nothing is playing, the queue is now in '') ~ remaining |
+            map(''area_name'') | join('', ''))) if remaining | count > 0 and leader in members else ''''
+            }}.'
   default:
   - variables:
       result:

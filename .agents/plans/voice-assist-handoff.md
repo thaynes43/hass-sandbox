@@ -101,6 +101,16 @@ scripts/voice-bench/run.sh door_status_check.py    # locks/garage truth vs what 
   `media_player.str_az5000es` back: the wake overwrites its source and volume and leaves it on, so
   if it was off, turn it off again (`media_player.turn_off`), and if it was on another input, select
   that input again.
+- Music tools the agents have (2026-09-20): Play Music, Move Music, Group Music and **Stop Music**
+  (`script.voice_stop_music`). Tom's first spoken group test (Movie Room Port + Rumpus KEFs) found:
+  the KEFs join but play **out of sync** — Music Assistant moves both onto AirPlay 2 and logs
+  `Cannot bind UDP 319: Permission denied … sync … degraded`, because the pod ran non-root (uid 568,
+  no capabilities, hostNetwork) and could not open the PTP clock port. **Fixed the same day**
+  (haynes-ops#2995, Tom's ruling: run it as upstream documents — root, default capabilities; the
+  new pod has `NET_BIND_SERVICE` effective). Still to hear with Tom: that a KEF + Sonos group now
+  stays in sync (a fixed offset through the AVR may remain and would be tuned separately); a joining KEF plays at its own Music Assistant level (it was 25 %, barely audible — Tom's
+  ruling stands: no volume logic); Group Music's leader hand-over now only auto-plays when the group
+  was playing.
 - Never run the synthetic **voice** modes (`MODE=voice`) against a room: a mis-transcription turned
   the Rumpus lights on at night once. Text (`MODE=pipe`) or Tom's real voice only.
 
@@ -216,6 +226,13 @@ it cuts off its surrounds and Sub.
   Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources (research).
 - Parked with cold-start context: hass-sandbox #144 (live-HA defects the floor maps found, older
   ESPHome devices), #149 (human-facing voice page for the docs site), haynes-ops #2969.
+  **Both music defects found on 2026-09-20 are parked, not fixed:** haynes-ops#2996 — all four
+  Spotify provider instances fail to load every MA start (`Re-Authentication required` /
+  `Spotify playback authorization required`; predates that day's pod change, the 2026-09-19 pod
+  logged the same). Only Tom can fix it, in the MA UI. Until then every music request resolves
+  against the LOCAL library, which feeds haynes-ops#2994 — local FLACs on the NFS share
+  intermittently give no audio for 30 s (`Source stalled`), so a voice "play <artist>" can wait a
+  minute while MA skips items; the same files read in 0.3 s a few minutes later.
 - Deploy chain for any AppDaemon change: hass-sandbox PR → merge → GHCR image → haynes-ops `tag:`
   bump PR → `flux reconcile kustomization appdaemon -n home-automation --with-source` → rollout
   status → confirm on the PR. haynes-ops `Flux Local - Test (main)` flakes on Helm repo fetches:

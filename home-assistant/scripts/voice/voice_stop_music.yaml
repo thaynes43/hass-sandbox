@@ -1,0 +1,164 @@
+# script.voice_stop_music ("Stop Music") — voice tool, created live via MCP 2026-09-20 after Tom's first spoken
+# group test (Movie Room Port + Rumpus KEFs). Only the exact "stop the music" sentences were handled (by
+# automation.voice_stop_the_music_stop_and_ungroup); everything else reached the AI agent, which had no stop
+# tool: "Stop all music." -> HassTurnOff ("Some players resisted the cut", nothing stopped: Music Assistant
+# Sonos players have no turn_off), "Stop the music in the rumpus room." -> HassMediaPause (pausing one grouped
+# speaker pauses the whole group and keeps it grouped), "ungroup the speakers" -> Group Music remove (handed
+# the queue to the KEFs and started playing again). This tool applies the SAME scope rule as that automation
+# (keep the two in step): stop = stop AND ungroup (Tom's ruling 2026-09-19); a soundbar on its TV input is
+# never stopped, only its followers are released. Empty room / "everywhere" = the whole house; a named room =
+# that room together with everything grouped with it. Allowed by the guard pattern script.voice_* (v1.19.2).
+# The answer is built from what the players report 2 s AFTER the calls (both carry continue_on_error): a
+# false 'stopped' is what the old HassTurnOff path gave. An unknown room is refused (a select list is a hint,
+# not validation). A grouped leader is stopped even when idle (Music Assistant's paused-group state).
+alias: Stop Music
+description: 'Voice tool that STOPS music and dissolves speaker groups. ALWAYS use this tool for any request
+  to stop, end, kill, shut off or turn off music: ''stop all music'', ''stop all the music'', ''stop the
+  music in the rumpus room'', ''turn the music off'', ''kill the music'', ''stop it, don''t pause it'',
+  ''ungroup the speakers'', ''stop playing everywhere''. NEVER use HassTurnOff, HassMediaPause or Group
+  Music for a stop request: these speakers cannot be turned off, pausing one grouped speaker pauses the
+  whole group and keeps it grouped, and Group Music hands the music to another room instead of stopping
+  it. Only a request that literally says ''pause'' uses the pause tool. Leave room empty to stop ALL music
+  in the house (the normal case, and always for ''all'' or ''everywhere''). Give a room only when the
+  user names one: that room stops together with every room grouped with it. To take ONE room out of a
+  group while the others keep playing (''stop it in the kitchen but keep it here''), use Group Music with
+  action remove instead. A soundbar that is playing its TV is never stopped. The tool answers with what
+  it stopped: tell the user that.'
+icon: mdi:stop-circle-outline
+mode: queued
+max: 3
+fields:
+  room:
+    name: Room
+    description: Leave empty (or 'everywhere') to stop all music in the house. Name a room only when the
+      user names one; it stops together with the rooms grouped with it. primary_bedroom and primary_bathroom
+      are the main bedroom and its bathroom, blue_room is Jackson's room, pink_room is Penelope's room,
+      white_room is the guest room, rumpus_room has the KEF speakers, study is the office.
+    required: false
+    selector:
+      select:
+        options:
+        - everywhere
+        - primary_bedroom
+        - primary_bathroom
+        - kitchen
+        - living_room
+        - study
+        - movie_room
+        - rumpus_room
+        - blue_room
+        - pink_room
+        - white_room
+        - kids_bathroom
+        - front_porch
+        - back_yard
+sequence:
+- alias: 'Rooms are a fixed list mapped to area ids (never an area selector, see voice_move_music). Same
+    scope rule as automation.voice_stop_the_music_stop_and_ungroup, which handles the exact ''stop the
+    music'' sentences locally: a player counts when it is GROUPED (Music Assistant reports a paused Sonos
+    group as idle, and an idle group is what leaks TV audio into other rooms later) or when it plays/pauses
+    music that is not its TV input. A grouped leader is stopped even when it reports idle (that IS the
+    paused-group state): releasing only its followers would leave its queue loaded. A named room means
+    EVERY Music Assistant speaker in it, not the first one area_entities happens to return: no area holds
+    two today, but the contract is that the room stops'
+  variables:
+    room_area:
+      primary_bedroom: primary_bedroom
+      primary_bathroom: main_bed_bath
+      kitchen: kitchen
+      living_room: living_room
+      study: office
+      movie_room: movie_room
+      rumpus_room: rumpus_room
+      blue_room: blue_room
+      pink_room: pink_room
+      white_room: white_room
+      kids_bathroom: kids_bathroom
+      front_porch: front_porch
+      back_yard: back_yard
+    wanted_room: '{{ room | default('''', true) }}'
+    named: '{{ wanted_room not in ['''', ''everywhere''] }}'
+    here: '{{ (area_entities(room_area.get(wanted_room, '''')) | select(''in'', integration_entities(''music_assistant''))
+      | select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'',
+      ''unknown'') | list) if named else [] }}'
+    counting: '{% set ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'') | select(''match'',
+      ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p)
+      in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p]
+      %}{% endif %}{% endfor %}{{ ns.p }}'
+    active: '{{ (here | select(''in'', counting) | list) if named else counting }}'
+    leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
+      or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
+    followers: '{% set ns = namespace(f=[]) %}{% for l in leaders %}{% set ns.f = ns.f + ((state_attr(l,
+      ''group_members'') or []) | reject(''eq'', l) | list) %}{% endfor %}{{ ns.f | unique | list }}'
+    stop_list: '{% set ns = namespace(s=[]) %}{% for l in leaders %}{% if state_attr(l, ''source'') !=
+      ''TV'' and (states(l) in [''playing'', ''paused''] or (state_attr(l, ''group_members'') or []) |
+      count > 1) %}{% set ns.s = ns.s + [l] %}{% endif %}{% endfor %}{{ ns.s }}'
+- alias: 'A select list is a hint, not validation: the agent can pass a room that is not on it'
+  if:
+  - condition: template
+    value_template: '{{ named and wanted_room not in room_area }}'
+  then:
+  - variables:
+      result:
+        response: 'Nothing was stopped: ''{{ wanted_room }}'' is not a room this tool knows. Use one of
+          {{ room_area.keys() | list | join('', '') }}, or leave the room empty to stop all music in the
+          house.'
+  - stop: Unknown room
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ stop_list | count == 0 and followers | count == 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ (''No music is playing in '' ~ area_name(room_area.get(wanted_room, '''')) ~ ''.'')
+          if named else ''No music is playing anywhere.'' }}'
+  - stop: Nothing to stop
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ stop_list | count > 0 }}'
+  then:
+  - action: media_player.media_stop
+    continue_on_error: true
+    target:
+      entity_id: '{{ stop_list }}'
+- if:
+  - condition: template
+    value_template: '{{ followers | count > 0 }}'
+  then:
+  - action: media_player.unjoin
+    continue_on_error: true
+    target:
+      entity_id: '{{ followers }}'
+- alias: 'Both calls carry continue_on_error, so look at what really happened before answering: a false
+    ''stopped'' is exactly what the HassTurnOff path used to give. A player that is still PAUSED was not
+    stopped either (a stopped Music Assistant player reports idle): pause versus stop is the whole point
+    of this tool. Followers are checked too: when the leader is a soundbar on its TV input no stop command
+    is sent at all, and a released speaker that really fell silent reports idle. 3 s, like Group Music:
+    Music Assistant''s group_members lags the unjoin, and a shorter wait reports a stop that worked as
+    STILL GROUPED. The soundbar carve-out applies here too: a released follower that falls back to its
+    TV input reports playing, and reporting that as NOT STOPPED would be the same false answer pointed
+    the other way'
+  delay:
+    seconds: 3
+- variables:
+    still_playing: '{% set ns = namespace(p=[]) %}{% for p in (stop_list + followers) | unique %}{% if
+      state_attr(p, ''source'') != ''TV'' and states(p) in [''playing'', ''paused''] %}{% set ns.p = ns.p
+      + [p] %}{% endif %}{% endfor %}{{ ns.p }}'
+    still_grouped: '{% set ns = namespace(g=[]) %}{% for p in (stop_list + followers) | unique %}{% if
+      (state_attr(p, ''group_members'') or []) | count > 1 %}{% set ns.g = ns.g + [p] %}{% endif %}{%
+      endfor %}{{ ns.g }}'
+- variables:
+    result:
+      response: '{% set ok = (stop_list + followers) | unique | reject(''in'', still_playing) | reject(''in'',
+        still_grouped) | list %}{% set done = ok | map(''area_name'') | select(''string'') | unique |
+        list %}{{ (''Stopped the music in '' ~ (done | join('', '') or ''a speaker without a room'') ~
+        (''; the speakers are no longer grouped'' if followers | count > 0 and still_grouped | count ==
+        0 else '''') ~ ''.'') if ok else ''Nothing was stopped.'' }}{{ ('' NOT STOPPED: '' ~ (still_playing
+        | map(''area_name'') | select(''string'') | unique | join('', '') or ''a speaker without a room'')
+        ~ ''.'') if still_playing else '''' }}{{ ('' STILL GROUPED: '' ~ (still_grouped | map(''area_name'')
+        | select(''string'') | unique | join('', '') or ''a speaker without a room'') ~ ''.'') if still_grouped
+        else '''' }}'
+- stop: Stopped
+  response_variable: result
