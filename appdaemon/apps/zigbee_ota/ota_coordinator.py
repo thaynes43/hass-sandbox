@@ -763,6 +763,11 @@ class OtaCoordinator:
         self, friendly: str, rec: DeviceRecord, attrs: dict[str, Any]
     ) -> None:
         self._recently_completed[friendly] = self.now()
+        # Also a settle: its three other callers (a late ok, an entity going
+        # off, an external install on a parked device) would otherwise leave
+        # the adoption gate open on a device whose in_progress flag is about
+        # to be stale.
+        self._recently_settled[friendly] = self.now()
         self._completed.append(
             {
                 "device": friendly,
@@ -787,9 +792,11 @@ class OtaCoordinator:
 
         ``cooldown`` holds every device waiting on a schedule, whether it
         failed or was only bounced by a busy Z2M; ``attempts`` says which.
-        The one gap is a global busy window: a device whose own schedule has
-        elapsed is then in neither list, and ``busy_until`` is what explains
-        it.
+        A device appears in exactly one of ``in_flight``, ``pending`` and
+        ``cooldown``, with two gaps: during a global busy window a device
+        whose own schedule has elapsed is in none of them (``busy_until``
+        explains it), and a cooling-down device adopted from an external
+        install shows only under ``in_flight``.
         """
         ts = self.now()
         in_flight_name = self._in_flight.friendly_name if self._in_flight else None

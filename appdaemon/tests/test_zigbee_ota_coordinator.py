@@ -1434,3 +1434,28 @@ def test_the_in_flight_device_is_never_also_listed_in_cooldown() -> None:
     assert status["in_flight"]["device"] == "hue_a"
     assert [item["device"] for item in status["cooldown"]] == []
     assert status["cooldown_count"] == 0
+
+
+def test_a_completion_closes_the_adoption_gate_too() -> None:
+    """Every settle has to close it, not only the ones _finish_in_flight
+    handles — otherwise the stale in_progress becomes a phantom flight that
+    only the four-hour timeout releases."""
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    # hue_a is updated externally: its entity goes off on a new version.
+    refresh(
+        coord,
+        {
+            **snapshot("hue_b"),
+            "update.hue_a": entity("hue_a", state="off", installed="200"),
+        },
+    )
+    assert coord.status()["completed_count_this_run"] == 1
+    # The next tick still sees the stale in_progress flag.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
