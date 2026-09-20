@@ -1423,6 +1423,9 @@ zigbee_ota_updater:
   # a name it does not know -- is parked rather than retried, and re-checked
   # once a day.
   park_recheck_s: 86400
+  # Also the stagger after either timeout gives up on an attempt, not just the
+  # wait after Z2M reports another OTA already running.
+  busy_backoff_s: 300
   # A Hue bulb takes 45-90min and is the slowest thing in the mesh; warn
   # (stalled flag) after 45min without progress, give up on the attempt after
   # 4h without a terminal response.
