@@ -15,7 +15,11 @@
 # capability data (cieloconnectapi mode_caps) and was not verifiable without switching the units. The one
 # path that can end half-applied is a unit too slow to confirm a new mode; its sentence says the mode
 # WAS set. Groups must hold one kind of thermostat (the auto/heat_cool name is resolved from the first).
-# Allowed by the guard pattern script.voice_* (v1.19.2).
+# The requested temperature is clamped to the range every target reports once the mode has landed (the
+# Cielos bottom out at 64 F in cool; the selector is 60-86) and the reply says so. Only units NOT already
+# in the requested mode are sent the change: each Cielo call costs ~2 s in their cloud and the spoken
+# reply waits for it (two units already in dry: 8.9 s before, 3.6 s after, as the bedroom satellite).
+# Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-20.
 alias: Thermostat
 description: 'Voice tool for the house thermostats. ALWAYS use this tool to change a thermostat''s MODE
   (cool, heat, dry, fan only, auto, off), and for ANY request that names ''the basement thermostats''
@@ -25,11 +29,12 @@ description: 'Voice tool for the house thermostats. ALWAYS use this tool to chan
   upstairs thermostat to cool''. There are four thermostats: rumpus_room and movie_room are the two basement
   mini splits, and they are the only ones with dry (dehumidify) and fan_only; basement means both mini
   splits at once; downstairs is the first-floor ecobee and upstairs is the second-floor ecobee (cool,
-  heat, auto and off only). Give a mode, a temperature, or both. If the user names no thermostat, use
-  the one for where the request comes from: the Rumpus Room uses rumpus_room, the Movie Room uses movie_room,
-  any other basement room uses basement, the first floor uses downstairs and the second floor (bedrooms)
-  uses upstairs. The tool answers with what it did, or with the reason nothing was changed: tell the user
-  that.'
+  heat, auto and off only). Give a mode alone, a temperature alone (keeps the current mode), or a temperature
+  together with cool or heat; a temperature with any other mode is refused and nothing changes. If the
+  user names no thermostat, use the one for where the request comes from: the Rumpus Room uses rumpus_room,
+  the Movie Room uses movie_room, any other basement room uses basement, the first floor uses downstairs
+  and the second floor (bedrooms) uses upstairs. The tool answers with what it did, or with the reason
+  nothing was changed: tell the user that.'
 icon: mdi:thermostat
 mode: queued
 max: 5
@@ -116,6 +121,9 @@ sequence:
       != '''' and wanted_mode not in ['''', ''cool'', ''heat''] %}Nothing was changed: this tool sets
       a temperature only together with cool or heat, or on its own. Send {{ wanted_mode | replace(''_'',
       '' '') }} alone, or send cool or heat with the temperature.{% endif %}'
+    target_temperature: ''
+    to_switch: '{% set ns = namespace(l=[]) %}{% for e in entities if hvac_mode != '''' and states(e)
+      != hvac_mode %}{% set ns.l = ns.l + [e] %}{% endfor %}{{ ns.l }}'
 - if:
   - condition: template
     value_template: '{{ problem | trim | length > 0 }}'
@@ -127,13 +135,15 @@ sequence:
     response_variable: result
 - if:
   - condition: template
-    value_template: '{{ hvac_mode != '''' }}'
+    value_template: '{{ to_switch | length > 0 }}'
   then:
   - action: climate.set_hvac_mode
     target:
-      entity_id: '{{ entities }}'
+      entity_id: '{{ to_switch }}'
     data:
       hvac_mode: '{{ hvac_mode }}'
+  alias: 'Each mini split costs about 2 s in Cielo''s cloud, and a voice reply waits for it: only units
+    that are not already in the requested mode are sent the change'
 - if:
   - condition: template
     value_template: '{{ wanted_temperature != '''' }}'
@@ -163,16 +173,29 @@ sequence:
             Send cool or heat together with the temperature.{% endif %}'
     - stop: Temperature not set
       response_variable: result
+  - alias: 'Each unit has its own range, and the mini splits'' range depends on the mode (64 to 90 in
+      cool): clamp to what every target accepts instead of letting set_temperature raise after the mode
+      has already changed'
+    variables:
+      target_temperature: '{% set ns = namespace(t=wanted_temperature | float) %}{% for e in entities
+        %}{% set lo = state_attr(e, ''min_temp'') %}{% set hi = state_attr(e, ''max_temp'') %}{% if lo
+        is number and ns.t < lo %}{% set ns.t = lo %}{% endif %}{% if hi is number and ns.t > hi %}{%
+        set ns.t = hi %}{% endif %}{% endfor %}{{ ns.t }}'
   - action: climate.set_temperature
     target:
       entity_id: '{{ entities }}'
     data:
-      temperature: '{{ wanted_temperature | float }}'
+      temperature: '{{ target_temperature | float }}'
 - variables:
     result:
-      response: 'Done: {{ entities | map(''state_attr'', ''friendly_name'') | join('' and '') }}{% if
-        wanted_mode != '''' %} set to {{ wanted_mode | replace(''_'', '' '') }} mode{% endif %}{% if wanted_temperature
-        != '''' %}{{ '' and'' if wanted_mode != '''' else '' set to'' }} {{ wanted_temperature }} degrees{%
-        endif %}.'
+      response: '{% if wanted_mode != '''' and wanted_temperature == '''' and to_switch | length == 0
+        %}Nothing to do: {{ entities | map(''state_attr'', ''friendly_name'') | join('' and '') }} {{
+        ''are'' if entities | length > 1 else ''is'' }} already in {{ wanted_mode | replace(''_'', ''
+        '') }} mode.{% else %}Done: {{ entities | map(''state_attr'', ''friendly_name'') | join('' and
+        '') }}{% if wanted_mode != '''' %} set to {{ wanted_mode | replace(''_'', '' '') }} mode{% endif
+        %}{% if wanted_temperature != '''' %}{{ '' and'' if wanted_mode != '''' else '' set to'' }} {{
+        target_temperature | float | round(0) | int }} degrees{% if target_temperature | float != wanted_temperature
+        | float %} (the closest it accepts to the {{ wanted_temperature | float | round(0) | int }} that
+        was asked for){% endif %}{% endif %}.{% endif %}'
 - stop: Done
   response_variable: result
