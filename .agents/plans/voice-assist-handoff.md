@@ -101,6 +101,14 @@ scripts/voice-bench/run.sh door_status_check.py    # locks/garage truth vs what 
   `media_player.str_az5000es` back: the wake overwrites its source and volume and leaves it on, so
   if it was off, turn it off again (`media_player.turn_off`), and if it was on another input, select
   that input again.
+- Music tools the agents have (2026-09-20): Play Music, Move Music, Group Music and **Stop Music**
+  (`script.voice_stop_music`). Tom's first spoken group test (Movie Room Port + Rumpus KEFs) found:
+  the KEFs join but play **out of sync** — Music Assistant moves both onto AirPlay 2 and logs
+  `Cannot bind UDP 319: Permission denied … sync … degraded`, because the pod runs non-root (uid 568,
+  no capabilities, hostNetwork) and cannot open the PTP clock port (haynes-ops, waits for Tom's
+  ruling); a joining KEF plays at its own Music Assistant level (it was 25 %, barely audible — Tom's
+  ruling stands: no volume logic); Group Music's leader hand-over now only auto-plays when the group
+  was playing.
 - Never run the synthetic **voice** modes (`MODE=voice`) against a room: a mis-transcription turned
   the Rumpus lights on at night once. Text (`MODE=pipe`) or Tom's real voice only.
 

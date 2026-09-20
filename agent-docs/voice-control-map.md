@@ -260,7 +260,12 @@ since v1.19.2). The **mode** of
   the kitchen too" / "stop it in the kitchen": a synced Sonos group).
   House-wide rule since 2026-09-19: **"stop the music" stops AND ungroups** (sentence-trigger
   automation `automation.voice_stop_the_music_stop_and_ungroup`, never touches a soundbar on its TV
-  input); **"pause" keeps the group**.
+  input); **"pause" keeps the group**. Since 2026-09-20 the automation also matches "stop **all**
+  (the) music", "turn off all the music" and "ungroup the speakers" (= everywhere, handled locally in
+  ~0.1 s), and every other phrasing reaches the agent's `script.voice_stop_music` (empty room =
+  the whole house; a named room = that room plus everything grouped with it). Before that tool
+  existed the agent answered a stop request with `HassTurnOff` (nothing stops: Music Assistant Sonos
+  players have no turn_off) or `HassMediaPause` (pauses the whole group and keeps it grouped).
 - **Never expose:** the two locks, the Café ovens/fridge (`water_heater.*`) and appliance
   switches, `switch.downstairs_{livingroom,study}_scene_controller` (fan mains power),
   `switch.zigbee2mqtt_bridge_permit_join` (sits in Dining Room), the dining strip outlets, printer
