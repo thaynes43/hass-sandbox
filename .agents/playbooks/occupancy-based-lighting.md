@@ -310,12 +310,17 @@ kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m \
 
 If `mmwave_detection_areas.area1` still shows the old box, the command did not land — re-publish.
 
-**No output is not a pass.** z2m logs that publish at `info` (verified on this cluster, which
-runs `log_level: info`), so an empty grep means the line is outside the window, not that
-nothing was published — z2m is chatty and the container log rotates, so `--since=3h` can still
-start minutes ago. Widen `--since`, and if it is still empty, force a fresh publish rather than
-trusting silence. HA's cached attributes cannot settle this, which is the whole point of
-reading the device's own answer.
+**No output is not a pass** — it is ambiguous, and both readings are bad:
+
+- the publish happened but aged out of the window (z2m is chatty and the container log rotates,
+  so even `--since=3h` can start only minutes ago), or
+- **nothing was ever published**: a `/set` to a topic that is not a z2m friendly name is dropped
+  silently, so `setDetectionArea` is never commanded and no state line is ever logged.
+
+Don't try to tell them apart from a wider `--since`. Re-publish while tailing the log
+(`kubectl logs -f -n home-automation deploy/zigbee2mqtt | grep <switch_name>`) so you see the
+command and the device's answer as they happen. HA's cached attributes cannot settle this, which is
+the whole point of reading the device's own answer.
 
 ### Interference (mask) areas
 
