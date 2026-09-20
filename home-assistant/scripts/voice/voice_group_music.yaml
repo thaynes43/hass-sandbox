@@ -120,6 +120,16 @@ sequence:
         leader: '{{ group | first | default('''', true) }}'
         remaining: '{{ group | reject(''in'', members) | list }}'
         outside: '{{ members | reject(''in'', group) | list }}'
+    - alias: A named room that is not in the group is simply stopped, whichever branch below runs, so
+        'stop the music in the study' is true afterwards
+      if:
+      - condition: template
+        value_template: '{{ outside | count > 0 }}'
+      then:
+      - action: media_player.media_stop
+        continue_on_error: true
+        target:
+          entity_id: '{{ outside }}'
     - choose:
       - alias: 'The leader stays: the leaving rooms simply unjoin'
         conditions:
@@ -130,16 +140,6 @@ sequence:
           continue_on_error: true
           target:
             entity_id: '{{ members | select(''in'', group) | list }}'
-        - alias: A named room that was not in the group is simply stopped, so 'stop the music in the study'
-            is true afterwards
-          if:
-          - condition: template
-            value_template: '{{ outside | count > 0 }}'
-          then:
-          - action: media_player.media_stop
-            continue_on_error: true
-            target:
-              entity_id: '{{ outside }}'
       - alias: 'The leader leaves and nobody stays: stop the music'
         conditions:
         - condition: template
