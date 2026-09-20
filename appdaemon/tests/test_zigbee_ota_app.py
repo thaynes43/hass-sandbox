@@ -478,3 +478,28 @@ def test_an_empty_identity_answer_is_logged_every_tick() -> None:
     attrs = app.set_state.call_args.kwargs["attributes"]
     assert attrs["identity_source"] == "none"
     assert attrs["z2m_devices_known"] == "0"
+
+
+def test_an_empty_state_dump_does_not_wipe_the_queue() -> None:
+    """AppDaemon hands back None mid-reconnect; an empty fleet is never true
+    for an install that had devices a moment ago."""
+    app = _make_app(
+        update_snapshot={
+            "update.hue_a": _entity("hue_a"),
+            "update.hue_b": _entity("hue_b"),
+        }
+    )
+    _run(app._tick({}))
+    assert len(_published_requests(app)) == 1
+    before = app._coordinator.status()["remaining"]
+    assert before == 2
+
+    async def empty(*args: Any, **kwargs: Any) -> Any:
+        return None
+
+    app.get_state = MagicMock(side_effect=empty)
+    _run(app._tick({}))
+    assert len(_published_requests(app)) == 1  # nothing new started
+    status = app._coordinator.status()
+    assert status["remaining"] == before  # the queue survived
+    assert status["identity_source"].startswith("stale")

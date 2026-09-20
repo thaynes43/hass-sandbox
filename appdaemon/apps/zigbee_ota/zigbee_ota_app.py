@@ -201,8 +201,16 @@ class ZigbeeOtaOrchestrator(hass.Hass):
                 )
             # Domain queries can't combine with attribute="all" in AppDaemon,
             # so take the full state dump and filter to update.* ourselves.
-            snapshot = await self.get_state() or {}
-            if isinstance(snapshot, dict):
+            snapshot = await self.get_state()
+            if not isinstance(snapshot, dict) or not snapshot:
+                # AppDaemon hands back None mid-reconnect. An empty dump is
+                # never the truth for this install, and treating it as one
+                # would drop every device's backoff and every park — the same
+                # defect the empty-identity guard exists for.
+                reason = "Home Assistant state snapshot unavailable"
+                self._coordinator.mark_identity_unavailable(reason)
+                self.log("%s — starting nothing this tick" % reason, level="WARNING")
+            else:
                 self._coordinator.refresh_entities(
                     {
                         entity_id: payload

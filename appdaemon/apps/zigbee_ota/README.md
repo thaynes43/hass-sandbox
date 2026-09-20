@@ -53,8 +53,12 @@ and widened in 2026-09 to every Z2M device.
   was still transferring when it went silent four hours ago.
 - **Externally started updates are adopted** — if an update is already
   `in_progress` (started from the Z2M frontend or HA), the app waits for it
-  instead of dueling; a Z2M "already in progress" error just requeues without
-  burning a retry attempt.
+  instead of dueling. The exception is the minute after the app's own attempt
+  on that device settled, where an `in_progress` is Home Assistant's entity
+  still catching up rather than a new install. A Z2M "already in progress"
+  error requeues the device without burning a retry attempt, but holds it
+  behind the rest of the fleet for `busy_backoff_s` + `retry_base_s` so the
+  queue doesn't spin on it.
 - **"No image currently available"** — Z2M's answer when a device advertises an
   update the OTA index has no file for (usually a pulled release). Nothing is
   transferred, so it counts as neither a completed update nor a failure: the
