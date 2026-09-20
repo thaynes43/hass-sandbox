@@ -79,7 +79,7 @@ Every playbook follows this skeleton:
 | `ha-helpers.md` | Create/update HA helpers (input_text, input_boolean, input_select) via MCP |
 | `ha-automations-scripts.md` | Create/update HA automations and scripts via MCP |
 | `ha-provisioner.md` | Integrate `ha_provisioner` into an AppDaemon app for self-provisioning |
-| `occupancy-based-lighting.md` | Add/update occupancy-based lighting zones: helpers, automations, holds, cards |
+| `occupancy-based-lighting.md` | Add/update occupancy-based lighting zones: helpers, automations, holds, cards, mmWave zone geometry |
 | `appdaemon-deploy.md` | Deploy AppDaemon apps from dev to production |
 | `security-audit.md` | Audit AppDaemon apps for security policy violations |
 | `ha-dashboard.md` | Edit HA dashboard views/cards via MCP (config_hash, python_transform, pitfalls) |

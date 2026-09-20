@@ -229,7 +229,7 @@ When starting a task that matches one of these, read the playbook first:
 | `.agents/playbooks/ha-automations-scripts.md` | Creating/updating HA automations or scripts via MCP |
 | `.agents/playbooks/ha-helpers.md` | Creating/updating HA helpers via MCP |
 | `.agents/playbooks/ha-dashboard.md` | Editing HA dashboard views/cards via MCP |
-| `.agents/playbooks/occupancy-based-lighting.md` | Adding/updating occupancy-based lighting zones |
+| `.agents/playbooks/occupancy-based-lighting.md` | Adding/updating occupancy-based lighting zones; tuning an mmWave detection zone that misses people |
 | `.agents/playbooks/cache-busting-playbook.md` | Bumping `?v=N` on a Lovelace JS resource after card updates (MCP workflow) |
 | `.agents/playbooks/multi-agent-plan.md` | Structuring large tasks across multiple agent sessions |
 | `.agents/playbooks/playbook-authoring-guide.md` | Writing a new playbook |

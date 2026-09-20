@@ -200,6 +200,7 @@ mode: restart
 | Lights turn off immediately despite hold | Hold guard only checked before delay, not after | Add second hold check after the `delay:` action |
 | Occupancy off delay not respected | Using `for:` on trigger instead of action `delay:` | Remove trigger `for:`, use action `delay:` reading from the helper |
 | Only control switch in hold registry | Extra sensors (non-control) added to hold/clear scripts | Only add the single control switch to hold/clear registries |
+| Lights turn off with someone standing at the switch | mmWave detection area excludes boresight (positive `width_min`), and/or sensitivity below `High` | Re-tune the zone — see *Reference: tuning the mmWave detection zone* |
 
 ---
 
@@ -246,6 +247,93 @@ Common suffixes (after `<switch_name>_`):
 - `number.<switch_name>_mmwavewidthmin` / `mmwavewidthmax`
 - `number.<switch_name>_mmwaveheightmin` / `mmwaveheightmax`
 - `sensor.<switch_name>_mmwave_control_commands`
+
+> **The `mmwave{width,depth,height}{min,max}` numbers do NOT apply the detection area on their
+> own** — the radar keeps the old zone until `setDetectionArea` is commanded. See
+> *Reference: tuning the mmWave detection zone* below.
+
+---
+
+## Reference: tuning the mmWave detection zone (geometry)
+
+The VZM32 radar only reports presence for targets inside **detection area 1**. Everything
+outside it is invisible to `binary_sensor.<switch_name>_occupancy`, no matter how strong the
+return — a person standing still a metre away reports nothing if they are outside the box.
+
+### Coordinate convention (all values in cm, from the switch)
+
+| Axis | Entity | Meaning |
+|------|--------|---------|
+| width | `mmwavewidthmin` / `mmwavewidthmax` | **signed** lateral: negative = left of the switch facing away from the wall, positive = right. `0` is straight out from the switch (boresight). |
+| depth | `mmwavedepthmin` / `mmwavedepthmax` | distance out from the wall; always `>= 0` |
+| height | `mmwaveheightmin` / `mmwaveheightmax` | negative = below the switch, positive = above |
+
+**The boresight trap**: the detection window is the *interval* `width_min … width_max` — the radar
+sees a target only where `width_min <= x <= width_max` — so a positive `widthmin` (or a negative
+`widthmax`) blanks the area directly in front of the switch. With `widthmin: 55, widthmax: 300` the
+radar sees **only** the 55–300 cm slice to the right of the switch: the whole left side and
+boresight fall outside the box, so someone standing at the switch is never seen. Unless the zone is
+deliberately an off-to-one-side target (a vanity, a rack aisle), the width window should straddle `0`.
+
+### Setting the zone (the number entities alone do NOT apply it)
+
+`number.<switch_name>_mmwave{width,depth,height}{min,max}` write bare ZCL attributes. The radar
+does not adopt them until the `setDetectionArea` **command** is issued, which Home Assistant does
+not expose. Writing only the numbers leaves the device running the *old* zone while HA and the
+z2m attribute state both show the new one — they silently disagree.
+
+Apply the zone with the z2m composite over MQTT, which issues `setDetectionArea` and then
+re-queries the device:
+
+```yaml
+action: mqtt.publish
+data:
+  # the z2m *friendly name*, not the HA entity slug — they coincide for the Inovelli
+  # presence switches, but not for every device (see agent-docs/hue-power-on-behavior.md)
+  topic: zigbee2mqtt/<switch_name>/set
+  payload: >-
+    {"mmwave_detection_areas": {"area1": {"width_min": -150, "width_max": 300,
+     "height_min": -300, "height_max": 300, "depth_min": 0, "depth_max": 250}}}
+```
+
+Set the number entities to the same values too, so the HA-facing config matches what the radar runs.
+
+### Verifying
+
+`mmwave_detection_areas.area1` in the device's z2m payload is the **device's own answer** to a
+`query_areas`, so it is the source of truth. Confirm the round trip:
+
+```bash
+kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m \
+  | grep "topic 'zigbee2mqtt/<switch_name>'" | tail -1
+```
+
+If `mmwave_detection_areas.area1` still shows the old box, the command did not land — re-publish.
+
+**No output is not a pass** — it is ambiguous, and both readings are bad:
+
+- the publish happened but aged out of the window (z2m is chatty and the container log rotates,
+  so even `--since=3h` can start only minutes ago), or
+- **nothing was ever published**: a `/set` to a topic that is not a z2m friendly name is dropped
+  silently, so `setDetectionArea` is never commanded and no state line is ever logged.
+
+Don't try to tell them apart from a wider `--since`. Re-publish while tailing the log
+(`kubectl logs -f -n home-automation deploy/zigbee2mqtt | grep <switch_name>`) so you see the
+command and the device's answer as they happen. HA's cached attributes cannot settle this, which is
+the whole point of reading the device's own answer.
+
+### Interference (mask) areas
+
+`mmwave_interference_areas` carve *exclusions* out of the detection area; targets inside them are
+never reported. They do not appear as HA entities at all — only in the z2m payload — so a zone can
+be silently masked with no sign of it in Home Assistant. Several switches carry a ~100 cm-deep mask
+band that came from the device's own interference auto-detect, not from hand tuning. When a zone
+misses people, check the mask as well as the detection box.
+
+### Sensitivity
+
+`select.<switch_name>_mmwavedetectsensitivity` defaults to **High (default)**. Anything lower is a
+deliberate choice; `Medium` on a zone that misses stationary people is worth putting back to High.
 
 ---
 

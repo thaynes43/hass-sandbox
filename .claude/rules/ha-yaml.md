@@ -41,4 +41,4 @@ Any change to `home-assistant/automations/switch-buttons/**` or related blueprin
 - `.agents/playbooks/ha-automations-scripts.md` — create/update automations and scripts via MCP
 - `.agents/playbooks/ha-helpers.md` — create/update/delete helpers via MCP
 - `.agents/playbooks/ha-dashboard.md` — edit dashboard views/cards via MCP (config_hash pitfall!)
-- `.agents/playbooks/occupancy-based-lighting.md` — add/update occupancy-based lighting zones
+- `.agents/playbooks/occupancy-based-lighting.md` — add/update occupancy-based lighting zones; tune an mmWave detection zone that misses people
