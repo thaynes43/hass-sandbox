@@ -69,14 +69,14 @@ Two rules that must not be broken:
 
 | Unit | IP | Today | Notes |
 |---|---|---|---|
-| Primary Bedroom Beam | .6 | SonosNet wireless, Ethernet dead | master of Sub Mini .77; the stuttering one |
-| Pink Room Beam | .24 | SonosNet wireless, Ethernet dead | standalone |
-| Blue Room Beam | .81 | SonosNet wireless, Ethernet dead | standalone; weakest mesh links in the house (28–34) |
-| White Room Beam | .231 | SonosNet wireless, Ethernet dead | standalone |
-| Living Room Arc | .232 | SonosNet wireless, Ethernet dead | master of Era 300 .69 / .209 and Subs .100 / .216 |
-| Movie Room Port | .70 | SonosNet wireless, Ethernet dead | standalone |
+| Primary Bedroom Beam | .6 | home Wi-Fi since 2026-09-19 (SonosNet off), Ethernet still dead | master of Sub Mini .77; the stuttering one |
+| Pink Room Beam | .24 | **wired since 2026-09-19, Pro Max 48 port 5** | standalone |
+| Blue Room Beam | .81 | **wired since 2026-09-19, Pro Max 48 port 3** | standalone; weakest mesh links in the house (28–34) |
+| White Room Beam | .231 | **wired since 2026-09-19, Pro Max 48 port 7** | standalone |
+| Living Room Arc | .232 | **wired since 2026-09-19, Pro Max 48 port 6** | master of Era 300 .69 / .209 and Subs .100 / .216 |
+| Movie Room Port | .70 | home Wi-Fi since 2026-09-19 (SonosNet off), Ethernet still dead | standalone |
 | Shed SYMFONISK | .154 | home Wi-Fi (HNET+, 5 GHz) | proves the system already holds the Wi-Fi credentials |
-| Amps: Back Yard .206, Front Porch .215, Kitchen .234, Primary Bathroom .88, Study .71, Kids' Bathroom .132 | | wired, bridging SonosNet | **USW Pro Max 16 PoE ports 1–6**, spanning tree off per port, zero STP state changes; Back Yard is the Sonos STP root |
+| Amps: Back Yard .206, Front Porch .215, Kitchen .234, Primary Bathroom .88, Study .71, Kids' Bathroom .132 | | wired; no longer bridging (SonosNet off) | **USW Pro Max 16 PoE ports 1–6**, spanning tree off per port, zero STP state changes; Back Yard is the Sonos STP root |
 | Pool Amp | .108 | wired, no radio | Shed Flex 2.5G port 7 |
 
 Disabled switch ports: **Switch Pro Max 48 PoE ports 3, 5, 6 and 7** — the only administratively
@@ -108,13 +108,12 @@ chosen.
    and an Amp's `http://<ip>:1400/status/proc/ath_rincon/status` must no longer list mesh peers.
    Baseline for comparison (2026-09-19): access ports receive under 4 broadcast+multicast packets
    per second, uplinks 12–60 (`rate(unpoller_device_port_receive_broadcast_total[…]) + …multicast…`).
-3. **Tom, one port at a time, on the agent's go** (Devices → Switch Pro Max 48 PoE → Port Manager):
-   port enabled; Native VLAN/Network **Default**; Tagged VLAN Management **Block All**; Advanced →
-   Manual: **Spanning Tree off** (as on the six Amp ports), **Loop Protection on**, **Storm
-   Control on** for broadcast, multicast and unknown unicast at **500 pps** each (1 % if the app
-   only offers percent), Port Isolation off, **MAC restriction / port security off** (it is on
-   today with an empty allow-list and would block the soundbar). Declare the work first
-   (`declare-activity start … --scope network,unifi,sonos,music-assistant,home-automation`).
+3. **Tom, in the UniFi app** (Devices → Switch Pro Max 48 PoE → Port Manager): enable the port with
+   the default **"Auto"** profile (Default network, spanning tree on). That is what was used for
+   ports 3/5/6/7 on 2026-09-19 and it was clean. The stricter settings first planned here (spanning
+   tree off, loop protection, storm control 500 pps, tagged VLANs blocked) were not applied and are
+   not needed once SonosNet is verified off; the one thing that must be off is **MAC restriction /
+   port security**, which the old disabled ports carried with an empty allow-list.
 4. **Agent, 10 minutes per port:** which soundbar's `eth0` comes alive (that identifies the port),
    broadcast/multicast rates, `mac_table_count` on the new port (1–3 is normal; climbing past ~5
    means bridging is back), `stp_state_change_count` on ports nobody touched (raw record via
@@ -130,7 +129,7 @@ chosen.
 
 ## Open questions
 
-- Which soundbar is on which of ports 3/5/6/7, and where the other two cables go.
+- Where the Primary Bedroom Beam's and the Movie Room Port's cables go (ports 3/5/6/7 are identified, see *Outcome*).
 - Whether to also retro-fit storm control and loop protection on the six Amp ports.
 - IGMP snooping on the Default network is off; sources mostly recommend on for Sonos. Not part of
   this item: change it separately, on its own, if at all.
