@@ -66,6 +66,15 @@ exposed since 2026-09-19 so that box's music has somewhere to play — it plays 
 other room, with no volume handling (the speakers keep their own level per input; the earlier
 save / 50 % / restore logic was removed on 2026-09-19) (`.agents/plans/voice-assist-rollout.md`, Phase 3).
 
+Thermostats (2026-09-20): `script.voice_thermostat` is the one voice tool for thermostat **modes**
+(cool / heat / dry / fan only / auto / off) and for the pair of basement mini splits — Assist has no
+set-mode intent, and its set-temperature intent takes a single thermostat, so "set the basement
+thermostats to dry mode" failed on both counts. Fixed list: `rumpus_room`, `movie_room`, `basement`
+(both Cielo units), `downstairs`, `upstairs` (the ecobees; no dry / fan only). A single thermostat's
+temperature still goes through the built-in intent — which cannot match a Cielo unit that is **off**
+(no target-temperature feature in that state); the tool can, when it is given a mode with the
+temperature.
+
 Defects found (open): Movie ZEN37 buttons 3 ×2 / 4 ×2 call
 `number.movie_room_breeze_target_temperature`, which does not exist (the Cielo controller has
 only `climate.movie_room_breeze`) while `button-mappings.md` documents them as working;

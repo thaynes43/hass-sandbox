@@ -272,6 +272,7 @@ script_allowlist_globs:
   - "script.llm_script_for_music_assistant_voice_requests"
   - "script.voice_move_music"
   - "script.voice_group_music"
+  - "script.voice_thermostat"
   - "script.kellie_mobile_primary_bedroom_relaxed"
   - "script.kellie_mobile_primary_bedroom_focused"
   - "script.kellie_mobile_primary_bedroom_bedtime"

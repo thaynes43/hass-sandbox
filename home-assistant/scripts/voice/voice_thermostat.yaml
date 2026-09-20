@@ -1,0 +1,164 @@
+# script.voice_thermostat ("Thermostat") — voice tool, created live via MCP 2026-09-20 after Tom asked the
+# bedroom box to "set the basement thermostats to dry mode" and got "I can't find a basement thermostat",
+# then "I can't set dry mode on the Rumpus Room thermostat by voice". Two gaps in Home Assistant 2026.9:
+# Assist has NO set-mode intent at all (only set-temperature and on/off), and its set-temperature intent
+# is single_target, so two thermostats on one floor can never be set together. This tool covers both:
+# a mode, a temperature or both, for one thermostat or for "basement" = both Cielo mini splits.
+# Thermostats are a FIXED LIST (select), never an area/entity selector (see voice_move_music.yaml).
+# Refusals come back as a `response` sentence with a plain stop: an `error: true` stop aborts the script
+# and Home Assistant then reports the tool call to the agent as a SUCCESS with an empty result.
+# The Cielo units only accept a temperature in a mode that has one (their supported_features change with
+# the mode; off/dry/fan_only have no target), hence the short wait after a mode change.
+# On the guard allowlist since v1.19.2.
+alias: Thermostat
+description: 'Voice tool for the house thermostats. ALWAYS use this tool to change a thermostat''s MODE
+  (cool, heat, dry, fan only, auto, off), and for ANY request that names ''the basement thermostats''
+  or ''the mini splits'' (mode, temperature or both). Examples: ''set the basement thermostats to dry
+  mode'', ''put the rumpus room thermostat in dry mode'', ''dehumidify the movie room'', ''set the basement
+  thermostats to 70'', ''cool the movie room to 68'', ''turn off the basement thermostats'', ''set the
+  upstairs thermostat to cool''. There are four thermostats: rumpus_room and movie_room are the two basement
+  mini splits, and they are the only ones with dry (dehumidify) and fan_only; basement means both mini
+  splits at once; downstairs is the first-floor ecobee and upstairs is the second-floor ecobee (cool,
+  heat, auto and off only). Give a mode, a temperature, or both. If the user names no thermostat, use
+  the one for where the request comes from: the Rumpus Room uses rumpus_room, the Movie Room uses movie_room,
+  any other basement room uses basement, the first floor uses downstairs and the second floor (bedrooms)
+  uses upstairs. The tool answers with what it did, or with the reason nothing was changed: tell the user
+  that.'
+icon: mdi:thermostat
+mode: queued
+max: 5
+fields:
+  thermostat:
+    name: Thermostat
+    description: Which thermostat. rumpus_room and movie_room are the basement mini splits; basement is
+      both of them at once ('the basement thermostats', 'the mini splits'); downstairs is the first-floor
+      ecobee; upstairs is the second-floor ecobee.
+    required: true
+    selector:
+      select:
+        options:
+        - rumpus_room
+        - movie_room
+        - basement
+        - downstairs
+        - upstairs
+  mode:
+    name: Mode
+    description: 'The mode to switch to. dry is the dehumidify mode and fan_only just runs the fan: only
+      the basement mini splits have those two. auto lets the thermostat heat or cool as needed. Leave
+      empty to keep the current mode and only change the temperature.'
+    required: false
+    selector:
+      select:
+        options:
+        - cool
+        - heat
+        - dry
+        - fan_only
+        - auto
+        - 'off'
+  temperature:
+    name: Temperature
+    description: Target temperature in degrees Fahrenheit. Leave empty to only change the mode. dry, fan_only
+      and off take no temperature.
+    required: false
+    selector:
+      number:
+        min: 60
+        max: 86
+        step: 1
+        unit_of_measurement: °F
+        mode: box
+sequence:
+- alias: 'Thermostats are a fixed list mapped to entities here. ''auto'' is called heat_cool on the ecobees.
+    ''problem'' is the sentence handed back to the agent when nothing can be changed (an error stop would
+    not reach it: Home Assistant reports an aborted script to the agent as a success)'
+  variables:
+    thermostats:
+      rumpus_room:
+      - climate.rumpus_room_breeze
+      movie_room:
+      - climate.movie_room_breeze
+      basement:
+      - climate.rumpus_room_breeze
+      - climate.movie_room_breeze
+      downstairs:
+      - climate.first_floor_ecobee
+      upstairs:
+      - climate.second_floor_ecobee
+    entities: '{{ thermostats.get(thermostat, []) }}'
+    wanted_mode: '{{ mode | default('''', true) }}'
+    wanted_temperature: '{{ temperature | default('''', true) }}'
+    hvac_mode: '{% set modes = (state_attr(entities[0], ''hvac_modes'') or []) if entities else [] %}{{
+      ''heat_cool'' if wanted_mode == ''auto'' and ''auto'' not in modes and ''heat_cool'' in modes else
+      wanted_mode }}'
+    not_responding: '{% set ns = namespace(bad=[]) %}{% for e in entities if states(e) in [''unavailable'',
+      ''unknown''] %}{% set ns.bad = ns.bad + [state_attr(e, ''friendly_name'') or e] %}{% endfor %}{{
+      ns.bad }}'
+    lacking_mode: '{% set ns = namespace(bad=[]) %}{% for e in entities if hvac_mode and hvac_mode not
+      in (state_attr(e, ''hvac_modes'') or []) %}{% set ns.bad = ns.bad + [state_attr(e, ''friendly_name'')
+      or e] %}{% endfor %}{{ ns.bad }}'
+    problem: '{% if entities | length == 0 %}Nothing was changed: unknown thermostat.{% elif wanted_mode
+      == '''' and wanted_temperature == '''' %}Nothing was changed: neither a mode nor a temperature was
+      given.{% elif not_responding | length > 0 %}Nothing was changed: {{ not_responding | join('' and
+      '') }} is not responding right now.{% elif lacking_mode | length > 0 %}Nothing was changed: {{ lacking_mode
+      | join('' and '') }} has no {{ wanted_mode }} mode. Only the basement mini splits have dry and fan
+      only; the ecobees have cool, heat, auto and off.{% elif wanted_temperature != '''' and hvac_mode
+      in [''dry'', ''fan_only'', ''off''] %}Nothing was changed: {{ wanted_mode }} takes no temperature.
+      Send the mode alone, or a temperature with cool, heat or auto.{% endif %}'
+- if:
+  - condition: template
+    value_template: '{{ problem | trim | length > 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ problem | trim }}'
+  - stop: Nothing was changed
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ hvac_mode != '''' }}'
+  then:
+  - action: climate.set_hvac_mode
+    target:
+      entity_id: '{{ entities }}'
+    data:
+      hvac_mode: '{{ hvac_mode }}'
+- if:
+  - condition: template
+    value_template: '{{ wanted_temperature != '''' }}'
+  then:
+  - alias: The mini splits only accept a temperature once they report a mode that has one (cool, heat,
+      auto); give a mode change a moment to land
+    wait_template: '{% set ns = namespace(ready=true) %}{% for e in entities if (state_attr(e, ''supported_features'')
+      | int(0)) | bitwise_and(1) == 0 %}{% set ns.ready = false %}{% endfor %}{{ ns.ready }}'
+    timeout:
+      seconds: '{{ 10 if hvac_mode != '''' else 0 }}'
+    continue_on_timeout: true
+  - variables:
+      no_single_target: '{% set ns = namespace(bad=[]) %}{% for e in entities if (state_attr(e, ''supported_features'')
+        | int(0)) | bitwise_and(1) == 0 %}{% set ns.bad = ns.bad + [(state_attr(e, ''friendly_name'')
+        or e) ~ '' (now in '' ~ states(e) ~ '' mode)''] %}{% endfor %}{{ ns.bad }}'
+  - if:
+    - condition: template
+      value_template: '{{ no_single_target | length > 0 }}'
+    then:
+    - variables:
+        result:
+          response: 'The temperature was NOT set: {{ no_single_target | join('' and '') }} takes no single
+            target temperature in that mode. Send a mode of cool or heat together with the temperature.'
+    - stop: Temperature not set
+      response_variable: result
+  - action: climate.set_temperature
+    target:
+      entity_id: '{{ entities }}'
+    data:
+      temperature: '{{ wanted_temperature | float }}'
+- variables:
+    result:
+      response: 'Done: {{ entities | map(''state_attr'', ''friendly_name'') | join('' and '') }}{% if
+        wanted_mode != '''' %} set to {{ wanted_mode | replace(''_'', '' '') }} mode{% endif %}{% if wanted_temperature
+        != '''' %}{{ '' and'' if wanted_mode != '''' else '' set to'' }} {{ wanted_temperature }} degrees{%
+        endif %}.'
+- stop: Done
+  response_variable: result

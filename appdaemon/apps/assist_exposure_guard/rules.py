@@ -162,6 +162,11 @@ DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     # locks or covers in reach.
     "script.voice_move_music",
     "script.voice_group_music",
+    # Thermostat tool: climate.set_hvac_mode / set_temperature on the four exposed
+    # thermostats (basement mini splits + ecobees).  Assist has no set-mode intent
+    # (no "dry mode") and its set-temperature intent takes one thermostat only (no
+    # "basement thermostats").  Climate only — no other domain in reach.
+    "script.voice_thermostat",
     # Primary bedroom modes
     "script.kellie_mobile_primary_bedroom_relaxed",
     "script.kellie_mobile_primary_bedroom_focused",
