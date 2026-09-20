@@ -248,7 +248,7 @@ Common suffixes (after `<switch_name>_`):
 - `number.<switch_name>_mmwaveheightmin` / `mmwaveheightmax`
 - `sensor.<switch_name>_mmwave_control_commands`
 - `select.<switch_name>_mmwavetargetinforeport` — enable to get live target coordinates
-- `sensor.<switch_name>_mmwave_targets`
+- `sensor.<switch_name>_mmwave_targets` — the coordinates themselves, once reporting is enabled
 
 > **The `mmwave{width,depth,height}{min,max}` numbers do NOT apply the detection area on their
 > own** — the radar keeps the old zone until `setDetectionArea` is commanded. See
@@ -294,9 +294,13 @@ data:
   # presence switches, but not for every device (see agent-docs/hue-power-on-behavior.md)
   topic: zigbee2mqtt/<switch_name>/set
   payload: >-
-    {"mmwave_detection_areas": {"area1": {"width_min": -150, "width_max": 300,
-     "height_min": -300, "height_max": 300, "depth_min": 0, "depth_max": 250}}}
+    {"mmwave_detection_areas": {"area1": {"width_min": <x_min>, "width_max": <x_max>,
+     "height_min": <z_min>, "height_max": <z_max>, "depth_min": 0, "depth_max": <y_max>}}}
 ```
+
+**Get those numbers from the device, not from your head** — see *Measuring where people actually
+are* below, and do it before you publish anything. For reference, the concessions zone ended up at
+`width -350..300, depth 0..400, height -300..300`, but that is one room's geometry, not a default.
 
 Set the number entities to the same values too, so the HA-facing config matches what the radar runs.
 
@@ -345,6 +349,15 @@ kubectl logs -n home-automation deploy/zigbee2mqtt --since=6m \
   | grep -o '"mmwave_targets":\[[^]]*\]'
 ```
 
+`sensor.<switch_name>_mmwave_targets` carries the same list in HA, so for a quick look you can
+just read that entity instead of the log:
+
+```
+sensor.basement_concessions_inovelli_presence_mmwave_targets
+  = "[{'dop': 600, 'id': 1, 'x': -70, 'y': 93, 'z': -50}]"
+```
+
+It only holds the latest sample, so use the log when you want the spread rather than an instant.
 Then set the box around the observed `x`/`y` spread with margin. This turns the whole exercise from
 guesswork into measurement — on the concessions zone it showed people standing at `x ≈ -173`
 (1.7 m to the **left**), `y ≈ 264`, while the configured box was `width 55..300, depth 0..100`:
