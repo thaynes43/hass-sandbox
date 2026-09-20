@@ -25,10 +25,15 @@ turns up, and then the new device. Tom speaks to the box; you read what actually
 - Voice exposure follows the physical controls: one floor at a time, concepts scripted like the
   wall buttons (`script.voice_*`), never raw dangerous entities. Locks, garage doors, alarm,
   pool/spa gear are **ask + secure only** (status sensors, lock-only and close-only scripts).
-- A new voice **script** or **switch** must be on the `assist_exposure_guard` allowlist
-  (`rules.py` + `apps-prod.yaml` + README + the test's curated tuple), released and deployed
-  **before** it is exposed; otherwise the guard un-exposes it in ~30 s and pushes Tom's phone.
-  Lights, fans, climate, media players, covers (non-garage) and sensors pass without a release.
+- A new voice **script** named `script.voice_*` needs no release: since v1.19.2 (Tom's ruling
+  2026-09-20) the `assist_exposure_guard` allows that pattern, so create it, expose it, test it,
+  then mirror it under `home-assistant/scripts/voice/` in a PR. A script with any other name, and
+  every **switch**, must still be on the guard allowlist (`rules.py` + `apps-prod.yaml` + README +
+  the test), released and deployed **before** it is exposed; otherwise the guard un-exposes it in
+  ~30 s and pushes Tom's phone. Lights, fans, climate, media players, covers (non-garage) and
+  sensors pass without a release.
+- A voice tool reports a refusal with `stop:` + `response_variable` (a `response` sentence), never
+  `error: true`: an error stop aborts the script and HA tells the agent the call succeeded.
 - Review bots are Opus 5 and re-review fresh on every push: single-purpose PRs, batch a round's
   fixes into one push, merge after round 2 unless a HIGH/behavioural finding is open, answer the
   rest on the PR. Check a bot's claim against the installed HA source before "fixing" it.

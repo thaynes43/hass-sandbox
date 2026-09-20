@@ -187,6 +187,15 @@ the two basement hold scripts created on 2026-09-18 were removed again. The one 
    list exposed entities, apply the deny rules above (domains, garage-class covers,
    integrations, name patterns, deny-by-default switches and scripts with allowlists in the
    app YAML), un-expose violators and notify Tom.
+   **Tom's ruling 2026-09-20 (v1.19.2): scripts are allowed by the pattern `script.voice_*`**
+   (plus the few non-`voice_` names listed explicitly). The per-name script list had cost seven
+   AppDaemon releases in three days (one per batch of new tools) with no enforcement on record
+   (`last_enforced: never` on 2026-09-20); Home Assistant never auto-exposes scripts, and a name never pinned what
+   a script does (its body is editable in the UI). The part that earns its keep is unchanged:
+   HA auto-exposes every new `cover`, `switch`, `scene`, `water_heater`, … so the deny rules
+   and the exact-name **switch** allowlist stay. A new voice tool is therefore live as soon as
+   it is created and exposed; its mirror under `home-assistant/scripts/voice/` still goes
+   through a reviewed PR, just not as a gate.
 
 ### Hot tub mode (Tom's ruling, 2026-09-19)
 

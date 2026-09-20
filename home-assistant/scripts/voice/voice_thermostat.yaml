@@ -9,7 +9,11 @@
 # and Home Assistant then reports the tool call to the agent as a SUCCESS with an empty result.
 # The Cielo units only accept a temperature in a mode that has one (their supported_features change with
 # the mode; off/dry/fan_only have no target), hence the short wait after a mode change.
-# On the guard allowlist since v1.19.2.
+# All-or-nothing: everything refusable is refused in the `problem` precheck BEFORE any call. A temperature
+# goes with cool or heat only (auto = heat_cool on the ecobees = two set points, not one). The one
+# path that can end half-applied is a unit too slow to confirm a new mode; its sentence says the mode
+# WAS set. Groups must hold one kind of thermostat (the auto/heat_cool name is resolved from the first).
+# Allowed by the guard pattern script.voice_* (v1.19.2).
 alias: Thermostat
 description: 'Voice tool for the house thermostats. ALWAYS use this tool to change a thermostat''s MODE
   (cool, heat, dry, fan only, auto, off), and for ANY request that names ''the basement thermostats''
@@ -59,8 +63,9 @@ fields:
         - 'off'
   temperature:
     name: Temperature
-    description: Target temperature in degrees Fahrenheit. Leave empty to only change the mode. dry, fan_only
-      and off take no temperature.
+    description: Target temperature in degrees Fahrenheit. Only together with cool or heat, or alone to
+      keep the current mode. Leave empty to only change the mode. dry, fan_only, auto and off take no
+      temperature.
     required: false
     selector:
       number:
@@ -70,9 +75,11 @@ fields:
         unit_of_measurement: °F
         mode: box
 sequence:
-- alias: 'Thermostats are a fixed list mapped to entities here. ''auto'' is called heat_cool on the ecobees.
+- alias: 'Thermostats are a fixed list mapped to entities here. Every group must hold ONE kind of thermostat:
+    ''auto'' is called heat_cool on the ecobees and that name is resolved once, from the first member.
     ''problem'' is the sentence handed back to the agent when nothing can be changed (an error stop would
-    not reach it: Home Assistant reports an aborted script to the agent as a success)'
+    not reach it: Home Assistant reports an aborted script to the agent as a success). Everything that
+    can be refused is refused HERE, before any call, so a refusal never leaves a half-applied change'
   variables:
     thermostats:
       rumpus_room:
@@ -102,10 +109,11 @@ sequence:
       == '''' and wanted_temperature == '''' %}Nothing was changed: neither a mode nor a temperature was
       given.{% elif not_responding | length > 0 %}Nothing was changed: {{ not_responding | join('' and
       '') }} is not responding right now.{% elif lacking_mode | length > 0 %}Nothing was changed: {{ lacking_mode
-      | join('' and '') }} has no {{ wanted_mode }} mode. Only the basement mini splits have dry and fan
-      only; the ecobees have cool, heat, auto and off.{% elif wanted_temperature != '''' and hvac_mode
-      in [''dry'', ''fan_only'', ''off''] %}Nothing was changed: {{ wanted_mode }} takes no temperature.
-      Send the mode alone, or a temperature with cool, heat or auto.{% endif %}'
+      | join('' and '') }} has no {{ wanted_mode | replace(''_'', '' '') }} mode. Only the basement mini
+      splits have dry and fan only; the ecobees have cool, heat, auto and off.{% elif wanted_temperature
+      != '''' and wanted_mode not in ['''', ''cool'', ''heat''] %}Nothing was changed: {{ wanted_mode
+      | replace(''_'', '' '') }} mode takes no single temperature. Send the mode alone, or send cool or
+      heat with the temperature.{% endif %}'
 - if:
   - condition: template
     value_template: '{{ problem | trim | length > 0 }}'
@@ -128,8 +136,8 @@ sequence:
   - condition: template
     value_template: '{{ wanted_temperature != '''' }}'
   then:
-  - alias: The mini splits only accept a temperature once they report a mode that has one (cool, heat,
-      auto); give a mode change a moment to land
+  - alias: The mini splits only accept a temperature once they report a mode that has one; give a mode
+      change a moment to land
     wait_template: '{% set ns = namespace(ready=true) %}{% for e in entities if (state_attr(e, ''supported_features'')
       | int(0)) | bitwise_and(1) == 0 %}{% set ns.ready = false %}{% endfor %}{{ ns.ready }}'
     timeout:
@@ -145,8 +153,12 @@ sequence:
     then:
     - variables:
         result:
-          response: 'The temperature was NOT set: {{ no_single_target | join('' and '') }} takes no single
-            target temperature in that mode. Send a mode of cool or heat together with the temperature.'
+          response: '{% if wanted_mode != '''' %}{{ entities | map(''state_attr'', ''friendly_name'')
+            | join('' and '') }} WAS set to {{ wanted_mode | replace(''_'', '' '') }} mode, but the temperature
+            was NOT set: {{ no_single_target | join('' and '') }} had not confirmed the new mode after
+            10 seconds. Ask again for the temperature alone in a moment.{% else %}Nothing was changed:
+            {{ no_single_target | join('' and '') }} takes no single target temperature in that mode.
+            Send cool or heat together with the temperature.{% endif %}'
     - stop: Temperature not set
       response_variable: result
   - action: climate.set_temperature

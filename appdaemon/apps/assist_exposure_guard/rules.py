@@ -18,7 +18,8 @@ per entity with the most specific reason available:
 5. ``deny_entity_globs``   — ``fnmatch`` patterns over the entity id
 6. ``switch_allowlist``    — the ``switch`` domain is DENY BY DEFAULT
 7. ``script_allowlist_globs`` — an exposed script is an unrestricted LLM tool,
-   so the shipped default names every allowed script explicitly
+   so the shipped default allows the purpose-built ``script.voice_*`` tools plus
+   a short list of other scripts named explicitly
 
 Why these defaults (ruling by the owner, 2026-09-18): HA's
 ``OnOffIntentHandler`` maps ``HassTurnOff`` on a lock to ``lock.unlock`` and
@@ -114,59 +115,34 @@ DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = (
 )
 
 #: An exposed script is an unrestricted tool: whatever the script does, the
-#: model can do.  So every exposed script is named **explicitly** — no
-#: patterns.  A glob here would make a filename the security boundary: anyone
-#: who later creates ``script.voice_<anything>`` would hand the voice agent a
-#: tool nobody reviewed.  Every entry is hand-curated and reviewed; adding
-#: another means adding it to this list (and to ``apps-prod.yaml`` — a test pins
-#: the two together) in the same PR that creates it.
+#: model can do.  The ``script.voice_*`` prefix is the naming convention for
+#: the hand-written voice tools, so the shipped default allows that pattern and
+#: names every other allowed script explicitly (owner ruling, 2026-09-20).
 #:
-#: The key is still matched with ``fnmatch``, so an operator *can* configure a
-#: pattern — the shipped default simply does not use that power.
+#: Why a pattern is safe here, where one would not be for ``switch``: HA does
+#: **not** auto-expose scripts — ``script`` is not in HA's
+#: ``DEFAULT_EXPOSED_DOMAINS`` (checked in the installed 2026.9.2 source), so the
+#: "expose new entities" default never reaches one.  A script is exposed only by
+#: someone deliberately exposing it, and naming a script ``voice_…`` is a second
+#: deliberate act.  The per-name list never pinned behaviour either: this guard
+#: pins an entity *id*, while the power lives in the script **body**, which is
+#: editable from the HA UI without touching this repo.  In practice the per-name
+#: list cost seven AppDaemon releases in three days (one per batch of new tools),
+#: with no enforcement on record (``last_enforced: never`` on 2026-09-20).
+#:
+#: Two entries still reach the dangerous set — ``script.voice_lock_all_doors``
+#: and ``script.voice_close_garage_doors``.  They are safe by construction, not
+#: by name: lock-only (front, side, bulkhead; never the mudroom door) and
+#: close-only.  Re-read their BODY in HA when reviewing them.
+#:
+#: A script **not** named ``script.voice_*`` still needs an explicit entry here
+#: and in ``apps-prod.yaml`` (a test pins the two together) in the same PR.
 DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
-    # Basement room-mode tools (movie room)
-    "script.voice_movie_room_bright",
-    "script.voice_movie_room_dim",
-    "script.voice_movie_room_red_night_mode",
-    "script.voice_movie_room_ambient_scene",
-    "script.voice_movie_room_color_toggle",
-    # Basement room-mode tools (rumpus room)
-    "script.voice_rumpus_room_bright",
-    "script.voice_rumpus_room_dim",
-    "script.voice_rumpus_room_color_toggle",
-    # Parameterised Hunter Douglas gateway scene runner
-    "script.voice_shades",
-    # Second-floor room tools (primary bathroom switch config buttons, cloffice preset)
-    "script.voice_primary_bathroom_lights_on",
-    "script.voice_primary_bathroom_lights_off",
-    "script.voice_primary_bathroom_shower_lights",
-    "script.voice_cloffice_bright",
-    # First-floor button mirrors (lights off only): Foyer-Chaos config 1x, Entrance config 1x
-    "script.voice_kitchen_lights_off",
-    "script.voice_entrance_all_off",
-    # Secure-direction door tools — the ONLY entries that reach the dangerous set.
-    # Safe by construction, not by name: lock-only (front, side, bulkhead; never the
-    # mudroom door) and close-only.  Re-read the script BODY in HA when reviewing these:
-    # it is editable from the UI without touching this repo.
-    "script.voice_lock_all_doors",
-    "script.voice_close_garage_doors",
-    # Hot tub mode: holds the back-yard flood light off (same calls as the spa-lights automation).
-    # Disables three spotlight automations by design; touches no spa/pool equipment.
-    "script.voice_hot_tub_mode_on",
-    "script.voice_hot_tub_mode_off",
+    # The hand-written voice tools: room modes, shades, doors (secure-direction
+    # only), hot tub mode, music, thermostat.
+    "script.voice_*",
     # Music Assistant request handler
     "script.llm_script_for_music_assistant_voice_requests",
-    # Music Assistant room tools: move a playing queue from one room to another
-    # (transfer_queue), and play one room's music in others in sync or drop them
-    # back out (media_player.join / unjoin).  Media players only — no lights,
-    # locks or covers in reach.
-    "script.voice_move_music",
-    "script.voice_group_music",
-    # Thermostat tool: climate.set_hvac_mode / set_temperature on the four exposed
-    # thermostats (basement mini splits + ecobees).  Assist has no set-mode intent
-    # (no "dry mode") and its set-temperature intent takes one thermostat only (no
-    # "basement thermostats").  Climate only — no other domain in reach.
-    "script.voice_thermostat",
     # Primary bedroom modes
     "script.kellie_mobile_primary_bedroom_relaxed",
     "script.kellie_mobile_primary_bedroom_focused",
