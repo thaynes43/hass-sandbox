@@ -330,7 +330,7 @@ before the fix). Pause / stop / volume / next are local intents (no LLM, ~0.1 s)
 |---|---|---|
 | Primary Bedroom | `media_player.primary_bedroom` (Sonos Beam) | text-as-satellite: agent passed `primary_bedroom`, Beam played, "stop the music" paused locally |
 | Kitchen | `media_player.kitchen` (Sonos Amp) | Tom's spoken request on 2026-09-19 played there; three text-as-satellite single-song requests carried `kitchen` and played |
-| Movie Room | `media_player.movie_room` (Sonos Port — audible only if the AVR is on its input; not checked) | text-as-satellite, many runs on 2026-09-19 (the empty-room test bed): agent passed `movie_room`, the Port played; never heard by anyone |
+| Movie Room | `media_player.movie_room` (Sonos Port → Sony STR-AZ5000ES, which is "Works with Sonos": 2.3 s after the Port starts the AVR powers itself on, tracks the Port's volume and switches to its `Sonos` input, with no HA action — read from the AVR's recorder history on 2026-09-20) | text-as-satellite, many runs on 2026-09-19: agent passed `movie_room`, the Port played — **out loud**, the room is not a silent test bed (the earlier "audible only if the AVR is on its input; never heard" note was wrong). Not yet requested by voice by Tom |
 | Rumpus Room | `media_player.ls50_wireless_ii_174476_4` (KEF LS50 W II via Music Assistant), since 2026-09-19 | text-as-satellite: played on the KEFs, "stop the music" paused locally |
 
 Test as a satellite without speaking: `scripts/voice-bench/run.sh bench.py "MODE=pipe REPS=1
