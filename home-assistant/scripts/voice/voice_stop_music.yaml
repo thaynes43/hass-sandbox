@@ -137,12 +137,15 @@ sequence:
     of this tool. Followers are checked too: when the leader is a soundbar on its TV input no stop command
     is sent at all, and a released speaker that really fell silent reports idle. 3 s, like Group Music:
     Music Assistant''s group_members lags the unjoin, and a shorter wait reports a stop that worked as
-    STILL GROUPED'
+    STILL GROUPED. The soundbar carve-out applies here too: a released follower that falls back to its
+    TV input reports playing, and reporting that as NOT STOPPED would be the same false answer pointed
+    the other way'
   delay:
     seconds: 3
 - variables:
-    still_playing: '{{ (stop_list + followers) | unique | select(''is_state'', [''playing'', ''paused''])
-      | list }}'
+    still_playing: '{% set ns = namespace(p=[]) %}{% for p in (stop_list + followers) | unique %}{% if
+      state_attr(p, ''source'') != ''TV'' and states(p) in [''playing'', ''paused''] %}{% set ns.p = ns.p
+      + [p] %}{% endif %}{% endfor %}{{ ns.p }}'
     still_grouped: '{% set ns = namespace(g=[]) %}{% for p in (stop_list + followers) | unique %}{% if
       (state_attr(p, ''group_members'') or []) | count > 1 %}{% set ns.g = ns.g + [p] %}{% endif %}{%
       endfor %}{{ ns.g }}'

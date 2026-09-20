@@ -34,14 +34,17 @@ actions:
 - variables:
     here: '{{ (area_entities(area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
       ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')
-      | first | default('''', true)) if area else '''' }}'
+      | list) if area else [] }}'
 - alias: 'Scope: a player counts when it is GROUPED (Music Assistant reports a paused Sonos group as idle,
     and an idle group is exactly what leaks TV audio later) or when it plays/pauses music that is not
     the TV input. This room when it counts, otherwise - or when the sentence says ''everywhere'', ''all'',
     ''house'' or ''ungroup'' - every such player. script.voice_stop_music applies the same rule for requests
     that reach the AI agent. An explicit ''here'' always wins: ''stop all the music in here'' is this
     room, not the house (the sentence is normalised to bare words first: speech-to-text punctuates, and
-    ''in here.'' must still count as here)'
+    ''in here.'' must still count as here). ''This room'' means EVERY Music Assistant speaker in it, not
+    the first one area_entities returns - the same rule script.voice_stop_music uses; with | first here,
+    a room whose second speaker was the one playing would fall through to the else branch and stop the
+    WHOLE HOUSE on a 0.2 s local ''Stopped.'''
   variables:
     active: '{% set said = '' '' ~ (trigger.sentence | default('''', true) | lower | regex_replace(''[^a-z0-9]+'',
       '' '') | trim) ~ '' '' %}{% set everywhere = '' here '' not in said and ('' everywhere '' in said
@@ -49,7 +52,8 @@ actions:
       %}{% for p in integration_entities(''music_assistant'') | select(''match'', ''media_player\.'')
       | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p) in [''playing'',
       ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p] %}{% endif %}{%
-      endfor %}{{ [here] if not everywhere and here in ns.p else ns.p }}'
+      endfor %}{% set inroom = here | select(''in'', ns.p) | list %}{{ inroom if not everywhere and inroom
+      | count > 0 else ns.p }}'
 - variables:
     leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
       or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
