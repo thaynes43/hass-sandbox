@@ -1026,7 +1026,7 @@
 </tr>
 <tr>
 <td><strong>zigbee_ota</strong></td>
-<td>Sequential Zigbee2MQTT OTA firmware rollout with offline-device retry</td>
+<td>Sequential OTA firmware rollout across every Zigbee2MQTT device, one at a time, with offline-device retry</td>
 </tr>
 <tr>
 <td><strong>assist_exposure_guard</strong></td>
@@ -1109,11 +1109,12 @@
 <a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>  └─ publishes sensor.countdown_status
 <a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>       └─ countdown-card / countdown-config-card (reads sensor)
 <a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin)
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>  └─ publishes sensor.zigbee_ota_orchestrator
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>  └─ publishes sensor.assist_exposure_guard + a persistent notification
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin;
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>            asks Home Assistant which update entities are Zigbee2MQTT devices)
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>  └─ publishes sensor.zigbee_ota_orchestrator
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>  └─ publishes sensor.assist_exposure_guard + a persistent notification
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Per-app documentation</p>
