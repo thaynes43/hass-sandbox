@@ -1771,3 +1771,67 @@ def test_an_external_update_on_a_parked_device_blocks_new_starts() -> None:
     refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_an_unavailable_tick_does_not_clear_the_transferring_flag() -> None:
+    """The device dropping off the mesh is why the transfer went silent, so
+    that flap must not be read as "the transfer stopped"."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 40})
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    clock.advance(1001)
+    assert coord.decide() is None  # timed out
+    clock.advance(301)
+
+    # It flaps unavailable. Nothing may start.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="unavailable")
+    refresh(coord, snap)
+    assert coord.status()["transferring"] == ["hue_a"]
+    assert coord.decide() is None
+    # Only a tick that actually reports the transfer over releases it.
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_pending_is_empty_while_something_else_is_transferring() -> None:
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["pending"] == []  # decide() would refuse to start hue_b
+    assert status["pending_count"] == 0
+    assert status["transferring"] == ["hue_a"]
+    assert status["transferring_count"] == 1
+
+
+def test_an_unreadable_tick_does_not_age_an_absence_on_the_snapshot_path() -> None:
+    """The app marks identity unavailable when the update domain is empty and
+    skips refresh_entities entirely, so the forgetting has to live there."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
+    refresh(coord, snapshot("hue_a", "hue_b", "hue_c"))
+    refresh(coord, snapshot("hue_c"))  # partial dump
+    for _ in range(5):
+        clock.advance(120)
+        coord.mark_identity_unavailable("no update entities in the snapshot")
+    clock.advance(120)
+    refresh(coord, snapshot("hue_c"))
+    assert coord.status()["remaining"] == 3

@@ -216,6 +216,9 @@ class OtaCoordinator:
         """The Home Assistant lookup failed this tick. Keep the last known-good
         set for reference but start nothing until a fresh one arrives."""
         self._identity_stale = reason
+        # A tick we could not read Home Assistant on is not evidence that a
+        # device has gone; don't let it age one towards retirement.
+        self._absent.clear()
         self._last_event = f"holding: {reason}"
 
     @property
@@ -268,9 +271,6 @@ class OtaCoordinator:
             # queue from a snapshot we can't match against a trustworthy list
             # would drop devices that are still there. Checked first so
             # last_event keeps the reason mark_identity_unavailable just set.
-            # A skipped refresh is not evidence of absence, so it cannot age
-            # one: start the clock again when Home Assistant can be read.
-            self._absent.clear()
             return
         if not self.identity_ready:
             self._last_event = (
@@ -304,7 +304,12 @@ class OtaCoordinator:
                 # unavailable entity is an absence of information, and the
                 # device dropping off the mesh is exactly what makes a
                 # transfer go silent, so this flap is the expected condition
-                # around the timeout this suppression exists for.
+                # around the timeout this suppression exists for — and for
+                # the same reason it cannot clear the transferring flag
+                # either, or the next tick starts a second transfer while
+                # Z2M is still on the air with this one.
+                if friendly in self._transferring:
+                    transferring.add(friendly)
                 self.set_availability(friendly, False)
                 continue
             self.set_availability(friendly, True)
@@ -645,10 +650,7 @@ class OtaCoordinator:
         if self._identity_stale is not None:
             # The device list could not be refreshed this tick; don't guess.
             return None
-        others_transferring = sorted(
-            self._transferring
-            - ({fl.friendly_name} if fl is not None else set())
-        )
+        others_transferring = self._others_transferring()
         if others_transferring:
             # Something on the mesh is mid-transfer that we are not tracking:
             # an external install, or an attempt we timed out on that Z2M is
@@ -674,6 +676,15 @@ class OtaCoordinator:
         self._last_event = f"starting update for {candidate.friendly_name}"
         return StartUpdate(friendly_name=candidate.friendly_name, transaction=transaction)
 
+    def _others_transferring(self) -> list[str]:
+        """Managed devices reporting a transfer that is not the in-flight one.
+
+        Z2M's in-progress guard is per device, so it would not reject a second
+        request; while this is non-empty nothing may start.
+        """
+        in_flight = {self._in_flight.friendly_name} if self._in_flight else set()
+        return sorted(self._transferring - in_flight)
+
     def _is_eligible(self, rec: DeviceRecord, ts: float) -> bool:
         """Can this device be started right now?
 
@@ -683,6 +694,7 @@ class OtaCoordinator:
         return (
             rec.next_attempt_ts <= ts
             and ts >= self._global_busy_until
+            and not self._others_transferring()
             # Unknown availability counts as online: with nothing said either
             # way, the request itself is the probe (failure lands in cooldown).
             and self._availability.get(rec.friendly_name, True)
@@ -915,6 +927,7 @@ class OtaCoordinator:
             "failed_attempts_this_run": self._failed_attempts,
             "busy_until": _at(self._global_busy_until) if ts < self._global_busy_until else "",
             "transferring": sorted(self._transferring)[:STATUS_LIST_CAP],
+            "transferring_count": len(self._transferring),
             "z2m_devices_known": self.z2m_device_count,
             "identity_source": self._identity_source(),
             "last_event": self._last_event,
