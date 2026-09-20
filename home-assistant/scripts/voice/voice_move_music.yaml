@@ -3,31 +3,91 @@
 # Music, which starts something new. This one calls music_assistant.transfer_queue, so the same song
 # carries on in the new room. Rooms are HA areas; the speaker is the area's Music Assistant player.
 # On the guard allowlist since v1.18.7 and exposed to Assist since 2026-09-19.
+# Rooms are a FIXED LIST (select), not an area selector: with an area field Home Assistant 2026.9 crashes
+# the whole voice request (IndexError in helpers/llm.py, the box blinks red) when the agent passes a room
+# name it cannot match exactly, e.g. "bathroom" for the area "Primary Bathroom" (first voice test, 2026-09-19).
 alias: Move Music
 description: 'Voice tool that MOVES the music that is already playing from one room to another: the same
   song carries on in the new room and stops in the old one. Use it for ''move the music to the living
-  room'', ''take this to the kitchen'', ''stop it here and play it in the bedroom''. Do NOT use Play Music
-  for that: Play Music starts something new. from_area is the room the music is playing in now (the room
-  the request comes from unless the user names another room); to_area is the room it should move to. To
-  have the same music in several rooms at once use Group Music instead.'
+  room'', ''take this to the kitchen'', ''stop it here and play it in the bedroom'', ''move it back to
+  the bedroom''. Do NOT use Play Music for that: Play Music starts something new. from_room is the room
+  the music is playing in now (the room the request comes from unless the user names another room, or
+  the room it was just moved to); to_room is the room it should move to. To have the same music in several
+  rooms at once use Group Music instead.'
 icon: mdi:transfer
 mode: queued
 max: 3
 fields:
-  from_area:
+  from_room:
     name: From room
-    description: The room the music is playing in now. Use the room the request comes from unless the
-      user names another room.
+    description: 'The room the music is playing in now. Use the room the request comes from unless the
+      user names another room. Pick the room from the list: primary_bedroom and primary_bathroom are the
+      main bedroom and its bathroom (from the primary bedroom, ''the bathroom'' means primary_bathroom
+      and ''the bedroom'' means primary_bedroom), blue_room is Jackson''s room, pink_room is Penelope''s
+      room, white_room is the guest room, rumpus_room has the KEF speakers, study is the office.'
     required: true
     selector:
-      area: {}
-  to_area:
+      select:
+        options:
+        - primary_bedroom
+        - primary_bathroom
+        - kitchen
+        - living_room
+        - study
+        - movie_room
+        - rumpus_room
+        - blue_room
+        - pink_room
+        - white_room
+        - kids_bathroom
+        - front_porch
+        - back_yard
+  to_room:
     name: To room
-    description: The room the music should move to.
+    description: 'The room the music should move to. Pick the room from the list: primary_bedroom and
+      primary_bathroom are the main bedroom and its bathroom (from the primary bedroom, ''the bathroom''
+      means primary_bathroom and ''the bedroom'' means primary_bedroom), blue_room is Jackson''s room,
+      pink_room is Penelope''s room, white_room is the guest room, rumpus_room has the KEF speakers, study
+      is the office.'
     required: true
     selector:
-      area: {}
+      select:
+        options:
+        - primary_bedroom
+        - primary_bathroom
+        - kitchen
+        - living_room
+        - study
+        - movie_room
+        - rumpus_room
+        - blue_room
+        - pink_room
+        - white_room
+        - kids_bathroom
+        - front_porch
+        - back_yard
 sequence:
+- alias: 'Rooms are a fixed list, not an area selector: Home Assistant crashes the whole voice request
+    (IndexError in helpers/llm.py) when an LLM passes an area name it cannot match, e.g. ''bathroom''
+    for ''Primary Bathroom'''
+  variables:
+    room_area:
+      primary_bedroom: primary_bedroom
+      primary_bathroom: main_bed_bath
+      kitchen: kitchen
+      living_room: living_room
+      study: office
+      movie_room: movie_room
+      rumpus_room: rumpus_room
+      blue_room: blue_room
+      pink_room: pink_room
+      white_room: white_room
+      kids_bathroom: kids_bathroom
+      front_porch: front_porch
+      back_yard: back_yard
+- variables:
+    from_area: '{{ room_area.get(from_room, '''') }}'
+    to_area: '{{ room_area.get(to_room, '''') }}'
 - variables:
     src: '{{ area_entities(from_area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
       ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')

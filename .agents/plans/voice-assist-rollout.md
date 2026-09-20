@@ -359,6 +359,19 @@ room that stays first (a plain unjoin of the leader left the wrong room playing)
 2.10.3 logged `maximum recursion depth exceeded` in its stream feeder and the living room player
 then accepted requests without playing until Music Assistant was restarted.
 
+**First voice test of Move/Group Music (Tom, 2026-09-19 late evening) — three fixes, all live.**
+(1) Both tools took rooms as HA **area** fields; when the agent passed "bathroom" / "bedroom" (areas:
+"Primary Bathroom" / "Primary Bedroom") Home Assistant crashed the whole request
+(`IndexError` at `helpers/llm.py` `intent.find_areas(...)[0]`, red blink, no answer). Both tools now
+take rooms from a **fixed select list** mapped to area ids inside the script, like `voice_shades`.
+Play Music still uses the blueprint's area field; it has passed exact area ids every time, so it
+was left alone — switch it to a list if it ever blinks red. (2) The agent named the room it was in
+as the source while the music played in the other named room: Group Music now picks whichever
+named room is really playing. (3) Re-grouping rooms that were already grouped, with a *member* as
+source, made Music Assistant tear the group apart and the music died after a second: the tool now
+uses the group's **leader** and leaves an existing group alone. Verified by replaying Tom's exact
+phrases as the bedroom box: bedroom + bathroom in sync, held.
+
 **Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
 the bedroom).** Two defects found by that test, plus a third (no default player, routing order
 item 4 above) found while fixing them; all fixed live and verified by text-as-satellite — mostly on
