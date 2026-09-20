@@ -200,6 +200,7 @@ mode: restart
 | Lights turn off immediately despite hold | Hold guard only checked before delay, not after | Add second hold check after the `delay:` action |
 | Occupancy off delay not respected | Using `for:` on trigger instead of action `delay:` | Remove trigger `for:`, use action `delay:` reading from the helper |
 | Only control switch in hold registry | Extra sensors (non-control) added to hold/clear scripts | Only add the single control switch to hold/clear registries |
+| Lights turn off with someone standing at the switch | mmWave detection area excludes boresight (positive `width_min`), and/or sensitivity below `High` | Re-tune the zone — see *Reference: tuning the mmWave detection zone* |
 
 ---
 
@@ -247,6 +248,10 @@ Common suffixes (after `<switch_name>_`):
 - `number.<switch_name>_mmwaveheightmin` / `mmwaveheightmax`
 - `sensor.<switch_name>_mmwave_control_commands`
 
+> **The `mmwave{width,depth,height}{min,max}` numbers do NOT apply the detection area on their
+> own** — the radar keeps the old zone until `setDetectionArea` is commanded. See
+> *Reference: tuning the mmWave detection zone* below.
+
 ---
 
 ## Reference: tuning the mmWave detection zone (geometry)
@@ -263,11 +268,12 @@ return — a person standing still a metre away reports nothing if they are outs
 | depth | `mmwavedepthmin` / `mmwavedepthmax` | distance out from the wall; always `>= 0` |
 | height | `mmwaveheightmin` / `mmwaveheightmax` | negative = below the switch, positive = above |
 
-**The boresight trap**: a positive `widthmin` (or a negative `widthmax`) blanks the area directly
-in front of the switch. `widthmin: 55` means "ignore everything from 55 cm to the *left* of the
-switch all the way across to 55 cm to the right" — someone standing at the switch is never seen.
-Unless the zone is deliberately an off-to-one-side target (a vanity, a rack aisle), the width
-window should straddle `0`.
+**The boresight trap**: the detection window is the *interval* `width_min … width_max` — the radar
+sees a target only where `width_min <= x <= width_max` — so a positive `widthmin` (or a negative
+`widthmax`) blanks the area directly in front of the switch. With `widthmin: 55, widthmax: 300` the
+radar sees **only** the 55–300 cm slice to the right of the switch: the whole left side and
+boresight fall outside the box, so someone standing at the switch is never seen. Unless the zone is
+deliberately an off-to-one-side target (a vanity, a rack aisle), the width window should straddle `0`.
 
 ### Setting the zone (the number entities alone do NOT apply it)
 
