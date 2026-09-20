@@ -348,6 +348,42 @@ def test_non_allowlisted_scripts_are_violations(entity_id: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "entity_id",
+    [
+        "script.voice_unlock_all_doors",
+        "script.voice_unlock_front_door",
+        "script.voice_open_garage_doors",
+        "script.voice_open_garage",
+        "script.voice_disarm_alarm",
+    ],
+)
+def test_unsafe_direction_voice_scripts_are_refused_before_the_pattern(
+    entity_id: str,
+) -> None:
+    """`script.voice_*` is allowed, but never the inverse of the secure-direction tools.
+
+    The deny globs run before the script allowlist, so the violation names the
+    pattern, not the generic allowlist reason.
+    """
+    violation = evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES)
+    assert violation is not None
+    assert violation.rule == RULE_ENTITY_GLOB
+
+
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        "script.voice_lock_all_doors",
+        "script.voice_close_garage_doors",
+        # `open` is only refused for the garage: shades and rooms open by voice.
+        "script.voice_open_shades",
+    ],
+)
+def test_the_direction_backstop_leaves_the_secure_direction_alone(entity_id: str) -> None:
+    assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
+
+
+@pytest.mark.parametrize(
     ("entity_id", "rule"),
     [
         ("automation.voice_thing", RULE_DOMAIN),

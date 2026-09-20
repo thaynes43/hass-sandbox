@@ -187,7 +187,8 @@ just disable automations.
 Voice tools on this floor (2026-09-19): `script.voice_primary_bathroom_lights_on` / `_lights_off`
 / `_shower_lights` (the three bathroom config buttons), `script.voice_cloffice_bright` (cloffice
 ZEN32 big 2x) and the Iris lamp `light.den_hue_iris_light`; shades go through
-`script.voice_shades`.
+`script.voice_shades`. The floor's thermostat is `climate.second_floor_ecobee` ("upstairs"); its
+**mode** (cool / heat / auto / off) goes through `script.voice_thermostat` — see *Basement*.
 
 **Never expose `switch.upstairs_*_scene_controller`** — the ZEN32 relay is line power to the
 Modern Forms fan module.
@@ -223,7 +224,9 @@ lights, the mudroom and entrance lights, the foyer chandelier and the bathroom g
 Voice tools on this floor (2026-09-19): `script.voice_kitchen_lights_off` (= Upstairs Foyer Chaos
 Config 1x, every kitchen light off) and `script.voice_entrance_all_off` (= Entrance Config 1x,
 entrance + mudroom + the three bathroom loads off). Both are literal copies of the button actions
-and are on the `assist_exposure_guard` script allowlist from v1.18.5.
+and are on the `assist_exposure_guard` script allowlist from v1.18.5. The **mode** of
+`climate.first_floor_ecobee` ("downstairs": cool / heat / auto / off) goes through
+`script.voice_thermostat` (2026-09-20) — see *Basement*.
 
 | Area | Physical controls (mapped buttons only) | Concepts → handle | Ownership / voice caveat |
 |---|---|---|---|

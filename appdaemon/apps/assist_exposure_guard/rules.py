@@ -102,6 +102,15 @@ DEFAULT_DENY_ENTITY_GLOBS: Tuple[str, ...] = (
     "light.ratgdov25i_*",
     "switch.spa_intouch3_switch",
     "switch.nrz120804q_*",
+    # Direction backstop for the ``script.voice_*`` allowlist pattern below.  The
+    # owner's ruling for the dangerous set is "ask + secure only": voice may lock,
+    # close and arm, never the inverse.  The pattern cannot tell the two apart, and
+    # these globs are evaluated BEFORE the script allowlist, so a voice tool named
+    # for the unsafe direction is refused however it got exposed.  A name is not a
+    # body (see the script allowlist comment) — this catches the honest mistake.
+    "script.voice_unlock_*",
+    "script.voice_open_garage*",
+    "script.voice_disarm_*",
 )
 
 #: The ``switch`` domain is deny-by-default: a switch is exposed only by name.
@@ -129,6 +138,10 @@ DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = (
 #: editable from the HA UI without touching this repo.  In practice the per-name
 #: list cost seven AppDaemon releases in three days (one per batch of new tools),
 #: with no enforcement on record (``last_enforced: never`` on 2026-09-20).
+#:
+#: The inverse names (``script.voice_unlock_*``, ``script.voice_open_garage*``,
+#: ``script.voice_disarm_*``) are refused by ``DEFAULT_DENY_ENTITY_GLOBS``, which
+#: is evaluated before this list.
 #:
 #: Two entries still reach the dangerous set — ``script.voice_lock_all_doors``
 #: and ``script.voice_close_garage_doors``.  They are safe by construction, not

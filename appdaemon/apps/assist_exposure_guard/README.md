@@ -243,6 +243,9 @@ deny_entity_globs:
   - "light.ratgdov25i_*"
   - "switch.spa_intouch3_switch"
   - "switch.nrz120804q_*"
+  - "script.voice_unlock_*"       # direction backstop for the script.voice_* pattern:
+  - "script.voice_open_garage*"   # voice may lock, close and arm, never the inverse
+  - "script.voice_disarm_*"
 # Exterior light relays — each switch only powers a light circuit.
 switch_allowlist:
   - "switch.back_yard_retaining_wall_lights_relay"  # patio retaining-wall lights
@@ -275,6 +278,12 @@ act. The per-name list never pinned behaviour either: the guard pins an entity
 HA UI without touching this repo. In practice it cost seven AppDaemon releases
 in three days, with no enforcement on record (`last_enforced: never` on
 2026-09-20).
+
+The pattern cannot tell a safe direction from an unsafe one, so the inverse
+names — `script.voice_unlock_*`, `script.voice_open_garage*`,
+`script.voice_disarm_*` — are in `deny_entity_globs`, which is evaluated before
+the script allowlist. That is a backstop for an honest mistake, not a boundary:
+a name is not a body.
 
 `script.voice_lock_all_doors` and `script.voice_close_garage_doors` are still
 the only doors into the dangerous set, and they are safe because of what is

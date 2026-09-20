@@ -42,8 +42,11 @@ turns up, and then the new device. Tom speaks to the box; you read what actually
 
 ## Live state at handoff
 
-- AppDaemon `ghcr.io/thaynes43/appdaemon:1.18.7` (2026-09-19 evening); guard: 114 exposed entities, 0 violations,
-  `switch_allowlist=3`.
+- AppDaemon `ghcr.io/thaynes43/appdaemon:1.19.2` (2026-09-20; PR #169 and its rollout); guard:
+  scripts allowed by `script.voice_*` (unsafe-direction names denied), `switch_allowlist=3`,
+  115 exposed entities once `script.voice_thermostat` is exposed, 0 violations. Check the running
+  tag before trusting this line: `kubectl get deploy appdaemon -n home-automation -o
+  jsonpath='{..image}'`.
 - HA core 2026.9.2. All four agents: `gpt-5.6-terra`, reasoning `none`, verbosity low, priority
   tier, web search on; each prompt = Tom's persona + one shared block. All pipelines: HA Cloud STT
   + HA Cloud TTS, `prefer_local_intents: true`.
