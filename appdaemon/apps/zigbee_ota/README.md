@@ -49,9 +49,14 @@ and widened in 2026-09 to every Z2M device.
   whether or not this app started it and whether or not the device is one it
   would otherwise skip — that set is on the sensor as `transferring`. Z2M's
   in-progress guard is per device, so it would not reject a second request;
-  this is what does. The cost is that a stale flag delays the next start until
-  Home Assistant clears it, which is the right way round: a stalled queue is
-  visible on the sensor, a doubled transfer is not.
+  this is what does. The mark is carried across ticks where the entity says
+  nothing — absent from the state dump, or `unavailable` — because silence is
+  not evidence a transfer stopped, and the device dropping off the mesh is
+  often why it went quiet. A mark that goes unconfirmed for an hour expires,
+  so a device that never comes back — dead battery, switched off at the wall —
+  cannot stall the fleet for longer than that.
+  The cost is that a stale flag delays the next start, which is the right way
+  round: a stalled queue is visible on the sensor, a doubled transfer is not.
 
   The two timeouts below are the exception, and they are optimistic by
   necessity: Z2M has no cancel API, so giving up on an attempt cannot close

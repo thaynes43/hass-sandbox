@@ -40,6 +40,15 @@ RESULT_BUSY = "busy"
 STATUS_LIST_CAP = 25
 ERROR_TEXT_CAP = 120
 
+# How long a "this device is transferring" mark is carried while its entity
+# says nothing — absent from the state dump, or unavailable. Silence is not
+# evidence a transfer stopped, but an unbounded mark would let one device that
+# never comes back (dead battery, switched off at the wall) stall the fleet
+# for good. Deliberately not update_timeout_s: that clock starts when the
+# attempt starts, so the two would expire together and the guard would be
+# useless for the very case it exists for.
+TRANSFER_MARK_TTL_S = 3600.0
+
 _OFFLINE_ERROR_MARKERS = ("respond", "timeout", "timed out", "offline", "unreachable")
 _BUSY_ERROR_MARKERS = ("already in progress",)
 # Z2M answers "No image currently available" (and, older, "No image available")
@@ -170,8 +179,10 @@ class OtaCoordinator:
         self._abandoned: set[str] = set()
         # friendly_name -> when it was first absent from a usable refresh
         self._absent: dict[str, float] = {}
-        # Managed devices whose entity says a transfer is under way.
-        self._transferring: set[str] = set()
+        # friendly_name -> when its entity last reported a transfer under way.
+        # Carried across ticks where the entity says nothing (absent from the
+        # dump, or unavailable) and expired after TRANSFER_MARK_TTL_S.
+        self._transferring: dict[str, float] = {}
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -279,7 +290,8 @@ class OtaCoordinator:
             self._absent.clear()
             return
         present: set[str] = set()
-        transferring: set[str] = set()
+        # Carried forward: silence is not evidence a transfer stopped.
+        transferring: dict[str, float] = dict(self._transferring)
         adopted_candidate: Optional[str] = None
         for entity_id, payload in snapshot.items():
             if not self._entity_matches(entity_id):
@@ -304,17 +316,16 @@ class OtaCoordinator:
                 # unavailable entity is an absence of information, and the
                 # device dropping off the mesh is exactly what makes a
                 # transfer go silent, so this flap is the expected condition
-                # around the timeout this suppression exists for — and for
-                # the same reason it cannot clear the transferring flag
-                # either, or the next tick starts a second transfer while
-                # Z2M is still on the air with this one.
-                if friendly in self._transferring:
-                    transferring.add(friendly)
+                # around the timeout this suppression exists for. The
+                # transferring mark is carried by default for the same
+                # reason, so there is nothing to do for it here.
                 self.set_availability(friendly, False)
                 continue
             self.set_availability(friendly, True)
             if state != "on":
-                # Nothing is on offer any more, so nothing is being skipped.
+                # Nothing is on offer any more, so nothing is being skipped
+                # and nothing is being transferred.
+                transferring.pop(friendly, None)
                 self._abandoned.discard(friendly)
                 parked = self._parked.pop(friendly, None)
                 # Work out whether anything actually installed.
@@ -368,7 +379,9 @@ class OtaCoordinator:
                 # Recorded whatever else we decide about this device. Z2M's
                 # in-progress guard is per device, so a transfer we are not
                 # tracking is still a transfer on the mesh.
-                transferring.add(friendly)
+                transferring[friendly] = self.now()
+            else:
+                transferring.pop(friendly, None)
             if not in_progress:
                 # Home Assistant has caught up: whatever we settled is no
                 # longer showing, so a future in_progress is a real install.
@@ -413,7 +426,13 @@ class OtaCoordinator:
         # interval does: a restore catches up well inside one, and a real
         # removal is retired a tick later than it used to be, which costs
         # nothing.
-        self._transferring = transferring
+        # A mark that has gone unconfirmed for TRANSFER_MARK_TTL_S has
+        # outlived any plausible silent transfer; honouring it further would
+        # let one device that never comes back stall the whole fleet.
+        cutoff = self.now() - TRANSFER_MARK_TTL_S
+        self._transferring = {
+            name: ts for name, ts in transferring.items() if ts > cutoff
+        }
         tracked = set(self._devices) | set(self._parked) | self._abandoned
         # Rebuilt, not updated in place: a record popped outside a refresh (a
         # success, or a late ok) would otherwise keep a stale mark and be
@@ -434,6 +453,7 @@ class OtaCoordinator:
             self._devices.pop(friendly, None)
             self._parked.pop(friendly, None)
             self._absent.pop(friendly, None)
+            self._transferring.pop(friendly, None)
         self._abandoned -= gone
 
         if adopted_candidate is not None and self._in_flight is None:
@@ -682,8 +702,10 @@ class OtaCoordinator:
         Z2M's in-progress guard is per device, so it would not reject a second
         request; while this is non-empty nothing may start.
         """
-        in_flight = {self._in_flight.friendly_name} if self._in_flight else set()
-        return sorted(self._transferring - in_flight)
+        in_flight = self._in_flight.friendly_name if self._in_flight else None
+        return sorted(
+            name for name in self._transferring if name != in_flight
+        )
 
     def _is_eligible(self, rec: DeviceRecord, ts: float) -> bool:
         """Can this device be started right now?

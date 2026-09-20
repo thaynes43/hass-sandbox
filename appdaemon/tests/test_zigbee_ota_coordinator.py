@@ -1835,3 +1835,43 @@ def test_an_unreadable_tick_does_not_age_an_absence_on_the_snapshot_path() -> No
     clock.advance(120)
     refresh(coord, snapshot("hue_c"))
     assert coord.status()["remaining"] == 3
+
+
+def test_a_partial_dump_does_not_clear_the_transferring_mark() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    clock.advance(1001)
+    assert coord.decide() is None  # timed out
+    clock.advance(301)
+    # Home Assistant restarts: hue_a is missing from the dump entirely.
+    refresh(coord, snapshot("hue_b"))
+    assert coord.status()["transferring"] == ["hue_a"]
+    assert coord.decide() is None
+
+
+def test_a_transferring_mark_that_is_never_confirmed_expires() -> None:
+    """Otherwise one device switched off at the wall stalls 163 others."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    clock.advance(1001)
+    coord.decide()
+    clock.advance(301)
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", state="unavailable")
+    refresh(coord, snap)
+    assert coord.decide() is None  # held
+    clock.advance(3600)
+    refresh(coord, snap)  # still unavailable, mark now unconfirmed for an hour
+    assert coord.status()["transferring"] == []
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
