@@ -2,6 +2,8 @@
 # kids' rooms, kids' bathroom and the whole-upstairs scenes added 2026-09-19 on Tom's ruling).
 # Fires the same gateway scenes as the ZEN32 buttons and the schedules. Tom's ruling: a plain
 # "open" means tilt-open upstairs and fully open downstairs, like the buttons on each floor.
+# 2026-09-20: a missing scene is handed back as a `response` sentence; the earlier `error: true` stop
+# aborted the script, which Home Assistant reports to the agent as a success with an empty result.
 alias: Window Shades
 description: 'Voice tool for the Hunter Douglas window shades. ALWAYS use this tool to move shades or
   blinds. It fires the same gateway scene the wall scene-controller buttons use. Pick the room and the
@@ -132,8 +134,12 @@ sequence:
   - condition: template
     value_template: '{{ scene_id | length == 0 or expand(scene_id) | length == 0 }}'
   then:
+  - variables:
+      result:
+        response: 'Nothing was moved: the {{ room | replace(''_'', '' '') }} shades have no ''{{ position
+          }}'' scene on the Hunter Douglas gateway right now.'
   - stop: Unknown room or position for the shades, or the gateway scene does not exist
-    error: true
+    response_variable: result
 - action: scene.turn_on
   data:
     entity_id: '{{ scene_id }}'
