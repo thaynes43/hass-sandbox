@@ -57,8 +57,13 @@ Button → voice script (all `script.voice_*`, zero-argument, mirrored in
 No voice hold tools: Tom ruled them out on 2026-09-19 (holds are not used day to day).
 
 Media: TV auto-off `automation.media_basement_movie_room_no_occupancy_tv_off` (20 min, spoken
-warnings on the satellite). Nothing turns the TV/AVR on. Three duplicate AVR registrations
-(`media_player.str_az5000es`, `_2`, `_2210`) — do not expose until phase 3. The KEF LS50s (the
+warnings on the satellite). No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
+"Works with Sonos") **wakes itself** when the Sonos Port `media_player.movie_room` plays: power on
+after ~2 s, volume tracks the Port, input switches to `Sonos` (AVR recorder history, 2026-09-19
+17:08) — so music sent to this room is audible even with everything "off". Four AVR registrations:
+`media_player.str_az5000es` (songpal — the controllable one: power, volume, inputs), `_2` (DLNA),
+`_2210` (Chromecast) and `_2210_2` (Music Assistant's wrapper of the Chromecast; no area, does not
+group with Sonos) — do not expose until phase 3. The KEF LS50s (the
 Rumpus Room PC's speakers over HDMI) have three registrations: the two non-Music-Assistant ones
 (`media_player.ls50_wireless_ii_174476_2`, `_3`) stay unexposed; the Music Assistant one
 (`media_player.ls50_wireless_ii_174476_4`, "Rumpus Room Speakers") is in the Rumpus Room area and
