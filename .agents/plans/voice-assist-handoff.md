@@ -226,6 +226,13 @@ it cuts off its surrounds and Sub.
   Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources (research).
 - Parked with cold-start context: hass-sandbox #144 (live-HA defects the floor maps found, older
   ESPHome devices), #149 (human-facing voice page for the docs site), haynes-ops #2969.
+  **Both music defects found on 2026-09-20 are parked, not fixed:** haynes-ops#2996 — all four
+  Spotify provider instances fail to load every MA start (`Re-Authentication required` /
+  `Spotify playback authorization required`; predates that day's pod change, the 2026-09-19 pod
+  logged the same). Only Tom can fix it, in the MA UI. Until then every music request resolves
+  against the LOCAL library, which feeds haynes-ops#2994 — local FLACs on the NFS share
+  intermittently give no audio for 30 s (`Source stalled`), so a voice "play <artist>" can wait a
+  minute while MA skips items; the same files read in 0.3 s a few minutes later.
 - Deploy chain for any AppDaemon change: hass-sandbox PR → merge → GHCR image → haynes-ops `tag:`
   bump PR → `flux reconcile kustomization appdaemon -n home-automation --with-source` → rollout
   status → confirm on the PR. haynes-ops `Flux Local - Test (main)` flakes on Helm repo fetches:
