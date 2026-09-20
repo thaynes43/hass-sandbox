@@ -224,7 +224,8 @@ lights, the mudroom and entrance lights, the foyer chandelier and the bathroom g
 Voice tools on this floor (2026-09-19): `script.voice_kitchen_lights_off` (= Upstairs Foyer Chaos
 Config 1x, every kitchen light off) and `script.voice_entrance_all_off` (= Entrance Config 1x,
 entrance + mudroom + the three bathroom loads off). Both are literal copies of the button actions
-and are on the `assist_exposure_guard` script allowlist from v1.18.5. The **mode** of
+and are allowed by the guard's `script.voice_*` pattern (per-name entries from v1.18.5, the pattern
+since v1.19.2). The **mode** of
 `climate.first_floor_ecobee` ("downstairs": cool / heat / auto / off) goes through
 `script.voice_thermostat` (2026-09-20) — see *Basement*.
 

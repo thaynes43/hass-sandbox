@@ -10,7 +10,9 @@
 # The Cielo units only accept a temperature in a mode that has one (their supported_features change with
 # the mode; off/dry/fan_only have no target), hence the short wait after a mode change.
 # All-or-nothing: everything refusable is refused in the `problem` precheck BEFORE any call. A temperature
-# goes with cool or heat only (auto = heat_cool on the ecobees = two set points, not one). The one
+# goes with cool or heat only. That is the TOOL's rule, not a device fact: auto = heat_cool on the
+# ecobees = two set points; whether a Cielo takes one set point in auto comes from per-device cloud
+# capability data (cieloconnectapi mode_caps) and was not verifiable without switching the units. The one
 # path that can end half-applied is a unit too slow to confirm a new mode; its sentence says the mode
 # WAS set. Groups must hold one kind of thermostat (the auto/heat_cool name is resolved from the first).
 # Allowed by the guard pattern script.voice_* (v1.19.2).
@@ -63,9 +65,9 @@ fields:
         - 'off'
   temperature:
     name: Temperature
-    description: Target temperature in degrees Fahrenheit. Only together with cool or heat, or alone to
-      keep the current mode. Leave empty to only change the mode. dry, fan_only, auto and off take no
-      temperature.
+    description: Target temperature in degrees Fahrenheit. This tool accepts it only together with cool
+      or heat, or alone to keep the current mode; with any other mode the request is refused and nothing
+      changes. Leave empty to only change the mode.
     required: false
     selector:
       number:
@@ -111,9 +113,9 @@ sequence:
       '') }} is not responding right now.{% elif lacking_mode | length > 0 %}Nothing was changed: {{ lacking_mode
       | join('' and '') }} has no {{ wanted_mode | replace(''_'', '' '') }} mode. Only the basement mini
       splits have dry and fan only; the ecobees have cool, heat, auto and off.{% elif wanted_temperature
-      != '''' and wanted_mode not in ['''', ''cool'', ''heat''] %}Nothing was changed: {{ wanted_mode
-      | replace(''_'', '' '') }} mode takes no single temperature. Send the mode alone, or send cool or
-      heat with the temperature.{% endif %}'
+      != '''' and wanted_mode not in ['''', ''cool'', ''heat''] %}Nothing was changed: this tool sets
+      a temperature only together with cool or heat, or on its own. Send {{ wanted_mode | replace(''_'',
+      '' '') }} alone, or send cool or heat with the temperature.{% endif %}'
 - if:
   - condition: template
     value_template: '{{ problem | trim | length > 0 }}'
