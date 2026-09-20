@@ -163,6 +163,8 @@ class OtaCoordinator:
         # any use, and outlasting it is exactly what makes a genuine external
         # install invisible.
         self._abandoned: set[str] = set()
+        # friendly_name -> consecutive refreshes it has been absent from
+        self._absent: dict[str, int] = {}
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -381,29 +383,27 @@ class OtaCoordinator:
             rec.installed_version = str(attrs.get("installed_version"))
             rec.latest_version = str(attrs.get("latest_version"))
 
-        # Drop devices that disappeared (renamed, removed from Z2M, or no
-        # longer matching) — the queue is derived state. Absence from the
-        # snapshot is not proof of that: entity setup is not atomic, so a tick
-        # landing mid-restore gets a fraction of the update domain while the
-        # entity registry still names every device. Only the registry answer
-        # retires a record; a record whose entity is still registered is
-        # simply waiting for its state to be served again.
-        registered = self._z2m_entity_ids
-        for friendly in list(self._devices):
-            if friendly in seen:
-                continue
-            if registered is not None and self._devices[friendly].entity_id in registered:
-                continue
-            self._devices.pop(friendly)
-        # _parked and _abandoned are keyed by name, with no entity id to test,
-        # so they are only pruned on a dump that served every registered
-        # entity. A partial one leaves them alone rather than guessing.
-        complete = registered is None or registered <= set(snapshot)
-        if complete:
-            for friendly in list(self._parked):
-                if friendly not in present:
-                    self._parked.pop(friendly)
-            self._abandoned &= present
+        # Retire devices that disappeared (renamed, removed from Z2M, or no
+        # longer matching) — the queue is derived state. One absent snapshot
+        # is not proof of that: entity restore is not atomic, and
+        # integration_entities() tracks the state machine rather than the
+        # registry (verified on this install: 6591 entities, none outside the
+        # state machine), so mid-restart the identity set and the dump shrink
+        # together and nothing distinguishes a device that is gone from one
+        # whose state has not come back yet. Two consecutive absences do:
+        # a restore catches up within a tick, and a real removal is retired
+        # one tick later than it used to be, which costs nothing.
+        for friendly in set(self._devices) | set(self._parked) | self._abandoned:
+            if friendly in present:
+                self._absent.pop(friendly, None)
+            else:
+                self._absent[friendly] = self._absent.get(friendly, 0) + 1
+        gone = {name for name, count in self._absent.items() if count >= 2}
+        for friendly in gone:
+            self._devices.pop(friendly, None)
+            self._parked.pop(friendly, None)
+            self._absent.pop(friendly, None)
+        self._abandoned -= gone
 
         if adopted_candidate is not None and self._in_flight is None:
             self._in_flight = InFlight(

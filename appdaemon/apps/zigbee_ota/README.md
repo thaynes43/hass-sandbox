@@ -64,7 +64,9 @@ and widened in 2026-09 to every Z2M device.
   `in_progress` false clears it, however long that takes. The corollary is
   that if Home Assistant never clears the flag — which is exactly the
   `update_timeout_s` case, where Z2M went silent mid-transfer — the device
-  stays unadoptable until its entity goes `off` or `unavailable`. If you press
+  stays unadoptable until its entity goes `off`. An `unavailable` entity does
+  not lift it: that is an absence of information, and the device dropping off
+  the mesh is what made the transfer go silent in the first place. If you press
   Install and the app appears to ignore it, that is the state to look for;
   `last_event` and `in_flight.adopted` on the sensor say which.
 

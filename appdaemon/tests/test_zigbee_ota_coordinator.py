@@ -140,8 +140,11 @@ def test_exclude_globs() -> None:
 
 
 def test_vanished_entities_drop_from_queue() -> None:
+    """Two absences, not one — a single missing snapshot is a partial dump."""
     coord = make_coordinator()
     refresh(coord, snapshot("hue_a", "hue_b"))
+    refresh(coord, snapshot("hue_b"))
+    assert coord.status()["pending"] == ["hue_a", "hue_b"]  # still provisional
     refresh(coord, snapshot("hue_b"))
     assert coord.status()["pending"] == ["hue_b"]
 
@@ -596,6 +599,7 @@ def test_no_image_park_is_dropped_when_the_device_leaves_the_fleet() -> None:
     )
     assert coord.status()["skipped_no_image"] == ["hue_a"]
     refresh(coord, snapshot("hue_b"))  # hue_a removed from Z2M
+    refresh(coord, snapshot("hue_b"))  # confirmed on the second tick
     assert coord.status()["skipped_no_image"] == []
     refresh(coord, snapshot("hue_a", "hue_b"))
     assert "hue_a" in coord.status()["pending"]
@@ -1539,6 +1543,7 @@ def test_the_abandoned_mark_is_pruned_when_a_device_leaves_the_fleet() -> None:
     clock.advance(101)
     coord.decide()  # abandons hue_a
     refresh(coord, snapshot("hue_b"))  # hue_a leaves Z2M
+    refresh(coord, snapshot("hue_b"))  # confirmed on the second tick
     assert coord._abandoned == set()
 
 
@@ -1571,9 +1576,10 @@ def test_a_partial_state_dump_keeps_records_parks_and_backoff() -> None:
     assert before["skipped_no_image"] == ["hue_a"]
     assert before["cooldown"][0]["device"] == "hue_b"
 
-    # Home Assistant serves one of the three; the registry still names all.
-    coord.set_z2m_entities({"update.hue_a", "update.hue_b", "update.hue_c"})
-    coord.refresh_entities(snapshot("hue_c"))
+    # Home Assistant serves one of the three mid-restore, and the identity
+    # set shrinks with it — nothing distinguishes this from a departure
+    # except that it is over by the next tick.
+    refresh(coord, snapshot("hue_c"))
     after = coord.status()
     assert after["remaining"] == before["remaining"]
     assert after["skipped_no_image"] == ["hue_a"]
@@ -1581,12 +1587,29 @@ def test_a_partial_state_dump_keeps_records_parks_and_backoff() -> None:
     assert after["cooldown"][0]["attempts"] == 1
 
 
-def test_a_device_the_registry_drops_is_still_retired() -> None:
+def test_a_device_that_really_left_is_retired_on_the_second_tick() -> None:
     clock = FakeClock()
     coord = make_coordinator(clock)
     refresh(coord, snapshot("hue_a", "hue_b"))
     assert coord.status()["remaining"] == 2
-    refresh(coord, snapshot("hue_b"))  # hue_a gone from the registry too
+    refresh(coord, snapshot("hue_b"))
+    assert coord.status()["remaining"] == 2  # one absence proves nothing
+    refresh(coord, snapshot("hue_b"))
     status = coord.status()
     assert status["remaining"] == 1
     assert status["pending"] == ["hue_b"]
+
+
+def test_a_renamed_device_does_not_leave_an_immortal_record() -> None:
+    """A display-name rename keeps the entity id, so the old name is never
+    seen again and must still be retired."""
+    coord = make_coordinator(include_globs=["update.*"])
+    snap = {"update.hue_a": entity("old name")}
+    refresh(coord, snap)
+    assert coord.status()["pending"] == ["old name"]
+    snap = {"update.hue_a": entity("new name")}
+    refresh(coord, snap)
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["pending"] == ["new name"]
+    assert status["remaining"] == 1
