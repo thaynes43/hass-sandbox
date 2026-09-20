@@ -179,6 +179,15 @@ sequence:
         entity_id: '{{ eff_src }}'
       data:
         group_members: '{{ eff_targets }}'
+    - alias: When only a paused room had music, resume it, so the answer 'now also plays' is true
+      if:
+      - condition: template
+        value_template: '{{ is_state(eff_src, ''paused'') }}'
+      then:
+      - action: media_player.media_play
+        continue_on_error: true
+        target:
+          entity_id: '{{ eff_src }}'
     - delay:
         seconds: 3
     - variables:

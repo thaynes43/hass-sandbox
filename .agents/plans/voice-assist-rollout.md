@@ -378,7 +378,9 @@ soundbar then switched to the TV, the TV audio also played in the grouped bathro
 `automation.voice_stop_the_music_stop_and_ungroup` is a **sentence trigger** (it runs before the
 built-in intents, locally, ~0.3 s): it stops the music in the room the request comes from (or, if
 nothing plays there, wherever music is playing), unjoins the followers, and never touches a
-soundbar whose source is `TV`. "Pause" is untouched. Verified as the kitchen box (kitchen + living
+soundbar whose source is `TV` (a leader on its TV input keeps playing; only its followers are
+released). Music Assistant reports a *paused* Sonos group as `idle`, so grouped players are in scope
+even when idle, and "stop the music everywhere" covers every room. "Pause" is untouched. Verified as the kitchen box (kitchen + living
 room grouped → "Stopped.", both idle, group gone) and as the bedroom box with the TV on
 ("No music is playing.", TV untouched).
 

@@ -155,6 +155,7 @@ sequence:
     data:
       source_player: '{{ q_leader }}'
       auto_play: true
+    continue_on_error: true
 - variables:
     result:
       response: The music moved from {{ area_name(from_area) }} to {{ area_name(to_area) }}.
