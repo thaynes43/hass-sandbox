@@ -372,6 +372,16 @@ source, made Music Assistant tear the group apart and the music died after a sec
 uses the group's **leader** and leaves an existing group alone. Verified by replaying Tom's exact
 phrases as the bedroom box: bedroom + bathroom in sync, held.
 
+**"Stop" ungroups, "pause" keeps the group (Tom's ruling, 2026-09-19).** Home Assistant's built-in
+intent answers "stop the music" with *Paused* and leaves a speaker group together; when the bedroom
+soundbar then switched to the TV, the TV audio also played in the grouped bathroom.
+`automation.voice_stop_the_music_stop_and_ungroup` is a **sentence trigger** (it runs before the
+built-in intents, locally, ~0.3 s): it stops the music in the room the request comes from (or, if
+nothing plays there, wherever music is playing), unjoins the followers, and never touches a
+soundbar whose source is `TV`. "Pause" is untouched. Verified as the kitchen box (kitchen + living
+room grouped → "Stopped.", both idle, group gone) and as the bedroom box with the TV on
+("No music is playing.", TV untouched).
+
 **Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
 the bedroom).** Two defects found by that test, plus a third (no default player, routing order
 item 4 above) found while fixing them; all fixed live and verified by text-as-satellite — mostly on
