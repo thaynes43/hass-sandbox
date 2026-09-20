@@ -200,7 +200,7 @@ mode: restart
 | Lights turn off immediately despite hold | Hold guard only checked before delay, not after | Add second hold check after the `delay:` action |
 | Occupancy off delay not respected | Using `for:` on trigger instead of action `delay:` | Remove trigger `for:`, use action `delay:` reading from the helper |
 | Only control switch in hold registry | Extra sensors (non-control) added to hold/clear scripts | Only add the single control switch to hold/clear registries |
-| Lights turn off with someone standing at the switch | mmWave detection area excludes boresight (positive `width_min`), and/or sensitivity below `High` | Re-tune the zone — see *Reference: tuning the mmWave detection zone* |
+| Lights turn off with someone standing there | mmWave detection area does not cover where people actually stand, and/or sensitivity below `High` | Measure with `mmwavetargetinforeport`, then re-tune — see *Reference: tuning the mmWave detection zone* |
 
 ---
 
@@ -247,6 +247,8 @@ Common suffixes (after `<switch_name>_`):
 - `number.<switch_name>_mmwavewidthmin` / `mmwavewidthmax`
 - `number.<switch_name>_mmwaveheightmin` / `mmwaveheightmax`
 - `sensor.<switch_name>_mmwave_control_commands`
+- `select.<switch_name>_mmwavetargetinforeport` — enable to get live target coordinates
+- `sensor.<switch_name>_mmwave_targets` — the coordinates themselves, once reporting is enabled
 
 > **The `mmwave{width,depth,height}{min,max}` numbers do NOT apply the detection area on their
 > own** — the radar keeps the old zone until `setDetectionArea` is commanded. See
@@ -292,9 +294,13 @@ data:
   # presence switches, but not for every device (see agent-docs/hue-power-on-behavior.md)
   topic: zigbee2mqtt/<switch_name>/set
   payload: >-
-    {"mmwave_detection_areas": {"area1": {"width_min": -150, "width_max": 300,
-     "height_min": -300, "height_max": 300, "depth_min": 0, "depth_max": 250}}}
+    {"mmwave_detection_areas": {"area1": {"width_min": <x_min>, "width_max": <x_max>,
+     "height_min": <z_min>, "height_max": <z_max>, "depth_min": 0, "depth_max": <y_max>}}}
 ```
+
+**Get those numbers from the device, not from your head** — see *Measuring where people actually
+are* below, and do it before you publish anything. For reference, the concessions zone ended up at
+`width -350..300, depth 0..400, height -300..300`, but that is one room's geometry, not a default.
 
 Set the number entities to the same values too, so the HA-facing config matches what the radar runs.
 
@@ -321,6 +327,49 @@ Don't try to tell them apart from a wider `--since`. Re-publish while tailing th
 (`kubectl logs -f -n home-automation deploy/zigbee2mqtt | grep <switch_name>`) so you see the
 command and the device's answer as they happen. HA's cached attributes cannot settle this, which is
 the whole point of reading the device's own answer.
+
+### Measuring where people actually are (do this before guessing at numbers)
+
+Do not tune the box by eye. The device will tell you exactly where it sees people:
+
+```yaml
+action: select.select_option
+target: { entity_id: select.<switch_name>_mmwavetargetinforeport }
+data: { option: "Enable" }
+```
+
+The device then publishes `mmwave_targets` roughly once a second — a list of
+`{id, x, y, z, dop}` where **x = width, y = depth, z = height** in cm, on the same axes as the
+detection box, and `dop` is doppler. Walk the zone (or have someone stand where the misses happen)
+and collect a minute of samples:
+
+```bash
+kubectl logs -n home-automation deploy/zigbee2mqtt --since=6m \
+  | grep "topic 'zigbee2mqtt/<switch_name>'" \
+  | grep -o '"mmwave_targets":\[[^]]*\]'
+```
+
+`sensor.<switch_name>_mmwave_targets` carries the same list in HA, so for a quick look you can
+just read that entity instead of the log:
+
+```
+sensor.basement_concessions_inovelli_presence_mmwave_targets
+  = "[{'dop': 600, 'id': 1, 'x': -70, 'y': 93, 'z': -50}]"
+```
+
+It only holds the latest sample, so use the log when you want the spread rather than an instant.
+Then set the box around the observed `x`/`y` spread with margin. This turns the whole exercise from
+guesswork into measurement — on the concessions zone it showed people standing at `x ≈ -173`
+(1.7 m to the **left**), `y ≈ 264`, while the configured box was `width 55..300, depth 0..100`:
+wrong on both axes, and a first "widened" guess of `width -150..300, depth 0..250` was *still*
+wrong on both. Only the measurement settled it.
+
+A target with a **constant non-zero `dop` that never moves** is a machine, not a person (a
+compressor or a fan). If one sits inside your detection box and holds occupancy on, that is what
+interference areas are for.
+
+**Turn reporting back off when you are done** — it is a ~1 Hz MQTT publish and HA state write per
+device, which is real recorder growth if left on.
 
 ### Interference (mask) areas
 
