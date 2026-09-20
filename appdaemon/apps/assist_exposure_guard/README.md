@@ -61,7 +61,7 @@ area" is one click. This app is the backstop for that click (owner ruling,
 | 4 | `deny_integrations` | Every entity whose registry `platform` matches |
 | 5 | `deny_entity_globs` | `fnmatch` patterns over the entity id |
 | 6 | `switch_allowlist` | The `switch` domain is **deny by default** — a switch is exposed by name, never by area |
-| 7 | `script_allowlist_globs` | An exposed script is an unrestricted tool — the shipped default names every allowed script explicitly, no patterns |
+| 7 | `script_allowlist_globs` | An exposed script is an unrestricted tool — the shipped default allows `script.voice_*` plus a short list of other scripts named explicitly |
 
 Ordering matters for the notification text: a PDU outlet is reported as
 "matches denied pattern `switch.usp_pdu_pro_*`" rather than the generic
@@ -243,35 +243,19 @@ deny_entity_globs:
   - "light.ratgdov25i_*"
   - "switch.spa_intouch3_switch"
   - "switch.nrz120804q_*"
+  - "script.voice_*unlock*"        # direction backstop for the script.voice_* pattern:
+  - "script.voice_*open*garage*"  # voice may lock, close and arm, never the inverse
+  - "script.voice_*garage*open*"
+  - "script.voice_*disarm*"
 # Exterior light relays — each switch only powers a light circuit.
 switch_allowlist:
   - "switch.back_yard_retaining_wall_lights_relay"  # patio retaining-wall lights
   - "switch.shed_exterior_lights_shelly_relay"      # shed flowerbox lights
   - "switch.back_yard_backyard_motion_light_relay"  # powers the back-yard MOTION flood fixture: off = no motion light until its 00:00 schedule
-# No patterns on purpose — see below.
+# One pattern — the voice tools — plus every other allowed script by name.
 script_allowlist_globs:
-  - "script.voice_movie_room_bright"
-  - "script.voice_movie_room_dim"
-  - "script.voice_movie_room_red_night_mode"
-  - "script.voice_movie_room_ambient_scene"
-  - "script.voice_movie_room_color_toggle"
-  - "script.voice_rumpus_room_bright"
-  - "script.voice_rumpus_room_dim"
-  - "script.voice_rumpus_room_color_toggle"
-  - "script.voice_shades"
-  - "script.voice_primary_bathroom_lights_on"
-  - "script.voice_primary_bathroom_lights_off"
-  - "script.voice_primary_bathroom_shower_lights"
-  - "script.voice_cloffice_bright"
-  - "script.voice_kitchen_lights_off"
-  - "script.voice_entrance_all_off"
-  - "script.voice_lock_all_doors"
-  - "script.voice_close_garage_doors"
-  - "script.voice_hot_tub_mode_on"
-  - "script.voice_hot_tub_mode_off"
+  - "script.voice_*"
   - "script.llm_script_for_music_assistant_voice_requests"
-  - "script.voice_move_music"
-  - "script.voice_group_music"
   - "script.kellie_mobile_primary_bedroom_relaxed"
   - "script.kellie_mobile_primary_bedroom_focused"
   - "script.kellie_mobile_primary_bedroom_bedtime"
@@ -279,23 +263,38 @@ script_allowlist_globs:
 allow_entities: []
 ```
 
-### Why the script list has no patterns
+### Why the script list carries one pattern
 
 An exposed script is an unrestricted tool: whatever the script does, the model
-can do. `script.voice_lock_all_doors` and `script.voice_close_garage_doors` are
-the only doors into the dangerous set, and they are safe because of what is
-written inside them (lock-only, close-only, the three exterior doors) — exactly
-the kind of power that must be reviewed rather than inferred from a filename.
-The guard pins the script's **entity id**; the safety argument lives in the script
-**body**, which is editable from the HA UI without touching this repo — re-read
-the body in HA whenever these two entries are reviewed.
+can do. `script.voice_*` is the naming convention for the hand-written voice
+tools, and the shipped default allows that pattern (owner ruling, 2026-09-20);
+every other allowed script is named explicitly.
 
-A glob such as `script.voice_*` would make the **filename** the security
-boundary: anyone creating `script.voice_anything` later would hand the voice
-agent a tool nobody looked at. So every allowed script is named explicitly.
-Adding a new voice tool means adding it to this list in the same PR that
-creates the script. (The config key is still `fnmatch`-matched, so an operator
-*can* configure a pattern — the shipped default simply does not.)
+Unlike `switch` and `scene`, HA never auto-exposes a script — `script` is not in
+HA's `DEFAULT_EXPOSED_DOMAINS` (checked in the installed 2026.9.2 source), so
+the "expose new entities" default never reaches one. A script becomes exposed
+only when someone deliberately exposes it, and naming a script `voice_…` is a second deliberate
+act. The per-name list never pinned behaviour either: the guard pins an entity
+**id**, while the power lives in the script **body**, which is editable from the
+HA UI without touching this repo. In practice it cost seven AppDaemon releases
+in three days, with no enforcement on record (`last_enforced: never` on
+2026-09-20).
+
+The pattern cannot tell a safe direction from an unsafe one, so the inverse
+names — `unlock`, `disarm`, or `open` + `garage` anywhere in a `script.voice_`
+id — are in `deny_entity_globs`, which is evaluated before the script
+allowlist. That is a backstop for an honest mistake, not a boundary:
+a name is not a body.
+
+`script.voice_lock_all_doors` and `script.voice_close_garage_doors` are still
+the only doors into the dangerous set, and they are safe because of what is
+written inside them (lock-only, close-only, the three exterior doors) — re-read
+the body in HA whenever they are reviewed.
+
+Consequence: a **new** `script.voice_*` tool may be exposed with no code change
+and no release. Any other script — like the four `script.kellie_mobile_*`
+bedroom modes — still needs an explicit entry in both `rules.py` and
+`apps-prod.yaml`, and therefore a release, before it may be exposed.
 
 ## Manual setup required
 
@@ -320,9 +319,10 @@ Standalone. Nothing else in this repo reads its sensor or its events.
 It is, however, the enforcement half of the voice-assistant rollout: the
 curation half (per-room exposure proposals, spoken aliases, the hand-written
 `script.voice_*` tools) is applied by hand in HA. **When a curated room adds a
-switch or a script, add it to `switch_allowlist` / `script_allowlist_globs` in
-BOTH `rules.py` (the default) and `apps-prod.yaml`, in the same PR** —
-`test_prod_yaml_rule_lists_equal_the_code_defaults` fails when only one of the
-two is edited (fix the drift, never the test), and without the entry this app
-un-exposes the new tool within `check_interval_minutes`. That coupling is the point: a new voice tool gets
-reviewed here or it does not reach a voice agent.
+switch — or a script not named `script.voice_*` — add it to `switch_allowlist` /
+`script_allowlist_globs` in BOTH `rules.py` (the default) and `apps-prod.yaml`,
+in the same PR** — `test_prod_yaml_rule_lists_equal_the_code_defaults` fails
+when only one of the two is edited (fix the drift, never the test), and without
+the entry this app un-exposes the new tool within `check_interval_minutes`.
+A new `script.voice_*` tool needs no entry and no release: the shipped pattern
+already covers it.

@@ -25,10 +25,15 @@ turns up, and then the new device. Tom speaks to the box; you read what actually
 - Voice exposure follows the physical controls: one floor at a time, concepts scripted like the
   wall buttons (`script.voice_*`), never raw dangerous entities. Locks, garage doors, alarm,
   pool/spa gear are **ask + secure only** (status sensors, lock-only and close-only scripts).
-- A new voice **script** or **switch** must be on the `assist_exposure_guard` allowlist
-  (`rules.py` + `apps-prod.yaml` + README + the test's curated tuple), released and deployed
-  **before** it is exposed; otherwise the guard un-exposes it in ~30 s and pushes Tom's phone.
-  Lights, fans, climate, media players, covers (non-garage) and sensors pass without a release.
+- A new voice **script** named `script.voice_*` needs no release: since v1.19.2 (Tom's ruling
+  2026-09-20) the `assist_exposure_guard` allows that pattern, so create it, expose it, test it,
+  then mirror it under `home-assistant/scripts/voice/` in a PR. A script with any other name, and
+  every **switch**, must still be on the guard allowlist (`rules.py` + `apps-prod.yaml` + README +
+  the test), released and deployed **before** it is exposed; otherwise the guard un-exposes it in
+  ~30 s and pushes Tom's phone. Lights, fans, climate, media players, covers (non-garage) and
+  sensors pass without a release.
+- A voice tool reports a refusal with `stop:` + `response_variable` (a `response` sentence), never
+  `error: true`: an error stop aborts the script and HA tells the agent the call succeeded.
 - Review bots are Opus 5 and re-review fresh on every push: single-purpose PRs, batch a round's
   fixes into one push, merge after round 2 unless a HIGH/behavioural finding is open, answer the
   rest on the PR. Check a bot's claim against the installed HA source before "fixing" it.
@@ -37,8 +42,11 @@ turns up, and then the new device. Tom speaks to the box; you read what actually
 
 ## Live state at handoff
 
-- AppDaemon `ghcr.io/thaynes43/appdaemon:1.18.7` (2026-09-19 evening); guard: 114 exposed entities, 0 violations,
-  `switch_allowlist=3`.
+- AppDaemon `ghcr.io/thaynes43/appdaemon:1.19.2` (2026-09-20; PR #169 and its rollout); guard:
+  scripts allowed by `script.voice_*` (unsafe-direction names denied), `switch_allowlist=3`,
+  115 exposed entities once `script.voice_thermostat` is exposed, 0 violations. Check the running
+  tag before trusting this line: `kubectl get deploy appdaemon -n home-automation -o
+  jsonpath='{..image}'`.
 - HA core 2026.9.2. All four agents: `gpt-5.6-terra`, reasoning `none`, verbosity low, priority
   tier, web search on; each prompt = Tom's persona + one shared block. All pipelines: HA Cloud STT
   + HA Cloud TTS, `prefer_local_intents: true`.
@@ -120,7 +128,10 @@ House-wide things any box should handle: exterior lights (porch, front door, "la
 lamp post — `unavailable` in HA at handoff, driveway, back yard, garage, "flood light", "motion
 flood light", "patio lights", "shed lights"), hot tub mode ("I'm going in the hot tub" →
 `script.voice_hot_tub_mode_on`; off refuses while a spa light is on), the kids' rooms (everything
-their ZEN32s do), both thermostats.
+their ZEN32s do), both ecobees and the two basement mini splits. Thermostat **modes** ("dry mode",
+"fan only", "set the upstairs thermostat to cool") and anything said to "the basement thermostats"
+go through `script.voice_thermostat` (2026-09-20): Assist has no set-mode intent and its
+set-temperature intent takes one thermostat only.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special
 handling: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**

@@ -66,6 +66,15 @@ exposed since 2026-09-19 so that box's music has somewhere to play — it plays 
 other room, with no volume handling (the speakers keep their own level per input; the earlier
 save / 50 % / restore logic was removed on 2026-09-19) (`.agents/plans/voice-assist-rollout.md`, Phase 3).
 
+Thermostats (2026-09-20): `script.voice_thermostat` is the one voice tool for thermostat **modes**
+(cool / heat / dry / fan only / auto / off) and for the pair of basement mini splits — Assist has no
+set-mode intent, and its set-temperature intent takes a single thermostat, so "set the basement
+thermostats to dry mode" failed on both counts. Fixed list: `rumpus_room`, `movie_room`, `basement`
+(both Cielo units), `downstairs`, `upstairs` (the ecobees; no dry / fan only). A single thermostat's
+temperature still goes through the built-in intent — which cannot match a Cielo unit that is **off**
+(no target-temperature feature in that state); the tool can, when it is given a mode with the
+temperature.
+
 Defects found (open): Movie ZEN37 buttons 3 ×2 / 4 ×2 call
 `number.movie_room_breeze_target_temperature`, which does not exist (the Cielo controller has
 only `climate.movie_room_breeze`) while `button-mappings.md` documents them as working;
@@ -178,7 +187,8 @@ just disable automations.
 Voice tools on this floor (2026-09-19): `script.voice_primary_bathroom_lights_on` / `_lights_off`
 / `_shower_lights` (the three bathroom config buttons), `script.voice_cloffice_bright` (cloffice
 ZEN32 big 2x) and the Iris lamp `light.den_hue_iris_light`; shades go through
-`script.voice_shades`.
+`script.voice_shades`. The floor's thermostat is `climate.second_floor_ecobee` ("upstairs"); its
+**mode** (cool / heat / auto / off) goes through `script.voice_thermostat` — see *Basement*.
 
 **Never expose `switch.upstairs_*_scene_controller`** — the ZEN32 relay is line power to the
 Modern Forms fan module.
@@ -214,7 +224,10 @@ lights, the mudroom and entrance lights, the foyer chandelier and the bathroom g
 Voice tools on this floor (2026-09-19): `script.voice_kitchen_lights_off` (= Upstairs Foyer Chaos
 Config 1x, every kitchen light off) and `script.voice_entrance_all_off` (= Entrance Config 1x,
 entrance + mudroom + the three bathroom loads off). Both are literal copies of the button actions
-and are on the `assist_exposure_guard` script allowlist from v1.18.5.
+and are allowed by the guard's `script.voice_*` pattern (per-name entries from v1.18.5, the pattern
+since v1.19.2). The **mode** of
+`climate.first_floor_ecobee` ("downstairs": cool / heat / auto / off) goes through
+`script.voice_thermostat` (2026-09-20) — see *Basement*.
 
 | Area | Physical controls (mapped buttons only) | Concepts → handle | Ownership / voice caveat |
 |---|---|---|---|

@@ -251,6 +251,9 @@ def test_the_shipped_switch_allowlist_is_exactly_the_curated_set() -> None:
     assert DEFAULT_RULES.switch_allowlist == CURATED_SWITCHES
 
 
+#: The scripts actually exposed to Assist in HA today.  Kept as a literal list
+#: even though `script.voice_*` now covers most of them: it is the regression
+#: net for the shipped allowlist, so a narrowed pattern is caught here.
 CURATED_SCRIPTS = (
     "script.voice_movie_room_bright",
     "script.voice_movie_room_dim",
@@ -274,6 +277,19 @@ CURATED_SCRIPTS = (
     "script.llm_script_for_music_assistant_voice_requests",
     "script.voice_move_music",
     "script.voice_group_music",
+    "script.voice_thermostat",
+    "script.kellie_mobile_primary_bedroom_relaxed",
+    "script.kellie_mobile_primary_bedroom_focused",
+    "script.kellie_mobile_primary_bedroom_bedtime",
+    "script.kellie_mobile_primary_bedroom_sleep",
+)
+
+
+#: What `rules.py` actually ships: the `script.voice_*` convention plus every
+#: other allowed script by name (owner ruling, 2026-09-20).
+SHIPPED_SCRIPT_ALLOWLIST = (
+    "script.voice_*",
+    "script.llm_script_for_music_assistant_voice_requests",
     "script.kellie_mobile_primary_bedroom_relaxed",
     "script.kellie_mobile_primary_bedroom_focused",
     "script.kellie_mobile_primary_bedroom_bedtime",
@@ -283,17 +299,30 @@ CURATED_SCRIPTS = (
 
 @pytest.mark.parametrize("entity_id", CURATED_SCRIPTS)
 def test_allowlisted_scripts_stay_exposed(entity_id: str) -> None:
+    """Every script actually exposed in HA today must still pass the guard."""
     assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
 
 
-def test_the_shipped_script_allowlist_is_exactly_the_curated_set() -> None:
-    assert DEFAULT_RULES.script_allowlist_globs == CURATED_SCRIPTS
+def test_the_shipped_script_allowlist_is_exactly_the_documented_default() -> None:
+    assert DEFAULT_RULES.script_allowlist_globs == SHIPPED_SCRIPT_ALLOWLIST
 
 
-def test_the_shipped_script_allowlist_contains_no_patterns() -> None:
-    """A glob would make a filename the security boundary — see README."""
-    for entry in DEFAULT_RULES.script_allowlist_globs:
-        assert not any(ch in entry for ch in "*?["), entry
+def test_the_only_shipped_script_pattern_is_the_voice_prefix() -> None:
+    """One pattern, and it is the reviewed one — everything else is by name."""
+    patterns = [
+        entry
+        for entry in DEFAULT_RULES.script_allowlist_globs
+        if any(ch in entry for ch in "*?[")
+    ]
+    assert patterns == ["script.voice_*"]
+
+
+def test_a_new_voice_tool_is_allowed_without_a_release() -> None:
+    """The point of the pattern: a brand-new voice tool needs no code change."""
+    assert (
+        evaluate_entity(ExposedEntity("script.voice_some_future_tool"), DEFAULT_RULES)
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -303,13 +332,13 @@ def test_the_shipped_script_allowlist_contains_no_patterns() -> None:
         "script.disarm_alarm",
         "script.unlock_front_door",
         "script.kellie_mobile_kitchen_bedtime",
-        "script.voicemail_check",
-        # A new script named to look curated must NOT be allowed: the list is
-        # the boundary, not the filename.
-        "script.voice_anything",
-        "script.voice_unlock_all_doors",
-        "script.voice_movie_room_bright_2",
         "script.kellie_mobile_primary_bedroom_party",
+        # `script.voice_*` needs the underscore: these are NOT voice tools.
+        "script.voicemail_check",
+        "script.voicemail_purge",
+        # The prefix is anchored — `voice` in the middle does not qualify.
+        "script.my_voice_tool",
+        "script.run_voice_macro",
     ],
 )
 def test_non_allowlisted_scripts_are_violations(entity_id: str) -> None:
@@ -318,8 +347,71 @@ def test_non_allowlisted_scripts_are_violations(entity_id: str) -> None:
     assert violation.rule == RULE_SCRIPT_ALLOWLIST
 
 
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        "script.voice_unlock_all_doors",
+        "script.voice_unlock_front_door",
+        "script.voice_open_garage_doors",
+        "script.voice_open_garage",
+        "script.voice_disarm_alarm",
+        # The word anywhere, in either order, with or without a suffix.
+        "script.voice_unlock",
+        "script.voice_disarm",
+        "script.voice_front_door_unlock",
+        "script.voice_garage_open",
+        "script.voice_garage_doors_open",
+        "script.voice_open_the_garage_doors",
+        "script.voice_alarm_disarm",
+    ],
+)
+def test_unsafe_direction_voice_scripts_are_refused_before_the_pattern(
+    entity_id: str,
+) -> None:
+    """`script.voice_*` is allowed, but never the inverse of the secure-direction tools.
+
+    The deny globs run before the script allowlist, so the violation names the
+    pattern, not the generic allowlist reason.
+    """
+    violation = evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES)
+    assert violation is not None
+    assert violation.rule == RULE_ENTITY_GLOB
+
+
+@pytest.mark.parametrize(
+    "entity_id",
+    [
+        "script.voice_lock_all_doors",
+        "script.voice_close_garage_doors",
+        # `open` is only refused for the garage: shades and rooms open by voice.
+        "script.voice_open_shades",
+        "script.voice_shades",
+        "script.voice_garage_lights_on",
+    ],
+)
+def test_the_direction_backstop_leaves_the_secure_direction_alone(entity_id: str) -> None:
+    assert evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES) is None
+
+
+@pytest.mark.parametrize(
+    ("entity_id", "rule"),
+    [
+        ("automation.voice_thing", RULE_DOMAIN),
+        ("scene.voice_movie_night", RULE_DOMAIN),
+        ("switch.voice_x", RULE_SWITCH_DEFAULT_DENY),
+    ],
+)
+def test_the_voice_pattern_does_not_leak_into_other_domains(
+    entity_id: str, rule: str
+) -> None:
+    """`script.voice_*` is domain-anchored: a voice_-named non-script is denied."""
+    violation = evaluate_entity(ExposedEntity(entity_id), DEFAULT_RULES)
+    assert violation is not None
+    assert violation.rule == rule
+
+
 def test_script_allowlist_globs_are_configurable() -> None:
-    """The key stays fnmatch-capable even though the default uses no patterns."""
+    """An operator can replace the shipped pattern with their own."""
     rules = GuardRules.from_config({"script_allowlist_globs": ["script.ok_*"]})
     assert evaluate_entity(ExposedEntity("script.ok_thing"), rules) is None
     assert evaluate_entity(ExposedEntity("script.voice_shades"), rules) is not None
