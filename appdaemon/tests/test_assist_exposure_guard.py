@@ -278,6 +278,7 @@ CURATED_SCRIPTS = (
     "script.voice_move_music",
     "script.voice_group_music",
     "script.voice_thermostat",
+    "script.voice_stop_music",
     "script.kellie_mobile_primary_bedroom_relaxed",
     "script.kellie_mobile_primary_bedroom_focused",
     "script.kellie_mobile_primary_bedroom_bedtime",

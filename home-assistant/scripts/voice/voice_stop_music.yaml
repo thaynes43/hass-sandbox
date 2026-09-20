@@ -132,11 +132,13 @@ sequence:
 - alias: 'Both calls carry continue_on_error, so look at what really happened before answering: a false
     ''stopped'' is exactly what the HassTurnOff path used to give. A player that is still PAUSED was not
     stopped either (a stopped Music Assistant player reports idle): pause versus stop is the whole point
-    of this tool'
+    of this tool. Followers are checked too: when the leader is a soundbar on its TV input no stop command
+    is sent at all, and a released speaker that really fell silent reports idle'
   delay:
     seconds: 2
 - variables:
-    still_playing: '{{ stop_list | select(''is_state'', [''playing'', ''paused'']) | list }}'
+    still_playing: '{{ (stop_list + followers) | unique | select(''is_state'', [''playing'', ''paused''])
+      | list }}'
     still_grouped: '{% set ns = namespace(g=[]) %}{% for p in (stop_list + followers) | unique %}{% if
       (state_attr(p, ''group_members'') or []) | count > 1 %}{% set ns.g = ns.g + [p] %}{% endif %}{%
       endfor %}{{ ns.g }}'

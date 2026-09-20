@@ -104,9 +104,11 @@ scripts/voice-bench/run.sh door_status_check.py    # locks/garage truth vs what 
 - Music tools the agents have (2026-09-20): Play Music, Move Music, Group Music and **Stop Music**
   (`script.voice_stop_music`). Tom's first spoken group test (Movie Room Port + Rumpus KEFs) found:
   the KEFs join but play **out of sync** — Music Assistant moves both onto AirPlay 2 and logs
-  `Cannot bind UDP 319: Permission denied … sync … degraded`, because the pod runs non-root (uid 568,
-  no capabilities, hostNetwork) and cannot open the PTP clock port (haynes-ops, waits for Tom's
-  ruling); a joining KEF plays at its own Music Assistant level (it was 25 %, barely audible — Tom's
+  `Cannot bind UDP 319: Permission denied … sync … degraded`, because the pod ran non-root (uid 568,
+  no capabilities, hostNetwork) and could not open the PTP clock port. **Fixed the same day**
+  (haynes-ops#2995, Tom's ruling: run it as upstream documents — root, default capabilities; the
+  new pod has `NET_BIND_SERVICE` effective). Still to hear with Tom: that a KEF + Sonos group now
+  stays in sync (a fixed offset through the AVR may remain and would be tuned separately); a joining KEF plays at its own Music Assistant level (it was 25 %, barely audible — Tom's
   ruling stands: no volume logic); Group Music's leader hand-over now only auto-plays when the group
   was playing.
 - Never run the synthetic **voice** modes (`MODE=voice`) against a room: a mis-transcription turned
