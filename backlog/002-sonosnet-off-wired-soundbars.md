@@ -1,9 +1,29 @@
 # 002 — Sonos: SonosNet off, soundbars back on Ethernet
 
-**Status:** Planned (decided by Tom 2026-09-19; blocked only on Tom being home — the Sonos app
-cannot reach the system over VPN, it needs his phone on the home Wi-Fi)
+**Status:** In progress — mostly done 2026-09-19 evening (see *Outcome*); left: the Primary Bedroom
+Beam and the Movie Room Port still have no Ethernet link
 **Size:** Small (about an hour with Tom present; no code)
 **Raised:** 2026-09-19, during the first spoken music test of the Primary Bedroom voice box
+
+## Outcome (2026-09-19, ~20:15)
+
+Tom ran the Disable SonosNet wizard and enabled ports 3, 5, 6 and 7 of the Switch Pro Max 48 PoE
+(port profile "Auto", spanning tree on — the storm-control / loop-protection settings below were
+not applied and turned out not to be needed). Verified after each step:
+
+- all 19 units report `SonosNetDisabled=1`, none went offline; the wired Amps' mesh neighbour tables
+  went from ~13 peers to 0 (the Ethernet↔mesh bridging is gone);
+- **port 3 = Blue Room Beam, port 5 = Pink Room Beam, port 6 = Living Room Arc** (the switch shows
+  an Era 300's MAC there: the Arc carries its satellites' traffic; the satellites are not wired),
+  **port 7 = White Room Beam** — all 100 Mb, forwarding, `ConnectionTypeString` = Ethernet;
+- every up port on the switch forwarding, none blocking; broadcast+multicast at or below the
+  afternoon baseline (uplinks 3–12 pps). No loop, no storm.
+
+Still on Wi-Fi: the **Primary Bedroom Beam** (the one that dropped streams) and the **Movie Room
+Port** — their Ethernet ports show no link, so their cables are unplugged or land elsewhere (ports
+26, 30, 45 of the Pro Max 48 are enabled on Default with nothing linked); and the Shed SYMFONISK
+(always was). Still owed once the bedroom Beam is wired: confirm Ethernet, re-test bedroom music,
+DHCP reservations for the wired units.
 
 ## Problem
 
