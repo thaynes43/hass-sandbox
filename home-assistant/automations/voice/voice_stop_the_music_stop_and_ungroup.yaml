@@ -24,10 +24,13 @@ actions:
     area: '{{ area_id(trigger.device_id) if trigger.device_id else '''' }}'
 - variables:
     here: '{{ (area_entities(area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
-      ''media_player\.'') | first | default('''', true)) if area else '''' }}'
-- alias: Music players = playing or paused and NOT on the TV input
+      ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')
+      | first | default('''', true)) if area else '''' }}'
+- alias: Music players = playing or paused and NOT on the TV input; 'everywhere' in the sentence means
+    every playing player, not just this room
   variables:
-    active: '{% set ns = namespace(p=[]) %}{% set pool = [here] if here != '''' and states(here) in [''playing'',
+    active: '{% set ns = namespace(p=[]) %}{% set everywhere = ''everywhere'' in (trigger.sentence | default('''',
+      true) | lower) %}{% set pool = [here] if not everywhere and here != '''' and states(here) in [''playing'',
       ''paused''] and state_attr(here, ''source'') != ''TV'' else (integration_entities(''music_assistant'')
       | select(''match'', ''media_player\.'') | select(''is_state'', ''playing'') | list) %}{% for p in
       pool %}{% if state_attr(p, ''source'') != ''TV'' %}{% set ns.p = ns.p + [p] %}{% endif %}{% endfor

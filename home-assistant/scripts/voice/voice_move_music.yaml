@@ -6,6 +6,8 @@
 # Rooms are a FIXED LIST (select), not an area selector: with an area field Home Assistant 2026.9 crashes
 # the whole voice request (IndexError in helpers/llm.py, the box blinks red) when the agent passes a room
 # name it cannot match exactly, e.g. "bathroom" for the area "Primary Bathroom" (first voice test, 2026-09-19).
+# The queue is taken from the LEADER of the source room's group and the old group is dissolved first,
+# so no group is left behind on an idle soundbar (it would replay that room's TV audio elsewhere).
 alias: Move Music
 description: 'Voice tool that MOVES the music that is already playing from one room to another: the same
   song carries on in the new room and stops in the old one. Use it for ''move the music to the living
@@ -116,19 +118,43 @@ sequence:
     response_variable: result
 - if:
   - condition: template
-    value_template: '{{ states(src) not in [''playing'', ''paused''] }}'
+    value_template: '{{ states(src) not in [''playing'', ''paused''] or state_attr(src, ''source'') ==
+      ''TV'' }}'
   then:
   - variables:
       result:
         response: 'Nothing was moved: nothing is playing in {{ area_name(from_area) }}.'
   - stop: Nothing playing in the source room
     response_variable: result
-- action: music_assistant.transfer_queue
-  target:
-    entity_id: '{{ dst }}'
-  data:
-    source_player: '{{ src }}'
-    auto_play: true
+- alias: 'The queue belongs to the LEADER of the source room''s group. The old group is dissolved first:
+    a group left behind on an idle soundbar replays that room''s TV audio in the other rooms later'
+  variables:
+    old_group: '{{ state_attr(src, ''group_members'') or [] }}'
+- variables:
+    q_leader: '{{ old_group | first | default(src, true) }}'
+    old_followers: '{{ old_group[1:] if old_group | count > 1 else [] }}'
+- if:
+  - condition: template
+    value_template: '{{ old_followers | count > 0 }}'
+  then:
+  - action: media_player.unjoin
+    continue_on_error: true
+    target:
+      entity_id: '{{ old_followers }}'
+  - delay:
+      seconds: 2
+- alias: When the target room was the leader all along the music is already there; otherwise hand the
+    queue over
+  if:
+  - condition: template
+    value_template: '{{ q_leader != dst }}'
+  then:
+  - action: music_assistant.transfer_queue
+    target:
+      entity_id: '{{ dst }}'
+    data:
+      source_player: '{{ q_leader }}'
+      auto_play: true
 - variables:
     result:
       response: The music moved from {{ area_name(from_area) }} to {{ area_name(to_area) }}.

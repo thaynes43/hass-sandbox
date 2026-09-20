@@ -138,13 +138,15 @@ sequence:
             response: 'Nothing changed: fewer than two of those rooms have a Music Assistant speaker.'
       - stop: No usable speakers
         response_variable: result
-    - alias: 'A room that is really PLAYING decides (the source room first, then the others); only when
-        nothing plays does a paused room count. The LEADER of that room''s group is the source: joining
-        onto a member makes Music Assistant tear the group apart and the music stops'
+    - alias: 'A room that is really PLAYING MUSIC decides (source room first, then the others); a soundbar
+        on its TV input does not count, or the TV audio would be shared. Only when nothing plays does
+        a paused room count. The LEADER of that room''s group is the source: joining onto a member makes
+        Music Assistant tear the group apart and the music stops'
       variables:
-        playing_room: '{% set order = (([src] if src != '''' else []) + everyone) | unique | list %}{{
-          order | select(''is_state'', ''playing'') | first | default(order | select(''is_state'', ''paused'')
-          | first | default('''', true), true) }}'
+        playing_room: '{% set ns = namespace(o=[]) %}{% for p in ((([src] if src != '''' else []) + everyone)
+          | unique | list) %}{% if state_attr(p, ''source'') != ''TV'' %}{% set ns.o = ns.o + [p] %}{%
+          endif %}{% endfor %}{{ ns.o | select(''is_state'', ''playing'') | first | default(ns.o | select(''is_state'',
+          ''paused'') | first | default('''', true), true) }}'
     - variables:
         eff_src: '{{ ((state_attr(playing_room, ''group_members'') or []) | first | default(playing_room,
           true)) if playing_room != '''' else '''' }}'
