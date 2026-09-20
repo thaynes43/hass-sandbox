@@ -40,12 +40,6 @@ RESULT_BUSY = "busy"
 STATUS_LIST_CAP = 25
 ERROR_TEXT_CAP = 120
 
-# How long a fresh completion suppresses adopting an in_progress flag on the
-# same device. The staleness this guards is one MQTT -> HA -> AppDaemon hop
-# plus a bulb rebooting into `unavailable`: tens of seconds. The much longer
-# completed_suppress_s would ignore a genuine external install for minutes.
-ADOPTION_SUPPRESS_S = 60.0
-
 _OFFLINE_ERROR_MARKERS = ("respond", "timeout", "timed out", "offline", "unreachable")
 _BUSY_ERROR_MARKERS = ("already in progress",)
 # Z2M answers "No image currently available" (and, older, "No image available")
@@ -163,9 +157,12 @@ class OtaCoordinator:
         self._global_busy_until: float = 0.0
         self._completed: list[dict[str, Any]] = []  # this process lifetime only
         self._recently_completed: dict[str, float] = {}
-        # Every terminal outcome, not just the successful ones: the stale
-        # in_progress snapshot that blocks adoption follows a failure too.
-        self._recently_settled: dict[str, float] = {}
+        # Devices whose attempt has settled while Home Assistant may still be
+        # showing in_progress. Anchored to device state rather than a clock:
+        # a wall-clock window would have to outlast the tick interval to be
+        # any use, and outlasting it is exactly what makes a genuine external
+        # install invisible.
+        self._abandoned: set[str] = set()
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -290,12 +287,14 @@ class OtaCoordinator:
                 # gate: the retained availability topics are delivered to the
                 # MQTT plugin before this app has a listener, so a device that
                 # was already offline at startup has no MQTT record at all.
+                self._abandoned.discard(friendly)
                 self.set_availability(friendly, False)
                 seen.add(friendly)
                 continue
             self.set_availability(friendly, True)
             if state != "on":
                 # Nothing is on offer any more, so nothing is being skipped.
+                self._abandoned.discard(friendly)
                 parked = self._parked.pop(friendly, None)
                 # Work out whether anything actually installed.
                 existing = self._devices.pop(friendly, None)
@@ -343,19 +342,14 @@ class OtaCoordinator:
                 completed_ts is not None
                 and self.now() - completed_ts < self.completed_suppress_s
             )
-            # HA's update entity lags Z2M by a few seconds, and that stale
-            # snapshot still carries in_progress: true. Keyed on the last
-            # settle of any kind — a failed attempt leaves the same stale flag,
-            # and there the entity stays "on", so a phantom adoption would only
-            # be released by the four-hour timeout.
-            settled_ts = self._recently_settled.get(friendly)
-            stale_in_progress = (
-                settled_ts is not None
-                and self.now() - settled_ts < ADOPTION_SUPPRESS_S
-            )
+            in_progress = bool(attrs.get("in_progress"))
+            if not in_progress:
+                # Home Assistant has caught up: whatever we settled is no
+                # longer showing, so a future in_progress is a real install.
+                self._abandoned.discard(friendly)
             if (
-                attrs.get("in_progress")
-                and not stale_in_progress
+                in_progress
+                and friendly not in self._abandoned
                 and (
                     self._in_flight is None
                     or self._in_flight.friendly_name != friendly
@@ -365,7 +359,10 @@ class OtaCoordinator:
                 # update must be adopted even for a device we would otherwise
                 # pass over, or decide() starts a second one alongside it.
                 # Z2M's in-progress guard is per device and would not reject
-                # the second request.
+                # the second request. Suppressed for a device we just settled,
+                # whose flag Home Assistant has not cleared yet — adopting
+                # that is a phantom flight only the four-hour timeout ends,
+                # and the timeout would re-adopt it, forever.
                 adopted_candidate = friendly
             if friendly in self._parked and self._still_parked(friendly, attrs):
                 continue
@@ -660,7 +657,7 @@ class OtaCoordinator:
         if fl is None:
             return
         self._in_flight = None
-        self._recently_settled[fl.friendly_name] = self.now()
+        self._abandoned.add(fl.friendly_name)
         rec = self._devices.get(fl.friendly_name)
         if result == RESULT_SUCCESS:
             if rec is not None:
@@ -747,7 +744,7 @@ class OtaCoordinator:
         """Park a device Z2M cannot install right now. No attempt is burned and
         no backoff is scheduled — a retry would only get the same answer."""
         rec = self._devices.pop(friendly, None)
-        self._recently_settled[friendly] = self.now()
+        self._abandoned.add(friendly)
         # latest_version None = not known yet (a response for a device we
         # weren't tracking); the next refresh learns it and keeps skipping.
         self._parked[friendly] = ParkedDevice(
@@ -763,11 +760,10 @@ class OtaCoordinator:
         self, friendly: str, rec: DeviceRecord, attrs: dict[str, Any]
     ) -> None:
         self._recently_completed[friendly] = self.now()
-        # Also a settle: its three other callers (a late ok, an entity going
-        # off, an external install on a parked device) would otherwise leave
-        # the adoption gate open on a device whose in_progress flag is about
-        # to be stale.
-        self._recently_settled[friendly] = self.now()
+        # Also a settle: its three callers outside _finish_in_flight would
+        # otherwise leave the gate open on a device whose in_progress flag is
+        # about to be stale.
+        self._abandoned.add(friendly)
         self._completed.append(
             {
                 "device": friendly,
@@ -793,10 +789,12 @@ class OtaCoordinator:
         ``cooldown`` holds every device waiting on a schedule, whether it
         failed or was only bounced by a busy Z2M; ``attempts`` says which.
         A device appears in exactly one of ``in_flight``, ``pending`` and
-        ``cooldown``, with two gaps: during a global busy window a device
+        ``cooldown``, with three gaps: during a global busy window a device
         whose own schedule has elapsed is in none of them (``busy_until``
-        explains it), and a cooling-down device adopted from an external
-        install shows only under ``in_flight``.
+        explains it); a cooling-down device adopted from an external install
+        shows only under ``in_flight``; and a device whose backoff has
+        elapsed while it is still unavailable shows only under ``offline``,
+        which is the overnight steady state on a fleet with battery sensors.
         """
         ts = self.now()
         in_flight_name = self._in_flight.friendly_name if self._in_flight else None

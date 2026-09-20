@@ -1209,8 +1209,10 @@ def test_a_parked_device_updating_externally_is_still_adopted() -> None:
     )
     assert coord.status()["skipped_no_image"] == ["hue_a"]
 
-    # Someone installs it from the Z2M frontend, minutes later.
+    # A tick passes with the flag clear, then someone installs it from the
+    # Z2M frontend.
     clock.advance(120)
+    refresh(coord, snapshot("hue_a", "hue_b"))
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1254,7 +1256,8 @@ def test_an_adopted_update_with_no_record_is_released_when_it_ends() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    clock.advance(120)  # the external install starts minutes later
+    clock.advance(120)
+    refresh(coord, snapshot("hue_a", "hue_b"))  # a tick with the flag clear
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1269,8 +1272,9 @@ def test_an_adopted_update_with_no_record_is_released_when_it_ends() -> None:
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
 
-def test_a_genuine_external_install_is_adopted_after_the_stale_window() -> None:
-    """The adoption gate guards seconds of snapshot lag, not ten minutes."""
+def test_a_genuine_external_install_is_adopted_once_the_flag_clears() -> None:
+    """Suppression lifts on device state, not a clock — so an install after
+    Home Assistant has caught up is adopted however long it took."""
     clock = FakeClock()
     coord = make_coordinator(clock)
     refresh(coord, snapshot("hue_a", "hue_b"))
@@ -1278,7 +1282,9 @@ def test_a_genuine_external_install_is_adopted_after_the_stale_window() -> None:
     coord.on_update_response(
         {"status": "ok", "transaction": decision.transaction, "data": {"id": "hue_a"}}
     )
-    clock.advance(120)  # past the adoption window, inside completed_suppress_s
+    clock.advance(120)
+    refresh(coord, snapshot("hue_a", "hue_b"))  # the flag has cleared
+    clock.advance(4000)  # and the install comes much later
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1301,7 +1307,8 @@ def test_an_external_install_on_a_parked_device_is_recorded() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    clock.advance(120)  # the external install starts minutes later
+    clock.advance(120)
+    refresh(coord, snapshot("hue_a", "hue_b"))  # a tick with the flag clear
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1331,7 +1338,8 @@ def test_an_external_install_that_changed_nothing_is_not_recorded() -> None:
             "data": {"id": "hue_a"},
         }
     )
-    clock.advance(120)  # the external install starts minutes later
+    clock.advance(120)
+    refresh(coord, snapshot("hue_a", "hue_b"))  # a tick with the flag clear
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1427,6 +1435,7 @@ def test_the_in_flight_device_is_never_also_listed_in_cooldown() -> None:
     assert coord.status()["cooldown"][0]["device"] == "hue_a"
     # Someone installs the cooling-down device from the Z2M frontend.
     clock.advance(120)
+    refresh(coord, snapshot("hue_a", "hue_b"))  # a tick with the flag clear
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
@@ -1453,6 +1462,43 @@ def test_a_completion_closes_the_adoption_gate_too() -> None:
     )
     assert coord.status()["completed_count_this_run"] == 1
     # The next tick still sees the stale in_progress flag.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_the_absolute_timeout_does_not_re_adopt_what_it_just_abandoned() -> None:
+    """update_timeout_s fires on an attempt that WAS transferring, so the
+    retained state topic still says updating and HA still reads in_progress.
+    Re-adopting that is a phantom only the same timeout can end — forever."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 40})
+    clock.advance(1001)
+    assert coord.decide() is None  # timed out, staggered
+    # The next scheduled tick, well outside any wall-clock window.
+    clock.advance(301)
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)  # still stale
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_the_never_started_abort_does_not_re_adopt_either() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    coord.decide()
+    clock.advance(101)
+    assert coord.decide() is None  # abandoned, staggered
+    clock.advance(301)
     snap = snapshot("hue_b")
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
