@@ -503,3 +503,29 @@ def test_an_empty_state_dump_does_not_wipe_the_queue() -> None:
     status = app._coordinator.status()
     assert status["remaining"] == before  # the queue survived
     assert status["identity_source"].startswith("stale")
+
+
+def test_a_dump_without_update_entities_does_not_wipe_the_queue() -> None:
+    """A Home Assistant restart serves other domains before the update
+    platform sets up; the dump is non-empty but carries no update.* at all."""
+    app = _make_app(
+        update_snapshot={
+            "update.hue_a": _entity("hue_a"),
+            "update.hue_b": _entity("hue_b"),
+        }
+    )
+    _run(app._tick({}))
+    assert len(_published_requests(app)) == 1
+    assert app._coordinator.status()["remaining"] == 2
+
+    async def no_updates(entity: str | None = None, **kwargs: Any) -> Any:
+        if entity is None:
+            return {"light.some_light": {"state": "on", "attributes": {}}}
+        return None
+
+    app.get_state = MagicMock(side_effect=no_updates)
+    _run(app._tick({}))
+    assert len(_published_requests(app)) == 1
+    status = app._coordinator.status()
+    assert status["remaining"] == 2
+    assert status["identity_source"].startswith("stale")

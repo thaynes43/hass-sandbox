@@ -202,23 +202,29 @@ class ZigbeeOtaOrchestrator(hass.Hass):
             # Domain queries can't combine with attribute="all" in AppDaemon,
             # so take the full state dump and filter to update.* ourselves.
             snapshot = await self.get_state()
-            if not isinstance(snapshot, dict) or not snapshot:
-                # AppDaemon hands back None mid-reconnect. An empty dump is
-                # never the truth for this install, and treating it as one
-                # would drop every device's backoff and every park — the same
-                # defect the empty-identity guard exists for.
-                reason = "Home Assistant state snapshot unavailable"
+            update_entities = (
+                {
+                    entity_id: payload
+                    for entity_id, payload in snapshot.items()
+                    if entity_id.startswith("update.")
+                    and isinstance(payload, dict)
+                }
+                if isinstance(snapshot, dict)
+                else {}
+            )
+            if not update_entities:
+                # AppDaemon hands back None mid-reconnect, and a Home Assistant
+                # restart serves other domains before the update platform sets
+                # up. Either way an empty update domain is not the truth, and
+                # applying it would drop every device's backoff and every park
+                # — the same defect the empty-identity guard exists for. The
+                # check is on the filtered view, because that is what
+                # refresh_entities would act on.
+                reason = "no Home Assistant update entities in the state snapshot"
                 self._coordinator.mark_identity_unavailable(reason)
                 self.log("%s — starting nothing this tick" % reason, level="WARNING")
             else:
-                self._coordinator.refresh_entities(
-                    {
-                        entity_id: payload
-                        for entity_id, payload in snapshot.items()
-                        if entity_id.startswith("update.")
-                        and isinstance(payload, dict)
-                    }
-                )
+                self._coordinator.refresh_entities(update_entities)
             if await self._paused():
                 self._publish_status(paused=True)
                 return
