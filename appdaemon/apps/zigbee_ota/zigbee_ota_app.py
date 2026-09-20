@@ -95,7 +95,8 @@ class ZigbeeOtaOrchestrator(hass.Hass):
             park_recheck_s=float(args.get("park_recheck_s", 86400)),
             # A device must be missing for a whole scan interval before it is
             # retired, so a partial state dump can't drop the fleet's state.
-            retire_grace_s=float(self._scan_interval_s),
+            # Shaded below the interval so scheduler jitter doesn't decide it.
+            retire_grace_s=float(self._scan_interval_s) * 0.9,
         )
         self.log(
             "ZigbeeOtaOrchestrator starting: globs=%s scan_interval=%ss"

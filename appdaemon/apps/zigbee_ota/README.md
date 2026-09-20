@@ -45,12 +45,20 @@ and widened in 2026-09 to every Z2M device.
   it on completion or failure). Progress (`progress`/`remaining`) is read from
   the device state topic's `update` object.
 
+  Nothing starts while *any* managed device's entity reports `in_progress`,
+  whether or not this app started it and whether or not the device is one it
+  would otherwise skip — that set is on the sensor as `transferring`. Z2M's
+  in-progress guard is per device, so it would not reject a second request;
+  this is what does. The cost is that a stale flag delays the next start until
+  Home Assistant clears it, which is the right way round: a stalled queue is
+  visible on the sensor, a doubled transfer is not.
+
   The two timeouts below are the exception, and they are optimistic by
   necessity: Z2M has no cancel API, so giving up on an attempt cannot close
   Z2M's side of it. Both only fire on an attempt that has transferred nothing
   or gone silent for hours, and the next device is staggered by
-  `busy_backoff_s` — but if Z2M's operation is somehow still open, a second
-  one can exist alongside it. `progress_stall_s` only ever gives up on an
+  `busy_backoff_s` — and if the device's entity still reports `in_progress`,
+  the `transferring` guard above holds the queue anyway. `progress_stall_s` only ever gives up on an
   attempt that transferred nothing at all, and never on an adopted one;
   `update_timeout_s` is the blunt backstop and will release an attempt that
   was still transferring when it went silent four hours ago.
@@ -122,7 +130,7 @@ and widened in 2026-09 to every Z2M device.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, `adopted`, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (everything waiting on a schedule and not in flight — per-device attempts / `retry_at` / last error; `attempts: 0` means it was bounced by a busy Z2M rather than having failed), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, `adopted`, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (everything waiting on a schedule and not in flight — per-device attempts / `retry_at` / last error; `attempts: 0` means it was bounced by a busy Z2M rather than having failed), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `transferring`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
 The lists are capped at 25 entries with a `*_count` beside them, and every
 schedule is an absolute time (`retry_at`, `busy_until`, `started_at`) rather

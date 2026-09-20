@@ -168,8 +168,10 @@ class OtaCoordinator:
         # any use, and outlasting it is exactly what makes a genuine external
         # install invisible.
         self._abandoned: set[str] = set()
-        # friendly_name -> when it was first absent from a refresh
+        # friendly_name -> when it was first absent from a usable refresh
         self._absent: dict[str, float] = {}
+        # Managed devices whose entity says a transfer is under way.
+        self._transferring: set[str] = set()
         self._parked: dict[str, ParkedDevice] = {}  # not installable right now
         self._cleared: list[dict[str, Any]] = []
         self._failed_attempts: int = 0
@@ -266,14 +268,18 @@ class OtaCoordinator:
             # queue from a snapshot we can't match against a trustworthy list
             # would drop devices that are still there. Checked first so
             # last_event keeps the reason mark_identity_unavailable just set.
+            # A skipped refresh is not evidence of absence, so it cannot age
+            # one: start the clock again when Home Assistant can be read.
+            self._absent.clear()
             return
         if not self.identity_ready:
             self._last_event = (
                 "no Zigbee2MQTT device list yet — nothing queued"
             )
+            self._absent.clear()
             return
-        seen: set[str] = set()
         present: set[str] = set()
+        transferring: set[str] = set()
         adopted_candidate: Optional[str] = None
         for entity_id, payload in snapshot.items():
             if not self._entity_matches(entity_id):
@@ -300,7 +306,6 @@ class OtaCoordinator:
                 # transfer go silent, so this flap is the expected condition
                 # around the timeout this suppression exists for.
                 self.set_availability(friendly, False)
-                seen.add(friendly)
                 continue
             self.set_availability(friendly, True)
             if state != "on":
@@ -354,6 +359,11 @@ class OtaCoordinator:
                 and self.now() - completed_ts < self.completed_suppress_s
             )
             in_progress = bool(attrs.get("in_progress"))
+            if in_progress:
+                # Recorded whatever else we decide about this device. Z2M's
+                # in-progress guard is per device, so a transfer we are not
+                # tracking is still a transfer on the mesh.
+                transferring.add(friendly)
             if not in_progress:
                 # Home Assistant has caught up: whatever we settled is no
                 # longer showing, so a future in_progress is a real install.
@@ -380,7 +390,6 @@ class OtaCoordinator:
             if just_finished:
                 # Don't re-queue a device we just finished off a stale snapshot.
                 continue
-            seen.add(friendly)
             rec = self._devices.get(friendly)
             if rec is None:
                 rec = DeviceRecord(entity_id=entity_id, friendly_name=friendly)
@@ -399,6 +408,7 @@ class OtaCoordinator:
         # interval does: a restore catches up well inside one, and a real
         # removal is retired a tick later than it used to be, which costs
         # nothing.
+        self._transferring = transferring
         tracked = set(self._devices) | set(self._parked) | self._abandoned
         # Rebuilt, not updated in place: a record popped outside a refresh (a
         # success, or a late ok) would otherwise keep a stale mark and be
@@ -634,6 +644,20 @@ class OtaCoordinator:
             return None
         if self._identity_stale is not None:
             # The device list could not be refreshed this tick; don't guess.
+            return None
+        others_transferring = sorted(
+            self._transferring
+            - ({fl.friendly_name} if fl is not None else set())
+        )
+        if others_transferring:
+            # Something on the mesh is mid-transfer that we are not tracking:
+            # an external install, or an attempt we timed out on that Z2M is
+            # still running. Starting another would put two transfers on the
+            # air, which is the one thing this app must never do. A stale flag
+            # only delays the next start until Home Assistant clears it, and
+            # a stalled queue is visible on the sensor where a doubled
+            # transfer would not be.
+            self._last_event = f"holding: {others_transferring[0]} still transferring"
             return None
         if ts < self._global_busy_until:
             return None
@@ -890,6 +914,7 @@ class OtaCoordinator:
             "cleared_without_update_count": len(self._cleared),
             "failed_attempts_this_run": self._failed_attempts,
             "busy_until": _at(self._global_busy_until) if ts < self._global_busy_until else "",
+            "transferring": sorted(self._transferring)[:STATUS_LIST_CAP],
             "z2m_devices_known": self.z2m_device_count,
             "identity_source": self._identity_source(),
             "last_event": self._last_event,

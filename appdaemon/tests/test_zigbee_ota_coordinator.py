@@ -910,10 +910,14 @@ def test_an_adopted_update_is_never_abandoned_early() -> None:
     clock.advance(101)  # no progress published yet
     assert coord.decide() is None  # hue_b must NOT start
     assert coord.status()["in_flight"]["device"] == "hue_c"
-    # The absolute timeout is still the backstop (plus the busy stagger).
+    # The absolute timeout is the backstop, but nothing else starts while
+    # hue_c's entity still reports a transfer.
     clock.advance(900)
     assert coord.decide() is None
     clock.advance(301)
+    assert coord.decide() is None
+    assert "still transferring" in coord.status()["last_event"]
+    refresh(coord, snapshot("hue_b", "hue_c"))  # hue_c's flag clears
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1101,12 +1105,16 @@ def test_a_busy_bounce_does_not_make_the_device_the_next_pick() -> None:
 def test_every_completion_entry_has_the_same_shape() -> None:
     """The success path where the record is already gone must not publish a
     differently shaped entry — a card reading .version would get undefined."""
-    coord = make_coordinator()
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
     refresh(coord, snapshot("hue_a", "hue_b"))
     first = coord.decide()
     assert first is not None and first.friendly_name == "hue_a"
-    # hue_a leaves the fleet mid-attempt, so its record is dropped.
+    # hue_a leaves the fleet mid-attempt, so its record is retired.
     refresh(coord, snapshot("hue_b"))
+    clock.advance(121)
+    refresh(coord, snapshot("hue_b"))
+    assert coord.status()["in_flight"]["device"] == "hue_a"  # flight survives
     coord.on_update_response(
         {"status": "ok", "transaction": first.transaction, "data": {"id": "hue_a"}}
     )
@@ -1247,6 +1255,8 @@ def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_success() -> None:
     snap["update.hue_a"] = entity("hue_a", in_progress=True)  # stale
     refresh(coord, snap)
     assert coord.status()["in_flight"] == {}
+    assert coord.decide() is None  # held while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1384,6 +1394,8 @@ def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_failure() -> None:
     status = coord.status()
     assert status["in_flight"] == {}
     assert status["failed_attempts_this_run"] == 1  # not a second one
+    assert coord.decide() is None  # and nothing starts while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1404,6 +1416,8 @@ def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_park() -> None:
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
     assert coord.status()["in_flight"] == {}
+    assert coord.decide() is None  # held while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1475,6 +1489,8 @@ def test_a_completion_closes_the_adoption_gate_too() -> None:
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
     assert coord.status()["in_flight"] == {}
+    assert coord.decide() is None  # held while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1496,6 +1512,8 @@ def test_the_absolute_timeout_does_not_re_adopt_what_it_just_abandoned() -> None
     snap["update.hue_a"] = entity("hue_a", in_progress=True)  # still stale
     refresh(coord, snap)
     assert coord.status()["in_flight"] == {}
+    assert coord.decide() is None  # held while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1512,6 +1530,8 @@ def test_the_never_started_abort_does_not_re_adopt_either() -> None:
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
     assert coord.status()["in_flight"] == {}
+    assert coord.decide() is None  # held while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1536,6 +1556,8 @@ def test_an_unavailable_tick_does_not_reopen_the_adoption_gate() -> None:
     snap["update.hue_a"] = entity("hue_a", in_progress=True)
     refresh(coord, snap)
     assert coord.status()["in_flight"] == {}
+    assert coord.decide() is None  # held while the flag is set
+    refresh(coord, snapshot("hue_a", "hue_b"))
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
 
@@ -1647,3 +1669,105 @@ def test_a_stale_absence_mark_does_not_retire_a_requeued_device() -> None:
     refresh(coord, snapshot("hue_a", "hue_b"))  # back, mark cleared
     refresh(coord, snapshot("hue_b"))  # absent again, only just now
     assert coord.status()["remaining"] == 2
+
+
+def test_an_outage_between_partial_dumps_does_not_age_an_absence() -> None:
+    """A skipped refresh is not evidence of absence: a partial dump, a spell
+    of unusable ticks, then another partial dump must not retire the fleet."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, retire_grace_s=120)
+    refresh(coord, snapshot("hue_a", "hue_b", "hue_c"))
+    assert coord.status()["remaining"] == 3
+    refresh(coord, snapshot("hue_c"))  # partial dump
+
+    # Home Assistant is bouncing: the identity lookup fails for a while.
+    for _ in range(5):
+        clock.advance(120)
+        coord.mark_identity_unavailable("HA restarting")
+        coord.refresh_entities(snapshot("hue_c"))
+    assert coord.status()["remaining"] == 3
+
+    clock.advance(120)
+    refresh(coord, snapshot("hue_c"))  # still partial, first usable tick back
+    assert coord.status()["remaining"] == 3
+    clock.advance(120)
+    refresh(coord, snapshot("hue_c"))  # now genuinely absent across a grace
+    assert coord.status()["remaining"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Never two transfers on the mesh
+# ---------------------------------------------------------------------------
+
+
+def test_a_timed_out_transfer_still_running_blocks_the_next_device() -> None:
+    """update_timeout_s gives our slot back, but Z2M has no cancel API — if
+    the entity still says the device is transferring, nothing else may start."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, update_timeout_s=1000, progress_stall_s=2000)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 40})
+    # It is genuinely still transferring when the four hours are up.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    clock.advance(1001)
+    assert coord.decide() is None  # timed out, staggered
+    clock.advance(301)  # busy window gone
+    assert coord.decide() is None
+    assert "hue_a still transferring" in coord.status()["last_event"]
+    assert coord.status()["transferring"] == ["hue_a"]
+
+    # Only when Home Assistant says it has stopped does the queue resume.
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_released_no_progress_transfer_still_running_blocks_too() -> None:
+    """The 45-minute release assumes nothing was sent; if the progress
+    messages were simply lost, the transfer is real and must still block."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    clock.advance(101)
+    assert coord.decide() is None  # released, staggered
+    clock.advance(301)
+    assert coord.decide() is None
+    assert coord.status()["transferring"] == ["hue_a"]
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_an_external_update_on_a_parked_device_blocks_new_starts() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    # Parked and abandoned, so it will not be adopted; it is transferring all
+    # the same, and that is what decides whether anything else may start.
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    assert coord.status()["in_flight"] == {}
+    assert coord.status()["transferring"] == ["hue_a"]
+    assert coord.decide() is None
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    nxt = coord.decide()
+    assert nxt is not None and nxt.friendly_name == "hue_b"
