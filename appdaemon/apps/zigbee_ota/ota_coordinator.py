@@ -493,7 +493,16 @@ class OtaCoordinator:
         if any(marker in lowered for marker in _BUSY_ERROR_MARKERS):
             # Another OTA (ours after a local timeout, or manual) is running.
             self._global_busy_until = self.now() + self.busy_backoff_s
-            if matches_flight and fl is not None and not fl.adopted:
+            if (
+                transaction is not None
+                and matches_flight
+                and fl is not None
+                and not fl.adopted
+            ):
+                # Only ever ours: pressing Install in the Home Assistant UI
+                # publishes the same request without a transaction, and Z2M's
+                # per-device guard answers it with exactly this error. Matching
+                # that by name would release a transfer that is running.
                 # Our request never started; requeue without burning an attempt.
                 self._in_flight = None
                 rec = self._devices.get(fl.friendly_name)
@@ -783,6 +792,7 @@ class OtaCoordinator:
         it.
         """
         ts = self.now()
+        in_flight_name = self._in_flight.friendly_name if self._in_flight else None
         cooldown = sorted(
             (
                 {
@@ -794,6 +804,7 @@ class OtaCoordinator:
                 }
                 for rec in self._devices.values()
                 if rec.next_attempt_ts > ts
+                and rec.friendly_name != in_flight_name
             ),
             key=lambda item: item["device"],
         )
@@ -812,7 +823,6 @@ class OtaCoordinator:
             for name, park in self._parked.items()
             if park.reason == PARK_UNKNOWN
         )
-        in_flight_name = self._in_flight.friendly_name if self._in_flight else None
         pending = sorted(
             rec.friendly_name
             for rec in self._devices.values()

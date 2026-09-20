@@ -1389,3 +1389,48 @@ def test_a_stale_in_progress_snapshot_is_not_adopted_after_a_park() -> None:
     assert coord.status()["in_flight"] == {}
     nxt = coord.decide()
     assert nxt is not None and nxt.friendly_name == "hue_b"
+
+
+def test_a_manual_install_busy_answer_does_not_release_our_transfer() -> None:
+    """Install in the HA UI publishes the same request with no transaction,
+    and Z2M's per-device guard answers it with the busy error."""
+    coord = make_coordinator()
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    coord.on_device_update_obj("hue_a", {"state": "updating", "progress": 30})
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "Update or check already in progress for 'hue_a'",
+            "data": {"id": "hue_a"},
+        }
+    )
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"  # still transferring
+    assert coord.decide() is None  # hue_b must not start alongside it
+
+
+def test_the_in_flight_device_is_never_also_listed_in_cooldown() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    decision = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "some failure",
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    assert coord.status()["cooldown"][0]["device"] == "hue_a"
+    # Someone installs the cooling-down device from the Z2M frontend.
+    clock.advance(120)
+    snap = snapshot("hue_b")
+    snap["update.hue_a"] = entity("hue_a", in_progress=True)
+    refresh(coord, snap)
+    status = coord.status()
+    assert status["in_flight"]["device"] == "hue_a"
+    assert [item["device"] for item in status["cooldown"]] == []
+    assert status["cooldown_count"] == 0
