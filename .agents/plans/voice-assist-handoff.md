@@ -96,8 +96,11 @@ scripts/voice-bench/run.sh door_status_check.py    # locks/garage truth vs what 
   `violations_last_run`, `last_enforced_entities`) and `kubectl logs -n home-automation
   deploy/appdaemon -c app | grep assist_exposure_guard`.
 - There is **no silent music player**: the Movie Room Port wakes the AVR by itself (see the table
-  below). Play test music only with Tom's OK for that room, keep it short, stop it, and check every
-  player **and** `media_player.str_az5000es` afterwards.
+  below). Play test music only with Tom's OK for that room and keep it short. Note the AVR's state
+  and source **before** the test; afterwards stop the music, check every player, and put
+  `media_player.str_az5000es` back: the wake overwrites its source and volume and leaves it on, so
+  if it was off, turn it off again (`media_player.turn_off`), and if it was on another input, select
+  that input again.
 - Never run the synthetic **voice** modes (`MODE=voice`) against a room: a mis-transcription turned
   the Rumpus lights on at night once. Text (`MODE=pipe`) or Tom's real voice only.
 
