@@ -1540,3 +1540,53 @@ def test_the_abandoned_mark_is_pruned_when_a_device_leaves_the_fleet() -> None:
     coord.decide()  # abandons hue_a
     refresh(coord, snapshot("hue_b"))  # hue_a leaves Z2M
     assert coord._abandoned == set()
+
+
+def test_a_partial_state_dump_keeps_records_parks_and_backoff() -> None:
+    """Entity setup is not atomic: a tick landing mid-restore gets part of the
+    update domain while the registry still names every device."""
+    clock = FakeClock()
+    coord = make_coordinator(clock, progress_stall_s=100)
+    refresh(coord, snapshot("hue_a", "hue_b", "hue_c"))
+    decision = coord.decide()
+    assert decision is not None and decision.friendly_name == "hue_a"
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": NO_IMAGE,
+            "transaction": decision.transaction,
+            "data": {"id": "hue_a"},
+        }
+    )
+    nxt = coord.decide()
+    coord.on_update_response(
+        {
+            "status": "error",
+            "error": "some failure",
+            "transaction": nxt.transaction,
+            "data": {"id": "hue_b"},
+        }
+    )
+    before = coord.status()
+    assert before["skipped_no_image"] == ["hue_a"]
+    assert before["cooldown"][0]["device"] == "hue_b"
+
+    # Home Assistant serves one of the three; the registry still names all.
+    coord.set_z2m_entities({"update.hue_a", "update.hue_b", "update.hue_c"})
+    coord.refresh_entities(snapshot("hue_c"))
+    after = coord.status()
+    assert after["remaining"] == before["remaining"]
+    assert after["skipped_no_image"] == ["hue_a"]
+    assert after["cooldown"][0]["device"] == "hue_b"
+    assert after["cooldown"][0]["attempts"] == 1
+
+
+def test_a_device_the_registry_drops_is_still_retired() -> None:
+    clock = FakeClock()
+    coord = make_coordinator(clock)
+    refresh(coord, snapshot("hue_a", "hue_b"))
+    assert coord.status()["remaining"] == 2
+    refresh(coord, snapshot("hue_b"))  # hue_a gone from the registry too
+    status = coord.status()
+    assert status["remaining"] == 1
+    assert status["pending"] == ["hue_b"]

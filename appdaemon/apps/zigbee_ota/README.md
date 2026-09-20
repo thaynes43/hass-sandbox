@@ -53,12 +53,24 @@ and widened in 2026-09 to every Z2M device.
   was still transferring when it went silent four hours ago.
 - **Externally started updates are adopted** — if an update is already
   `in_progress` (started from the Z2M frontend or HA), the app waits for it
-  instead of dueling. The exception is the minute after the app's own attempt
-  on that device settled, where an `in_progress` is Home Assistant's entity
-  still catching up rather than a new install. A Z2M "already in progress"
-  error requeues the device without burning a retry attempt, but holds it
-  behind the rest of the fleet for `busy_backoff_s` + `retry_base_s` so the
-  queue doesn't spin on it.
+  instead of dueling, and that check runs before every skip, so an install on
+  a device the app itself would pass over (parked, cooling down) is still
+  adopted rather than run alongside a second one.
+
+  Adoption is suppressed for a device whose own attempt has just settled,
+  because Home Assistant's `in_progress` flag lags and adopting a stale one
+  creates a phantom that only `update_timeout_s` could end. That suppression
+  lifts on device state rather than a timer: the first tick that reads
+  `in_progress` false clears it, however long that takes. The corollary is
+  that if Home Assistant never clears the flag — which is exactly the
+  `update_timeout_s` case, where Z2M went silent mid-transfer — the device
+  stays unadoptable until its entity goes `off` or `unavailable`. If you press
+  Install and the app appears to ignore it, that is the state to look for;
+  `last_event` and `in_flight.adopted` on the sensor say which.
+
+  A Z2M "already in progress" error requeues the device without burning a
+  retry attempt, but holds it behind the rest of the fleet for
+  `busy_backoff_s` + `retry_base_s` so the queue doesn't spin on it.
 - **"No image currently available"** — Z2M's answer when a device advertises an
   update the OTA index has no file for (usually a pulled release). Nothing is
   transferred, so it counts as neither a completed update nor a failure: the
@@ -105,7 +117,7 @@ and widened in 2026-09 to every Z2M device.
 
 | Entity | Purpose |
 | --- | --- |
-| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (everything waiting on a schedule and not in flight — per-device attempts / `retry_at` / last error; `attempts: 0` means it was bounced by a busy Z2M rather than having failed), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
+| `sensor.zigbee_ota_orchestrator` | State = devices remaining. Attributes: `in_flight` (device, `adopted`, progress %, remaining s, stalled), `pending` (only what could start right now), `cooldown` (everything waiting on a schedule and not in flight — per-device attempts / `retry_at` / last error; `attempts: 0` means it was bounced by a busy Z2M rather than having failed), `offline`, `completed_this_run`, `skipped_no_image`, `unknown_to_z2m`, `cleared_without_update`, `failed_attempts_this_run`, `busy_until`, `z2m_devices_known`, `identity_source`, `paused`, `last_event`. |
 
 The lists are capped at 25 entries with a `*_count` beside them, and every
 schedule is an absolute time (`retry_at`, `busy_until`, `started_at`) rather

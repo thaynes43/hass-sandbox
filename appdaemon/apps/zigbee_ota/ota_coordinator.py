@@ -381,15 +381,29 @@ class OtaCoordinator:
             rec.installed_version = str(attrs.get("installed_version"))
             rec.latest_version = str(attrs.get("latest_version"))
 
-        # Drop devices that disappeared from the snapshot entirely (renamed,
-        # removed from Z2M, or no longer matching) — the queue is derived state.
+        # Drop devices that disappeared (renamed, removed from Z2M, or no
+        # longer matching) — the queue is derived state. Absence from the
+        # snapshot is not proof of that: entity setup is not atomic, so a tick
+        # landing mid-restore gets a fraction of the update domain while the
+        # entity registry still names every device. Only the registry answer
+        # retires a record; a record whose entity is still registered is
+        # simply waiting for its state to be served again.
+        registered = self._z2m_entity_ids
         for friendly in list(self._devices):
-            if friendly not in seen:
-                self._devices.pop(friendly)
-        for friendly in list(self._parked):
-            if friendly not in present:
-                self._parked.pop(friendly)
-        self._abandoned &= present
+            if friendly in seen:
+                continue
+            if registered is not None and self._devices[friendly].entity_id in registered:
+                continue
+            self._devices.pop(friendly)
+        # _parked and _abandoned are keyed by name, with no entity id to test,
+        # so they are only pruned on a dump that served every registered
+        # entity. A partial one leaves them alone rather than guessing.
+        complete = registered is None or registered <= set(snapshot)
+        if complete:
+            for friendly in list(self._parked):
+                if friendly not in present:
+                    self._parked.pop(friendly)
+            self._abandoned &= present
 
         if adopted_candidate is not None and self._in_flight is None:
             self._in_flight = InFlight(
