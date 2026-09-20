@@ -2,7 +2,7 @@
 # kitchen box to move the music to the living room and got a different song: the agents only had Play
 # Music, which starts something new. This one calls music_assistant.transfer_queue, so the same song
 # carries on in the new room. Rooms are HA areas; the speaker is the area's Music Assistant player.
-# Must be on the assist_exposure_guard script allowlist (v1.18.7) before it is exposed.
+# On the guard allowlist since v1.18.7 and exposed to Assist since 2026-09-19.
 alias: Move Music
 description: 'Voice tool that MOVES the music that is already playing from one room to another: the same
   song carries on in the new room and stops in the old one. Use it for ''move the music to the living

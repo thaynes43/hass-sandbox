@@ -5,7 +5,8 @@
 # join are named in the answer. Removing the room that LEADS the group (the one whose music it is)
 # is handled explicitly: unjoining the leader alone left the wrong room playing, so the group is
 # dissolved, the queue is transferred to the first room that stays and the rest regroup around it.
-# Must be on the assist_exposure_guard script allowlist (v1.18.7) before it is exposed.
+# A room named for removal that is not in the group is simply stopped. On the guard allowlist since
+# v1.18.7 and exposed to Assist since 2026-09-19.
 alias: Group Music
 description: Voice tool that plays the music of one room in OTHER rooms too, in sync (the same song everywhere),
   or takes rooms out of that group again. Use it for 'play this in the living room too', 'play it in the
@@ -118,6 +119,7 @@ sequence:
     - variables:
         leader: '{{ group | first | default('''', true) }}'
         remaining: '{{ group | reject(''in'', members) | list }}'
+        outside: '{{ members | reject(''in'', group) | list }}'
     - choose:
       - alias: 'The leader stays: the leaving rooms simply unjoin'
         conditions:
@@ -127,7 +129,17 @@ sequence:
         - action: media_player.unjoin
           continue_on_error: true
           target:
-            entity_id: '{{ members }}'
+            entity_id: '{{ members | select(''in'', group) | list }}'
+        - alias: A named room that was not in the group is simply stopped, so 'stop the music in the study'
+            is true afterwards
+          if:
+          - condition: template
+            value_template: '{{ outside | count > 0 }}'
+          then:
+          - action: media_player.media_stop
+            continue_on_error: true
+            target:
+              entity_id: '{{ outside }}'
       - alias: 'The leader leaves and nobody stays: stop the music'
         conditions:
         - condition: template
@@ -156,6 +168,7 @@ sequence:
         data:
           source_player: '{{ leader }}'
           auto_play: true
+        continue_on_error: true
       - if:
         - condition: template
           value_template: '{{ remaining | count > 1 }}'
@@ -170,9 +183,9 @@ sequence:
             group_members: '{{ remaining[1:] }}'
     - variables:
         result:
-          response: '{{ members | map(''area_name'') | join('', '') }} left the group and stopped{{ ('';
-            the music carries on in '' ~ remaining | map(''area_name'') | join('', '')) if remaining |
-            count > 0 and leader in members else '''' }}.'
+          response: '{{ members | map(''area_name'') | join('', '') }} stopped{{ (''; the music carries
+            on in '' ~ remaining | map(''area_name'') | join('', '')) if remaining | count > 0 and leader
+            in members else '''' }}.'
   default:
   - variables:
       result:

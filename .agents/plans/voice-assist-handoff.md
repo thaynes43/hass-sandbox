@@ -37,7 +37,7 @@ turns up, and then the new device. Tom speaks to the box; you read what actually
 
 ## Live state at handoff
 
-- AppDaemon `ghcr.io/thaynes43/appdaemon:1.18.6`; guard: 112 exposed entities, 0 violations,
+- AppDaemon `ghcr.io/thaynes43/appdaemon:1.18.7` (2026-09-19 evening); guard: 114 exposed entities, 0 violations,
   `switch_allowlist=3`.
 - HA core 2026.9.2. All four agents: `gpt-5.6-terra`, reasoning `none`, verbosity low, priority
   tier, web search on; each prompt = Tom's persona + one shared block. All pipelines: HA Cloud STT
@@ -104,6 +104,9 @@ for tool-call questions, and anything the persona gets wrong. Cover in each room
    locked?") — doors can only be secured, the mudroom↔garage door is normally unlocked;
 5. **music: "play <artist>" with no room, then "turn it up", "next song", "stop the music"**, and
    once "play <artist> in the <other room>";
+   also the two tools added 2026-09-19 and **not yet tried by voice**: "move the music to the
+   <room>" (`script.voice_move_music`) and "play this in the <room> too" / "stop it in the <room>"
+   (`script.voice_group_music`);
 6. shades where the room has them (`script.voice_shades`: upstairs "open" = tilt-open).
 
 | Room | Room tools to exercise | Music notes / known gaps |
