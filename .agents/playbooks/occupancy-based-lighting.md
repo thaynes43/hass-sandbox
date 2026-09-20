@@ -249,6 +249,74 @@ Common suffixes (after `<switch_name>_`):
 
 ---
 
+## Reference: tuning the mmWave detection zone (geometry)
+
+The VZM32 radar only reports presence for targets inside **detection area 1**. Everything
+outside it is invisible to `binary_sensor.<switch_name>_occupancy`, no matter how strong the
+return — a person standing still a metre away reports nothing if they are outside the box.
+
+### Coordinate convention (all values in cm, from the switch)
+
+| Axis | Entity | Meaning |
+|------|--------|---------|
+| width | `mmwavewidthmin` / `mmwavewidthmax` | **signed** lateral: negative = left of the switch facing away from the wall, positive = right. `0` is straight out from the switch (boresight). |
+| depth | `mmwavedepthmin` / `mmwavedepthmax` | distance out from the wall; always `>= 0` |
+| height | `mmwaveheightmin` / `mmwaveheightmax` | negative = below the switch, positive = above |
+
+**The boresight trap**: a positive `widthmin` (or a negative `widthmax`) blanks the area directly
+in front of the switch. `widthmin: 55` means "ignore everything from 55 cm to the *left* of the
+switch all the way across to 55 cm to the right" — someone standing at the switch is never seen.
+Unless the zone is deliberately an off-to-one-side target (a vanity, a rack aisle), the width
+window should straddle `0`.
+
+### Setting the zone (the number entities alone do NOT apply it)
+
+`number.<switch_name>_mmwave{width,depth,height}{min,max}` write bare ZCL attributes. The radar
+does not adopt them until the `setDetectionArea` **command** is issued, which Home Assistant does
+not expose. Writing only the numbers leaves the device running the *old* zone while HA and the
+z2m attribute state both show the new one — they silently disagree.
+
+Apply the zone with the z2m composite over MQTT, which issues `setDetectionArea` and then
+re-queries the device:
+
+```yaml
+action: mqtt.publish
+data:
+  topic: zigbee2mqtt/<switch_name>/set
+  payload: >-
+    {"mmwave_detection_areas": {"area1": {"width_min": -150, "width_max": 300,
+     "height_min": -300, "height_max": 300, "depth_min": 0, "depth_max": 250}}}
+```
+
+Set the number entities to the same values too, so the HA-facing config matches what the radar runs.
+
+### Verifying
+
+`mmwave_detection_areas.area1` in the device's z2m payload is the **device's own answer** to a
+`query_areas`, so it is the source of truth. Confirm the round trip:
+
+```bash
+kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m \
+  | grep "topic 'zigbee2mqtt/<switch_name>'" | tail -1
+```
+
+If `mmwave_detection_areas.area1` still shows the old box, the command did not land — re-publish.
+
+### Interference (mask) areas
+
+`mmwave_interference_areas` carve *exclusions* out of the detection area; targets inside them are
+never reported. They do not appear as HA entities at all — only in the z2m payload — so a zone can
+be silently masked with no sign of it in Home Assistant. Several switches carry a ~100 cm-deep mask
+band that came from the device's own interference auto-detect, not from hand tuning. When a zone
+misses people, check the mask as well as the detection box.
+
+### Sensitivity
+
+`select.<switch_name>_mmwavedetectsensitivity` defaults to **High (default)**. Anything lower is a
+deliberate choice; `Medium` on a zone that misses stationary people is worth putting back to High.
+
+---
+
 ## Migration notes
 
 ### `normal_mode` → `normal_mode_input_select`
