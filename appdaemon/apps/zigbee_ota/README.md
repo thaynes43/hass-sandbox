@@ -15,7 +15,8 @@ and widened in 2026-09 to every Z2M device.
   `exclude_globs`. Because the queue is derived state, restarts are harmless:
   the app picks up wherever the fleet actually is (only in-memory retry counters
   reset). A device is only retired once it has been missing from the state dump
-  for a whole `scan_interval_s` — entity restore is not atomic, so a single
+  for most of a `scan_interval_s` (90% of it, so scheduler jitter doesn't
+  decide it) — entity restore is not atomic, so a single
   partial dump would otherwise throw away every device's backoff and every
   parked device on a Home Assistant restart.
 - **Only Zigbee2MQTT devices, ever** — the glob is just the first filter. On
@@ -52,9 +53,11 @@ and widened in 2026-09 to every Z2M device.
   this is what does. The mark is carried across ticks where the entity says
   nothing — absent from the state dump, or `unavailable` — because silence is
   not evidence a transfer stopped, and the device dropping off the mesh is
-  often why it went quiet. A mark that goes unconfirmed for an hour expires,
-  so a device that never comes back — dead battery, switched off at the wall —
-  cannot stall the fleet for longer than that.
+  often why it went quiet. It is released three ways: Z2M answers for that
+  device (its response is authoritative that the operation ended), Home
+  Assistant reports `in_progress` false, or the mark goes unconfirmed for an
+  hour — so a device that never comes back, dead battery or switched off at
+  the wall, cannot stall the fleet for longer than that.
   The cost is that a stale flag delays the next start, which is the right way
   round: a stalled queue is visible on the sensor, a doubled transfer is not.
 
