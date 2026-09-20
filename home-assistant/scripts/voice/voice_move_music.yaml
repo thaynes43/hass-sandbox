@@ -30,9 +30,11 @@ fields:
 sequence:
 - variables:
     src: '{{ area_entities(from_area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
-      ''media_player\.'') | reject(''is_state'', ''unavailable'') | first | default('''', true) }}'
+      ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')
+      | first | default('''', true) }}'
     dst: '{{ area_entities(to_area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
-      ''media_player\.'') | reject(''is_state'', ''unavailable'') | first | default('''', true) }}'
+      ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')
+      | first | default('''', true) }}'
 - if:
   - condition: template
     value_template: '{{ src == '''' or dst == '''' }}'

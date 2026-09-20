@@ -353,7 +353,9 @@ the new room, the old room stops) and `script.voice_group_music` (`media_player.
 on the Music Assistant players = a native Sonos group: the same song in several rooms in sync, and
 rooms leaving again). Verified by direct calls with Tom listening: kitchen joined the living room
 on the same track and left again with the living room still playing; a move living room → kitchen
-continued at the same position. Seen once and not reproduced: on the first ungroup Music Assistant
+continued at the same position; the Rumpus KEFs joined a Sonos group too (Music Assistant syncs
+them); and removing the room that **leads** the group works because the tool hands the queue to a
+room that stays first (a plain unjoin of the leader left the wrong room playing). Seen once and not reproduced: on the first ungroup Music Assistant
 2.10.3 logged `maximum recursion depth exceeded` in its stream feeder and the living room player
 then accepted requests without playing until Music Assistant was restarted.
 
