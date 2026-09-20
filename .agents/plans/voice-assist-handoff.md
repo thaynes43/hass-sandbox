@@ -120,7 +120,10 @@ House-wide things any box should handle: exterior lights (porch, front door, "la
 lamp post — `unavailable` in HA at handoff, driveway, back yard, garage, "flood light", "motion
 flood light", "patio lights", "shed lights"), hot tub mode ("I'm going in the hot tub" →
 `script.voice_hot_tub_mode_on`; off refuses while a spa light is on), the kids' rooms (everything
-their ZEN32s do), both thermostats.
+their ZEN32s do), both ecobees and the two basement mini splits. Thermostat **modes** ("dry mode",
+"fan only", "set the upstairs thermostat to cool") and anything said to "the basement thermostats"
+go through `script.voice_thermostat` (2026-09-20): Assist has no set-mode intent and its
+set-temperature intent takes one thermostat only.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special
 handling: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**
