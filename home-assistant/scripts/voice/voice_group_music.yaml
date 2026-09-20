@@ -1,0 +1,194 @@
+# script.voice_group_music ("Group Music") — voice tool, created live via MCP 2026-09-19: the same music
+# in several rooms in sync (media_player.join on the Music Assistant players, i.e. a native Sonos group),
+# and taking rooms out again (media_player.unjoin). Rooms are HA areas. The Rumpus KEFs DO join (Music
+# Assistant syncs them with the Sonos players). A join is checked afterwards and rooms that did not
+# join are named in the answer. Removing the room that LEADS the group (the one whose music it is)
+# is handled explicitly: unjoining the leader alone left the wrong room playing, so the group is
+# dissolved, the queue is transferred to the first room that stays and the rest regroup around it.
+# A room named for removal that is not in the group is simply stopped. On the guard allowlist since
+# v1.18.7 and exposed to Assist since 2026-09-19.
+alias: Group Music
+description: Voice tool that plays the music of one room in OTHER rooms too, in sync (the same song everywhere),
+  or takes rooms out of that group again. Use it for 'play this in the living room too', 'play it in the
+  kitchen and the study as well', 'play this everywhere downstairs' (name the rooms) with action add,
+  and for 'stop it in the living room but keep it here', 'stop it in here but keep it in the living room'
+  or 'just the kitchen now' with action remove. source_area is the room whose music is shared (the room
+  the request comes from unless the user names another room); areas are the rooms to add, or the rooms
+  that should stop and leave the group (that may be the room the request comes from). Use Move Music instead
+  when the music should simply go from one room to another.
+icon: mdi:speaker-multiple
+mode: queued
+max: 3
+fields:
+  source_area:
+    name: Source room
+    description: The room whose music is shared. Use the room the request comes from unless the user names
+      another room.
+    required: true
+    selector:
+      area: {}
+  areas:
+    name: Rooms
+    description: The rooms to add to the group, or to take out of it.
+    required: true
+    selector:
+      area:
+        multiple: true
+  action:
+    name: Action
+    description: add = these rooms play the source room's music too; remove = these rooms stop and leave
+      the group.
+    required: true
+    selector:
+      select:
+        options:
+        - add
+        - remove
+sequence:
+- variables:
+    src: '{{ area_entities(source_area) | select(''in'', integration_entities(''music_assistant'')) |
+      select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'',
+      ''unknown'') | first | default('''', true) }}'
+    members: '{% set ns = namespace(p=[]) %}{% for a in [areas] | flatten %}{% set ns.p = ns.p + (area_entities(a)
+      | select(''in'', integration_entities(''music_assistant'')) | select(''match'', ''media_player\.'')
+      | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'') | list) %}{% endfor
+      %}{{ ns.p | unique | list }}'
+- variables:
+    targets: '{{ members | reject(''eq'', src) | list }}'
+- choose:
+  - conditions:
+    - condition: template
+      value_template: '{{ action == ''add'' }}'
+    sequence:
+    - if:
+      - condition: template
+        value_template: '{{ src == '''' or targets | count == 0 }}'
+      then:
+      - variables:
+          result:
+            response: 'Nothing changed: {{ ''there is no Music Assistant speaker in '' ~ area_name(source_area)
+              if src == '''' else ''none of those rooms has a Music Assistant speaker other than the source
+              room'' }}.'
+      - stop: No usable speakers
+        response_variable: result
+    - if:
+      - condition: template
+        value_template: '{{ states(src) not in [''playing'', ''paused''] }}'
+      then:
+      - variables:
+          result:
+            response: 'Nothing changed: nothing is playing in {{ area_name(source_area) }}.'
+      - stop: Nothing playing in the source room
+        response_variable: result
+    - alias: 'A speaker that cannot join (the Rumpus KEFs are not Sonos) must not abort the tool: the
+        result below says who really joined'
+      action: media_player.join
+      continue_on_error: true
+      target:
+        entity_id: '{{ src }}'
+      data:
+        group_members: '{{ targets }}'
+    - delay:
+        seconds: 3
+    - variables:
+        joined: '{{ targets | select(''in'', state_attr(src, ''group_members'') or []) | list }}'
+    - variables:
+        result:
+          response: '{% set ok = joined | map(''area_name'') | list %}{% set bad = targets | reject(''in'',
+            joined) | map(''area_name'') | list %}{{ (''The music from '' ~ area_name(source_area) ~ ''
+            now also plays in '' ~ ok | join('', '') ~ ''.'') if ok else ''No room was added.'' }}{{ (''
+            Could not be added: '' ~ bad | join('', '') ~ ''.'') if bad else '''' }}'
+  - conditions:
+    - condition: template
+      value_template: '{{ action == ''remove'' }}'
+    sequence:
+    - if:
+      - condition: template
+        value_template: '{{ members | count == 0 }}'
+      then:
+      - variables:
+          result:
+            response: 'Nothing changed: none of those rooms has a Music Assistant speaker.'
+      - stop: No usable speakers
+        response_variable: result
+    - alias: The group as the source room's player reports it (leader first); a room that is not grouped
+        is its own group
+      variables:
+        group: '{{ (state_attr(src, ''group_members'') or []) if (state_attr(src, ''group_members'') or
+          []) | count > 0 else ([src] if src != '''' else []) }}'
+    - variables:
+        leader: '{{ group | first | default('''', true) }}'
+        remaining: '{{ group | reject(''in'', members) | list }}'
+        outside: '{{ members | reject(''in'', group) | list }}'
+    - alias: A named room that is not in the group is simply stopped, whichever branch below runs, so
+        'stop the music in the study' is true afterwards
+      if:
+      - condition: template
+        value_template: '{{ outside | count > 0 }}'
+      then:
+      - action: media_player.media_stop
+        continue_on_error: true
+        target:
+          entity_id: '{{ outside }}'
+    - choose:
+      - alias: 'The leader stays: the leaving rooms simply unjoin'
+        conditions:
+        - condition: template
+          value_template: '{{ leader == '''' or leader not in members }}'
+        sequence:
+        - action: media_player.unjoin
+          continue_on_error: true
+          target:
+            entity_id: '{{ members | select(''in'', group) | list }}'
+      - alias: 'The leader leaves and nobody stays: stop the music'
+        conditions:
+        - condition: template
+          value_template: '{{ remaining | count == 0 }}'
+        sequence:
+        - action: media_player.media_stop
+          continue_on_error: true
+          target:
+            entity_id: '{{ leader }}'
+        - action: media_player.unjoin
+          continue_on_error: true
+          target:
+            entity_id: '{{ group | reject(''eq'', leader) | list }}'
+      default:
+      - alias: 'The leader leaves but others stay: dissolve the group, hand the queue to the first room
+          that stays, regroup the rest around it'
+        action: media_player.unjoin
+        continue_on_error: true
+        target:
+          entity_id: '{{ group | reject(''eq'', leader) | list }}'
+      - delay:
+          seconds: 2
+      - action: music_assistant.transfer_queue
+        target:
+          entity_id: '{{ remaining | first }}'
+        data:
+          source_player: '{{ leader }}'
+          auto_play: true
+        continue_on_error: true
+      - if:
+        - condition: template
+          value_template: '{{ remaining | count > 1 }}'
+        then:
+        - delay:
+            seconds: 3
+        - action: media_player.join
+          continue_on_error: true
+          target:
+            entity_id: '{{ remaining | first }}'
+          data:
+            group_members: '{{ remaining[1:] }}'
+    - variables:
+        result:
+          response: '{{ members | map(''area_name'') | join('', '') }} stopped{{ (''; the music carries
+            on in '' ~ remaining | map(''area_name'') | join('', '')) if remaining | count > 0 and leader
+            in members else '''' }}.'
+  default:
+  - variables:
+      result:
+        response: 'Nothing changed: action must be add or remove.'
+- stop: Done
+  response_variable: result

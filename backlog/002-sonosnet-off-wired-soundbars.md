@@ -1,0 +1,136 @@
+# 002 — Sonos: SonosNet off, soundbars back on Ethernet
+
+**Status:** Done for the soundbars (2026-09-19, see *Outcome*); only the Movie Room Port is still on
+Wi-Fi (no Ethernet link), which nobody has asked to change
+**Size:** Small (about an hour with Tom present; no code)
+**Raised:** 2026-09-19, during the first spoken music test of the Primary Bedroom voice box
+
+## Outcome (2026-09-19, ~20:15)
+
+Tom ran the Disable SonosNet wizard and enabled ports 3, 5, 6 and 7 of the Switch Pro Max 48 PoE
+(port profile "Auto", spanning tree on — the storm-control / loop-protection settings below were
+not applied and turned out not to be needed). Verified after each step:
+
+- all 19 units report `SonosNetDisabled=1`, none went offline; the wired Amps' mesh neighbour tables
+  went from ~13 peers to 0 (the Ethernet↔mesh bridging is gone);
+- **port 3 = Blue Room Beam, port 5 = Pink Room Beam, port 6 = Living Room Arc** (the switch shows
+  an Era 300's MAC there: the Arc carries its satellites' traffic; the satellites are not wired),
+  **port 7 = White Room Beam** — all 100 Mb, forwarding, `ConnectionTypeString` = Ethernet;
+- every up port on the switch forwarding, none blocking; broadcast+multicast at or below the
+  afternoon baseline (uplinks 3–12 pps). No loop, no storm.
+
+**Primary Bedroom Beam (20:20):** its cable turned out to be plugged into the TV; Tom moved it to
+the Beam. It reports Ethernet, the Sub Mini re-bonded on its home-theater link by itself (it is
+deliberately not wired), and a re-test as the bedroom voice box played about two minutes with no
+stream error in the Music Assistant log. That closes the problem this item was raised for.
+
+Still on Wi-Fi: the **Movie Room Port** (no Ethernet link; its cable is unplugged or lands
+elsewhere) and the Shed SYMFONISK (always was).
+
+## Problem
+
+Voice-requested music in the Primary Bedroom started, stopped after 10–20 s and skipped, over and
+over. Music Assistant logged `ERROR_LSE`, `ERROR_BUFFERING`, `ERROR_LOST_CONNECTION` and
+"Player Primary Bedroom disconnected prematurely from stream". It is not a voice defect: the
+bedroom Beam (`media_player.primary_bedroom`, 192.168.0.6) is **wireless on SonosNet** with
+marginal links (34–41; above 45 is good) to the wired Amps and 2,000–3,000 PHY errors per second,
+the worst in the house together with its Sub Mini. Tom moved SonosNet from channel 11 (shared with
+the Primary Closet AP a few metres from the Beam) to channel 1 that afternoon (Zigbee is on
+channel 15; 2.4 GHz airtime is 44–66 % on every AP). The link numbers and the PHY error rate did
+**not** change, but a re-test at 18:35 **played 5.5 minutes across two tracks without a single
+stream error** — with the house empty, so a quieter 2.4 GHz band and the channel move cannot be
+told apart. Treat the Beam as "marginal, currently working", not as fixed: signal strength is
+still poor and the first evening with people home is the real test. The kitchen Amp is wired and
+plays smoothly.
+
+Years ago Tom disabled the soundbars' switch ports because wired Sonos units caused network loops:
+every wired SonosNet-capable unit bridges Ethernet to the 2.4 GHz mesh, and Sonos's legacy 802.1D
+spanning tree (path cost 10 for 100 Mbit) disagrees with UniFi's RSTP (200000).
+
+## Decision (Tom, 2026-09-19)
+
+**Turn SonosNet off for the whole system and wire the soundbars again.** Since Sonos app 85
+(27 May 2026) there is a system-wide wizard: *Settings → System → Network → SonosNet → Disable
+SonosNet*. Sonos staff describe the effect as: a wired soundbar "will stop bridging SonosNet out
+to your other Sonos players (it'll still talk to its own surrounds and Sub)" — the surround/Sub
+link is a private 5 GHz link, not part of SonosNet. Sonos documents "wire one or more products, the
+rest stay on home Wi-Fi" as supported with SonosNet off, and Ubiquiti's Sonos guidance says the
+same (disable SonosNet, wire the devices, same switch where possible). Sources were search-result
+snippets plus `github.com/IngmarStein/unifi-sonos-doc`; the vendor sites are blocked by the dev
+pod's egress allowlist, and no first-hand "I did this and the loops stopped" report was found —
+hence the staged procedure.
+
+Two rules that must not be broken:
+
+- **Never** use the old per-device *Disable Wi-Fi* on a soundbar: it kills the radio its surrounds
+  and Sub depend on. Only the system-wide SonosNet wizard.
+- Do not wire bonded satellites (Era 300 surrounds, Subs). It gains nothing (their audio rides the
+  soundbar's 5 GHz link regardless) and it is the one topology nobody could rule out as a loop.
+
+## Current state (surveyed read-only 2026-09-19, all units firmware 97.1-80312, 192.168.0.x, Default VLAN)
+
+| Unit | IP | Today | Notes |
+|---|---|---|---|
+| Primary Bedroom Beam | .6 | **wired since 2026-09-19 20:20** (its cable had been in the TV) | master of Sub Mini .77; the stuttering one |
+| Pink Room Beam | .24 | **wired since 2026-09-19, Pro Max 48 port 5** | standalone |
+| Blue Room Beam | .81 | **wired since 2026-09-19, Pro Max 48 port 3** | standalone; weakest mesh links in the house (28–34) |
+| White Room Beam | .231 | **wired since 2026-09-19, Pro Max 48 port 7** | standalone |
+| Living Room Arc | .232 | **wired since 2026-09-19, Pro Max 48 port 6** | master of Era 300 .69 / .209 and Subs .100 / .216 |
+| Movie Room Port | .70 | home Wi-Fi since 2026-09-19 (SonosNet off), Ethernet still dead | standalone |
+| Shed SYMFONISK | .154 | home Wi-Fi (HNET+, 5 GHz) | proves the system already holds the Wi-Fi credentials |
+| Amps: Back Yard .206, Front Porch .215, Kitchen .234, Primary Bathroom .88, Study .71, Kids' Bathroom .132 | | wired; no longer bridging (SonosNet off) | **USW Pro Max 16 PoE ports 1–6**, spanning tree off per port, zero STP state changes; Back Yard is the Sonos STP root |
+| Pool Amp | .108 | wired, no radio | Shed Flex 2.5G port 7 |
+
+Disabled switch ports: **Switch Pro Max 48 PoE ports 3, 5, 6 and 7** — the only administratively
+disabled ports on that switch (`port_table[].enabled == false`, override `forward: "disabled"`,
+no network, port security on with an empty MAC list). The controller kept no MAC history for them,
+so **which soundbar is on which port is unknown** until each links up. Six units have dead
+Ethernet but only four ports are disabled: two of them are unplugged or on another switch (ports
+26, 30 and 45 of the Pro Max 48 are enabled on Default with no link).
+
+UniFi Wi-Fi settings on `HNET+` are already right for Sonos and must be left alone: multicast
+enhancement off, 2.4 GHz minimum rate 1 Mbps, PMF optional, no client isolation, no proxy ARP,
+802.11r off. Never enable the "optimize" / Wi-Fi AI / airtime-fairness features on it. Storm
+control and loop protection are off on every switch port today.
+
+## Procedure
+
+Who does what (Tom's ruling): **Tom makes the switch-port changes in the UniFi app**; the agent
+gives exact settings, verifies and monitors. The `mcp-unifi` port tools cannot do it
+(haynes-ops issue #2984); calling the UniFi API from inside the mcp-unifi pod was offered and not
+chosen.
+
+1. **Tom, at home:** run the Disable SonosNet wizard. Expect every Sonos to drop for a minute or
+   two. Arc and Beams are 2.4 GHz-only on Wi-Fi, so they land on `HNET+` 2.4 GHz until wired; one
+   that fails to join simply stays offline until its port is enabled.
+2. **Agent:** confirm on all 19 units before any port is touched. From inside the HA pod
+   (`kubectl exec -n home-automation deploy/home-assistant -c app -- curl -s -m 5 …`):
+   `http://<ip>:1400/status/wireless` → `<SonosNetDisabled>1` and a `ConnectionTypeString` of
+   Ethernet / WiFi / Home Theater (today: `0`, "SonosNet (Ethernet)" / "SonosNet (wireless)");
+   and an Amp's `http://<ip>:1400/status/proc/ath_rincon/status` must no longer list mesh peers.
+   Baseline for comparison (2026-09-19): access ports receive under 4 broadcast+multicast packets
+   per second, uplinks 12–60 (`rate(unpoller_device_port_receive_broadcast_total[…]) + …multicast…`).
+3. **Tom, in the UniFi app** (Devices → Switch Pro Max 48 PoE → Port Manager): enable the port with
+   the default **"Auto"** profile (Default network, spanning tree on). That is what was used for
+   ports 3/5/6/7 on 2026-09-19 and it was clean. The stricter settings first planned here (spanning
+   tree off, loop protection, storm control 500 pps, tagged VLANs blocked) were not applied and are
+   not needed once SonosNet is verified off; the one thing that must be off is **MAC restriction /
+   port security**, which the old disabled ports carried with an empty allow-list.
+4. **Agent, 10 minutes per port:** which soundbar's `eth0` comes alive (that identifies the port),
+   broadcast/multicast rates, `mac_table_count` on the new port (1–3 is normal; climbing past ~5
+   means bridging is back), `stp_state_change_count` on ports nobody touched (raw record via
+   `get_device_by_mac`, saved to a file, read with `jq`; it contains `x_authkey` — never paste it).
+   Abort = Tom disables the port again. Ignore the pre-existing noise on Pro Max 48 port 13 and
+   Livingroom Flex port 4. Then ports 5, 6, 7.
+5. **Afterwards:** find the two dead-Ethernet units without a disabled port; re-test bedroom music as the satellite
+   (`scripts/voice-bench/run.sh bench.py "MODE=pipe … DEVICE_ID=9140746b067691b4aeb5a66c38a642db …"`)
+   and watch the Music Assistant log for a full minute; re-check *About My System → ConnectionType*
+   after Sonos firmware updates (the old per-device setting used to revert; no such report for the
+   new wizard, but nobody has confirmed it survives updates either).
+
+## Open questions
+
+- Where the Movie Room Port's cable goes, if it should be wired at all.
+- Whether to also retro-fit storm control and loop protection on the six Amp ports.
+- IGMP snooping on the Default network is off; sources mostly recommend on for Sonos. Not part of
+  this item: change it separately, on its own, if at all.

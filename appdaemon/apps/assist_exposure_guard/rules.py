@@ -156,6 +156,12 @@ DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     "script.voice_hot_tub_mode_off",
     # Music Assistant request handler
     "script.llm_script_for_music_assistant_voice_requests",
+    # Music Assistant room tools: move a playing queue from one room to another
+    # (transfer_queue), and play one room's music in others in sync or drop them
+    # back out (media_player.join / unjoin).  Media players only — no lights,
+    # locks or covers in reach.
+    "script.voice_move_music",
+    "script.voice_group_music",
     # Primary bedroom modes
     "script.kellie_mobile_primary_bedroom_relaxed",
     "script.kellie_mobile_primary_bedroom_focused",

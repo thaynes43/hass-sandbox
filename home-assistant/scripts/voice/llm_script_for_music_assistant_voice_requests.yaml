@@ -1,13 +1,17 @@
 # script.llm_script_for_music_assistant_voice_requests ("Play Music") — the one music tool every room
 # agent calls. Blueprint script; this mirrors its inputs (edited live via MCP, 2026-09-19).
-# Blueprint: home-assistant/blueprints/music_assistant_llm_voice_script.yaml (locally patched:
-# pre_actions + playing_before). How the target speaker is chosen: .agents/plans/voice-assist-rollout.md
-# (Phase 3). The helper input_number.rumpus_room_kef_saved_volume is live-only (never mirrored).
+# Blueprint: home-assistant/blueprints/music_assistant_llm_voice_script.yaml (locally patched, its
+# header lists how). How the target speaker is chosen: .agents/plans/voice-assist-rollout.md (Phase 3).
+# No speaker gets special treatment: the Rumpus Room KEF volume logic (pre_actions/actions, a helper
+# and a restore automation) was removed on the owner's ruling, 2026-09-19 — the KEFs keep their own
+# volume per input and play like every other room.
+# enqueue_option: replace = a spoken request starts a fresh queue. media_id_prompt / area_prompt:
+# rewritten for track-list format and for always passing the room. NO default_player ("hand it back,
+# never guess"): a request without an area or player is returned to the agent by the blueprint.
 alias: Play Music
 use_blueprint:
   path: music-assistant/llm_voice_script.yaml
   input:
-    default_player: media_player.primary_bedroom
     play_continuously: Use player settings
     shuffle_prompt: 'This argument is mandatory and must always be provided no matter what! It is a boolean
       value, not a function.
@@ -24,74 +28,66 @@ use_blueprint:
 
       If the request is "Play the artist Guns and Roses", "shuffle" should be set to false, since the
       request does not mention or request to shuffle. '
-    pre_actions:
-    - alias: The Rumpus Room speaker = the first Music Assistant player in that area (empty when there
-        is none)
-      variables:
-        rumpus_player: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
-          | select(''match'', ''media_player'') | first | default('''', true) }}'
-        rumpus_pc_volume_fallback: 0.92
-    - alias: Read its volume BEFORE touching it (parallel runs must never save the voice level); 0 = no
-        speaker or no reading
-      variables:
-        rumpus_volume_read: '{{ (state_attr(rumpus_player, ''volume_level'') | float(0)) if rumpus_player
-          != '''' else 0 }}'
-    - alias: 'Rumpus Room speaker: remember its volume and start voice music at 50%'
-      if:
-      - condition: template
-        value_template: '{{ rumpus_player != '''' and (''rumpus_room'' in (area | default([], true)) or
-          rumpus_player in player_data) and rumpus_player not in playing_before }}'
-      then:
-      - alias: Save the volume once (0 means nothing saved). No reading (speaker asleep or reconnecting)
-          = save the usual PC level instead, so the 50% below can always be undone
-        if:
-        - condition: numeric_state
-          entity_id: input_number.rumpus_room_kef_saved_volume
-          below: 0.005
-        then:
-        - if:
-          - condition: template
-            value_template: '{{ rumpus_volume_read <= 0.005 }}'
-          then:
-          - action: system_log.write
-            data:
-              level: warning
-              logger: voice.play_music
-              message: Rumpus Room speaker {{ rumpus_player }} reported no volume; saved the fallback
-                {{ rumpus_pc_volume_fallback }} as the level to restore.
-        - action: input_number.set_value
-          target:
-            entity_id: input_number.rumpus_room_kef_saved_volume
-          data:
-            value: '{{ rumpus_volume_read if rumpus_volume_read > 0.005 else rumpus_pc_volume_fallback
-              }}'
-      - action: media_player.volume_set
-        target:
-          entity_id: '{{ rumpus_player }}'
-        data:
-          volume_level: 0.5
-    actions:
-    - variables:
-        rumpus_player: '{{ area_entities(''rumpus_room'') | select(''in'', integration_entities(''music_assistant''))
-          | select(''match'', ''media_player'') | first | default('''', true) }}'
-    - alias: 'Rumpus Room speaker: set 50% again once playing (it wakes from standby at its own level)'
-      if:
-      - condition: template
-        value_template: '{{ rumpus_player != '''' and (''rumpus_room'' in (area | default([], true)) or
-          rumpus_player in player_data) and rumpus_player not in playing_before }}'
-      then:
-      - alias: 'Wait until the speaker is really playing: waking from standby takes seconds and resets
-          its volume'
-        wait_template: '{{ is_state(rumpus_player, ''playing'') }}'
-        timeout: 00:00:15
-        continue_on_timeout: true
-      - action: media_player.volume_set
-        target:
-          entity_id: '{{ rumpus_player }}'
-        data:
-          volume_level: 0.5
+    enqueue_option: replace
+    media_id_prompt: 'This argument is mandatory and must always be provided no matter what!
+
+      media_id is the most specific from track, album, and artist.
+
+      "track" and "artist" can be a single value or multiple values.
+
+      - If the search is about a track: Then media_id is the track name or a list of track names (use
+      a semicolon as separator). If the songs are by different artists, write every entry as "Artist name
+      - Song name": the artist first, then space dash space, then the song (example: "Whitney Houston
+      - I Wanna Dance with Somebody"). Use only the main artist: never add "featuring", "feat.", "with"
+      or a second artist, and never add words like "remastered", "live" or a year. Never give bare song
+      names when the songs are by different artists, because the wrong version of the song gets played.
+      If all songs are from the same artist, use the artist for the "artist" parameter, and only use the
+      song names as track name.
+
+      - If the request is a mood, a genre, an activity or otherwise open and names no artist ("party music",
+      "something relaxing", "music everyone will like"): choose at most five very well known songs by
+      different artists that fit, and give them as tracks in that same "Artist name - Song name" form.
+      Searching for a playlist by mood does not work here. If such a request names an artist ("something
+      upbeat by Prince"), it is a request for that one artist: put the artist in the "artist" parameter
+      and give at most five of their song names, without the artist, as the track names.
+
+      - If the search is about an album: Then media_id is the album name or a list of album names (use
+      a semicolon as separator).
+
+      - If the search is about an artist: Then media_id is the artist name.
+
+      - If the search is a specific playlist: Then media_id is the requested playlist without the word
+      playlist at the start or end (example: instead of "Favorite Songs playlist" return "Favorite Songs").
+
+      - If the search is a radio channel: Then media_id is the requested channel.
+
+      If this tool answers that it could not resolve the media, none of the entries was found and nothing
+      is playing: call it again with fewer and more famous songs, the artist first, in the same "Artist
+      name - Song name" form.
+
+      This is a mandatory argument and must always be provided.'
+    area_prompt: 'The area or areas for which the music is requested.
+
+      - The request names a room (or rooms): pass those areas.
+
+      - The request names a speaker (a player) and no room: pass only "media_player" and no area at all,
+      otherwise the music also starts in the room you are in.
+
+      - The request names both a room and a speaker, each specifically: pass both; the music then plays
+      in that room and on that speaker.
+
+      - The request names neither: pass the area the request comes from. You were told which area you
+      are in, so pass it, also for a single named song and also when the request is to add something to
+      the queue or to play it next ("the queue" is not a target). A request without an area and without
+      a player is handed back and nothing plays.
+
+      If you do not know which room the request comes from, do not use this parameter; ask the user which
+      room they want the music in.'
 description: 'This script is used to play music based on a voice request. The tool takes the following
-  arguments: media_type, artist, album, media_id, radio_mode, area. media_id and media_type are always
-  required and must always be supplied as arguments to this tool. An area or Music Assistant media player
-  can optionally be provided in the voice request as well. Use the parameters as described in the description
-  of each parameter. Use this tool whenever the user requests to play music.'
+  arguments: media_type, artist, album, media_id, media_description, area, media_player, shuffle, queue.
+  media_id, media_type and media_description are always required and must always be supplied as arguments
+  to this tool. An area or Music Assistant media player can optionally be provided in the voice request
+  as well. A normal request starts the music now and replaces whatever was queued; only when the user
+  explicitly asks to add something to the queue or to play it next, set the queue argument. Use the parameters
+  as described in the description of each parameter. Use this tool whenever the user requests to play
+  music.'

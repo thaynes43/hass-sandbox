@@ -62,8 +62,9 @@ warnings on the satellite). Nothing turns the TV/AVR on. Three duplicate AVR reg
 Rumpus Room PC's speakers over HDMI) have three registrations: the two non-Music-Assistant ones
 (`media_player.ls50_wireless_ii_174476_2`, `_3`) stay unexposed; the Music Assistant one
 (`media_player.ls50_wireless_ii_174476_4`, "Rumpus Room Speakers") is in the Rumpus Room area and
-exposed since 2026-09-19 so that box's music has somewhere to play — it starts at 50 % and the
-PC level is restored afterwards (`.agents/plans/voice-assist-rollout.md`, Phase 3).
+exposed since 2026-09-19 so that box's music has somewhere to play — it plays there like in any
+other room, with no volume handling (the speakers keep their own level per input; the earlier
+save / 50 % / restore logic was removed on 2026-09-19) (`.agents/plans/voice-assist-rollout.md`, Phase 3).
 
 Defects found (open): Movie ZEN37 buttons 3 ×2 / 4 ×2 call
 `number.movie_room_breeze_target_temperature`, which does not exist (the Cielo controller has
@@ -236,6 +237,9 @@ and are on the `assist_exposure_guard` script allowlist from v1.18.5.
 - **Media:** the Sonos players are `music_assistant` only (native `sonos` entry ignored) — no
   turn_on/turn_off. The Frame TV has two entities (`…_the_frame_75_2` dlna, `…_the_frame_75` MA).
   The Play Music script already reaches every first-floor Sonos by area.
+  Since 2026-09-19 two more music tools work from any box: `script.voice_move_music` ("move the
+  music to the living room": same song, new room) and `script.voice_group_music` ("play this in
+  the kitchen too" / "stop it in the kitchen": a synced Sonos group).
 - **Never expose:** the two locks, the Café ovens/fridge (`water_heater.*`) and appliance
   switches, `switch.downstairs_{livingroom,study}_scene_controller` (fan mains power),
   `switch.zigbee2mqtt_bridge_permit_join` (sits in Dining Room), the dining strip outlets, printer

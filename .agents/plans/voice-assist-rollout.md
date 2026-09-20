@@ -260,7 +260,9 @@ spoken-output rules, the question-mark/open-mic rule with its reason, room conte
 tools, the never-by-voice list. Backup and rationale: `agent-docs/voice-agent-prompts.md`.
 Verified text-only (`scripts/voice-bench/run.sh persona_check.py`): personas intact, no trailing
 question marks, brightness spoken as a percentage, lock requests refused in character.
-**Not yet verified by voice** on Kitchen / Movie Room / Rumpus.
+**Not yet verified by voice** on Movie Room / Rumpus; on Kitchen only one spoken music request
+(2026-09-19, played fine) — lights, state questions, door tools and the persona are still unspoken
+there.
 
 Lesson: a synthetic *voice* bench is not read-only on a Whisper pipeline — Piper audio of "Are the
 rumpus room lights on?" became "Either Rumpus rim lights on" and the old agent switched the
@@ -292,15 +294,23 @@ recompile the four boxes again to reach voice-pe 26.9.0.
 `script.llm_script_for_music_assistant_voice_requests` ("Play Music", the Music Assistant LLM
 blueprint), and that script resolves the target in this order:
 
-1. a Music Assistant player named in the request (`media_player` argument, entity_id or friendly name);
+1. a Music Assistant player named in the request (`media_player` argument, entity_id or friendly
+   name). The agent then passes **no area** (the script targets the union of both, so its own room
+   would start playing too), and a named speaker that is **not** a Music Assistant player stops
+   the request ("that speaker was not found") even when an area or other, valid speakers came with
+   it — it is never dropped silently (blueprint variable `unresolved_players`);
 2. a room named in the request (`area` argument) → `music_assistant.play_media` targeted at the
-   area, i.e. **every Music Assistant player assigned to that HA area**;
+   area, i.e. **every Music Assistant player assigned to that HA area** (a room *and* a speaker,
+   both named on purpose, target both);
 3. nothing named → the agent passes the area it is in. It knows that because HA's Assist API prompt
    says "You are in area X …" (`components/intent/llm.py` in 2026.9), taken from the **area of the
    satellite device**. The `area` argument is an area selector, so HA resolves spoken names and
    aliases to area ids (`helpers/llm.py`, `ScriptTool`);
-4. no area at all (a request that does not come from a satellite) → the blueprint's
-   `default_player`, `media_player.primary_bedroom`.
+4. no area and no player → **handed back, nothing plays** (Tom's ruling 2026-09-19: "hand it back,
+   never guess"). The blueprint returns "call this tool again with the area the request comes from,
+   or ask which room", and the Play Music script no longer sets a `default_player`. Until then the
+   fallback was `media_player.primary_bedroom`, and a room agent that left its area out (seen on
+   "play <song> by <artist>" and on add-to-queue requests) played in the bedroom from another room.
 
 An area with no Music Assistant player in it is a **silent failure**: `play_media` returns success,
 nothing plays, and the agent says it is playing (verified by calling `play_media` at `rumpus_room`
@@ -310,8 +320,8 @@ before the fix). Pause / stop / volume / next are local intents (no LLM, ~0.1 s)
 | Satellite (device area) | Room-less "play X" lands on | Checked |
 |---|---|---|
 | Primary Bedroom | `media_player.primary_bedroom` (Sonos Beam) | text-as-satellite: agent passed `primary_bedroom`, Beam played, "stop the music" paused locally |
-| Kitchen | `media_player.kitchen` (Sonos Amp) | by configuration only |
-| Movie Room | `media_player.movie_room` (Sonos Port — audible only if the AVR is on its input; not checked) | by configuration only |
+| Kitchen | `media_player.kitchen` (Sonos Amp) | Tom's spoken request on 2026-09-19 played there; three text-as-satellite single-song requests carried `kitchen` and played |
+| Movie Room | `media_player.movie_room` (Sonos Port — audible only if the AVR is on its input; not checked) | text-as-satellite, many runs on 2026-09-19 (the empty-room test bed): agent passed `movie_room`, the Port played; never heard by anyone |
 | Rumpus Room | `media_player.ls50_wireless_ii_174476_4` (KEF LS50 W II via Music Assistant), since 2026-09-19 | text-as-satellite: played on the KEFs, "stop the music" paused locally |
 
 Test as a satellite without speaking: `scripts/voice-bench/run.sh bench.py "MODE=pipe REPS=1
@@ -322,49 +332,96 @@ The satellites' own Music Assistant players (`media_player.home_assistant_voice_
 purpose, so music never lands on a box's speaker. `media_player.unnamed_room` ("Pool") and
 `media_player.shed` have no area either; Back Yard is grouped with Pool.
 
-**Rumpus Room KEFs (Tom's rulings, 2026-09-19: "KEFs, at a set volume", then 50 % by ear).** The
-KEFs are the Rumpus Room PC's speakers over HDMI and sit at 92 % for that, so:
+**Rumpus Room KEFs: no special handling (Tom's ruling, 2026-09-19 evening).** The KEFs are the
+Rumpus PC's speakers over HDMI; the Music Assistant KEF entity is in the Rumpus Room area, named
+"Rumpus Room Speakers" (aliases KEFs / KEF speakers / Rumpus speakers) and exposed, so music lands
+there like in any other room. An earlier version of the Play Music script saved "the PC volume",
+started voice music at 50 % and restored the level with an automation ten minutes after the music
+stopped. It was removed the same day — script `pre_actions`/`actions`, the helper
+`input_number.rumpus_room_kef_saved_volume` and
+`automation.rumpus_room_kefs_restore_volume_after_voice_music` — because it was solving a problem
+that does not exist: the speakers keep their own volume per input (streaming plays at the level
+they remember for it, 50 % at the time; the PC input comes back at its own level by itself), and
+the owner's ruling is to let them play like all the rest and smooth out anything odd later
+(issue #159, closed). The blueprint's `pre_actions` input stays, unused.
 
-- the Music Assistant KEF entity is in the Rumpus Room area, named "Rumpus Room Speakers" (aliases
-  KEFs / KEF speakers / Rumpus speakers) and exposed;
-- the blueprint is **locally patched** (`home-assistant/blueprints/music_assistant_llm_voice_script.yaml`):
-  a `pre_actions` input that runs before `play_media`, and a `playing_before` variable. The Play
-  Music script uses them to save the speakers' volume into
-  `input_number.rumpus_room_kef_saved_volume` (live-only helper, 0 = nothing saved) and set 50 %
-  **before** playing, and sets 50 % again in the blueprint's after-play `actions`, after waiting
-  (up to 15 s) for the speaker to report `playing` — the KEFs wake from standby at their own 20 %,
-  which overrode the first set in the first live test. Both only
-  when the speakers were not already playing, so a volume someone chose mid-session survives the
-  next request. "The speaker" is resolved as *the first Music Assistant player in the Rumpus Room
-  area*, not by entity id (the KEFs have been re-registered before: `_2`, `_3`, `_4`), and exactly
-  that one player is read, clamped and restored. The volume is read into a variable before
-  anything is written, so two parallel runs (the blueprint is `mode: parallel`) can never save the
-  50 % voice level as the PC level. If the player reports no volume at that moment, the script
-  saves the usual PC level (0.92, a constant in the script) and logs a warning, so the 50 % can
-  always be undone;
-- `automation.rumpus_room_kefs_restore_volume_after_voice_music` clears the queue (soft-fail) and
-  restores the saved volume once that player has been quiet for 10 minutes. Normal path: a state
-  trigger on the KEF entity (verified: fired 10 min after the stop, 50 % → 92 %, helper → 0).
-  Backstop: a 10-minute tick with the same conditions plus "the helper is at least ~10 minutes
-  old", for a request that saved the volume and then never played, an HA restart mid-wait, or a
-  re-registered entity; the helper-age condition keeps a tick from undoing a request that is just
-  starting.
+**Moving and sharing music (2026-09-19 evening).** Tom asked the kitchen box to move the music to
+the living room and got a different song: the agents only had Play Music, which starts something
+new. Two more voice tools, both area-based like Play Music and both on the guard allowlist since
+v1.18.7: `script.voice_move_music` (`music_assistant.transfer_queue`: the same song carries on in
+the new room, the old room stops) and `script.voice_group_music` (`media_player.join` / `unjoin`
+on the Music Assistant players = a native Sonos group: the same song in several rooms in sync, and
+rooms leaving again). Verified by direct calls with Tom listening: kitchen joined the living room
+on the same track and left again with the living room still playing; a move living room → kitchen
+continued at the same position; the Rumpus KEFs joined a Sonos group too (Music Assistant syncs
+them); and removing the room that **leads** the group works because the tool hands the queue to a
+room that stays first (a plain unjoin of the leader left the wrong room playing). Seen once and not reproduced: on the first ungroup Music Assistant
+2.10.3 logged `maximum recursion depth exceeded` in its stream feeder and the living room player
+then accepted requests without playing until Music Assistant was restarted.
 
-Tom confirmed (2026-09-19) that the KEFs switch back to the PC's HDMI input by themselves as soon
-as the PC makes a sound, so nothing has to manage their input, and that 92 % on the KEFs is normal
-(Windows is the second volume lever and attenuates it) — so restoring it is right.
+**Queue, track lists and the default player (2026-09-19, after Tom's first spoken music test in
+the bedroom).** Two defects found by that test, plus a third (no default player, routing order
+item 4 above) found while fixing them; all fixed live and verified by text-as-satellite — mostly on
+the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and Kitchen boxes:
 
-The Music Assistant player only reports its own queue: over ten days of daily PC use on the HDMI
-input it was never `playing` (only `idle`), and it stayed `idle` on 2026-09-19 while Tom had PC
-audio running between the test plays — so "already playing" in the script can only mean voice/MA
-music, and PC audio never makes a request skip the 50 % start. The wait for `playing` sits inside
-the tool call on purpose: it costs a second or two normally and up to 15 s only when playback never
-starts; re-clamping from an automation on every `playing` edge instead would also override a
-volume someone chose and then paused/resumed.
+- *Old queue came back.* Music Assistant's default `enqueue` for a **track** request is `play`
+  (play now, keep the old queue); artists, albums and playlists default to `replace`
+  (`controllers/player_queues/config.py`, MA 2.10.3). A mood request is a track list, so whatever an
+  earlier request had queued played next (Miles Davis after "party music"). The blueprint has a
+  third local input, `enqueue_option` (default "Music Assistant default" = upstream behaviour); the
+  Play Music script sets it to `replace`. Verified: a 227-item artist queue became exactly the 5
+  requested tracks. So that "replace by default" does not take queueing away, the blueprint also
+  has an optional LLM-facing field `queue` (`add` / `next`, only when the request talks about the
+  queue); it wins over `enqueue_option`, and for it the shuffle step only runs when the request
+  itself asked to shuffle (the existing queue is kept, and its shuffle setting is somebody's
+  choice; the flip side: an "add" that ends up building the whole queue, because the target's queue
+  was empty, inherits whatever shuffle setting that player was left with). Found while testing it: on "add X to the queue" the agent
+  **left the area out**, and the script's fallback is the default player, so the song went into the
+  bedroom Beam's queue from the Movie Room. Two fixes: the script's `area_prompt` says an
+  add/next request still needs the area, and the blueprint **hands an add/next request without an
+  area or player back** ("call this tool again and give the area") instead of using the default
+  player. Verified: first call without area → handed back → second call with `movie_room` →
+  queued there; "play Waterloo next" passed the area straight away. Review rounds 2 and 3 shaped
+  the rest: an "add" aimed at a speaker that is **not playing** would start nothing (a silent success),
+  and turning such an add into `replace` would destroy a **paused** queue. So `add`/`next` are passed on as they are only when **every** targeted Music
+  Assistant player is already playing (blueprint variable `queue_effective`; unavailable/unknown
+  players are not counted, so a stale entity cannot switch queueing off); otherwise the
+  request becomes `play` — the song starts now and the existing queue is kept behind it. An add is
+  therefore never silent and never destructive. Verified on the Movie Room player: paused
+  227-item queue + "add Dancing Queen" → `enqueue: play`, playing, 228 items, old queue intact;
+  then "add Waterloo" while playing → `enqueue: add`, 229 items, current song kept; shuffle step
+  skipped both times. The same two cases were repeated on the Rumpus KEFs that evening (227 →
+  228 → 229 items) before their volume logic was removed.
+  Also verified: from the Movie Room box "play Miles Davis on the Rumpus Room Speakers" → the agent
+  invented `media_player.kefs`, the hand-back named it, the retry carried `rumpus_room`, and only
+  the KEFs played (before the hand-back that request would have gone to the bedroom default);
+  three "play <song> by <artist>" requests as the Kitchen box all carried `kitchen`.
+  **Open for the TVs/AVR work below:** `queue_targets` ignores `unavailable`/`unknown` players but
+  not `off`/`standby` ones. Every room has exactly one Music Assistant player today and none of
+  them reports `off`, but a TV- or AVR-backed MA player added to a room would, while powered down,
+  keep "every target is playing" from ever holding there, and each add would play now instead of
+  appending. Decide the rule when such a player is added (should a powered-down TV be a music
+  target at all?), then extend the filter.
+- *Invented track lists did not resolve.* For "party mood" the agent first sent
+  `Title - Artist featuring X` entries; Music Assistant splits on " - " as *artist - title*, so
+  **none** of them resolved and the call failed (`Could not resolve [...]`; a list where only some
+  entries resolve plays those and reports nothing — two later test lists played 4 of 5). Its retry
+  used bare titles, which matched the wrong versions (a KIDZ BOP "Party Rock Anthem"). The
+  script's `media_id_prompt` input now spells out `Artist name - Song name`, main artist only, at
+  most five songs for a mood request (one artist named → `artist` parameter + bare song names),
+  and "retry with fewer, more famous songs" when the tool could resolve none. Verified: five
+  entries in the right form, one call (script run 1.1 s; the 7-track kitchen request had taken
+  4.7 s). Mood → *playlist* is not an option here: `music_assistant.search` returns no provider
+  playlists for "party hits", only library playlists.
 
-Open: the wake-from-standby path of the after-play volume set has not been re-tested (the KEFs
-were awake for every run after that step was added). Still to
-do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
+The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
+is wireless on SonosNet with marginal links and dropped every stream that afternoon (`ERROR_LSE`,
+`ERROR_BUFFERING`). A text re-test at 18:35, after Tom had moved SonosNet from channel 11 to 1 and
+with the house empty, played 5.5 minutes without a stream error although the link numbers had not
+changed — "marginal, currently working", not fixed. Plan agreed with Tom: SonosNet off + soundbars
+wired (`backlog/002-sonosnet-off-wired-soundbars.md`).
+
+Still to do in this phase: the TVs, the AVR and the Frame (duplicate registrations), and the Sonos players
 being Music Assistant-only (no turn_on/turn_off). The separate "ChatGPT for Music Assistant" agent
 (`conversation.chatgpt`) belongs to the older JSON-prompt approach and is not used by the script.
 
