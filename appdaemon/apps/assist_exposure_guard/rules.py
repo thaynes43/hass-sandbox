@@ -108,9 +108,10 @@ DEFAULT_DENY_ENTITY_GLOBS: Tuple[str, ...] = (
     # these globs are evaluated BEFORE the script allowlist, so a voice tool named
     # for the unsafe direction is refused however it got exposed.  A name is not a
     # body (see the script allowlist comment) — this catches the honest mistake.
-    "script.voice_unlock_*",
-    "script.voice_open_garage*",
-    "script.voice_disarm_*",
+    "script.voice_*unlock*",
+    "script.voice_*open*garage*",
+    "script.voice_*garage*open*",
+    "script.voice_*disarm*",
 )
 
 #: The ``switch`` domain is deny-by-default: a switch is exposed only by name.
@@ -139,9 +140,9 @@ DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = (
 #: list cost seven AppDaemon releases in three days (one per batch of new tools),
 #: with no enforcement on record (``last_enforced: never`` on 2026-09-20).
 #:
-#: The inverse names (``script.voice_unlock_*``, ``script.voice_open_garage*``,
-#: ``script.voice_disarm_*``) are refused by ``DEFAULT_DENY_ENTITY_GLOBS``, which
-#: is evaluated before this list.
+#: The inverse names — ``unlock``, ``disarm`` or ``open`` + ``garage`` anywhere
+#: in a ``script.voice_`` id — are refused by ``DEFAULT_DENY_ENTITY_GLOBS``,
+#: which is evaluated before this list.
 #:
 #: Two entries still reach the dangerous set — ``script.voice_lock_all_doors``
 #: and ``script.voice_close_garage_doors``.  They are safe by construction, not

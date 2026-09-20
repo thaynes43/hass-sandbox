@@ -1509,9 +1509,10 @@ assist_exposure_guard:
     - "switch.nrz120804q_*"
     # Direction backstop for the script.voice_* pattern below: voice may lock,
     # close and arm, never the inverse.  Evaluated before the script allowlist.
-    - "script.voice_unlock_*"
-    - "script.voice_open_garage*"
-    - "script.voice_disarm_*"
+    - "script.voice_*unlock*"
+    - "script.voice_*open*garage*"
+    - "script.voice_*garage*open*"
+    - "script.voice_*disarm*"
   # The switch domain is DENY BY DEFAULT — a switch is exposed by name, never
   # by area.  Add entity ids here AND in the rules.py default as rooms are
   # curated: a test pins every list in this entry to the code defaults.

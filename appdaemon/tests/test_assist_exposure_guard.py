@@ -355,6 +355,14 @@ def test_non_allowlisted_scripts_are_violations(entity_id: str) -> None:
         "script.voice_open_garage_doors",
         "script.voice_open_garage",
         "script.voice_disarm_alarm",
+        # The word anywhere, in either order, with or without a suffix.
+        "script.voice_unlock",
+        "script.voice_disarm",
+        "script.voice_front_door_unlock",
+        "script.voice_garage_open",
+        "script.voice_garage_doors_open",
+        "script.voice_open_the_garage_doors",
+        "script.voice_alarm_disarm",
     ],
 )
 def test_unsafe_direction_voice_scripts_are_refused_before_the_pattern(
@@ -377,6 +385,8 @@ def test_unsafe_direction_voice_scripts_are_refused_before_the_pattern(
         "script.voice_close_garage_doors",
         # `open` is only refused for the garage: shades and rooms open by voice.
         "script.voice_open_shades",
+        "script.voice_shades",
+        "script.voice_garage_lights_on",
     ],
 )
 def test_the_direction_backstop_leaves_the_secure_direction_alone(entity_id: str) -> None:
