@@ -1,0 +1,76 @@
+# automation.voice_stop_the_music_stop_and_ungroup (created live via MCP, 2026-09-19; id stripped).
+# Sentence trigger, so it runs before Home Assistant's built-in intents, which treat "stop the music" as PAUSE
+# and keep a speaker group together (the bedroom TV then also played in the bathroom). "Pause" is untouched.
+# Music Assistant reports a PAUSED Sonos group as idle, so grouped players count as in scope even when
+# idle; a group leader on its TV input keeps playing and only its followers are released.
+alias: '[Voice] Stop the music = stop and ungroup'
+description: 'Home Assistant''s built-in intent treats ''stop the music'' as PAUSE, which keeps a Sonos/Music
+  Assistant group together - so when the bedroom soundbar then switched to the TV, the TV audio also played
+  in the bathroom (Tom, 2026-09-19). This sentence trigger runs before the built-in intents: ''stop''
+  really stops the music where the request comes from (or, if nothing plays there, wherever music is playing)
+  and dissolves the group. ''Pause'' is untouched and keeps the group. A soundbar that is playing TV audio
+  is never touched.'
+triggers:
+- trigger: conversation
+  command:
+  - stop [the] music
+  - stop [the] music [in] here
+  - stop [the] music everywhere
+  - stop playing [[the] music]
+  - stop [the] song
+  - turn off the music
+  - turn the music off
+  - music off
+actions:
+- variables:
+    area: '{{ area_id(trigger.device_id) if trigger.device_id else '''' }}'
+- variables:
+    here: '{{ (area_entities(area) | select(''in'', integration_entities(''music_assistant'')) | select(''match'',
+      ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'', ''unknown'')
+      | first | default('''', true)) if area else '''' }}'
+- alias: 'Scope: a player counts when it is GROUPED (Music Assistant reports a paused Sonos group as idle,
+    and an idle group is exactly what leaks TV audio later) or when it plays/pauses music that is not
+    the TV input. This room when it counts, otherwise - or when the sentence says ''everywhere'' - every
+    such player'
+  variables:
+    active: '{% set everywhere = ''everywhere'' in (trigger.sentence | default('''', true) | lower) %}{%
+      set ns = namespace(p=[]) %}{% for p in integration_entities(''music_assistant'') | select(''match'',
+      ''media_player\.'') | list %}{% if (state_attr(p, ''group_members'') or []) | count > 1 or (states(p)
+      in [''playing'', ''paused''] and state_attr(p, ''source'') != ''TV'') %}{% set ns.p = ns.p + [p]
+      %}{% endif %}{% endfor %}{{ [here] if not everywhere and here in ns.p else ns.p }}'
+- variables:
+    leaders: '{% set ns = namespace(l=[]) %}{% for p in active %}{% set g = state_attr(p, ''group_members'')
+      or [] %}{% set ns.l = ns.l + [(g | first) if g else p] %}{% endfor %}{{ ns.l | unique | list }}'
+- variables:
+    followers: '{% set ns = namespace(f=[]) %}{% for l in leaders %}{% set ns.f = ns.f + ((state_attr(l,
+      ''group_members'') or []) | reject(''eq'', l) | list) %}{% endfor %}{{ ns.f | unique | list }}'
+- alias: 'A leader that is on its TV input keeps playing the TV: only its followers are released'
+  variables:
+    stop_list: '{% set ns = namespace(s=[]) %}{% for l in leaders %}{% if state_attr(l, ''source'') !=
+      ''TV'' and states(l) in [''playing'', ''paused''] %}{% set ns.s = ns.s + [l] %}{% endif %}{% endfor
+      %}{{ ns.s }}'
+- if:
+  - condition: template
+    value_template: '{{ stop_list | count == 0 and followers | count == 0 }}'
+  then:
+  - set_conversation_response: No music is playing.
+  - stop: Nothing to stop
+- if:
+  - condition: template
+    value_template: '{{ stop_list | count > 0 }}'
+  then:
+  - action: media_player.media_stop
+    continue_on_error: true
+    target:
+      entity_id: '{{ stop_list }}'
+- if:
+  - condition: template
+    value_template: '{{ followers | count > 0 }}'
+  then:
+  - action: media_player.unjoin
+    continue_on_error: true
+    target:
+      entity_id: '{{ followers }}'
+- set_conversation_response: Stopped.
+mode: queued
+max: 3

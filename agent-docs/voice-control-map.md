@@ -240,6 +240,9 @@ and are on the `assist_exposure_guard` script allowlist from v1.18.5.
   Since 2026-09-19 two more music tools work from any box: `script.voice_move_music` ("move the
   music to the living room": same song, new room) and `script.voice_group_music` ("play this in
   the kitchen too" / "stop it in the kitchen": a synced Sonos group).
+  House-wide rule since 2026-09-19: **"stop the music" stops AND ungroups** (sentence-trigger
+  automation `automation.voice_stop_the_music_stop_and_ungroup`, never touches a soundbar on its TV
+  input); **"pause" keeps the group**.
 - **Never expose:** the two locks, the Café ovens/fridge (`water_heater.*`) and appliance
   switches, `switch.downstairs_{livingroom,study}_scene_controller` (fan mains power),
   `switch.zigbee2mqtt_bridge_permit_join` (sits in Dining Room), the dining strip outlets, printer

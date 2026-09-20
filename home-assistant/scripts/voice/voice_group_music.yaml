@@ -7,32 +7,75 @@
 # dissolved, the queue is transferred to the first room that stays and the rest regroup around it.
 # A room named for removal that is not in the group is simply stopped. On the guard allowlist since
 # v1.18.7 and exposed to Assist since 2026-09-19.
+# add: whichever named room is really playing decides, and the LEADER of its group is the source
+# (joining onto a member makes Music Assistant tear the group apart and the music stops); rooms that
+# already play together are left alone.
+# Rooms are a FIXED LIST (select), not an area selector: with an area field Home Assistant 2026.9 crashes
+# the whole voice request (IndexError in helpers/llm.py, the box blinks red) when the agent passes a room
+# name it cannot match exactly, e.g. "bathroom" for the area "Primary Bathroom" (first voice test, 2026-09-19).
 alias: Group Music
 description: Voice tool that plays the music of one room in OTHER rooms too, in sync (the same song everywhere),
-  or takes rooms out of that group again. Use it for 'play this in the living room too', 'play it in the
-  kitchen and the study as well', 'play this everywhere downstairs' (name the rooms) with action add,
-  and for 'stop it in the living room but keep it here', 'stop it in here but keep it in the living room'
-  or 'just the kitchen now' with action remove. source_area is the room whose music is shared (the room
-  the request comes from unless the user names another room); areas are the rooms to add, or the rooms
-  that should stop and leave the group (that may be the room the request comes from). Use Move Music instead
-  when the music should simply go from one room to another.
+  or takes rooms out of that group again. Use it for 'play this in the living room too', 'play the music
+  in the bedroom and the bathroom', 'play it in the kitchen and the study as well' (name the rooms) with
+  action add, and for 'stop it in the living room but keep it here', 'stop it in here but keep it in the
+  living room' or 'just the kitchen now' with action remove. source_room is the room where the music is
+  playing NOW (the room the request comes from, or the room it was just moved to, unless the user names
+  another); rooms are the rooms to add, or the rooms that should stop (that may be the room the request
+  comes from). When the user lists the rooms that should play ('in the bedroom and the bathroom') and
+  one of them is the source room, pass the others. Use Move Music instead when the music should simply
+  go from one room to another.
 icon: mdi:speaker-multiple
 mode: queued
 max: 3
 fields:
-  source_area:
+  source_room:
     name: Source room
-    description: The room whose music is shared. Use the room the request comes from unless the user names
-      another room.
+    description: 'The room where the music is playing now and whose music is shared. Pick from the list:
+      primary_bedroom and primary_bathroom are the main bedroom and its bathroom (from the primary bedroom,
+      ''the bathroom'' means primary_bathroom and ''the bedroom'' means primary_bedroom), blue_room is
+      Jackson''s room, pink_room is Penelope''s room, white_room is the guest room, rumpus_room has the
+      KEF speakers, study is the office.'
     required: true
     selector:
-      area: {}
-  areas:
+      select:
+        options:
+        - primary_bedroom
+        - primary_bathroom
+        - kitchen
+        - living_room
+        - study
+        - movie_room
+        - rumpus_room
+        - blue_room
+        - pink_room
+        - white_room
+        - kids_bathroom
+        - front_porch
+        - back_yard
+  rooms:
     name: Rooms
-    description: The rooms to add to the group, or to take out of it.
+    description: 'The rooms to add to the group, or to stop and take out of it. Pick from the list: primary_bedroom
+      and primary_bathroom are the main bedroom and its bathroom (from the primary bedroom, ''the bathroom''
+      means primary_bathroom and ''the bedroom'' means primary_bedroom), blue_room is Jackson''s room,
+      pink_room is Penelope''s room, white_room is the guest room, rumpus_room has the KEF speakers, study
+      is the office.'
     required: true
     selector:
-      area:
+      select:
+        options:
+        - primary_bedroom
+        - primary_bathroom
+        - kitchen
+        - living_room
+        - study
+        - movie_room
+        - rumpus_room
+        - blue_room
+        - pink_room
+        - white_room
+        - kids_bathroom
+        - front_porch
+        - back_yard
         multiple: true
   action:
     name: Action
@@ -45,6 +88,28 @@ fields:
         - add
         - remove
 sequence:
+- alias: 'Rooms are a fixed list, not an area selector: Home Assistant crashes the whole voice request
+    (IndexError in helpers/llm.py) when an LLM passes an area name it cannot match, e.g. ''bathroom''
+    for ''Primary Bathroom'''
+  variables:
+    room_area:
+      primary_bedroom: primary_bedroom
+      primary_bathroom: main_bed_bath
+      kitchen: kitchen
+      living_room: living_room
+      study: office
+      movie_room: movie_room
+      rumpus_room: rumpus_room
+      blue_room: blue_room
+      pink_room: pink_room
+      white_room: white_room
+      kids_bathroom: kids_bathroom
+      front_porch: front_porch
+      back_yard: back_yard
+- variables:
+    source_area: '{{ room_area.get(source_room, '''') }}'
+    areas: '{% set ns = namespace(a=[]) %}{% for r in [rooms] | flatten %}{% if r in room_area %}{% set
+      ns.a = ns.a + [room_area[r]] %}{% endif %}{% endfor %}{{ ns.a }}'
 - variables:
     src: '{{ area_entities(source_area) | select(''in'', integration_entities(''music_assistant'')) |
       select(''match'', ''media_player\.'') | reject(''is_state'', ''unavailable'') | reject(''is_state'',
@@ -60,44 +125,80 @@ sequence:
     - condition: template
       value_template: '{{ action == ''add'' }}'
     sequence:
+    - alias: Whichever of the named rooms is really playing is the source (the agent often names the room
+        it is in, while the music plays in another room that was named); the others join it
+      variables:
+        everyone: '{{ (([src] if src != '''' else []) + members) | unique | list }}'
     - if:
       - condition: template
-        value_template: '{{ src == '''' or targets | count == 0 }}'
+        value_template: '{{ everyone | count < 2 }}'
       then:
       - variables:
           result:
-            response: 'Nothing changed: {{ ''there is no Music Assistant speaker in '' ~ area_name(source_area)
-              if src == '''' else ''none of those rooms has a Music Assistant speaker other than the source
-              room'' }}.'
+            response: 'Nothing changed: fewer than two of those rooms have a Music Assistant speaker.'
       - stop: No usable speakers
         response_variable: result
+    - alias: 'A room that is really PLAYING MUSIC decides (source room first, then the others); a soundbar
+        on its TV input does not count, or the TV audio would be shared. Only when nothing plays does
+        a paused room count. The LEADER of that room''s group is the source: joining onto a member makes
+        Music Assistant tear the group apart and the music stops'
+      variables:
+        playing_room: '{% set ns = namespace(o=[]) %}{% for p in ((([src] if src != '''' else []) + everyone)
+          | unique | list) %}{% if state_attr(p, ''source'') != ''TV'' %}{% set ns.o = ns.o + [p] %}{%
+          endif %}{% endfor %}{{ ns.o | select(''is_state'', ''playing'') | first | default(ns.o | select(''is_state'',
+          ''paused'') | first | default('''', true), true) }}'
+    - variables:
+        eff_src: '{{ ((state_attr(playing_room, ''group_members'') or []) | first | default(playing_room,
+          true)) if playing_room != '''' else '''' }}'
     - if:
       - condition: template
-        value_template: '{{ states(src) not in [''playing'', ''paused''] }}'
+        value_template: '{{ eff_src == '''' }}'
       then:
       - variables:
           result:
-            response: 'Nothing changed: nothing is playing in {{ area_name(source_area) }}.'
-      - stop: Nothing playing in the source room
+            response: 'Nothing changed: nothing is playing in any of those rooms.'
+      - stop: Nothing playing in the named rooms
         response_variable: result
-    - alias: 'A speaker that cannot join (the Rumpus KEFs are not Sonos) must not abort the tool: the
-        result below says who really joined'
+    - variables:
+        eff_targets: '{{ everyone | reject(''eq'', eff_src) | reject(''in'', state_attr(eff_src, ''group_members'')
+          or []) | list }}'
+    - alias: 'Already one group: leave it alone'
+      if:
+      - condition: template
+        value_template: '{{ eff_targets | count == 0 }}'
+      then:
+      - variables:
+          result:
+            response: 'Nothing to do: those rooms already play the same music together.'
+      - stop: Already grouped
+        response_variable: result
+    - alias: 'A speaker that cannot join must not abort the tool: the result below says who really joined'
       action: media_player.join
       continue_on_error: true
       target:
-        entity_id: '{{ src }}'
+        entity_id: '{{ eff_src }}'
       data:
-        group_members: '{{ targets }}'
+        group_members: '{{ eff_targets }}'
+    - alias: When only a paused room had music, resume it, so the answer 'now also plays' is true
+      if:
+      - condition: template
+        value_template: '{{ is_state(eff_src, ''paused'') }}'
+      then:
+      - action: media_player.media_play
+        continue_on_error: true
+        target:
+          entity_id: '{{ eff_src }}'
     - delay:
         seconds: 3
     - variables:
-        joined: '{{ targets | select(''in'', state_attr(src, ''group_members'') or []) | list }}'
+        joined: '{{ eff_targets | select(''in'', state_attr(eff_src, ''group_members'') or []) | list
+          }}'
     - variables:
         result:
-          response: '{% set ok = joined | map(''area_name'') | list %}{% set bad = targets | reject(''in'',
-            joined) | map(''area_name'') | list %}{{ (''The music from '' ~ area_name(source_area) ~ ''
-            now also plays in '' ~ ok | join('', '') ~ ''.'') if ok else ''No room was added.'' }}{{ (''
-            Could not be added: '' ~ bad | join('', '') ~ ''.'') if bad else '''' }}'
+          response: '{% set ok = joined | map(''area_name'') | list %}{% set bad = eff_targets | reject(''in'',
+            joined) | map(''area_name'') | list %}{{ (''The music from '' ~ area_name(eff_src) ~ '' now
+            also plays in '' ~ ok | join('', '') ~ ''.'') if ok else ''No room was added.'' }}{{ ('' Could
+            not be added: '' ~ bad | join('', '') ~ ''.'') if bad else '''' }}'
   - conditions:
     - condition: template
       value_template: '{{ action == ''remove'' }}'
