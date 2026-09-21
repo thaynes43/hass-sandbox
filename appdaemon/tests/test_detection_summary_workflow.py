@@ -216,6 +216,32 @@ def test_an_unknown_app_workflow_stops_the_app_at_startup() -> None:
     assert SOURCE_APP_CONFIG in message
 
 
+def test_a_nested_image_workflow_is_honoured() -> None:
+    app = _make_app(
+        _args(ai_provider_conf={"image": {"bundle": "comfyui-qwen-edit", "image_workflow": _TUNED}})
+    )
+    _initialize(app)
+    assert app._comfyui_workflow == _TUNED
+    assert app._comfyui_workflow_source == SOURCE_APP_CONFIG
+
+
+def test_an_unknown_nested_workflow_stops_the_app_at_startup() -> None:
+    """The nested form fails fast exactly like the top-level one."""
+    app = _make_app(
+        _args(
+            ai_provider_conf={
+                "image": {"bundle": "comfyui-qwen-edit", "image_workflow": "qwen-typo"}
+            }
+        )
+    )
+    with pytest.raises(ValueError) as exc_info:
+        _initialize(app)
+    message = str(exc_info.value)
+    assert "qwen-typo" in message
+    assert "not registered" in message
+    assert SOURCE_APP_CONFIG in message
+
+
 def test_an_unknown_bundle_workflow_stops_the_app_at_startup() -> None:
     app = _make_app(
         _args(

@@ -432,6 +432,7 @@ def _validate_against_graph(workflow: Workflow, graph: Dict[str, Any]) -> None:
                 f"{prefix}: bindings.images[{idx}]: node {slot.node!r} is bound to more than one slot"
             )
         seen_slot_nodes.add(slot.node)
+        declared: set[str] = set()
         for target in slot.unlink:
             node_id, sep, input_name = str(target).partition(".")
             if not sep or not node_id or not input_name:
@@ -445,10 +446,64 @@ def _validate_against_graph(workflow: Workflow, graph: Dict[str, Any]) -> None:
                     f"{prefix}: bindings.images[{idx}].unlink: {target!r} does not link to "
                     f"slot node {slot.node!r} (links to {linked!r})"
                 )
+            declared.add(f"{node_id}.{input_name}")
+
+        # The reverse direction: slot 0 is always supplied, but any later slot
+        # can be pruned, and pruning deletes its node. Every input still
+        # pointing at that node would then dangle and ComfyUI would reject the
+        # whole graph at render time — so every consumer must be declared here,
+        # not just the ones someone remembered.
+        if idx > 0:
+            for consumer in _consumers_of(graph, slot.node):
+                if consumer not in declared:
+                    raise WorkflowRegistryError(
+                        f"{prefix}: bindings.images[{idx}]: slot node {slot.node!r} can be "
+                        f"pruned, but {consumer!r} consumes it and is not in that slot's "
+                        f"unlink list {sorted(declared)}"
+                    )
+
+    # An override is applied after the bindings, so one that targets a bound
+    # input silently overrules the provider — a `seed:` pasted into a sampler
+    # override block would pin every render to the same seed, and nothing
+    # would look wrong.
+    reserved: Dict[Tuple[str, str], str] = {
+        (workflow.prompt.node, workflow.prompt.input): "bindings.prompt",
+        (workflow.output.node, workflow.output.input): "bindings.output",
+    }
+    if workflow.negative_prompt is not None:
+        reserved[(workflow.negative_prompt.node, workflow.negative_prompt.input)] = (
+            "bindings.negative_prompt"
+        )
+    if workflow.seed is not None:
+        reserved[(workflow.seed.node, workflow.seed.input)] = "bindings.seed"
+    for idx, slot in enumerate(workflow.images):
+        reserved[(slot.node, slot.input)] = f"bindings.images[{idx}]"
 
     for node_id, node_overrides in workflow.overrides.items():
         for input_name in node_overrides:
             _check_input(node_id, str(input_name), f"overrides[{node_id!r}]")
+            bound_by = reserved.get((str(node_id), str(input_name)))
+            if bound_by is not None:
+                raise WorkflowRegistryError(
+                    f"{prefix}: overrides[{node_id!r}][{input_name!r}] targets the same input "
+                    f"as {bound_by}, which the provider writes at render time — an override "
+                    f"there would silently replace it. Remove one of the two."
+                )
+
+
+def _consumers_of(graph: Dict[str, Any], node_id: str) -> Tuple[str, ...]:
+    """Every ``<consumer>.<input>`` whose value links to ``node_id``."""
+    found: list[str] = []
+    for consumer_id, node in graph.items():
+        if consumer_id == node_id or not isinstance(node, dict):
+            continue
+        inputs = node.get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        for input_name, value in inputs.items():
+            if isinstance(value, list) and value and str(value[0]) == str(node_id):
+                found.append(f"{consumer_id}.{input_name}")
+    return tuple(sorted(found))
 
 
 def _required_models(graph: Dict[str, Any]) -> Tuple[str, ...]:

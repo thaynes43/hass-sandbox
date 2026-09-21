@@ -217,7 +217,7 @@ ai_provider_conf:
 | `simple_text` | No | Bundle ref for the run narrative |
 | `multimodal` | No | Bundle ref for vision scoring |
 | `image` | No | Bundle ref for image generation |
-| `image_workflow` | No | ComfyUI only: workflow name, overriding the bundle's for this app. Ignored by other providers; an unregistered name fails at startup. |
+| `image_workflow` | No | ComfyUI only: workflow name, overriding the bundle's for this app. Also accepted nested inside a scoped `image: {bundle: ..., image_workflow: ...}` dict, which wins over the top-level key. On a non-ComfyUI image provider it does nothing and logs a WARNING. An unregistered name fails at startup. |
 
 ### Defaults (overridable)
 

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from .schema import BundleConfig, ProviderDefaults, ProviderModelSettings
+
+logger = logging.getLogger(__name__)
 
 # Directory containing provider YAML files (sibling to this module)
 _MODEL_SETTINGS_DIR = Path(__file__).resolve().parent
@@ -199,11 +202,11 @@ def resolve_capability_config(
             flat = _bundle_to_flat_config(bundle, capability, resolve_secret)
             flat = _merge_capability_overrides(flat, scoped, capability)
             if capability == "image":
-                flat = _apply_image_workflow_override(flat, conf)
+                flat = _apply_image_workflow_override(flat, conf, scoped=scoped)
             return flat
         flat = _inline_to_flat_config(scoped, capability, resolve_secret)
         if capability == "image":
-            flat = _apply_image_workflow_override(flat, conf)
+            flat = _apply_image_workflow_override(flat, conf, scoped=scoped)
         return flat
 
     # Inline config path (backward compatibility)
@@ -214,25 +217,54 @@ def resolve_capability_config(
 
 
 # ComfyUI only: which workflow an app wants, named in its own ai_provider_conf
-# rather than in the shared bundle. Other providers have no workflow concept
-# and ignore the key entirely.
+# rather than in the shared bundle. Other providers have no workflow concept.
 _IMAGE_WORKFLOW_KEY = "image_workflow"
+
+# Warned-about (provider, name) pairs, so an ignored key says so once rather
+# than on every render. Cleared by clear_cache() for tests.
+_ignored_image_workflow_warnings: set = set()
 
 
 def _apply_image_workflow_override(
-    flat: Dict[str, Any], conf: Dict[str, Any]
+    flat: Dict[str, Any],
+    conf: Dict[str, Any],
+    scoped: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Let one app override the bundle's ComfyUI workflow by name.
 
-    ``ai_provider_conf: {image: comfyui-qwen-edit, image_workflow: <name>}``.
+    Accepted in two places, the nested one winning because it is the more
+    specific::
+
+        ai_provider_conf: {image: comfyui-qwen-edit, image_workflow: <name>}
+        ai_provider_conf: {image: {bundle: comfyui-qwen-edit, image_workflow: <name>}}
+
     The name is not validated here — ``build_image_provider`` owns that, so a
     typo fails at app startup with the registered names listed.
     """
-    requested = str(conf.get(_IMAGE_WORKFLOW_KEY) or "").strip()
+    nested = str((scoped or {}).get(_IMAGE_WORKFLOW_KEY) or "").strip()
+    top_level = str(conf.get(_IMAGE_WORKFLOW_KEY) or "").strip()
+    requested = nested or top_level
     if not requested:
         return flat
-    if str(flat.get("provider") or "").strip().lower() != "comfyui":
+
+    provider = str(flat.get("provider") or "").strip().lower()
+    if provider != "comfyui":
+        # Not an error: a bundle ref can be swapped to another provider
+        # without touching this key. But it silently does nothing, which is
+        # exactly the kind of thing someone spends an afternoon on.
+        where = "image.image_workflow" if nested else "image_workflow"
+        key = (provider, where, requested)
+        if key not in _ignored_image_workflow_warnings:
+            _ignored_image_workflow_warnings.add(key)
+            logger.warning(
+                "ai_provider_conf.%s=%r ignored: it selects a ComfyUI workflow and the "
+                "resolved image provider is %r, which has no workflows.",
+                where,
+                requested,
+                provider or "unset",
+            )
         return flat
+
     options = dict(flat.get("provider_options") or {})
     options["workflow"] = requested
     options["workflow_source"] = "app_config"
@@ -399,3 +431,4 @@ def _merge_capability_overrides(
 def clear_cache() -> None:
     """Clear the provider settings cache (for tests)."""
     _provider_cache.clear()
+    _ignored_image_workflow_warnings.clear()

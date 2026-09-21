@@ -286,3 +286,75 @@ def test_image_workflow_applies_to_an_inline_comfyui_config() -> None:
     flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
     assert flat["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-tuned-3frame"
     assert flat["provider_options"]["workflow_source"] == "app_config"
+
+
+# ---------- image_workflow: nested form, and the ignored-key warning ----------
+
+_TUNED = "qwen-image-edit-2509-lightning4-tuned"
+_QWEN21 = "qwen-image-2.1-2609-25step-edit"
+
+
+def test_image_workflow_is_honoured_inside_a_scoped_dict() -> None:
+    conf = {"image": {"bundle": "comfyui-qwen-edit", "image_workflow": _TUNED}}
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == _TUNED
+    assert flat["provider_options"]["workflow_source"] == "app_config"
+
+
+def test_nested_image_workflow_beats_the_top_level_one() -> None:
+    """The nested key sits with the capability it configures, so it is the
+    more specific of the two."""
+    conf = {
+        "image": {"bundle": "comfyui-qwen-edit", "image_workflow": _TUNED},
+        "image_workflow": _QWEN21,
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == _TUNED
+
+
+def test_image_workflow_is_honoured_in_a_scoped_inline_dict() -> None:
+    conf = {
+        "image": {
+            "provider": "comfyui",
+            "base_url": "https://comfyui.haynesops.com",
+            "model": "qwen-image-2.1",
+            "image_workflow": _TUNED,
+        }
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == _TUNED
+
+
+def test_ignored_image_workflow_warns_once_and_still_resolves(caplog) -> None:
+    """A non-ComfyUI image provider has no workflows; say so rather than
+    dropping the key in silence."""
+    from providers.ai_providers.model_settings import loader
+
+    loader.clear_cache()
+    conf = {"image": "gemini-sota", "image_workflow": _TUNED}
+    with caplog.at_level("WARNING", logger="providers.ai_providers.model_settings.loader"):
+        for _ in range(5):
+            flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+
+    assert flat["provider"] == "gemini"
+    assert flat["model"] == "gemini-3.1-flash-image-preview"
+    assert "workflow" not in (flat.get("provider_options") or {})
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1, "the key is read on every render; warn once"
+    assert "image_workflow" in warnings[0].getMessage()
+    assert _TUNED in warnings[0].getMessage()
+    assert "gemini" in warnings[0].getMessage()
+    loader.clear_cache()
+
+
+def test_ignored_nested_image_workflow_names_the_nested_key(caplog) -> None:
+    from providers.ai_providers.model_settings import loader
+
+    loader.clear_cache()
+    conf = {"image": {"bundle": "gemini-sota", "image_workflow": _TUNED}}
+    with caplog.at_level("WARNING", logger="providers.ai_providers.model_settings.loader"):
+        resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "image.image_workflow" in warnings[0].getMessage()
+    loader.clear_cache()

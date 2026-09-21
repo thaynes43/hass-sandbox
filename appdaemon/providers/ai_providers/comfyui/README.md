@@ -91,8 +91,19 @@ detection_summary_back_yard_pets:
     image_workflow: qwen-image-edit-2509-lightning4-tuned-3frame
 ```
 
-`image_workflow` beats the bundle, and only for that app. Other providers
-ignore the key, so it is harmless on an app that is not on ComfyUI.
+`image_workflow` beats the bundle, and only for that app. It is also accepted
+inside the capability's own scoped dict, which wins over the top-level key
+when both are given:
+
+```yaml
+  ai_provider_conf:
+    image:
+      bundle: comfyui-qwen-edit
+      image_workflow: qwen-image-edit-2509-lightning4-tuned-3frame
+```
+
+On an app whose image provider is not ComfyUI the key does nothing — there are
+no workflows to name — and a WARNING says so rather than dropping it silently.
 
 ### Roll back
 
@@ -198,7 +209,7 @@ Set under `provider_options` in [`comfyui.yaml`](../model_settings/comfyui.yaml)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `workflow` | `str \| null` | `null` | Workflow name for every app on this bundle. `null` follows the registry's `default_workflow`. An unregistered name fails at app startup. |
+| `workflow` | `str \| null` | `null` | Workflow name for every app on this bundle. `null` follows the registry's `default_workflow`. An unregistered name fails at app startup. Overridden per app by `ai_provider_conf.image_workflow`, or by `image_workflow` nested inside the scoped `image:` dict — the nested one wins if both are set. |
 | `upload_namespace` | `str \| null` | `null` | Prefix for uploaded input filenames. The app sets this per camera zone; `null` means `comfyui`. |
 | `min_input_pixels` | `int \| null` | `null` | Log a warning when the first input image's width × height is below this. Does not block generation. |
 | `poll_interval_s` | `float` | `1.0` | Seconds between `/history` polls. |

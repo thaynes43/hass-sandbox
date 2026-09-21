@@ -539,6 +539,114 @@ def test_unlink_must_be_a_list(tmp_path: Path) -> None:
     )
 
 
+def test_an_uncovered_consumer_of_a_prunable_slot_raises(tmp_path: Path) -> None:
+    """Every reference to a prunable slot node must be in its unlink list.
+
+    Pruning deletes the node; an input still pointing at it dangles and
+    ComfyUI rejects the whole graph. The forward check (each unlink target
+    really links to the slot) does not catch a consumer nobody listed.
+    """
+    graph = _minimal_graph()
+    # A third node also consumes slot 1, and the unlink list does not say so.
+    graph["extra"] = {
+        "inputs": {"image": ["load1", 0]},
+        "class_type": "ImageScaleToTotalPixels",
+    }
+    message = _load_expecting_error(_write_registry(tmp_path, graph=graph))
+    assert "bindings.images[1]" in message
+    assert "'load1' can be pruned" in message
+    assert "extra.image" in message
+
+
+def test_every_consumer_covered_is_accepted(tmp_path: Path) -> None:
+    graph = _minimal_graph()
+    graph["extra"] = {"inputs": {"image": ["load1", 0]}, "class_type": "ImageScaleToTotalPixels"}
+    workflow = _minimal_workflow()
+    workflow["bindings"]["images"][1]["unlink"] = ["pos.image2", "neg.image2", "extra.image"]
+    loaded = load_workflow_registry(
+        _write_registry(tmp_path, workflow=workflow, graph=graph)
+    ).get("w1")
+    assert loaded.images[1].unlink == ("pos.image2", "neg.image2", "extra.image")
+
+
+def test_slot_zero_needs_no_unlink_coverage(tmp_path: Path) -> None:
+    """Slot 0 is always supplied, so its node is never pruned."""
+    loaded = load_workflow_registry(_write_registry(tmp_path)).get("w1")
+    assert loaded.images[0].unlink == ()
+
+
+def test_every_shipped_prunable_slot_covers_all_its_consumers() -> None:
+    """The reverse check, asserted against the graphs we actually ship."""
+    registry = load_workflow_registry()
+    for name in registry.names:
+        workflow = registry.get(name)
+        graph = workflow.load_graph()
+        for idx, slot in enumerate(workflow.images):
+            if idx == 0:
+                continue
+            consumers = {
+                f"{cid}.{inp}"
+                for cid, node in graph.items()
+                for inp, value in (node.get("inputs") or {}).items()
+                if isinstance(value, list) and value and str(value[0]) == slot.node
+            }
+            assert consumers == set(slot.unlink), f"{name} slot {idx}"
+
+
+# ---------- an override must not fight a binding ----------
+
+
+@pytest.mark.parametrize(
+    ("node", "input_name", "expected"),
+    [
+        ("sampler", "seed", "bindings.seed"),
+        ("pos", "prompt", "bindings.prompt"),
+        ("neg", "prompt", "bindings.negative_prompt"),
+        ("load0", "image", "bindings.images[0]"),
+        ("load1", "image", "bindings.images[1]"),
+        ("save", "filename_prefix", "bindings.output"),
+    ],
+)
+def test_an_override_colliding_with_a_binding_raises(
+    tmp_path: Path, node: str, input_name: str, expected: str
+) -> None:
+    """Overrides are applied after bindings, so a collision silently wins.
+
+    A `seed:` pasted into a sampler override block would pin every render to
+    the same seed and nothing would look wrong.
+    """
+    workflow = _minimal_workflow()
+    workflow["overrides"] = {node: {input_name: "whatever"}}
+    message = _load_expecting_error(_write_registry(tmp_path, workflow=workflow))
+    assert f"overrides[{node!r}][{input_name!r}]" in message
+    assert expected in message
+
+
+def test_an_override_next_to_a_binding_on_the_same_node_is_fine(tmp_path: Path) -> None:
+    """Only the exact (node, input) collides — cfg beside seed is normal."""
+    workflow = _minimal_workflow()
+    workflow["overrides"] = {"sampler": {"cfg": 2.5, "steps": 8}}
+    loaded = load_workflow_registry(_write_registry(tmp_path, workflow=workflow)).get("w1")
+    assert loaded.overrides["sampler"]["cfg"] == 2.5
+    assert loaded.overrides["sampler"]["steps"] == 8
+
+
+def test_no_shipped_override_collides_with_a_binding() -> None:
+    registry = load_workflow_registry()
+    for name in registry.names:
+        workflow = registry.get(name)
+        bound = {(workflow.prompt.node, workflow.prompt.input)}
+        if workflow.negative_prompt is not None:
+            bound.add((workflow.negative_prompt.node, workflow.negative_prompt.input))
+        if workflow.seed is not None:
+            bound.add((workflow.seed.node, workflow.seed.input))
+        bound.add((workflow.output.node, workflow.output.input))
+        bound.update((slot.node, slot.input) for slot in workflow.images)
+        for node_id, overrides in workflow.overrides.items():
+            for input_name in overrides:
+                assert (node_id, input_name) not in bound, f"{name}: {node_id}.{input_name}"
+
+
 def test_unknown_override_node_raises(tmp_path: Path) -> None:
     workflow = _minimal_workflow()
     workflow["overrides"] = {"ghost": {"cfg": 1}}
