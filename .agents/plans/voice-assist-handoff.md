@@ -245,12 +245,17 @@ it cuts off its surrounds and Sub.
   - Local wins on its own: `play_media` matches the library first, and a local FLAC mapping
     scores ~62 against Spotify's fixed 2–3, so anything on the NAS (307k tracks, ~99 % of the
     library) plays from `/music` with no stream limit. That makes haynes-ops#2994 the weak link.
-  - 89 playlists / ~800 tracks in the MA library exist only on the disabled personal instance
-    ("All Out 80s", "Basement Fight Songs", …): `music_assistant.search` still returns them
-    (`library://playlist/340`), but their only source is switched off. How a play request for one
-    fails (raised error or silent nothing) is untested; the cure is the Automation account
-    following them in Spotify — AFTER haynes-ops#3049 is fixed, since syncing ~800 new tracks
-    is exactly the load that tripped the rate limit.
+  - The disabled personal instance costs **playlists only, not tracks** (corrected 2026-09-21; the
+    earlier "~800 tracks fail" here was an untested inference and wrong). Tracks/albums/artists
+    mapped to it still stream: `streams/audio.py` `_get_mapping_providers` lets another loaded
+    account of the same service serve the same item id. Playlists do not: a disabled instance is
+    not loaded, `mass.get_provider("spotify--NuGaRzch")` returns None and
+    `_get_provider_playlist_tracks` returns `[]`. Measured read-only (HA WS
+    `media_player/browse_media`, no Spotify call in the MA log): `library://playlist/282` "Bike
+    Ride 2025" and `/340` "All Out 80s" → 0 tracks; the control `/485` on the Automation instance →
+    100. So his 89 playlists (incl. "Liked Songs Tom Haynes") open empty; what `play_media` says
+    for one is untested. Deleting the instance would only hide them. Tom's ruling: keep it disabled.
+    They become playable when the Automation account follows them (after haynes-ops#3049).
   - **Spotify search is dead while the account is rate-limited — haynes-ops#3049** (measured 2026-09-21: every
     Spotify Web API call since 03:20 got `Spotify Rate Limiter`, retry in ~3,900 s, renewed hourly by
     MA's album-metadata task; `Search on provider Spotify [Automation] did not return in time`).
