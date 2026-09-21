@@ -355,7 +355,10 @@ def _drive_image_gen(
     seen_configs: List[Any] = []
 
     fake_provider = MagicMock()
-    fake_provider.capabilities = MagicMock(supports_image_to_image=True)
+    # No slot limit: these tests are about workflow *selection*, not trimming.
+    fake_provider.capabilities = MagicMock(
+        supports_image_to_image=True, max_input_images=None
+    )
     fake_provider.edit_image.return_value = dict(edit_meta)
     fake_provider.workflow_name = edit_meta.get("workflow_name")
     fake_provider.workflow_source = edit_meta.get("workflow_source")
@@ -451,3 +454,258 @@ def test_image_gen_start_log_names_the_workflow() -> None:
     assert start_logs
     assert f"workflow={_TUNED}" in start_logs[0]
     assert f"workflow_source={SOURCE_APP_CONFIG}" in start_logs[0]
+
+
+# ---------- reference frames vs the workflow's image slots ----------
+#
+# The app picks 2-4 candidate frames; the provider sends only as many as the
+# selected workflow has image slots. The prompt tells the model how many images
+# it has and carries one note per image, so the app has to trim to the
+# provider's `max_input_images` BEFORE building either — otherwise the prompt
+# counts and describes frames that were never uploaded.
+
+
+def _score(
+    *, male: int = 0, female: int = 0, animal: int = 0, frame_score: float = 1.0, summary: str = ""
+):
+    return _selection_mod.ScoreResult(
+        male_count=male,
+        female_count=female,
+        animal_count=animal,
+        person_score=frame_score,
+        face_score=frame_score,
+        frame_score=frame_score,
+        pose="standing",
+        summary=summary,
+        structured={},
+    )
+
+
+def _four_frame_run(app: DetectionSummary, run_id: str) -> _Run:
+    """Four frames captured one second apart, starting at the run's start."""
+    local_run_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir) / app.bundle_runs_subdir / run_id
+    )
+    frames_dir = local_run_dir / app.captured_subdir
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    frames = []
+    for idx in range(4):
+        (frames_dir / f"frame_{idx:03d}.jpg").write_bytes(b"\xff\xd8\xff" + b"\x00" * 16)
+        frames.append(
+            CapturedFrame(
+                idx=idx,
+                filename=f"frame_{idx:03d}.jpg",
+                image_ha_path=(
+                    f"{app.snapshot_ha_dir}/{app.bundle_runs_subdir}/{run_id}"
+                    f"/{app.captured_subdir}/frame_{idx:03d}.jpg"
+                ),
+                captured_ts=1.0 + idx,
+            )
+        )
+    return _Run(
+        capture=CaptureState(
+            run_id=run_id, started_ts=1.0, ended_ts=5.0, frames=frames, capture_idx=4
+        )
+    )
+
+
+def _four_frame_scores(**_: Any):
+    """Four candidates whose rank order is deliberately not chronological.
+
+    `candidate_idxs` is [best, best-animals, best-males, best-females], so
+    scoring the LAST captured frame best makes rank order [3, 1, 2, 0] against
+    a chronological [0, 1, 2, 3] — the case the notes used to be built in.
+    """
+    scored = {
+        0: _score(female=2, frame_score=3.0, summary="two women leaving"),
+        1: _score(animal=3, frame_score=4.0, summary="three dogs"),
+        2: _score(male=5, frame_score=5.0, summary="five men"),
+        3: _score(male=1, female=1, animal=1, frame_score=9.0, summary="the clearest view"),
+    }
+    return scored, SelectionMeta(
+        budget=4, scored_indices=[0, 1, 2, 3], probes=[0, 1, 2, 3], cutoff_idx_inclusive=3, best_idx=3
+    )
+
+
+def _drive_four_frame_image_gen(
+    app: DetectionSummary, run_id: str, *, max_input_images: Any
+) -> MagicMock:
+    """Run `_build_bundle` to the render against a provider with a slot count."""
+    run = _four_frame_run(app, run_id)
+
+    fake_provider = MagicMock()
+    fake_provider.capabilities = MagicMock(
+        supports_image_to_image=True, max_input_images=max_input_images
+    )
+    fake_provider.edit_image.return_value = dict(_EDIT_META)
+    fake_provider.workflow_name = _EDIT_META["workflow_name"]
+    fake_provider.workflow_source = _EDIT_META["workflow_source"]
+
+    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=_four_frame_scores), \
+         patch("detection_summary_app.manager.should_publish_bundle", return_value=True), \
+         patch("detection_summary_app.manager.build_image_provider", return_value=fake_provider), \
+         patch("detection_summary_app.manager.delete_run_dir", return_value=False):
+        bundle = app._build_bundle(run)
+
+    assert bundle is not None
+    return fake_provider
+
+
+def _notes_block(prompt: str) -> list[str]:
+    return [ln for ln in prompt.splitlines() if ln.startswith("- Image ")]
+
+
+def test_four_selected_frames_are_trimmed_to_three_slots() -> None:
+    """The default workflow has three slots; the fourth candidate is dropped here."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    provider = _drive_four_frame_image_gen(app, "run-trim", max_input_images=3)
+
+    sent = provider.edit_image.call_args.kwargs["input_image_paths"]
+    assert len(sent) == 3
+    # Rank order is preserved: best frame (best.jpg) first, then the extras.
+    assert Path(sent[0]).name == app.bundle_best_filename
+    assert [Path(p).name for p in sent[1:]] == ["frame_001.jpg", "frame_002.jpg"]
+    # The dropped candidate is the lowest-ranked one, frame_000.
+    assert not any(Path(p).name == "frame_000.jpg" for p in sent)
+
+
+def test_every_selected_frame_is_sent_when_the_provider_has_no_limit() -> None:
+    """Gemini and OpenAI take everything, so `max_input_images=None` trims nothing."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    provider = _drive_four_frame_image_gen(app, "run-nolimit", max_input_images=None)
+
+    sent = provider.edit_image.call_args.kwargs["input_image_paths"]
+    assert len(sent) == 4
+    assert [Path(p).name for p in sent] == [
+        app.bundle_best_filename, "frame_001.jpg", "frame_002.jpg", "frame_000.jpg"
+    ]
+    assert len(_notes_block(provider.edit_image.call_args.kwargs["prompt"])) == 4
+
+
+def test_the_notes_describe_the_frames_sent_in_the_order_sent() -> None:
+    """The exact block, because note N is the model's only handle on image N.
+
+    The best frame here is the last one captured (t=3.0s), so a chronological
+    notes order would map every note to the wrong image.
+    """
+    app = _make_app(_args())
+    _initialize(app)
+
+    provider = _drive_four_frame_image_gen(app, "run-notes", max_input_images=3)
+
+    prompt = provider.edit_image.call_args.kwargs["prompt"]
+    assert _notes_block(prompt) == [
+        "- Image 1 (primary frame) t=3.0s: the clearest view (m=1, f=1, animals=1)",
+        "- Image 2 t=1.0s: three dogs (m=0, f=0, animals=3)",
+        "- Image 3 t=2.0s: five men (m=5, f=0, animals=0)",
+    ]
+    # The trimmed frame's summary must not appear at all.
+    assert "two women leaving" not in prompt
+
+
+def test_the_prompt_counts_the_frames_actually_sent() -> None:
+    app = _make_app(_args())
+    _initialize(app)
+
+    provider = _drive_four_frame_image_gen(app, "run-count", max_input_images=3)
+
+    kwargs = provider.edit_image.call_args.kwargs
+    assert "You are provided 3 image(s)" in kwargs["prompt"]
+    assert len(kwargs["input_image_paths"]) == 3
+    assert len(_notes_block(kwargs["prompt"])) == 3
+
+
+def test_a_trim_is_logged_at_debug_with_the_zone_and_the_counts() -> None:
+    app = _make_app(_args())
+    _initialize(app)
+
+    _drive_four_frame_image_gen(app, "run-trimlog", max_input_images=3)
+
+    trims = [str(c) for c in app.log.mock_calls if "trimmed reference frames" in str(c)]
+    assert len(trims) == 1
+    assert "zone=garage" in trims[0]
+    assert "selected=4" in trims[0]
+    assert "sent=3" in trims[0]
+    assert "DEBUG" in trims[0]
+
+
+def test_nothing_is_logged_when_no_frame_is_trimmed() -> None:
+    """A run that fits the slots is not a config-shaped condition worth logging."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    _drive_four_frame_image_gen(app, "run-notrim", max_input_images=4)
+
+    assert not [c for c in app.log.mock_calls if "trimmed reference frames" in str(c)]
+
+
+def test_the_llm_event_records_only_the_frames_sent() -> None:
+    """`input_paths` on the bundle's image_edit event is what was uploaded."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-event")
+    fake_provider = MagicMock()
+    fake_provider.capabilities = MagicMock(supports_image_to_image=True, max_input_images=3)
+    fake_provider.edit_image.return_value = dict(_EDIT_META)
+    fake_provider.workflow_name = _EDIT_META["workflow_name"]
+    fake_provider.workflow_source = _EDIT_META["workflow_source"]
+
+    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=_four_frame_scores), \
+         patch("detection_summary_app.manager.should_publish_bundle", return_value=True), \
+         patch("detection_summary_app.manager.build_image_provider", return_value=fake_provider), \
+         patch("detection_summary_app.manager.delete_run_dir", return_value=False):
+        bundle = app._build_bundle(run)
+
+    event = [
+        e for e in bundle["summary"]["summarized_llm_events"] if e.get("type") == "image_edit"
+    ][0]
+    assert len(event["input_paths"]) == 3
+    assert not any(p.endswith("frame_000.jpg") for p in event["input_paths"])
+
+
+def test_no_note_claims_primary_when_the_best_frame_never_materialised() -> None:
+    """best.jpg is allowed to be missing, and then nothing is the primary frame.
+
+    `_build_bundle` writes best.jpg from `frame_{best_idx:03d}.jpg` only if that
+    file exists, and the wait for it can time out. The best candidate is then
+    skipped with a WARNING and the first upload is a *secondary* reference —
+    which must not be labelled the primary one.
+    """
+    app = _make_app(_args())
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-nobest")
+    # Drop the best frame's source so best.jpg is never written.
+    local_run_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir) / app.bundle_runs_subdir / "run-nobest"
+    )
+    (local_run_dir / app.captured_subdir / "frame_003.jpg").unlink()
+
+    fake_provider = MagicMock()
+    fake_provider.capabilities = MagicMock(supports_image_to_image=True, max_input_images=3)
+    fake_provider.edit_image.return_value = dict(_EDIT_META)
+    fake_provider.workflow_name = _EDIT_META["workflow_name"]
+    fake_provider.workflow_source = _EDIT_META["workflow_source"]
+
+    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=_four_frame_scores), \
+         patch("detection_summary_app.manager.should_publish_bundle", return_value=True), \
+         patch("detection_summary_app.manager.build_image_provider", return_value=fake_provider), \
+         patch("detection_summary_app.manager.delete_run_dir", return_value=False):
+        bundle = app._build_bundle(run)
+
+    assert bundle is not None
+    kwargs = fake_provider.edit_image.call_args.kwargs
+    assert [Path(p).name for p in kwargs["input_image_paths"]] == [
+        "frame_001.jpg", "frame_002.jpg", "frame_000.jpg"
+    ]
+    assert "primary frame" not in kwargs["prompt"]
+    assert _notes_block(kwargs["prompt"]) == [
+        "- Image 1 t=1.0s: three dogs (m=0, f=0, animals=3)",
+        "- Image 2 t=2.0s: five men (m=5, f=0, animals=0)",
+        "- Image 3 t=0.0s: two women leaving (m=0, f=2, animals=0)",
+    ]

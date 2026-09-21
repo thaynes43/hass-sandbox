@@ -402,6 +402,55 @@ def test_empty_workflow_name_is_the_registry_default() -> None:
     assert provider.workflow_name == load_workflow_registry().default_workflow
 
 
+# ---------- capabilities ----------
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "expected_slots"),
+    [
+        (_QWEN21_3FRAME, 3),
+        (_QWEN21, 1),
+        (_LEGACY, 1),
+        (_TUNED, 1),
+        (_TUNED_3FRAME, 3),
+    ],
+)
+def test_capabilities_report_the_workflow_slot_count(
+    workflow_name: str, expected_slots: int
+) -> None:
+    """`max_input_images` is what the caller trims to, per shipped workflow."""
+    provider = _make_provider(workflow_name=workflow_name)
+    assert provider.capabilities.max_input_images == expected_slots
+    assert provider.capabilities.max_input_images == (
+        load_workflow_registry().get(workflow_name).max_images
+    )
+
+
+def test_capabilities_are_per_instance_not_per_class() -> None:
+    """Two apps on different workflows must not share one slot count."""
+    three_frame = _make_provider(workflow_name=_QWEN21_3FRAME)
+    single = _make_provider(workflow_name=_QWEN21)
+    assert three_frame.capabilities.max_input_images == 3
+    assert single.capabilities.max_input_images == 1
+    # The class default stays workflow-independent, so reading it is not a lie.
+    assert ComfyUIImageGenerationProvider.capabilities.max_input_images is None
+
+
+def test_capabilities_keep_the_flags_callers_already_read() -> None:
+    """The manager reads `supports_image_to_image` off the same object."""
+    provider = _make_provider()
+    assert provider.capabilities.supports_image_to_image is True
+    assert provider.capabilities.supports_text_to_image is False
+    assert provider.capabilities.supports_inpaint is False
+    assert provider.capabilities.notes
+
+
+def test_default_workflow_capabilities_match_the_registry_default() -> None:
+    provider = _make_provider()  # no workflow named -> registry default
+    default = load_workflow_registry().get(load_workflow_registry().default_workflow)
+    assert provider.capabilities.max_input_images == default.max_images == 3
+
+
 # ---------- workflow construction ----------
 
 
@@ -637,6 +686,31 @@ def test_two_inputs_render_on_the_default_workflow(tmp_path: Path) -> None:
     assert "11" not in sent
     assert "images.image_3" not in sent["6"]["inputs"]
     assert sent["6"]["inputs"]["images.image_2"] == ["10", 0]
+
+
+def test_a_caller_that_trimmed_to_the_slot_count_ignores_nothing(tmp_path: Path) -> None:
+    """The normal case now: the caller read `max_input_images` and sent that many.
+
+    The truncation above stays as a safety net — a caller that does not trim,
+    or a one-shot fallback onto a narrower workflow, still cannot overrun the
+    slots — but on a trimmed run it must be a no-op, so `ignored_input_paths`
+    is absent rather than empty.
+    """
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _upload_response("garage-slot1.jpg"),
+         _upload_response("garage-slot2.jpg"), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(upload_namespace="garage")  # registry default
+    paths = _inputs(tmp_path, provider.capabilities.max_input_images)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=paths, prompt="p", output_image_path=str(tmp_path / "o.png")
+        )
+    assert len(paths) == 3
+    assert result["input_paths"] == paths
+    assert len(result["uploaded_input_names"]) == 3
+    assert "ignored_input_paths" not in result
 
 
 def test_four_inputs_fill_three_slots_on_the_multiframe_workflow(tmp_path: Path) -> None:

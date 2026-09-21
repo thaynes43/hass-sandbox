@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional, TYPE_CHECKING
+from typing import Any, Optional, Sequence, TYPE_CHECKING
 
 from ..population import augment_image_instructions, augment_image_instructions_with_consensus
 from .style_variants import (
@@ -27,6 +27,48 @@ class ImagePromptResult:
     environment_variant_description: Optional[str] = None
 
 
+@dataclass(frozen=True)
+class FrameNote:
+    """What one reference frame contained, for the prompt's frame-notes block.
+
+    The caller passes these in the order the frames are sent to the provider
+    and passes only the frames it actually sends; the builder owns how they are
+    labelled, because how a reference is named to the model is prompt policy.
+    """
+
+    summary: str = ""
+    # Seconds after the capture started, when that is known.
+    time_offset_s: Optional[float] = None
+    male_count: int = 0
+    female_count: int = 0
+    animal_count: int = 0
+    # Whether this is the run's best-scoring frame. Carried rather than
+    # inferred from position: the best frame is normally first, but it is
+    # dropped when its file never appeared, and calling a secondary reference
+    # the primary one would be the same kind of untrue claim this labelling
+    # exists to prevent. No note carries it when the best frame was not sent.
+    is_primary: bool = False
+
+
+def _render_frame_note(note: FrameNote, position: int) -> str:
+    """Render one note, labelled by the position the image is sent in.
+
+    Positions, not filenames: the provider renames every upload before it
+    leaves (ComfyUI uploads as ``<zone>-slot<N>``), so a filename in the prompt
+    names nothing the model can see. "Image 1" is what the model is looking at.
+    """
+    label = f"Image {position}" + (" (primary frame)" if note.is_primary else "")
+    offset = note.time_offset_s
+    time_part = f" t={float(offset):.1f}s" if isinstance(offset, (int, float)) else ""
+    summary = str(note.summary or "").strip() or "(no summary)"
+    counts = (
+        f"(m={int(note.male_count)}, "
+        f"f={int(note.female_count)}, "
+        f"animals={int(note.animal_count)})"
+    )
+    return f"- {label}{time_part}: {summary} {counts}"
+
+
 class ImagePromptBuilder:
     """Builds image-generation prompt from app instructions + reference frames + guardrails."""
 
@@ -35,7 +77,7 @@ class ImagePromptBuilder:
         base_instructions: str,
         population_bounds: dict[str, Any],
         narrative_text: str = "",
-        frame_notes: list[str] | None = None,
+        frame_notes: Sequence[FrameNote] | None = None,
         input_paths_count: int = 1,
         bundle_augmentation: Optional[str] = None,
         style_profile_id: Optional[str] = None,
@@ -55,6 +97,14 @@ class ImagePromptBuilder:
         - Frame notes
         - Bundle augmentation (from provider config)
         - Style profile + environment variant (randomly selected for variety)
+
+        ``frame_notes`` describes the images the provider will actually
+        receive, in the order it receives them, and ``input_paths_count`` is how
+        many that is — the caller trims both to the provider's
+        ``max_input_images`` before calling. Notes are labelled here by that
+        position ("Image 1 (primary frame)", "Image 2", ...), which is the only
+        handle the model has on them; the "primary frame" qualifier comes from
+        the note's own ``is_primary``, not from being first.
         """
         if consensus_bounds and profile:
             base_prompt = augment_image_instructions_with_consensus(
@@ -97,7 +147,13 @@ class ImagePromptBuilder:
         if narrative_text:
             prompt_lines.extend(["", "Narrative context:", narrative_text])
         if frame_notes:
-            prompt_lines.extend(["", "Frame notes (for the provided references):", *frame_notes])
+            rendered_notes = [
+                _render_frame_note(note, position)
+                for position, note in enumerate(frame_notes, start=1)
+            ]
+            prompt_lines.extend(
+                ["", "Frame notes (for the provided references):", *rendered_notes]
+            )
 
         prompt = "\n".join([ln.rstrip() for ln in prompt_lines]).strip()
 

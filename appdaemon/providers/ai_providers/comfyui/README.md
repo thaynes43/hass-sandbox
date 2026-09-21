@@ -14,6 +14,8 @@ switch and nothing to click.
   `/history` and `/view` APIs, polling to completion
 - Multi-image workflows: every reference frame that has a slot is uploaded and
   bound; unused slots are pruned from the graph
+- `capabilities.max_input_images` — the selected workflow's slot count, so a
+  caller can trim before it renders (see below)
 - One-shot fallback to the registry default when a workflow is rejected
 
 ## Limitations
@@ -53,9 +55,11 @@ than quietly landing on an older graph; the fix is to point the bundle at a
 back to this one.
 
 It takes up to three reference frames because that is what the callers have:
-every detection_summary camera app picks 2-4 candidate frames and tells the
-model how many it is looking at. Unused slots are pruned, so a single-frame
-caller renders the same graph the one-slot entry does. On this 7B model the
+every detection_summary camera app picks 2-4 candidate frames, trims them to
+this entry's three slots and tells the model how many it is looking at. Unused
+slots are pruned, so a single-frame caller renders the same graph the one-slot
+entry does — picking a one-slot entry narrows the app to the best frame alone,
+which is a real rollback and not just a cost saving. On this 7B model the
 extra frames are close to free — about 50 s against 45 s for one — which is why
 three frames is the default rather than an opt-in. (On the 20B 2509 model they
 cost several times more, so its three-frame entry stayed opt-in.)
@@ -295,6 +299,24 @@ Within one namespace the provider also holds a lock from the first upload until
 the prompt reaches a terminal state, so two runs for the same zone cannot
 interleave. Different namespaces never block each other.
 
+### How many frames go over
+
+`capabilities.max_input_images` is the resolved workflow's slot count — 3 on
+the three-frame entries, 1 on the rest. It is **per instance**, not per class,
+because it is only knowable once the workflow is; the class attribute leaves it
+`None` and carries only the workflow-independent flags. It reports the workflow
+that will be *requested*, so a one-shot fallback onto a narrower entry is not
+reflected in it.
+
+Callers that describe their references in the prompt — `detection_summary_app`
+does, with a count and one note per image — must read it and trim before
+calling `edit_image`, or the prompt describes frames the model never receives.
+
+`edit_image` truncates anyway (`in_paths[: workflow.max_images]`) and records
+the remainder as `ignored_input_paths`. That is a safety net, not the contract:
+it covers a caller that did not trim and a fallback onto a workflow with fewer
+slots. On a trimmed run nothing is dropped and `ignored_input_paths` is absent.
+
 ## Errors and fallback
 
 `ComfyUIWorkflowRejectedError` (a subclass of `ExternalImageGenError`) means
@@ -346,7 +368,7 @@ back:
 | `required_models` | Model files that graph loads |
 | `uploaded_input_names` | Every uploaded input, slot order |
 | `uploaded_input_name` | The first upload (kept for older readers) |
-| `ignored_input_paths` | Inputs beyond the workflow's slot count |
+| `ignored_input_paths` | Inputs beyond the workflow's slot count; absent when the caller trimmed to `max_input_images` first |
 | `timeout_s` | The budget actually applied |
 
 `model` is the producing workflow's `model` label, so a bundle's recorded model

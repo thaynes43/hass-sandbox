@@ -48,6 +48,7 @@ from .profiles import (
     load_profile_from_dict,
 )
 from .prompting import (
+    FrameNote,
     ScorePromptBuilder,
     ImagePromptBuilder,
     NarrativePromptBuilder,
@@ -1045,19 +1046,23 @@ class DetectionSummary(hass.Hass):
             if len(candidate_idxs) > max_refs:
                 candidate_idxs = candidate_idxs[:max_refs]
 
-            # Build input paths (best.jpg + additional captured frames).
-            input_paths: list[Path] = []
+            # Build input paths (best.jpg + additional captured frames), keeping
+            # each path paired with the frame index it came from: the prompt's
+            # per-frame notes are built from the same list further down, so the
+            # notes describe exactly the frames sent, in the order sent.
+            selected_frames: list[tuple[int, Path]] = []
             for ii in candidate_idxs:
                 p = best_dst if int(ii) == int(best_idx) else (frames_dir / f"frame_{int(ii):03d}.jpg")
                 if p.exists():
-                    input_paths.append(p)
+                    selected_frames.append((int(ii), p))
                 else:
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen missing candidate frame idx={int(ii)} path={p}",
                         level="WARNING",
                     )
-            if not input_paths and best_dst.exists():
-                input_paths = [best_dst]
+            if not selected_frames and best_dst.exists():
+                selected_frames = [(int(best_idx), best_dst)]
+            input_paths: list[Path] = [p for _ii, p in selected_frames]
 
             if input_paths:
                 try:
@@ -1081,18 +1086,40 @@ class DetectionSummary(hass.Hass):
                     ):
                         raise ExternalImageGenError("image provider does not support image-to-image")
 
+                    # The provider knows how many reference images it will
+                    # actually send (for ComfyUI, the selected workflow's slot
+                    # count); anything past that is dropped before the render.
+                    # Trim here so the prompt cannot describe — or count —
+                    # frames the model never receives.
+                    max_input_images = getattr(
+                        getattr(img_provider, "capabilities", None), "max_input_images", None
+                    )
+                    if isinstance(max_input_images, int) and 0 < max_input_images < len(selected_frames):
+                        self.log(
+                            f"DetectionSummary[{self.bundle_key}]: image gen trimmed reference frames "
+                            f"zone={self.bundle_key} selected={len(selected_frames)} sent={max_input_images}",
+                            level="DEBUG",
+                        )
+                        selected_frames = selected_frames[:max_input_images]
+                        input_paths = [p for _ii, p in selected_frames]
+
                     # Narrative context is helpful, but should not be treated as a "hard rule" about subject count.
                     narrative_text = ""
                     if isinstance(run_narrative, dict):
                         narrative_text = str(run_narrative.get("run_summary") or "").strip()
 
-                    # Compact per-frame notes for the images we are providing.
+                    # Compact per-frame notes for the images we are providing —
+                    # one per frame in `selected_frames`, in that exact order,
+                    # so note N describes the Nth image the provider receives.
+                    # The builder labels them by that position, so this loop
+                    # emits a note for EVERY selected frame: skipping one (every
+                    # candidate index comes from `scored`, so a missing score is
+                    # already impossible) would shift every later note onto the
+                    # wrong image, which is the bug this ordering exists to fix.
                     idx_to_frame = {int(f.idx): f for f in (run.capture.frames or []) if getattr(f, "idx", None) is not None}
-                    notes: list[str] = []
-                    for ii in sorted({int(best_idx)} | {int(i) for i in candidate_idxs}):
+                    notes: list[FrameNote] = []
+                    for ii, _path in selected_frames:
                         rr = scored.get(int(ii))
-                        if not rr:
-                            continue
                         cap = idx_to_frame.get(int(ii))
                         t_s = None
                         if cap is not None:
@@ -1107,8 +1134,20 @@ class DetectionSummary(hass.Hass):
                             a = int(getattr(rr, "animal_count", 0) or 0)
                         except Exception:
                             m, f, a = 0, 0, 0
-                        time_part = f" t={t_s:.1f}s" if isinstance(t_s, (int, float)) else ""
-                        notes.append(f"- frame_{int(ii):03d}.jpg{time_part}: {summary or '(no summary)'} (m={m}, f={f}, animals={a})")
+                        notes.append(
+                            FrameNote(
+                                summary=summary,
+                                time_offset_s=t_s,
+                                male_count=m,
+                                female_count=f,
+                                animal_count=a,
+                                # The best frame is normally first, but it is
+                                # skipped above when best.jpg never appeared
+                                # (`best_src` missing, or the wait timed out),
+                                # and then no reference is the primary one.
+                                is_primary=int(ii) == int(best_idx),
+                            )
+                        )
 
                     prompt_result = self._image_prompt_builder.build(
                         base_instructions=str(self.image_instructions),

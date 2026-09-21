@@ -77,9 +77,9 @@ All workflows trigger on every PR but skip expensive work when irrelevant files 
 |----------|---------|----------------------|------|
 | Unit Tests | Every PR push + push to `main` | `appdaemon/` | Required to pass |
 | Docs Build | Every PR push | `docs/`, `mkdocs.yml` | Required to pass |
-| Agent Docs Audit | PR marked ready / reopened | `appdaemon/` | Required to pass |
-| Docs Site Audit | PR marked ready / reopened | `appdaemon/`, `home-assistant/`, `docs/` | Required to pass |
-| Code Review | PR marked ready / reopened | — | Required to pass |
+| Agent Docs Audit | Every PR push (`opened`, `synchronize`, `ready_for_review`, `reopened`) | `appdaemon/` | Required to pass |
+| Docs Site Audit | Every PR push (same four types) | `appdaemon/`, `home-assistant/`, `docs/` | Required to pass |
+| Code Review | Every PR push (same four types) | — | Required to pass |
 | Build AppDaemon | PR push (build+push dev tags) + push to `main` (build+push semver tags) | `appdaemon/`, `docker/`, `VERSION` | Required to pass |
 | CI Auto-Fix | Unit Tests workflow fails on PR | — | Auto-creates fix commit |
 | Deploy Docs | Push to `main` | `docs/`, `mkdocs.yml` | Deploys to GitHub Pages |
