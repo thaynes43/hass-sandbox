@@ -783,6 +783,9 @@ vestaboard_health_checker:
   checker_name: Vestaboard
   ping_host: "192.168.50.159"
   ping_check_name: Ping
+  # The board sleeps its Wi-Fi radio: 16% of lone pings were dropped while a
+  # continuous ping lost none, which kept the card yellow.
+  ping_attempts: 3
   check_interval_s: 180
   entities:
     - entity_id: sensor.vestaboard_controller_status
