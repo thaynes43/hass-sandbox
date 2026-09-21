@@ -698,6 +698,36 @@ def test_execution_error_in_history_does_not_fall_back(tmp_path: Path) -> None:
     assert fake.call_count == 3, "no second render on the fallback workflow"
 
 
+def test_interrupted_prompt_fails_promptly_instead_of_polling_to_the_deadline(tmp_path: Path) -> None:
+    """A cancelled render is terminal: ComfyUI records status_str="error" with an
+    `execution_interrupted` message and no outputs. Polling that entry to a
+    900-1200 s deadline would hold the zone's upload lock the whole time."""
+    interrupted = _json_response(
+        {
+            "pid-i": {
+                "outputs": {},
+                "status": {
+                    "status_str": "error",
+                    "completed": False,
+                    "messages": [["execution_start", {}], ["execution_interrupted", {"node_id": "7"}]],
+                },
+            }
+        }
+    )
+    fake = _Urlopen([_upload_response(), _json_response({"prompt_id": "pid-i"}), interrupted])
+    provider = _make_provider(workflow_name=_QWEN21, fallback_workflow_name=_QWEN21)
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ExternalImageGenError) as exc_info:
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    assert not isinstance(exc_info.value, ComfyUIWorkflowRejectedError)
+    assert "execution_interrupted" in str(exc_info.value)
+    assert fake.call_count == 3, "one history poll, not a poll loop to the deadline"
+
+
 def test_non_400_http_error_is_not_a_workflow_rejection(tmp_path: Path) -> None:
     fake = _Urlopen([_upload_response(), _http_error(500, b"kaboom")])
     provider = _make_provider(

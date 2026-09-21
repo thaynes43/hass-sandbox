@@ -552,6 +552,19 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
                         # the usual one). Falling back would silently render a
                         # rolled-back zone on the default workflow instead.
                         raise ExternalImageGenError(f"ComfyUI execution error: {msg!r}")
+                # Any other terminal state without outputs (an interrupt from
+                # the ComfyUI UI or POST /interrupt is the usual one) is final:
+                # do not keep polling a finished entry to the deadline while
+                # holding the zone's upload lock.
+                status_str = str(status.get("status_str") or "").lower()
+                if not entry.get("outputs") and (
+                    status_str == "error" or status.get("completed") is True
+                ):
+                    kinds = [m[0] for m in messages if isinstance(m, (list, tuple)) and m]
+                    raise ExternalImageGenError(
+                        f"ComfyUI prompt_id={prompt_id} ended without outputs: "
+                        f"status={status_str!r} messages={kinds!r}"
+                    )
                 if entry.get("outputs"):
                     return entry
             time.sleep(float(self._config.poll_interval_s))
