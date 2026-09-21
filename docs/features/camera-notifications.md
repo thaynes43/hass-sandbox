@@ -23,9 +23,9 @@ The `detection_summary_viewer` provides a Lovelace dashboard card for browsing h
 
 ### Stylised images
 
-Between scoring and publishing, the best frame is turned into a stylised
-illustration — the picture that actually lands on your phone. That render runs
-on a local ComfyUI box.
+Between scoring and publishing, the best frames of the event are turned into a
+single stylised illustration — the picture that actually lands on your phone.
+That render runs on a local ComfyUI box.
 
 Which ComfyUI *workflow* does the rendering is named in the AppDaemon config,
 so every camera's look is pinned to a specific, versioned graph rather than to
@@ -34,12 +34,18 @@ when its model was released and what to expect from it — how the output looks,
 and roughly how long a render takes.
 
 The default is Qwen-Image-2.1, which produces clean restyles that keep the
-scene, people and vehicles where they are, and takes a couple of minutes per
-image. The older Qwen-Image-Edit-2509 workflows are still registered and render
-in well under a minute, at the cost of harsher colour. Changing a camera's
-look, or rolling one back, is a config change in a normal release; the original
-pre-2026-09 graph is kept unchanged for exactly that purpose. Which workflow
-produced any given image is recorded in that run's bundle.
+scene, people and vehicles where they are, in roughly a minute per image. It is
+given up to three of the run's frames rather than one: a person can be half out
+of shot in the best frame and plain in the next, and the extra frames let the
+model get them right — on this model they cost about five seconds. The older
+Qwen-Image-Edit-2509 workflows are still registered and render a little faster
+from one frame, at the cost of harsher colour; on that larger model extra
+frames are expensive, so they are normally given just the best one.
+
+Changing a camera's look, or rolling one back, is a config change in a normal
+release; a single-frame Qwen-Image-2.1 entry and the original pre-2026-09 graph
+are both kept unchanged for exactly that purpose. Which workflow produced any
+given image is recorded in that run's bundle.
 
 ### Door Notifications
 
@@ -61,7 +67,7 @@ detection_summary_app
   ├─ captures snapshot via HA
   ├─ sends to multimodal LLM
   ├─ renders a stylised image on ComfyUI
-  │    (workflow named in the app's config)
+  │    (up to 3 frames; workflow named in the app's config)
   ├─ writes bundle to /media/
   └─ fires HA event
         │

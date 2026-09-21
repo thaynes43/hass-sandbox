@@ -53,7 +53,7 @@ Current default models in this package:
   - `simple_text`: `qwen3.5:9b`
   - `multimodal`: `qwen3.5:9b`
 - ComfyUI:
-  - `image`: `qwen-image-2.1` — the label of whichever workflow the [workflow registry](./comfyui/README.md) selects by name (default `qwen-image-2.1-2609-25step-edit`)
+  - `image`: `qwen-image-2.1` — the label of whichever workflow the [workflow registry](./comfyui/README.md) selects by name (default `qwen-image-2.1-2609-25step-edit-3frame`)
 
 ## Per-Provider Docs
 

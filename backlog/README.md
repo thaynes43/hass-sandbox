@@ -23,3 +23,4 @@ incremental patching.
 |---|------|--------|------|
 | 001 | [Custom card deployment revamp / HACS integration](001-card-deployment-and-hacs-integration.md) | Proposed | Major |
 | 002 | [Sonos: SonosNet off, soundbars back on Ethernet](002-sonosnet-off-wired-soundbars.md) | Done for the soundbars 2026-09-19 (Movie Room Port still on Wi-Fi) | Small |
+| 003 | [Image prompt's frame count can exceed the workflow's slot count](003-image-prompt-frame-count-vs-workflow-slots.md) | Proposed | Small |

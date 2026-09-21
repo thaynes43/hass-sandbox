@@ -35,15 +35,47 @@
 # error, never a silent no-op against a live ComfyUI.
 #
 # Measured on the live server (1080p input, warm model), on a 3090:
-#   * Qwen-Image-2.1 at 25 steps  — about 16 GB of VRAM, 1.5-2.5 min per image
+#   * Qwen-Image-2.1 at 25 steps  — about 16 GB of VRAM, roughly 45 s for one
+#     frame and 50 s for three; 2-3x that when the card is thermally throttled.
+#     Extra frames are nearly free on this 7B model.
 #   * Qwen-Image-Edit-2509 with the 4-step Lightning LoRA — 40-50 s single
 #     frame, several times that for three frames
 # ComfyUI serves one queue, so a slow workflow starves every other camera —
 # keep an eye on that before adding one.
 
-default_workflow: qwen-image-2.1-2609-25step-edit
+default_workflow: qwen-image-2.1-2609-25step-edit-3frame
 
 workflows:
+  qwen-image-2.1-2609-25step-edit-3frame:
+    model: qwen-image-2.1
+    model_released: 2026-09-20
+    added: 2026-09-21
+    description: >-
+      Qwen-Image-2.1 instruction edit with up to three camera frames as
+      references (the official template's settings: 25 steps, cfg 1,
+      euler/simple, int8 weights, 1024 px budget). Unused slots are pruned, so
+      it also serves single-frame callers. Needs ComfyUI >= 0.37.0.
+    expect: >-
+      Same clean, painterly result as the single-frame entry, with the extra
+      frames used to confirm who and what is in the scene. About 16 GB of
+      VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is
+      thermally throttled.
+    graph: workflows/qwen_image_2_1_edit_3frame_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "6", input: prompt}
+      negative_prompt: {node: "6", input: negative_prompt}
+      seed: {node: "7", input: seed}
+      output: {node: "9"}
+      images:
+        - {node: "1", input: image}
+        - node: "10"
+          input: image
+          unlink: ["6.images.image_2"]
+        - node: "11"
+          input: image
+          unlink: ["6.images.image_3"]
+
   qwen-image-2.1-2609-25step-edit:
     model: qwen-image-2.1
     model_released: 2026-09-20
@@ -56,7 +88,8 @@ workflows:
     expect: >-
       Clean, painterly restyles that keep the scene, people and vehicles where
       they are; natural colour, no burnt shadows. About 16 GB of VRAM and
-      roughly 1.5-2.5 min per image on a 3090.
+      roughly 45 s per image on a cool 3090, 2-3x that when thermally
+      throttled.
     graph: workflows/qwen_image_2_1_edit_API.json
     timeout_s: 900
     bindings:
