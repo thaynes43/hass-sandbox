@@ -445,10 +445,12 @@ the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and
   most five songs for a mood request (one artist named → `artist` parameter + bare song names),
   and "retry with fewer, more famous songs" when the tool could resolve none. Verified: five
   entries in the right form, one call (script run 1.1 s; the 7-track kitchen request had taken
-  4.7 s). Mood → *playlist* is not an option here: `music_assistant.search` returns no provider
-  playlists for "party hits", only library playlists. (Measured 2026-09-19/20 with Spotify
-  unreachable, and again on 2026-09-21 while it was rate-limited, haynes-ops#3049 — never with
-  Spotify search working. The re-measure is a checkbox on haynes-ops#3049.)
+  4.7 s). Mood → *playlist* was ruled out at the time because `music_assistant.search` returned no
+  provider playlists for "party hits", only library playlists — but that was measured with
+  Spotify unreachable. Re-measured 2026-09-21 with search working: the same call returns
+  `spotify--AqUiP74a://playlist/…` results, so mood → playlist is an option whenever Spotify search works — it was
+  down for 15 h that same day (handoff, "Spotify rate limit"), so it cannot be the only path;
+  the five-song rule above has not been revisited.
 
 The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
 is wireless on SonosNet with marginal links and dropped every stream that afternoon (`ERROR_LSE`,
