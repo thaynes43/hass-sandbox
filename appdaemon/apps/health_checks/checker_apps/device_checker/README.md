@@ -21,6 +21,7 @@ vestaboard_health_checker:
   checker_name: Vestaboard                # Display name on cards
   ping_host: "192.168.50.159"             # IP to ping (optional, omit to skip)
   ping_check_name: Ping                   # Display name for ping check
+  ping_attempts: 3                        # Pings per cycle, ok on first success (default 1)
   check_interval_s: 180                   # Check frequency (seconds)
   entities:                               # List of entity checks
     - entity_id: sensor.vestaboard_controller_status

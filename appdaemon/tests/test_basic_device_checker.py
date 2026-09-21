@@ -182,6 +182,28 @@ class TestPingCheck:
             result = _run(app._check_ping())
         assert result["status"] == "critical"
 
+    def test_ping_attempts_defaults_to_one(self):
+        app = _make_app()
+        _init_only(app)
+        with patch(
+            "health_checks.checker_apps.device_checker.device_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ) as mock_ping:
+            _run(app._check_ping())
+        mock_ping.assert_awaited_once_with("192.168.50.159", attempts=1)
+
+    def test_ping_attempts_passed_through(self):
+        app = _make_app({"ping_attempts": 3})
+        _init_only(app)
+        with patch(
+            "health_checks.checker_apps.device_checker.device_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ) as mock_ping:
+            _run(app._check_ping())
+        mock_ping.assert_awaited_once_with("192.168.50.159", attempts=3)
+
 
 class TestRunChecks:
     def test_reports_all_results(self):

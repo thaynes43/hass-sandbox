@@ -50,6 +50,9 @@ class BasicDeviceChecker(hass.Hass):
         # IP ping (optional)
         self._ping_host: str = args.get("ping_host", "")
         self._ping_check_name: str = args.get("ping_check_name", "Ping")
+        # Wi-Fi devices in power-save routinely drop a lone ping; retry before
+        # calling it a miss (ok on the first success).
+        self._ping_attempts: int = max(1, int(args.get("ping_attempts", 1)))
 
         # Entity checks (list of dicts with entity_id, healthy_state, name)
         # healthy_state can be:
@@ -213,7 +216,9 @@ class BasicDeviceChecker(hass.Hass):
 
     async def _check_ping(self) -> Dict[str, str]:
         try:
-            result = await ping_check(self._ping_host)
+            result = await ping_check(
+                self._ping_host, attempts=self._ping_attempts
+            )
             return {
                 "name": self._ping_check_name,
                 "status": result["status"],
