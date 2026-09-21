@@ -252,13 +252,19 @@ it cuts off its surrounds and Sub.
     BOTH accounts opened empty too (6 of 8 sampled; `_select_provider_id` takes the first
     mapping). Deleting it (`config/providers/remove`, 6 s) fixed both: the same playlists then
     returned 76–298 tracks, and "All Out 80s" by name plus a by-name track both played (Sonos
-    `GetPositionInfo` RelTime advancing). Never leave a second Spotify instance disabled.
+    `GetPositionInfo` RelTime advancing). The 811 tracks / 282 albums that were mapped only to
+    it left the library with it — nothing to migrate: they are ordinary Spotify catalogue
+    items, so a request for one now falls through to a Spotify search and plays on the
+    Automation account (the RAYE track above was one of them). Never leave a second Spotify
+    instance disabled.
   - **Playlist cutover done 2026-09-21:** the 60 playlists only the personal account had (36
     Spotify-made, 24 Tom's own) were added through MA `music/library/add_item
     spotify--AqUiP74a://playlist/<id>` (`library_sync_back` on → Spotify `PUT me/library`); 59
     have tracks, "DJ" has none by nature, and Spotify answers HTTP 500 to following
     `"Wuthering Heights" Official Playlist` (tried twice). A playlist sync afterwards succeeded
-    and kept all 60. "Liked Songs" cannot be followed. Tooling + the saved list: `~/ma-cutover/`
+    and kept all 60. Not verified in a Spotify client: the evidence for the Spotify-side
+    follows is no error from 59 of 60 `PUT me/library` calls plus the entries surviving that
+    sync with `library_sync_deletions` on. "Liked Songs" cannot be followed. Tooling + the saved list: `~/ma-cutover/`
     on the dev-env PVC; it talks to MA's API from inside the home-assistant pod with HA's own
     login (`/config/.storage/core.config_entries`, token never printed). Proof of audio = Sonos
     SOAP `GetPositionInfo`/`GetTransportInfo` via `kubectl exec deploy/home-assistant -- curl
@@ -266,8 +272,12 @@ it cuts off its surrounds and Sub.
   - **Spotify rate limit, 2026-09-21 03:20 → ~18:20 (haynes-ops#3049):** search and album
     lookups on Tom's personal developer app (every ordinary call uses it, `_get_auth_info`) got
     HTTP 429 with a ~1 h `Retry-After` all day; playlist reads, library writes and PLAYBACK kept
-    working. It cleared by itself at ~18:20 with the developer key still in place — do not remove
-    the key as a first move (Tom: it is the faster path). While it lasts a voice request finds
+    working. It cleared by itself at ~18:20 with the developer key still in place, so removing
+    that key is not the first move (Tom: the personal key is the faster path, 45 requests / 30 s
+    against 1 / 2 s on MA's shared session). STILL OPEN on haynes-ops#3049: what tripped it at
+    03:20 is unknown, and MA's hourly `metadata_album_reconciliation_v1` task retried the
+    instant each penalty ended, which is what kept it alive all day — it can trip again.
+    While a 429 phase lasts a voice request finds
     library items only: grep the MA log for `Spotify Rate Limiter` before debugging "found
     nothing". With search back, "party hits" returns Spotify playlists, so mood → playlist is
     possible again (the 2026-09-19 "returns nothing" was measured with Spotify down).
