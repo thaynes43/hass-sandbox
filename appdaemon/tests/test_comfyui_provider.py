@@ -49,7 +49,18 @@ def _upload_response(name: str = "uploaded.jpg") -> MagicMock:
     return _json_response({"name": name, "subfolder": "", "type": "input"})
 
 
-def _history_response(prompt_id: str, *, save_node: str = "60") -> MagicMock:
+# The registry default renders on the Qwen-Image-2.1 graph, whose SaveImage
+# node is "9". The 2509 graphs all save on "60", so a test that pins one of
+# those must say so.
+_QWEN21 = "qwen-image-2.1-2609-25step-edit"
+_LEGACY = "qwen-image-edit-2509-lightning4-legacy"
+_TUNED = "qwen-image-edit-2509-lightning4-tuned"
+_TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
+_QWEN21_SAVE_NODE = "9"
+_QWEN2509_SAVE_NODE = "60"
+
+
+def _history_response(prompt_id: str, *, save_node: str = _QWEN21_SAVE_NODE) -> MagicMock:
     return _json_response(
         {
             prompt_id: {
@@ -162,23 +173,26 @@ def test_default_workflow_generates_and_reports_meta(tmp_path: Path) -> None:
     assert out_path.read_bytes().startswith(b"\x89PNG")
     assert result["provider"] == "comfyui"
     assert result["prompt_id"] == "pid-123"
-    assert result["model"] == "qwen-image-edit-2509"
-    assert result["workflow_name"] == "qwen-image-edit-2509-lightning4-legacy"
-    assert result["workflow_name_requested"] == "qwen-image-edit-2509-lightning4-legacy"
+    assert result["model"] == "qwen-image-2.1"
+    assert result["workflow_name"] == _QWEN21
+    assert result["workflow_name_requested"] == _QWEN21
+    assert result["workflow_source"] == "registry_default"
     assert "workflow_fallback_reason" not in result
     assert result["uploaded_input_name"] == "garage-slot0.jpg"
     assert result["uploaded_input_names"] == ["garage-slot0.jpg"]
     assert result["timeout_s"] == 900.0
-    assert "qwen_image_edit_2509_fp8_e4m3fn.safetensors" in result["required_models"]
+    assert result["workflow_model_released"] == "2026-09-20"
+    assert "qwen_image_2.1_int8_convrot.safetensors" in result["required_models"]
 
 
 def test_explicit_workflow_is_used(tmp_path: Path) -> None:
     fake = _Urlopen(
         [_upload_response(), _upload_response(), _upload_response(),
-         _json_response({"prompt_id": "pid-t"}), _history_response("pid-t"), _view_response()]
+         _json_response({"prompt_id": "pid-t"}),
+         _history_response("pid-t", save_node=_QWEN2509_SAVE_NODE), _view_response()]
     )
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned-3frame", upload_namespace="garage"
+        workflow_name=_TUNED_3FRAME, upload_namespace="garage"
     )
     with patch("urllib.request.urlopen", new=fake):
         result = provider.edit_image(
@@ -186,7 +200,7 @@ def test_explicit_workflow_is_used(tmp_path: Path) -> None:
             prompt="p",
             output_image_path=str(tmp_path / "out.png"),
         )
-    assert result["workflow_name"] == "qwen-image-edit-2509-lightning4-tuned-3frame"
+    assert result["workflow_name"] == _TUNED_3FRAME
     assert result["timeout_s"] == 1200.0
     assert len(result["uploaded_input_names"]) == 3
 
@@ -195,9 +209,9 @@ def test_tuned_workflow_uploads_only_the_first_frame(tmp_path: Path) -> None:
     """Single-frame by design: a 3-image render costs ~4x on the real server."""
     fake = _Urlopen(
         [_upload_response("garage-slot0.jpg"), _json_response({"prompt_id": "pid"}),
-         _history_response("pid"), _view_response()]
+         _history_response("pid", save_node=_QWEN2509_SAVE_NODE), _view_response()]
     )
-    provider = _make_provider(workflow_name="qwen-image-edit-2509-lightning4-tuned", upload_namespace="garage")
+    provider = _make_provider(workflow_name=_TUNED, upload_namespace="garage")
     paths = _inputs(tmp_path, 3)
     with patch("urllib.request.urlopen", new=fake):
         result = provider.edit_image(
@@ -224,9 +238,10 @@ def test_explicit_timeout_overrides_the_workflow(tmp_path: Path) -> None:
 
 def test_multiframe_workflow_timeout(tmp_path: Path) -> None:
     fake = _Urlopen(
-        [_upload_response(), _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+        [_upload_response(), _json_response({"prompt_id": "pid"}),
+         _history_response("pid", save_node=_QWEN2509_SAVE_NODE), _view_response()]
     )
-    provider = _make_provider(workflow_name="qwen-image-edit-2509-lightning4-tuned-3frame")
+    provider = _make_provider(workflow_name=_TUNED_3FRAME)
     with patch("urllib.request.urlopen", new=fake):
         result = provider.edit_image(
             input_image_paths=_inputs(tmp_path, 1),
@@ -295,8 +310,8 @@ def test_legacy_workflow_only_differs_from_its_graph_by_bindings_and_overrides()
     Asserted structurally — every node/input that differs from the shipped
     1-image template must be one the workflow is declared to write.
     """
-    built = _build("qwen-image-edit-2509-lightning4-legacy", ["garage-slot0.jpg"])
-    template = _template("qwen-image-edit-2509-lightning4-legacy")
+    built = _build(_LEGACY, ["garage-slot0.jpg"])
+    template = _template(_LEGACY)
 
     assert set(built) == set(template), "no nodes may be added or removed"
 
@@ -315,7 +330,17 @@ def test_legacy_workflow_only_differs_from_its_graph_by_bindings_and_overrides()
         ("60", "filename_prefix"),  # output name
         ("115:3", "cfg"),         # override
         ("115:93", "megapixels"),  # override
+        # The one difference that is NOT what production sent on disk: the
+        # 2509 graphs used to get fp8_e4m3fn weights from the server-wide
+        # --fp8_e4m3fn-unet flag, which is going away because it breaks the
+        # int8 checkpoints Qwen-Image-2.1 uses. Setting it per workflow keeps
+        # the rendered output identical once the flag is gone — so the
+        # rollback guarantee holds against the RUNNING system, which is what
+        # it is for, even though it no longer holds byte-for-byte against the
+        # file.
+        ("115:37", "weight_dtype"),
     }
+    assert built["115:37"]["inputs"]["weight_dtype"] == "fp8_e4m3fn"
     assert built["78"]["inputs"]["image"] == "garage-slot0.jpg"
     assert built["115:111"]["inputs"]["prompt"] == "PROMPT"
     assert built["115:110"]["inputs"]["prompt"] == ""
@@ -326,8 +351,8 @@ def test_legacy_workflow_only_differs_from_its_graph_by_bindings_and_overrides()
 
 
 def test_tuned_workflow_is_single_slot_on_a_cleaned_graph() -> None:
-    built = _build("qwen-image-edit-2509-lightning4-tuned", ["a-slot0.jpg"])
-    template = _template("qwen-image-edit-2509-lightning4-tuned")
+    built = _build(_TUNED, ["a-slot0.jpg"])
+    template = _template(_TUNED)
     # The cleaned sibling graph drops the two orphan nodes the original keeps.
     assert "115:112" not in template
     assert "115:116" not in template
@@ -338,7 +363,7 @@ def test_tuned_workflow_is_single_slot_on_a_cleaned_graph() -> None:
 
 
 def test_multiframe_workflow_binds_three_images() -> None:
-    built = _build("qwen-image-edit-2509-lightning4-tuned-3frame", ["a-slot0.jpg", "a-slot1.jpg", "a-slot2.jpg"])
+    built = _build(_TUNED_3FRAME, ["a-slot0.jpg", "a-slot1.jpg", "a-slot2.jpg"])
     assert built["78"]["inputs"]["image"] == "a-slot0.jpg"
     assert built["120"]["inputs"]["image"] == "a-slot1.jpg"
     assert built["121"]["inputs"]["image"] == "a-slot2.jpg"
@@ -349,7 +374,7 @@ def test_multiframe_workflow_binds_three_images() -> None:
 
 
 def test_multiframe_workflow_prunes_unused_slots_with_two_images() -> None:
-    built = _build("qwen-image-edit-2509-lightning4-tuned-3frame", ["a-slot0.jpg", "a-slot1.jpg"])
+    built = _build(_TUNED_3FRAME, ["a-slot0.jpg", "a-slot1.jpg"])
     assert "120" in built
     assert "121" not in built
     assert built["115:111"]["inputs"]["image2"] == ["120", 0]
@@ -358,7 +383,7 @@ def test_multiframe_workflow_prunes_unused_slots_with_two_images() -> None:
 
 
 def test_multiframe_workflow_prunes_both_extra_slots_with_one_image() -> None:
-    built = _build("qwen-image-edit-2509-lightning4-tuned-3frame", ["a-slot0.jpg"])
+    built = _build(_TUNED_3FRAME, ["a-slot0.jpg"])
     assert "120" not in built
     assert "121" not in built
     for node in ("115:111", "115:110"):
@@ -368,7 +393,7 @@ def test_multiframe_workflow_prunes_both_extra_slots_with_one_image() -> None:
 
 
 def test_filename_prefix_falls_back_when_output_has_no_stem() -> None:
-    built = _build("qwen-image-edit-2509-lightning4-legacy", ["a-slot0.jpg"], out="")
+    built = _build(_LEGACY, ["a-slot0.jpg"], out="")
     assert built["60"]["inputs"]["filename_prefix"] == "detection-summary"
 
 
@@ -394,10 +419,10 @@ def test_four_inputs_fill_three_slots_on_the_multiframe_workflow(tmp_path: Path)
     fake = _Urlopen(
         [_upload_response("garage-slot0.jpg"), _upload_response("garage-slot1.jpg"),
          _upload_response("garage-slot2.jpg"), _json_response({"prompt_id": "pid"}),
-         _history_response("pid"), _view_response()]
+         _history_response("pid", save_node=_QWEN2509_SAVE_NODE), _view_response()]
     )
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned-3frame", upload_namespace="garage"
+        workflow_name=_TUNED_3FRAME, upload_namespace="garage"
     )
     paths = _inputs(tmp_path, 4)
     with patch("urllib.request.urlopen", new=fake):
@@ -428,10 +453,11 @@ def test_build_upload_name_sanitises_namespace_and_suffix() -> None:
 def test_uploads_are_namespaced_per_slot(tmp_path: Path) -> None:
     fake = _Urlopen(
         [_upload_response("a-slot0.jpg"), _upload_response("a-slot1.jpg"), _upload_response("a-slot2.jpg"),
-         _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+         _json_response({"prompt_id": "pid"}),
+         _history_response("pid", save_node=_QWEN2509_SAVE_NODE), _view_response()]
     )
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned-3frame", upload_namespace="back yard pets"
+        workflow_name=_TUNED_3FRAME, upload_namespace="back yard pets"
     )
     with patch("urllib.request.urlopen", new=fake):
         provider.edit_image(
@@ -500,7 +526,11 @@ def test_same_namespace_runs_do_not_interleave(tmp_path: Path) -> None:
         with guard:
             active -= 1
         return {
-            "outputs": {"60": {"images": [{"filename": "g.png", "subfolder": "", "type": "output"}]}},
+            "outputs": {
+                _QWEN21_SAVE_NODE: {
+                    "images": [{"filename": "g.png", "subfolder": "", "type": "output"}]
+                }
+            },
             "status": {"messages": []},
         }
 
@@ -554,7 +584,7 @@ def test_http_400_value_not_in_list_is_a_workflow_rejection(tmp_path: Path) -> N
                 output_image_path=str(tmp_path / "o.png"),
             )
     message = str(exc_info.value)
-    assert "qwen-image-edit-2509-lightning4-legacy" in message
+    assert _QWEN21 in message
     assert "value_not_in_list" in message
     assert "input_name='unet_name'" in message
     assert "qwen_image_edit_2509_fp8_e4m3fn.safetensors" in message
@@ -568,13 +598,13 @@ def test_rejection_falls_back_exactly_once(tmp_path: Path) -> None:
             _http_error(400, _VALUE_NOT_IN_LIST_BODY),  # attempt 1 rejected
             _upload_response("garage-slot0.jpg"),     # attempt 2 (original) upload
             _json_response({"prompt_id": "pid-fb"}),
-            _history_response("pid-fb"),
+            _history_response("pid-fb", save_node=_QWEN2509_SAVE_NODE),
             _view_response(),
         ]
     )
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned",
-        fallback_workflow_name="qwen-image-edit-2509-lightning4-legacy",
+        workflow_name=_TUNED,
+        fallback_workflow_name=_LEGACY,
         upload_namespace="garage",
     )
     with patch("urllib.request.urlopen", new=fake):
@@ -584,9 +614,9 @@ def test_rejection_falls_back_exactly_once(tmp_path: Path) -> None:
             output_image_path=str(tmp_path / "o.png"),
         )
 
-    assert result["workflow_name"] == "qwen-image-edit-2509-lightning4-legacy"
-    assert result["workflow_name_requested"] == "qwen-image-edit-2509-lightning4-tuned"
-    assert "qwen-image-edit-2509-lightning4-tuned" in result["workflow_fallback_reason"]
+    assert result["workflow_name"] == _LEGACY
+    assert result["workflow_name_requested"] == _TUNED
+    assert _TUNED in result["workflow_fallback_reason"]
     assert "unet_name" in result["workflow_fallback_reason"]
     assert result["timeout_s"] == 900.0
     assert fake.call_count == 6
@@ -600,7 +630,7 @@ def test_fallback_is_not_retried_when_it_is_also_rejected(tmp_path: Path) -> Non
         ]
     )
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned", fallback_workflow_name="qwen-image-edit-2509-lightning4-legacy"
+        workflow_name=_TUNED, fallback_workflow_name=_LEGACY
     )
     with patch("urllib.request.urlopen", new=fake):
         with pytest.raises(ComfyUIWorkflowRejectedError):
@@ -614,10 +644,11 @@ def test_fallback_is_not_retried_when_it_is_also_rejected(tmp_path: Path) -> Non
 
 def test_unknown_requested_workflow_falls_back(tmp_path: Path) -> None:
     fake = _Urlopen(
-        [_upload_response(), _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+        [_upload_response(), _json_response({"prompt_id": "pid"}),
+         _history_response("pid", save_node=_QWEN2509_SAVE_NODE), _view_response()]
     )
     provider = _make_provider(
-        workflow_name="ghost-workflow", fallback_workflow_name="qwen-image-edit-2509-lightning4-legacy"
+        workflow_name="ghost-workflow", fallback_workflow_name=_LEGACY
     )
     with patch("urllib.request.urlopen", new=fake):
         result = provider.edit_image(
@@ -625,7 +656,7 @@ def test_unknown_requested_workflow_falls_back(tmp_path: Path) -> None:
             prompt="p",
             output_image_path=str(tmp_path / "o.png"),
         )
-    assert result["workflow_name"] == "qwen-image-edit-2509-lightning4-legacy"
+    assert result["workflow_name"] == _LEGACY
     assert result["workflow_name_requested"] == "ghost-workflow"
     assert "ghost-workflow" in result["workflow_fallback_reason"]
 
@@ -654,7 +685,7 @@ def test_execution_error_in_history_is_a_workflow_rejection(tmp_path: Path) -> N
 def test_non_400_http_error_is_not_a_workflow_rejection(tmp_path: Path) -> None:
     fake = _Urlopen([_upload_response(), _http_error(500, b"kaboom")])
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned", fallback_workflow_name="qwen-image-edit-2509-lightning4-legacy"
+        workflow_name=_TUNED, fallback_workflow_name=_LEGACY
     )
     with patch("urllib.request.urlopen", new=fake):
         with pytest.raises(ExternalImageGenError) as exc_info:
@@ -670,8 +701,8 @@ def test_non_400_http_error_is_not_a_workflow_rejection(tmp_path: Path) -> None:
 def test_timeout_does_not_fall_back(tmp_path: Path) -> None:
     """A slow render says nothing about the workflow — never burn a second one."""
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned",
-        fallback_workflow_name="qwen-image-edit-2509-lightning4-legacy",
+        workflow_name=_TUNED,
+        fallback_workflow_name=_LEGACY,
         timeout_s=0.05,
         poll_interval_s=0.0,
     )
@@ -701,7 +732,7 @@ def test_timeout_does_not_fall_back(tmp_path: Path) -> None:
 def test_connection_error_does_not_fall_back(tmp_path: Path) -> None:
     fake = _Urlopen([OSError("connection refused")])
     provider = _make_provider(
-        workflow_name="qwen-image-edit-2509-lightning4-tuned", fallback_workflow_name="qwen-image-edit-2509-lightning4-legacy"
+        workflow_name=_TUNED, fallback_workflow_name=_LEGACY
     )
     with patch("urllib.request.urlopen", new=fake):
         with pytest.raises(ExternalImageGenError) as exc_info:

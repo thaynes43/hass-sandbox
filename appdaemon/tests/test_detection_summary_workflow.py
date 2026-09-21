@@ -45,6 +45,7 @@ from providers.ai_providers.comfyui.comfyui_image_generation_provider import (  
     SOURCE_BUNDLE,
 )
 
+_QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
@@ -132,8 +133,18 @@ def _initialize(app: DetectionSummary) -> MagicMock:
 def test_bundle_default_is_used_when_the_app_says_nothing() -> None:
     app = _make_app(_args())
     _initialize(app)
-    assert app._comfyui_workflow == _LEGACY
+    assert app._comfyui_workflow == _QWEN21
     assert app._comfyui_workflow_source == SOURCE_BUNDLE
+
+
+def test_an_app_can_roll_back_to_a_2509_workflow_by_name() -> None:
+    """Rolling one camera back to the pre-2.1 model is one config line."""
+    app = _make_app(
+        _args(ai_provider_conf={"image": "comfyui-qwen-edit", "image_workflow": _LEGACY})
+    )
+    _initialize(app)
+    assert app._comfyui_workflow == _LEGACY
+    assert app._comfyui_workflow_source == SOURCE_APP_CONFIG
 
 
 def test_an_app_can_override_the_bundle_workflow_by_name() -> None:
@@ -171,7 +182,7 @@ def test_the_registry_default_is_used_when_the_bundle_pins_nothing() -> None:
         )
     )
     _initialize(app)
-    assert app._comfyui_workflow == _LEGACY
+    assert app._comfyui_workflow == _QWEN21
     assert app._comfyui_workflow_source == "registry_default"
 
 
@@ -200,7 +211,7 @@ def test_an_unknown_app_workflow_stops_the_app_at_startup() -> None:
     assert "qwen-typo" in message
     assert "not registered" in message
     # The error has to name what IS available, or the operator is guessing.
-    for name in (_LEGACY, _TUNED, _TUNED_3FRAME):
+    for name in (_QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME):
         assert name in message
     assert SOURCE_APP_CONFIG in message
 

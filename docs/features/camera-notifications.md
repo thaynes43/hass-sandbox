@@ -31,8 +31,12 @@ Which ComfyUI *workflow* does the rendering is named in the AppDaemon config,
 so every camera's look is pinned to a specific, versioned graph rather than to
 whatever the box happened to have loaded. Each workflow in the registry records
 when its model was released and what to expect from it — how the output looks,
-and roughly how long a render takes (40-50 seconds for the single-frame ones,
-several times that when three reference frames are used). Changing a camera's
+and roughly how long a render takes.
+
+The default is Qwen-Image-2.1, which produces clean restyles that keep the
+scene, people and vehicles where they are, and takes a couple of minutes per
+image. The older Qwen-Image-Edit-2509 workflows are still registered and render
+in well under a minute, at the cost of harsher colour. Changing a camera's
 look, or rolling one back, is a config change in a normal release; the original
 pre-2026-09 graph is kept unchanged for exactly that purpose. Which workflow
 produced any given image is recorded in that run's bundle.

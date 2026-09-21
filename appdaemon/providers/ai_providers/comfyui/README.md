@@ -32,13 +32,28 @@ expect from it.
 
 | Workflow | Model released | Added | Frames | Expect |
 |---|---|---|---|---|
+| `qwen-image-2.1-2609-25step-edit` **(default)** | 2026-09-20 | 2026-09-21 | 1 | Clean, painterly restyles that keep the scene, people and vehicles where they are; natural colour, no burnt shadows. About 16 GB of VRAM and roughly 1.5-2.5 min per image on a 3090. |
 | `qwen-image-edit-2509-lightning4-legacy` | 2025-09-22 | 2026-09-21 | 1 | What production sent until 2026-09: strong stylisation but over-saturated colour and crushed shadows, because cfg 3.5 fights the 4-step LoRA. About 40-50 s per image. |
 | `qwen-image-edit-2509-lightning4-tuned` | 2025-09-22 | 2026-09-21 | 1 | Same model at the settings it was made for (cfg 1, 1 MP): clean colour, subject and lighting preserved. About 40-50 s per image. |
 | `qwen-image-edit-2509-lightning4-tuned-3frame` | 2025-09-22 | 2026-09-21 | up to 3 | Tuned settings with up to three camera frames as references, for zones where a subject seen in only one frame goes missing. Several times slower per image. |
 
-`qwen-image-edit-2509-lightning4-legacy` is the registry's `default_workflow`,
-and its graph file is kept byte-for-byte as production had it (placeholder
-input filename aside). It is the rollback target.
+`qwen-image-2.1-2609-25step-edit` is the registry's `default_workflow`. It runs
+Qwen-Image-2.1 (7B, one model for both generate and edit) on the official
+ComfyUI template's settings, and **needs ComfyUI >= 0.37.0** for its
+`TextEncodeQwenImage21` and `QwenImage21Cache` nodes — an older server rejects
+the graph outright, which the provider reports as a workflow rejection and
+falls back from.
+
+It is slower than the 4-step 2509 workflows (minutes, not seconds) and wants
+more VRAM. Rolling a camera — or everything — back to
+`qwen-image-edit-2509-lightning4-legacy` is a one-line config change; that
+entry's graph file is still kept as production had it.
+
+The three 2509 workflows now set `weight_dtype: fp8_e4m3fn` on their own
+UNETLoader. They used to get that from the server-wide `--fp8_e4m3fn-unet`
+flag, which is being removed because it breaks the int8 checkpoints
+Qwen-Image-2.1 uses; pinning it per workflow keeps their output identical once
+the flag is gone.
 
 Names follow `<model>-<model release yymm>-<sampling>-<variant>`. Spell the
 model out — the name is what someone reads in a diff, long after the context is
@@ -52,10 +67,14 @@ In [`../model_settings/comfyui.yaml`](../model_settings/comfyui.yaml), on the
 ```yaml
 bundles:
   comfyui-qwen-edit:
-    image_model: qwen-image-edit-2509
+    image_model: qwen-image-2.1
     provider_options:
-      workflow: qwen-image-edit-2509-lightning4-tuned
+      workflow: qwen-image-2.1-2609-25step-edit
 ```
+
+`image_model` is the label reported in result meta; keep it in step with the
+workflow's own `model`. The bundle is still called `comfyui-qwen-edit` because
+every app references it by that name.
 
 Omit `workflow` entirely to follow the registry's own `default_workflow`.
 
@@ -78,8 +97,9 @@ ignore the key, so it is harmless on an app that is not on ComfyUI.
 ### Roll back
 
 Set the name back — to `qwen-image-edit-2509-lightning4-legacy` for the
-pre-registry behaviour — and ship it. Nothing else changes: the graph files of
-the other entries are untouched by a rollback.
+pre-2.1 behaviour — and ship it. One line in the bundle rolls every camera
+back; one line in an app rolls back just that one. Nothing else changes: the
+other entries' graph files are untouched by a rollback.
 
 ### A bad name stops the app
 
@@ -97,22 +117,32 @@ workflow name is not checked until image generation is switched on.
 
 ### What it costs to switch
 
-Measured on the live server, warm, with a 1080p input frame: single-frame
-workflows render in 40-50 s, the three-frame one several times that. ComfyUI
-serves one queue, so a slow workflow starves every other camera — worth
-checking before adding one.
+Measured on the live server, warm, with a 1080p input frame on a 3090:
 
-All three shipped workflows load the same diffusion model and the same LoRA, so
-moving between them costs nothing extra. A workflow that loads them
-*differently* — a different model file, or the same model with or without a
-LoRA — makes ComfyUI re-patch and reload, about 5 minutes on the first render
-after the change. One-off, not a per-render tax.
+- `qwen-image-2.1-2609-25step-edit` — 1.5-2.5 min per image, about 16 GB VRAM
+- the 2509 workflows — 40-50 s single frame, several times that for three
+
+ComfyUI serves one queue, so a slow workflow starves every other camera —
+worth weighing before pointing every zone at a slow one.
+
+Moving between the three 2509 workflows costs nothing extra: they load the same
+diffusion model and the same LoRA. Moving between 2.1 and 2509 loads a
+different model, so ComfyUI re-patches and reloads — about 5 minutes on the
+first render after the change. One-off, not a per-render tax.
 
 ### Required model files
 
 Each entry's `required_models` is derived from its graph's loader nodes
 (`unet_name`, `clip_name`, `vae_name`, `lora_name`, `ckpt_name`) and reported
-in result meta. All three shipped workflows need, on the ComfyUI server:
+in result meta. On the ComfyUI server:
+
+`qwen-image-2.1-2609-25step-edit`
+
+- `qwen_image_2.1_int8_convrot.safetensors` (UNet)
+- `qwen3vl_8b_int8_convrot.safetensors` (CLIP)
+- `qwen_image_2.1_vae_bf16.safetensors` (VAE)
+
+the three `qwen-image-edit-2509-*` workflows
 
 - `qwen_image_edit_2509_fp8_e4m3fn.safetensors` (UNet)
 - `qwen_2.5_vl_7b_fp8_scaled.safetensors` (CLIP)
@@ -255,6 +285,7 @@ dead or wedged ComfyUI instance (page-only watchdog — see its README).
 - [workflow_registry.py](./workflow_registry.py) — the registry, with strict load-time validation
 - [workflow_registry.yaml](./workflow_registry.yaml) — the registry itself
 - [comfyui_status_client.py](./comfyui_status_client.py)
+- [workflows/qwen_image_2_1_edit_API.json](./workflows/qwen_image_2_1_edit_API.json) — `qwen-image-2.1-2609-25step-edit`
 - [workflows/02_qwen_Image_edit_subgraphed_API.json](./workflows/02_qwen_Image_edit_subgraphed_API.json) — `…-lightning4-legacy`
 - [workflows/qwen_image_edit_2509_single_image_API.json](./workflows/qwen_image_edit_2509_single_image_API.json) — `…-lightning4-tuned`
 - [workflows/02_qwen_Image_edit_subgraphed_three_images_API.json](./workflows/02_qwen_Image_edit_subgraphed_three_images_API.json) — `…-lightning4-tuned-3frame`

@@ -138,16 +138,16 @@ def test_build_image_provider_comfyui() -> None:
     cfg = ImageProviderConfig(
         provider=ImageProviderName.COMFYUI,
         base_url="https://comfyui.haynesops.com",
-        model="qwen-image-edit-2509",
+        model="qwen-image-2.1",
     )
     provider = build_image_provider(cfg)
     assert provider.name == ImageProviderName.COMFYUI
     assert provider.capabilities.supports_image_to_image
     assert not provider.capabilities.supports_text_to_image
     # No name in config -> the registry default, with itself as the fallback.
-    assert provider.workflow_name == "qwen-image-edit-2509-lightning4-legacy"
+    assert provider.workflow_name == "qwen-image-2.1-2609-25step-edit"
     assert provider.workflow_source == "registry_default"
-    assert provider._config.fallback_workflow_name == "qwen-image-edit-2509-lightning4-legacy"
+    assert provider._config.fallback_workflow_name == "qwen-image-2.1-2609-25step-edit"
     assert provider._config.timeout_s is None
 
 
@@ -192,7 +192,7 @@ def test_build_image_provider_comfyui_rejects_an_unknown_workflow() -> None:
     with pytest.raises(ValueError) as exc_info:
         build_image_provider(cfg)
     assert "ghost-workflow" in str(exc_info.value)
-    assert "qwen-image-edit-2509-lightning4-legacy" in str(exc_info.value)
+    assert "qwen-image-2.1-2609-25step-edit" in str(exc_info.value)
 
 
 def test_build_image_provider_comfyui_rejects_an_unoffered_model() -> None:
@@ -343,9 +343,9 @@ def test_provider_config_from_pointer_image_comfyui() -> None:
         args = {"ai_provider_conf": {"image": "comfyui-qwen-edit"}}
         cfg = provider_config_from_appdaemon_args(args)
         assert cfg.provider == ImageProviderName.COMFYUI
-        assert cfg.model == "qwen-image-edit-2509"
+        assert cfg.model == "qwen-image-2.1"
         assert cfg.base_url == "https://comfyui.haynesops.com"
-        assert cfg.provider_options["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
+        assert cfg.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit"
         assert cfg.provider_options["min_input_pixels"] == 921600
         assert cfg.timeout_s is None
     finally:
@@ -364,7 +364,7 @@ def test_provider_config_from_scoped_bundle_override_comfyui() -> None:
     cfg = provider_config_from_appdaemon_args(args)
     assert cfg.provider == ImageProviderName.COMFYUI
     assert cfg.base_url == "https://override.example.com"
-    assert cfg.model == "qwen-image-edit-2509"
+    assert cfg.model == "qwen-image-2.1"
 
 
 def test_multimodal_config_from_pointer() -> None:

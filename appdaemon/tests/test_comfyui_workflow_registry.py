@@ -20,10 +20,12 @@ from providers.ai_providers.comfyui.workflow_registry import (  # noqa: E402
     load_workflow_registry,
 )
 
+_QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
-_SHIPPED_WORKFLOWS = (_LEGACY, _TUNED, _TUNED_3FRAME)
+_SHIPPED_WORKFLOWS = (_QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME)
+_QWEN2509_WORKFLOWS = (_LEGACY, _TUNED, _TUNED_3FRAME)
 
 
 # ---------- helpers ----------
@@ -111,9 +113,9 @@ def _isolate_registry_cache():
 
 def test_shipped_registry_loads_with_expected_workflows() -> None:
     registry = load_workflow_registry()
-    assert registry.default_workflow == _LEGACY
+    assert registry.default_workflow == _QWEN21
     assert registry.names == _SHIPPED_WORKFLOWS
-    assert registry.default.name == _LEGACY
+    assert registry.default.name == _QWEN21
 
 
 def test_every_shipped_workflow_validates_against_its_graph() -> None:
@@ -143,7 +145,7 @@ def test_every_shipped_workflow_carries_its_operator_metadata() -> None:
     registry = load_workflow_registry()
     for name in registry.names:
         workflow = registry.get(name)
-        assert workflow.model_released == datetime.date(2025, 9, 22)
+        assert isinstance(workflow.model_released, datetime.date)
         assert workflow.added == datetime.date(2026, 9, 21)
         assert workflow.description.strip()
         assert workflow.expect.strip()
@@ -154,6 +156,8 @@ def test_every_shipped_workflow_carries_its_operator_metadata() -> None:
 
 def test_shipped_expect_text_describes_output_and_speed() -> None:
     registry = load_workflow_registry()
+    assert "1.5-2.5 min" in registry.get(_QWEN21).expect
+    assert "16 GB" in registry.get(_QWEN21).expect
     assert "over-saturated" in registry.get(_LEGACY).expect
     assert "40-50 s" in registry.get(_LEGACY).expect
     assert "clean colour" in registry.get(_TUNED).expect
@@ -204,13 +208,16 @@ def test_legacy_workflow_keeps_the_untouched_graph_file() -> None:
 def test_shipped_required_models() -> None:
     registry = load_workflow_registry()
     lightning = "Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors"
-    for name in _SHIPPED_WORKFLOWS:
+    for name in _QWEN2509_WORKFLOWS:
         assert lightning in registry.get(name).required_models
         assert "qwen_image_edit_2509_fp8_e4m3fn.safetensors" in registry.get(name).required_models
 
 
 def test_shipped_model_labels() -> None:
-    assert load_workflow_registry().model_labels() == ("qwen-image-edit-2509",)
+    assert load_workflow_registry().model_labels() == (
+        "qwen-image-2.1",
+        "qwen-image-edit-2509",
+    )
 
 
 def test_get_unknown_workflow_raises() -> None:
@@ -218,7 +225,7 @@ def test_get_unknown_workflow_raises() -> None:
     with pytest.raises(UnknownWorkflowError) as exc_info:
         registry.get("nope")
     assert "nope" in str(exc_info.value)
-    assert _LEGACY in str(exc_info.value)
+    assert _QWEN21 in str(exc_info.value)
 
 
 def test_get_empty_workflow_name_raises() -> None:
@@ -233,6 +240,64 @@ def test_get_or_default_falls_back() -> None:
     assert registry.has(_TUNED)
     assert not registry.has("nope")
     assert not registry.has(None)
+
+
+def test_qwen_image_2_1_workflow_shape() -> None:
+    """The new default: one image slot, both prompts on the same encoder node."""
+    workflow = load_workflow_registry().get(_QWEN21)
+    assert workflow.model == "qwen-image-2.1"
+    assert workflow.model_released == datetime.date(2026, 9, 20)
+    assert workflow.max_images == 1
+    assert workflow.images[0].node == "1"
+    assert workflow.images[0].unlink == ()
+    assert workflow.timeout_s == 900
+    assert workflow.graph == "workflows/qwen_image_2_1_edit_API.json"
+    # TextEncodeQwenImage21 takes both prompts, unlike the 2509 graphs where
+    # they are two separate TextEncodeQwenImageEditPlus nodes.
+    assert workflow.prompt.node == "6"
+    assert workflow.prompt.input == "prompt"
+    assert workflow.negative_prompt is not None
+    assert workflow.negative_prompt.node == "6"
+    assert workflow.negative_prompt.input == "negative_prompt"
+    assert workflow.seed is not None and workflow.seed.node == "7"
+    assert workflow.output.node == "9"
+    assert not workflow.overrides, "the template's own settings are used as-is"
+
+
+def test_qwen_image_2_1_required_models() -> None:
+    """unet_name + clip_name + vae_name, and no LoRA."""
+    workflow = load_workflow_registry().get(_QWEN21)
+    assert workflow.required_models == (
+        "qwen3vl_8b_int8_convrot.safetensors",
+        "qwen_image_2.1_int8_convrot.safetensors",
+        "qwen_image_2.1_vae_bf16.safetensors",
+    )
+
+
+def test_qwen_image_2_1_graph_uses_the_template_sampler_settings() -> None:
+    graph = load_workflow_registry().get(_QWEN21).load_graph()
+    sampler = graph["7"]["inputs"]
+    assert sampler["steps"] == 25
+    assert sampler["cfg"] == 1.0
+    assert sampler["sampler_name"] == "euler"
+    assert sampler["scheduler"] == "simple"
+    assert graph["6"]["inputs"]["resolution"] == 1024
+    # The encoder consumes the LoadImage node the slot binds.
+    assert graph["6"]["inputs"]["images.image_1"] == ["1", 0]
+
+
+def test_qwen2509_workflows_pin_their_unet_weight_dtype() -> None:
+    """The server-wide --fp8_e4m3fn-unet flag is going away (it breaks int8).
+
+    Every 2509 workflow relied on it, so each now sets the same dtype on its
+    own UNETLoader; without this they would silently load in a different
+    precision once the flag is dropped.
+    """
+    registry = load_workflow_registry()
+    for name in _QWEN2509_WORKFLOWS:
+        assert registry.get(name).overrides["115:37"]["weight_dtype"] == "fp8_e4m3fn"
+    # The 2.1 graph must NOT carry it — its checkpoints are int8.
+    assert "115:37" not in registry.get(_QWEN21).overrides
 
 
 # ---------- a valid synthetic registry ----------

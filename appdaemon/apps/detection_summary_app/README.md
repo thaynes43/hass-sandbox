@@ -154,6 +154,10 @@ named in config — the `comfyui-qwen-edit` bundle's default, or
 deployment; changing it is a normal AppDaemon release. An unregistered name
 raises at `initialize()` rather than failing at render time.
 
+The bundle default is `qwen-image-2.1-2609-25step-edit` (needs ComfyUI >=
+0.37.0). Setting `image_workflow: qwen-image-edit-2509-lightning4-legacy` on one
+app rolls that camera back to the pre-2.1 model and its sub-minute renders.
+
 The workflow that produced each image is recorded on the `image gen start` INFO
 line, in `generated_image.workflow_name` / `workflow_source` in the bundle, and
 on the `image_edit` LLM event. If the provider had to fall back because ComfyUI

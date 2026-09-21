@@ -104,10 +104,10 @@ def test_load_bundle_comfyui_qwen_edit() -> None:
     assert bundle.provider == "comfyui"
     assert bundle.base_url is None
     assert bundle.base_url_env == "COMFYUI_URL"
-    assert bundle.image_model == "qwen-image-edit-2509"
+    assert bundle.image_model == "qwen-image-2.1"
     # The bundle names its workflow; the registry owns everything about it,
     # including the timeout.
-    assert bundle.provider_options["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
+    assert bundle.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit"
     assert bundle.provider_options["min_input_pixels"] == 921600
     assert bundle.image_timeout_s is None
 
@@ -146,9 +146,9 @@ def test_resolve_capability_config_pointer_image_comfyui() -> None:
     conf = {"image": "comfyui-qwen-edit"}
     flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
     assert flat["provider"] == "comfyui"
-    assert flat["model"] == "qwen-image-edit-2509"
+    assert flat["model"] == "qwen-image-2.1"
     assert flat["base_url"] == "https://comfyui.haynesops.com"
-    assert flat["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
+    assert flat["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit"
     assert flat["provider_options"]["min_input_pixels"] == 921600
     assert flat["timeout_s"] is None
 
@@ -163,7 +163,7 @@ def test_resolve_capability_config_scoped_bundle_override() -> None:
     flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
     assert flat["provider"] == "comfyui"
     assert flat["base_url"] == "https://override.example.com"
-    assert flat["model"] == "qwen-image-edit-2509"
+    assert flat["model"] == "qwen-image-2.1"
 
 
 def test_resolve_capability_config_uses_any_nonempty_bundle_ref(monkeypatch) -> None:
@@ -259,7 +259,7 @@ def test_image_workflow_overrides_the_bundle_workflow() -> None:
     again = resolve_capability_config(
         {"image": "comfyui-qwen-edit"}, "image", resolve_secret=_resolve_secret
     )
-    assert again["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
+    assert again["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit"
     assert "workflow_source" not in again["provider_options"]
 
 

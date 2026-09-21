@@ -34,14 +34,39 @@
 # `default_workflow` must name a registered workflow. A typo is a startup
 # error, never a silent no-op against a live ComfyUI.
 #
-# Measured on the live server (1080p input, warm model): a single-frame render
-# is 40-50 s, a three-frame render several times that. ComfyUI serves one
-# queue, so a slow workflow starves every other camera — keep an eye on that
-# before adding one.
+# Measured on the live server (1080p input, warm model), on a 3090:
+#   * Qwen-Image-2.1 at 25 steps  — about 16 GB of VRAM, 1.5-2.5 min per image
+#   * Qwen-Image-Edit-2509 with the 4-step Lightning LoRA — 40-50 s single
+#     frame, several times that for three frames
+# ComfyUI serves one queue, so a slow workflow starves every other camera —
+# keep an eye on that before adding one.
 
-default_workflow: qwen-image-edit-2509-lightning4-legacy
+default_workflow: qwen-image-2.1-2609-25step-edit
 
 workflows:
+  qwen-image-2.1-2609-25step-edit:
+    model: qwen-image-2.1
+    model_released: 2026-09-20
+    added: 2026-09-21
+    description: >-
+      Qwen-Image-2.1 (7B, unified generate + edit) driven as an instruction
+      edit of one camera frame: the official ComfyUI template's settings —
+      25 steps, cfg 1, euler/simple, int8 weights, 1024 px pixel budget.
+      Needs ComfyUI >= 0.37.0.
+    expect: >-
+      Clean, painterly restyles that keep the scene, people and vehicles where
+      they are; natural colour, no burnt shadows. About 16 GB of VRAM and
+      roughly 1.5-2.5 min per image on a 3090.
+    graph: workflows/qwen_image_2_1_edit_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "6", input: prompt}
+      negative_prompt: {node: "6", input: negative_prompt}
+      seed: {node: "7", input: seed}
+      output: {node: "9"}
+      images:
+        - {node: "1", input: image}
+
   qwen-image-edit-2509-lightning4-legacy:
     model: qwen-image-edit-2509
     model_released: 2025-09-22
@@ -66,6 +91,9 @@ workflows:
     overrides:
       "115:3": {cfg: 3.5}
       "115:93": {megapixels: 1.5}
+      # Same effect as the server-wide --fp8_e4m3fn-unet flag this model used to
+      # rely on; set here so the server flag can go (it breaks int8 checkpoints).
+      "115:37": {weight_dtype: fp8_e4m3fn}
 
   qwen-image-edit-2509-lightning4-tuned:
     model: qwen-image-edit-2509
@@ -90,6 +118,7 @@ workflows:
     overrides:
       "115:3": {cfg: 1, steps: 4}
       "115:93": {megapixels: 1.0}
+      "115:37": {weight_dtype: fp8_e4m3fn}
 
   qwen-image-edit-2509-lightning4-tuned-3frame:
     model: qwen-image-edit-2509
@@ -121,3 +150,4 @@ workflows:
     overrides:
       "115:3": {cfg: 1, steps: 4}
       "115:93": {megapixels: 1.0}
+      "115:37": {weight_dtype: fp8_e4m3fn}
