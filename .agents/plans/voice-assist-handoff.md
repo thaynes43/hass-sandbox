@@ -239,8 +239,9 @@ it cuts off its surrounds and Sub.
   - A second, different Spotify request while one is streaming does NOT stop the first room: MA
     looks for another source for up to 15 s, then the NEW `play_media` call raises ("Spotify has
     reached its limit of 1 simultaneous streams"). What the agent says then is untested — and
-    cannot be reproduced while the account is rate-limited (below). That fix is Tom's, in the MA
-    UI: do not reconfigure MA to get a repro, wait for haynes-ops#3049.
+    a repro needs two items that are already in the library WITH a Spotify mapping and no local
+    copy (playback goes through Soloist, not the rate-limited Web API, so that may still work;
+    anything that needs a Spotify search will not, see below). Never reconfigure MA for a repro.
   - Local wins on its own: `play_media` matches the library first, and a local FLAC mapping
     scores ~62 against Spotify's fixed 2–3, so anything on the NAS (307k tracks, ~99 % of the
     library) plays from `/music` with no stream limit. That makes haynes-ops#2994 the weak link.
@@ -248,14 +249,15 @@ it cuts off its surrounds and Sub.
     ("All Out 80s", "Basement Fight Songs", …): `music_assistant.search` still returns them
     (`library://playlist/340`), but their only source is switched off. How a play request for one
     fails (raised error or silent nothing) is untested; the cure is the Automation account
-    following them in Spotify.
+    following them in Spotify — AFTER haynes-ops#3049 is fixed, since syncing ~800 new tracks
+    is exactly the load that tripped the rate limit.
   - **Spotify search is dead while the account is rate-limited — haynes-ops#3049** (measured 2026-09-21: every
     Spotify Web API call since 03:20 got `Spotify Rate Limiter`, retry in ~3,900 s, renewed hourly by
     MA's album-metadata task; `Search on provider Spotify [Automation] did not return in time`).
     It does not clear by itself (MA re-tries the moment each penalty expires; the fixes in
     haynes-ops#3049 need Tom in the MA UI). Meanwhile a voice request finds library items only — check the MA log for that line
     before debugging "it played the wrong thing / nothing". The 2026-09-19 "mood → playlist
-    returns nothing" result was taken with Spotify down and has not been re-measured with it up.
+    returns nothing" result was taken with Spotify down and has not been re-measured with it up (checkbox on haynes-ops#3049).
   - Keep crossfade off (Soloist + crossfade skips every other track, MA support#6440), and re-check
     all of this after MA 2.11 (it reworks per-account access).
 - Deploy chain for any AppDaemon change: hass-sandbox PR → merge → GHCR image → haynes-ops `tag:`
