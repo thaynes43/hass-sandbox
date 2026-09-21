@@ -134,40 +134,35 @@ Consumers (e.g. `DoorNotify`) listen for `detection_summary/run_published` match
 - Push notifications use a **`local_file` camera** pointing at a stable path:
   - `/media/detection-summary/<bundle_key>/detection_summary_generated.png`
   - Notifications attach `/api/camera_proxy/<camera_entity_id>`
-- The app **self-provisions** its helpers on startup; no manual helper creation needed
+- The app **self-provisions** `input_text.<bundle_key>_detection_summary` on startup; no manual helper creation needed
 - `local_file` cameras and shell commands must be added to `configuration.yaml` manually
 
 ### Self-provisioned entities
 
-| Entity | Type | Scope | Purpose |
-|--------|------|-------|---------|
-| `input_text.<bundle_key>_detection_summary` | `input_text` (max 255) | per zone | Latest summary text for this zone |
-| `input_boolean.<bundle_key>_detection_summary_trial_workflow` | `input_boolean` | per zone | ComfyUI only: send this zone's renders through the Trial workflow instead of the Active one |
-| `input_select.comfyui_active_workflow` | `input_select` | global | ComfyUI only: the workflow profile every zone uses |
-| `input_select.comfyui_trial_workflow` | `input_select` | global | ComfyUI only: the workflow profile a zone uses while its trial toggle is on |
+| Entity | Type | Purpose |
+|--------|------|---------|
+| `input_text.<bundle_key>_detection_summary` | `input_text` (max 255) | Latest summary text for this zone |
 
-The two globals are created once no matter how many zones start, and their
-options are reconciled against the registered profiles on every start. They
-appear only when the resolved image provider is ComfyUI — an OpenAI or Gemini
-image bundle provisions neither the selects nor the per-zone toggle. The run
-picker, selected-summary text and relay script belong to
+The run picker, selected-summary text and relay script belong to
 `detection_summary_viewer`, not to this app.
 
-### Runtime workflow selection (ComfyUI)
+### Image workflow (ComfyUI)
 
-When the `image` capability resolves to ComfyUI, the workflow sent for each run
-is chosen from Home Assistant at call time rather than baked into the release:
-the zone's trial toggle picks between the Trial and Active selects, and an
-unusable value falls back to the registry default (warned once per distinct bad
-value, not once per run). The chosen profile and its source (`ha_active`,
-`ha_trial`, `yaml_default`) appear on the `image gen start` INFO line, in
-`generated_image.workflow_profile` / `workflow_profile_source` in the bundle,
-and on the `image_edit` LLM event. If the provider had to fall back because
-ComfyUI rejected the requested graph, `workflow_profile` names the profile that
-actually rendered and `workflow_profile_fallback_reason` says why.
+When the `image` capability resolves to ComfyUI, the graph sent for each run is
+named in config — the `comfyui-qwen-edit` bundle's default, or
+`ai_provider_conf.image_workflow` on this app. It is fixed for the life of the
+deployment; changing it is a normal AppDaemon release. An unregistered name
+raises at `initialize()` rather than failing at render time.
 
-Trial, promote and roll-back steps: see
-[`providers/ai_providers/comfyui/README.md`](../../providers/ai_providers/comfyui/README.md#switching-workflows).
+The workflow that produced each image is recorded on the `image gen start` INFO
+line, in `generated_image.workflow_name` / `workflow_source` in the bundle, and
+on the `image_edit` LLM event. If the provider had to fall back because ComfyUI
+rejected the configured graph, `workflow_name` names what actually rendered and
+`workflow_fallback_reason` says why.
+
+See
+[`providers/ai_providers/comfyui/README.md`](../../providers/ai_providers/comfyui/README.md#choosing-a-workflow)
+for the registry table and how to roll back.
 
 ## Config reference (apps.yaml)
 
@@ -212,6 +207,13 @@ ai_provider_conf:
   multimodal: openai-default    # Vision scoring
   image: openai-default         # Image generation (edit)
 ```
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `simple_text` | No | Bundle ref for the run narrative |
+| `multimodal` | No | Bundle ref for vision scoring |
+| `image` | No | Bundle ref for image generation |
+| `image_workflow` | No | ComfyUI only: workflow name, overriding the bundle's for this app. Ignored by other providers; an unregistered name fails at startup. |
 
 ### Defaults (overridable)
 

@@ -1,10 +1,11 @@
 """ComfyUI image generation provider using workflow JSON + prompt/history APIs.
 
-The graph sent over the wire is chosen by *workflow profile* — a named entry in
-``workflow_profiles.yaml`` that owns the workflow file, the node/input bindings
-and the literal node overrides (see ``workflow_profiles.py``). The provider
-stays transport-only: it never reads Home Assistant and never touches the
-prompt text. The caller passes a profile name; everything else follows from it.
+The graph sent over the wire is chosen by *workflow* — a named entry in
+``workflow_registry.yaml`` that owns the graph JSON, the node/input bindings
+and the literal node overrides (see ``workflow_registry.py``). The provider
+stays transport-only: it never touches the prompt text and never decides
+anything for itself. The caller passes a workflow name, which comes from
+AppDaemon config; everything else follows from it.
 """
 
 from __future__ import annotations
@@ -33,11 +34,17 @@ from ..image_generation_provider import (
     ImageProviderCapabilities,
     ImageProviderName,
 )
-from .workflow_profiles import (
-    WorkflowProfile,
-    WorkflowProfileError,
-    load_workflow_profiles,
+from .workflow_registry import (
+    Workflow,
+    WorkflowRegistryError,
+    load_workflow_registry,
 )
+
+# Where a workflow name came from, recorded in result meta so a rendered image
+# can be traced back to the config that chose it.
+SOURCE_APP_CONFIG = "app_config"
+SOURCE_BUNDLE = "bundle"
+SOURCE_REGISTRY_DEFAULT = "registry_default"
 
 DEFAULT_UPLOAD_NAMESPACE = "comfyui"
 DEFAULT_FILENAME_PREFIX = "detection-summary"
@@ -48,26 +55,28 @@ _UNSAFE_UPLOAD_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 class ComfyUIWorkflowRejectedError(ExternalImageGenError):
     """The workflow itself was rejected — the request will never succeed as sent.
 
-    Raised for an unknown or invalid profile, a ComfyUI ``POST /prompt``
+    Raised for an unknown or invalid workflow, a ComfyUI ``POST /prompt``
     validation failure (HTTP 400 — including a model file that is not on the
     server), and an ``execution_error`` reported in history.
 
     Deliberately NOT raised for timeouts or connection errors: those say
-    nothing about the workflow, and falling back to another profile would just
+    nothing about the workflow, and falling back to another one would just
     burn a second render.
     """
 
 
 @dataclass(frozen=True)
 class ComfyUIImageGenerationConfig:
-    """Everything the provider needs that the workflow profile does not own."""
+    """Everything the provider needs that the workflow itself does not own."""
 
     base_url: str
-    # Profile to send. None -> the registry's default_profile.
-    workflow_profile: Optional[str] = None
-    # Profile to retry with once when the requested profile is rejected.
-    fallback_workflow_profile: Optional[str] = None
-    # Explicit timeout override. None -> the producing profile's timeout_s.
+    # Workflow to send, by name. None -> the registry's default_workflow.
+    workflow_name: Optional[str] = None
+    # Where that name came from, for meta/logs only.
+    workflow_source: str = SOURCE_REGISTRY_DEFAULT
+    # Workflow to retry with once when the requested one is rejected.
+    fallback_workflow_name: Optional[str] = None
+    # Explicit timeout override. None -> the producing workflow's timeout_s.
     timeout_s: Optional[float] = None
     # Upload filename namespace — one per caller (e.g. a camera zone) so two
     # callers cannot overwrite each other's input frames on the server.
@@ -251,13 +260,25 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         self._config = config
         # Loading here fails fast on a malformed registry rather than at the
         # first render, 10 minutes into an evening.
-        self._registry = load_workflow_profiles()
-        fallback = str(config.fallback_workflow_profile or "").strip()
+        self._registry = load_workflow_registry()
+        fallback = str(config.fallback_workflow_name or "").strip()
         if fallback and not self._registry.has(fallback):
             raise ValueError(
-                f"ComfyUI fallback_workflow_profile {fallback!r} is not a registered workflow "
-                f"profile; known profiles: {list(self._registry.names)}"
+                f"ComfyUI fallback_workflow_name {fallback!r} is not a registered workflow; "
+                f"registered workflows: {list(self._registry.names)}"
             )
+
+    # --- what this provider will send ----------------------------------
+
+    @property
+    def workflow_name(self) -> str:
+        """The workflow this provider will request, resolved against the registry."""
+        return str(self._config.workflow_name or "").strip() or self._registry.default_workflow
+
+    @property
+    def workflow_source(self) -> str:
+        """Where :attr:`workflow_name` came from — config, bundle, or the registry."""
+        return self._config.workflow_source
 
     # --- public API ----------------------------------------------------
 
@@ -283,14 +304,14 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         if not str(prompt or "").strip():
             raise ExternalImageGenError("prompt is required")
 
-        requested = str(self._config.workflow_profile or "").strip() or self._registry.default_profile
-        fallback = str(self._config.fallback_workflow_profile or "").strip()
+        requested = self.workflow_name
+        fallback = str(self._config.fallback_workflow_name or "").strip()
         started = time.time()
 
         try:
             return self._attempt(
-                profile_name=requested,
-                requested_profile=requested,
+                name=requested,
+                requested_name=requested,
                 in_paths=in_paths,
                 prompt=str(prompt),
                 out_path=out_path,
@@ -300,14 +321,15 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             if not fallback or fallback == requested:
                 raise
             logger.warning(
-                "ComfyUI workflow profile %r was rejected (%s); retrying once with fallback profile %r",
+                "ComfyUI workflow %r was rejected (%s); retrying once with the fallback "
+                "workflow %r",
                 requested,
                 exc,
                 fallback,
             )
             return self._attempt(
-                profile_name=fallback,
-                requested_profile=requested,
+                name=fallback,
+                requested_name=requested,
                 in_paths=in_paths,
                 prompt=str(prompt),
                 out_path=out_path,
@@ -315,13 +337,13 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
                 fallback_reason=str(exc),
             )
 
-    # --- one attempt against one profile -------------------------------
+    # --- one attempt against one workflow ------------------------------
 
     def _attempt(
         self,
         *,
-        profile_name: str,
-        requested_profile: str,
+        name: str,
+        requested_name: str,
         in_paths: List[Path],
         prompt: str,
         out_path: Path,
@@ -329,17 +351,17 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         fallback_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
         try:
-            profile = self._registry.get(profile_name)
-        except WorkflowProfileError as exc:
+            workflow = self._registry.get(name)
+        except WorkflowRegistryError as exc:
             raise ComfyUIWorkflowRejectedError(str(exc)) from exc
 
         timeout_s = float(
-            self._config.timeout_s if self._config.timeout_s is not None else profile.timeout_s
+            self._config.timeout_s if self._config.timeout_s is not None else workflow.timeout_s
         )
         namespace = str(self._config.upload_namespace or "").strip() or DEFAULT_UPLOAD_NAMESPACE
 
-        used_paths = in_paths[: profile.max_images]
-        ignored_paths = in_paths[profile.max_images :]
+        used_paths = in_paths[: workflow.max_images]
+        ignored_paths = in_paths[workflow.max_images :]
 
         input_dimensions = self._check_primary_input(used_paths[0])
 
@@ -354,17 +376,17 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
                     )
                 )
 
-            workflow = self._build_workflow(
-                profile=profile,
+            graph = self._build_graph(
+                workflow=workflow,
                 prompt=prompt,
                 uploaded_names=uploaded_names,
                 output_path=out_path,
             )
 
-            prompt_id = self._queue_prompt(workflow, timeout_s=timeout_s, profile=profile)
+            prompt_id = self._queue_prompt(graph, timeout_s=timeout_s, workflow=workflow)
             history_entry = self._wait_for_history(prompt_id, timeout_s=timeout_s)
 
-        image_info = self._extract_output_image_info(history_entry, profile=profile)
+        image_info = self._extract_output_image_info(history_entry, workflow=workflow)
         img_bytes = self._download_output_image(image_info, timeout_s=timeout_s)
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -374,7 +396,7 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             "backend": "external",
             "provider": "comfyui",
             "endpoint": self._config.base_url.rstrip("/"),
-            "model": profile.model,
+            "model": workflow.model,
             "created_at_epoch": time.time(),
             "elapsed_s": round(time.time() - started, 3),
             "input_paths": [str(p) for p in in_paths],
@@ -382,16 +404,18 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             "prompt_id": prompt_id,
             "uploaded_input_name": uploaded_names[0],
             "uploaded_input_names": list(uploaded_names),
-            "workflow_profile": profile.name,
-            "workflow_profile_requested": requested_profile,
-            "workflow": profile.workflow,
-            "required_models": list(profile.required_models),
+            "workflow_name": workflow.name,
+            "workflow_name_requested": requested_name,
+            "workflow_source": self._config.workflow_source,
+            "workflow_graph": workflow.graph,
+            "workflow_model_released": workflow.model_released.isoformat(),
+            "required_models": list(workflow.required_models),
             "timeout_s": timeout_s,
             "request": {"prompt_len": len(prompt), "prompt": prompt},
             "response": {"image_info": image_info},
         }
         if fallback_reason:
-            meta["workflow_profile_fallback_reason"] = fallback_reason
+            meta["workflow_fallback_reason"] = fallback_reason
         if input_dimensions:
             meta["input_dimensions"] = {"width": input_dimensions[0], "height": input_dimensions[1]}
         if ignored_paths:
@@ -413,53 +437,53 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
 
     # --- workflow construction -----------------------------------------
 
-    def _build_workflow(
+    def _build_graph(
         self,
         *,
-        profile: WorkflowProfile,
+        workflow: Workflow,
         prompt: str,
         uploaded_names: Sequence[str],
         output_path: Path,
     ) -> Dict[str, Any]:
         try:
-            template = profile.load_template()
-        except WorkflowProfileError as exc:
+            template = workflow.load_graph()
+        except WorkflowRegistryError as exc:
             raise ComfyUIWorkflowRejectedError(str(exc)) from exc
 
-        workflow = copy.deepcopy(template)
+        graph = copy.deepcopy(template)
         supplied = len(uploaded_names)
 
         try:
-            for slot_idx, slot in enumerate(profile.images):
+            for slot_idx, slot in enumerate(workflow.images):
                 if slot_idx < supplied:
-                    workflow[slot.node]["inputs"][slot.input] = uploaded_names[slot_idx]
+                    graph[slot.node]["inputs"][slot.input] = uploaded_names[slot_idx]
                     continue
                 # Fewer images than slots: drop the LoadImage node and every
                 # optional input that consumed it, or ComfyUI rejects the graph.
                 for target in slot.unlink:
                     node_id, _, input_name = str(target).partition(".")
-                    node = workflow.get(node_id)
+                    node = graph.get(node_id)
                     if isinstance(node, dict) and isinstance(node.get("inputs"), dict):
                         node["inputs"].pop(input_name, None)
-                workflow.pop(slot.node, None)
+                graph.pop(slot.node, None)
 
-            workflow[profile.prompt.node]["inputs"][profile.prompt.input] = prompt
-            if profile.negative_prompt is not None:
-                workflow[profile.negative_prompt.node]["inputs"][profile.negative_prompt.input] = ""
-            if profile.seed is not None:
-                workflow[profile.seed.node]["inputs"][profile.seed.input] = int(time.time() * 1000)
-            workflow[profile.output.node]["inputs"][profile.output.input] = (
+            graph[workflow.prompt.node]["inputs"][workflow.prompt.input] = prompt
+            if workflow.negative_prompt is not None:
+                graph[workflow.negative_prompt.node]["inputs"][workflow.negative_prompt.input] = ""
+            if workflow.seed is not None:
+                graph[workflow.seed.node]["inputs"][workflow.seed.input] = int(time.time() * 1000)
+            graph[workflow.output.node]["inputs"][workflow.output.input] = (
                 output_path.stem or DEFAULT_FILENAME_PREFIX
             )
-            for node_id, node_overrides in profile.overrides.items():
-                workflow[node_id]["inputs"].update(dict(node_overrides))
+            for node_id, node_overrides in workflow.overrides.items():
+                graph[node_id]["inputs"].update(dict(node_overrides))
         except KeyError as exc:
             # Load-time validation should make this unreachable; if the JSON
             # changed under us it is still a workflow fault, not a transport one.
             raise ComfyUIWorkflowRejectedError(
-                f"workflow profile {profile.name!r}: workflow is missing expected node/input: {exc!r}"
+                f"workflow {workflow.name!r}: graph is missing expected node/input: {exc!r}"
             ) from exc
-        return workflow
+        return graph
 
     # --- HTTP -----------------------------------------------------------
 
@@ -482,15 +506,15 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         return name
 
     def _queue_prompt(
-        self, workflow: Dict[str, Any], *, timeout_s: float, profile: WorkflowProfile
+        self, graph: Dict[str, Any], *, timeout_s: float, workflow: Workflow
     ) -> str:
         req = urllib.request.Request(
             url=f"{self._config.base_url.rstrip('/')}/prompt",
             method="POST",
-            data=_safe_json({"prompt": workflow}),
+            data=_safe_json({"prompt": graph}),
             headers={"Content-Type": "application/json"},
         )
-        payload = self._read_json(req, timeout_s=timeout_s, reject_profile=profile)
+        payload = self._read_json(req, timeout_s=timeout_s, reject_workflow=workflow)
         prompt_id = str(payload.get("prompt_id") or "").strip()
         if not prompt_id:
             raise ExternalImageGenError(f"ComfyUI prompt response missing prompt_id: {payload!r}")
@@ -542,14 +566,14 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         return None
 
     def _extract_output_image_info(
-        self, history_entry: Dict[str, Any], *, profile: WorkflowProfile
+        self, history_entry: Dict[str, Any], *, workflow: Workflow
     ) -> Dict[str, Any]:
         outputs = history_entry.get("outputs") or {}
-        save_output = outputs.get(profile.output.node)
+        save_output = outputs.get(workflow.output.node)
         if not isinstance(save_output, dict):
             raise ExternalImageGenError(
-                f"ComfyUI history missing save-image node {profile.output.node!r} "
-                f"for workflow profile {profile.name!r}: {outputs!r}"
+                f"ComfyUI history missing save-image node {workflow.output.node!r} "
+                f"for workflow {workflow.name!r}: {outputs!r}"
             )
         images = save_output.get("images") or []
         if not images or not isinstance(images[0], dict):
@@ -579,11 +603,11 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         req: urllib.request.Request,
         *,
         timeout_s: float,
-        reject_profile: Optional[WorkflowProfile] = None,
+        reject_workflow: Optional[Workflow] = None,
     ) -> Dict[str, Any]:
         """GET/POST JSON.
 
-        ``reject_profile`` marks a call where an HTTP 400 is ComfyUI refusing
+        ``reject_workflow`` marks a call where an HTTP 400 is ComfyUI refusing
         the *graph* (prompt validation), which is a workflow fault worth
         falling back on — not a transport failure.
         """
@@ -596,15 +620,15 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
                 detail = e.read().decode("utf-8", errors="replace")
             except Exception:
                 pass
-            if reject_profile is not None and e.code == 400:
+            if reject_workflow is not None and e.code == 400:
                 summary = ""
                 try:
                     summary = _describe_node_errors(json.loads(detail))
                 except Exception:
                     summary = ""
                 raise ComfyUIWorkflowRejectedError(
-                    f"ComfyUI rejected workflow profile {reject_profile.name!r} "
-                    f"({reject_profile.workflow}): {summary or detail[:400]}"
+                    f"ComfyUI rejected workflow {reject_workflow.name!r} "
+                    f"({reject_workflow.graph}): {summary or detail[:400]}"
                 ) from e
             raise ExternalImageGenError(f"comfyui http error: {e.code} {e.reason}; {detail}") from e
         except Exception as e:

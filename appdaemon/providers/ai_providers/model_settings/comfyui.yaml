@@ -1,17 +1,20 @@
 # ComfyUI workflow-based image generation.
 #
-# The graph that actually gets sent is chosen by *workflow profile* at runtime,
-# not here: see ../comfyui/workflow_profiles.yaml for the registry and
-# ../comfyui/README.md for how an operator switches, trials and promotes one.
+# The graph that gets sent is chosen BY NAME from the workflow registry in
+# ../comfyui/workflow_registry.yaml. Two levels, both config:
 #
-# Leave `workflow_profile` unset to follow the registry's default_profile.
-# Setting it here pins the bundle to one profile and fails the build if that
-# profile is not registered.
+#   * `provider_options.workflow` here — the default for every app on this
+#     bundle. Omit it to follow the registry's own `default_workflow`.
+#   * `ai_provider_conf.image_workflow: <name>` on a single app — overrides
+#     this bundle for that app only.
 #
-# No timeout is set on purpose: the render budget belongs to the profile
+# Either way an unregistered name stops the app at startup with the registered
+# names listed; see ../comfyui/README.md for the table and how to roll back.
+#
+# No timeout is set on purpose: the render budget belongs to the workflow
 # (a cold ComfyUI takes ~10.5 min to load the model from NFS before the first
 # image, which the old 300s default could never survive). Setting
-# `image_timeout_s` here overrides every profile — do that only to shorten a
+# `image_timeout_s` here overrides every workflow — do that only to shorten a
 # specific bundle deliberately.
 
 defaults:
@@ -21,6 +24,7 @@ bundles:
   comfyui-qwen-edit:
     image_model: qwen-image-edit-2509
     provider_options:
+      workflow: qwen-image-edit-2509-lightning4-legacy
       # Warn when an input image is below this total pixel count.
       # 921600 = 1280*720 (expected medium-channel minimum).
       min_input_pixels: 921600

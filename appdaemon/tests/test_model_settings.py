@@ -105,9 +105,9 @@ def test_load_bundle_comfyui_qwen_edit() -> None:
     assert bundle.base_url is None
     assert bundle.base_url_env == "COMFYUI_URL"
     assert bundle.image_model == "qwen-image-edit-2509"
-    # The workflow is chosen by profile at runtime, so the bundle carries no
-    # workflow path and no timeout — the profile owns both.
-    assert "workflow_path" not in bundle.provider_options
+    # The bundle names its workflow; the registry owns everything about it,
+    # including the timeout.
+    assert bundle.provider_options["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
     assert bundle.provider_options["min_input_pixels"] == 921600
     assert bundle.image_timeout_s is None
 
@@ -148,7 +148,7 @@ def test_resolve_capability_config_pointer_image_comfyui() -> None:
     assert flat["provider"] == "comfyui"
     assert flat["model"] == "qwen-image-edit-2509"
     assert flat["base_url"] == "https://comfyui.haynesops.com"
-    assert "workflow_path" not in flat["provider_options"]
+    assert flat["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
     assert flat["provider_options"]["min_input_pixels"] == 921600
     assert flat["timeout_s"] is None
 
@@ -245,3 +245,44 @@ def test_clear_cache() -> None:
     # Should still work after cache clear
     bundle = load_bundle("gemini-default")
     assert bundle.provider == "gemini"
+
+
+# ---------- image_workflow: one app overriding the bundle ----------
+
+
+def test_image_workflow_overrides_the_bundle_workflow() -> None:
+    conf = {"image": "comfyui-qwen-edit", "image_workflow": "qwen-image-edit-2509-lightning4-tuned"}
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-tuned"
+    assert flat["provider_options"]["workflow_source"] == "app_config"
+    # The shared bundle object must not have been mutated for everyone else.
+    again = resolve_capability_config(
+        {"image": "comfyui-qwen-edit"}, "image", resolve_secret=_resolve_secret
+    )
+    assert again["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
+    assert "workflow_source" not in again["provider_options"]
+
+
+def test_image_workflow_is_ignored_for_other_providers() -> None:
+    conf = {"image": "gemini-sota", "image_workflow": "qwen-image-edit-2509-lightning4-tuned"}
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider"] == "gemini"
+    assert "workflow" not in (flat.get("provider_options") or {})
+
+
+def test_image_workflow_is_ignored_for_other_capabilities() -> None:
+    conf = {"simple_text": "openai-budget", "image_workflow": "qwen-image-edit-2509-lightning4-tuned"}
+    flat = resolve_capability_config(conf, "simple_text", resolve_secret=_resolve_secret)
+    assert "provider_options" not in flat
+
+
+def test_image_workflow_applies_to_an_inline_comfyui_config() -> None:
+    conf = {
+        "provider": "comfyui",
+        "base_url": "https://comfyui.haynesops.com",
+        "image_model": "qwen-image-edit-2509",
+        "image_workflow": "qwen-image-edit-2509-lightning4-tuned-3frame",
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-tuned-3frame"
+    assert flat["provider_options"]["workflow_source"] == "app_config"

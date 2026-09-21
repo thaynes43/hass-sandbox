@@ -130,22 +130,22 @@ def validate_image_model(provider: str, model: str) -> Tuple[bool, Optional[str]
         )
     if provider_lower == "comfyui":
         # ComfyUI has no model list of its own: the models a request can use
-        # are whatever the registered workflow profiles declare, so the
-        # profile registry is the allowlist. An empty label is fine — the
-        # producing profile supplies the label reported back in meta.
+        # are whatever the registered workflows declare, so the workflow
+        # registry is the allowlist. An empty label is fine — the producing
+        # workflow supplies the label reported back in meta.
         model_lower = (model or "").strip().lower()
         if not model_lower:
             return True, None
-        # Imported lazily: the profile registry reads YAML + workflow JSON at
-        # import time, and provider_settings is imported by the registry the
-        # comfyui package itself pulls in.
-        from .comfyui.workflow_profiles import load_workflow_profiles
+        # Imported lazily: the workflow registry reads YAML + graph JSON, and
+        # provider_settings is imported by the registry the comfyui package
+        # itself pulls in.
+        from .comfyui.workflow_registry import load_workflow_registry
 
-        supported = {label.strip().lower() for label in load_workflow_profiles().model_labels()}
+        supported = {label.strip().lower() for label in load_workflow_registry().model_labels()}
         if model_lower not in supported:
             return False, (
-                f"Provider comfyui model {model!r} is not offered by any registered workflow "
-                f"profile. Supported: {sorted(supported)}."
+                f"Provider comfyui model {model!r} is not offered by any registered workflow. "
+                f"Supported: {sorted(supported)}."
             )
         return True, None
     if provider_lower == "openai":

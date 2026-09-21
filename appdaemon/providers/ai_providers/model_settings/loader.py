@@ -177,7 +177,10 @@ def resolve_capability_config(
                 f"Capability {capability!r} references unknown bundle {ref!r}"
             ) from None
         else:
-            return _bundle_to_flat_config(bundle, capability, resolve_secret)
+            flat = _bundle_to_flat_config(bundle, capability, resolve_secret)
+            if capability == "image":
+                flat = _apply_image_workflow_override(flat, conf)
+            return flat
 
     # Capability-scoped dict config:
     #   simple_text:
@@ -194,11 +197,47 @@ def resolve_capability_config(
                     f"Capability {capability!r} references unknown bundle {ref!r}"
                 ) from None
             flat = _bundle_to_flat_config(bundle, capability, resolve_secret)
-            return _merge_capability_overrides(flat, scoped, capability)
-        return _inline_to_flat_config(scoped, capability, resolve_secret)
+            flat = _merge_capability_overrides(flat, scoped, capability)
+            if capability == "image":
+                flat = _apply_image_workflow_override(flat, conf)
+            return flat
+        flat = _inline_to_flat_config(scoped, capability, resolve_secret)
+        if capability == "image":
+            flat = _apply_image_workflow_override(flat, conf)
+        return flat
 
     # Inline config path (backward compatibility)
-    return _inline_to_flat_config(conf, capability, resolve_secret)
+    flat = _inline_to_flat_config(conf, capability, resolve_secret)
+    if capability == "image":
+        flat = _apply_image_workflow_override(flat, conf)
+    return flat
+
+
+# ComfyUI only: which workflow an app wants, named in its own ai_provider_conf
+# rather than in the shared bundle. Other providers have no workflow concept
+# and ignore the key entirely.
+_IMAGE_WORKFLOW_KEY = "image_workflow"
+
+
+def _apply_image_workflow_override(
+    flat: Dict[str, Any], conf: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Let one app override the bundle's ComfyUI workflow by name.
+
+    ``ai_provider_conf: {image: comfyui-qwen-edit, image_workflow: <name>}``.
+    The name is not validated here — ``build_image_provider`` owns that, so a
+    typo fails at app startup with the registered names listed.
+    """
+    requested = str(conf.get(_IMAGE_WORKFLOW_KEY) or "").strip()
+    if not requested:
+        return flat
+    if str(flat.get("provider") or "").strip().lower() != "comfyui":
+        return flat
+    options = dict(flat.get("provider_options") or {})
+    options["workflow"] = requested
+    options["workflow_source"] = "app_config"
+    flat["provider_options"] = options
+    return flat
 
 
 def _resolve_secret_safe(

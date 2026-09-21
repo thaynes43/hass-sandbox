@@ -1,0 +1,123 @@
+# ComfyUI workflow registry.
+#
+# Each entry is the complete description of one ComfyUI graph the provider can
+# send: the graph JSON to POST, which nodes carry the prompt / seed / images /
+# output, which literal node inputs to override, and how long a render may
+# take. Consumers pick one BY NAME in AppDaemon config — the bundle default in
+# model_settings/comfyui.yaml, or `ai_provider_conf.image_workflow` on a single
+# app. Changing which workflow runs is a config change shipped as a normal
+# AppDaemon release, not a runtime toggle.
+#
+# ## Naming convention
+#
+#   <model>-<model release yymm>-<sampling>-<variant>
+#
+# e.g. `qwen-image-edit-2509-lightning4-tuned`: the Qwen image-edit model
+# released 2025-09, sampled through the 4-step Lightning LoRA, tuned variant.
+# The name is what an operator reads in a diff months from now, so spell the
+# model out rather than abbreviating it.
+#
+# ## Required fields
+#
+#   model           label reported back in result meta["model"]
+#   model_released  date the MODEL WEIGHTS were released (not this entry)
+#   added           date this entry was added to the registry
+#   description     what the graph is
+#   expect          what the output looks like and roughly how long it takes
+#   graph           the API-format workflow JSON, relative to this file
+#   timeout_s       render budget, seconds
+#   bindings        prompt / negative_prompt / seed / output / images
+#
+# Validation runs at load time (workflow_registry.py): the dates must parse,
+# every node id and input name referenced must exist in the graph, every
+# `unlink` target must currently link to that slot's node, and
+# `default_workflow` must name a registered workflow. A typo is a startup
+# error, never a silent no-op against a live ComfyUI.
+#
+# Measured on the live server (1080p input, warm model): a single-frame render
+# is 40-50 s, a three-frame render several times that. ComfyUI serves one
+# queue, so a slow workflow starves every other camera — keep an eye on that
+# before adding one.
+
+default_workflow: qwen-image-edit-2509-lightning4-legacy
+
+workflows:
+  qwen-image-edit-2509-lightning4-legacy:
+    model: qwen-image-edit-2509
+    model_released: 2025-09-22
+    added: 2026-09-21
+    description: >-
+      The graph production sent before the registry existed, byte-for-byte
+      apart from a neutral placeholder input filename. Kept unchanged as the
+      rollback target.
+    expect: >-
+      What production sent until 2026-09: strong stylisation but
+      over-saturated colour and crushed shadows, because cfg 3.5 fights the
+      4-step LoRA. About 40-50 s per image.
+    graph: workflows/02_qwen_Image_edit_subgraphed_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "115:111", input: prompt}
+      negative_prompt: {node: "115:110", input: prompt}
+      seed: {node: "115:3", input: seed}
+      output: {node: "60"}
+      images:
+        - {node: "78", input: image}
+    overrides:
+      "115:3": {cfg: 3.5}
+      "115:93": {megapixels: 1.5}
+
+  qwen-image-edit-2509-lightning4-tuned:
+    model: qwen-image-edit-2509
+    model_released: 2025-09-22
+    added: 2026-09-21
+    description: >-
+      One reference frame at the settings the distilled 4-step LoRA was made
+      for: cfg 1, and 1.0 MP because that is the resolution the model was
+      trained at. Runs the cleaned copy of the single-image graph.
+    expect: >-
+      Same model at the settings it was made for (cfg 1, 1 MP): clean colour,
+      subject and lighting preserved. About 40-50 s per image.
+    graph: workflows/qwen_image_edit_2509_single_image_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "115:111", input: prompt}
+      negative_prompt: {node: "115:110", input: prompt}
+      seed: {node: "115:3", input: seed}
+      output: {node: "60"}
+      images:
+        - {node: "78", input: image}
+    overrides:
+      "115:3": {cfg: 1, steps: 4}
+      "115:93": {megapixels: 1.0}
+
+  qwen-image-edit-2509-lightning4-tuned-3frame:
+    model: qwen-image-edit-2509
+    model_released: 2025-09-22
+    added: 2026-09-21
+    description: >-
+      The tuned settings with up to three reference frames bound into both
+      text encoders. Unused slots are pruned from the graph, so it still works
+      when only one or two frames are supplied.
+    expect: >-
+      Tuned settings with up to three camera frames as references, for zones
+      where a subject seen in only one frame goes missing. Several times
+      slower per image.
+    graph: workflows/02_qwen_Image_edit_subgraphed_three_images_API.json
+    timeout_s: 1200
+    bindings:
+      prompt: {node: "115:111", input: prompt}
+      negative_prompt: {node: "115:110", input: prompt}
+      seed: {node: "115:3", input: seed}
+      output: {node: "60"}
+      images:
+        - {node: "78", input: image}
+        - node: "120"
+          input: image
+          unlink: ["115:111.image2", "115:110.image2"]
+        - node: "121"
+          input: image
+          unlink: ["115:111.image3", "115:110.image3"]
+    overrides:
+      "115:3": {cfg: 1, steps: 4}
+      "115:93": {megapixels: 1.0}

@@ -3,140 +3,142 @@
 Local image generation through ComfyUI workflows. This package supplies the
 `image` capability only — no `simple_text`, no `multimodal`.
 
-The graph that goes over the wire is chosen at **runtime** by *workflow
-profile*, selected from Home Assistant. Switching the workflow, trialling a new
-one on a single camera, promoting it, and rolling back are all operator actions
-in the HA UI — no ComfyUI change, no AppDaemon release, no image rebuild.
+The graph that goes over the wire is chosen **by name** from the workflow
+registry, in AppDaemon config. Changing which workflow a camera renders with is
+a config change shipped as a normal AppDaemon release — there is no runtime
+switch and nothing to click.
 
 ## Implemented capabilities
 
 - Image-to-image generation through the ComfyUI `/upload/image`, `/prompt`,
   `/history` and `/view` APIs, polling to completion
-- Multi-image workflows: every reference frame that has a slot in the profile is
-  uploaded and bound; unused slots are pruned from the graph
-- Runtime workflow selection, per-zone trial, and one-shot fallback when a
-  workflow is rejected
+- Multi-image workflows: every reference frame that has a slot is uploaded and
+  bound; unused slots are pruned from the graph
+- One-shot fallback to the registry default when a workflow is rejected
 
 ## Limitations
 
 - No text-only or image-to-text structured output
-- No text-to-image: every profile expects at least one reference image
+- No text-to-image: every workflow expects at least one reference image
 - The caller cannot pass ComfyUI parameters directly — anything tunable is a
-  profile `override`, which keeps the graph validated at load time
+  registry `override`, which keeps the graph validated at load time
 
-## Shipped workflow profiles
+## Choosing a workflow
 
-Declared in [`workflow_profiles.yaml`](./workflow_profiles.yaml). Timings are
-measured on the live server with a warm model and a 1080p input frame.
+The registry lives in [`workflow_registry.yaml`](./workflow_registry.yaml).
+Every entry carries the metadata needed to tell it from its neighbours months
+later: when the *model* was released, when the entry was added, and what to
+expect from it.
 
-| Profile | Frames | Steps / cfg | Scale | Timeout | Typical render | Use it for |
-|---|---|---|---|---|---|---|
-| `qwen2509-original` | 1 | 4 / 3.5 | 1.5 MP | 900 s | ~50 s | The rollback target — byte-for-byte what production sent before profiles existed |
-| `qwen2509-tuned` | 1 | 4 / 1 | 1.0 MP | 900 s | ~50 s | Everyday use: same speed, visibly cleaner (cfg 3.5 comes out burnt and over-saturated) |
-| `qwen2509-tuned-multiframe` | up to 3 | 4 / 1 | 1.0 MP | 1200 s | several times slower (≤ ~4 min) | Zones where a subject that appears in only one frame keeps getting dropped or invented |
+| Workflow | Model released | Added | Frames | Expect |
+|---|---|---|---|---|
+| `qwen-image-edit-2509-lightning4-legacy` | 2025-09-22 | 2026-09-21 | 1 | What production sent until 2026-09: strong stylisation but over-saturated colour and crushed shadows, because cfg 3.5 fights the 4-step LoRA. About 40-50 s per image. |
+| `qwen-image-edit-2509-lightning4-tuned` | 2025-09-22 | 2026-09-21 | 1 | Same model at the settings it was made for (cfg 1, 1 MP): clean colour, subject and lighting preserved. About 40-50 s per image. |
+| `qwen-image-edit-2509-lightning4-tuned-3frame` | 2025-09-22 | 2026-09-21 | up to 3 | Tuned settings with up to three camera frames as references, for zones where a subject seen in only one frame goes missing. Several times slower per image. |
 
-`qwen2509-original` is the `default_profile`: a fresh deploy renders exactly
-what the previous release did until someone changes the HA select.
+`qwen-image-edit-2509-lightning4-legacy` is the registry's `default_workflow`,
+and its graph file is kept byte-for-byte as production had it (placeholder
+input filename aside). It is the rollback target.
 
-Extra reference frames are expensive — a three-frame render costs roughly 4x a
-single-frame one — so multi-frame is opt-in rather than the norm. A profile that
-has fewer slots than the caller supplied frames uses the first N in order and
-records the rest in result meta as `ignored_input_paths`.
+Names follow `<model>-<model release yymm>-<sampling>-<variant>`. Spell the
+model out — the name is what someone reads in a diff, long after the context is
+gone.
 
-All three run the distilled 4-step Lightning LoRA on purpose. There is no
-full-step profile: a 20-step cfg-4 single-frame render was still going at 16
-minutes on the current server, and because ComfyUI serves one queue that would
-starve every other camera and trip the `ImageGenQueueStuck` page. Revisit it
-after the ComfyUI upgrade.
+### Set the default for every app
+
+In [`../model_settings/comfyui.yaml`](../model_settings/comfyui.yaml), on the
+`comfyui-qwen-edit` bundle:
+
+```yaml
+bundles:
+  comfyui-qwen-edit:
+    image_model: qwen-image-edit-2509
+    provider_options:
+      workflow: qwen-image-edit-2509-lightning4-tuned
+```
+
+Omit `workflow` entirely to follow the registry's own `default_workflow`.
+
+### Override it for one app
+
+In `apps-prod.yaml` / `apps-dev.yaml`, alongside the capability refs:
+
+```yaml
+detection_summary_back_yard_pets:
+  ai_provider_conf:
+    simple_text: openai-default
+    multimodal: openai-default
+    image: comfyui-qwen-edit
+    image_workflow: qwen-image-edit-2509-lightning4-tuned-3frame
+```
+
+`image_workflow` beats the bundle, and only for that app. Other providers
+ignore the key, so it is harmless on an app that is not on ComfyUI.
+
+### Roll back
+
+Set the name back — to `qwen-image-edit-2509-lightning4-legacy` for the
+pre-registry behaviour — and ship it. Nothing else changes: the graph files of
+the other entries are untouched by a rollback.
+
+### A bad name stops the app
+
+An unregistered name raises at `initialize()`, naming the workflow, where it
+was set (`app_config` or `bundle`), and every registered name:
+
+```
+ComfyUI workflow 'qwen-tunedd' is not registered (set via app_config).
+Registered workflows: ['qwen-image-edit-2509-lightning4-legacy', ...]
+```
+
+A config typo therefore never reaches a render. The one gap: an app with
+`external_image_gen_enabled: false` builds no image provider at all, so its
+workflow name is not checked until image generation is switched on.
+
+### What it costs to switch
+
+Measured on the live server, warm, with a 1080p input frame: single-frame
+workflows render in 40-50 s, the three-frame one several times that. ComfyUI
+serves one queue, so a slow workflow starves every other camera — worth
+checking before adding one.
+
+All three shipped workflows load the same diffusion model and the same LoRA, so
+moving between them costs nothing extra. A workflow that loads them
+*differently* — a different model file, or the same model with or without a
+LoRA — makes ComfyUI re-patch and reload, about 5 minutes on the first render
+after the change. One-off, not a per-render tax.
 
 ### Required model files
 
-Each profile's `required_models` is derived from its workflow's loader nodes
-(`unet_name`, `clip_name`, `vae_name`, `lora_name`, `ckpt_name`) and reported in
-result meta. All profiles need the base Qwen edit set on the ComfyUI server:
+Each entry's `required_models` is derived from its graph's loader nodes
+(`unet_name`, `clip_name`, `vae_name`, `lora_name`, `ckpt_name`) and reported
+in result meta. All three shipped workflows need, on the ComfyUI server:
 
 - `qwen_image_edit_2509_fp8_e4m3fn.safetensors` (UNet)
 - `qwen_2.5_vl_7b_fp8_scaled.safetensors` (CLIP)
 - `qwen_image_vae.safetensors` (VAE)
+- `Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors` (LoRA)
 
-All three additionally need
-`Qwen-Image-Edit-2509-Lightning-4steps-V1.0-bf16.safetensors`, which is what
-makes switching between them free — see the caution below.
+## Adding a workflow
 
-## Switching workflows
-
-Three Home Assistant helpers, all self-provisioned by `detection_summary_app` on
-startup — never create them by hand:
-
-| Entity | Type | What it does |
-|---|---|---|
-| `input_select.comfyui_active_workflow` | global | The profile every camera zone uses |
-| `input_select.comfyui_trial_workflow` | global | The profile a zone uses while its trial toggle is on |
-| `input_boolean.<zone>_detection_summary_trial_workflow` | per zone | Opts that zone into the trial select |
-
-Both selects list the registered profiles in YAML order and start on the
-default. Options are reconciled against the registry on every AppDaemon start,
-so a release that adds or retires a profile updates the dropdowns by itself; a
-selection that no longer exists is reset to the default.
-
-**Trial a profile on one camera**
-
-1. Set `input_select.comfyui_trial_workflow` to the profile you want to try.
-2. Turn on `input_boolean.<zone>_detection_summary_trial_workflow` for one zone
-   (`garage`, say).
-3. Trigger that camera and compare. Every other zone is untouched — it is still
-   on the Active profile.
-
-**Promote it**
-
-4. Set `input_select.comfyui_active_workflow` to that profile.
-5. Turn the zone's trial toggle back off, so it follows Active with everyone else.
-
-**Roll back**
-
-6. Set `input_select.comfyui_active_workflow` back to the previous profile
-   (`qwen2509-original` restores the pre-profiles behaviour exactly).
-
-Both changes take effect on the next detection — nothing restarts, nothing
-redeploys. The profile that produced each image is recorded in the run bundle
-(`generated_image.workflow_profile`) alongside where the name came from
-(`workflow_profile_source`: `ha_active`, `ha_trial` or `yaml_default`), and on
-the `image gen start` INFO log line.
-
-### What a switch costs
-
-- Single-frame profiles render in **~40-50 s** on the live server.
-- The three-frame profile is several times slower. One measurement came in at
-  ~4 min, taken while the GPU may have been thermally throttled, so treat that
-  as an upper bound and time it yourself before promoting it.
-
-Switching between the three shipped profiles is free: they load the same
-diffusion model and the same LoRA, so ComfyUI keeps what it already has. A
-profile that names a **different model file** makes ComfyUI load it on first
-use — minutes when the file is cold on the NAS. While a trial of such a profile
-runs on one zone and the rest stay on Active, ComfyUI swaps models every time
-the two alternate, so expect slower renders for the length of the trial.
-
-ComfyUI has one queue. A slow profile delays every other camera's render, so
-time a candidate on the live server before making it Active.
-
-## Adding a profile
-
-1. Put the API-format workflow JSON in [`workflows/`](./workflows/). Export it
+1. Put the API-format graph JSON in [`workflows/`](./workflows/). Export it
    from ComfyUI with *Workflow → Export (API)*. Replace any personal input
    filename with the neutral placeholder `input.png`.
-2. Add an entry to [`workflow_profiles.yaml`](./workflow_profiles.yaml):
+2. Add an entry to [`workflow_registry.yaml`](./workflow_registry.yaml):
 
    ```yaml
-   my-profile:
-     description: "One line — it shows up in docs and logs."
-     model: qwen-image-edit-2509   # the label reported in result meta["model"]
-     workflow: workflows/my_workflow_API.json
+   qwen-image-edit-2509-lightning4-myvariant:
+     model: qwen-image-edit-2509       # label reported in result meta["model"]
+     model_released: 2025-09-22        # when the MODEL WEIGHTS shipped
+     added: 2026-10-01                 # when this entry was added
+     description: "What the graph is."
+     expect: "What the output looks like, and roughly how long it takes."
+     graph: workflows/my_graph_API.json
      timeout_s: 900
      bindings:
        prompt: {node: "115:111", input: prompt}
        negative_prompt: {node: "115:110", input: prompt}   # optional; set to ""
-       seed: {node: "115:3", input: seed}                  # optional; per-run seed
+       seed: {node: "115:3", input: seed}                  # optional; per-run
        output: {node: "60"}                                # SaveImage node
        images:                                             # ordered; slot 0 required
          - {node: "78", input: image}
@@ -147,13 +149,14 @@ time a candidate on the live server before making it Active.
        "115:3": {cfg: 1, steps: 4}
    ```
 
-3. Run the tests. Validation is strict and happens at load: every node id and
-   input name must exist in the workflow, every `unlink` target must currently
-   link to that slot's node, and `default_profile` must be registered. A typo is
-   a startup `ValueError`, never a silent no-op against a live ComfyUI.
-4. Deploy. The new name appears in both selects on the next AppDaemon start.
+3. Run the tests. Validation is strict and happens at load: the dates must
+   parse as `YYYY-MM-DD`, every node id and input name must exist in the graph,
+   every `unlink` target must currently link to that slot's node, and
+   `default_workflow` must be registered. A typo is a startup error, never a
+   silent no-op against a live ComfyUI.
+4. Point a bundle or an app at the new name and ship it.
 
-`unlink` is what makes a multi-slot workflow safe with fewer images: when slot N
+`unlink` is what makes a multi-slot graph safe with fewer images: when slot N
 goes unused, the provider deletes that slot's `LoadImage` node **and** each
 listed `<node>.<input>` that consumed it. Those are optional inputs on
 `TextEncodeQwenImageEditPlus`; leaving one pointing at a deleted node makes
@@ -165,16 +168,16 @@ Set under `provider_options` in [`comfyui.yaml`](../model_settings/comfyui.yaml)
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `workflow_profile` | `str \| null` | `null` | Pin this bundle to one profile. `null` follows the registry's `default_profile`. An unregistered name fails the build. |
+| `workflow` | `str \| null` | `null` | Workflow name for every app on this bundle. `null` follows the registry's `default_workflow`. An unregistered name fails at app startup. |
 | `upload_namespace` | `str \| null` | `null` | Prefix for uploaded input filenames. The app sets this per camera zone; `null` means `comfyui`. |
 | `min_input_pixels` | `int \| null` | `null` | Log a warning when the first input image's width × height is below this. Does not block generation. |
 | `poll_interval_s` | `float` | `1.0` | Seconds between `/history` polls. |
 
-Timeouts belong to the profile. The bundle deliberately sets no
+Timeouts belong to the workflow. The bundle deliberately sets no
 `image_timeout_s` — the old 300 s default could never survive a cold start,
 where the first render after a ComfyUI restart takes ~10.5 minutes loading the
 model from NFS. Setting `image_timeout_s` on the bundle overrides *every*
-profile, so do it only to deliberately shorten one bundle.
+workflow, so do it only to deliberately shorten one bundle.
 
 ## Uploads and concurrency
 
@@ -193,17 +196,16 @@ interleave. Different namespaces never block each other.
 `ComfyUIWorkflowRejectedError` (a subclass of `ExternalImageGenError`) means the
 *workflow* was refused and would be refused again as sent:
 
-- an unknown or invalid profile name
+- an unknown or invalid workflow name
 - HTTP 400 from `POST /prompt` — ComfyUI's graph validation. A missing model
   file arrives this way as `node_errors[*].errors[*].type == "value_not_in_list"`;
   the provider surfaces the `input_name` and the `received_value` in the message
 - `execution_error` reported in `/history`
 
-When the requested profile differs from `fallback_workflow_profile` (the
-registry default), one such failure logs a WARNING and retries **exactly once**
-with the fallback. Result meta then carries `workflow_profile` (the profile that
-produced the image), `workflow_profile_requested`, and
-`workflow_profile_fallback_reason`.
+When the configured workflow differs from `fallback_workflow_name` (the registry
+default), one such failure logs a WARNING and retries **exactly once** with the
+fallback. Result meta then carries `workflow_name` (what actually produced the
+image), `workflow_name_requested`, and `workflow_fallback_reason`.
 
 Timeouts and connection errors are deliberately **not** in this class. A slow or
 unreachable server says nothing about the workflow, and a fallback render would
@@ -217,17 +219,19 @@ only burn another ten minutes.
 
 | Key | Meaning |
 |---|---|
-| `workflow_profile` | The profile that produced the image |
-| `workflow_profile_requested` | The profile that was asked for |
-| `workflow_profile_fallback_reason` | Present only when it fell back |
-| `workflow` | The workflow JSON path that profile used |
+| `workflow_name` | The workflow that produced the image |
+| `workflow_name_requested` | The workflow the config asked for |
+| `workflow_source` | Where that name came from: `app_config`, `bundle`, `registry_default` |
+| `workflow_fallback_reason` | Present only when it fell back |
+| `workflow_graph` | The graph JSON path that workflow used |
+| `workflow_model_released` | When those model weights were released |
 | `required_models` | Model files that graph loads |
 | `uploaded_input_names` | Every uploaded input, slot order |
 | `uploaded_input_name` | The first upload (kept for older readers) |
-| `ignored_input_paths` | Inputs beyond the profile's slot count |
+| `ignored_input_paths` | Inputs beyond the workflow's slot count |
 | `timeout_s` | The budget actually applied |
 
-`model` is the producing profile's `model` label, so a bundle's recorded model
+`model` is the producing workflow's `model` label, so a bundle's recorded model
 always matches the graph that rendered it.
 
 ## ComfyUIStatusClient
@@ -247,11 +251,10 @@ dead or wedged ComfyUI instance (page-only watchdog — see its README).
 
 ## Files
 
-- [comfyui_image_generation_provider.py](./comfyui_image_generation_provider.py) — transport + profile binding
-- [workflow_profiles.py](./workflow_profiles.py) — profile registry, strict load-time validation
-- [workflow_profiles.yaml](./workflow_profiles.yaml) — the registry itself
-- [workflow_profile_selector.py](./workflow_profile_selector.py) — HA helper provisioning + runtime selection (app layer only; the provider never reads HA)
+- [comfyui_image_generation_provider.py](./comfyui_image_generation_provider.py) — transport + graph binding
+- [workflow_registry.py](./workflow_registry.py) — the registry, with strict load-time validation
+- [workflow_registry.yaml](./workflow_registry.yaml) — the registry itself
 - [comfyui_status_client.py](./comfyui_status_client.py)
-- [workflows/02_qwen_Image_edit_subgraphed_API.json](./workflows/02_qwen_Image_edit_subgraphed_API.json) — `qwen2509-original`
-- [workflows/qwen_image_edit_2509_single_image_API.json](./workflows/qwen_image_edit_2509_single_image_API.json) — `qwen2509-tuned`
-- [workflows/02_qwen_Image_edit_subgraphed_three_images_API.json](./workflows/02_qwen_Image_edit_subgraphed_three_images_API.json) — `qwen2509-tuned-multiframe`
+- [workflows/02_qwen_Image_edit_subgraphed_API.json](./workflows/02_qwen_Image_edit_subgraphed_API.json) — `…-lightning4-legacy`
+- [workflows/qwen_image_edit_2509_single_image_API.json](./workflows/qwen_image_edit_2509_single_image_API.json) — `…-lightning4-tuned`
+- [workflows/02_qwen_Image_edit_subgraphed_three_images_API.json](./workflows/02_qwen_Image_edit_subgraphed_three_images_API.json) — `…-lightning4-tuned-3frame`

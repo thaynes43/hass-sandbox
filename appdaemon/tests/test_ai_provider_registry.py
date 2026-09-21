@@ -144,40 +144,55 @@ def test_build_image_provider_comfyui() -> None:
     assert provider.name == ImageProviderName.COMFYUI
     assert provider.capabilities.supports_image_to_image
     assert not provider.capabilities.supports_text_to_image
-    # No explicit profile -> the registry default, with itself as the fallback.
-    assert provider._config.workflow_profile == "qwen2509-original"
-    assert provider._config.fallback_workflow_profile == "qwen2509-original"
+    # No name in config -> the registry default, with itself as the fallback.
+    assert provider.workflow_name == "qwen-image-edit-2509-lightning4-legacy"
+    assert provider.workflow_source == "registry_default"
+    assert provider._config.fallback_workflow_name == "qwen-image-edit-2509-lightning4-legacy"
     assert provider._config.timeout_s is None
 
 
-def test_build_image_provider_comfyui_honours_an_injected_profile() -> None:
+def test_build_image_provider_comfyui_honours_a_named_workflow() -> None:
     cfg = ImageProviderConfig(
         provider=ImageProviderName.COMFYUI,
         base_url="https://comfyui.haynesops.com",
         model="qwen-image-edit-2509",
         provider_options={
-            "workflow_profile": "qwen2509-tuned-multiframe",
+            "workflow": "qwen-image-edit-2509-lightning4-tuned-3frame",
             "upload_namespace": "garage",
             "min_input_pixels": 921600,
         },
     )
     provider = build_image_provider(cfg)
-    assert provider._config.workflow_profile == "qwen2509-tuned-multiframe"
-    assert provider._config.fallback_workflow_profile == "qwen2509-original"
+    assert provider.workflow_name == "qwen-image-edit-2509-lightning4-tuned-3frame"
+    # No explicit source in provider_options -> it came from the bundle.
+    assert provider.workflow_source == "bundle"
     assert provider._config.upload_namespace == "garage"
     assert provider._config.min_input_pixels == 921600
 
 
-def test_build_image_provider_comfyui_rejects_an_unknown_profile() -> None:
+def test_build_image_provider_comfyui_records_an_app_config_source() -> None:
     cfg = ImageProviderConfig(
         provider=ImageProviderName.COMFYUI,
         base_url="https://comfyui.haynesops.com",
-        provider_options={"workflow_profile": "ghost-profile"},
+        model="qwen-image-edit-2509",
+        provider_options={
+            "workflow": "qwen-image-edit-2509-lightning4-tuned",
+            "workflow_source": "app_config",
+        },
+    )
+    assert build_image_provider(cfg).workflow_source == "app_config"
+
+
+def test_build_image_provider_comfyui_rejects_an_unknown_workflow() -> None:
+    cfg = ImageProviderConfig(
+        provider=ImageProviderName.COMFYUI,
+        base_url="https://comfyui.haynesops.com",
+        provider_options={"workflow": "ghost-workflow"},
     )
     with pytest.raises(ValueError) as exc_info:
         build_image_provider(cfg)
-    assert "ghost-profile" in str(exc_info.value)
-    assert "qwen2509-original" in str(exc_info.value)
+    assert "ghost-workflow" in str(exc_info.value)
+    assert "qwen-image-edit-2509-lightning4-legacy" in str(exc_info.value)
 
 
 def test_build_image_provider_comfyui_rejects_an_unoffered_model() -> None:
@@ -191,7 +206,7 @@ def test_build_image_provider_comfyui_rejects_an_unoffered_model() -> None:
     assert "sdxl-turbo" in str(exc_info.value)
 
 
-def test_build_image_provider_comfyui_bundle_timeout_wins_over_the_profile() -> None:
+def test_build_image_provider_comfyui_bundle_timeout_wins_over_the_workflow() -> None:
     cfg = ImageProviderConfig(
         provider=ImageProviderName.COMFYUI,
         base_url="https://comfyui.haynesops.com",
@@ -330,7 +345,7 @@ def test_provider_config_from_pointer_image_comfyui() -> None:
         assert cfg.provider == ImageProviderName.COMFYUI
         assert cfg.model == "qwen-image-edit-2509"
         assert cfg.base_url == "https://comfyui.haynesops.com"
-        assert "workflow_path" not in cfg.provider_options
+        assert cfg.provider_options["workflow"] == "qwen-image-edit-2509-lightning4-legacy"
         assert cfg.provider_options["min_input_pixels"] == 921600
         assert cfg.timeout_s is None
     finally:

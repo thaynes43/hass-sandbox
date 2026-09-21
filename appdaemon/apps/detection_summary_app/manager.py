@@ -69,9 +69,6 @@ try:
         ExternalImageGenError,
         ImageProviderName,
     )
-    from providers.ai_providers.comfyui.workflow_profile_selector import (
-        WorkflowProfileSelector,
-    )
     from providers.ha_provisioner import HAProvisioner
     from providers.secrets import resolve_arg_secret
 except Exception:  # pragma: no cover
@@ -92,9 +89,6 @@ except Exception:  # pragma: no cover
         ExternalDataGenError,
         ExternalImageGenError,
         ImageProviderName,
-    )
-    from providers.ai_providers.comfyui.workflow_profile_selector import (  # type: ignore
-        WorkflowProfileSelector,
     )
     from providers.ha_provisioner import HAProvisioner  # type: ignore
     from providers.secrets import resolve_arg_secret  # type: ignore
@@ -386,9 +380,10 @@ class DetectionSummary(hass.Hass):
         self._multimodal_provider = None
         self._simple_text_provider = None
         self._active: Optional[_Run] = None
-        # ComfyUI only: runtime workflow-profile selection from HA helpers.
-        self._workflow_profile_selector = None
-        self._trial_workflow_entity_id: Optional[str] = None
+        # ComfyUI only: the workflow this app will send, resolved from config
+        # at startup so a bad name never reaches a render.
+        self._comfyui_workflow: Optional[str] = None
+        self._comfyui_workflow_source: Optional[str] = None
 
         if self.ai_data_enabled:
             self._get_multimodal_provider()
@@ -404,8 +399,14 @@ class DetectionSummary(hass.Hass):
                     f"ai_provider_conf provider={img_cfg.provider!r} does not support image-to-image generation"
                 )
             if img_cfg.provider == ImageProviderName.COMFYUI:
-                self._workflow_profile_selector = WorkflowProfileSelector(
-                    self, log_prefix=f"DetectionSummary[{self.bundle_key}]"
+                # build_image_provider has already rejected an unregistered
+                # workflow name, so reaching here means the config is good.
+                self._comfyui_workflow = getattr(image_provider, "workflow_name", None)
+                self._comfyui_workflow_source = getattr(image_provider, "workflow_source", None)
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: comfyui workflow="
+                    f"{self._comfyui_workflow} source={self._comfyui_workflow_source}",
+                    level="INFO",
                 )
 
         # ensure directories exist on shared mount
@@ -491,22 +492,6 @@ class DetectionSummary(hass.Hass):
                 f"DetectionSummary[{bk}]: failed to provision input_text '{bk_display} Detection Summary': {exc!r}",
                 level="ERROR",
             )
-
-        # ComfyUI workflow selection: two global selects (shared by every zone)
-        # plus this zone's trial toggle. Options are reconciled on every start
-        # because ensure_helper is create-only and the profile list can change
-        # with a release.
-        if self._workflow_profile_selector is not None:
-            try:
-                self._trial_workflow_entity_id = await self._workflow_profile_selector.provision(
-                    prov, zone_display_name=bk_display
-                )
-                self._workflow_profile_selector.reconcile_options()
-            except Exception as exc:
-                self.log(
-                    f"DetectionSummary[{bk}]: failed to provision ComfyUI workflow helpers: {exc!r}",
-                    level="ERROR",
-                )
 
     def _get_multimodal_provider(self):
         if self._multimodal_provider is not None:
@@ -1080,19 +1065,13 @@ class DetectionSummary(hass.Hass):
                     # Requirement: maximize style/theme variety across runs without anchoring on hard-coded examples,
                     # while keeping contents consistent with the chosen best frame.
                     provider_cfg = provider_config_from_appdaemon_args(self.args)
-                    # ComfyUI: pick the workflow profile from HA right before
-                    # the call, and namespace the uploads to this zone so two
-                    # zones rendering at once cannot swap input frames.
-                    profile_selection = None
-                    if self._workflow_profile_selector is not None:
-                        profile_selection = self._workflow_profile_selector.select(
-                            self._trial_workflow_entity_id
-                        )
+                    # ComfyUI: namespace the uploads to this zone so two zones
+                    # rendering at once cannot swap each other's input frames.
+                    if provider_cfg.provider == ImageProviderName.COMFYUI:
                         provider_cfg = dataclass_replace(
                             provider_cfg,
                             provider_options={
                                 **(provider_cfg.provider_options or {}),
-                                "workflow_profile": profile_selection.profile,
                                 "upload_namespace": self.bundle_key,
                             },
                         )
@@ -1144,17 +1123,17 @@ class DetectionSummary(hass.Hass):
                         profile=self._profile,
                     )
                     prompt = prompt_result.prompt
-                    profile_log = (
-                        f" workflow_profile={profile_selection.profile} "
-                        f"workflow_profile_source={profile_selection.source}"
-                        if profile_selection is not None
+                    workflow_log = (
+                        f" workflow={getattr(img_provider, 'workflow_name', None)}"
+                        f" workflow_source={getattr(img_provider, 'workflow_source', None)}"
+                        if provider_cfg.provider == ImageProviderName.COMFYUI
                         else ""
                     )
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
                         f"inputs={len(input_paths)} out={out_path} prompt_len={len(prompt)} "
                         f"style={prompt_result.style_profile_id} env={prompt_result.environment_variant_id}"
-                        f"{profile_log}",
+                        f"{workflow_log}",
                         level="INFO",
                     )
                     generated_image = img_provider.edit_image(
@@ -1169,13 +1148,6 @@ class DetectionSummary(hass.Hass):
                         generated_image["environment_variant_id"] = prompt_result.environment_variant_id
                         generated_image["environment_variant_description"] = prompt_result.environment_variant_description
                         generated_image["image_prompt"] = prompt
-                        if profile_selection is not None:
-                            # The provider already records the profile that
-                            # actually produced the image (which differs from
-                            # the selected one when it fell back) — don't
-                            # overwrite that with what we asked for.
-                            generated_image.setdefault("workflow_profile", profile_selection.profile)
-                            generated_image["workflow_profile_source"] = profile_selection.source
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen done run_id={run_id} "
                         f"elapsed_s={(generated_image or {}).get('elapsed_s')} model={(generated_image or {}).get('model')} "
@@ -1195,12 +1167,13 @@ class DetectionSummary(hass.Hass):
                         "prompt_len": len(prompt),
                         "image_prompt": prompt,
                     }
-                    if profile_selection is not None:
-                        image_edit_event["workflow_profile"] = (
-                            (generated_image or {}).get("workflow_profile")
-                            or profile_selection.profile
-                        )
-                        image_edit_event["workflow_profile_source"] = profile_selection.source
+                    # The provider records the workflow that actually produced
+                    # the image, which differs from the configured one when it
+                    # fell back — carry that through, not what we asked for.
+                    for key in ("workflow_name", "workflow_source", "workflow_fallback_reason"):
+                        value = (generated_image or {}).get(key)
+                        if value is not None:
+                            image_edit_event[key] = value
                     llm_events.append(image_edit_event)
                     # mirror to stable filename under zone dir
                     stable_local = self._ha_path_to_local_fs(stable_generated_ha_path(cfg))

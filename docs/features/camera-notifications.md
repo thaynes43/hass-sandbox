@@ -21,32 +21,21 @@ The `detection_summary_app` is the backbone of the camera notification pipeline:
 
 The `detection_summary_viewer` provides a Lovelace dashboard card for browsing historical detection bundles — useful for reviewing what happened while you were away.
 
-### Stylised images, switchable from Home Assistant
+### Stylised images
 
 Between scoring and publishing, the best frame is turned into a stylised
 illustration — the picture that actually lands on your phone. That render runs
-on a local ComfyUI box, and which ComfyUI *workflow* it uses is a Home Assistant
-setting, not a code change.
+on a local ComfyUI box.
 
-Three helpers control it, and the app creates all three itself:
-
-| Helper | What it does |
-|---|---|
-| `input_select.comfyui_active_workflow` | The workflow every camera uses |
-| `input_select.comfyui_trial_workflow` | The workflow a camera uses while it is trialling |
-| `input_boolean.<camera>_detection_summary_trial_workflow` | Puts that one camera on the trial workflow |
-
-So trying out a new look is: pick it in **Trial**, turn on the trial toggle for
-one camera, and walk past that camera. Every other camera keeps rendering
-exactly as before. If the result is better, set **Active** to the same workflow
-and turn the toggle back off. If it is worse, change **Active** back — the
-`qwen2509-original` entry is the original look, kept byte-for-byte for exactly
-that reason.
-
-Nothing restarts and nothing redeploys; the next detection uses the new setting.
-The workflows differ mostly in how many reference frames they use and how long
-they take — a single frame renders in about a minute, three frames in about
-four. Which workflow produced any given image is recorded in that run's bundle.
+Which ComfyUI *workflow* does the rendering is named in the AppDaemon config,
+so every camera's look is pinned to a specific, versioned graph rather than to
+whatever the box happened to have loaded. Each workflow in the registry records
+when its model was released and what to expect from it — how the output looks,
+and roughly how long a render takes (40-50 seconds for the single-frame ones,
+several times that when three reference frames are used). Changing a camera's
+look, or rolling one back, is a config change in a normal release; the original
+pre-2026-09 graph is kept unchanged for exactly that purpose. Which workflow
+produced any given image is recorded in that run's bundle.
 
 ### Door Notifications
 
@@ -68,7 +57,7 @@ detection_summary_app
   ├─ captures snapshot via HA
   ├─ sends to multimodal LLM
   ├─ renders a stylised image on ComfyUI
-  │    (workflow picked from the HA selects above)
+  │    (workflow named in the app's config)
   ├─ writes bundle to /media/
   └─ fires HA event
         │

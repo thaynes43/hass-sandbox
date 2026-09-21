@@ -34,7 +34,11 @@ from .comfyui.comfyui_image_generation_provider import (
     ComfyUIImageGenerationConfig,
     ComfyUIImageGenerationProvider,
 )
-from .comfyui.workflow_profiles import load_workflow_profiles
+from .comfyui.comfyui_image_generation_provider import (
+    SOURCE_BUNDLE,
+    SOURCE_REGISTRY_DEFAULT,
+)
+from .comfyui.workflow_registry import load_workflow_registry
 from .ollama.ollama_image_generation_provider import OllamaImageGenerationProvider
 
 # Multimodal
@@ -125,22 +129,29 @@ def build_image_provider(cfg: ImageProviderConfig) -> ImageGenerationProvider:
         if not ok and err:
             raise ValueError(err)
         options = dict(cfg.provider_options or {})
-        profiles = load_workflow_profiles()
-        # The app layer may inject an HA-selected profile here; the selector
-        # only ever hands down a registered name, so an unknown one at this
-        # point means the YAML is wrong and should fail the build.
-        requested = str(options.get("workflow_profile") or "").strip() or profiles.default_profile
-        if not profiles.has(requested):
+        registry = load_workflow_registry()
+        # The workflow name comes from config only — an app's
+        # `ai_provider_conf.image_workflow`, else the bundle's
+        # `provider_options.workflow`, else the registry default. An unknown
+        # name is a config typo and must stop the app at startup rather than
+        # reach a render.
+        requested = str(options.get("workflow") or "").strip()
+        source = str(options.get("workflow_source") or "").strip() or SOURCE_BUNDLE
+        if not requested:
+            requested = registry.default_workflow
+            source = SOURCE_REGISTRY_DEFAULT
+        elif not registry.has(requested):
             raise ValueError(
-                f"ComfyUI provider_options.workflow_profile {requested!r} is not a registered "
-                f"workflow profile; known profiles: {list(profiles.names)}"
+                f"ComfyUI workflow {requested!r} is not registered (set via {source}). "
+                f"Registered workflows: {list(registry.names)}"
             )
         return ComfyUIImageGenerationProvider(
             ComfyUIImageGenerationConfig(
                 base_url=str(cfg.base_url or "http://localhost:8188"),
-                workflow_profile=requested,
-                fallback_workflow_profile=profiles.default_profile,
-                # None here means "use the profile's timeout"; an explicit
+                workflow_name=requested,
+                workflow_source=source,
+                fallback_workflow_name=registry.default_workflow,
+                # None here means "use the workflow's timeout"; an explicit
                 # bundle image_timeout_s still wins.
                 timeout_s=float(cfg.timeout_s) if cfg.timeout_s is not None else None,
                 upload_namespace=(
