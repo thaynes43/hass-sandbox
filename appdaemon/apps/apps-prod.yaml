@@ -758,6 +758,8 @@ cielo_health_checker:
   checker_id: cielo
   checker_name: Cielo
   check_interval_s: 180
+  # Both units drop ~2% of lone pings with their status still ok (Wi-Fi power-save)
+  ping_attempts: 3
   health_dependencies:
     - checker_id: cloud
   devices:

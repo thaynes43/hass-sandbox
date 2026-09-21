@@ -346,6 +346,30 @@ class TestPingChecks:
         assert result["status"] == "critical"
         assert result["name"] == "Movie Room Ping"
 
+    def test_ping_attempts_defaults_to_one(self):
+        app = _make_app()
+        _init_only(app)
+        with patch(
+            "health_checks.checker_apps.device_group_checker"
+            ".device_group_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ) as mock_ping:
+            _run(app._check_device_ping(SAMPLE_DEVICES[0]))
+        mock_ping.assert_awaited_once_with(SAMPLE_DEVICES[0]["ip"], attempts=1)
+
+    def test_ping_attempts_passed_through(self):
+        app = _make_app({"ping_attempts": 3})
+        _init_only(app)
+        with patch(
+            "health_checks.checker_apps.device_group_checker"
+            ".device_group_checker.ping_check",
+            new_callable=AsyncMock,
+            return_value={"status": "ok", "detail": "3ms"},
+        ) as mock_ping:
+            _run(app._check_device_ping(SAMPLE_DEVICES[0]))
+        mock_ping.assert_awaited_once_with(SAMPLE_DEVICES[0]["ip"], attempts=3)
+
 
 # ---------------------------------------------------------------------------
 # Tests — Run checks reporting

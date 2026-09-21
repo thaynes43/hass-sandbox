@@ -44,6 +44,10 @@ class DeviceGroupChecker(hass.Hass):
         # Timing
         self._check_interval_s: int = int(args.get("check_interval_s", 180))
 
+        # Wi-Fi devices in power-save routinely drop a lone ping; retry before
+        # calling it a miss (ok on the first success).
+        self._ping_attempts: int = max(1, int(args.get("ping_attempts", 1)))
+
         # Device list — each device has name, optional ip, and list of entity checks
         raw_devices = args.get("devices", [])
         self._devices: List[Dict[str, Any]] = []
@@ -212,7 +216,7 @@ class DeviceGroupChecker(hass.Hass):
     async def _check_device_ping(self, dev: dict) -> Dict[str, str]:
         name = f"{dev['name']} Ping"
         try:
-            result = await ping_check(dev["ip"])
+            result = await ping_check(dev["ip"], attempts=self._ping_attempts)
             return {
                 "name": name,
                 "status": result["status"],
