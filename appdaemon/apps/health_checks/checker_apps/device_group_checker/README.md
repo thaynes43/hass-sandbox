@@ -49,6 +49,7 @@ cielo_health_checker:
 | `checker_id` | Yes | `device_group` | Unique ID for this checker |
 | `checker_name` | No | `checker_id` | Display name |
 | `check_interval_s` | No | `180` | How often to run checks (seconds) |
+| `ping_attempts` | No | `1` | Pings per device per cycle; ok on the first success. Raise it for Wi-Fi devices that drop lone pings |
 | `devices` | Yes | `[]` | List of device configs (see below) |
 
 ### Device config
