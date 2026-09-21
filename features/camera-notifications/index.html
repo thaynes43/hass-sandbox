@@ -1075,21 +1075,26 @@
 </ol>
 <p>The <code>detection_summary_viewer</code> provides a Lovelace dashboard card for browsing historical detection bundles — useful for reviewing what happened while you were away.</p>
 <h3 id="stylised-images">Stylised images</h3>
-<p>Between scoring and publishing, the best frame is turned into a stylised
-illustration — the picture that actually lands on your phone. That render runs
-on a local ComfyUI box.</p>
+<p>Between scoring and publishing, the best frames of the event are turned into a
+single stylised illustration — the picture that actually lands on your phone.
+That render runs on a local ComfyUI box.</p>
 <p>Which ComfyUI <em>workflow</em> does the rendering is named in the AppDaemon config,
 so every camera's look is pinned to a specific, versioned graph rather than to
 whatever the box happened to have loaded. Each workflow in the registry records
 when its model was released and what to expect from it — how the output looks,
 and roughly how long a render takes.</p>
 <p>The default is Qwen-Image-2.1, which produces clean restyles that keep the
-scene, people and vehicles where they are, and takes a couple of minutes per
-image. The older Qwen-Image-Edit-2509 workflows are still registered and render
-in well under a minute, at the cost of harsher colour. Changing a camera's
-look, or rolling one back, is a config change in a normal release; the original
-pre-2026-09 graph is kept unchanged for exactly that purpose. Which workflow
-produced any given image is recorded in that run's bundle.</p>
+scene, people and vehicles where they are, in roughly a minute per image. It is
+given up to three of the run's frames rather than one: a person can be half out
+of shot in the best frame and plain in the next, and the extra frames let the
+model get them right — on this model they cost about five seconds. The older
+Qwen-Image-Edit-2509 workflows are still registered and render a little faster
+from one frame, at the cost of harsher colour; on that larger model extra
+frames are expensive, so they are normally given just the best one.</p>
+<p>Changing a camera's look, or rolling one back, is a config change in a normal
+release; a single-frame Qwen-Image-2.1 entry and the original pre-2026-09 graph
+are both kept unchanged for exactly that purpose. Which workflow produced any
+given image is recorded in that run's bundle.</p>
 <h3 id="door-notifications">Door Notifications</h3>
 <p>The <code>door_notify</code> app listens for door open/close events (both <code>binary_sensor</code> and <code>cover</code> entities) and sends push notifications. It optionally attaches the most recent AI detection summary from a nearby camera, giving you context like <em>"Person walking up driveway"</em> alongside the <em>"Garage door opened"</em> alert.</p>
 <p>Key features:</p>
@@ -1106,7 +1111,7 @@ produced any given image is recorded in that run's bundle.</p>
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  ├─ captures snapshot via HA
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  ├─ sends to multimodal LLM
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  ├─ renders a stylised image on ComfyUI
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │    (workflow named in the app's config)
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │    (up to 3 frames; workflow named in the app's config)
 <a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  ├─ writes bundle to /media/
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  └─ fires HA event
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        │
