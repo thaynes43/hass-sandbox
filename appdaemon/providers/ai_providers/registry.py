@@ -34,6 +34,7 @@ from .comfyui.comfyui_image_generation_provider import (
     ComfyUIImageGenerationConfig,
     ComfyUIImageGenerationProvider,
 )
+from .comfyui.workflow_profiles import load_workflow_profiles
 from .ollama.ollama_image_generation_provider import OllamaImageGenerationProvider
 
 # Multimodal
@@ -120,69 +121,40 @@ def build_image_provider(cfg: ImageProviderConfig) -> ImageGenerationProvider:
         return OllamaImageGenerationProvider(base_url=str(cfg.base_url or "http://localhost:11434"))
 
     if cfg.provider == ImageProviderName.COMFYUI:
-        model = str(cfg.model or "qwen-image-edit-2509")
-        ok, err = validate_image_model("comfyui", model)
+        ok, err = validate_image_model("comfyui", str(cfg.model or ""))
         if not ok and err:
             raise ValueError(err)
         options = dict(cfg.provider_options or {})
-        workflow_path = str(
-            options.get("workflow_path")
-            or "workflows/02_qwen_Image_edit_subgraphed_API.json"
-        )
+        profiles = load_workflow_profiles()
+        # The app layer may inject an HA-selected profile here; the selector
+        # only ever hands down a registered name, so an unknown one at this
+        # point means the YAML is wrong and should fail the build.
+        requested = str(options.get("workflow_profile") or "").strip() or profiles.default_profile
+        if not profiles.has(requested):
+            raise ValueError(
+                f"ComfyUI provider_options.workflow_profile {requested!r} is not a registered "
+                f"workflow profile; known profiles: {list(profiles.names)}"
+            )
         return ComfyUIImageGenerationProvider(
             ComfyUIImageGenerationConfig(
                 base_url=str(cfg.base_url or "http://localhost:8188"),
-                workflow_path=workflow_path,
-                model=model,
-                timeout_s=float(cfg.timeout_s or 300.0),
-                prompt_node_id=str(options.get("prompt_node_id") or "115:111"),
-                negative_prompt_node_id=(
-                    str(options["negative_prompt_node_id"])
-                    if options.get("negative_prompt_node_id") is not None
-                    else "115:110"
+                workflow_profile=requested,
+                fallback_workflow_profile=profiles.default_profile,
+                # None here means "use the profile's timeout"; an explicit
+                # bundle image_timeout_s still wins.
+                timeout_s=float(cfg.timeout_s) if cfg.timeout_s is not None else None,
+                upload_namespace=(
+                    str(options["upload_namespace"])
+                    if options.get("upload_namespace") is not None
+                    else None
                 ),
-                load_image_node_id=str(options.get("load_image_node_id") or "78"),
-                save_image_node_id=str(options.get("save_image_node_id") or "60"),
-                sampler_node_id=(
-                    str(options["sampler_node_id"])
-                    if options.get("sampler_node_id") is not None
-                    else "115:3"
-                ),
-                sampler_seed_input=str(options.get("sampler_seed_input") or "seed"),
-                filename_prefix=str(options.get("filename_prefix") or "detection-summary"),
-                upload_overwrite=bool(options.get("upload_overwrite", True)),
                 poll_interval_s=float(options.get("poll_interval_s") or 1.0),
-                provider_options=options,
-                sampler_cfg=(
-                    float(options["sampler_cfg"])
-                    if options.get("sampler_cfg") is not None
-                    else None
-                ),
-                sampler_steps=(
-                    int(options["sampler_steps"])
-                    if options.get("sampler_steps") is not None
-                    else None
-                ),
-                sampler_denoise=(
-                    float(options["sampler_denoise"])
-                    if options.get("sampler_denoise") is not None
-                    else None
-                ),
-                scale_node_id=(
-                    str(options["scale_node_id"])
-                    if options.get("scale_node_id") is not None
-                    else None
-                ),
-                scale_megapixels=(
-                    float(options["scale_megapixels"])
-                    if options.get("scale_megapixels") is not None
-                    else None
-                ),
                 min_input_pixels=(
                     int(options["min_input_pixels"])
                     if options.get("min_input_pixels") is not None
                     else None
                 ),
+                provider_options=options,
             )
         )
 

@@ -21,6 +21,7 @@ __pycache__/
 .Python
 
 # Virtual environments / env files
+.venv
 .venv/
 .venv-wsl/
 venv/

@@ -14,7 +14,7 @@
   },
   "78": {
     "inputs": {
-      "image": "Penelope Spring 2024.jpg"
+      "image": "input.png"
     },
     "class_type": "LoadImage",
     "_meta": {

@@ -1,23 +1,36 @@
-"""Tests for ComfyUI image generation provider."""
+"""Tests for the ComfyUI image generation provider (profile-driven)."""
 
 from __future__ import annotations
 
+import io
 import json
 import struct
 import sys
+import threading
+import time
+import urllib.error
 from pathlib import Path
+from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from providers.ai_providers.comfyui.comfyui_image_generation_provider import (
+from providers.ai_providers.comfyui.comfyui_image_generation_provider import (  # noqa: E402
     ComfyUIImageGenerationConfig,
     ComfyUIImageGenerationProvider,
+    ComfyUIWorkflowRejectedError,
     _get_image_dimensions,
+    _upload_lock,
+    build_upload_name,
 )
-from providers.ai_providers.image_generation_provider import ExternalImageGenError
+from providers.ai_providers.comfyui.workflow_profiles import (  # noqa: E402
+    load_workflow_profiles,
+)
+from providers.ai_providers.image_generation_provider import ExternalImageGenError  # noqa: E402
+
+# ---------- fakes ----------
 
 
 def _mock_response(payload: bytes) -> MagicMock:
@@ -28,141 +41,693 @@ def _mock_response(payload: bytes) -> MagicMock:
     return resp
 
 
-def test_comfyui_image_generation_success(tmp_path: Path) -> None:
-    workflow_path = (
-        Path(__file__).resolve().parents[1]
-        / "providers"
-        / "ai_providers"
-        / "comfyui"
-        / "workflows"
-        / "02_qwen_Image_edit_subgraphed_API.json"
-    )
-    input_path = tmp_path / "best.jpg"
-    input_path.write_bytes(b"\xff\xd8\xff\xdb")
-    output_path = tmp_path / "generated.png"
+def _json_response(payload: Any) -> MagicMock:
+    return _mock_response(json.dumps(payload).encode("utf-8"))
 
-    upload_resp = _mock_response(json.dumps({"name": "uploaded-best.jpg", "subfolder": "", "type": "input"}).encode("utf-8"))
-    prompt_resp = _mock_response(json.dumps({"prompt_id": "pid-123"}).encode("utf-8"))
-    history_resp = _mock_response(
-        json.dumps(
-            {
-                "pid-123": {
-                    "outputs": {
-                        "60": {
-                            "images": [
-                                {"filename": "generated.png", "subfolder": "", "type": "output"}
-                            ]
-                        }
-                    },
-                    "status": {"messages": []},
-                }
+
+def _upload_response(name: str = "uploaded.jpg") -> MagicMock:
+    return _json_response({"name": name, "subfolder": "", "type": "input"})
+
+
+def _history_response(prompt_id: str, *, save_node: str = "60") -> MagicMock:
+    return _json_response(
+        {
+            prompt_id: {
+                "outputs": {
+                    save_node: {
+                        "images": [{"filename": "generated.png", "subfolder": "", "type": "output"}]
+                    }
+                },
+                "status": {"messages": []},
             }
-        ).encode("utf-8")
-    )
-    view_resp = _mock_response(b"\x89PNG\r\n\x1a\n")
-
-    provider = ComfyUIImageGenerationProvider(
-        ComfyUIImageGenerationConfig(
-            base_url="https://comfyui.haynesops.com",
-            workflow_path=str(workflow_path),
-        )
+        }
     )
 
-    with patch("urllib.request.urlopen", side_effect=[upload_resp, prompt_resp, history_resp, view_resp]):
-        result = provider.edit_image(
-            input_image_paths=[str(input_path)],
-            prompt="Turn this into a clean illustration.",
-            output_image_path=str(output_path),
-        )
 
-    assert output_path.exists()
-    assert output_path.read_bytes().startswith(b"\x89PNG")
-    assert result["provider"] == "comfyui"
-    assert result["prompt_id"] == "pid-123"
-    assert result["uploaded_input_name"] == "uploaded-best.jpg"
+def _view_response() -> MagicMock:
+    return _mock_response(b"\x89PNG\r\n\x1a\n")
 
 
-def test_comfyui_image_generation_requires_input(tmp_path: Path) -> None:
-    workflow_path = (
-        Path(__file__).resolve().parents[1]
-        / "providers"
-        / "ai_providers"
-        / "comfyui"
-        / "workflows"
-        / "02_qwen_Image_edit_subgraphed_API.json"
+def _http_error(code: int, body: Any) -> urllib.error.HTTPError:
+    raw = body if isinstance(body, (bytes, str)) else json.dumps(body)
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
+    return urllib.error.HTTPError(
+        "http://comfy/prompt", code, "Bad Request", {}, io.BytesIO(raw)
     )
-    provider = ComfyUIImageGenerationProvider(
-        ComfyUIImageGenerationConfig(
-            base_url="https://comfyui.haynesops.com",
-            workflow_path=str(workflow_path),
-        )
-    )
-    with pytest.raises(ExternalImageGenError) as exc_info:
-        provider.edit_image(input_image_paths=[], prompt="x", output_image_path=str(tmp_path / "out.png"))
-    assert "input_image_paths" in str(exc_info.value)
 
 
-def test_comfyui_image_generation_missing_workflow_raises(tmp_path: Path) -> None:
-    with pytest.raises(ValueError) as exc_info:
-        ComfyUIImageGenerationProvider(
-            ComfyUIImageGenerationConfig(
-                base_url="https://comfyui.haynesops.com",
-                workflow_path=str(tmp_path / "missing.json"),
-            )
-        )
-    assert "workflow file does not exist" in str(exc_info.value).lower()
+_VALUE_NOT_IN_LIST_BODY = {
+    "error": {"type": "prompt_outputs_failed_validation", "message": "Prompt outputs failed validation"},
+    "node_errors": {
+        "115:37": {
+            "class_type": "UNETLoader",
+            "errors": [
+                {
+                    "type": "value_not_in_list",
+                    "message": "Value not in list",
+                    "extra_info": {
+                        "input_name": "unet_name",
+                        "received_value": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
+                    },
+                }
+            ],
+        }
+    },
+}
 
 
-# ---------- Workflow helpers ----------
+class _Urlopen:
+    """Records every request and replays a scripted list of responses."""
 
-_WORKFLOW_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "providers"
-    / "ai_providers"
-    / "comfyui"
-    / "workflows"
-    / "02_qwen_Image_edit_subgraphed_API.json"
-)
+    def __init__(self, responses: List[Any]) -> None:
+        self._responses = list(responses)
+        self.requests: List[Any] = []
+
+    def __call__(self, req, timeout=None):  # noqa: ANN001 - urlopen signature
+        self.requests.append(req)
+        if not self._responses:
+            raise AssertionError(f"unexpected extra request to {req.full_url}")
+        nxt = self._responses.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+
+    @property
+    def call_count(self) -> int:
+        return len(self.requests)
+
+    def urls(self) -> List[str]:
+        return [r.full_url for r in self.requests]
 
 
-def _make_provider(**kwargs: object) -> ComfyUIImageGenerationProvider:
-    defaults = {
-        "base_url": "https://comfyui.haynesops.com",
-        "workflow_path": str(_WORKFLOW_PATH),
-    }
+def _make_provider(**kwargs: Any) -> ComfyUIImageGenerationProvider:
+    defaults: Dict[str, Any] = {"base_url": "https://comfyui.haynesops.com"}
     defaults.update(kwargs)
     return ComfyUIImageGenerationProvider(ComfyUIImageGenerationConfig(**defaults))
 
 
-# ---------- Sampler / scale override tests ----------
+def _write_jpeg(path: Path, w: int = 1920, h: int = 1080) -> Path:
+    path.write_bytes(_make_minimal_jpeg(w, h))
+    return path
 
 
-def test_build_workflow_sampler_overrides() -> None:
-    provider = _make_provider(sampler_cfg=4.0, sampler_steps=8, sampler_denoise=0.85)
-    wf = provider._build_workflow(prompt="test", uploaded_name="img.jpg", output_path=Path("out.png"))
-    sampler = wf["115:3"]["inputs"]
-    assert sampler["cfg"] == 4.0
-    assert sampler["steps"] == 8
-    assert sampler["denoise"] == 0.85
+def _inputs(tmp_path: Path, count: int, suffix: str = ".jpg") -> List[str]:
+    out = []
+    for i in range(count):
+        p = tmp_path / f"frame_{i}{suffix}"
+        _write_jpeg(p)
+        out.append(str(p))
+    return out
 
 
-def test_build_workflow_scale_override() -> None:
-    provider = _make_provider(scale_node_id="115:93", scale_megapixels=1.5)
-    wf = provider._build_workflow(prompt="test", uploaded_name="img.jpg", output_path=Path("out.png"))
-    assert wf["115:93"]["inputs"]["megapixels"] == 1.5
+# ---------- happy path ----------
 
 
-def test_build_workflow_no_overrides_preserves_defaults() -> None:
+def test_default_profile_generates_and_reports_meta(tmp_path: Path) -> None:
+    out_path = tmp_path / "generated.png"
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _json_response({"prompt_id": "pid-123"}),
+         _history_response("pid-123"), _view_response()]
+    )
+    provider = _make_provider(upload_namespace="garage")
+
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="Turn this into a clean illustration.",
+            output_image_path=str(out_path),
+        )
+
+    assert out_path.read_bytes().startswith(b"\x89PNG")
+    assert result["provider"] == "comfyui"
+    assert result["prompt_id"] == "pid-123"
+    assert result["model"] == "qwen-image-edit-2509"
+    assert result["workflow_profile"] == "qwen2509-original"
+    assert result["workflow_profile_requested"] == "qwen2509-original"
+    assert "workflow_profile_fallback_reason" not in result
+    assert result["uploaded_input_name"] == "garage-slot0.jpg"
+    assert result["uploaded_input_names"] == ["garage-slot0.jpg"]
+    assert result["timeout_s"] == 900.0
+    assert "qwen_image_edit_2509_fp8_e4m3fn.safetensors" in result["required_models"]
+
+
+def test_explicit_profile_is_used(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response(), _upload_response(), _upload_response(),
+         _json_response({"prompt_id": "pid-t"}), _history_response("pid-t"), _view_response()]
+    )
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned-multiframe", upload_namespace="garage"
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 3),
+            prompt="p",
+            output_image_path=str(tmp_path / "out.png"),
+        )
+    assert result["workflow_profile"] == "qwen2509-tuned-multiframe"
+    assert result["timeout_s"] == 1200.0
+    assert len(result["uploaded_input_names"]) == 3
+
+
+def test_tuned_profile_uploads_only_the_first_frame(tmp_path: Path) -> None:
+    """Single-frame by design: a 3-image render costs ~4x on the real server."""
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(workflow_profile="qwen2509-tuned", upload_namespace="garage")
+    paths = _inputs(tmp_path, 3)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=paths, prompt="p", output_image_path=str(tmp_path / "out.png")
+        )
+    assert result["uploaded_input_names"] == ["garage-slot0.jpg"]
+    assert result["ignored_input_paths"] == paths[1:]
+    assert result["timeout_s"] == 900.0
+
+
+def test_explicit_timeout_overrides_the_profile(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(timeout_s=42.0)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "out.png"),
+        )
+    assert result["timeout_s"] == 42.0
+
+
+def test_multiframe_profile_timeout(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(workflow_profile="qwen2509-tuned-multiframe")
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "out.png"),
+        )
+    assert result["timeout_s"] == 1200.0
+
+
+# ---------- input validation ----------
+
+
+def test_requires_input_paths(tmp_path: Path) -> None:
     provider = _make_provider()
-    wf = provider._build_workflow(prompt="test", uploaded_name="img.jpg", output_path=Path("out.png"))
-    sampler = wf["115:3"]["inputs"]
-    assert sampler["cfg"] == 1
-    assert sampler["steps"] == 4
-    assert sampler["denoise"] == 1
-    assert wf["115:93"]["inputs"]["megapixels"] == 1
+    with pytest.raises(ExternalImageGenError) as exc_info:
+        provider.edit_image(input_image_paths=[], prompt="x", output_image_path=str(tmp_path / "o.png"))
+    assert "input_image_paths" in str(exc_info.value)
 
 
-# ---------- Image dimension parsing ----------
+def test_requires_existing_inputs(tmp_path: Path) -> None:
+    provider = _make_provider()
+    with pytest.raises(ExternalImageGenError) as exc_info:
+        provider.edit_image(
+            input_image_paths=[str(tmp_path / "missing.jpg")],
+            prompt="x",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+    assert "do not exist" in str(exc_info.value)
+
+
+def test_requires_prompt(tmp_path: Path) -> None:
+    provider = _make_provider()
+    with pytest.raises(ExternalImageGenError) as exc_info:
+        provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="   ",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+    assert "prompt is required" in str(exc_info.value)
+
+
+def test_unknown_fallback_profile_fails_at_construction() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        _make_provider(fallback_workflow_profile="nope")
+    assert "not a registered workflow profile" in str(exc_info.value)
+
+
+# ---------- workflow construction ----------
+
+
+def _build(profile_name: str, uploaded: List[str], out: str = "generated.png") -> Dict[str, Any]:
+    provider = _make_provider()
+    profile = load_workflow_profiles().get(profile_name)
+    return provider._build_workflow(
+        profile=profile, prompt="PROMPT", uploaded_names=uploaded, output_path=Path(out)
+    )
+
+
+def _template(profile_name: str) -> Dict[str, Any]:
+    return load_workflow_profiles().get(profile_name).load_template()
+
+
+def test_original_profile_only_differs_from_its_template_by_bindings_and_overrides() -> None:
+    """The rollback guarantee: deploying this release changes nothing on disk.
+
+    Asserted structurally — every node/input that differs from the shipped
+    1-image template must be one the profile is declared to write.
+    """
+    built = _build("qwen2509-original", ["garage-slot0.jpg"])
+    template = _template("qwen2509-original")
+
+    assert set(built) == set(template), "no nodes may be added or removed"
+
+    differences = set()
+    for node_id, node in template.items():
+        built_inputs = built[node_id]["inputs"]
+        for key in set(node["inputs"]) | set(built_inputs):
+            if node["inputs"].get(key) != built_inputs.get(key):
+                differences.add((node_id, key))
+        assert built[node_id]["class_type"] == node["class_type"]
+
+    assert differences == {
+        ("78", "image"),          # slot 0
+        ("115:111", "prompt"),    # positive prompt
+        ("115:3", "seed"),        # per-run seed
+        ("60", "filename_prefix"),  # output name
+        ("115:3", "cfg"),         # override
+        ("115:93", "megapixels"),  # override
+    }
+    assert built["78"]["inputs"]["image"] == "garage-slot0.jpg"
+    assert built["115:111"]["inputs"]["prompt"] == "PROMPT"
+    assert built["115:110"]["inputs"]["prompt"] == ""
+    assert built["60"]["inputs"]["filename_prefix"] == "generated"
+    assert built["115:3"]["inputs"]["cfg"] == 3.5
+    assert built["115:3"]["inputs"]["steps"] == 4  # workflow default, not overridden
+    assert built["115:93"]["inputs"]["megapixels"] == 1.5
+
+
+def test_tuned_profile_is_single_slot_on_a_cleaned_graph() -> None:
+    built = _build("qwen2509-tuned", ["a-slot0.jpg"])
+    template = _template("qwen2509-tuned")
+    # The cleaned sibling graph drops the two orphan nodes the original keeps.
+    assert "115:112" not in template
+    assert "115:116" not in template
+    assert built["78"]["inputs"]["image"] == "a-slot0.jpg"
+    assert built["115:3"]["inputs"]["cfg"] == 1
+    assert built["115:3"]["inputs"]["steps"] == 4
+    assert built["115:93"]["inputs"]["megapixels"] == 1.0
+
+
+def test_multiframe_profile_binds_three_images() -> None:
+    built = _build("qwen2509-tuned-multiframe", ["a-slot0.jpg", "a-slot1.jpg", "a-slot2.jpg"])
+    assert built["78"]["inputs"]["image"] == "a-slot0.jpg"
+    assert built["120"]["inputs"]["image"] == "a-slot1.jpg"
+    assert built["121"]["inputs"]["image"] == "a-slot2.jpg"
+    assert built["115:111"]["inputs"]["image2"] == ["120", 0]
+    assert built["115:111"]["inputs"]["image3"] == ["121", 0]
+    assert built["115:3"]["inputs"]["cfg"] == 1
+    assert built["115:93"]["inputs"]["megapixels"] == 1.0
+
+
+def test_multiframe_profile_prunes_unused_slots_with_two_images() -> None:
+    built = _build("qwen2509-tuned-multiframe", ["a-slot0.jpg", "a-slot1.jpg"])
+    assert "120" in built
+    assert "121" not in built
+    assert built["115:111"]["inputs"]["image2"] == ["120", 0]
+    assert "image3" not in built["115:111"]["inputs"]
+    assert "image3" not in built["115:110"]["inputs"]
+
+
+def test_multiframe_profile_prunes_both_extra_slots_with_one_image() -> None:
+    built = _build("qwen2509-tuned-multiframe", ["a-slot0.jpg"])
+    assert "120" not in built
+    assert "121" not in built
+    for node in ("115:111", "115:110"):
+        assert "image2" not in built[node]["inputs"]
+        assert "image3" not in built[node]["inputs"]
+        assert built[node]["inputs"]["image1"] == ["115:93", 0]
+
+
+def test_filename_prefix_falls_back_when_output_has_no_stem() -> None:
+    built = _build("qwen2509-original", ["a-slot0.jpg"], out="")
+    assert built["60"]["inputs"]["filename_prefix"] == "detection-summary"
+
+
+def test_extra_inputs_beyond_the_slots_are_reported_as_ignored(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(upload_namespace="garage")  # 1-slot default profile
+    paths = _inputs(tmp_path, 4)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=paths, prompt="p", output_image_path=str(tmp_path / "o.png")
+        )
+    assert result["uploaded_input_names"] == ["garage-slot0.jpg"]
+    assert result["ignored_input_paths"] == paths[1:]
+    assert result["input_paths"] == paths
+    # Only one upload happened: upload + prompt + history + view.
+    assert fake.call_count == 4
+
+
+def test_four_inputs_fill_three_slots_on_the_multiframe_profile(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _upload_response("garage-slot1.jpg"),
+         _upload_response("garage-slot2.jpg"), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned-multiframe", upload_namespace="garage"
+    )
+    paths = _inputs(tmp_path, 4)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=paths, prompt="p", output_image_path=str(tmp_path / "o.png")
+        )
+    assert result["uploaded_input_names"] == [
+        "garage-slot0.jpg", "garage-slot1.jpg", "garage-slot2.jpg"
+    ]
+    assert result["ignored_input_paths"] == paths[3:]
+
+
+# ---------- upload naming ----------
+
+
+def test_build_upload_name_shape() -> None:
+    assert build_upload_name("garage", 0, Path("/x/best.jpg")) == "garage-slot0.jpg"
+    assert build_upload_name("garage", 2, Path("/x/frame_003.png")) == "garage-slot2.png"
+
+
+def test_build_upload_name_sanitises_namespace_and_suffix() -> None:
+    assert build_upload_name("back deck/pets", 1, Path("/x/f.jpg")) == "back_deck_pets-slot1.jpg"
+    assert build_upload_name("../../etc", 0, Path("/x/f.jpg")) == "etc-slot0.jpg"
+    assert build_upload_name("", 0, Path("/x/f")) == "input-slot0"
+    assert build_upload_name("zone", 0, Path("/x/f.j p&g")) == "zone-slot0.j_p_g"
+
+
+def test_uploads_are_namespaced_per_slot(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response("a-slot0.jpg"), _upload_response("a-slot1.jpg"), _upload_response("a-slot2.jpg"),
+         _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned-multiframe", upload_namespace="back yard pets"
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 3),
+            prompt="p",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+
+    uploads = [r for r in fake.requests if r.full_url.endswith("/upload/image")]
+    assert len(uploads) == 3
+    bodies = [r.data.decode("utf-8", errors="replace") for r in uploads]
+    for slot, body in enumerate(bodies):
+        assert f'filename="back_yard_pets-slot{slot}.jpg"' in body
+        assert 'name="overwrite"\r\n\r\ntrue' in body
+
+
+def test_upload_name_defaults_to_the_generic_namespace(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider()
+    with patch("urllib.request.urlopen", new=fake):
+        provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+    body = fake.requests[0].data.decode("utf-8", errors="replace")
+    assert 'filename="comfyui-slot0.jpg"' in body
+
+
+# ---------- upload serialisation ----------
+
+
+def test_upload_locks_are_per_namespace() -> None:
+    assert _upload_lock("garage") is _upload_lock("garage")
+    assert _upload_lock("garage") is not _upload_lock("bulkhead")
+
+
+def test_same_namespace_runs_do_not_interleave(tmp_path: Path) -> None:
+    """Two runs in one namespace must not overlap between upload and terminal state.
+
+    ComfyUI's LoadImage resolves filenames at execution time and uploads
+    overwrite, so an unserialised second run would replace the frame the first
+    one queued but has not rendered yet.
+    """
+    active = 0
+    overlapped = False
+    guard = threading.Lock()
+
+    def _by_url(req, timeout=None):  # noqa: ANN001 - one shared patch for both threads
+        url = req.full_url
+        if url.endswith("/upload/image"):
+            return _upload_response()
+        if url.endswith("/prompt"):
+            return _json_response({"prompt_id": "pid"})
+        return _view_response()
+
+    def _slow_history(self, prompt_id, *, timeout_s):  # noqa: ANN001
+        nonlocal active, overlapped
+        with guard:
+            active += 1
+            if active > 1:
+                overlapped = True
+        time.sleep(0.05)
+        with guard:
+            active -= 1
+        return {
+            "outputs": {"60": {"images": [{"filename": "g.png", "subfolder": "", "type": "output"}]}},
+            "status": {"messages": []},
+        }
+
+    def _run(namespace: str, work_dir: str) -> None:
+        provider = _make_provider(upload_namespace=namespace)
+        provider.edit_image(
+            input_image_paths=_inputs(tmp_path / work_dir, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / work_dir / "o.png"),
+        )
+
+    for name in ("a", "b", "c", "d"):
+        (tmp_path / name).mkdir()
+
+    with patch("urllib.request.urlopen", new=_by_url), \
+         patch.object(ComfyUIImageGenerationProvider, "_wait_for_history", _slow_history):
+        threads = [
+            threading.Thread(target=_run, args=("garage", "a")),
+            threading.Thread(target=_run, args=("garage", "b")),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        assert not overlapped, "two runs in the same namespace overlapped"
+
+        # Different namespaces share no lock, so they must both finish.
+        threads = [
+            threading.Thread(target=_run, args=("garage", "c")),
+            threading.Thread(target=_run, args=("bulkhead", "d")),
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+        assert all(not t.is_alive() for t in threads)
+    assert (tmp_path / "d" / "o.png").exists()
+
+
+# ---------- error taxonomy + fallback ----------
+
+
+def test_http_400_value_not_in_list_is_a_workflow_rejection(tmp_path: Path) -> None:
+    fake = _Urlopen([_upload_response(), _http_error(400, _VALUE_NOT_IN_LIST_BODY)])
+    provider = _make_provider()  # requested == fallback default -> no retry
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ComfyUIWorkflowRejectedError) as exc_info:
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    message = str(exc_info.value)
+    assert "qwen2509-original" in message
+    assert "value_not_in_list" in message
+    assert "input_name='unet_name'" in message
+    assert "qwen_image_edit_2509_fp8_e4m3fn.safetensors" in message
+    assert fake.call_count == 2, "a rejected default must not be retried"
+
+
+def test_rejection_falls_back_exactly_once(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [
+            _upload_response(),                       # attempt 1 (tuned) upload
+            _http_error(400, _VALUE_NOT_IN_LIST_BODY),  # attempt 1 rejected
+            _upload_response("garage-slot0.jpg"),     # attempt 2 (original) upload
+            _json_response({"prompt_id": "pid-fb"}),
+            _history_response("pid-fb"),
+            _view_response(),
+        ]
+    )
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned",
+        fallback_workflow_profile="qwen2509-original",
+        upload_namespace="garage",
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+
+    assert result["workflow_profile"] == "qwen2509-original"
+    assert result["workflow_profile_requested"] == "qwen2509-tuned"
+    assert "qwen2509-tuned" in result["workflow_profile_fallback_reason"]
+    assert "unet_name" in result["workflow_profile_fallback_reason"]
+    assert result["timeout_s"] == 900.0
+    assert fake.call_count == 6
+
+
+def test_fallback_is_not_retried_when_it_is_also_rejected(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [
+            _upload_response(), _http_error(400, _VALUE_NOT_IN_LIST_BODY),
+            _upload_response(), _http_error(400, _VALUE_NOT_IN_LIST_BODY),
+        ]
+    )
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned", fallback_workflow_profile="qwen2509-original"
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ComfyUIWorkflowRejectedError):
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    assert fake.call_count == 4, "exactly one fallback attempt, then give up"
+
+
+def test_unknown_requested_profile_falls_back(tmp_path: Path) -> None:
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(
+        workflow_profile="ghost-profile", fallback_workflow_profile="qwen2509-original"
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+    assert result["workflow_profile"] == "qwen2509-original"
+    assert result["workflow_profile_requested"] == "ghost-profile"
+    assert "ghost-profile" in result["workflow_profile_fallback_reason"]
+
+
+def test_execution_error_in_history_is_a_workflow_rejection(tmp_path: Path) -> None:
+    history = _json_response(
+        {
+            "pid-x": {
+                "outputs": {},
+                "status": {"messages": [["execution_error", {"exception_message": "boom"}]]},
+            }
+        }
+    )
+    fake = _Urlopen([_upload_response(), _json_response({"prompt_id": "pid-x"}), history])
+    provider = _make_provider()
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ComfyUIWorkflowRejectedError) as exc_info:
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    assert "execution error" in str(exc_info.value)
+
+
+def test_non_400_http_error_is_not_a_workflow_rejection(tmp_path: Path) -> None:
+    fake = _Urlopen([_upload_response(), _http_error(500, b"kaboom")])
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned", fallback_workflow_profile="qwen2509-original"
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ExternalImageGenError) as exc_info:
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    assert not isinstance(exc_info.value, ComfyUIWorkflowRejectedError)
+    assert fake.call_count == 2, "a 500 must not trigger a fallback render"
+
+
+def test_timeout_does_not_fall_back(tmp_path: Path) -> None:
+    """A slow render says nothing about the workflow — never burn a second one."""
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned",
+        fallback_workflow_profile="qwen2509-original",
+        timeout_s=0.05,
+        poll_interval_s=0.0,
+    )
+    responses: List[Any] = [_upload_response(), _json_response({"prompt_id": "pid-slow"})]
+    fake = _Urlopen(responses)
+
+    def _never_done(req, timeout=None):  # noqa: ANN001
+        fake.requests.append(req)
+        if responses:
+            nxt = responses.pop(0)
+            return nxt
+        return _json_response({"pid-slow": {"status": {"messages": []}}})
+
+    with patch("urllib.request.urlopen", new=_never_done):
+        with pytest.raises(ExternalImageGenError) as exc_info:
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    assert not isinstance(exc_info.value, ComfyUIWorkflowRejectedError)
+    assert "Timed out" in str(exc_info.value)
+    upload_count = len([r for r in fake.requests if r.full_url.endswith("/upload/image")])
+    assert upload_count == 1, "the fallback profile must not have been attempted"
+
+
+def test_connection_error_does_not_fall_back(tmp_path: Path) -> None:
+    fake = _Urlopen([OSError("connection refused")])
+    provider = _make_provider(
+        workflow_profile="qwen2509-tuned", fallback_workflow_profile="qwen2509-original"
+    )
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ExternalImageGenError) as exc_info:
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+    assert not isinstance(exc_info.value, ComfyUIWorkflowRejectedError)
+    assert fake.call_count == 1
+
+
+def test_missing_save_node_output_is_a_transport_error(tmp_path: Path) -> None:
+    history = _json_response({"pid": {"outputs": {"99": {}}, "status": {"messages": []}}})
+    fake = _Urlopen([_upload_response(), _json_response({"prompt_id": "pid"}), history])
+    provider = _make_provider(timeout_s=0.3, poll_interval_s=0.0)
+    with patch("urllib.request.urlopen", new=fake):
+        with pytest.raises(ExternalImageGenError):
+            provider.edit_image(
+                input_image_paths=_inputs(tmp_path, 1),
+                prompt="p",
+                output_image_path=str(tmp_path / "o.png"),
+            )
+
+
+# ---------- image dimension parsing ----------
 
 
 def _make_minimal_png(w: int, h: int) -> bytes:
@@ -198,34 +763,23 @@ def test_get_image_dimensions_unknown_format(tmp_path: Path) -> None:
     assert _get_image_dimensions(p) is None
 
 
-# ---------- Low-res input warning ----------
+# ---------- low-res input warning ----------
 
 
 def test_low_res_input_logs_warning(tmp_path: Path) -> None:
     input_path = tmp_path / "small.jpg"
     input_path.write_bytes(_make_minimal_jpeg(640, 360))
-    output_path = tmp_path / "out.png"
-
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid-1"}), _history_response("pid-1"), _view_response()]
+    )
     provider = _make_provider(min_input_pixels=500000)
 
-    upload_resp = _mock_response(json.dumps({"name": "small.jpg"}).encode("utf-8"))
-    prompt_resp = _mock_response(json.dumps({"prompt_id": "pid-1"}).encode("utf-8"))
-    history_resp = _mock_response(
-        json.dumps({
-            "pid-1": {
-                "outputs": {"60": {"images": [{"filename": "g.png", "subfolder": "", "type": "output"}]}},
-                "status": {"messages": []},
-            }
-        }).encode("utf-8")
-    )
-    view_resp = _mock_response(b"\x89PNG\r\n\x1a\n")
-
-    with patch("urllib.request.urlopen", side_effect=[upload_resp, prompt_resp, history_resp, view_resp]), \
+    with patch("urllib.request.urlopen", new=fake), \
          patch("providers.ai_providers.comfyui.comfyui_image_generation_provider.logger") as mock_logger:
         result = provider.edit_image(
             input_image_paths=[str(input_path)],
             prompt="test prompt",
-            output_image_path=str(output_path),
+            output_image_path=str(tmp_path / "out.png"),
         )
     mock_logger.warning.assert_called_once()
     assert "640" in str(mock_logger.warning.call_args)
@@ -235,27 +789,16 @@ def test_low_res_input_logs_warning(tmp_path: Path) -> None:
 def test_high_res_input_no_warning(tmp_path: Path) -> None:
     input_path = tmp_path / "big.png"
     input_path.write_bytes(_make_minimal_png(1600, 1200))
-    output_path = tmp_path / "out.png"
-
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid-2"}), _history_response("pid-2"), _view_response()]
+    )
     provider = _make_provider(min_input_pixels=500000)
 
-    upload_resp = _mock_response(json.dumps({"name": "big.png"}).encode("utf-8"))
-    prompt_resp = _mock_response(json.dumps({"prompt_id": "pid-2"}).encode("utf-8"))
-    history_resp = _mock_response(
-        json.dumps({
-            "pid-2": {
-                "outputs": {"60": {"images": [{"filename": "g.png", "subfolder": "", "type": "output"}]}},
-                "status": {"messages": []},
-            }
-        }).encode("utf-8")
-    )
-    view_resp = _mock_response(b"\x89PNG\r\n\x1a\n")
-
-    with patch("urllib.request.urlopen", side_effect=[upload_resp, prompt_resp, history_resp, view_resp]), \
+    with patch("urllib.request.urlopen", new=fake), \
          patch("providers.ai_providers.comfyui.comfyui_image_generation_provider.logger") as mock_logger:
         provider.edit_image(
             input_image_paths=[str(input_path)],
             prompt="test prompt",
-            output_image_path=str(output_path),
+            output_image_path=str(tmp_path / "out.png"),
         )
     mock_logger.warning.assert_not_called()

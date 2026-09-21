@@ -105,7 +105,11 @@ def test_load_bundle_comfyui_qwen_edit() -> None:
     assert bundle.base_url is None
     assert bundle.base_url_env == "COMFYUI_URL"
     assert bundle.image_model == "qwen-image-edit-2509"
-    assert bundle.provider_options["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
+    # The workflow is chosen by profile at runtime, so the bundle carries no
+    # workflow path and no timeout — the profile owns both.
+    assert "workflow_path" not in bundle.provider_options
+    assert bundle.provider_options["min_input_pixels"] == 921600
+    assert bundle.image_timeout_s is None
 
 
 def test_load_bundle_not_found() -> None:
@@ -144,7 +148,9 @@ def test_resolve_capability_config_pointer_image_comfyui() -> None:
     assert flat["provider"] == "comfyui"
     assert flat["model"] == "qwen-image-edit-2509"
     assert flat["base_url"] == "https://comfyui.haynesops.com"
-    assert flat["provider_options"]["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
+    assert "workflow_path" not in flat["provider_options"]
+    assert flat["provider_options"]["min_input_pixels"] == 921600
+    assert flat["timeout_s"] is None
 
 
 def test_resolve_capability_config_scoped_bundle_override() -> None:

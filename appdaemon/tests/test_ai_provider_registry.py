@@ -139,12 +139,66 @@ def test_build_image_provider_comfyui() -> None:
         provider=ImageProviderName.COMFYUI,
         base_url="https://comfyui.haynesops.com",
         model="qwen-image-edit-2509",
-        provider_options={"workflow_path": "workflows/02_qwen_Image_edit_subgraphed_API.json"},
     )
     provider = build_image_provider(cfg)
     assert provider.name == ImageProviderName.COMFYUI
     assert provider.capabilities.supports_image_to_image
     assert not provider.capabilities.supports_text_to_image
+    # No explicit profile -> the registry default, with itself as the fallback.
+    assert provider._config.workflow_profile == "qwen2509-original"
+    assert provider._config.fallback_workflow_profile == "qwen2509-original"
+    assert provider._config.timeout_s is None
+
+
+def test_build_image_provider_comfyui_honours_an_injected_profile() -> None:
+    cfg = ImageProviderConfig(
+        provider=ImageProviderName.COMFYUI,
+        base_url="https://comfyui.haynesops.com",
+        model="qwen-image-edit-2509",
+        provider_options={
+            "workflow_profile": "qwen2509-tuned-multiframe",
+            "upload_namespace": "garage",
+            "min_input_pixels": 921600,
+        },
+    )
+    provider = build_image_provider(cfg)
+    assert provider._config.workflow_profile == "qwen2509-tuned-multiframe"
+    assert provider._config.fallback_workflow_profile == "qwen2509-original"
+    assert provider._config.upload_namespace == "garage"
+    assert provider._config.min_input_pixels == 921600
+
+
+def test_build_image_provider_comfyui_rejects_an_unknown_profile() -> None:
+    cfg = ImageProviderConfig(
+        provider=ImageProviderName.COMFYUI,
+        base_url="https://comfyui.haynesops.com",
+        provider_options={"workflow_profile": "ghost-profile"},
+    )
+    with pytest.raises(ValueError) as exc_info:
+        build_image_provider(cfg)
+    assert "ghost-profile" in str(exc_info.value)
+    assert "qwen2509-original" in str(exc_info.value)
+
+
+def test_build_image_provider_comfyui_rejects_an_unoffered_model() -> None:
+    cfg = ImageProviderConfig(
+        provider=ImageProviderName.COMFYUI,
+        base_url="https://comfyui.haynesops.com",
+        model="sdxl-turbo",
+    )
+    with pytest.raises(ValueError) as exc_info:
+        build_image_provider(cfg)
+    assert "sdxl-turbo" in str(exc_info.value)
+
+
+def test_build_image_provider_comfyui_bundle_timeout_wins_over_the_profile() -> None:
+    cfg = ImageProviderConfig(
+        provider=ImageProviderName.COMFYUI,
+        base_url="https://comfyui.haynesops.com",
+        model="qwen-image-edit-2509",
+        timeout_s=120.0,
+    )
+    assert build_image_provider(cfg)._config.timeout_s == 120.0
 
 
 def test_build_multimodal_provider_openai() -> None:
@@ -276,7 +330,9 @@ def test_provider_config_from_pointer_image_comfyui() -> None:
         assert cfg.provider == ImageProviderName.COMFYUI
         assert cfg.model == "qwen-image-edit-2509"
         assert cfg.base_url == "https://comfyui.haynesops.com"
-        assert cfg.provider_options["workflow_path"] == "workflows/02_qwen_Image_edit_subgraphed_API.json"
+        assert "workflow_path" not in cfg.provider_options
+        assert cfg.provider_options["min_input_pixels"] == 921600
+        assert cfg.timeout_s is None
     finally:
         os.environ.pop("COMFYUI_URL", None)
 

@@ -1,0 +1,104 @@
+# ComfyUI workflow profiles.
+#
+# A profile is the complete description of one ComfyUI graph the provider can
+# send: which workflow JSON to POST, which nodes carry the prompt / seed /
+# images / output, which literal node inputs to override, and how long the
+# render may take.
+#
+# The provider never reads Home Assistant; the app layer picks a profile name
+# at call time (see workflow_profile_selector.py) and passes it down. Adding a
+# profile here is therefore the whole job — no provider code changes, no image
+# rebuild for ComfyUI itself.
+#
+# Validation runs at load time (workflow_profiles.py): every node id and input
+# name referenced below must exist in the referenced workflow JSON, every
+# `unlink` target must currently link to that slot's node, and
+# `default_profile` must name a registered profile.
+#
+# Timings: a single-frame render is ~40-50 s on the live server (three days of
+# production renders). The three-frame graph is several times slower — one
+# measurement came in at ~4 min, taken while the GPU may have been thermally
+# throttled, so treat it as an upper bound. Extra reference frames are
+# expensive, so they are opt-in rather than the norm.
+#
+# Two things to weigh before adding a profile:
+#   * ComfyUI has ONE queue. A profile slow enough to back it up delays every
+#     other camera and can trip the ImageGenQueueStuck page. Time a candidate on
+#     the live server before making it Active.
+#   * The three shipped profiles load the same diffusion model and LoRA, so
+#     switching between them costs nothing. A profile that names a different
+#     model file makes ComfyUI load it on first use — minutes when the file is
+#     cold on the NAS — and alternating between two such profiles (Active on
+#     most zones, Trial on one) reloads on every alternation.
+
+default_profile: qwen2509-original
+
+profiles:
+  qwen2509-original:
+    description: >-
+      Byte-for-byte what production sent before runtime profiles existed: one
+      reference frame, Lightning LoRA at 4 steps, cfg 3.5, scaled to 1.5 MP.
+      The rollback target — its workflow file is untouched apart from a neutral
+      placeholder filename. ~50 s per render.
+    model: qwen-image-edit-2509
+    workflow: workflows/02_qwen_Image_edit_subgraphed_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "115:111", input: prompt}
+      negative_prompt: {node: "115:110", input: prompt}
+      seed: {node: "115:3", input: seed}
+      output: {node: "60"}
+      images:
+        - {node: "78", input: image}
+    overrides:
+      "115:3": {cfg: 3.5}
+      "115:93": {megapixels: 1.5}
+
+  qwen2509-tuned:
+    description: >-
+      One reference frame at the settings the model actually wants: cfg 1,
+      because the 4-step Lightning LoRA is distilled for it, and 1.0 MP,
+      because that is the resolution it was trained at. Same ~50 s as
+      `qwen2509-original` and visibly cleaner — cfg 3.5 comes out burnt and
+      over-saturated. Extra frames the caller supplies are recorded in
+      `ignored_input_paths` and not uploaded.
+    model: qwen-image-edit-2509
+    workflow: workflows/qwen_image_edit_2509_single_image_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "115:111", input: prompt}
+      negative_prompt: {node: "115:110", input: prompt}
+      seed: {node: "115:3", input: seed}
+      output: {node: "60"}
+      images:
+        - {node: "78", input: image}
+    overrides:
+      "115:3": {cfg: 1, steps: 4}
+      "115:93": {megapixels: 1.0}
+
+  qwen2509-tuned-multiframe:
+    description: >-
+      `qwen2509-tuned` with up to three reference frames bound into both text
+      encoders, so a subject only present in a later frame stops being a
+      phantom. Several times slower (up to ~4 minutes with three frames), so use
+      it for zones where phantom subjects are the actual problem, not by
+      default. Unused slots are pruned from the graph.
+    model: qwen-image-edit-2509
+    workflow: workflows/02_qwen_Image_edit_subgraphed_three_images_API.json
+    timeout_s: 1200
+    bindings:
+      prompt: {node: "115:111", input: prompt}
+      negative_prompt: {node: "115:110", input: prompt}
+      seed: {node: "115:3", input: seed}
+      output: {node: "60"}
+      images:
+        - {node: "78", input: image}
+        - node: "120"
+          input: image
+          unlink: ["115:111.image2", "115:110.image2"]
+        - node: "121"
+          input: image
+          unlink: ["115:111.image3", "115:110.image3"]
+    overrides:
+      "115:3": {cfg: 1, steps: 4}
+      "115:93": {megapixels: 1.0}

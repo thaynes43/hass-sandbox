@@ -89,7 +89,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers/openai` | `appdaemon/providers/ai_providers/openai/README.md` | OpenAI adapter (text, multimodal, image) |
 | `ai_providers/gemini` | `appdaemon/providers/ai_providers/gemini/README.md` | Google Gemini adapter (text, multimodal, image) |
 | `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal) |
-| `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image) |
+| `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image): workflow profile registry (`workflow_profiles.yaml`), runtime profile selection from HA helpers, trial/promote/rollback |
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `AssistExposureClient` (voice-assistant exposure list read/write + entity-registry platforms) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
@@ -131,6 +131,12 @@ immich_fetcher
                local_file_status staging probe)
 
 detection_summary_app
+  └─ depends on: ai_providers (scoring, narrative, image generation),
+     ha_provisioner (summary-text helper; with a ComfyUI image bundle also the
+     two global comfyui_*_workflow selects + this zone's trial input_boolean)
+  └─ ComfyUI only: providers/ai_providers/comfyui/workflow_profile_selector
+     reads those helpers per run and injects the workflow profile into the
+     provider config (the provider itself never reads HA)
   └─ fires detection_summary/run_published event
   └─ writes bundles to shared filesystem
        └─ detection_summary_viewer (listens for events, reads filesystem)
