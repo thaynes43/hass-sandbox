@@ -1772,6 +1772,7 @@
 <a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">      </span><span class="nt">healthy_state</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">normal</span>
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Status</span>
 </code></pre></div>
+<p>A Wi-Fi device that sleeps its radio will drop the odd ping while working perfectly, and one dropped ping turns its card yellow for a whole cycle. Add <code>ping_attempts: 3</code> and the checker pings up to three times, accepting the first reply — the Vestaboard and the Cielo units run this way. A device that is really down still fails all three.</p>
 <h3 id="adding-environmental-monitoring-config-only">Adding Environmental Monitoring (Config Only)</h3>
 <p>The <code>TempHumidityChecker</code> supports configurable warning and critical thresholds:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">server_room_temp_checker</span><span class="p">:</span>
