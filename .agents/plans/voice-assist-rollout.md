@@ -448,7 +448,7 @@ the Movie Room box (empty room, AVR path), in the evening also as the Rumpus and
   4.7 s). Mood → *playlist* is not an option here: `music_assistant.search` returns no provider
   playlists for "party hits", only library playlists. (Measured 2026-09-19/20 with Spotify
   unreachable, and again on 2026-09-21 while it was rate-limited, haynes-ops#3049 — never with
-  Spotify search working, so re-measure before treating this as settled.)
+  Spotify search working. The re-measure is a checkbox on haynes-ops#3049.)
 
 The stop-start playback Tom heard in the bedroom the same day was **not** a voice defect: the Beam
 is wireless on SonosNet with marginal links and dropped every stream that afternoon (`ERROR_LSE`,
