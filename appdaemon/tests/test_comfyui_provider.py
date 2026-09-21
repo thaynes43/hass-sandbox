@@ -661,25 +661,41 @@ def test_unknown_requested_workflow_falls_back(tmp_path: Path) -> None:
     assert "ghost-workflow" in result["workflow_fallback_reason"]
 
 
-def test_execution_error_in_history_is_a_workflow_rejection(tmp_path: Path) -> None:
-    history = _json_response(
+def _execution_error_history(prompt_id: str) -> MagicMock:
+    return _json_response(
         {
-            "pid-x": {
+            prompt_id: {
                 "outputs": {},
-                "status": {"messages": [["execution_error", {"exception_message": "boom"}]]},
+                "status": {"messages": [["execution_error", {"exception_message": "CUDA OOM"}]]},
             }
         }
     )
-    fake = _Urlopen([_upload_response(), _json_response({"prompt_id": "pid-x"}), history])
-    provider = _make_provider()
+
+
+def test_execution_error_in_history_does_not_fall_back(tmp_path: Path) -> None:
+    """The graph validated and ran, so the failure is runtime, not the graph.
+
+    A CUDA OOM on a rolled-back zone must not quietly re-render it on the
+    current default workflow — which is what a fallback here would do.
+    """
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid-x"}),
+         _execution_error_history("pid-x")]
+    )
+    provider = _make_provider(
+        workflow_name=_TUNED, fallback_workflow_name=_QWEN21
+    )
     with patch("urllib.request.urlopen", new=fake):
-        with pytest.raises(ComfyUIWorkflowRejectedError) as exc_info:
+        with pytest.raises(ExternalImageGenError) as exc_info:
             provider.edit_image(
                 input_image_paths=_inputs(tmp_path, 1),
                 prompt="p",
                 output_image_path=str(tmp_path / "o.png"),
             )
+    assert not isinstance(exc_info.value, ComfyUIWorkflowRejectedError)
     assert "execution error" in str(exc_info.value)
+    assert "CUDA OOM" in str(exc_info.value)
+    assert fake.call_count == 3, "no second render on the fallback workflow"
 
 
 def test_non_400_http_error_is_not_a_workflow_rejection(tmp_path: Path) -> None:

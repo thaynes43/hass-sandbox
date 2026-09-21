@@ -53,15 +53,21 @@ _UNSAFE_UPLOAD_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 
 class ComfyUIWorkflowRejectedError(ExternalImageGenError):
-    """The workflow itself was rejected — the request will never succeed as sent.
+    """ComfyUI refused the graph before running it — as sent, it never can run.
 
-    Raised for an unknown or invalid workflow, a ComfyUI ``POST /prompt``
-    validation failure (HTTP 400 — including a model file that is not on the
-    server), and an ``execution_error`` reported in history.
+    Raised only for **deterministic** rejections, which is what makes a
+    fallback render worth attempting:
 
-    Deliberately NOT raised for timeouts or connection errors: those say
-    nothing about the workflow, and falling back to another one would just
-    burn a second render.
+    * an unknown or invalid workflow name;
+    * a ``POST /prompt`` validation failure (HTTP 400), including a model file
+      that is not on the server.
+
+    Everything else stays a plain ``ExternalImageGenError`` and does not fall
+    back. Timeouts and connection errors say nothing about the graph. Neither
+    does an ``execution_error`` in history: the graph validated and started, so
+    the failure is a runtime one (a CUDA OOM, most likely), and retrying on a
+    different workflow would quietly promote a deliberately rolled-back zone
+    back onto the default.
     """
 
 
@@ -541,7 +547,11 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
                 messages = status.get("messages") or []
                 for msg in messages:
                     if isinstance(msg, (list, tuple)) and msg and msg[0] == "execution_error":
-                        raise ComfyUIWorkflowRejectedError(f"ComfyUI execution error: {msg!r}")
+                        # NOT a workflow rejection: the graph validated and
+                        # ran, so this is a runtime failure (CUDA OOM being
+                        # the usual one). Falling back would silently render a
+                        # rolled-back zone on the default workflow instead.
+                        raise ExternalImageGenError(f"ComfyUI execution error: {msg!r}")
                 if entry.get("outputs"):
                     return entry
             time.sleep(float(self._config.poll_interval_s))

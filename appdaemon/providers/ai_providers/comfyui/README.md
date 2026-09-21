@@ -234,23 +234,32 @@ interleave. Different namespaces never block each other.
 
 ## Errors and fallback
 
-`ComfyUIWorkflowRejectedError` (a subclass of `ExternalImageGenError`) means the
-*workflow* was refused and would be refused again as sent:
+`ComfyUIWorkflowRejectedError` (a subclass of `ExternalImageGenError`) means
+ComfyUI refused the graph *before running it*, so the same request can never
+succeed as sent. Exactly two failures qualify:
 
 - an unknown or invalid workflow name
 - HTTP 400 from `POST /prompt` — ComfyUI's graph validation. A missing model
   file arrives this way as `node_errors[*].errors[*].type == "value_not_in_list"`;
   the provider surfaces the `input_name` and the `received_value` in the message
-- `execution_error` reported in `/history`
 
-When the configured workflow differs from `fallback_workflow_name` (the registry
-default), one such failure logs a WARNING and retries **exactly once** with the
-fallback. Result meta then carries `workflow_name` (what actually produced the
-image), `workflow_name_requested`, and `workflow_fallback_reason`.
+Those, and only those, fall back: when the configured workflow differs from
+`fallback_workflow_name` (the registry default), the failure logs a WARNING and
+retries **exactly once** with the fallback. Result meta then carries
+`workflow_name` (what actually produced the image), `workflow_name_requested`,
+and `workflow_fallback_reason`.
 
-Timeouts and connection errors are deliberately **not** in this class. A slow or
-unreachable server says nothing about the workflow, and a fallback render would
-only burn another ten minutes.
+Everything else raises a plain `ExternalImageGenError` and does **not** fall
+back:
+
+- **timeouts and connection errors** — a slow or unreachable server says
+  nothing about the graph, and a fallback render would only burn another ten
+  minutes
+- **`execution_error` in `/history`** — the graph validated and started, so the
+  failure is a runtime one (a CUDA OOM, most likely). Retrying on a different
+  workflow would quietly render a zone that was deliberately rolled back to an
+  older workflow on the current default instead
+- **a missing SaveImage output, or a failed download** — transport faults
 
 ## Result meta
 

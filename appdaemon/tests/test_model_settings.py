@@ -358,3 +358,59 @@ def test_ignored_nested_image_workflow_names_the_nested_key(caplog) -> None:
     assert len(warnings) == 1
     assert "image.image_workflow" in warnings[0].getMessage()
     loader.clear_cache()
+
+
+# ---------- a scoped provider_options must not wipe the bundle's ----------
+
+
+def test_scoped_provider_options_keeps_the_bundle_workflow() -> None:
+    """Setting one option must not discard the rest of the bundle's."""
+    conf = {
+        "image": {
+            "bundle": "comfyui-qwen-edit",
+            "provider_options": {"poll_interval_s": 2.0},
+        }
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    options = flat["provider_options"]
+    assert options["poll_interval_s"] == 2.0
+    assert options["workflow"] == _QWEN21
+    assert options["min_input_pixels"] == 921600
+
+
+def test_scoped_provider_options_can_override_the_bundle_workflow() -> None:
+    conf = {
+        "image": {
+            "bundle": "comfyui-qwen-edit",
+            "provider_options": {"workflow": _TUNED},
+        }
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == _TUNED
+    # and the untouched bundle option survives
+    assert flat["provider_options"]["min_input_pixels"] == 921600
+
+
+def test_image_workflow_beats_a_scoped_provider_options_workflow() -> None:
+    """image_workflow is the app-level knob and stays the most specific."""
+    conf = {
+        "image": {
+            "bundle": "comfyui-qwen-edit",
+            "provider_options": {"workflow": _TUNED},
+        },
+        "image_workflow": "qwen-image-edit-2509-lightning4-tuned-3frame",
+    }
+    flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    assert flat["provider_options"]["workflow"] == "qwen-image-edit-2509-lightning4-tuned-3frame"
+    assert flat["provider_options"]["workflow_source"] == "app_config"
+
+
+def test_scoped_provider_options_does_not_mutate_the_shared_bundle() -> None:
+    conf = {
+        "image": {"bundle": "comfyui-qwen-edit", "provider_options": {"workflow": _TUNED}},
+    }
+    resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
+    again = resolve_capability_config(
+        {"image": "comfyui-qwen-edit"}, "image", resolve_secret=_resolve_secret
+    )
+    assert again["provider_options"]["workflow"] == _QWEN21

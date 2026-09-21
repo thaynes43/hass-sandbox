@@ -423,7 +423,18 @@ def _merge_capability_overrides(
             if overrides.get(key) is not None:
                 merged[key] = overrides.get(key)
         if overrides.get("provider_options") is not None:
-            merged["provider_options"] = dict(overrides.get("provider_options") or {})
+            # Merge, do not replace. A scoped dict that sets one option —
+            # min_input_pixels, say — used to discard everything else the
+            # bundle had, including the ComfyUI `workflow` name, which then
+            # silently fell back to the registry default.
+            #
+            # Only the image capability carries provider_options at all
+            # (_bundle_to_flat_config and _inline_to_flat_config set it under
+            # `capability == "image"` and nowhere else), so there is no
+            # equivalent for simple_text or multimodal to keep in step.
+            merged_options = dict(merged.get("provider_options") or {})
+            merged_options.update(dict(overrides.get("provider_options") or {}))
+            merged["provider_options"] = merged_options
 
     return merged
 
