@@ -53,8 +53,11 @@ DEFAULT_FILENAME_PREFIX = "detection-summary"
 # the output download. The render budget (``timeout_s``, 900-1200 s) is the
 # budget for the *render*, and it is enforced by ``_wait_for_history``'s
 # deadline; handing it to a socket as well would let one half-open connection
-# hold the namespace's upload lock and its worker thread for 15-20 minutes.
-# None of these three calls moves more than a few MB, so a minute is generous.
+# stall for 15-20 minutes. Upload and POST /prompt run inside
+# ``_upload_lock(namespace)``, so a stall there holds the namespace's upload
+# lock as well as the worker thread; the output download runs after that lock
+# is released and costs only the thread. None of the three moves more than a
+# few MB, so a minute is generous.
 _REQUEST_TIMEOUT_S = 60.0
 
 _UNSAFE_UPLOAD_CHARS = re.compile(r"[^A-Za-z0-9._-]")
