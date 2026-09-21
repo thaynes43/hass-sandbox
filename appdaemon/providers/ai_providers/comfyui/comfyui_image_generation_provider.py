@@ -49,6 +49,14 @@ SOURCE_REGISTRY_DEFAULT = "registry_default"
 DEFAULT_UPLOAD_NAMESPACE = "comfyui"
 DEFAULT_FILENAME_PREFIX = "detection-summary"
 
+# Per-request socket timeout for the short calls — upload, POST /prompt, and
+# the output download. The render budget (``timeout_s``, 900-1200 s) is the
+# budget for the *render*, and it is enforced by ``_wait_for_history``'s
+# deadline; handing it to a socket as well would let one half-open connection
+# hold the namespace's upload lock and its worker thread for 15-20 minutes.
+# None of these three calls moves more than a few MB, so a minute is generous.
+_REQUEST_TIMEOUT_S = 60.0
+
 _UNSAFE_UPLOAD_CHARS = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -58,9 +66,14 @@ class ComfyUIWorkflowRejectedError(ExternalImageGenError):
     Raised only for **deterministic** rejections, which is what makes a
     fallback render worth attempting:
 
-    * an unknown or invalid workflow name;
+    * a graph the registry entry can no longer turn into a valid request — its
+      JSON unreadable, or missing a node/input the entry binds;
     * a ``POST /prompt`` validation failure (HTTP 400), including a model file
       that is not on the server.
+
+    An *unregistered* workflow name is not one of these: it is rejected when
+    the provider is constructed (see ``_require_registered``), so it never
+    reaches a render.
 
     Everything else stays a plain ``ExternalImageGenError`` and does not fall
     back. Timeouts and connection errors say nothing about the graph. Neither
@@ -267,10 +280,27 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         # Loading here fails fast on a malformed registry rather than at the
         # first render, 10 minutes into an evening.
         self._registry = load_workflow_registry()
-        fallback = str(config.fallback_workflow_name or "").strip()
-        if fallback and not self._registry.has(fallback):
+        self._require_registered("workflow_name", config.workflow_name)
+        self._require_registered("fallback_workflow_name", config.fallback_workflow_name)
+
+    def _require_registered(self, field_name: str, value: Optional[str]) -> None:
+        """Reject an unregistered workflow name at construction time.
+
+        A name that is not in the registry is a config typo, and the only
+        useful moment to say so is before the provider exists — not per render,
+        where the operator would get a WARNING and a silently different image.
+        ``registry.build_image_provider`` checks the same thing earlier so it
+        can name *where* the typo was configured; this is the guarantee for any
+        caller that builds a :class:`ComfyUIImageGenerationConfig` directly.
+
+        Empty is legal for both fields and means "unset": no ``workflow_name``
+        resolves to the registry default, no ``fallback_workflow_name`` means a
+        rejected workflow is not retried.
+        """
+        name = str(value or "").strip()
+        if name and not self._registry.has(name):
             raise ValueError(
-                f"ComfyUI fallback_workflow_name {fallback!r} is not a registered workflow; "
+                f"ComfyUI {field_name} {name!r} is not a registered workflow; "
                 f"registered workflows: {list(self._registry.names)}"
             )
 
@@ -356,10 +386,9 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         started: float,
         fallback_reason: Optional[str] = None,
     ) -> Dict[str, Any]:
-        try:
-            workflow = self._registry.get(name)
-        except WorkflowRegistryError as exc:
-            raise ComfyUIWorkflowRejectedError(str(exc)) from exc
+        # Both names were checked against the registry in __init__, and the
+        # registry is immutable once loaded, so this cannot raise here.
+        workflow = self._registry.get(name)
 
         timeout_s = float(
             self._config.timeout_s if self._config.timeout_s is not None else workflow.timeout_s
@@ -505,7 +534,7 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             data=body,
             headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         )
-        payload = self._read_json(req, timeout_s=timeout_s)
+        payload = self._read_json(req, timeout_s=min(_REQUEST_TIMEOUT_S, float(timeout_s)))
         name = str(payload.get("name") or upload_name).strip()
         if not name:
             raise ExternalImageGenError(f"ComfyUI upload response missing image name: {payload!r}")
@@ -520,7 +549,11 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             data=_safe_json({"prompt": graph}),
             headers={"Content-Type": "application/json"},
         )
-        payload = self._read_json(req, timeout_s=timeout_s, reject_workflow=workflow)
+        payload = self._read_json(
+            req,
+            timeout_s=min(_REQUEST_TIMEOUT_S, float(timeout_s)),
+            reject_workflow=workflow,
+        )
         prompt_id = str(payload.get("prompt_id") or "").strip()
         if not prompt_id:
             raise ExternalImageGenError(f"ComfyUI prompt response missing prompt_id: {payload!r}")
@@ -616,7 +649,9 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
             method="GET",
         )
         try:
-            with urllib.request.urlopen(req, timeout=float(timeout_s)) as resp:
+            with urllib.request.urlopen(
+                req, timeout=min(_REQUEST_TIMEOUT_S, float(timeout_s))
+            ) as resp:
                 return resp.read()
         except Exception as e:
             raise ExternalImageGenError(f"failed to download ComfyUI output image: {e!r}") from e

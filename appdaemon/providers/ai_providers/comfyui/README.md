@@ -122,9 +122,24 @@ ComfyUI workflow 'qwen-tunedd' is not registered (set via app_config).
 Registered workflows: ['qwen-image-edit-2509-lightning4-legacy', ...]
 ```
 
-A config typo therefore never reaches a render. The one gap: an app with
-`external_image_gen_enabled: false` builds no image provider at all, so its
-workflow name is not checked until image generation is switched on.
+A config typo therefore never reaches a render. The provider's constructor
+enforces the same rule for both `workflow_name` and `fallback_workflow_name`,
+so a caller that builds a `ComfyUIImageGenerationConfig` directly — bypassing
+`build_image_provider` — gets the same `ValueError` rather than a per-render
+warning and an image quietly rendered on the default:
+
+```
+ComfyUI workflow_name 'qwen-tunedd' is not a registered workflow;
+registered workflows: ['qwen-image-edit-2509-lightning4-legacy', ...]
+```
+
+An empty name still means "unset" in both places: no `workflow_name` resolves
+to the registry's `default_workflow`, and no `fallback_workflow_name` means a
+rejected workflow is not retried.
+
+The one gap: an app with `external_image_gen_enabled: false` builds no image
+provider at all, so its workflow name is not checked until image generation is
+switched on.
 
 ### What it costs to switch
 
@@ -220,6 +235,13 @@ where the first render after a ComfyUI restart takes ~10.5 minutes loading the
 model from NFS. Setting `image_timeout_s` on the bundle overrides *every*
 workflow, so do it only to deliberately shorten one bundle.
 
+That budget is the budget for the **render**, enforced by the `/history` poll
+deadline — it is not a socket timeout. The short calls (upload, `POST /prompt`,
+the output download) are capped at 60 s each, and `/history` polls at 30 s, so
+a half-open connection fails in a minute instead of holding the zone's upload
+lock and its worker thread for the full 15-20 minutes. A budget shorter than
+the cap still wins: the cap is a ceiling, never a floor.
+
 ## Uploads and concurrency
 
 Input frames upload as `<upload_namespace>-slot<N><suffix>`, sanitised to
@@ -238,10 +260,15 @@ interleave. Different namespaces never block each other.
 ComfyUI refused the graph *before running it*, so the same request can never
 succeed as sent. Exactly two failures qualify:
 
-- an unknown or invalid workflow name
+- a registered workflow whose graph can no longer be turned into a request —
+  its JSON unreadable, or missing a node/input the entry binds
 - HTTP 400 from `POST /prompt` — ComfyUI's graph validation. A missing model
   file arrives this way as `node_errors[*].errors[*].type == "value_not_in_list"`;
   the provider surfaces the `input_name` and the `received_value` in the message
+
+An *unregistered* name is not one of these: it is rejected when the provider is
+constructed (see [A bad name stops the app](#a-bad-name-stops-the-app)), so it
+never reaches a render and never falls back.
 
 Those, and only those, fall back: when the configured workflow differs from
 `fallback_workflow_name` (the registry default), the failure logs a WARNING and

@@ -134,7 +134,9 @@ def build_image_provider(cfg: ImageProviderConfig) -> ImageGenerationProvider:
         # `ai_provider_conf.image_workflow`, else the bundle's
         # `provider_options.workflow`, else the registry default. An unknown
         # name is a config typo and must stop the app at startup rather than
-        # reach a render.
+        # reach a render. The provider re-checks both names in its
+        # constructor; this check runs first only so the message can say
+        # *where* the typo was configured.
         requested = str(options.get("workflow") or "").strip()
         source = str(options.get("workflow_source") or "").strip() or SOURCE_BUNDLE
         if not requested:
