@@ -12,7 +12,7 @@ Two checks on a configurable interval, polling ``GET /prompt``
    to critical after ``unreachable_after_s`` (default 15m).
 2. **Queue Progress** — critical when ``queue_remaining`` stays > 0 without
    *any* value change for ``queue_stuck_after_s`` (default 30m).  The first
-   generation after a ComfyUI restart takes ~8.5 minutes (model load) but
+   generation after a ComfyUI restart takes ~10.5 minutes (model load) but
    completes — the queue counter moves — so the 30m threshold cannot
    false-positive on cold starts.  ComfyUI's queue is in-memory: a restart
    resets it to 0, which simply reads as healthy.
