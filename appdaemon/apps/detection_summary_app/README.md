@@ -136,6 +136,7 @@ Consumers (e.g. `DoorNotify`) listen for `detection_summary/run_published` match
   - Notifications attach `/api/camera_proxy/<camera_entity_id>`
 - The app **self-provisions** `input_text.<bundle_key>_detection_summary` on startup; no manual helper creation needed
 - `local_file` cameras and shell commands must be added to `configuration.yaml` manually
+- The ComfyUI server is a prerequisite the app cannot provision: the default workflow needs **ComfyUI >= 0.37.0** and the three Qwen-Image-2.1 model files on the server (listed in the [ComfyUI provider README](../../providers/ai_providers/comfyui/README.md)); both are managed in the haynes-ops repo
 
 ### Self-provisioned entities
 
