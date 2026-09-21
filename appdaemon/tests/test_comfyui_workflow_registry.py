@@ -20,12 +20,18 @@ from providers.ai_providers.comfyui.workflow_registry import (  # noqa: E402
     load_workflow_registry,
 )
 
+_QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
-_SHIPPED_WORKFLOWS = (_QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME)
+_SHIPPED_WORKFLOWS = (_QWEN21_3FRAME, _QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME)
 _QWEN2509_WORKFLOWS = (_LEGACY, _TUNED, _TUNED_3FRAME)
+_QWEN21_MODELS = (
+    "qwen3vl_8b_int8_convrot.safetensors",
+    "qwen_image_2.1_int8_convrot.safetensors",
+    "qwen_image_2.1_vae_bf16.safetensors",
+)
 
 
 # ---------- helpers ----------
@@ -113,9 +119,9 @@ def _isolate_registry_cache():
 
 def test_shipped_registry_loads_with_expected_workflows() -> None:
     registry = load_workflow_registry()
-    assert registry.default_workflow == _QWEN21
+    assert registry.default_workflow == _QWEN21_3FRAME
     assert registry.names == _SHIPPED_WORKFLOWS
-    assert registry.default.name == _QWEN21
+    assert registry.default.name == _QWEN21_3FRAME
 
 
 def test_every_shipped_workflow_validates_against_its_graph() -> None:
@@ -156,7 +162,11 @@ def test_every_shipped_workflow_carries_its_operator_metadata() -> None:
 
 def test_shipped_expect_text_describes_output_and_speed() -> None:
     registry = load_workflow_registry()
-    assert "1.5-2.5 min" in registry.get(_QWEN21).expect
+    assert "extra frames" in registry.get(_QWEN21_3FRAME).expect
+    assert "50 s per image" in registry.get(_QWEN21_3FRAME).expect
+    assert "16 GB" in registry.get(_QWEN21_3FRAME).expect
+    assert "three camera frames" in registry.get(_QWEN21_3FRAME).description
+    assert "45 s per image" in registry.get(_QWEN21).expect
     assert "16 GB" in registry.get(_QWEN21).expect
     assert "over-saturated" in registry.get(_LEGACY).expect
     assert "40-50 s" in registry.get(_LEGACY).expect
@@ -266,12 +276,96 @@ def test_qwen_image_2_1_workflow_shape() -> None:
 
 def test_qwen_image_2_1_required_models() -> None:
     """unet_name + clip_name + vae_name, and no LoRA."""
-    workflow = load_workflow_registry().get(_QWEN21)
-    assert workflow.required_models == (
-        "qwen3vl_8b_int8_convrot.safetensors",
-        "qwen_image_2.1_int8_convrot.safetensors",
-        "qwen_image_2.1_vae_bf16.safetensors",
+    assert load_workflow_registry().get(_QWEN21).required_models == _QWEN21_MODELS
+
+
+def test_qwen_image_2_1_3frame_is_the_default_and_takes_three_frames() -> None:
+    """The default: same model and settings, three reference slots.
+
+    The camera apps supply 2-4 frames and their prompt says so, so a
+    single-slot default silently contradicted the prompt. Multi-frame is cheap
+    on this 7B model — about 50 s against 45 s for one frame — so it is the
+    default rather than an opt-in.
+    """
+    registry = load_workflow_registry()
+    workflow = registry.get(_QWEN21_3FRAME)
+    assert registry.default.name == workflow.name
+    assert workflow.model == "qwen-image-2.1"
+    assert workflow.model_released == datetime.date(2026, 9, 20)
+    assert workflow.added == datetime.date(2026, 9, 21)
+    assert workflow.timeout_s == 900
+    assert workflow.graph == "workflows/qwen_image_2_1_edit_3frame_API.json"
+    assert workflow.max_images == 3
+    assert not workflow.overrides, "the template's own settings are used as-is"
+
+    # Same bindings as the single-frame entry: one encoder node carries both
+    # prompts, the KSampler the seed, the SaveImage the output prefix.
+    assert (workflow.prompt.node, workflow.prompt.input) == ("6", "prompt")
+    assert workflow.negative_prompt is not None
+    assert (workflow.negative_prompt.node, workflow.negative_prompt.input) == (
+        "6",
+        "negative_prompt",
     )
+    assert workflow.seed is not None and workflow.seed.node == "7"
+    assert workflow.output.node == "9"
+
+    assert [s.node for s in workflow.images] == ["1", "10", "11"]
+    assert all(s.input == "image" for s in workflow.images)
+    assert workflow.images[0].unlink == ()
+    assert workflow.images[1].unlink == ("6.images.image_2",)
+    assert workflow.images[2].unlink == ("6.images.image_3",)
+
+
+def test_qwen_image_2_1_3frame_required_models() -> None:
+    """Same three files as the single-frame entry — no extra download."""
+    registry = load_workflow_registry()
+    assert registry.get(_QWEN21_3FRAME).required_models == _QWEN21_MODELS
+    assert registry.get(_QWEN21).required_models == _QWEN21_MODELS
+
+
+def test_qwen_image_2_1_3frame_graph_matches_the_single_frame_graph() -> None:
+    """Only the reference slots differ: same model files, same sampler."""
+    registry = load_workflow_registry()
+    three = registry.get(_QWEN21_3FRAME).load_graph()
+    one = registry.get(_QWEN21).load_graph()
+
+    assert set(three) - set(one) == {"10", "11"}
+    assert set(one) - set(three) == set()
+    for node_id in one:
+        if node_id == "6":
+            continue
+        assert three[node_id] == one[node_id], f"node {node_id} drifted from the 1-frame graph"
+
+    encoder = three["6"]["inputs"]
+    assert encoder["resolution"] == 1024
+    assert encoder["images.image_1"] == ["1", 0]
+    assert encoder["images.image_2"] == ["10", 0]
+    assert encoder["images.image_3"] == ["11", 0]
+    assert {k: v for k, v in encoder.items() if not k.startswith("images.")} == {
+        k: v for k, v in one["6"]["inputs"].items() if not k.startswith("images.")
+    }
+
+
+def test_unlink_targets_split_on_the_first_dot_only() -> None:
+    """``<node>.<input>`` — the INPUT name may itself contain dots.
+
+    ``TextEncodeQwenImage21`` names its optional slots ``images.image_2``, so
+    the 2.1 three-frame entry's unlink target is ``6.images.image_2``. A parser
+    that split on the last dot, or on every dot, would look for a node ``6``
+    with an input ``image_2`` (or a node ``6.images``) and the entry would fail
+    to load. Node ids elsewhere contain ``:`` but never ``.``.
+    """
+    registry = load_workflow_registry()
+    workflow = registry.get(_QWEN21_3FRAME)
+    graph = workflow.load_graph()
+    for slot, input_name in zip(workflow.images[1:], ("images.image_2", "images.image_3")):
+        (target,) = slot.unlink
+        assert target == f"6.{input_name}"
+        assert target.count(".") == 2
+        node_id, _, parsed_input = target.partition(".")
+        assert node_id == "6"
+        assert parsed_input == input_name
+        assert graph[node_id]["inputs"][parsed_input] == [slot.node, 0]
 
 
 def test_qwen_image_2_1_graph_uses_the_template_sampler_settings() -> None:
@@ -318,6 +412,31 @@ def test_valid_registry_round_trip(tmp_path: Path) -> None:
 def test_registry_is_cached_per_path(tmp_path: Path) -> None:
     path = _write_registry(tmp_path)
     assert load_workflow_registry(path) is load_workflow_registry(path)
+
+
+def test_dotted_unlink_input_name_validates(tmp_path: Path) -> None:
+    """The same first-dot rule on a synthetic registry, end to end."""
+    graph = _minimal_graph()
+    graph["pos"]["inputs"] = {"prompt": "", "images.image_1": ["load0", 0], "images.image_2": ["load1", 0]}
+    graph["neg"]["inputs"] = {"prompt": "", "images.image_1": ["load0", 0], "images.image_2": ["load1", 0]}
+    workflow = _minimal_workflow()
+    workflow["bindings"]["images"][1]["unlink"] = ["pos.images.image_2", "neg.images.image_2"]
+    loaded = load_workflow_registry(
+        _write_registry(tmp_path, workflow=workflow, graph=graph)
+    ).get("w1")
+    assert loaded.images[1].unlink == ("pos.images.image_2", "neg.images.image_2")
+
+
+def test_dotted_unlink_still_rejects_a_wrong_input_name(tmp_path: Path) -> None:
+    """Splitting on the first dot must not make a typo in the tail invisible."""
+    graph = _minimal_graph()
+    graph["pos"]["inputs"] = {"prompt": "", "images.image_1": ["load0", 0], "images.image_2": ["load1", 0]}
+    graph["neg"]["inputs"] = {"prompt": "", "images.image_1": ["load0", 0], "images.image_2": ["load1", 0]}
+    workflow = _minimal_workflow()
+    workflow["bindings"]["images"][1]["unlink"] = ["pos.images.image_two", "neg.images.image_2"]
+    message = _load_expecting_error(_write_registry(tmp_path, workflow=workflow, graph=graph))
+    assert "images.image_two" in message
+    assert "has no input" in message
 
 
 def test_optional_bindings_may_be_omitted(tmp_path: Path) -> None:

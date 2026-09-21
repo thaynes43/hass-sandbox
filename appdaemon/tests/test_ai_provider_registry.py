@@ -145,9 +145,9 @@ def test_build_image_provider_comfyui() -> None:
     assert provider.capabilities.supports_image_to_image
     assert not provider.capabilities.supports_text_to_image
     # No name in config -> the registry default, with itself as the fallback.
-    assert provider.workflow_name == "qwen-image-2.1-2609-25step-edit"
+    assert provider.workflow_name == "qwen-image-2.1-2609-25step-edit-3frame"
     assert provider.workflow_source == "registry_default"
-    assert provider._config.fallback_workflow_name == "qwen-image-2.1-2609-25step-edit"
+    assert provider._config.fallback_workflow_name == "qwen-image-2.1-2609-25step-edit-3frame"
     assert provider._config.timeout_s is None
 
 
@@ -345,7 +345,7 @@ def test_provider_config_from_pointer_image_comfyui() -> None:
         assert cfg.provider == ImageProviderName.COMFYUI
         assert cfg.model == "qwen-image-2.1"
         assert cfg.base_url == "https://comfyui.haynesops.com"
-        assert cfg.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit"
+        assert cfg.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
         assert cfg.provider_options["min_input_pixels"] == 921600
         assert cfg.timeout_s is None
     finally:

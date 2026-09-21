@@ -24,7 +24,7 @@ bundles:
   comfyui-qwen-edit:
     image_model: qwen-image-2.1
     provider_options:
-      workflow: qwen-image-2.1-2609-25step-edit
+      workflow: qwen-image-2.1-2609-25step-edit-3frame
       # Warn when an input image is below this total pixel count.
       # 921600 = 1280*720 (expected medium-channel minimum).
       min_input_pixels: 921600

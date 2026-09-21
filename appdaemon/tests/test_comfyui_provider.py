@@ -56,6 +56,7 @@ def _upload_response(name: str = "uploaded.jpg") -> MagicMock:
 # The registry default renders on the Qwen-Image-2.1 graph, whose SaveImage
 # node is "9". The 2509 graphs all save on "60", so a test that pins one of
 # those must say so.
+_QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"  # the registry default
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
@@ -190,8 +191,8 @@ def test_default_workflow_generates_and_reports_meta(tmp_path: Path) -> None:
     assert result["provider"] == "comfyui"
     assert result["prompt_id"] == "pid-123"
     assert result["model"] == "qwen-image-2.1"
-    assert result["workflow_name"] == _QWEN21
-    assert result["workflow_name_requested"] == _QWEN21
+    assert result["workflow_name"] == _QWEN21_3FRAME
+    assert result["workflow_name_requested"] == _QWEN21_3FRAME
     assert result["workflow_source"] == "registry_default"
     assert "workflow_fallback_reason" not in result
     assert result["uploaded_input_name"] == "garage-slot0.jpg"
@@ -504,6 +505,71 @@ def test_multiframe_workflow_prunes_both_extra_slots_with_one_image() -> None:
         assert built[node]["inputs"]["image1"] == ["115:93", 0]
 
 
+def test_default_workflow_binds_three_frames() -> None:
+    built = _build(_QWEN21_3FRAME, ["a-slot0.jpg", "a-slot1.jpg", "a-slot2.jpg"])
+    assert built["1"]["inputs"]["image"] == "a-slot0.jpg"
+    assert built["10"]["inputs"]["image"] == "a-slot1.jpg"
+    assert built["11"]["inputs"]["image"] == "a-slot2.jpg"
+    encoder = built["6"]["inputs"]
+    assert encoder["images.image_1"] == ["1", 0]
+    assert encoder["images.image_2"] == ["10", 0]
+    assert encoder["images.image_3"] == ["11", 0]
+    assert encoder["prompt"] == "PROMPT"
+    assert encoder["negative_prompt"] == ""
+    assert built["9"]["inputs"]["filename_prefix"] == "generated"
+    # The template's own sampler settings survive: the entry has no overrides.
+    assert built["7"]["inputs"]["steps"] == 25
+    assert built["7"]["inputs"]["cfg"] == 1.0
+    assert built["7"]["inputs"]["seed"] != 0
+
+
+def test_default_workflow_prunes_the_third_slot_with_two_images() -> None:
+    built = _build(_QWEN21_3FRAME, ["a-slot0.jpg", "a-slot1.jpg"])
+    assert "10" in built
+    assert "11" not in built
+    encoder = built["6"]["inputs"]
+    assert encoder["images.image_1"] == ["1", 0]
+    assert encoder["images.image_2"] == ["10", 0]
+    assert "images.image_3" not in encoder
+
+
+def test_default_workflow_prunes_both_extra_slots_with_one_image() -> None:
+    """A single-frame caller renders the same graph the 1-slot entry does."""
+    built = _build(_QWEN21_3FRAME, ["a-slot0.jpg"])
+    assert "10" not in built
+    assert "11" not in built
+    encoder = built["6"]["inputs"]
+    assert encoder["images.image_1"] == ["1", 0]
+    assert "images.image_2" not in encoder
+    assert "images.image_3" not in encoder
+    # Identical to what the single-frame entry builds, seed aside.
+    single = _build(_QWEN21, ["a-slot0.jpg"])
+    for node_id in single:
+        assert built[node_id]["inputs"].keys() == single[node_id]["inputs"].keys()
+    assert set(built) == set(single)
+
+
+def test_default_workflow_unlinks_a_dotted_input_name() -> None:
+    """``6.images.image_2`` names input ``images.image_2`` on node ``6``.
+
+    The pruning parser splits on the FIRST dot. Splitting on the last would
+    delete an input ``image_2`` that does not exist, leave ``images.image_2``
+    pointing at the deleted LoadImage node, and ComfyUI would reject the whole
+    graph at render time — after the upload, with nothing in the logs but a
+    400.
+    """
+    template = _template(_QWEN21_3FRAME)
+    assert "images.image_2" in template["6"]["inputs"], "the dot is in the INPUT name"
+    built = _build(_QWEN21_3FRAME, ["a-slot0.jpg"])
+    dangling = [
+        f"{node_id}.{name}"
+        for node_id, node in built.items()
+        for name, value in node["inputs"].items()
+        if isinstance(value, list) and value and str(value[0]) not in built
+    ]
+    assert dangling == []
+
+
 def test_filename_prefix_falls_back_when_output_has_no_stem() -> None:
     built = _build(_LEGACY, ["a-slot0.jpg"], out="")
     assert built["60"]["inputs"]["filename_prefix"] == "detection-summary"
@@ -514,7 +580,9 @@ def test_extra_inputs_beyond_the_slots_are_reported_as_ignored(tmp_path: Path) -
         [_upload_response("garage-slot0.jpg"), _json_response({"prompt_id": "pid"}),
          _history_response("pid"), _view_response()]
     )
-    provider = _make_provider(upload_namespace="garage")  # 1-slot default workflow
+    # The single-frame 2.1 entry, named explicitly: the registry default is the
+    # three-slot one now, and this is the one-slot behaviour under test.
+    provider = _make_provider(workflow_name=_QWEN21, upload_namespace="garage")
     paths = _inputs(tmp_path, 4)
     with patch("urllib.request.urlopen", new=fake):
         result = provider.edit_image(
@@ -525,6 +593,50 @@ def test_extra_inputs_beyond_the_slots_are_reported_as_ignored(tmp_path: Path) -
     assert result["input_paths"] == paths
     # Only one upload happened: upload + prompt + history + view.
     assert fake.call_count == 4
+
+
+def test_four_inputs_fill_three_slots_on_the_default_workflow(tmp_path: Path) -> None:
+    """The camera apps send 2-4 frames; the default takes the first three."""
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _upload_response("garage-slot1.jpg"),
+         _upload_response("garage-slot2.jpg"), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(upload_namespace="garage")  # registry default
+    paths = _inputs(tmp_path, 4)
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=paths, prompt="p", output_image_path=str(tmp_path / "o.png")
+        )
+    assert result["workflow_name"] == _QWEN21_3FRAME
+    assert result["uploaded_input_names"] == [
+        "garage-slot0.jpg", "garage-slot1.jpg", "garage-slot2.jpg"
+    ]
+    assert result["ignored_input_paths"] == paths[3:]
+    assert result["timeout_s"] == 900.0
+
+
+def test_two_inputs_render_on_the_default_workflow(tmp_path: Path) -> None:
+    """Two frames upload two slots and prune the third — no rejection."""
+    fake = _Urlopen(
+        [_upload_response("garage-slot0.jpg"), _upload_response("garage-slot1.jpg"),
+         _json_response({"prompt_id": "pid"}), _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(upload_namespace="garage")
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 2),
+            prompt="p",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+    assert result["uploaded_input_names"] == ["garage-slot0.jpg", "garage-slot1.jpg"]
+    assert "ignored_input_paths" not in result
+    sent = json.loads(
+        [r for r in fake.requests if r.full_url.endswith("/prompt")][0].data.decode("utf-8")
+    )["prompt"]
+    assert "11" not in sent
+    assert "images.image_3" not in sent["6"]["inputs"]
+    assert sent["6"]["inputs"]["images.image_2"] == ["10", 0]
 
 
 def test_four_inputs_fill_three_slots_on_the_multiframe_workflow(tmp_path: Path) -> None:

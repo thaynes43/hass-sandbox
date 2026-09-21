@@ -106,8 +106,9 @@ def test_load_bundle_comfyui_qwen_edit() -> None:
     assert bundle.base_url_env == "COMFYUI_URL"
     assert bundle.image_model == "qwen-image-2.1"
     # The bundle names its workflow; the registry owns everything about it,
-    # including the timeout.
-    assert bundle.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit"
+    # including the timeout. The three-frame entry is the one the seven
+    # camera apps ride, because they all supply more than one frame.
+    assert bundle.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
     assert bundle.provider_options["min_input_pixels"] == 921600
     assert bundle.image_timeout_s is None
 
@@ -148,7 +149,7 @@ def test_resolve_capability_config_pointer_image_comfyui() -> None:
     assert flat["provider"] == "comfyui"
     assert flat["model"] == "qwen-image-2.1"
     assert flat["base_url"] == "https://comfyui.haynesops.com"
-    assert flat["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit"
+    assert flat["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
     assert flat["provider_options"]["min_input_pixels"] == 921600
     assert flat["timeout_s"] is None
 
@@ -259,7 +260,7 @@ def test_image_workflow_overrides_the_bundle_workflow() -> None:
     again = resolve_capability_config(
         {"image": "comfyui-qwen-edit"}, "image", resolve_secret=_resolve_secret
     )
-    assert again["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit"
+    assert again["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
     assert "workflow_source" not in again["provider_options"]
 
 
@@ -292,6 +293,9 @@ def test_image_workflow_applies_to_an_inline_comfyui_config() -> None:
 
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
+# What the `comfyui-qwen-edit` bundle pins, and so what an app that names
+# no workflow of its own resolves to.
+_BUNDLE_DEFAULT = "qwen-image-2.1-2609-25step-edit-3frame"
 
 
 def test_image_workflow_is_honoured_inside_a_scoped_dict() -> None:
@@ -374,7 +378,7 @@ def test_scoped_provider_options_keeps_the_bundle_workflow() -> None:
     flat = resolve_capability_config(conf, "image", resolve_secret=_resolve_secret)
     options = flat["provider_options"]
     assert options["poll_interval_s"] == 2.0
-    assert options["workflow"] == _QWEN21
+    assert options["workflow"] == _BUNDLE_DEFAULT
     assert options["min_input_pixels"] == 921600
 
 
@@ -413,4 +417,4 @@ def test_scoped_provider_options_does_not_mutate_the_shared_bundle() -> None:
     again = resolve_capability_config(
         {"image": "comfyui-qwen-edit"}, "image", resolve_secret=_resolve_secret
     )
-    assert again["provider_options"]["workflow"] == _QWEN21
+    assert again["provider_options"]["workflow"] == _BUNDLE_DEFAULT
