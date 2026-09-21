@@ -1020,6 +1020,8 @@ upstairs_lights_checker:
   entity_patterns:
     - include: "(light|switch)\\.upstairs.*inovelli.*"
     - include: "light\\.upstairs.*hue.*"
+    # Jackson cuts this bulb at the lamp's own switch, so it drops off Zigbee by design
+    - exclude: ".*upstairs_blue_room_nightstand_hue_bulb_jackson.*"
     - exclude: ".*night_light.*"
 
 exterior_lights_checker:
