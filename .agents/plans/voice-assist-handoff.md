@@ -234,7 +234,8 @@ it cuts off its surrounds and Sub.
   no provider or account, MA decides):**
   - One Spotify instance is enabled, `Spotify [Automation]`, on the Soloist engine = **one Spotify
     stream for the whole house**. `Spotify [Tom Haynes]` is present but disabled, so his phones
-    and MA never share an account. A grouped set of rooms is one queue = one stream.
+    and MA never share an account; the two kids' instances were deleted (four became two). A
+    grouped set of rooms is one queue = one stream.
   - A second, different Spotify request while one is streaming does NOT stop the first room: MA
     looks for another source for up to 15 s, then the NEW `play_media` call raises ("Spotify has
     reached its limit of 1 simultaneous streams"). What the agent says then is untested.
@@ -242,8 +243,16 @@ it cuts off its surrounds and Sub.
     scores ~62 against Spotify's fixed 2–3, so anything on the NAS (307k tracks, ~99 % of the
     library) plays from `/music` with no stream limit. That makes #2994 the weak link.
   - 89 playlists / ~800 tracks in the MA library exist only on the disabled personal instance
-    ("All Out 80s", "Basement Fight Songs", …) and fail when asked for, until the Automation
-    account follows them in Spotify.
+    ("All Out 80s", "Basement Fight Songs", …): `music_assistant.search` still returns them
+    (`library://playlist/340`), but their only source is switched off. How a play request for one
+    fails (raised error or silent nothing) is untested; the cure is the Automation account
+    following them in Spotify.
+  - **Spotify search is dead while the account is rate-limited** (measured 2026-09-21: every
+    Spotify Web API call since 03:20 got `Spotify Rate Limiter`, retry in ~3,900 s, renewed hourly by
+    MA's album-metadata task; `Search on provider Spotify [Automation] did not return in time`).
+    Until it clears, a voice request finds library items only — check the MA log for that line
+    before debugging "it played the wrong thing / nothing". The 2026-09-19 "mood → playlist
+    returns nothing" result was taken with Spotify down and has not been re-measured with it up.
   - Keep crossfade off (Soloist + crossfade skips every other track, MA support#6440), and re-check
     all of this after MA 2.11 (it reworks per-account access).
 - Deploy chain for any AppDaemon change: hass-sandbox PR → merge → GHCR image → haynes-ops `tag:`
