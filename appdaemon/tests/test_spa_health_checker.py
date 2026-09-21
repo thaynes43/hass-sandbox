@@ -1084,3 +1084,87 @@ class TestMultiEntityStaleness:
         assert result["name"] == "Staleness"
         assert "All 2 entities stale" in result["detail"]
         assert "600" in result["detail"] or "599" in result["detail"]  # freshest age
+
+
+class TestStalenessIgnoresUnavailable:
+    """An entity that just flipped to ``unavailable`` has a brand-new
+    ``last_updated`` but no data — it must not read as fresh."""
+
+    _ARGS = {
+        "staleness_entities": ["climate.spa_thermostat", "light.spa_light"],
+        "staleness_threshold_s": 300,
+    }
+
+    def test_all_unavailable_is_critical_even_when_just_updated(self):
+        app = _make_app(extra_args=self._ARGS)
+        _init_only(app)
+        recent = datetime.datetime.utcnow().isoformat()
+        app.get_state = AsyncMock(side_effect=[
+            {"state": "unavailable", "last_updated": recent},
+            {"state": "unavailable", "last_updated": recent},
+        ])
+
+        result = _run(app._check_staleness())
+
+        assert result["status"] == "critical"
+        assert "2 of 2 entities unavailable" in result["detail"]
+
+    def test_unavailable_entity_does_not_mask_a_stale_one(self):
+        app = _make_app(extra_args=self._ARGS)
+        _init_only(app)
+        recent = datetime.datetime.utcnow().isoformat()
+        old = (datetime.datetime.utcnow() - datetime.timedelta(seconds=600)).isoformat()
+        app.get_state = AsyncMock(side_effect=[
+            {"state": "unavailable", "last_updated": recent},
+            {"state": "off", "last_updated": old},
+        ])
+
+        result = _run(app._check_staleness())
+
+        assert result["status"] == "critical"
+        assert "All 1 reporting entities stale, 1 unavailable" in result["detail"]
+        app.log.assert_any_call(
+            "Staleness: 1 of 2 entities unavailable, not counted as fresh: "
+            "spa_thermostat",
+            level="WARNING",
+        )
+
+    def test_fresh_available_entity_still_passes(self):
+        app = _make_app(extra_args=self._ARGS)
+        _init_only(app)
+        recent = datetime.datetime.utcnow().isoformat()
+        app.get_state = AsyncMock(side_effect=[
+            {"state": "unavailable", "last_updated": recent},
+            {"state": "heat", "last_updated": recent},
+        ])
+
+        result = _run(app._check_staleness())
+
+        assert result["status"] == "ok"
+        assert "spa_light" in result["detail"]
+
+    def test_dead_gateway_stays_critical_through_cross_check(self):
+        """Ping dead + connection off + every entity unavailable is a total
+        outage: nothing passes, so the cross-check must not downgrade it and
+        auto-repair gets to see a critical."""
+        app = _make_app(extra_args=self._ARGS)
+        _init_only(app)
+        recent = datetime.datetime.utcnow().isoformat()
+        app._check_gateway_ping = AsyncMock(return_value={
+            "name": "Gateway Ping", "status": "critical", "detail": "timeout",
+        })
+        app._check_connection_entity = AsyncMock(return_value={
+            "name": "Overall Connection", "status": "critical", "detail": "off",
+        })
+        app._refresh_auto_repair_config = AsyncMock()
+        app.get_state = AsyncMock(return_value={
+            "state": "unavailable", "last_updated": recent,
+        })
+        seen = {}
+        app._evaluate_auto_repair = lambda results: seen.update(
+            statuses=[r["status"] for r in results]
+        )
+
+        _run(app._run_checks())
+
+        assert seen["statuses"] and set(seen["statuses"]) == {"critical"}
