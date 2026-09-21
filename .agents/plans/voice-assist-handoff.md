@@ -245,10 +245,12 @@ it cuts off its surrounds and Sub.
   - Local wins on its own: `play_media` matches the library first, and a local FLAC mapping
     scores ~62 against Spotify's fixed 2–3, so anything on the NAS (307k tracks, ~99 % of the
     library) plays from `/music` with no stream limit. That makes haynes-ops#2994 the weak link.
-  - **Library entries that belong only to the disabled personal instance do not play — tracks,
-    albums and playlists alike** (played in the White Room with Tom's OK, 2026-09-21; this
+  - **Library entries that belong only to the disabled personal instance do not play** — measured
+    for tracks and a playlist; albums were not played but go through the same availability check
+    (played in the White Room with Tom's OK, 2026-09-21; this
     replaces two earlier versions of this bullet that were reasoned from a query and from source,
-    and were each half wrong). 811 tracks / 282 albums / 89 playlists are in that state.
+    and were each half wrong). From `library.db` that day: 811 tracks / 282 albums / 89 playlists
+    have no mapping to any other provider.
     - `library://track/339052`, the same id as `spotify://track/…`, "All Out 80s" by name, and a
       by-name track request (`media_id` + `artist`, what the voice tool sends) all fail at once
       with `MediaNotFoundError: There is nothing to play here` (MA log: `No playable items found`),
@@ -259,9 +261,12 @@ it cuts off its surrounds and Sub.
     - The catalogue IS shared: the same track id as `spotify--AqUiP74a://track/…` played (Sonos
       `GetPositionInfo` RelTime advancing). The stale library entry is the only blocker.
     - Spotify **playback** works while the Web API is rate-limited (Sonos 0:39 into the stream).
-    - Ways out, Tom's call: delete the instance (its entries leave the library, requests fall
-      through to search — needs haynes-ops#3049 fixed), or have the Automation account follow/save
-      the same items so they gain a live mapping. Proof of audio = the Sonos SOAP
+    - **Tom's ruling stands: keep the instance disabled** (made 2026-09-21 before this test; he
+      asked for confirmed harm before deleting, and has not yet ruled on the result above). Two
+      ways out exist, neither tried: delete the instance (UNVERIFIED that its entries then leave
+      the library and by-name requests reach a Spotify search — and search needs haynes-ops#3049
+      fixed first), or have the Automation account follow/save the same items so they gain a live
+      mapping. Do not delete it without his say-so. Proof of audio = the Sonos SOAP
       `GetPositionInfo`/`GetTransportInfo` via `kubectl exec deploy/home-assistant -- curl
       http://<speaker>:1400/MediaRenderer/AVTransport/Control`; HA's `media_position` stayed 0.
   - **Spotify search is dead while the account is rate-limited — haynes-ops#3049** (measured 2026-09-21: every
