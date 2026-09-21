@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Protocol, Sequence
+from typing import Any, Dict, Optional, Protocol, Sequence
 
 
 class ExternalImageGenError(RuntimeError):
@@ -38,12 +38,25 @@ class ImageProviderCapabilities:
     supports_image_to_image: bool
     supports_inpaint: bool = False
     notes: str = ""
+    # How many input images this provider will actually send. ``None`` means
+    # "no limit the caller has to care about" — every image handed to
+    # ``edit_image`` is used. A number means anything past it is dropped, so a
+    # caller that describes its references in the prompt must trim to this
+    # first or the prompt will describe images the model never receives.
+    #
+    # Only ComfyUI has a real limit today (the selected workflow's image slot
+    # count), and only its provider resolves it per instance. Gemini and OpenAI
+    # send every frame they are given, so they leave this ``None``.
+    max_input_images: Optional[int] = None
 
 
 class ImageGenerationProvider(Protocol):
     """Protocol for image generation (edit/image-to-image) providers."""
 
     name: ImageProviderName
+    # Providers whose capabilities depend on their configuration (ComfyUI, whose
+    # ``max_input_images`` is the resolved workflow's slot count) set this per
+    # instance; the rest declare it once on the class. Read it off the instance.
     capabilities: ImageProviderCapabilities
 
     def edit_image(

@@ -42,6 +42,12 @@ Qwen-Image-Edit-2509 workflows are still registered and render a little faster
 from one frame, at the cost of harsher colour; on that larger model extra
 frames are expensive, so they are normally given just the best one.
 
+How many frames a workflow takes is something the app asks it before it builds
+the prompt, so the notes it writes about the scene ("Image 1 … Image 2 …")
+describe exactly the frames the model is looking at — the best one first. A
+run that turns up a fourth good frame simply drops it rather than telling the
+model about a picture it was never sent.
+
 Changing a camera's look, or rolling one back, is a config change in a normal
 release; a single-frame Qwen-Image-2.1 entry and the original pre-2026-09 graph
 are both kept unchanged for exactly that purpose. Which workflow produced any

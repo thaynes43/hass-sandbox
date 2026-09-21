@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace as dataclass_replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -48,6 +48,16 @@ SOURCE_REGISTRY_DEFAULT = "registry_default"
 
 DEFAULT_UPLOAD_NAMESPACE = "comfyui"
 DEFAULT_FILENAME_PREFIX = "detection-summary"
+
+# What is true of every ComfyUI workflow. ``max_input_images`` is deliberately
+# left unset here: it is the resolved workflow's slot count, so each provider
+# instance fills it in once it knows which workflow it will send.
+_BASE_CAPABILITIES = ImageProviderCapabilities(
+    supports_text_to_image=False,
+    supports_image_to_image=True,
+    supports_inpaint=False,
+    notes="Uses ComfyUI workflow API for image-to-image generation.",
+)
 
 # Per-request socket timeout for the short calls — upload, POST /prompt, and
 # the output download. The render budget (``timeout_s``, 900-1200 s) is the
@@ -271,12 +281,11 @@ def _describe_node_errors(payload: Any) -> str:
 
 class ComfyUIImageGenerationProvider(ImageGenerationProvider):
     name = ImageProviderName.COMFYUI
-    capabilities = ImageProviderCapabilities(
-        supports_text_to_image=False,
-        supports_image_to_image=True,
-        supports_inpaint=False,
-        notes="Uses ComfyUI workflow API for image-to-image generation.",
-    )
+    # Workflow-independent defaults. The real value is built per instance in
+    # ``__init__``, where the resolved workflow — and so ``max_input_images`` —
+    # is known; this class attribute only describes what is true of every
+    # ComfyUI workflow, and exists so reading the class is not misleading.
+    capabilities = _BASE_CAPABILITIES
 
     def __init__(self, config: ComfyUIImageGenerationConfig):
         self._config = config
@@ -285,6 +294,18 @@ class ComfyUIImageGenerationProvider(ImageGenerationProvider):
         self._registry = load_workflow_registry()
         self._require_registered("workflow_name", config.workflow_name)
         self._require_registered("fallback_workflow_name", config.fallback_workflow_name)
+        # Instance-level: how many reference images this provider will actually
+        # send is the resolved workflow's image-slot count, so it is only
+        # knowable once the workflow is. A caller that describes its references
+        # in the prompt reads this and trims before calling ``edit_image``.
+        #
+        # This reports the workflow that will be *requested*. A one-shot
+        # fallback can land on a different entry with fewer slots, which is
+        # exactly why ``_attempt`` keeps truncating on its own.
+        self.capabilities = dataclass_replace(
+            _BASE_CAPABILITIES,
+            max_input_images=self._registry.get(self.workflow_name).max_images,
+        )
 
     def _require_registered(self, field_name: str, value: Optional[str]) -> None:
         """Reject an unregistered workflow name at construction time.

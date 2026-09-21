@@ -156,11 +156,34 @@ deployment; changing it is a normal AppDaemon release. An unregistered name
 raises at `initialize()` rather than failing at render time.
 
 The bundle default is `qwen-image-2.1-2609-25step-edit-3frame` (needs ComfyUI
->= 0.37.0). The app picks 2-4 candidate frames per run and the image prompt
-tells the model how many it is looking at, so the default graph takes up to
-three of them as references — the extras are what let it confirm who and what
-is in the scene when one frame is ambiguous. A fourth candidate frame is never
-uploaded; it is recorded in the run's meta as `ignored_input_paths`.
+>= 0.37.0). The app picks 2-4 candidate frames per run, so the default graph
+takes up to three of them as references — the extras are what let it confirm
+who and what is in the scene when one frame is ambiguous.
+
+#### Reference frames vs the workflow's image slots
+
+An image provider reports how many reference images it will actually send as
+`capabilities.max_input_images` — for ComfyUI, the selected workflow's image
+slot count (3 on the default, 1 on the single-frame entries); `None` on Gemini
+and OpenAI, which send every frame they are given. The manager builds the
+provider first, trims its candidate list to that number, and only then builds
+the prompt, so the prompt describes exactly the frames the model receives:
+
+- the frames are sent in rank order — best frame first, then the extras that
+  carry the most animals / males / females — and a trim drops from the tail;
+- the prompt's `You are provided N image(s)` line counts the frames sent, not
+  the frames selected;
+- the per-frame notes run in the same order as the uploads and are labelled by
+  position (`Image 1 (primary frame)`, `Image 2`, …), because every upload is
+  renamed on the way out and a filename would name nothing the model can see;
+- a trim logs one DEBUG line with the zone, the selected count and the sent
+  count. It is a config-shaped condition — the app's `max_refs` outgrew the
+  workflow — not a per-run fault.
+
+The provider truncates as well, so an untrimmed caller still cannot overrun the
+slots and anything dropped there is recorded in the run's meta as
+`ignored_input_paths`. With the manager trimming first that list is normally
+absent.
 
 Two one-line rollbacks on a single camera: `image_workflow:
 qwen-image-2.1-2609-25step-edit` keeps the model but sends only the best frame,

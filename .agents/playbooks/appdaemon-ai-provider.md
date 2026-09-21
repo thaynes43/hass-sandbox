@@ -46,6 +46,13 @@ Create exactly these files matching the convention:
 - `<provider>_multimodal_text_provider.py` — implements `MultimodalTextProvider` (method: `generate_from_image`)
 - `<provider>_simple_text_provider.py` — implements `SimpleTextProvider` (method: `generate_from_text`)
 
+An image provider that will not send every input image it is handed must say
+so: set `ImageProviderCapabilities.max_input_images` to the number it actually
+sends, so a caller that describes its references in the prompt can trim first.
+Leave it `None` when there is no limit. It is a class attribute unless the
+limit depends on config — ComfyUI's is the selected workflow's slot count, so
+that provider builds its `capabilities` per instance in `__init__`.
+
 **Step 4 — Register in registry**
 
 In `registry.py`:

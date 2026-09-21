@@ -13,6 +13,7 @@ sys.path.insert(0, str(_repo))
 sys.path.insert(0, str(_repo / "apps"))
 
 from detection_summary_app.prompting import (
+    FrameNote,
     ScorePromptBuilder,
     ImagePromptBuilder,
     NarrativePromptBuilder,
@@ -191,13 +192,84 @@ class TestImagePromptBuilder:
             base_instructions="Base",
             population_bounds={},
             narrative_text="Someone arrived.",
-            frame_notes=["- frame_000.jpg: Person at door (m=1, f=0, animals=0)"],
+            frame_notes=[FrameNote(summary="Person at door", male_count=1)],
         )
         out = result.prompt
         assert "Narrative context" in out
         assert "Someone arrived" in out
         assert "Frame notes" in out
-        assert "frame_000.jpg" in out
+        assert "Person at door" in out
+
+    def test_notes_are_labelled_by_position_not_filename(self):
+        """The provider renames every upload, so a filename names nothing.
+
+        This is the exact rendered block, because the labels are the only
+        handle the model has on which reference a note describes.
+        """
+        builder = ImagePromptBuilder()
+        result = builder.build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(
+                    summary="A man at the door.",
+                    time_offset_s=1.25,
+                    male_count=1,
+                ),
+                FrameNote(
+                    summary="A dog crosses the drive.",
+                    time_offset_s=0.5,
+                    animal_count=1,
+                ),
+                FrameNote(summary="", time_offset_s=None, female_count=2),
+            ],
+            input_paths_count=3,
+        )
+        block = result.prompt.split("Frame notes (for the provided references):\n")[1]
+        rendered = "\n".join(block.splitlines()[:3])
+        assert rendered == (
+            "- Image 1 (primary frame) t=1.2s: A man at the door. (m=1, f=0, animals=0)\n"
+            "- Image 2 t=0.5s: A dog crosses the drive. (m=0, f=0, animals=1)\n"
+            "- Image 3: (no summary) (m=0, f=2, animals=0)"
+        )
+        # No filename the model never receives.
+        assert "frame_0" not in result.prompt
+        assert ".jpg" not in result.prompt
+
+    def test_note_order_is_the_order_the_frames_are_sent(self):
+        """Notes are positional, so the builder must not re-sort them.
+
+        The common case the labelling exists for: the best (primary) frame is
+        not the earliest one, so chronological order and send order differ.
+        """
+        builder = ImagePromptBuilder()
+        result = builder.build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(summary="best, captured late", time_offset_s=4.0),
+                FrameNote(summary="earliest frame", time_offset_s=0.0),
+            ],
+            input_paths_count=2,
+        )
+        lines = [ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")]
+        assert lines == [
+            "- Image 1 (primary frame) t=4.0s: best, captured late (m=0, f=0, animals=0)",
+            "- Image 2 t=0.0s: earliest frame (m=0, f=0, animals=0)",
+        ]
+
+    def test_count_matches_the_number_of_notes(self):
+        """The count the model is told and the notes it gets describe one set."""
+        builder = ImagePromptBuilder()
+        notes = [FrameNote(summary=f"frame {i}") for i in range(3)]
+        result = builder.build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=notes,
+            input_paths_count=len(notes),
+        )
+        assert "You are provided 3 image(s)" in result.prompt
+        assert len([ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")]) == 3
 
     def test_build_includes_bundle_augmentation(self):
         builder = ImagePromptBuilder()
