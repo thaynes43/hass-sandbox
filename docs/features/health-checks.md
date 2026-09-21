@@ -254,6 +254,8 @@ nas_health_checker:
       name: Status
 ```
 
+A Wi-Fi device that sleeps its radio will drop the odd ping while working perfectly, and one dropped ping turns its card yellow for a whole cycle. Add `ping_attempts: 3` and the checker pings up to three times, accepting the first reply — the Vestaboard and the Cielo units run this way. A device that is really down still fails all three.
+
 ### Adding Environmental Monitoring (Config Only)
 
 The `TempHumidityChecker` supports configurable warning and critical thresholds:
