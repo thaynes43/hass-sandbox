@@ -424,6 +424,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#stylised-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stylised images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#door-notifications" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -968,6 +979,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#stylised-images" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stylised images
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#door-notifications" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1052,6 +1074,22 @@
 <li><strong>Publish</strong> — the summary bundle (image + AI description + metadata) is written to the shared filesystem and an HA event is fired</li>
 </ol>
 <p>The <code>detection_summary_viewer</code> provides a Lovelace dashboard card for browsing historical detection bundles — useful for reviewing what happened while you were away.</p>
+<h3 id="stylised-images">Stylised images</h3>
+<p>Between scoring and publishing, the best frame is turned into a stylised
+illustration — the picture that actually lands on your phone. That render runs
+on a local ComfyUI box.</p>
+<p>Which ComfyUI <em>workflow</em> does the rendering is named in the AppDaemon config,
+so every camera's look is pinned to a specific, versioned graph rather than to
+whatever the box happened to have loaded. Each workflow in the registry records
+when its model was released and what to expect from it — how the output looks,
+and roughly how long a render takes.</p>
+<p>The default is Qwen-Image-2.1, which produces clean restyles that keep the
+scene, people and vehicles where they are, and takes a couple of minutes per
+image. The older Qwen-Image-Edit-2509 workflows are still registered and render
+in well under a minute, at the cost of harsher colour. Changing a camera's
+look, or rolling one back, is a config change in a normal release; the original
+pre-2026-09 graph is kept unchanged for exactly that purpose. Which workflow
+produced any given image is recorded in that run's bundle.</p>
 <h3 id="door-notifications">Door Notifications</h3>
 <p>The <code>door_notify</code> app listens for door open/close events (both <code>binary_sensor</code> and <code>cover</code> entities) and sends push notifications. It optionally attaches the most recent AI detection summary from a nearby camera, giving you context like <em>"Person walking up driveway"</em> alongside the <em>"Garage door opened"</em> alert.</p>
 <p>Key features:</p>
@@ -1067,16 +1105,18 @@
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>detection_summary_app
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  ├─ captures snapshot via HA
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>  ├─ sends to multimodal LLM
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  ├─ writes bundle to /media/
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  └─ fires HA event
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>        │
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>        ├──▶ detection_summary_viewer (dashboard card)
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>  ├─ renders a stylised image on ComfyUI
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  │    (workflow named in the app's config)
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>  ├─ writes bundle to /media/
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  └─ fires HA event
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>        │
-<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        └──▶ door_notify (attaches to push notification)
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>                │
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>                ▼
-<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>           Mobile push notification
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>           (image + AI description)
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>        ├──▶ detection_summary_viewer (dashboard card)
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>        │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>        └──▶ door_notify (attaches to push notification)
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>                │
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>                ▼
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>           Mobile push notification
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>           (image + AI description)
 </code></pre></div>
 <h2 id="home-assistant-yaml">Home Assistant YAML</h2>
 <p>The HA side of camera notifications lives in:</p>
