@@ -10,6 +10,7 @@ import threading
 import time
 import urllib.error
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, List
 from unittest.mock import MagicMock, patch
 
@@ -21,10 +22,13 @@ from providers.ai_providers.comfyui.comfyui_image_generation_provider import (  
     ComfyUIImageGenerationConfig,
     ComfyUIImageGenerationProvider,
     ComfyUIWorkflowRejectedError,
+    _REQUEST_TIMEOUT_S,
     _get_image_dimensions,
     _upload_lock,
     build_upload_name,
 )
+
+_PROVIDER_MODULE = "providers.ai_providers.comfyui.comfyui_image_generation_provider"
 from providers.ai_providers.comfyui.workflow_registry import (  # noqa: E402
     load_workflow_registry,
 )
@@ -114,9 +118,11 @@ class _Urlopen:
     def __init__(self, responses: List[Any]) -> None:
         self._responses = list(responses)
         self.requests: List[Any] = []
+        self.timeouts: List[Any] = []
 
     def __call__(self, req, timeout=None):  # noqa: ANN001 - urlopen signature
         self.requests.append(req)
+        self.timeouts.append(timeout)
         if not self._responses:
             raise AssertionError(f"unexpected extra request to {req.full_url}")
         nxt = self._responses.pop(0)
@@ -130,6 +136,16 @@ class _Urlopen:
 
     def urls(self) -> List[str]:
         return [r.full_url for r in self.requests]
+
+    def timeout_for(self, url_fragment: str) -> Any:
+        """The socket timeout of the single request whose URL contains a fragment."""
+        matches = [
+            timeout
+            for req, timeout in zip(self.requests, self.timeouts)
+            if url_fragment in req.full_url
+        ]
+        assert len(matches) == 1, f"expected exactly one {url_fragment!r} request, got {matches!r}"
+        return matches[0]
 
 
 def _make_provider(**kwargs: Any) -> ComfyUIImageGenerationProvider:
@@ -251,6 +267,79 @@ def test_multiframe_workflow_timeout(tmp_path: Path) -> None:
     assert result["timeout_s"] == 1200.0
 
 
+# ---------- per-request socket timeouts ----------
+
+
+def test_per_request_socket_timeouts_are_capped(tmp_path: Path) -> None:
+    """The render budget is a deadline, not a socket timeout.
+
+    Upload, ``POST /prompt`` and the output download each move a few MB at
+    most. Handing them the 900-1200 s render budget would let one half-open
+    connection hold the namespace's upload lock — and its worker thread — for
+    the whole budget.
+    """
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider()  # registry default: a 900 s render budget
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "out.png"),
+        )
+
+    assert result["timeout_s"] == 900.0, "the render budget itself is unchanged"
+    assert _REQUEST_TIMEOUT_S < result["timeout_s"]
+    assert fake.timeout_for("/upload/image") == _REQUEST_TIMEOUT_S
+    assert fake.timeout_for("/prompt") == _REQUEST_TIMEOUT_S
+    assert fake.timeout_for("/view?") == _REQUEST_TIMEOUT_S
+    # Unchanged: /history polls were already capped, at 30 s.
+    assert fake.timeout_for("/history/") == 30.0
+
+
+def test_per_request_timeout_never_exceeds_a_short_budget(tmp_path: Path) -> None:
+    """The cap is a ceiling, not a floor: a deliberately short budget still wins."""
+    fake = _Urlopen(
+        [_upload_response(), _json_response({"prompt_id": "pid"}),
+         _history_response("pid"), _view_response()]
+    )
+    provider = _make_provider(timeout_s=5.0)
+    with patch("urllib.request.urlopen", new=fake):
+        provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "out.png"),
+        )
+    assert fake.timeouts == [5.0, 5.0, 5.0, 5.0]
+
+
+def test_history_deadline_still_uses_the_full_render_budget() -> None:
+    """Capping the per-request timeouts must not shorten the render itself."""
+    provider = _make_provider(poll_interval_s=0.0)
+    polls: List[Any] = []
+    clock = {"now": 1000.0}
+
+    def _pending(req, timeout=None):  # noqa: ANN001 - urlopen signature
+        polls.append(timeout)
+        clock["now"] += 100.0  # 100 s of wall clock per poll
+        return _json_response({"pid": {"status": {"messages": []}}})
+
+    fake_time = SimpleNamespace(time=lambda: clock["now"], sleep=lambda _s: None)
+
+    with patch("urllib.request.urlopen", new=_pending), patch(
+        f"{_PROVIDER_MODULE}.time", new=fake_time
+    ):
+        with pytest.raises(ExternalImageGenError) as exc_info:
+            provider._wait_for_history("pid", timeout_s=900.0)
+
+    assert "Timed out" in str(exc_info.value)
+    # 900 s of budget at 100 s per poll — the 60 s request cap does not bound it.
+    assert len(polls) == 9
+    assert polls == [30.0] * 9
+
+
 # ---------- input validation ----------
 
 
@@ -287,6 +376,29 @@ def test_unknown_fallback_workflow_fails_at_construction() -> None:
     with pytest.raises(ValueError) as exc_info:
         _make_provider(fallback_workflow_name="nope")
     assert "not a registered workflow" in str(exc_info.value)
+
+
+def test_unknown_workflow_name_fails_at_construction() -> None:
+    """A typo'd workflow name must stop the app, not render on the default.
+
+    ``registry.build_image_provider`` checks this first so it can name where
+    the typo was configured; this is the same guarantee for a caller that
+    builds the config directly.
+    """
+    with pytest.raises(ValueError) as exc_info:
+        _make_provider(workflow_name="ghost-workflow", fallback_workflow_name=_LEGACY)
+    message = str(exc_info.value)
+    assert "workflow_name" in message
+    assert "ghost-workflow" in message
+    assert "not a registered workflow" in message
+    # The message names what the operator may have meant.
+    assert _LEGACY in message
+
+
+def test_empty_workflow_name_is_the_registry_default() -> None:
+    """Empty means unset, not a bad name — it resolves to the registry default."""
+    provider = _make_provider(workflow_name="   ")
+    assert provider.workflow_name == load_workflow_registry().default_workflow
 
 
 # ---------- workflow construction ----------
@@ -640,25 +752,6 @@ def test_fallback_is_not_retried_when_it_is_also_rejected(tmp_path: Path) -> Non
                 output_image_path=str(tmp_path / "o.png"),
             )
     assert fake.call_count == 4, "exactly one fallback attempt, then give up"
-
-
-def test_unknown_requested_workflow_falls_back(tmp_path: Path) -> None:
-    fake = _Urlopen(
-        [_upload_response(), _json_response({"prompt_id": "pid"}),
-         _history_response("pid", save_node=_QWEN2509_SAVE_NODE), _view_response()]
-    )
-    provider = _make_provider(
-        workflow_name="ghost-workflow", fallback_workflow_name=_LEGACY
-    )
-    with patch("urllib.request.urlopen", new=fake):
-        result = provider.edit_image(
-            input_image_paths=_inputs(tmp_path, 1),
-            prompt="p",
-            output_image_path=str(tmp_path / "o.png"),
-        )
-    assert result["workflow_name"] == _LEGACY
-    assert result["workflow_name_requested"] == "ghost-workflow"
-    assert "ghost-workflow" in result["workflow_fallback_reason"]
 
 
 def _execution_error_history(prompt_id: str) -> MagicMock:
