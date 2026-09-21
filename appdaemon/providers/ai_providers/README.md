@@ -22,6 +22,8 @@ At a high level:
 - `multimodal` is used for frame scoring and other image-to-JSON tasks
 - `image` is used for image editing or generation workflows that write an output image file
 
+Each image provider carries an `ImageProviderCapabilities`, read off the **instance**. Alongside the `supports_*` flags it declares `max_input_images` — how many reference images that provider will actually send, or `None` when it sends everything it is given. A caller that describes its references in the prompt (`detection_summary_app` does, with a count and one note per image) must trim to it first, or the prompt describes images the model never receives. OpenAI and Gemini leave it `None`; ComfyUI resolves it per instance from the selected workflow's image-slot count.
+
 ## Provider Summary
 
 | Provider | simple_text | multimodal | image |
