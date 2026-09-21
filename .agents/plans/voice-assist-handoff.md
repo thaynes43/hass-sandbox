@@ -232,50 +232,45 @@ it cuts off its surrounds and Sub.
   minute while MA skips items; the same files read in 0.3 s a few minutes later.
 - **Where music comes from (read from the live pod 2026-09-21, MA 2.10.4; the voice scripts name
   no provider or account, MA decides):**
-  - One Spotify instance is enabled, `Spotify [Automation]`, on the Soloist engine = **one Spotify
-    stream for the whole house**. `Spotify [Tom Haynes]` is present but disabled, so his phones
-    and MA never share an account; the two kids' instances were deleted (four became two). A
-    grouped set of rooms is one queue = one stream.
+  - One Spotify instance exists, `Spotify [Automation]` (`spotify--AqUiP74a`), on the Soloist
+    engine = **one Spotify stream for the whole house**. Tom's personal instance was deleted on
+    2026-09-21 (below) and the kids' two before that, so his phones and MA never share an
+    account. A grouped set of rooms is one queue = one stream.
   - A second, different Spotify request while one is streaming does NOT stop the first room: MA
     looks for another source for up to 15 s, then the NEW `play_media` call raises ("Spotify has
-    reached its limit of 1 simultaneous streams"). What the agent says then is untested — and
-    a repro needs two items that are already in the library WITH a Spotify mapping and no local
-    copy (playback goes through Soloist, not the rate-limited Web API, so that may still work;
-    anything that needs a Spotify search will not, see below). Never reconfigure MA for a repro.
+    reached its limit of 1 simultaneous streams"). That is read from the 2.10.4 source, not
+    reproduced: a repro needs Spotify-only music in two rooms at once (Tom has OK'd the White
+    Room only, 2026-09-21), and what the voice agent then says is untested.
   - Local wins on its own: `play_media` matches the library first, and a local FLAC mapping
     scores ~62 against Spotify's fixed 2–3, so anything on the NAS (307k tracks, ~99 % of the
     library) plays from `/music` with no stream limit. That makes haynes-ops#2994 the weak link.
-  - **Library entries that belong only to the disabled personal instance do not play** — measured
-    for tracks and a playlist; albums were not played but go through the same availability check
-    (played in the White Room with Tom's OK, 2026-09-21; this
-    replaces two earlier versions of this bullet that were reasoned from a query and from source,
-    and were each half wrong). From `library.db` that day: 811 tracks / 282 albums / 89 playlists
-    have no mapping to any other provider.
-    - `library://track/339052`, the same id as `spotify://track/…`, "All Out 80s" by name, and a
-      by-name track request (`media_id` + `artist`, what the voice tool sends) all fail at once
-      with `MediaNotFoundError: There is nothing to play here` (MA log: `No playable items found`),
-      with **no Spotify call and no fall-through to a Spotify search**. It raises; it is not silent.
-    - Cause (`controllers/music/media/base.py` ~2269): a library item is available only if a
-      mapping's `provider_instance` is in `available_providers`; a disabled instance never is. The
-      same-service stand-in in `streams/audio.py` only helps a loaded-but-busy account.
-    - The catalogue IS shared: the same track id as `spotify--AqUiP74a://track/…` played (Sonos
-      `GetPositionInfo` RelTime advancing). The stale library entry is the only blocker.
-    - Spotify **playback** works while the Web API is rate-limited (Sonos 0:39 into the stream).
-    - **Tom's ruling stands: keep the instance disabled** (made 2026-09-21 before this test; he
-      asked for confirmed harm before deleting, and has not yet ruled on the result above). Two
-      ways out exist, neither tried: delete the instance (UNVERIFIED that its entries then leave
-      the library and by-name requests reach a Spotify search — and search needs haynes-ops#3049
-      fixed first), or have the Automation account follow/save the same items so they gain a live
-      mapping. Do not delete it without his say-so. Proof of audio = the Sonos SOAP
-      `GetPositionInfo`/`GetTransportInfo` via `kubectl exec deploy/home-assistant -- curl
-      http://<speaker>:1400/MediaRenderer/AVTransport/Control`; HA's `media_position` stayed 0.
-  - **Spotify search is dead while the account is rate-limited — haynes-ops#3049** (measured 2026-09-21: every
-    Spotify Web API call since 03:20 got `Spotify Rate Limiter`, retry in ~3,900 s, renewed hourly by
-    MA's album-metadata task; `Search on provider Spotify [Automation] did not return in time`).
-    It does not clear by itself (MA re-tries the moment each penalty expires; the fixes in
-    haynes-ops#3049 need Tom in the MA UI). Meanwhile a voice request finds library items only — check the MA log for that line
-    before debugging "it played the wrong thing / nothing". The 2026-09-19 "mood → playlist
-    returns nothing" result was taken with Spotify down and has not been re-measured with it up (checkbox on haynes-ops#3049).
+  - **Lesson from the personal instance (deleted 2026-09-21, Tom's decision after a White Room
+    test):** a DISABLED Spotify instance poisons the library. Entries mapped only to it fail at
+    once with `MediaNotFoundError: There is nothing to play here` — by library URI, by
+    `spotify://` URI and by name, with no fall-through to a search (`controllers/music/media/
+    base.py` ~2269: available only if the mapping's instance is loaded) — and playlists mapped to
+    BOTH accounts opened empty too (6 of 8 sampled; `_select_provider_id` takes the first
+    mapping). Deleting it (`config/providers/remove`, 6 s) fixed both: the same playlists then
+    returned 76–298 tracks, and "All Out 80s" by name plus a by-name track both played (Sonos
+    `GetPositionInfo` RelTime advancing). Never leave a second Spotify instance disabled.
+  - **Playlist cutover done 2026-09-21:** the 60 playlists only the personal account had (36
+    Spotify-made, 24 Tom's own) were added through MA `music/library/add_item
+    spotify--AqUiP74a://playlist/<id>` (`library_sync_back` on → Spotify `PUT me/library`); 59
+    have tracks, "DJ" has none by nature, and Spotify answers HTTP 500 to following
+    `"Wuthering Heights" Official Playlist` (tried twice). A playlist sync afterwards succeeded
+    and kept all 60. "Liked Songs" cannot be followed. Tooling + the saved list: `~/ma-cutover/`
+    on the dev-env PVC; it talks to MA's API from inside the home-assistant pod with HA's own
+    login (`/config/.storage/core.config_entries`, token never printed). Proof of audio = Sonos
+    SOAP `GetPositionInfo`/`GetTransportInfo` via `kubectl exec deploy/home-assistant -- curl
+    http://<speaker>:1400/MediaRenderer/AVTransport/Control`; HA's `media_position` stays 0.
+  - **Spotify rate limit, 2026-09-21 03:20 → ~18:20 (haynes-ops#3049):** search and album
+    lookups on Tom's personal developer app (every ordinary call uses it, `_get_auth_info`) got
+    HTTP 429 with a ~1 h `Retry-After` all day; playlist reads, library writes and PLAYBACK kept
+    working. It cleared by itself at ~18:20 with the developer key still in place — do not remove
+    the key as a first move (Tom: it is the faster path). While it lasts a voice request finds
+    library items only: grep the MA log for `Spotify Rate Limiter` before debugging "found
+    nothing". With search back, "party hits" returns Spotify playlists, so mood → playlist is
+    possible again (the 2026-09-19 "returns nothing" was measured with Spotify down).
   - Keep crossfade off (Soloist + crossfade skips every other track, MA support#6440), and re-check
     all of this after MA 2.11 (it reworks per-account access).
 - Deploy chain for any AppDaemon change: hass-sandbox PR → merge → GHCR image → haynes-ops `tag:`
