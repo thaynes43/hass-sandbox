@@ -1141,6 +1141,11 @@ class DetectionSummary(hass.Hass):
                                 male_count=m,
                                 female_count=f,
                                 animal_count=a,
+                                # The best frame is normally first, but it is
+                                # skipped above when best.jpg never appeared
+                                # (`best_src` missing, or the wait timed out),
+                                # and then no reference is the primary one.
+                                is_primary=int(ii) == int(best_idx),
                             )
                         )
 

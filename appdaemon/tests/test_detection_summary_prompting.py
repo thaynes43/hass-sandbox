@@ -215,6 +215,7 @@ class TestImagePromptBuilder:
                     summary="A man at the door.",
                     time_offset_s=1.25,
                     male_count=1,
+                    is_primary=True,
                 ),
                 FrameNote(
                     summary="A dog crosses the drive.",
@@ -247,7 +248,7 @@ class TestImagePromptBuilder:
             base_instructions="Base",
             population_bounds={},
             frame_notes=[
-                FrameNote(summary="best, captured late", time_offset_s=4.0),
+                FrameNote(summary="best, captured late", time_offset_s=4.0, is_primary=True),
                 FrameNote(summary="earliest frame", time_offset_s=0.0),
             ],
             input_paths_count=2,
@@ -256,6 +257,29 @@ class TestImagePromptBuilder:
         assert lines == [
             "- Image 1 (primary frame) t=4.0s: best, captured late (m=0, f=0, animals=0)",
             "- Image 2 t=0.0s: earliest frame (m=0, f=0, animals=0)",
+        ]
+
+    def test_no_note_claims_to_be_primary_when_the_best_frame_was_not_sent(self):
+        """The qualifier is carried, not inferred from being first.
+
+        best.jpg can legitimately be missing (never written, or the wait for
+        it timed out), in which case the best frame is not among the uploads
+        and calling the first one primary would be untrue.
+        """
+        builder = ImagePromptBuilder()
+        result = builder.build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(summary="best-animals frame", time_offset_s=1.0, animal_count=2),
+                FrameNote(summary="best-females frame", time_offset_s=0.0, female_count=1),
+            ],
+            input_paths_count=2,
+        )
+        assert "primary frame" not in result.prompt
+        assert [ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")] == [
+            "- Image 1 t=1.0s: best-animals frame (m=0, f=0, animals=2)",
+            "- Image 2 t=0.0s: best-females frame (m=0, f=1, animals=0)",
         ]
 
     def test_count_matches_the_number_of_notes(self):

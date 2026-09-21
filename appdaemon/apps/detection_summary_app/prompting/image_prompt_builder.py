@@ -42,6 +42,12 @@ class FrameNote:
     male_count: int = 0
     female_count: int = 0
     animal_count: int = 0
+    # Whether this is the run's best-scoring frame. Carried rather than
+    # inferred from position: the best frame is normally first, but it is
+    # dropped when its file never appeared, and calling a secondary reference
+    # the primary one would be the same kind of untrue claim this labelling
+    # exists to prevent. No note carries it when the best frame was not sent.
+    is_primary: bool = False
 
 
 def _render_frame_note(note: FrameNote, position: int) -> str:
@@ -51,7 +57,7 @@ def _render_frame_note(note: FrameNote, position: int) -> str:
     leaves (ComfyUI uploads as ``<zone>-slot<N>``), so a filename in the prompt
     names nothing the model can see. "Image 1" is what the model is looking at.
     """
-    label = "Image 1 (primary frame)" if position == 1 else f"Image {position}"
+    label = f"Image {position}" + (" (primary frame)" if note.is_primary else "")
     offset = note.time_offset_s
     time_part = f" t={float(offset):.1f}s" if isinstance(offset, (int, float)) else ""
     summary = str(note.summary or "").strip() or "(no summary)"
@@ -97,7 +103,8 @@ class ImagePromptBuilder:
         many that is — the caller trims both to the provider's
         ``max_input_images`` before calling. Notes are labelled here by that
         position ("Image 1 (primary frame)", "Image 2", ...), which is the only
-        handle the model has on them.
+        handle the model has on them; the "primary frame" qualifier comes from
+        the note's own ``is_primary``, not from being first.
         """
         if consensus_bounds and profile:
             base_prompt = augment_image_instructions_with_consensus(

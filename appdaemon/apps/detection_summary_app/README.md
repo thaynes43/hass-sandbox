@@ -175,7 +175,10 @@ the prompt, so the prompt describes exactly the frames the model receives:
   the frames selected;
 - the per-frame notes run in the same order as the uploads and are labelled by
   position (`Image 1 (primary frame)`, `Image 2`, …), because every upload is
-  renamed on the way out and a filename would name nothing the model can see;
+  renamed on the way out and a filename would name nothing the model can see.
+  The `(primary frame)` qualifier is carried on the note, not inferred from
+  being first: `best.jpg` is allowed to be missing, and then the best frame is
+  not among the uploads and no note claims to be it;
 - a trim logs one DEBUG line with the zone, the selected count and the sent
   count. It is a config-shaped condition — the app's `max_refs` outgrew the
   workflow — not a per-run fault.

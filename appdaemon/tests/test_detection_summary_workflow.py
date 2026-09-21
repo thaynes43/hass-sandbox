@@ -666,3 +666,46 @@ def test_the_llm_event_records_only_the_frames_sent() -> None:
     ][0]
     assert len(event["input_paths"]) == 3
     assert not any(p.endswith("frame_000.jpg") for p in event["input_paths"])
+
+
+def test_no_note_claims_primary_when_the_best_frame_never_materialised() -> None:
+    """best.jpg is allowed to be missing, and then nothing is the primary frame.
+
+    `_build_bundle` writes best.jpg from `frame_{best_idx:03d}.jpg` only if that
+    file exists, and the wait for it can time out. The best candidate is then
+    skipped with a WARNING and the first upload is a *secondary* reference —
+    which must not be labelled the primary one.
+    """
+    app = _make_app(_args())
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-nobest")
+    # Drop the best frame's source so best.jpg is never written.
+    local_run_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir) / app.bundle_runs_subdir / "run-nobest"
+    )
+    (local_run_dir / app.captured_subdir / "frame_003.jpg").unlink()
+
+    fake_provider = MagicMock()
+    fake_provider.capabilities = MagicMock(supports_image_to_image=True, max_input_images=3)
+    fake_provider.edit_image.return_value = dict(_EDIT_META)
+    fake_provider.workflow_name = _EDIT_META["workflow_name"]
+    fake_provider.workflow_source = _EDIT_META["workflow_source"]
+
+    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=_four_frame_scores), \
+         patch("detection_summary_app.manager.should_publish_bundle", return_value=True), \
+         patch("detection_summary_app.manager.build_image_provider", return_value=fake_provider), \
+         patch("detection_summary_app.manager.delete_run_dir", return_value=False):
+        bundle = app._build_bundle(run)
+
+    assert bundle is not None
+    kwargs = fake_provider.edit_image.call_args.kwargs
+    assert [Path(p).name for p in kwargs["input_image_paths"]] == [
+        "frame_001.jpg", "frame_002.jpg", "frame_000.jpg"
+    ]
+    assert "primary frame" not in kwargs["prompt"]
+    assert _notes_block(kwargs["prompt"]) == [
+        "- Image 1 t=1.0s: three dogs (m=0, f=0, animals=3)",
+        "- Image 2 t=2.0s: five men (m=5, f=0, animals=0)",
+        "- Image 3 t=0.0s: two women leaving (m=0, f=2, animals=0)",
+    ]
