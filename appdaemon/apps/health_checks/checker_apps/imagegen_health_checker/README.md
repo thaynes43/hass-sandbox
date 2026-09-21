@@ -28,7 +28,9 @@ The wedge signature is a non-zero `queue_remaining` with **no job completing**. 
 
 ### Cold-start nuance
 
-The first generation after a ComfyUI restart takes ~8.5 minutes (model load) — far longer than a normal job, but it *completes*, so the queue counter moves well inside the 30-minute threshold. The stuck detector therefore cannot false-positive on cold starts; don't be tempted to lower `queue_stuck_after_s` below the cold-start time plus a healthy margin.
+The first generation after a ComfyUI restart takes ~10.5 minutes (model load from NFS) — far longer than a normal job, but it *completes*, so the queue counter moves inside the 30-minute threshold. The stuck detector therefore cannot false-positive on cold starts; don't be tempted to lower `queue_stuck_after_s` below the cold-start time plus a healthy margin.
+
+The submitting side has to survive the same cold start. The ComfyUI provider's render budget is now per workflow profile (900–1200 s) rather than the old flat 300 s, which was shorter than a cold start and guaranteed the first job after a restart failed — see [`providers/ai_providers/comfyui/README.md`](../../../../providers/ai_providers/comfyui/README.md).
 
 ### In-memory queue semantics
 

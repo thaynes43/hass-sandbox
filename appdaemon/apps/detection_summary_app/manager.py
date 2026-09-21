@@ -17,7 +17,7 @@ import math
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 from pathlib import Path, PurePosixPath
 from typing import Any, Optional
 
@@ -64,7 +64,11 @@ try:
         provider_config_from_appdaemon_args,
         simple_text_config_from_appdaemon_args,
     )
-    from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError
+    from providers.ai_providers.types import (
+        ExternalDataGenError,
+        ExternalImageGenError,
+        ImageProviderName,
+    )
     from providers.ha_provisioner import HAProvisioner
     from providers.secrets import resolve_arg_secret
 except Exception:  # pragma: no cover
@@ -81,7 +85,11 @@ except Exception:  # pragma: no cover
         provider_config_from_appdaemon_args,
         simple_text_config_from_appdaemon_args,
     )
-    from providers.ai_providers.types import ExternalDataGenError, ExternalImageGenError  # type: ignore
+    from providers.ai_providers.types import (  # type: ignore
+        ExternalDataGenError,
+        ExternalImageGenError,
+        ImageProviderName,
+    )
     from providers.ha_provisioner import HAProvisioner  # type: ignore
     from providers.secrets import resolve_arg_secret  # type: ignore
 
@@ -372,6 +380,10 @@ class DetectionSummary(hass.Hass):
         self._multimodal_provider = None
         self._simple_text_provider = None
         self._active: Optional[_Run] = None
+        # ComfyUI only: the workflow this app will send, resolved from config
+        # at startup so a bad name never reaches a render.
+        self._comfyui_workflow: Optional[str] = None
+        self._comfyui_workflow_source: Optional[str] = None
 
         if self.ai_data_enabled:
             self._get_multimodal_provider()
@@ -385,6 +397,16 @@ class DetectionSummary(hass.Hass):
             ):
                 raise ValueError(
                     f"ai_provider_conf provider={img_cfg.provider!r} does not support image-to-image generation"
+                )
+            if img_cfg.provider == ImageProviderName.COMFYUI:
+                # build_image_provider has already rejected an unregistered
+                # workflow name, so reaching here means the config is good.
+                self._comfyui_workflow = getattr(image_provider, "workflow_name", None)
+                self._comfyui_workflow_source = getattr(image_provider, "workflow_source", None)
+                self.log(
+                    f"DetectionSummary[{self.bundle_key}]: comfyui workflow="
+                    f"{self._comfyui_workflow} source={self._comfyui_workflow_source}",
+                    level="INFO",
                 )
 
         # ensure directories exist on shared mount
@@ -1043,6 +1065,16 @@ class DetectionSummary(hass.Hass):
                     # Requirement: maximize style/theme variety across runs without anchoring on hard-coded examples,
                     # while keeping contents consistent with the chosen best frame.
                     provider_cfg = provider_config_from_appdaemon_args(self.args)
+                    # ComfyUI: namespace the uploads to this zone so two zones
+                    # rendering at once cannot swap each other's input frames.
+                    if provider_cfg.provider == ImageProviderName.COMFYUI:
+                        provider_cfg = dataclass_replace(
+                            provider_cfg,
+                            provider_options={
+                                **(provider_cfg.provider_options or {}),
+                                "upload_namespace": self.bundle_key,
+                            },
+                        )
                     img_provider = build_image_provider(provider_cfg)
                     if not getattr(img_provider, "capabilities", None) or not getattr(
                         img_provider.capabilities, "supports_image_to_image", False
@@ -1091,10 +1123,17 @@ class DetectionSummary(hass.Hass):
                         profile=self._profile,
                     )
                     prompt = prompt_result.prompt
+                    workflow_log = (
+                        f" workflow={getattr(img_provider, 'workflow_name', None)}"
+                        f" workflow_source={getattr(img_provider, 'workflow_source', None)}"
+                        if provider_cfg.provider == ImageProviderName.COMFYUI
+                        else ""
+                    )
                     self.log(
                         f"DetectionSummary[{self.bundle_key}]: image gen start run_id={run_id} "
                         f"inputs={len(input_paths)} out={out_path} prompt_len={len(prompt)} "
-                        f"style={prompt_result.style_profile_id} env={prompt_result.environment_variant_id}",
+                        f"style={prompt_result.style_profile_id} env={prompt_result.environment_variant_id}"
+                        f"{workflow_log}",
                         level="INFO",
                     )
                     generated_image = img_provider.edit_image(
@@ -1115,21 +1154,27 @@ class DetectionSummary(hass.Hass):
                         f"output_exists={out_path.exists()}",
                         level="INFO",
                     )
-                    llm_events.append(
-                        {
-                            "type": "image_edit",
-                            "input_paths": [str(p) for p in input_paths],
-                            "output_path": str(out_path),
-                            "elapsed_s": (generated_image or {}).get("elapsed_s"),
-                            "model": (generated_image or {}).get("model"),
-                            "style_profile_id": prompt_result.style_profile_id,
-                            "style_profile_description": prompt_result.style_profile_description,
-                            "environment_variant_id": prompt_result.environment_variant_id,
-                            "environment_variant_description": prompt_result.environment_variant_description,
-                            "prompt_len": len(prompt),
-                            "image_prompt": prompt,
-                        }
-                    )
+                    image_edit_event: dict[str, Any] = {
+                        "type": "image_edit",
+                        "input_paths": [str(p) for p in input_paths],
+                        "output_path": str(out_path),
+                        "elapsed_s": (generated_image or {}).get("elapsed_s"),
+                        "model": (generated_image or {}).get("model"),
+                        "style_profile_id": prompt_result.style_profile_id,
+                        "style_profile_description": prompt_result.style_profile_description,
+                        "environment_variant_id": prompt_result.environment_variant_id,
+                        "environment_variant_description": prompt_result.environment_variant_description,
+                        "prompt_len": len(prompt),
+                        "image_prompt": prompt,
+                    }
+                    # The provider records the workflow that actually produced
+                    # the image, which differs from the configured one when it
+                    # fell back — carry that through, not what we asked for.
+                    for key in ("workflow_name", "workflow_source", "workflow_fallback_reason"):
+                        value = (generated_image or {}).get(key)
+                        if value is not None:
+                            image_edit_event[key] = value
+                    llm_events.append(image_edit_event)
                     # mirror to stable filename under zone dir
                     stable_local = self._ha_path_to_local_fs(stable_generated_ha_path(cfg))
                     stable_local.parent.mkdir(parents=True, exist_ok=True)

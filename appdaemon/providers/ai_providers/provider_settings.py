@@ -129,11 +129,22 @@ def validate_image_model(provider: str, model: str) -> Tuple[bool, Optional[str]
             "Use provider=openai or provider=gemini for image generation."
         )
     if provider_lower == "comfyui":
-        supported = frozenset({"qwen-image-edit-2509"})
+        # ComfyUI has no model list of its own: the models a request can use
+        # are whatever the registered workflows declare, so the workflow
+        # registry is the allowlist. An empty label is fine — the producing
+        # workflow supplies the label reported back in meta.
         model_lower = (model or "").strip().lower()
-        if model_lower and model_lower not in supported:
+        if not model_lower:
+            return True, None
+        # Imported lazily: the workflow registry reads YAML + graph JSON, and
+        # provider_settings is imported by the registry the comfyui package
+        # itself pulls in.
+        from .comfyui.workflow_registry import load_workflow_registry
+
+        supported = {label.strip().lower() for label in load_workflow_registry().model_labels()}
+        if model_lower not in supported:
             return False, (
-                f"Provider comfyui model {model!r} is not in the allowed image set. "
+                f"Provider comfyui model {model!r} is not offered by any registered workflow. "
                 f"Supported: {sorted(supported)}."
             )
         return True, None

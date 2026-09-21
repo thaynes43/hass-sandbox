@@ -136,6 +136,38 @@ Consumers (e.g. `DoorNotify`) listen for `detection_summary/run_published` match
   - Notifications attach `/api/camera_proxy/<camera_entity_id>`
 - The app **self-provisions** `input_text.<bundle_key>_detection_summary` on startup; no manual helper creation needed
 - `local_file` cameras and shell commands must be added to `configuration.yaml` manually
+- The ComfyUI server is a prerequisite the app cannot provision: the default workflow needs **ComfyUI >= 0.37.0** and the three Qwen-Image-2.1 model files on the server (listed in the [ComfyUI provider README](../../providers/ai_providers/comfyui/README.md)); both are managed in the haynes-ops repo
+
+### Self-provisioned entities
+
+| Entity | Type | Purpose |
+|--------|------|---------|
+| `input_text.<bundle_key>_detection_summary` | `input_text` (max 255) | Latest summary text for this zone |
+
+The run picker, selected-summary text and relay script belong to
+`detection_summary_viewer`, not to this app.
+
+### Image workflow (ComfyUI)
+
+When the `image` capability resolves to ComfyUI, the graph sent for each run is
+named in config — the `comfyui-qwen-edit` bundle's default, or
+`ai_provider_conf.image_workflow` on this app. It is fixed for the life of the
+deployment; changing it is a normal AppDaemon release. An unregistered name
+raises at `initialize()` rather than failing at render time.
+
+The bundle default is `qwen-image-2.1-2609-25step-edit` (needs ComfyUI >=
+0.37.0). Setting `image_workflow: qwen-image-edit-2509-lightning4-legacy` on one
+app rolls that camera back to the pre-2.1 model and its sub-minute renders.
+
+The workflow that produced each image is recorded on the `image gen start` INFO
+line, in `generated_image.workflow_name` / `workflow_source` in the bundle, and
+on the `image_edit` LLM event. If the provider had to fall back because ComfyUI
+rejected the configured graph, `workflow_name` names what actually rendered and
+`workflow_fallback_reason` says why.
+
+See
+[`providers/ai_providers/comfyui/README.md`](../../providers/ai_providers/comfyui/README.md#choosing-a-workflow)
+for the registry table and how to roll back.
 
 ## Config reference (apps.yaml)
 
@@ -180,6 +212,13 @@ ai_provider_conf:
   multimodal: openai-default    # Vision scoring
   image: openai-default         # Image generation (edit)
 ```
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `simple_text` | No | Bundle ref for the run narrative |
+| `multimodal` | No | Bundle ref for vision scoring |
+| `image` | No | Bundle ref for image generation |
+| `image_workflow` | No | ComfyUI only: workflow name, overriding the bundle's for this app. Also accepted nested inside a scoped `image: {bundle: ..., image_workflow: ...}` dict, which wins over the top-level key. On a non-ComfyUI image provider it does nothing and logs a WARNING. An unregistered name fails at startup. |
 
 ### Defaults (overridable)
 

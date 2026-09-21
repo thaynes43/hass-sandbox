@@ -21,6 +21,26 @@ The `detection_summary_app` is the backbone of the camera notification pipeline:
 
 The `detection_summary_viewer` provides a Lovelace dashboard card for browsing historical detection bundles — useful for reviewing what happened while you were away.
 
+### Stylised images
+
+Between scoring and publishing, the best frame is turned into a stylised
+illustration — the picture that actually lands on your phone. That render runs
+on a local ComfyUI box.
+
+Which ComfyUI *workflow* does the rendering is named in the AppDaemon config,
+so every camera's look is pinned to a specific, versioned graph rather than to
+whatever the box happened to have loaded. Each workflow in the registry records
+when its model was released and what to expect from it — how the output looks,
+and roughly how long a render takes.
+
+The default is Qwen-Image-2.1, which produces clean restyles that keep the
+scene, people and vehicles where they are, and takes a couple of minutes per
+image. The older Qwen-Image-Edit-2509 workflows are still registered and render
+in well under a minute, at the cost of harsher colour. Changing a camera's
+look, or rolling one back, is a config change in a normal release; the original
+pre-2026-09 graph is kept unchanged for exactly that purpose. Which workflow
+produced any given image is recorded in that run's bundle.
+
 ### Door Notifications
 
 The `door_notify` app listens for door open/close events (both `binary_sensor` and `cover` entities) and sends push notifications. It optionally attaches the most recent AI detection summary from a nearby camera, giving you context like *"Person walking up driveway"* alongside the *"Garage door opened"* alert.
@@ -40,6 +60,8 @@ Camera motion sensor
 detection_summary_app
   ├─ captures snapshot via HA
   ├─ sends to multimodal LLM
+  ├─ renders a stylised image on ComfyUI
+  │    (workflow named in the app's config)
   ├─ writes bundle to /media/
   └─ fires HA event
         │

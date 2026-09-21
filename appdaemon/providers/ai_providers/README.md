@@ -35,7 +35,7 @@ At a high level:
 
 - Ollama does not provide image generation in this package.
 - ComfyUI does not provide text-only or image-to-text structured output in this package.
-- Capability switching is static per configured provider today. The registry does not dynamically choose different ComfyUI workflows or different image backends at runtime based on the number of input images or whether a request is text-to-image versus image-to-image.
+- Capability switching is static per configured provider. ComfyUI workflows are chosen by name in config (bundle default or per-app `image_workflow`), never picked at runtime from the number of input images or from whether a request is text-to-image versus image-to-image.
 
 ## Model Defaults
 
@@ -53,7 +53,7 @@ Current default models in this package:
   - `simple_text`: `qwen3.5:9b`
   - `multimodal`: `qwen3.5:9b`
 - ComfyUI:
-  - `image`: `qwen-image-edit-2509`
+  - `image`: `qwen-image-2.1` — the label of whichever workflow the [workflow registry](./comfyui/README.md) selects by name (default `qwen-image-2.1-2609-25step-edit`)
 
 ## Per-Provider Docs
 

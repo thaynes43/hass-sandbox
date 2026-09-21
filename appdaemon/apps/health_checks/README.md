@@ -121,7 +121,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 ### ImageGen Health Checker
 
-`ImageGenHealthChecker` watches the ComfyUI image-generation service by polling `GET /prompt` (`exec_info.queue_remaining`) via `ComfyUIStatusClient`. Two checks: **API Reachable** is a warning while the endpoint is unreachable, escalating to critical after `unreachable_after_s`; **Queue Progress** goes critical when the queue counter stays > 0 without any movement for `queue_stuck_after_s`. A wedged ComfyUI is the canonical symptom of the GPU falling off the PCI bus on the Proxmox host — only a host reboot fixes that — so this checker is **page-only**: no repair support. The 30-minute stuck threshold sits safely above the ~8.5-minute cold-start generation, and ComfyUI's in-memory queue resets to 0 on restart, which simply reads as healthy.
+`ImageGenHealthChecker` watches the ComfyUI image-generation service by polling `GET /prompt` (`exec_info.queue_remaining`) via `ComfyUIStatusClient`. Two checks: **API Reachable** is a warning while the endpoint is unreachable, escalating to critical after `unreachable_after_s`; **Queue Progress** goes critical when the queue counter stays > 0 without any movement for `queue_stuck_after_s`. A wedged ComfyUI is the canonical symptom of the GPU falling off the PCI bus on the Proxmox host — only a host reboot fixes that — so this checker is **page-only**: no repair support. The 30-minute stuck threshold sits safely above the ~10.5-minute cold-start generation, and ComfyUI's in-memory queue resets to 0 on restart, which simply reads as healthy.
 
 ### Dependency System
 
