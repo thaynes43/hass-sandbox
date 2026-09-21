@@ -253,8 +253,10 @@ it cuts off its surrounds and Sub.
     mapping). Deleting it (`config/providers/remove`, 6 s) fixed both: the same playlists then
     returned 76–298 tracks, and "All Out 80s" by name plus a by-name track both played (Sonos
     `GetPositionInfo` RelTime advancing). The 811 tracks / 282 albums that were mapped only to
-    it left the library with it (re-read from `library.db` after the delete: 1 stray mapping
-    of that instance remains, no track/album/playlist is left without a mapping) — nothing to
+    it left the library with it (re-read from `library.db` after the delete: 1 stray artist
+    mapping of that instance remains, nothing is left without a mapping, and the test track
+    below has no library row any more; totals went 306,828 → 306,532 tracks and 25,269 →
+    25,233 albums over the day, not reconciled item by item — file scans ran too) — nothing to
     migrate: they are ordinary Spotify catalogue items, so a request for one falls through to
     a Spotify search and plays on the Automation account. Tested with one of them,
     `media_id: "WHERE IS MY HUSBAND!"` + `artist: RAYE`: refused before the delete, played
@@ -283,7 +285,8 @@ it cuts off its surrounds and Sub.
     that key is not the first move (Tom: the personal key is the faster path, 45 requests / 30 s
     against 1 / 2 s on MA's shared session). STILL OPEN on haynes-ops#3049: what tripped it at
     03:20 is unknown, and MA's hourly `metadata_album_reconciliation_v1` task retried the
-    instant each penalty ended, which is what kept it alive all day — it can trip again.
+    instant each penalty ended. Why the 18:20 retry was the one that got through is not known
+    either, so treat a recurrence as likely and check the log first.
     While a 429 phase lasts a voice request finds
     library items only: grep the MA log for `Spotify Rate Limiter` before debugging "found
     nothing". With search back, "party hits" returns Spotify playlists, so mood → playlist is
