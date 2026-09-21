@@ -226,13 +226,26 @@ it cuts off its surrounds and Sub.
   Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources (research).
 - Parked with cold-start context: hass-sandbox #144 (live-HA defects the floor maps found, older
   ESPHome devices), #149 (human-facing voice page for the docs site), haynes-ops #2969.
-  **Both music defects found on 2026-09-20 are parked, not fixed:** haynes-ops#2996 — all four
-  Spotify provider instances fail to load every MA start (`Re-Authentication required` /
-  `Spotify playback authorization required`; predates that day's pod change, the 2026-09-19 pod
-  logged the same). Only Tom can fix it, in the MA UI. Until then every music request resolves
-  against the LOCAL library, which feeds haynes-ops#2994 — local FLACs on the NFS share
+  haynes-ops#2996 (Spotify instances failing to load) is **closed**: Tom rebuilt them on
+  2026-09-20 evening. Still parked: haynes-ops#2994 — local FLACs on the NFS share
   intermittently give no audio for 30 s (`Source stalled`), so a voice "play <artist>" can wait a
   minute while MA skips items; the same files read in 0.3 s a few minutes later.
+- **Where music comes from (read from the live pod 2026-09-21, MA 2.10.4; the voice scripts name
+  no provider or account, MA decides):**
+  - One Spotify instance is enabled, `Spotify [Automation]`, on the Soloist engine = **one Spotify
+    stream for the whole house**. `Spotify [Tom Haynes]` is present but disabled, so his phones
+    and MA never share an account. A grouped set of rooms is one queue = one stream.
+  - A second, different Spotify request while one is streaming does NOT stop the first room: MA
+    looks for another source for up to 15 s, then the NEW `play_media` call raises ("Spotify has
+    reached its limit of 1 simultaneous streams"). What the agent says then is untested.
+  - Local wins on its own: `play_media` matches the library first, and a local FLAC mapping
+    scores ~62 against Spotify's fixed 2–3, so anything on the NAS (307k tracks, ~99 % of the
+    library) plays from `/music` with no stream limit. That makes #2994 the weak link.
+  - 89 playlists / ~800 tracks in the MA library exist only on the disabled personal instance
+    ("All Out 80s", "Basement Fight Songs", …) and fail when asked for, until the Automation
+    account follows them in Spotify.
+  - Keep crossfade off (Soloist + crossfade skips every other track, MA support#6440), and re-check
+    all of this after MA 2.11 (it reworks per-account access).
 - Deploy chain for any AppDaemon change: hass-sandbox PR → merge → GHCR image → haynes-ops `tag:`
   bump PR → `flux reconcile kustomization appdaemon -n home-automation --with-source` → rollout
   status → confirm on the PR. haynes-ops `Flux Local - Test (main)` flakes on Helm repo fetches:
