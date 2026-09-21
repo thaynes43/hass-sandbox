@@ -8,11 +8,13 @@ Monitors a Gecko-integrated hot tub (Westford Spa) connected via the [ha-gecko-i
 |-------|--------|-------------|
 | Gateway Ping | ICMP ping to in.touch gateway IP (`gateway_host`) | Responds within timeout |
 | Connection entity checks | Entity state for each entry in `connection_entities` | `"on"` |
-| Staleness | Age of `last_updated` across all entities in `staleness_entities` | ANY entity is fresh (< `staleness_threshold_s`); fails only if ALL are stale |
+| Staleness | Age of `last_updated` across all entities in `staleness_entities` | ANY entity is fresh (< `staleness_threshold_s`); fails if ALL are stale or `unavailable`/`unknown` |
 
 The checks are config-driven: `connection_entities` accepts a list of binary sensor entity IDs. Check names are derived from the entity ID (e.g. `binary_sensor.westford_spa_overall_connection` becomes "Overall Connection"). Any check can be omitted by removing its config key.
 
 The staleness check is the key zombie detector — the Gecko integration's coordinator polls every 30 seconds, so if no tracked entity has been updated recently, the data path is stale even if connectivity sensors still report "on". Using multiple entities (thermostat, lights, pumps) with OR logic reduces false positives: any one fresh entity keeps the check healthy.
+
+An `unavailable` or `unknown` entity is never fresh. Going `unavailable` stamps `last_updated`, so counting it would hold the check ok for a full `staleness_threshold_s` after the gateway dies — and with one check still passing, the cross-check keeps the spa at warning and auto-repair never starts. With every tracked entity `unavailable`, Staleness is critical at once, and a dead gateway (ping, connection and staleness all failing) is repaired after the configured auto-repair delay.
 
 ## Repair
 

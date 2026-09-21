@@ -379,9 +379,15 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
 
         Uses OR logic — if ANY entity is fresh, the check passes.
         Tracks the minimum (freshest) age across all entities.
+
+        An ``unavailable``/``unknown`` entity carries no data and is never
+        fresh: the flip to ``unavailable`` stamps ``last_updated``, which used
+        to read as a fresh update and held this check ok — and auto-repair
+        off — for a full threshold after the gateway died.
         """
         min_age_s: Optional[float] = None
         freshest_name: str = ""
+        n_unavailable = 0
 
         for entity_id in self._staleness_entities:
             entity_name = entity_id.split(".")[-1]
@@ -391,6 +397,10 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     self.log(
                         f"Staleness: entity {entity_id} not found", level="WARNING"
                     )
+                    continue
+
+                if attrs.get("state") in ("unavailable", "unknown"):
+                    n_unavailable += 1
                     continue
 
                 last_updated = attrs.get("last_updated", "")
@@ -419,6 +429,16 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 self.log(
                     f"Staleness check failed for {entity_id}: {exc!r}", level="ERROR"
                 )
+
+        if min_age_s is None and n_unavailable:
+            return {
+                "name": "Staleness",
+                "status": "critical",
+                "detail": (
+                    f"{n_unavailable} of {len(self._staleness_entities)} "
+                    "entities unavailable, none reporting"
+                ),
+            }
 
         if min_age_s is None:
             # All entities were missing or errored
