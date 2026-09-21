@@ -41,9 +41,16 @@ expect from it.
 `qwen-image-2.1-2609-25step-edit-3frame` is the registry's `default_workflow`.
 It runs Qwen-Image-2.1 (7B, one model for both generate and edit) on the
 official ComfyUI template's settings, and **needs ComfyUI >= 0.37.0** for its
-`TextEncodeQwenImage21` and `QwenImage21Cache` nodes — an older server rejects
-the graph outright, which the provider reports as a workflow rejection and
-falls back from.
+`TextEncodeQwenImage21` and `QwenImage21Cache` nodes.
+
+An older server rejects the graph outright, and the provider reports that as a
+workflow rejection — but **the registry default cannot fall back**, because the
+default is what everything falls back *to* (`fallback_workflow_name` is the
+registry default, and a fallback equal to the requested workflow is not
+retried). So on a downgraded ComfyUI every render on the default fails rather
+than quietly landing on an older graph; the fix is to point the bundle at a
+2509 entry and ship it. An app that has *named* a workflow of its own does fall
+back to this one.
 
 It takes up to three reference frames because that is what the callers have:
 every detection_summary camera app picks 2-4 candidate frames and tells the
