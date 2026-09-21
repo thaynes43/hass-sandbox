@@ -238,9 +238,11 @@ workflow, so do it only to deliberately shorten one bundle.
 That budget is the budget for the **render**, enforced by the `/history` poll
 deadline — it is not a socket timeout. The short calls (upload, `POST /prompt`,
 the output download) are capped at 60 s each, and `/history` polls at 30 s, so
-a half-open connection fails in a minute instead of holding the zone's upload
-lock and its worker thread for the full 15-20 minutes. A budget shorter than
-the cap still wins: the cap is a ceiling, never a floor.
+a half-open connection fails in a minute instead of stalling for the full
+15-20 minutes. The upload and `POST /prompt` run inside the namespace's upload
+lock, so a stall there would hold that lock as well as the worker thread; the
+output download runs after the lock is released and costs only the thread. A
+budget shorter than the cap still wins: the cap is a ceiling, never a floor.
 
 ## Uploads and concurrency
 
