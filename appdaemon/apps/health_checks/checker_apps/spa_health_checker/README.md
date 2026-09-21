@@ -74,9 +74,13 @@ spa_health_checker:
   checker_name: Spa                            # Display name on cards
   gateway_host: "192.168.50.122"                # in.touch gateway IP to ping
   connection_entities:                         # Binary sensors to monitor
-    - binary_sensor.westford_spa_overall_connection
+    - binary_sensor.back_yard_westford_spa_overall_connection
   staleness_entities:                          # Entities for staleness detection (OR logic — any fresh entity passes)
-    - climate.westford_spa_thermostat_1
+    - climate.back_yard_westford_spa_thermostat_1
+    - light.back_yard_westford_spa_light_1
+    - light.back_yard_westford_spa_light_2
+    - fan.back_yard_westford_spa_pump_1
+    - fan.back_yard_westford_spa_pump_2
   staleness_threshold_s: 10800                 # Seconds before all entities are considered stale (3 hours)
   repair_switch: switch.spa_intouch3_switch    # Z-Wave switch controlling spa power
   repair_recovery_wait_s: 300                  # Max seconds to wait for recovery after repair

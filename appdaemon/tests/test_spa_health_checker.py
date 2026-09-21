@@ -1122,7 +1122,12 @@ class TestStalenessIgnoresUnavailable:
         result = _run(app._check_staleness())
 
         assert result["status"] == "critical"
-        assert "stale" in result["detail"]
+        assert "All 1 reporting entities stale, 1 unavailable" in result["detail"]
+        app.log.assert_any_call(
+            "Staleness: 1 of 2 entities unavailable, not counted as fresh: "
+            "spa_thermostat",
+            level="WARNING",
+        )
 
     def test_fresh_available_entity_still_passes(self):
         app = _make_app(extra_args=self._ARGS)

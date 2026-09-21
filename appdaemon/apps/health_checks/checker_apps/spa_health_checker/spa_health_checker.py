@@ -387,7 +387,8 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
         """
         min_age_s: Optional[float] = None
         freshest_name: str = ""
-        n_unavailable = 0
+        n_reporting = 0
+        unavailable: List[str] = []
 
         for entity_id in self._staleness_entities:
             entity_name = entity_id.split(".")[-1]
@@ -400,7 +401,7 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     continue
 
                 if attrs.get("state") in ("unavailable", "unknown"):
-                    n_unavailable += 1
+                    unavailable.append(entity_name)
                     continue
 
                 last_updated = attrs.get("last_updated", "")
@@ -420,6 +421,7 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     lu_dt = last_updated
 
                 age_s = (datetime.datetime.utcnow() - lu_dt).total_seconds()
+                n_reporting += 1
 
                 if min_age_s is None or age_s < min_age_s:
                     min_age_s = age_s
@@ -430,13 +432,23 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     f"Staleness check failed for {entity_id}: {exc!r}", level="ERROR"
                 )
 
-        if min_age_s is None and n_unavailable:
+        n = len(self._staleness_entities)
+        if unavailable:
+            # One line per cycle, not per entity — an outage would otherwise
+            # log every tracked entity every check_interval_s
+            self.log(
+                f"Staleness: {len(unavailable)} of {n} entities unavailable, "
+                f"not counted as fresh: {', '.join(unavailable)}",
+                level="WARNING",
+            )
+
+        if min_age_s is None and unavailable:
             return {
                 "name": "Staleness",
                 "status": "critical",
                 "detail": (
-                    f"{n_unavailable} of {len(self._staleness_entities)} "
-                    "entities unavailable, none reporting"
+                    f"{len(unavailable)} of {n} entities unavailable, "
+                    "none reporting"
                 ),
             }
 
@@ -455,12 +467,18 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 "detail": f"Freshest: {freshest_name} updated {int(min_age_s)}s ago",
             }
 
-        n = len(self._staleness_entities)
+        if unavailable:
+            scope = (
+                f"All {n_reporting} reporting entities stale, "
+                f"{len(unavailable)} unavailable"
+            )
+        else:
+            scope = f"All {n} entities stale"
         return {
             "name": "Staleness",
             "status": "critical",
             "detail": (
-                f"All {n} entities stale "
+                f"{scope} "
                 f"(freshest: {int(min_age_s)}s, threshold: {self._staleness_threshold_s}s)"
             ),
         }

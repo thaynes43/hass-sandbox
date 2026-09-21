@@ -3,7 +3,9 @@
 Monitors the Gecko `in.touch` hot-tub gateway (Westford Spa). Checks: gateway
 ICMP ping (`192.168.50.122`), the overall-connection binary sensor, and a
 staleness/"zombie" detector (all tracked entities stale → data path dead even
-if connectivity reads `on`). `check_interval_s: 120`. `supports_repair: yes`
+if connectivity reads `on`; an `unavailable`/`unknown` entity is never fresh, so
+with every tracked entity dark Staleness is critical at once —
+`N of M entities unavailable, none reporting`). `check_interval_s: 120`. `supports_repair: yes`
 (power-cycle `switch.spa_intouch3_switch`). Depends on `cloud`.
 
 > ⚠️ **STOP — this checker is muted indefinitely.** The spa hardware is
@@ -11,6 +13,10 @@ if connectivity reads `on`). `check_interval_s: 120`. `supports_repair: yes`
 > entirely**: no remediation, no page, no note. The mute is a deliberate human
 > decision, not a transient. The rest of this runbook only applies if the mute
 > has been lifted and the hardware repaired.
+>
+> Banner written 2026-07-06. Checked 2026-09-21: still muted. The gateway itself
+> is online and the checker's auto-repair toggle is on — the mute silences
+> paging, it does not stop the checker power-cycling a dead gateway on its own.
 
 ## Symptoms
 
@@ -26,6 +32,11 @@ if connectivity reads `on`). `check_interval_s: 120`. `supports_repair: yes`
    - `Overall Connection` red only → cloud/link handshake dropped.
    - Only staleness red (connectivity `on`) → the **zombie** state: entities
      report values but the coordinator has stopped updating.
+   - All three red → the gateway is dead (typically the wedge: wired link still
+     up in UniFi, no ICMP reply, every Gecko entity `unavailable`). This is the
+     one case auto-repair acts on by itself: read `repair_state` —
+     `auto_repair_deadline` set means a power cycle is already scheduled. Wait
+     for it; do not stack a manual `start_repair` on top.
 3. Check the `cloud` dependency: read `checkers.cloud.status`. If `cloud` is
    critical, this is downstream — triage `cloud`, not `spa`.
 4. Loki: `{namespace="home-automation", app="appdaemon"} |= "spa"` last 1h —
