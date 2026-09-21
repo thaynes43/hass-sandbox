@@ -253,11 +253,18 @@ it cuts off its surrounds and Sub.
     mapping). Deleting it (`config/providers/remove`, 6 s) fixed both: the same playlists then
     returned 76–298 tracks, and "All Out 80s" by name plus a by-name track both played (Sonos
     `GetPositionInfo` RelTime advancing). The 811 tracks / 282 albums that were mapped only to
-    it left the library with it — nothing to migrate: they are ordinary Spotify catalogue
-    items, so a request for one now falls through to a Spotify search and plays on the
-    Automation account (the RAYE track above was one of them). Never leave a second Spotify
-    instance disabled.
-  - **Playlist cutover done 2026-09-21:** the 60 playlists only the personal account had (36
+    it left the library with it (re-read from `library.db` after the delete: 1 stray mapping
+    of that instance remains, no track/album/playlist is left without a mapping) — nothing to
+    migrate: they are ordinary Spotify catalogue items, so a request for one falls through to
+    a Spotify search and plays on the Automation account. Tested with one of them,
+    `media_id: "WHERE IS MY HUSBAND!"` + `artist: RAYE`: refused before the delete, played
+    as `spotify--AqUiP74a://track/55lijDD6OAjLFFUHU9tcDm` after it. A search needs the Web
+    API, so this path dies during a 429 phase (below). Never leave a second Spotify instance
+    disabled.
+  - **Playlist cutover done 2026-09-21:** of the 112 playlists the personal instance knew, 51
+    were already on the Automation account too, 1 is the "Liked Songs" pseudo-playlist, and 60
+    were its alone (the morning's "89" was an earlier read; Automation's own syncs linked the
+    difference during the day). Those 60 (36
     Spotify-made, 24 Tom's own) were added through MA `music/library/add_item
     spotify--AqUiP74a://playlist/<id>` (`library_sync_back` on → Spotify `PUT me/library`); 59
     have tracks, "DJ" has none by nature, and Spotify answers HTTP 500 to following
