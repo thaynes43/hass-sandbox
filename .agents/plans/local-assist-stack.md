@@ -14,7 +14,7 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 | STT | haynes-ops `ai/whisper` on `talosm01` (A2000) | `ghcr.io/thaynes43/wyoming-whisper-gpu:3.8.1-2`, **NVIDIA Parakeet TDT 0.6B v2** via onnx-asr on CUDA, `whisper.ai.svc.cluster.local:10300`, HA entry `faster-whisper` → `stt.faster_whisper`. Measured in HA: 0.30 s cold / 0.05 s warm vs HA Cloud 1.14 / 0.86 s, same transcript with punctuation. |
 | TTS | haynes-ops `ai/kokoro` on `talosm01` | `flight777/kokoro-wyoming-ml` (CUDA), Kokoro-82M, `kokoro.ai.svc.cluster.local:10210`, HA entry `01M34V1S24J5SBNZXXFW00JF1K` → `tts.kokoro`, 54 voices, **no streaming synthesis** (that image reports `supports_synthesize_streaming: False`). 0.28–0.50 s to first audio vs cloud 0.39–0.62 s. Piper is still there as fallback. A2000 total ≈ 8.1 GB of 12 (vexa 3.9 + Parakeet 3.4 + Kokoro 0.6). |
 | HA agent | `llama_cpp` integration, entry `01M34TQMBVCKW0BG0KZW5JG5YM` | subentry `01M34TQMBVMNR9CJZX892KD8VJ` → **`conversation.muse_glimmer_30b`**, `llm_hass_api: [assist]`, prompt = Regina persona + the shared spoken-aloud block (backup in `agent-docs/voice-agent-prompts.md`; write back with `ha_config_set_helper(helper_type="config_subentry", …)`). |
-| Pipeline | **Regina** `01jb8sg4njw0mh3gnpqt4j9h6x` | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` → `tts.kokoro` `af_heart` (en-US), `prefer_local_intents: true`. **No satellite is assigned to it yet** — Tom picks a box to try it on. The four room pipelines are unchanged (OpenAI + HA Cloud). |
+| Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. **Rumpus Room Voice PE** runs it with wake word **Hey Jarvis** (`select.rumpus_room_voice_assistant` / `select.rumpus_room_voice_wake_word`; revert = "Rumpus Room Assist" / "Okay Nabu"). Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept, and that agent got the cigar-journal API (Tom's request, 2026-09-22 evening). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
 | Removed | — | `ollama-assist01` (haynes-ops#3108, PVC orphan haynes-ops#3109) and its HA entry (had zero models). `ollama-assist02` on the RTX 2000 Ada still serves AppDaemon's detection summaries (`qwen3.5:9b`). |
 
 ### What the numbers mean
@@ -73,7 +73,7 @@ eval ~300 tok/s, decode 8–9 tok/s):**
 | Is the front door locked? | `assist…GetLiveContext{name: "Front Door Lock State"}` ✓ | small | correct in 17 s |
 
 Conclusions: the 30B model **picks the right tool with sensible arguments 4/4**, mixing Assist and
-MCP tools. What breaks the voice loop is (1) the throttled GPU (#3052 — 3.5× slower prompt eval,
+MCP tools. What breaks the voice loop is (1) the throttled GPU (haynes-ops#3052 — 3.5× slower prompt eval,
 4× slower decode than the same card cold) and (2) **tool result size**: cigar-journal's outputs are
 sized for desktop agents, not a spoken turn. Before any room agent gets these tools: cap results in
 the prompt ("ask for at most five results; never fetch the whole humidor"), and ask cigar-journal
