@@ -345,9 +345,34 @@ def test_provider_config_from_pointer_image_comfyui() -> None:
         assert cfg.provider == ImageProviderName.COMFYUI
         assert cfg.model == "qwen-image-2.1"
         assert cfg.base_url == "https://comfyui.haynesops.com"
-        assert cfg.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
+        assert cfg.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
         assert cfg.provider_options["min_input_pixels"] == 921600
         assert cfg.timeout_s is None
+    finally:
+        os.environ.pop("COMFYUI_URL", None)
+
+
+def test_the_bundle_default_arms_the_one_shot_fallback() -> None:
+    """The bundle asks for the gpu1 graph; the registry default catches it.
+
+    `build_image_provider` always passes `registry.default_workflow` as the
+    fallback, and a fallback equal to the requested workflow is never retried.
+    Pinning the bundle (not the registry default) to the GPU variant is what
+    keeps the two different — so a `gpu:1` that has left the bus degrades to a
+    slower render on `gpu:0` instead of a dead zone.
+    """
+    import os
+
+    os.environ["COMFYUI_URL"] = "https://comfyui.haynesops.com"
+    try:
+        cfg = provider_config_from_appdaemon_args(
+            {"ai_provider_conf": {"image": "comfyui-qwen-edit"}}
+        )
+        provider = build_image_provider(cfg)
+        assert provider.workflow_name == "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
+        assert provider.workflow_source == "bundle"
+        assert provider._config.fallback_workflow_name == "qwen-image-2.1-2609-25step-edit-3frame"
+        assert provider._config.fallback_workflow_name != provider.workflow_name
     finally:
         os.environ.pop("COMFYUI_URL", None)
 

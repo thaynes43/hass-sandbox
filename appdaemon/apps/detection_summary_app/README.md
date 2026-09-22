@@ -136,7 +136,7 @@ Consumers (e.g. `DoorNotify`) listen for `detection_summary/run_published` match
   - Notifications attach `/api/camera_proxy/<camera_entity_id>`
 - The app **self-provisions** `input_text.<bundle_key>_detection_summary` on startup; no manual helper creation needed
 - `local_file` cameras and shell commands must be added to `configuration.yaml` manually
-- The ComfyUI server is a prerequisite the app cannot provision: the default workflow needs **ComfyUI >= 0.37.0** and the three Qwen-Image-2.1 model files on the server (listed in the [ComfyUI provider README](../../providers/ai_providers/comfyui/README.md)); both are managed in the haynes-ops repo
+- The ComfyUI server is a prerequisite the app cannot provision: the default workflow needs **ComfyUI >= 0.37.0**, the three Qwen-Image-2.1 model files on the server (listed in the [ComfyUI provider README](../../providers/ai_providers/comfyui/README.md)), and a **second GPU that ComfyUI enumerates as `gpu:1`** — the bundle default pins the render to that card. All are managed in the haynes-ops repo. A host with only one GPU degrades rather than breaks: ComfyUI rejects the graph and the provider falls back to the GPU-agnostic registry default, paying a rejected `POST /prompt` on every render until the bundle is pointed back at `qwen-image-2.1-2609-25step-edit-3frame`
 
 ### Self-provisioned entities
 
@@ -155,10 +155,14 @@ named in config — the `comfyui-qwen-edit` bundle's default, or
 deployment; changing it is a normal AppDaemon release. An unregistered name
 raises at `initialize()` rather than failing at render time.
 
-The bundle default is `qwen-image-2.1-2609-25step-edit-3frame` (needs ComfyUI
->= 0.37.0). The app picks 2-4 candidate frames per run, so the default graph
-takes up to three of them as references — the extras are what let it confirm
-who and what is in the scene when one frame is ambiguous.
+The bundle default is `qwen-image-2.1-2609-25step-edit-3frame-gpu1` (needs
+ComfyUI >= 0.37.0). The app picks 2-4 candidate frames per run, so the default
+graph takes up to three of them as references — the extras are what let it
+confirm who and what is in the scene when one frame is ambiguous. The `gpu1`
+suffix is the same graph pinned to the host's second GPU, which throttles far
+less; the registry's own default stays GPU-agnostic because it is what a
+rejected graph falls back to. See the
+[ComfyUI provider README](../../providers/ai_providers/comfyui/README.md#the-gpu1-variant).
 
 #### Reference frames vs the workflow's image slots
 
@@ -188,10 +192,11 @@ slots and anything dropped there is recorded in the run's meta as
 `ignored_input_paths`. With the manager trimming first that list is normally
 absent.
 
-Two one-line rollbacks on a single camera: `image_workflow:
-qwen-image-2.1-2609-25step-edit` keeps the model but sends only the best frame,
-and `image_workflow: qwen-image-edit-2509-lightning4-legacy` goes back to the
-pre-2.1 model.
+Three one-line rollbacks on a single camera: `image_workflow:
+qwen-image-2.1-2609-25step-edit-3frame` renders exactly the same image but
+drops the `gpu:1` pin, `image_workflow: qwen-image-2.1-2609-25step-edit` keeps
+the model but sends only the best frame, and `image_workflow:
+qwen-image-edit-2509-lightning4-legacy` goes back to the pre-2.1 model.
 
 The workflow that produced each image is recorded on the `image gen start` INFO
 line, in `generated_image.workflow_name` / `workflow_source` in the bundle, and

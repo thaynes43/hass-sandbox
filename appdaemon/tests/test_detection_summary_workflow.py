@@ -47,6 +47,7 @@ from providers.ai_providers.comfyui.comfyui_image_generation_provider import (  
 
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"
+_QWEN21_3FRAME_GPU1 = "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
@@ -136,11 +137,13 @@ def test_bundle_default_is_used_when_the_app_says_nothing() -> None:
 
     Every camera app sends 2-4 candidate frames and tells the model how
     many it is looking at, so a single-slot default would silently drop
-    all but the first.
+    all but the first. The bundle pins the ``gpu1`` variant of that entry —
+    same graph on the host's cooler card — while the registry's own default
+    stays GPU-agnostic so it can serve as the fallback.
     """
     app = _make_app(_args())
     _initialize(app)
-    assert app._comfyui_workflow == _QWEN21_3FRAME
+    assert app._comfyui_workflow == _QWEN21_3FRAME_GPU1
     assert app._comfyui_workflow_source == SOURCE_BUNDLE
 
 
@@ -218,7 +221,7 @@ def test_an_unknown_app_workflow_stops_the_app_at_startup() -> None:
     assert "qwen-typo" in message
     assert "not registered" in message
     # The error has to name what IS available, or the operator is guessing.
-    for name in (_QWEN21_3FRAME, _QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME):
+    for name in (_QWEN21_3FRAME, _QWEN21_3FRAME_GPU1, _QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME):
         assert name in message
     assert SOURCE_APP_CONFIG in message
 
