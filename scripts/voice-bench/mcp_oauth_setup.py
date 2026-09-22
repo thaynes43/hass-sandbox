@@ -52,7 +52,11 @@ async def main() -> None:
             r = await ws.receive_json()
             assert r["type"] == "auth_ok", r
             await ws.send_json({"id": 1, "type": "application_credentials/list"})
-            existing = (await ws.receive_json()).get("result") or []
+            resp = await ws.receive_json()
+            if not resp.get("success"):
+                print("application_credentials/list failed, refusing to register blind:", redact(resp.get("error") or {}))
+                return
+            existing = resp.get("result") or []
             for c in existing:
                 if c.get("domain") == "mcp" and c.get("name") == NAME:
                     print("credential already exists", c["id"], "- nothing registered; delete it in HA first to re-register")
@@ -99,7 +103,10 @@ async def main() -> None:
         if status not in (200, 201):
             print("register failed", status, redact(reg))
             return
-        cid = reg["client_id"]
+        cid = reg.get("client_id")
+        if not cid:
+            print("registration returned", status, "but no client_id:", redact(reg))
+            return
         csec = reg.get("client_secret") or ""
         if not csec:
             print(
@@ -128,7 +135,11 @@ async def main() -> None:
                 }
             )
             r = await ws.receive_json()
-            print("application credential", "ok" if r.get("success") else redact(r.get("error") or {}), (r.get("result") or {}).get("id"))
+            if r.get("success"):
+                print("application credential ok", (r.get("result") or {}).get("id"))
+            else:
+                print("credential store FAILED:", redact(r.get("error") or {}))
+                print("a client was registered on the server as", cid[:6] + "… and is now orphaned - revoke it there before re-running")
 
 
 asyncio.run(main())
