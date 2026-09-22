@@ -228,7 +228,8 @@ The **Rumpus Room** Voice PE runs it (wake word "Hey Jarvis"); the Kitchen pipel
 STT/TTS with its OpenAI agent. Everything about it — entry ids, GPU
 layout and the thermal throttling that currently makes multi-round answers take 10 s+, the model
 bake-off still owed, and the tool tracks — is in `.agents/plans/local-assist-stack.md`. Read that
-before touching `ai/` in haynes-ops or the Jarvis agent.
+before touching `ai/` in haynes-ops or the local agent `conversation.muse_glimmer_30b` (the Rumpus
+Room's OpenAI agent is also a "Jarvis" persona — the local one is the one on the box now).
 
 ## Still open after testing
 

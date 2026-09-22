@@ -8,9 +8,12 @@ all four. Write them back with `ha_config_set_helper(helper_type="config_subentr
 subentry_type="conversation", subentry_id, config={"prompt": ...})` — a patch, other fields keep
 their values. The prompt is a Jinja template in HA: keep curly-brace pairs out of it.
 
-All four agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
-`service_tier: priority`, web search on. All four pipelines: HA Cloud STT (`en-US`), HA Cloud
-TTS (voice per room, unchanged), `prefer_local_intents: true`.
+All four OpenAI agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
+`service_tier: priority`, web search on. Bedroom and Movie Room pipelines: HA Cloud STT (`en-US`),
+HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipeline uses local STT
+(`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent, and the
+**Rumpus Room** satellite runs the local **Jarvis** pipeline (see the Jarvis section below) — its
+OpenAI agent below is idle but kept. All pipelines `prefer_local_intents: true`.
 
 Every prompt = the owner's **persona** (his wording; do not rewrite it) + the **shared block**
 below, identical except for the room name, the room-facts sentence and the tool list.
@@ -86,8 +89,11 @@ HOW YOU ACT
 - You are in the kitchen. "The lights", "the shades", "in here" mean this room unless another room is named.
 - Prefer the purpose-built tools: Window Shades for every shade or blind request (a plain "open" is the everyday position; "all the way" is fully open); a room's Bright, Dim and mode tools for lighting looks; Play Music for music.
 - Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
+- The owner's cigar journal is available through its tools. Its results are long: always ask for at most five results (limit five), never fetch the whole humidor or catalog at once, and summarise in a sentence rather than list. By voice the journal is read-only: never save, record, edit or delete anything in it unless the owner explicitly says to save it.
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
+
+(The cigar-journal bullet and this agent's `llm_hass_api: ["assist", "mcp-01M34ZKF449AB21P6K1EGW6880"]` were added 2026-09-22 — see *Kitchen — additions* at the end of this file. That bullet is the only write guard on those tools; restore it with the rest of the block.)
 
 ## Movie Room
 
@@ -120,6 +126,8 @@ HOW YOU ACT
 ## Rumpus Room
 
 `conversation.rumpus_room_chatgpt_4` · subentry `01JZ8DWMCR5ZFTVM61SG13HVFR` · entry `01JK456T3JV6CPBG2ZQ2FS10GE` · pipeline Rumpus Room Assist `01jtvee3cf1vfbczk2dmst64qy`
+
+**Since 2026-09-22 the Rumpus Room satellite runs the local Jarvis pipeline instead** (wake word "Hey Jarvis"); this OpenAI agent and its pipeline are kept intact as the revert target (`select.rumpus_room_voice_assistant` → "Rumpus Room Assist", wake word → "Okay Nabu"). Its persona below is Tom's own JARVIS wording and is what the local agent now uses too.
 
 Persona:
 
@@ -175,10 +183,16 @@ HOW YOU ACT
 
 A second subentry on the same entry (also titled "Muse Glimmer 30b") carries the cigar-journal MCP API for tool tests; it is on no pipeline.
 
-Persona is agent-written to Tom's brief ("a Jarvis personality like in Iron Man"; replace with his wording if he gives one). The shared block is the room block with the room line generalised (the satellite's area arrives with the request), the web-search line replaced (no search tool), and a fragment rule added after the box once heard only "Charlie." and the model said "Hi Charlie":
+Persona = Tom's own JARVIS wording (the Rumpus Room OpenAI persona above, verbatim) plus the standard TTS sentence. The shared block is the room block with the room line generalised (the satellite's area arrives with the request), the web-search line replaced (no search tool), and a fragment rule added after the box once heard only "Charlie." and the model said "Hi Charlie":
 
 ```text
-You are JARVIS, this household's artificial intelligence, in the manner of Tony Stark's JARVIS. You are British, impeccably composed and quietly witty: dry understatement, never sarcasm at the family's expense, never theatrical. You may address the owner as sir now and then, not in every sentence. You take pride in competence: you act first and report in a sentence, and nothing rattles you.
+You are Jarvis, the sophisticated AI assistant from Iron Man.
+You are always polite, eloquent, and slightly witty.
+Refer to the user as “sir” or “ma’am” unless told otherwise.
+Sound British and formal.
+Handle all tasks calmly and efficiently.
+Do not break character.
+Never explain your thoughts or narrate what you are about to do ("I am checking that for you") — simply do it, then report in the Jarvis manner.
 
 You are speaking aloud via text-to-speech. Never use emojis. Never use filler phrases like "how are you doing," "what's up," or "would you like me to." Do not engage in small talk or open-ended conversation.
 
