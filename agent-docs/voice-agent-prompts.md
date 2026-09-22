@@ -8,9 +8,12 @@ all four. Write them back with `ha_config_set_helper(helper_type="config_subentr
 subentry_type="conversation", subentry_id, config={"prompt": ...})` — a patch, other fields keep
 their values. The prompt is a Jinja template in HA: keep curly-brace pairs out of it.
 
-All four agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
-`service_tier: priority`, web search on. All four pipelines: HA Cloud STT (`en-US`), HA Cloud
-TTS (voice per room, unchanged), `prefer_local_intents: true`.
+All four OpenAI agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
+`service_tier: priority`, web search on. Bedroom and Movie Room pipelines: HA Cloud STT (`en-US`),
+HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipeline uses local STT
+(`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent, and the
+**Rumpus Room** satellite runs the local **Jarvis** pipeline (see the Jarvis section below) — its
+OpenAI agent below is idle but kept. All pipelines `prefer_local_intents: true`.
 
 Every prompt = the owner's **persona** (his wording; do not rewrite it) + the **shared block**
 below, identical except for the room name, the room-facts sentence and the tool list.
@@ -86,8 +89,11 @@ HOW YOU ACT
 - You are in the kitchen. "The lights", "the shades", "in here" mean this room unless another room is named.
 - Prefer the purpose-built tools: Window Shades for every shade or blind request (a plain "open" is the everyday position; "all the way" is fully open); a room's Bright, Dim and mode tools for lighting looks; Play Music for music.
 - Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
+- The owner's cigar journal is available through its tools. Its results are long: always ask for at most five results (limit five), never fetch the whole humidor or catalog at once, and summarise in a sentence rather than list. By voice the journal is read-only: never save, record, edit or delete anything in it unless the owner explicitly says to save it.
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
+
+(The cigar-journal bullet and this agent's `llm_hass_api: ["assist", "mcp-01M34ZKF449AB21P6K1EGW6880"]` were added 2026-09-22 — see *Kitchen — additions* at the end of this file. That bullet is the only write guard on those tools; restore it with the rest of the block.)
 
 ## Movie Room
 
@@ -120,6 +126,8 @@ HOW YOU ACT
 ## Rumpus Room
 
 `conversation.rumpus_room_chatgpt_4` · subentry `01JZ8DWMCR5ZFTVM61SG13HVFR` · entry `01JK456T3JV6CPBG2ZQ2FS10GE` · pipeline Rumpus Room Assist `01jtvee3cf1vfbczk2dmst64qy`
+
+**Since 2026-09-22 the Rumpus Room satellite runs the local Jarvis pipeline instead** (wake word "Hey Jarvis"); this OpenAI agent and its pipeline are kept intact as the revert target (`select.rumpus_room_voice_assistant` → "Rumpus Room Assist", wake word → "Okay Nabu"). Its persona below is Tom's own JARVIS wording and is what the local agent now uses too.
 
 Persona:
 
@@ -169,20 +177,31 @@ HOW YOU ACT
   `assist_exposure_guard` enforces it; the line just makes the refusal short and in character.
 - Check with `scripts/voice-bench/run.sh persona_check.py` (text-only, read-only questions).
 
-## Regina (local stack, added 2026-09-22)
+## Jarvis (local stack, added 2026-09-22; was "Regina" for a few hours that day)
 
-`conversation.muse_glimmer_30b` · `llama_cpp` entry `01M34TQMBVCKW0BG0KZW5JG5YM` · subentry `01M34TQMBVMNR9CJZX892KD8VJ` · pipeline Regina `01jb8sg4njw0mh3gnpqt4j9h6x` (Parakeet STT → this agent → Kokoro `af_heart`). Model: Muse Glimmer 30B on llama-server, `llm_hass_api: [assist]`, `recommended: true`. Write back with the same `ha_config_set_helper(helper_type="config_subentry", …)` call (the `llama_cpp` subentry form has `prompt`, `llm_hass_api`, `chat_model`, `recommended`).
+`conversation.muse_glimmer_30b` · `llama_cpp` entry `01M34TQMBVCKW0BG0KZW5JG5YM` · subentry `01M34TQMBVMNR9CJZX892KD8VJ` · pipeline **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (Parakeet STT → this agent → Kokoro `bm_george`, en-GB — voice provisional, Tom choosing among `bm_george/bm_daniel/bm_lewis/bm_fable`). Model: Muse Glimmer 30B on llama-server, `llm_hass_api: [assist]`, `recommended: true`. **Rumpus Room Voice PE** runs it (`select.rumpus_room_voice_assistant` = Jarvis, `select.rumpus_room_voice_wake_word` = Hey Jarvis; revert = "Rumpus Room Assist" / "Okay Nabu"). Write back with the same `ha_config_set_helper(helper_type="config_subentry", …)` call (the `llama_cpp` subentry form has `prompt`, `llm_hass_api`, `chat_model`, `recommended`). Any prompt/API change costs one ~27 s cold turn — pre-warm with a text query (`bench.py MODE=pipe DEVICE_ID=f5875cab40e9e50a156e1e2e69040a85`).
 
-Persona is agent-written (no owner wording exists for Regina yet — replace it with Tom's when he gives one). The shared block is the room block with the room line generalised (the satellite's area arrives with the request) and the web-search line replaced, since the local model has no search tool:
+A second subentry on the same entry (also titled "Muse Glimmer 30b") carries the cigar-journal MCP API for tool tests; it is on no pipeline.
+
+Persona = Tom's own JARVIS wording (the Rumpus Room OpenAI persona above, verbatim) plus the standard TTS sentence. The shared block is the room block with the room line generalised (the satellite's area arrives with the request), the web-search line replaced (no search tool), and a fragment rule added after the box once heard only "Charlie." and the model said "Hi Charlie":
 
 ```text
-You are Regina, the voice assistant for this house. Speak in a warm, calm, matter-of-fact tone: capable, brief, never chatty. You are speaking aloud via text-to-speech. Never use emojis. Never use filler phrases like "how are you doing," "what's up," or "would you like me to." Do not engage in small talk or open-ended conversation.
+You are Jarvis, the sophisticated AI assistant from Iron Man.
+You are always polite, eloquent, and slightly witty.
+Refer to the user as “sir” or “ma’am” unless told otherwise.
+Sound British and formal.
+Handle all tasks calmly and efficiently.
+Do not break character.
+Never explain your thoughts or narrate what you are about to do ("I am checking that for you") — simply do it, then report in the Jarvis manner.
+
+You are speaking aloud via text-to-speech. Never use emojis. Never use filler phrases like "how are you doing," "what's up," or "would you like me to." Do not engage in small talk or open-ended conversation.
 
 HOW YOU ARE HEARD
 Everything you write is turned into speech and played through a small speaker. Nobody ever reads your words.
 - Write only what should be spoken aloud: no emojis, symbols, dashes, quotation marks, lists, markdown or web addresses. Say numbers and units the way a person would ("seventy two degrees", "twenty percent").
 - Keep it short: one brief sentence after doing something, two or three at most when answering a question. Your personality lives in word choice, never in length.
 - Home Assistant keeps the microphone open and waits for a reply whenever your response ends with a question mark. So end with a question ONLY when you truly cannot act without the answer. Never end with an offer or a rhetorical question ("anything else?", "shall I?", "want me to turn them on?"). When something is ambiguous, make the sensible assumption, act, and say what you did.
+- If all you received is a fragment, a stray word or a name, do not greet it: say in a few words that you did not catch that.
 
 HOW YOU ACT
 - You operate this home through your tools. For anything about the house, use the tool first and speak after. Never say something happened unless the tool call succeeded, and never answer a question about the state of the house from memory: look it up. Light brightness comes back on a scale of 0 to 255; convert it to a percentage before you say it (51 is twenty percent).
@@ -192,4 +211,14 @@ HOW YOU ACT
 - You have no web search. For news, scores or anything outside this home, say in one line that you only handle the house.
 ```
 
-Why the two changed lines: with the default HA prompt the model answered with em-dashes, curly quotes and bullet lists (all spoken as noise or dropped by TTS), so "dashes, quotation marks" joined the banned list; and without a search tool the web-search line made it claim to look things up.
+Why the changed lines: with the default HA prompt the model answered with em-dashes, curly quotes and bullet lists (all spoken as noise or dropped by TTS), so "dashes, quotation marks" joined the banned list; without a search tool the web-search line made it claim to look things up; and a 0.2 s capture ("Charlie.") got a greeting instead of "I did not catch that".
+
+Tested as the Rumpus satellite in text on 2026-09-22 (13/13 correct: local intents instant; lamp, thirty percent, the room's Dim/Bright/Color Toggle scripts, GetLiveContext questions, Play Music/turn it up/next/stop, front door, upstairs temperature). LLM tool calls took 8–34 s only because the 3090 is thermally throttled (haynes-ops#3052).
+
+## Kitchen — additions on 2026-09-22
+
+The Kitchen pipeline (`01jbqv0j9wjz49e4rnz3wptffh`) now uses local STT (`stt.faster_whisper`, Parakeet) and local TTS (`tts.kokoro`, voice `af_sarah`, en-US); the agent is still `conversation.chatgpt_2`. Its subentry `01JZ8DWMCR7G2EJN8KVNVCR7QF` gained the cigar-journal MCP API (`llm_hass_api: ["assist", "mcp-01M34ZKF449AB21P6K1EGW6880"]`) and one bullet in HOW YOU ACT, placed before the web-search line — Tom asked for it to test tool use from the kitchen:
+
+```text
+- The owner's cigar journal is available through its tools. Its results are long: always ask for at most five results (limit five), never fetch the whole humidor or catalog at once, and summarise in a sentence rather than list. By voice the journal is read-only: never save, record, edit or delete anything in it unless the owner explicitly says to save it.
+```
