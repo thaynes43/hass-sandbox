@@ -56,7 +56,9 @@ both generate and edit) on the official ComfyUI template's settings, and
 **needs ComfyUI >= 0.37.0** for its `TextEncodeQwenImage21` and
 `QwenImage21Cache` nodes.
 
-An older server rejects both 2.1 graphs outright, and the provider reports that
+All three 2.1 entries use those nodes, so an older server rejects **every 2.1
+entry** outright — the single-frame one is not a safe downgrade target on a
+pre-0.37.0 server, only the 2509 entries are. The provider reports that
 as a workflow rejection — but **the registry default cannot fall back**,
 because the default is what everything falls back *to*
 (`fallback_workflow_name` is the registry default, and a fallback equal to the
@@ -75,12 +77,15 @@ extra frames are close to free — about 50 s against 45 s for one — which is 
 three frames is the default rather than an opt-in. (On the 20B 2509 model they
 cost several times more, so its three-frame entry stayed opt-in.)
 
-Two rollbacks, both one line:
+Three rollbacks from what the bundle runs, each one line:
 
+- `qwen-image-2.1-2609-25step-edit-3frame` — the nearest one: the same image,
+  with the `gpu:1` pin dropped so ComfyUI picks the card.
 - `qwen-image-2.1-2609-25step-edit` — the same model and settings, one frame
   only. Use this if multi-frame ever turns out to confuse a zone.
 - `qwen-image-edit-2509-lightning4-legacy` — the pre-2.1 model, byte-for-byte
-  what production sent before 2026-09.
+  what production sent before 2026-09, and the only one of the three that also
+  survives a pre-0.37.0 ComfyUI.
 
 The three 2509 workflows now set `weight_dtype: fp8_e4m3fn` on their own
 UNETLoader. They used to get that from the server-wide `--fp8_e4m3fn-unet`
