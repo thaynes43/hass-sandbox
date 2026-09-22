@@ -56,10 +56,31 @@ fetch OOM-paged Tom at 6 Gi). Swapping models = change `-m` and `--alias` in the
   HA's MCP entry points at the hop with no auth. Test scope; a dedicated read-only `home-assistant`
   service token (ADR-011 CLI in the cigar-journal pod, pasted into 1Password by Tom) is the follow-up
   if it becomes permanent.
-- Then: add the new MCP API to the Regina subentry's `llm_hass_api` (it appears next to "Assist"),
-  and run text-mode questions that need tools: "what is in my humidor", "what did I smoke last",
-  "find a maduro under ten dollars". Judge: correct tool, correct arguments, no hallucinated
-  inventory, latency with ~40 extra tool schemas in the prompt. Record results here.
+- Live since 2026-09-22: haynes-ops#3112 (hop), HA `mcp` entry `01M34ZKF449AB21P6K1EGW6880`
+  ("cigar-journal", 35 tools), attached to Regina as `llm_hass_api: ["assist",
+  "mcp-01M34ZKF449AB21P6K1EGW6880"]`. The tool schemas add **~28k tokens** to every turn (15k →
+  43.6k), which first overflowed the 32k slot; llama-server now runs `--ctx-size 131072` = 64k per
+  slot (haynes-ops#3113, +488 MiB VRAM).
+
+**Results (2026-09-22, `bench.py MODE=pipe PIPELINE=<Regina>`, GPU in thermal throttle — prompt
+eval ~300 tok/s, decode 8–9 tok/s):**
+
+| Question | Tool chosen | Result size | Outcome |
+|---|---|---|---|
+| What cigars do I have in my humidor? | `get_my_inventory{}` ✓ | **~47k tokens** | request grew to 91,674 tokens → context error even at 64k |
+| What was the last cigar I smoked? | `get_my_smokes{limit: 10}` ✓ | 5.2k tokens | correct spoken answer (name, date, rating) in 37 s |
+| Find me a maduro in the catalog | `browse_catalog{q: "maduro", limit: 48}` ✓ | 18.7k tokens (62 s to ingest) | correct answer ("eighty five matches, examples …") in 91 s |
+| Is the front door locked? | `assist…GetLiveContext{name: "Front Door Lock State"}` ✓ | small | correct in 17 s |
+
+Conclusions: the 30B model **picks the right tool with sensible arguments 4/4**, mixing Assist and
+MCP tools. What breaks the voice loop is (1) the throttled GPU (#3052 — 3.5× slower prompt eval,
+4× slower decode than the same card cold) and (2) **tool result size**: cigar-journal's outputs are
+sized for desktop agents, not a spoken turn. Before any room agent gets these tools: cap results in
+the prompt ("ask for at most five results; never fetch the whole humidor"), and ask cigar-journal
+for a compact/voice output mode (or per-tool `limit` defaults) — the model cannot shrink a 47k-token
+result it never sees. Prompt caching does carry the 28k tool preamble across turns (only the first
+turn after a restart pays ~30 s cold), but the cache is per slot and there are two slots.
+The tools stay attached to Regina for further testing; nothing else uses them.
 - Voice safety: the journal server exposes write tools (`save_smoke`, `record_purchase`, …). The test
   agent is Regina (no satellite). Before any room agent gets these tools, either scope the OAuth client
   to `catalog:read journal:read` or keep writes behind a confirmation in the prompt.

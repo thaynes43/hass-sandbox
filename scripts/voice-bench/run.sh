@@ -8,6 +8,7 @@
 #   scripts/voice-bench/run.sh openai_agents.py                             # agent subentry settings + account model ids
 #   scripts/voice-bench/run.sh persona_check.py                            # text-only persona + spoken-rules check, all four room agents
 #   scripts/voice-bench/run.sh door_status_check.py                        # truth vs what the agents SAY about locks/garage (read-only)
+#   scripts/voice-bench/run.sh mcp_oauth_setup.py "MCP_URL=<https://host/mcp> NAME=<name>"   # register HA as an OAuth client of an MCP server (no secrets printed)
 # The HA token comes from the AppDaemon pod's env and travels over stdin: it never
 # appears in argv, in the transcript, or on disk.
 set -euo pipefail
