@@ -107,8 +107,10 @@ def test_load_bundle_comfyui_qwen_edit() -> None:
     assert bundle.image_model == "qwen-image-2.1"
     # The bundle names its workflow; the registry owns everything about it,
     # including the timeout. The three-frame entry is the one the seven
-    # camera apps ride, because they all supply more than one frame.
-    assert bundle.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
+    # camera apps ride, because they all supply more than one frame — and the
+    # gpu1 variant of it, because the host's second card throttles far less.
+    # The registry's own default stays GPU-agnostic: it is the fallback target.
+    assert bundle.provider_options["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
     assert bundle.provider_options["min_input_pixels"] == 921600
     assert bundle.image_timeout_s is None
 
@@ -149,7 +151,7 @@ def test_resolve_capability_config_pointer_image_comfyui() -> None:
     assert flat["provider"] == "comfyui"
     assert flat["model"] == "qwen-image-2.1"
     assert flat["base_url"] == "https://comfyui.haynesops.com"
-    assert flat["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
+    assert flat["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
     assert flat["provider_options"]["min_input_pixels"] == 921600
     assert flat["timeout_s"] is None
 
@@ -260,7 +262,7 @@ def test_image_workflow_overrides_the_bundle_workflow() -> None:
     again = resolve_capability_config(
         {"image": "comfyui-qwen-edit"}, "image", resolve_secret=_resolve_secret
     )
-    assert again["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame"
+    assert again["provider_options"]["workflow"] == "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
     assert "workflow_source" not in again["provider_options"]
 
 
@@ -295,7 +297,7 @@ _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 # What the `comfyui-qwen-edit` bundle pins, and so what an app that names
 # no workflow of its own resolves to.
-_BUNDLE_DEFAULT = "qwen-image-2.1-2609-25step-edit-3frame"
+_BUNDLE_DEFAULT = "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
 
 
 def test_image_workflow_is_honoured_inside_a_scoped_dict() -> None:

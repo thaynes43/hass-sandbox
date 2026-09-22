@@ -15,7 +15,9 @@
 # e.g. `qwen-image-edit-2509-lightning4-tuned`: the Qwen image-edit model
 # released 2025-09, sampled through the 4-step Lightning LoRA, tuned variant.
 # The name is what an operator reads in a diff months from now, so spell the
-# model out rather than abbreviating it.
+# model out rather than abbreviating it. A variant that only moves the graph
+# onto different hardware says so in the same slot (`...-3frame-gpu1` is the
+# three-frame graph pinned to the host's second GPU).
 #
 # ## Required fields
 #
@@ -40,6 +42,8 @@
 #     Extra frames are nearly free on this 7B model.
 #   * Qwen-Image-Edit-2509 with the 4-step Lightning LoRA — 40-50 s single
 #     frame, several times that for three frames
+# Those are cool-card numbers on gpu:0, which is the hot slot on this host; the
+# `-gpu1` entry trades a slightly slower cool render for 55-60 s sustained.
 # ComfyUI serves one queue, so a slow workflow starves every other camera —
 # keep an eye on that before adding one.
 
@@ -61,6 +65,37 @@ workflows:
       VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is
       thermally throttled.
     graph: workflows/qwen_image_2_1_edit_3frame_API.json
+    timeout_s: 900
+    bindings:
+      prompt: {node: "6", input: prompt}
+      negative_prompt: {node: "6", input: negative_prompt}
+      seed: {node: "7", input: seed}
+      output: {node: "9"}
+      images:
+        - {node: "1", input: image}
+        - node: "10"
+          input: image
+          unlink: ["6.images.image_2"]
+        - node: "11"
+          input: image
+          unlink: ["6.images.image_3"]
+
+  qwen-image-2.1-2609-25step-edit-3frame-gpu1:
+    model: qwen-image-2.1
+    model_released: 2026-09-20
+    added: 2026-09-21
+    description: >-
+      The three-frame Qwen-Image-2.1 entry with the model, text encoder and
+      VAE placed on the second GPU (`gpu:1`) by ComfyUI's core device-selection
+      nodes. On the current host that card sits in the cooler slot and
+      throttles far less. If `gpu:1` is not present ComfyUI rejects the graph
+      and the provider falls back to the registry default.
+    expect: >-
+      Identical output to the plain three-frame entry. About 55-60 s per image
+      even back-to-back, where the first GPU drops to ~115 s once it heats up.
+      The first render after a ComfyUI restart or after switching cards pays a
+      one-off model load of a few minutes.
+    graph: workflows/qwen_image_2_1_edit_3frame_gpu1_API.json
     timeout_s: 900
     bindings:
       prompt: {node: "6", input: prompt}

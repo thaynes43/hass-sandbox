@@ -57,6 +57,7 @@ def _upload_response(name: str = "uploaded.jpg") -> MagicMock:
 # node is "9". The 2509 graphs all save on "60", so a test that pins one of
 # those must say so.
 _QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"  # the registry default
+_QWEN21_3FRAME_GPU1 = "qwen-image-2.1-2609-25step-edit-3frame-gpu1"  # the bundle default
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
@@ -106,6 +107,26 @@ _VALUE_NOT_IN_LIST_BODY = {
                         "input_name": "unet_name",
                         "received_value": "qwen_image_edit_2509_fp8_e4m3fn.safetensors",
                     },
+                }
+            ],
+        }
+    },
+}
+
+
+_DEVICE_NOT_IN_LIST_BODY = {
+    "error": {
+        "type": "prompt_outputs_failed_validation",
+        "message": "Prompt outputs failed validation",
+    },
+    "node_errors": {
+        "20": {
+            "class_type": "SelectModelDevice",
+            "errors": [
+                {
+                    "type": "value_not_in_list",
+                    "message": "Value not in list",
+                    "extra_info": {"input_name": "device", "received_value": "gpu:1"},
                 }
             ],
         }
@@ -409,6 +430,7 @@ def test_empty_workflow_name_is_the_registry_default() -> None:
     ("workflow_name", "expected_slots"),
     [
         (_QWEN21_3FRAME, 3),
+        (_QWEN21_3FRAME_GPU1, 3),
         (_QWEN21, 1),
         (_LEGACY, 1),
         (_TUNED, 1),
@@ -596,6 +618,84 @@ def test_default_workflow_prunes_both_extra_slots_with_one_image() -> None:
     for node_id in single:
         assert built[node_id]["inputs"].keys() == single[node_id]["inputs"].keys()
     assert set(built) == set(single)
+
+
+def test_gpu1_workflow_binds_three_frames_and_keeps_the_device_nodes() -> None:
+    """The device-selection nodes sit outside the prunable slots entirely."""
+    built = _build(_QWEN21_3FRAME_GPU1, ["a-slot0.jpg", "a-slot1.jpg", "a-slot2.jpg"])
+    assert built["1"]["inputs"]["image"] == "a-slot0.jpg"
+    assert built["10"]["inputs"]["image"] == "a-slot1.jpg"
+    assert built["11"]["inputs"]["image"] == "a-slot2.jpg"
+    encoder = built["6"]["inputs"]
+    assert encoder["images.image_1"] == ["1", 0]
+    assert encoder["images.image_2"] == ["10", 0]
+    assert encoder["images.image_3"] == ["11", 0]
+    assert encoder["prompt"] == "PROMPT"
+    assert encoder["negative_prompt"] == ""
+    assert built["9"]["inputs"]["filename_prefix"] == "generated"
+    assert built["20"]["inputs"] == {"model": ["2", 0], "device": "gpu:1"}
+    assert built["21"]["inputs"] == {"clip": ["3", 0], "device": "gpu:1"}
+    assert built["22"]["inputs"] == {"vae": ["4", 0], "device": "gpu:1"}
+    assert built["5"]["inputs"]["model"] == ["20", 0]
+    assert built["8"]["inputs"]["vae"] == ["22", 0]
+    assert built["7"]["inputs"]["steps"] == 25
+    assert built["7"]["inputs"]["seed"] != 0
+
+
+@pytest.mark.parametrize(
+    "uploaded, kept, dropped",
+    [
+        (["a-slot0.jpg", "a-slot1.jpg"], ("10",), ("11",)),
+        (["a-slot0.jpg"], (), ("10", "11")),
+    ],
+)
+def test_gpu1_workflow_prunes_unused_slots(uploaded, kept, dropped) -> None:
+    """Pruning must still work once the device nodes are in the graph.
+
+    They consume the loaders, not the ``LoadImage`` slots, so a pruned slot
+    leaves them untouched — and nothing may be left dangling.
+    """
+    built = _build(_QWEN21_3FRAME_GPU1, uploaded)
+    for node_id in kept:
+        assert node_id in built
+    for node_id in dropped:
+        assert node_id not in built
+    encoder = built["6"]["inputs"]
+    assert encoder["images.image_1"] == ["1", 0]
+    for slot_node, input_name in (("10", "images.image_2"), ("11", "images.image_3")):
+        if slot_node in built:
+            assert encoder[input_name] == [slot_node, 0]
+        else:
+            assert input_name not in encoder
+    # The device placement survives every prune.
+    assert built["20"]["inputs"]["device"] == "gpu:1"
+    assert built["21"]["inputs"]["device"] == "gpu:1"
+    assert built["22"]["inputs"]["device"] == "gpu:1"
+    assert built["5"]["inputs"]["model"] == ["20", 0]
+    assert built["6"]["inputs"]["clip"] == ["21", 0]
+    assert built["6"]["inputs"]["vae"] == ["22", 0]
+    assert built["8"]["inputs"]["vae"] == ["22", 0]
+    dangling = [
+        f"{node_id}.{name}"
+        for node_id, node in built.items()
+        for name, value in node["inputs"].items()
+        if isinstance(value, list) and value and str(value[0]) not in built
+    ]
+    assert dangling == []
+
+
+def test_gpu1_workflow_with_one_frame_matches_the_plain_entry_apart_from_placement() -> None:
+    """Same render, different card: only the three device nodes differ."""
+    gpu1 = _build(_QWEN21_3FRAME_GPU1, ["a-slot0.jpg"])
+    plain = _build(_QWEN21_3FRAME, ["a-slot0.jpg"])
+    assert set(gpu1) - set(plain) == {"20", "21", "22"}
+    assert set(plain) - set(gpu1) == set()
+    rewired = {"5": {"model"}, "6": {"clip", "vae"}, "8": {"vae"}}
+    for node_id, node in plain.items():
+        for input_name, value in node["inputs"].items():
+            if input_name in rewired.get(node_id, set()) or input_name == "seed":
+                continue
+            assert gpu1[node_id]["inputs"][input_name] == value
 
 
 def test_default_workflow_unlinks_a_dotted_input_name() -> None:
@@ -917,6 +1017,57 @@ def test_rejection_falls_back_exactly_once(tmp_path: Path) -> None:
     assert _TUNED in result["workflow_fallback_reason"]
     assert "unet_name" in result["workflow_fallback_reason"]
     assert result["timeout_s"] == 900.0
+    assert fake.call_count == 6
+
+
+def test_a_missing_second_gpu_falls_back_to_the_gpu_agnostic_default(tmp_path: Path) -> None:
+    """The card leaving the bus is exactly what the one-shot fallback is for.
+
+    ``SelectModelDevice``'s ``device`` is a combo input, so a ``gpu:1`` that is
+    no longer enumerated comes back from ``POST /prompt`` as HTTP 400
+    ``value_not_in_list`` — a deterministic graph rejection. The bundle asks
+    for the gpu1 entry, the registry default (which pins no card) is the
+    fallback, and the retry renders on ``gpu:0`` instead of the zone going dark.
+    """
+    fake = _Urlopen(
+        [
+            _upload_response(),                          # attempt 1 (gpu1) upload
+            _http_error(400, _DEVICE_NOT_IN_LIST_BODY),  # attempt 1 rejected
+            _upload_response("garage-slot0.jpg"),        # attempt 2 (default) upload
+            _json_response({"prompt_id": "pid-fb"}),
+            _history_response("pid-fb"),                 # the 2.1 graph saves on "9"
+            _view_response(),
+        ]
+    )
+    registry = load_workflow_registry()
+    provider = _make_provider(
+        workflow_name=_QWEN21_3FRAME_GPU1,
+        workflow_source="bundle",
+        # Exactly what build_image_provider passes: the registry's own default.
+        fallback_workflow_name=registry.default_workflow,
+        upload_namespace="garage",
+    )
+    assert registry.default_workflow == _QWEN21_3FRAME
+    assert provider.workflow_name != provider._config.fallback_workflow_name, (
+        "a fallback equal to the requested workflow is never retried"
+    )
+
+    with patch("urllib.request.urlopen", new=fake):
+        result = provider.edit_image(
+            input_image_paths=_inputs(tmp_path, 1),
+            prompt="p",
+            output_image_path=str(tmp_path / "o.png"),
+        )
+
+    assert result["workflow_name"] == _QWEN21_3FRAME
+    assert result["workflow_name_requested"] == _QWEN21_3FRAME_GPU1
+    assert result["workflow_source"] == "bundle"
+    reason = result["workflow_fallback_reason"]
+    assert _QWEN21_3FRAME_GPU1 in reason
+    assert "value_not_in_list" in reason
+    assert "input_name='device'" in reason
+    assert "received_value='gpu:1'" in reason
+    assert result["model"] == "qwen-image-2.1", "the same model, on the other card"
     assert fake.call_count == 6
 
 

@@ -21,11 +21,19 @@ from providers.ai_providers.comfyui.workflow_registry import (  # noqa: E402
 )
 
 _QWEN21_3FRAME = "qwen-image-2.1-2609-25step-edit-3frame"
+_QWEN21_3FRAME_GPU1 = "qwen-image-2.1-2609-25step-edit-3frame-gpu1"
 _QWEN21 = "qwen-image-2.1-2609-25step-edit"
 _LEGACY = "qwen-image-edit-2509-lightning4-legacy"
 _TUNED = "qwen-image-edit-2509-lightning4-tuned"
 _TUNED_3FRAME = "qwen-image-edit-2509-lightning4-tuned-3frame"
-_SHIPPED_WORKFLOWS = (_QWEN21_3FRAME, _QWEN21, _LEGACY, _TUNED, _TUNED_3FRAME)
+_SHIPPED_WORKFLOWS = (
+    _QWEN21_3FRAME,
+    _QWEN21_3FRAME_GPU1,
+    _QWEN21,
+    _LEGACY,
+    _TUNED,
+    _TUNED_3FRAME,
+)
 _QWEN2509_WORKFLOWS = (_LEGACY, _TUNED, _TUNED_3FRAME)
 _QWEN21_MODELS = (
     "qwen3vl_8b_int8_convrot.safetensors",
@@ -166,6 +174,9 @@ def test_shipped_expect_text_describes_output_and_speed() -> None:
     assert "50 s per image" in registry.get(_QWEN21_3FRAME).expect
     assert "16 GB" in registry.get(_QWEN21_3FRAME).expect
     assert "three camera frames" in registry.get(_QWEN21_3FRAME).description
+    assert "55-60 s per image" in registry.get(_QWEN21_3FRAME_GPU1).expect
+    assert "~115 s" in registry.get(_QWEN21_3FRAME_GPU1).expect
+    assert "gpu:1" in registry.get(_QWEN21_3FRAME_GPU1).description
     assert "45 s per image" in registry.get(_QWEN21).expect
     assert "16 GB" in registry.get(_QWEN21).expect
     assert "over-saturated" in registry.get(_LEGACY).expect
@@ -344,6 +355,109 @@ def test_qwen_image_2_1_3frame_graph_matches_the_single_frame_graph() -> None:
     assert {k: v for k, v in encoder.items() if not k.startswith("images.")} == {
         k: v for k, v in one["6"]["inputs"].items() if not k.startswith("images.")
     }
+
+
+def test_gpu1_entry_is_the_three_frame_entry_on_the_second_card() -> None:
+    """Same model, metadata, bindings and budget — only the placement differs.
+
+    The host has two 3090s and ComfyUI runs everything on ``gpu:0``, which sits
+    in the hotter slot and throttles to ~115 s per render; ``gpu:1`` holds
+    55-60 s back-to-back.
+    """
+    registry = load_workflow_registry()
+    gpu1 = registry.get(_QWEN21_3FRAME_GPU1)
+    plain = registry.get(_QWEN21_3FRAME)
+
+    assert gpu1.model == plain.model == "qwen-image-2.1"
+    assert gpu1.model_released == plain.model_released == datetime.date(2026, 9, 20)
+    assert gpu1.added == plain.added == datetime.date(2026, 9, 21)
+    assert gpu1.timeout_s == plain.timeout_s == 900
+    assert gpu1.graph == "workflows/qwen_image_2_1_edit_3frame_gpu1_API.json"
+    assert not gpu1.overrides, "the template's own settings are used as-is"
+
+    assert (gpu1.prompt.node, gpu1.prompt.input) == (plain.prompt.node, plain.prompt.input)
+    assert gpu1.negative_prompt == plain.negative_prompt
+    assert gpu1.seed == plain.seed
+    assert gpu1.output == plain.output
+    assert gpu1.images == plain.images
+    assert gpu1.max_images == 3
+
+
+def test_gpu1_entry_needs_no_extra_model_files() -> None:
+    """Placing the same graph on another card cannot change what it loads."""
+    registry = load_workflow_registry()
+    assert registry.get(_QWEN21_3FRAME_GPU1).required_models == _QWEN21_MODELS
+    assert (
+        registry.get(_QWEN21_3FRAME_GPU1).required_models
+        == registry.get(_QWEN21_3FRAME).required_models
+    )
+
+
+def test_gpu1_graph_only_adds_the_device_selection_nodes() -> None:
+    """Three core nodes and four rewires — everything else is byte-identical.
+
+    ``SelectModelDevice`` / ``SelectCLIPDevice`` / ``SelectVAEDevice`` are core
+    ComfyUI 0.37.0 nodes. They sit between each loader and its consumer, so the
+    diff against the plain three-frame graph must be exactly: the three new
+    nodes, plus the four inputs that now read from them.
+    """
+    registry = load_workflow_registry()
+    gpu1 = registry.get(_QWEN21_3FRAME_GPU1).load_graph()
+    plain = registry.get(_QWEN21_3FRAME).load_graph()
+
+    assert set(gpu1) - set(plain) == {"20", "21", "22"}
+    assert set(plain) - set(gpu1) == set()
+
+    assert gpu1["20"]["class_type"] == "SelectModelDevice"
+    assert gpu1["20"]["inputs"] == {"model": ["2", 0], "device": "gpu:1"}
+    assert gpu1["21"]["class_type"] == "SelectCLIPDevice"
+    assert gpu1["21"]["inputs"] == {"clip": ["3", 0], "device": "gpu:1"}
+    assert gpu1["22"]["class_type"] == "SelectVAEDevice"
+    assert gpu1["22"]["inputs"] == {"vae": ["4", 0], "device": "gpu:1"}
+
+    # The four rewires: the cache, both encoder inputs, and the decoder.
+    assert gpu1["5"]["inputs"]["model"] == ["20", 0]
+    assert gpu1["6"]["inputs"]["clip"] == ["21", 0]
+    assert gpu1["6"]["inputs"]["vae"] == ["22", 0]
+    assert gpu1["8"]["inputs"]["vae"] == ["22", 0]
+
+    rewired = {"5": {"model"}, "6": {"clip", "vae"}, "8": {"vae"}}
+    for node_id, node in plain.items():
+        changed = rewired.get(node_id, set())
+        assert gpu1[node_id]["class_type"] == node["class_type"]
+        assert gpu1[node_id].get("_meta") == node.get("_meta")
+        assert set(gpu1[node_id]["inputs"]) == set(node["inputs"])
+        for input_name, value in node["inputs"].items():
+            if input_name in changed:
+                continue
+            assert gpu1[node_id]["inputs"][input_name] == value, (
+                f"node {node_id} input {input_name} drifted from the plain 3-frame graph"
+            )
+
+    # No dangling links: every node reference resolves.
+    for node_id, node in gpu1.items():
+        for value in node["inputs"].values():
+            if isinstance(value, list) and value:
+                assert str(value[0]) in gpu1, f"{node_id} links to a missing node {value[0]!r}"
+
+
+def test_the_registry_default_stays_gpu_agnostic() -> None:
+    """The default is the FALLBACK target, so it must not name a card.
+
+    ``build_image_provider`` passes ``registry.default_workflow`` as
+    ``fallback_workflow_name``. If the default itself pinned ``gpu:1``, the
+    card going off the bus would reject both the requested graph and the one it
+    falls back to, and nothing would render.
+    """
+    registry = load_workflow_registry()
+    assert registry.default_workflow == _QWEN21_3FRAME
+    assert "gpu" not in registry.default_workflow
+    default_graph = registry.default.load_graph()
+    assert not [
+        node_id
+        for node_id, node in default_graph.items()
+        if str(node.get("inputs", {}).get("device", "")).startswith("gpu:")
+    ], "the fallback graph must not pin a specific card"
 
 
 def test_unlink_targets_split_on_the_first_dot_only() -> None:

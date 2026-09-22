@@ -24,7 +24,14 @@ bundles:
   comfyui-qwen-edit:
     image_model: qwen-image-2.1
     provider_options:
-      workflow: qwen-image-2.1-2609-25step-edit-3frame
+      # The three-frame graph pinned to the host's second GPU, which sits in
+      # the cooler slot and throttles far less (55-60 s back-to-back against
+      # ~115 s on a hot gpu:0). The registry's own `default_workflow` stays the
+      # GPU-agnostic `qwen-image-2.1-2609-25step-edit-3frame`, because that is
+      # what a rejected graph falls back TO — if `gpu:1` ever leaves the bus,
+      # ComfyUI 400s this graph and the fallback renders on gpu:0 instead.
+      # To go back, set this to qwen-image-2.1-2609-25step-edit-3frame.
+      workflow: qwen-image-2.1-2609-25step-edit-3frame-gpu1
       # Warn when an input image is below this total pixel count.
       # 921600 = 1280*720 (expected medium-channel minimum).
       min_input_pixels: 921600

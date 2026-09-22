@@ -155,10 +155,14 @@ named in config — the `comfyui-qwen-edit` bundle's default, or
 deployment; changing it is a normal AppDaemon release. An unregistered name
 raises at `initialize()` rather than failing at render time.
 
-The bundle default is `qwen-image-2.1-2609-25step-edit-3frame` (needs ComfyUI
->= 0.37.0). The app picks 2-4 candidate frames per run, so the default graph
-takes up to three of them as references — the extras are what let it confirm
-who and what is in the scene when one frame is ambiguous.
+The bundle default is `qwen-image-2.1-2609-25step-edit-3frame-gpu1` (needs
+ComfyUI >= 0.37.0). The app picks 2-4 candidate frames per run, so the default
+graph takes up to three of them as references — the extras are what let it
+confirm who and what is in the scene when one frame is ambiguous. The `gpu1`
+suffix is the same graph pinned to the host's second GPU, which throttles far
+less; the registry's own default stays GPU-agnostic because it is what a
+rejected graph falls back to. See the
+[ComfyUI provider README](../../providers/ai_providers/comfyui/README.md#the-gpu1-variant).
 
 #### Reference frames vs the workflow's image slots
 
