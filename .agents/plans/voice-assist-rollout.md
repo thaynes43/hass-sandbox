@@ -463,7 +463,10 @@ Still to do in this phase: the TVs, the AVR and the Frame (duplicate registratio
 being Music Assistant-only (no turn_on/turn_off). The separate "ChatGPT for Music Assistant" agent
 (`conversation.chatgpt`) belongs to the older JSON-prompt approach and is not used by the script.
 
-## Phase 5 — MCP servers as LLM tool sources (not started)
+## Phase 5 — MCP servers as LLM tool sources (started 2026-09-22)
 
-HA's `mcp` client speaks streamable HTTP then SSE, no stdio, OAuth only (no static bearer field);
-`llm_hass_api` is a real multi-select and merged tools get namespaced.
+HA's `mcp` client speaks streamable HTTP then SSE, no stdio, OAuth only (no static bearer field, **and
+no PKCE** — it cannot link to an OAuth 2.1-strict server such as cigar-journal, verified 2026-09-22);
+`llm_hass_api` is a real multi-select and merged tools get namespaced, so exposure is per agent.
+The local stack, the cigar-journal test, and the two design tracks Tom asked for (Movie Room
+recommender, voice dispatch to dev-env agents) live in **`.agents/plans/local-assist-stack.md`**.
