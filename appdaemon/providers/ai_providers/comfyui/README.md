@@ -132,6 +132,12 @@ renders on the GPU-agnostic default instead. Pinning the card on the registry
 default would mean both the requested graph and its fallback fail, and the zone
 goes dark.
 
+That safety net is per render, not a repair: each run pays a wasted upload and
+a rejected `POST /prompt` before the retry, and logs a WARNING naming the
+rejection. So a `gpu:1` that is gone for good is a config change, not something
+to leave running — flip the bundle back to
+`qwen-image-2.1-2609-25step-edit-3frame` and ship it.
+
 #### Going back to the plain entry
 
 Set the bundle's `workflow` back to `qwen-image-2.1-2609-25step-edit-3frame`

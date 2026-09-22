@@ -643,13 +643,15 @@ def test_gpu1_workflow_binds_three_frames_and_keeps_the_device_nodes() -> None:
 
 
 @pytest.mark.parametrize(
-    "uploaded, kept, dropped",
+    ("uploaded", "kept", "dropped"),
     [
         (["a-slot0.jpg", "a-slot1.jpg"], ("10",), ("11",)),
         (["a-slot0.jpg"], (), ("10", "11")),
     ],
 )
-def test_gpu1_workflow_prunes_unused_slots(uploaded, kept, dropped) -> None:
+def test_gpu1_workflow_prunes_unused_slots(
+    uploaded: List[str], kept: tuple[str, ...], dropped: tuple[str, ...]
+) -> None:
     """Pruning must still work once the device nodes are in the graph.
 
     They consume the loaders, not the ``LoadImage`` slots, so a pruned slot
