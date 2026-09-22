@@ -3,7 +3,7 @@
 Written 2026-09-22. Read this before touching the local voice stack or the two tool tracks below.
 Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents, phases 1–4),
 `.agents/plans/voice-assist-handoff.md` (room-by-room testing), `agent-docs/voice-agent-prompts.md`
-(prompt backups incl. Regina's). Cluster side lives in haynes-ops (`kubernetes/main/apps/ai/`).
+(prompt backups incl. Jarvis's). Cluster side lives in haynes-ops (`kubernetes/main/apps/ai/`).
 
 ## What is live (2026-09-22)
 
@@ -13,7 +13,7 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 | GPU layout | `talosw01` 2× RTX 3090 | Tom's ruling 2026-09-22 (haynes-ops#2960): per-app pinning via `NVIDIA_VISIBLE_DEVICES`. **LLM on 3090 #1 (`GPU-d8a856f1…`), ComfyUI on 3090 #0 (`GPU-18bf6eab…`)** — swapped the same day because #0 throttles to 225 MHz within ~10 s of load (haynes-ops#3052; 87 °C, fan 100 %). Until airflow is fixed nothing latency-sensitive goes on #0. ComfyUI's AppDaemon and Open WebUI graphs load the same int8 Qwen-Image-2.1 files, so one resident copy serves both. |
 | STT | haynes-ops `ai/whisper` on `talosm01` (A2000) | `ghcr.io/thaynes43/wyoming-whisper-gpu:3.8.1-2`, **NVIDIA Parakeet TDT 0.6B v2** via onnx-asr on CUDA, `whisper.ai.svc.cluster.local:10300`, HA entry `faster-whisper` → `stt.faster_whisper`. Measured in HA: 0.30 s cold / 0.05 s warm vs HA Cloud 1.14 / 0.86 s, same transcript with punctuation. |
 | TTS | haynes-ops `ai/kokoro` on `talosm01` | `flight777/kokoro-wyoming-ml` (CUDA), Kokoro-82M, `kokoro.ai.svc.cluster.local:10210`, HA entry `01M34V1S24J5SBNZXXFW00JF1K` → `tts.kokoro`, 54 voices, **no streaming synthesis** (that image reports `supports_synthesize_streaming: False`). 0.28–0.50 s to first audio vs cloud 0.39–0.62 s. Piper is still there as fallback. A2000 total ≈ 8.1 GB of 12 (vexa 3.9 + Parakeet 3.4 + Kokoro 0.6). |
-| HA agent | `llama_cpp` integration, entry `01M34TQMBVCKW0BG0KZW5JG5YM` | subentry `01M34TQMBVMNR9CJZX892KD8VJ` → **`conversation.muse_glimmer_30b`**, `llm_hass_api: [assist]`, prompt = Regina persona + the shared spoken-aloud block (backup in `agent-docs/voice-agent-prompts.md`; write back with `ha_config_set_helper(helper_type="config_subentry", …)`). |
+| HA agent | `llama_cpp` integration, entry `01M34TQMBVCKW0BG0KZW5JG5YM` | subentry `01M34TQMBVMNR9CJZX892KD8VJ` → **`conversation.muse_glimmer_30b`**, `llm_hass_api: [assist]`, prompt = JARVIS persona + the shared spoken-aloud block (backup in `agent-docs/voice-agent-prompts.md`; write back with `ha_config_set_helper(helper_type="config_subentry", …)`). |
 | Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. **Rumpus Room Voice PE** runs it with wake word **Hey Jarvis** (`select.rumpus_room_voice_assistant` / `select.rumpus_room_voice_wake_word`; revert = "Rumpus Room Assist" / "Okay Nabu"). Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept, and that agent got the cigar-journal API (Tom's request, 2026-09-22 evening). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
 | Removed | — | `ollama-assist01` (haynes-ops#3108, PVC orphan haynes-ops#3109) and its HA entry (had zero models). `ollama-assist02` on the RTX 2000 Ada still serves AppDaemon's detection summaries (`qwen3.5:9b`). |
 
@@ -57,12 +57,13 @@ fetch OOM-paged Tom at 6 Gi). Swapping models = change `-m` and `--alias` in the
   service token (ADR-011 CLI in the cigar-journal pod, pasted into 1Password by Tom) is the follow-up
   if it becomes permanent.
 - Live since 2026-09-22: haynes-ops#3112 (hop), HA `mcp` entry `01M34ZKF449AB21P6K1EGW6880`
-  ("cigar-journal", 35 tools), attached to Regina as `llm_hass_api: ["assist",
-  "mcp-01M34ZKF449AB21P6K1EGW6880"]`. The tool schemas add **~28k tokens** to every turn (15k →
+  ("cigar-journal", 35 tools). It was first attached to the local agent as `llm_hass_api: ["assist",
+  "mcp-01M34ZKF449AB21P6K1EGW6880"]` for the test below; who holds it now is in the safety note at the
+  end of this section. The tool schemas add **~28k tokens** to every turn (15k →
   43.6k), which first overflowed the 32k slot; llama-server now runs `--ctx-size 131072` = 64k per
   slot (haynes-ops#3113, +488 MiB VRAM).
 
-**Results (2026-09-22, `bench.py MODE=pipe PIPELINE=<Regina>`, GPU in thermal throttle — prompt
+**Results (2026-09-22, `bench.py MODE=pipe PIPELINE=<Jarvis, then still named Regina>`, GPU in thermal throttle — prompt
 eval ~300 tok/s, decode 8–9 tok/s):**
 
 | Question | Tool chosen | Result size | Outcome |
@@ -80,10 +81,19 @@ the prompt ("ask for at most five results; never fetch the whole humidor"), and 
 for a compact/voice output mode (or per-tool `limit` defaults) — the model cannot shrink a 47k-token
 result it never sees. Prompt caching does carry the 28k tool preamble across turns (only the first
 turn after a restart pays ~30 s cold), but the cache is per slot and there are two slots.
-The tools stay attached to Regina for further testing; nothing else uses them.
-- Voice safety: the journal server exposes write tools (`save_smoke`, `record_purchase`, …). The test
-  agent is Regina (no satellite). Before any room agent gets these tools, either scope the OAuth client
-  to `catalog:read journal:read` or keep writes behind a confirmation in the prompt.
+- **Who holds the cigar-journal API (2026-09-22 evening):**
+  - the **Kitchen** OpenAI agent `conversation.chatgpt_2` (subentry `01JZ8DWMCR7G2EJN8KVNVCR7QF`) —
+    **satellite-backed** (the Kitchen Voice PE), added at Tom's request for his own tool tests;
+  - a second `llama_cpp` subentry (also titled "Muse Glimmer 30b") on **no pipeline**, for text tests;
+  - **not** the main Jarvis agent `01M34TQMBVMNR9CJZX892KD8VJ` (Assist only — keeps the room turn
+    28k tokens lighter).
+- **Voice safety, as it stands:** the journal server exposes write tools (`save_smoke`,
+  `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. The guard
+  chosen for the kitchen is the **prompt bullet** ("ask for at most five results … by voice the
+  journal is read-only: never save, record, edit or delete unless the owner explicitly says to") —
+  a prompt rule, not an enforced scope. Still outstanding if this stops being a test: a dedicated
+  read-only `home-assistant` service token (`catalog:read journal:read`) behind the hop, and a
+  compact/voice output mode on the server so results stop being 5k–47k tokens.
 
 ## Tool track 2 — Movie Room recommender (design needed)
 

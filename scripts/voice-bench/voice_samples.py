@@ -1,6 +1,6 @@
 """Synthesize one sentence in several TTS voices and save the audio inside the HA pod.
 
-    scripts/voice-bench/run.sh voice_samples.py "ENGINE=tts.kokoro VOICES=bm_george,bm_daniel,bm_lewis,bm_fable LANG=en-GB OUT=/tmp/samples"
+    scripts/voice-bench/run.sh voice_samples.py "ENGINE=tts.kokoro VOICES=bm_george,bm_daniel,bm_lewis,bm_fable TTS_LANG=en-GB OUT=/tmp/samples"
     kubectl cp home-automation/<ha pod>:/tmp/samples ./samples -c app     # then hand the files to the owner
 
 Nothing plays anywhere: tts_get_url only synthesizes. Prints file name, size and time-to-audio per voice.
@@ -17,7 +17,7 @@ BASE = "http://localhost:8123"
 H = {"Authorization": f"Bearer {TOK}"}
 ENGINE = os.environ.get("ENGINE", "tts.kokoro")
 VOICES = os.environ.get("VOICES", "bm_george").split(",")
-LANG = os.environ.get("LANG_", os.environ.get("LANG", "en-GB"))
+LANG = os.environ.get("TTS_LANG", os.environ.get("LANG_", "en-GB"))  # not LANG: the pod sets it (C.UTF-8)
 OUT = os.environ.get("OUT", "/tmp/samples")
 SENTENCE = os.environ.get(
     "SENTENCE",
@@ -38,6 +38,9 @@ async def main() -> None:
                     continue
                 path = (await r.json())["path"]
             async with s.get(f"{BASE}{path}") as r:
+                if r.status != 200:
+                    print(v, "fetch", r.status, path)
+                    continue
                 data = await r.read()
                 ext = "mp3" if "mpeg" in (r.headers.get("content-type") or "") or path.endswith(".mp3") else "wav"
             fn = f"{OUT}/jarvis-{v}.{ext}"
