@@ -568,3 +568,101 @@ class TestFetchShowtimes:
 
         assert "amc exclusive" in cache.films
         assert "showcase exclusive" in cache.films
+
+
+# ---------------------------------------------------------------------------
+# TestResolveDate — day-label parsing and the locale tripwire
+# ---------------------------------------------------------------------------
+
+class TestResolveDate:
+    TODAY = datetime.date(2026, 9, 22)  # a Tuesday
+
+    def test_today_label(self):
+        assert SerpApiFetcher._resolve_date("Today", "", self.TODAY) == "2026-09-22"
+
+    def test_tomorrow_label(self):
+        assert SerpApiFetcher._resolve_date("Tomorrow", "", self.TODAY) == "2026-09-23"
+
+    def test_month_day_date(self):
+        assert SerpApiFetcher._resolve_date("Fri", "Sep 25", self.TODAY) == "2026-09-25"
+
+    def test_weekday_label_without_date(self):
+        assert SerpApiFetcher._resolve_date("Thu", "", self.TODAY) == "2026-09-24"
+
+    def test_unrecognised_label_returns_none(self):
+        """A foreign-language label is not silently stamped with today's date."""
+        assert SerpApiFetcher._resolve_date("Šiandien", "", self.TODAY) is None
+        assert SerpApiFetcher._resolve_date("Rytoj", "", self.TODAY) is None
+        assert SerpApiFetcher._resolve_date("", "", self.TODAY) is None
+
+
+class TestUnresolvedDayLabelWarning:
+    @staticmethod
+    def _lithuanian_response() -> dict:
+        return {
+            "showtimes": [
+                {
+                    "day": "Šiandien",
+                    "movies": [
+                        {
+                            "name": "absoliutus blogis",
+                            "showing": [{"type": "Standard", "time": ["7:00pm"]}],
+                        }
+                    ],
+                },
+                {
+                    "day": "Rytoj",
+                    "movies": [
+                        {
+                            "name": "praktinė magija 2",
+                            "showing": [{"type": "Standard", "time": ["8:00pm"]}],
+                        }
+                    ],
+                },
+            ]
+        }
+
+    @pytest.mark.asyncio
+    async def test_warns_once_per_theater_and_names_the_label(self, caplog):
+        mock_client = _make_mock_client()
+        mock_client.get_showtimes = AsyncMock(return_value=self._lithuanian_response())
+
+        fetcher = _make_fetcher(["AMC Methuen 20"])
+        cache = ShowtimeCache(date=datetime.date.today().isoformat())
+
+        with caplog.at_level("WARNING", logger="providers.media_providers.serpapi_fetcher"):
+            await fetcher._fetch_theater(mock_client, "AMC Methuen 20", cache)
+
+        warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert "AMC Methuen 20" in message
+        assert "Šiandien" in message
+
+    @pytest.mark.asyncio
+    async def test_unresolved_label_still_falls_back_to_today(self, caplog):
+        mock_client = _make_mock_client()
+        mock_client.get_showtimes = AsyncMock(return_value=self._lithuanian_response())
+
+        fetcher = _make_fetcher(["AMC Methuen 20"])
+        cache = ShowtimeCache(date=datetime.date.today().isoformat())
+
+        with caplog.at_level("WARNING", logger="providers.media_providers.serpapi_fetcher"):
+            await fetcher._fetch_theater(mock_client, "AMC Methuen 20", cache)
+
+        today = datetime.date.today().isoformat()
+        assert cache.films["absoliutus blogis"][0].date == today
+        assert cache.films["praktinė magija 2"][0].date == today
+
+    @pytest.mark.asyncio
+    async def test_no_warning_when_every_label_resolves(self, caplog):
+        mock_client = _make_mock_client()
+        mock_client.get_showtimes = AsyncMock(return_value=SAMPLE_THEATER_RESPONSE)
+
+        fetcher = _make_fetcher(["AMC Tyngsboro 12"])
+        cache = ShowtimeCache(date=datetime.date.today().isoformat())
+
+        with caplog.at_level("WARNING", logger="providers.media_providers.serpapi_fetcher"):
+            await fetcher._fetch_theater(mock_client, "AMC Tyngsboro 12", cache)
+
+        assert [r for r in caplog.records if r.levelname == "WARNING"] == []

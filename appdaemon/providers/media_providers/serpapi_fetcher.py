@@ -150,12 +150,31 @@ class SerpApiFetcher:
         # Parse up to 7 days of showtimes
         total_movies = 0
         today = datetime.date.today()
+        warned_unresolved = False
         for day_block in showtimes_list[:7]:
             day_label = day_block.get("day", "")   # e.g. "Today", "Tomorrow", "Monday"
             day_date = day_block.get("date", "")    # e.g. "Mar 29"
 
             # Normalize to an ISO date string for consistent grouping across theaters
-            iso_date = self._resolve_date(day_label, day_date, today)
+            resolved = self._resolve_date(day_label, day_date, today)
+            if resolved is None:
+                # Unrecognised day label — almost always a locale regression
+                # (Google answered in another language, e.g. "Šiandien"), which
+                # also means the film titles will not match TMDb.  Warn once per
+                # theater so the log shows it without one line per day block.
+                if not warned_unresolved:
+                    logger.warning(
+                        "SerpApiFetcher: theater '%s' returned an unrecognised day "
+                        "label %r (date=%r) — treating it as today.  Check the "
+                        "SerpApi locale params (hl/gl/google_domain).",
+                        theater_name,
+                        day_label,
+                        day_date,
+                    )
+                    warned_unresolved = True
+                iso_date = today.isoformat()
+            else:
+                iso_date = resolved
             # Build a friendly label like "Mon, Mar 31"
             try:
                 dt = datetime.date.fromisoformat(iso_date)
@@ -211,7 +230,7 @@ class SerpApiFetcher:
     @staticmethod
     def _resolve_date(
         day_label: str, date_str: str, today: datetime.date
-    ) -> str:
+    ) -> Optional[str]:
         """Convert SerpApi day/date into an ISO date string (YYYY-MM-DD).
 
         SerpApi returns inconsistent combos:
@@ -221,7 +240,9 @@ class SerpApiFetcher:
         - ``day="Tue", date="Apr 1"``
 
         Returns:
-            ISO date string like ``"2026-03-30"``.
+            ISO date string like ``"2026-03-30"``, or ``None`` when the
+            label/date pair is not recognised at all (the caller decides
+            the fallback and logs it).
         """
         # Handle relative labels without a date
         label_lower = (day_label or "").strip().lower()
@@ -260,8 +281,8 @@ class SerpApiFetcher:
                 days_ahead = 7  # next week if same dow
             return (today + datetime.timedelta(days=days_ahead)).isoformat()
 
-        # Last resort
-        return today.isoformat()
+        # Nothing matched — let the caller log and fall back.
+        return None
 
     # -------------------------------------------------------------------------
     # Theater name matching (used by app when cross-referencing with TMDb)

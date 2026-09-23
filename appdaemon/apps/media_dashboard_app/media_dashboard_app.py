@@ -116,10 +116,107 @@ SENSOR_DETAIL = "sensor.media_dashboard_detail"
 RELAY_SCRIPT_ID = "media_dashboard_relay"
 COMMAND_EVENT = "media_dashboard_command"
 
-# Showtimes older than this many hours are noted as stale but still shown
-_SHOWTIME_STALE_WARN_HOURS = 24
-# Showtimes older than this many hours are omitted entirely
-_SHOWTIME_STALE_OMIT_HOURS = 48
+
+# ---------------------------------------------------------------------------
+# Showtime title matching
+# ---------------------------------------------------------------------------
+
+def _normalize_showtime_title(title: str) -> str:
+    """Normalise a film title to lowercase words separated by single spaces.
+
+    Case-folds, expands ``&`` to ``and``, turns every character that is not a
+    letter or digit into a space, and collapses runs of whitespace.  Punctuation
+    becomes a word boundary rather than vanishing, so "Spider-Man: Brand New
+    Day" normalises to "spider man brand new day" — which keeps the
+    prefix-with-boundary rule below working on hyphenated titles.
+    """
+    text = (title or "").casefold().replace("&", " and ")
+    cleaned = "".join(ch if ch.isalnum() else " " for ch in text)
+    return " ".join(cleaned.split())
+
+
+def _compact_showtime_title(title: str) -> str:
+    """Normalise a title down to letters and digits only (no spaces).
+
+    Used for the *equality* test only, so "Spider-Man", "Spider Man" and
+    "Spiderman" compare equal.  Never used for the prefix test — without a
+    word boundary "hope" would prefix-match "hopeless".
+    """
+    return _normalize_showtime_title(title).replace(" ", "")
+
+
+def _showtime_title_matches(tmdb_title: str, cache_title: str) -> bool:
+    """True when a showtime-cache film title refers to a TMDb title.
+
+    Two rules:
+
+    - **Equality** on the compact form (letters and digits only), so the two
+      sources may disagree about hyphens and spacing.
+    - **Prefix with a word boundary** on the spaced form, because cinemas
+      append qualifiers ("Ghost in the Shell 30th Anniversary 4K" for "Ghost
+      in the Shell").
+
+    Deliberately **not** a substring test: that let "Hope" match "Hopeless" and
+    any foreign-language title that happened to contain the word.
+    """
+    tmdb_norm = _normalize_showtime_title(tmdb_title)
+    cache_norm = _normalize_showtime_title(cache_title)
+    if not tmdb_norm or not cache_norm:
+        return False
+    if _compact_showtime_title(tmdb_title) == _compact_showtime_title(cache_title):
+        return True
+    return cache_norm.startswith(tmdb_norm + " ")
+
+
+# ---------------------------------------------------------------------------
+# Showtime cache freshness
+# ---------------------------------------------------------------------------
+
+def _cache_has_current_entries(cache: ShowtimeCache, today_iso: str) -> bool:
+    """True when any film in the cache has an entry dated today or later."""
+    for entries in cache.films.values():
+        for entry in entries:
+            if entry.date and entry.date >= today_iso:
+                return True
+    return False
+
+
+def _classify_showtime_cache(
+    cache: Optional[ShowtimeCache], today: datetime.date
+) -> tuple[bool, str, str]:
+    """Decide whether an on-disk showtime cache may be used, by calendar day.
+
+    The fetcher stamps ``cache.date`` with the *local* date, so freshness is a
+    calendar-day comparison — not an hour count.  (An hour count against UTC
+    midnight declared a cache fetched this morning "stale" by 20:00 local and
+    dropped it entirely the next evening, while it was only one day old.)
+
+    Returns:
+        ``(usable, note, reason)`` — ``note`` is the human-readable staleness
+        line for a cache fetched yesterday (empty for today's), ``reason``
+        explains an unusable cache for the log (empty when usable).
+    """
+    if cache is None:
+        return False, "", "no cache on disk"
+
+    raw_date = (cache.date or "").strip()
+    if not raw_date:
+        return False, "", "cache has no date"
+
+    try:
+        cache_date = datetime.date.fromisoformat(raw_date[:10])
+    except ValueError:
+        return False, "", f"unparseable cache date {raw_date!r}"
+
+    age_days = (today - cache_date).days
+    if age_days not in (0, 1):
+        return False, "", f"cache is dated {raw_date}"
+
+    if not _cache_has_current_entries(cache, today.isoformat()):
+        return False, "", f"cache {raw_date} has no showtimes dated today or later"
+
+    note = "" if age_days == 0 else f"Showtimes were fetched yesterday ({raw_date})"
+    return True, note, ""
 
 
 class MediaDashboardApp(hass.Hass):
@@ -195,6 +292,18 @@ class MediaDashboardApp(hass.Hass):
             "plex_shows": [],
             "coming_soon": [],
         }
+        # Unfiltered TMDb result for the In Theaters row.  The published row is
+        # composed from this pool plus the showtime cache (see
+        # _compose_in_theaters), so a TMDb refresh cannot drop showtime flags.
+        self._tmdb_in_theaters_pool: List[MediaItem] = []
+        # The showtime cache the row was last composed against, kept in memory so
+        # a per-tap detail lookup does not re-read the file (and so a failed
+        # cache write cannot strand the detail popup on stale disk data).
+        self._showtime_cache: Optional[ShowtimeCache] = None
+        # Date stamp of that cache, and which branch of _compose_in_theaters
+        # produced the published row ("showtimes" / "tmdb_fallback").
+        self._showtimes_date: str = ""
+        self._in_theaters_source: str = ""
         self._fetch_status: Dict[str, str] = {
             "tautulli": "pending",
             "tmdb": "pending",
@@ -405,9 +514,10 @@ class MediaDashboardApp(hass.Hass):
             await self._tmdb.download_posters(all_items)
             await self._enrich_mdblist_ratings(all_items)
 
-            self._categories["in_theaters"] = self._rank_items(
-                theaters_result.items, "in_theaters"
-            )
+            # Keep the full TMDb result; the published row is composed from it
+            # against the showtime cache so the flags survive this refresh.
+            self._tmdb_in_theaters_pool = list(theaters_result.items)
+            self._compose_in_theaters()
             self._categories["coming_soon"] = self._rank_items(
                 coming_result.items, "coming_soon"
             )
@@ -446,7 +556,7 @@ class MediaDashboardApp(hass.Hass):
             today = datetime.date.today().isoformat()
             cached = self._read_showtime_cache()
             if cached is not None and cached.date == today:
-                self._apply_showtime_flags(cached)
+                self._compose_in_theaters(cached)
                 self._fetch_status["serpapi"] = "ok"
                 self._publish_sensor()
                 self.log(
@@ -459,10 +569,29 @@ class MediaDashboardApp(hass.Hass):
         try:
             cache = await self._serpapi.fetch_showtimes()
 
+            if not cache.films:
+                # SerpApiFetcher never raises: an outage, an auth failure or a
+                # spent quota all come back as an empty cache stamped today.
+                # Writing that over yesterday's good data would lose the
+                # showtimes *and* make the daily guard skip every retry until
+                # tomorrow.  Keep the previous cache and report the failure.
+                self.log(
+                    f"Showtime refresh returned 0 films for "
+                    f"{len(self._theaters)} theaters — keeping the previous cache",
+                    level="ERROR",
+                )
+                self._fetch_status["serpapi"] = "error"
+                self._compose_in_theaters(self._showtime_cache)
+                self._publish_sensor()
+                return
+
             # Write cache to disk
             self._write_showtime_cache(cache)
 
-            self._apply_showtime_flags(cache)
+            # Compose against the cache we just fetched, not a re-read: a failed
+            # write is logged and swallowed, and the row must not silently fall
+            # back to whatever (if anything) is still on disk.
+            self._compose_in_theaters(cache)
 
             self._fetch_status["serpapi"] = "ok"
             self._publish_sensor()
@@ -478,11 +607,89 @@ class MediaDashboardApp(hass.Hass):
             self._fetch_status["serpapi"] = "error"
             self._publish_sensor()
 
-    def _apply_showtime_flags(self, cache: ShowtimeCache) -> None:
-        """Set ``has_showtimes`` on in-theaters items from a ShowtimeCache."""
-        film_titles_lower = {t.lower() for t in cache.films.keys()}
-        for item in self._categories["in_theaters"]:
-            item.has_showtimes = item.title.lower() in film_titles_lower
+    def _theater_list_text(self) -> str:
+        """Configured theater names as user-facing prose ("A or B")."""
+        return " or ".join(self._theaters) or "the configured theaters"
+
+    def _compose_in_theaters(self, cache: Optional[ShowtimeCache] = None) -> None:
+        """Rebuild the In Theaters row from the TMDb pool + the showtime cache.
+
+        "In Theaters" means *playing at the configured theaters this week*, so
+        the row is the TMDb pool intersected with the showtime cache.  The row
+        falls back to TMDb's now-playing list only — never to trending, which
+        carries streaming hits and months-old releases that are not in any
+        local cinema — when either:
+
+        - the cache is unusable (missing, older than yesterday, or carrying
+          nothing dated today or later), or
+        - a usable cache matches *no* pool title at all, which means something
+          is wrong with the data (a locale regression, a theater that stopped
+          answering) rather than that nothing is playing.
+
+        Both the TMDb refresh and the showtime refresh call this, so the
+        ``has_showtimes`` flags cannot be dropped by whichever runs last.
+
+        Args:
+            cache: The cache to compose against.  The showtime refresh passes
+                   the one it just fetched or read, so a failed cache *write*
+                   (which is logged and swallowed) does not silently compose
+                   against a stale or missing file.  Defaults to reading disk.
+        """
+        pool = self._tmdb_in_theaters_pool
+        if cache is None:
+            cache = self._read_showtime_cache()
+        self._showtime_cache = cache
+        today = datetime.date.today()
+        usable, _note, reason = _classify_showtime_cache(cache, today)
+        today_iso = today.isoformat()
+
+        self._showtimes_date = (cache.date or "") if cache is not None else ""
+
+        matched = 0
+        for item in pool:
+            has = False
+            if usable and cache is not None:
+                for film_title, entries in cache.films.items():
+                    if not _showtime_title_matches(item.title, film_title):
+                        continue
+                    if any(e.date and e.date >= today_iso for e in entries):
+                        has = True
+                        break
+            item.has_showtimes = has
+            if has:
+                matched += 1
+
+        now_playing = [item for item in pool if item.release_type == "in_theaters"]
+
+        if usable and matched:
+            self._in_theaters_source = "showtimes"
+            selected = [item for item in pool if item.has_showtimes]
+            self.log(
+                f"In Theaters: {matched} of {len(pool)} TMDb titles have showtimes "
+                f"at {self._theater_list_text()} (cache {self._showtimes_date})",
+                level="INFO",
+            )
+        elif usable:
+            # A cache that is fresh and full of screenings but matches nothing
+            # is a data fault, not an empty week — never publish an empty row
+            # because of it.
+            self._in_theaters_source = "tmdb_fallback"
+            selected = now_playing
+            self.log(
+                f"In Theaters: usable cache ({self._showtimes_date}) matched none "
+                f"of {len(pool)} TMDb titles — falling back to TMDb now-playing",
+                level="WARNING",
+            )
+        else:
+            self._in_theaters_source = "tmdb_fallback"
+            selected = now_playing
+            self.log(
+                f"In Theaters: no usable showtime data ({reason}); "
+                f"showing TMDb now-playing ({len(selected)})",
+                level="INFO",
+            )
+
+        self._categories["in_theaters"] = self._rank_items(selected, "in_theaters")
 
     async def _refresh_all(self) -> None:
         """Run all three refreshes sequentially to avoid API rate limits."""
@@ -602,6 +809,8 @@ class MediaDashboardApp(hass.Hass):
             "categories": published_categories,
             "hidden_eligible": hidden_eligible,
             "fetch_status": dict(self._fetch_status),
+            "showtimes_date": self._showtimes_date,
+            "in_theaters_source": self._in_theaters_source,
             "last_updated": datetime.datetime.now().isoformat(timespec="seconds"),
             "friendly_name": "Media Dashboard Status",
             "icon": "mdi:movie-roll",
@@ -630,7 +839,9 @@ class MediaDashboardApp(hass.Hass):
                 dmt = 0
             attrs["poster"] = f"/local/{self._poster_www_subdir}/{item.local_poster}?t={dmt}"
         attrs["showtimes"] = showtimes
-        attrs["showtimes_date"] = datetime.date.today().isoformat()
+        # The date the cache was fetched — not "today", which claimed freshness
+        # the cache did not have.
+        attrs["showtimes_date"] = self._showtimes_date
         attrs["friendly_name"] = f"Media Dashboard Detail: {item.title}"
 
         self.log(f"Publishing detail sensor for item: {item.id}", level="DEBUG")
@@ -948,39 +1159,33 @@ class MediaDashboardApp(hass.Hass):
         """Find showtimes for an item from the on-disk cache.
 
         Returns a dict with:
-        - ``entries``: list of {cinema_name, times} for each matching cinema
-        - ``stale``: boolean (cache is >24h old)
-        - ``note``: optional human-readable staleness message
+        - ``entries``: list of {cinema_name, times, day, date} per cinema/day,
+          never including days already past
+        - ``stale``: boolean (the cache was fetched yesterday)
+        - ``note``: human-readable explanation when there is nothing to show,
+          or the staleness line when there is
         """
-        cache = self._read_showtime_cache()
+        # The cache the row was composed against, so the popup and the row
+        # always agree — and a tap costs no disk read.
+        cache = self._showtime_cache
+        if cache is None:
+            cache = self._read_showtime_cache()
         if cache is None:
             return {"entries": [], "note": "No showtime data available"}
 
-        # Staleness check
-        stale = False
-        note = ""
-        if cache.date:
-            try:
-                cache_dt = datetime.datetime.fromisoformat(cache.date).replace(
-                    tzinfo=datetime.timezone.utc
-                )
-                age_hours = (
-                    datetime.datetime.now(tz=datetime.timezone.utc) - cache_dt
-                ).total_seconds() / 3600
-                if age_hours >= _SHOWTIME_STALE_OMIT_HOURS:
-                    return {"entries": [], "note": "Showtime data is too old (>48h)"}
-                if age_hours >= _SHOWTIME_STALE_WARN_HOURS:
-                    stale = True
-                    note = f"Showtime data may be stale (fetched {cache.date})"
-            except (ValueError, TypeError):
-                pass
+        today = datetime.date.today()
+        today_iso = today.isoformat()
+        usable, note, _reason = _classify_showtime_cache(cache, today)
 
-        # Match by title (case-insensitive)
-        title_lower = item.title.lower()
-        entries = []
-        for film_title, showtime_list in cache.films.items():
-            if film_title.lower() == title_lower or title_lower in film_title.lower():
+        entries: List[dict] = []
+        if usable:
+            for film_title, showtime_list in cache.films.items():
+                if not _showtime_title_matches(item.title, film_title):
+                    continue
                 for st_entry in showtime_list:
+                    # Yesterday's fetch carries yesterday's screenings too.
+                    if not st_entry.date or st_entry.date < today_iso:
+                        continue
                     entries.append({
                         "cinema_name": st_entry.cinema_name,
                         "times": st_entry.times,
@@ -988,8 +1193,19 @@ class MediaDashboardApp(hass.Hass):
                         "date": st_entry.date,
                     })
 
+        if not entries:
+            if usable:
+                empty_note = (
+                    f"Not playing at {self._theater_list_text()} this week"
+                )
+            elif cache.date:
+                empty_note = f"Showtimes not available (last fetched {cache.date})"
+            else:
+                empty_note = "No showtime data available"
+            return {"entries": [], "note": empty_note}
+
         result: dict = {"entries": entries}
-        if stale:
+        if note:
             result["stale"] = True
             result["note"] = note
         return result

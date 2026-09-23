@@ -258,9 +258,80 @@ class TestFetchInTheaters:
             result = await fetcher.fetch_in_theaters()
 
         assert result.status == "ok"
-        ids = [i.tmdb_id for i in result.items]
-        assert 1 in ids
-        assert 2 in ids
+        by_id = {i.tmdb_id: i for i in result.items}
+        assert set(by_id) == {1, 2}
+        # Provenance is recorded: the app only shows a trending-only title when
+        # a configured theater actually has showtimes for it.
+        assert by_id[1].release_type == "in_theaters"
+        assert by_id[2].release_type == "trending"
+
+    @pytest.mark.asyncio
+    async def test_pages_now_playing_up_to_three_pages(self):
+        """One page of now_playing is 20 titles — fewer than a multiplex shows."""
+        mock_client = _make_mock_client()
+
+        async def _page(region="US", page=1):
+            return {
+                "page": page,
+                "total_pages": 9,
+                "results": [_movie(tmdb_id=100 + page, popularity=50.0)],
+            }
+
+        mock_client.get_now_playing = AsyncMock(side_effect=_page)
+        mock_client.get_trending = AsyncMock(return_value={"results": []})
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            result = await fetcher.fetch_in_theaters()
+
+        assert mock_client.get_now_playing.await_count == 3
+        assert [c.kwargs["page"] for c in mock_client.get_now_playing.await_args_list] == [1, 2, 3]
+        assert sorted(i.tmdb_id for i in result.items) == [101, 102, 103]
+
+    @pytest.mark.asyncio
+    async def test_stops_paging_at_the_last_page(self):
+        mock_client = _make_mock_client()
+
+        async def _page(region="US", page=1):
+            return {
+                "page": page,
+                "total_pages": 2,
+                "results": [_movie(tmdb_id=200 + page, popularity=50.0)],
+            }
+
+        mock_client.get_now_playing = AsyncMock(side_effect=_page)
+        mock_client.get_trending = AsyncMock(return_value={"results": []})
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            result = await fetcher.fetch_in_theaters()
+
+        assert mock_client.get_now_playing.await_count == 2
+        assert sorted(i.tmdb_id for i in result.items) == [201, 202]
+
+    @pytest.mark.asyncio
+    async def test_single_page_response_does_not_page(self):
+        """A response without total_pages is treated as the only page."""
+        mock_client = _make_mock_client()
+        mock_client.get_now_playing = AsyncMock(
+            return_value={"results": [_movie(tmdb_id=1, popularity=50.0)]}
+        )
+        mock_client.get_trending = AsyncMock(return_value={"results": []})
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            await fetcher.fetch_in_theaters()
+
+        assert mock_client.get_now_playing.await_count == 1
 
     @pytest.mark.asyncio
     async def test_deduplicates_by_tmdb_id(self):
@@ -307,6 +378,70 @@ class TestFetchInTheaters:
             result = await fetcher.fetch_in_theaters()
 
         assert result.items[0].release_type == "in_theaters"
+
+    @pytest.mark.asyncio
+    async def test_trending_only_item_is_marked_trending(self):
+        mock_client = _make_mock_client()
+        mock_client.get_now_playing = AsyncMock(return_value={"results": []})
+        mock_client.get_trending = AsyncMock(
+            return_value={"results": [_movie(tmdb_id=7, popularity=80.0)]}
+        )
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            result = await fetcher.fetch_in_theaters()
+
+        assert [i.release_type for i in result.items] == ["trending"]
+
+    @pytest.mark.asyncio
+    async def test_title_on_both_lists_keeps_in_theaters(self):
+        mock_client = _make_mock_client()
+        shared = _movie(tmdb_id=5, title="Both Lists", popularity=30.0)
+        mock_client.get_now_playing = AsyncMock(return_value={"results": [shared]})
+        mock_client.get_trending = AsyncMock(return_value={"results": [shared]})
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            result = await fetcher.fetch_in_theaters()
+
+        assert [i.release_type for i in result.items] == ["in_theaters"]
+
+    @pytest.mark.asyncio
+    async def test_logs_raw_unique_and_filtered_counts(self, caplog):
+        """The summary must show where titles were lost: dedupe vs filters."""
+        mock_client = _make_mock_client()
+        shared = _movie(tmdb_id=5, title="Both Lists", popularity=30.0)
+        mock_client.get_now_playing = AsyncMock(
+            return_value={
+                "results": [shared, _movie(tmdb_id=6, popularity=50.0),
+                            _movie(tmdb_id=7, popularity=1.0)],
+            }
+        )
+        mock_client.get_trending = AsyncMock(
+            return_value={"results": [shared, _movie(tmdb_id=8, popularity=40.0)]}
+        )
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"), \
+                caplog.at_level("INFO", logger="providers.media_providers.tmdb_fetcher"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            result = await fetcher.fetch_in_theaters()
+
+        # 3 raw + 2 raw -> 4 unique (id 5 on both) -> 3 after the popularity filter
+        assert len(result.items) == 3
+        assert any(
+            "TmdbFetcher.fetch_in_theaters: 3 now_playing raw + 2 trending raw "
+            "-> 4 unique -> 3 after filters" == r.getMessage()
+            for r in caplog.records
+        )
 
     @pytest.mark.asyncio
     async def test_returns_error_on_failure(self):

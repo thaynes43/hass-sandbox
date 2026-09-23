@@ -41,30 +41,29 @@ A new AppDaemon-powered dashboard card that displays media content across four c
 
 ### 3. SerpApi — Theater Showtimes
 
-**API**: SerpApi Google Showtimes (paid plan required; single API key, no per-theater calls)
+**API**: SerpApi Google search (free plan, 250 searches/month; one search per configured theater per day)
 
 **Endpoint used**:
-- `GET /search?engine=google&q=showtimes+near+{location}&location={location}&api_key={key}` — returns `showtimes_results` structured data grouping movies by theater
+- `GET /search?engine=google&q=<theater name>+showtimes&hl=en&gl=us&google_domain=google.com&api_key={key}` — one call per theater; returns a `showtimes` array grouped by day, each day listing movies with their showing times
 
 **Signup**: SerpApi account required. API key stored as `SERPAPI_KEY` env var.
 
 **Coverage**: Uses Google's live showtime data — covers all major US chains (AMC, Cinemark, Showcase, Regal, etc.).
 
-**Refresh cadence**: Once daily (one search covers all configured theaters)
+**Refresh cadence**: Once per calendar day, one search per theater, guarded by the cache date on disk
 
-**Theater filtering**: Response includes many theaters; results are filtered to the configured `theaters` list using case-insensitive substring matching (e.g. configured `"Showcase Cinema de Lux Lowell"` matches API name `"Showcase Cinema de Lux Lowell"`).
+**Theater matching**: each search targets one theater by name, so no filtering is needed; film titles are matched to TMDb titles with the normalised equality/prefix rule described in the app README.
 
-**Fallback**: If SerpApi returns no results or fails, TMDb still provides "now playing" and "upcoming" theater data (just no showtimes). The card degrades gracefully — movie posters and metadata still show, just without specific showtime data.
+**Fallback**: If no usable showtime cache exists (missing, older than yesterday, or matching nothing), the In Theaters row falls back to TMDb now-playing (`in_theaters_source = "tmdb_fallback"`); a zero-film fetch never overwrites the previous cache.
 
 ### Configured Theaters (01886 area)
 
-| Theater | Location | Priority |
-|---------|----------|----------|
-| AMC Tyngsboro 12 | 440 Middlesex Rd, Tyngsborough, MA 01879 | High |
-| Showcase Cinema de Lux Lowell | 32 Reiss Ave, Lowell, MA 01851 | High |
-| AMC Methuen 20 (The Loop) | 90 Pleasant Valley St, Methuen, MA 01844 | High |
-| Cinemark Rockingham Park and XD | 99 Rockingham Park Blvd, Salem, NH 03079 | Medium |
-| AMC Burlington Cinema 10 | 20 South Ave, Burlington, MA 01803 | Low |
+| Theater | Location |
+|---------|----------|
+| Cinemark Rockingham Park and XD | 99 Rockingham Park Blvd, Salem, NH 03079 |
+| AMC Methuen 20 (The Loop) | 90 Pleasant Valley St, Methuen, MA 01844 |
+
+Trimmed from five to these two on 2026-06-18: each theater is one SerpApi search per day, and the plan is 250 searches/month.
 
 ## Content Filtering & Thumbs Up/Down
 
@@ -359,6 +358,8 @@ To stay under HA's ~16KB WebSocket limit, we keep items lean — metadata only, 
       "tmdb": {"last_ok": "2026-03-29T12:00:00", "status": "ok"},
       "serpapi": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
     },
+    "showtimes_date": "2026-03-29",
+    "in_theaters_source": "showtimes",
     "friendly_name": "Media Dashboard",
     "icon": "mdi:movie-open-outline"
   }
@@ -428,12 +429,9 @@ media_dashboard_app:
   # SerpApi — Google Showtimes
   serpapi_api_key_env: SERPAPI_KEY
   location: "Westford, MA"
-  theaters:
-    - name: "AMC Tyngsboro 12"
-    - name: "Showcase Cinema de Lux Lowell"
-    - name: "AMC Methuen 20"
-    - name: "Cinemark Rockingham Park and XD"
-    - name: "AMC Burlington Cinema 10"
+  theaters:                          # plain strings, one SerpApi search each per day
+    - Cinemark Rockingham Park and XD
+    - AMC Methuen 20
   # Refresh intervals (seconds)
   plex_refresh_interval: 7200       # 2 hours
   tmdb_refresh_interval: 43200      # 12 hours
@@ -529,23 +527,24 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
 ### Flow
 
 1. **Daily batch fetch** (via `showtimes_refresh_interval`, default 24h):
-   - SerpApi fetcher searches ``"showtimes near {location}"`` — one request covers all configured theaters
-   - Results are filtered to configured theater names (case-insensitive substring match)
+   - SerpApi fetcher runs one Google search per configured theater (`"<theater name> showtimes"`, locale pinned to US English) — two theaters = two searches per day
+   - Each theater's result is parsed into per-day entries and keyed by lowercase film title
    - Cached to `{media_fs_root}/{showtime_cache_subdir}` as a JSON file keyed by lowercase film title
 
 2. **`get_detail` relay command** (user taps a poster):
    - App reads the item's full metadata from the in-memory fetcher cache
-   - App reads showtimes from the **disk cache** — no SerpApi call
+   - App reads showtimes from the **in-memory copy of the daily cache** (disk only on first use) — no SerpApi call
    - Publishes combined result to `sensor.media_dashboard_detail`
 
-3. **Staleness handling**:
-   - If showtime cache is >24h old and refresh fails, show stale data with a "Showtimes from yesterday" note
-   - If showtime cache is >48h old, omit showtimes entirely — show "Showtimes unavailable" in the detail view
-   - `has_showtimes` field in the main sensor reflects whether current-day data exists
+3. **Staleness handling** (as implemented — calendar days, not hours):
+   - Cache stamped with today's date: fresh, whatever the time of day
+   - Cache stamped yesterday: still used, with a `Showtimes were fetched yesterday (YYYY-MM-DD)` note; entries for days already past are dropped
+   - Anything older, missing or unparseable: no showtimes, and the In Theaters row falls back to TMDb now-playing
+   - `has_showtimes` reflects a current-day-or-later screening at a configured theater, and is re-derived on every TMDb *and* showtime refresh
 
 ### Why not on-demand?
 - SerpApi charges per search request — on-demand fetches for each poster tap would be costly
-- One daily search covers all configured theaters (single API call per day)
+- One search per configured theater per calendar day, guarded by the cache date on disk (a forced refresh from the card is the only way to spend more)
 - Cached showtimes don't change intra-day, so staleness is not a concern within the same day
 
 ## Failure Modes
@@ -556,10 +555,10 @@ On partial upstream failure, the app **retains last-known-good data** per catego
 |---|---|
 | Tautulli unreachable | Keep existing `plex_movies` and `plex_shows` items. Set `fetch_status.tautulli.status = "error"`. Log warning. |
 | TMDb unreachable | Keep existing `in_theaters` and `coming_soon` items. Set `fetch_status.tmdb.status = "error"`. |
-| SerpApi unreachable | Keep existing showtime cache on disk. Set `fetch_status.serpapi = "error"`. Detail view shows stale showtimes with note. |
+| SerpApi unreachable | Keep existing showtime cache on disk. Set `fetch_status.serpapi = "error"`. A cache dated yesterday is still used (detail note "Showtimes were fetched yesterday"); anything older drops In Theaters to the TMDb now-playing fallback (`in_theaters_source = "tmdb_fallback"`). |
 | Tautulli returns empty | Clear `plex_movies` and `plex_shows` items (genuinely empty library is valid). Set status to `"ok"`. |
 | TMDb returns empty | Clear items for affected category. Set status to `"ok"`. |
-| SerpApi returns no configured theaters | Set `has_showtimes = false` for all in-theater movies. |
+| SerpApi returns nothing (outage, auth, spent quota) | The fetcher never raises; a zero-film result is logged at ERROR, sets `fetch_status.serpapi = "error"`, is **not** written to disk (that would lose the previous showtimes and make the daily guard skip retries until tomorrow), and the row is recomposed against the previous cache. |
 | All sources fail simultaneously | All categories retain last-known-good data. All `fetch_status` entries show `"error"`. |
 | Stale data TTL | Items older than `stale_ttl` (configurable, default 7 days) are evicted even if refresh keeps failing. Prevents showing week-old "now playing" data. |
 
@@ -589,7 +588,7 @@ Since fetchers live in `providers/media_providers/`, they must be testable indep
 | **Partial-source failure** | Tautulli failure retains `plex_movies` + `plex_shows` items. TMDb failure retains `in_theaters` + `coming_soon`. `fetch_status` updated correctly. |
 | **Stale data TTL** | Items older than `stale_ttl` evicted. Fresh items retained. |
 | **Relay command handling** | `refresh` triggers correct fetcher(s). `get_detail` reads from cache and publishes detail sensor. `dismiss`/`like`/`undo_dismiss` update preferences and re-publish main sensor. |
-| **Showtime cache** | Daily fetch writes cache file. `get_detail` reads from cache (no API call). Stale cache >24h shows warning. Stale cache >48h omits showtimes. |
+| **Showtime cache** | Daily fetch writes cache file. `get_detail` reads from cache (no API call). Yesterday's cache is used with a note; older than that omits showtimes and drops In Theaters to the TMDb now-playing fallback. |
 
 ### Integration tests (`tests/integration-tests/`) — env-gated
 

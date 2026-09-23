@@ -267,7 +267,11 @@ class TestGetDetailCommand:
             date=datetime.date.today().isoformat(),
             films={
                 "test movie": [
-                    ShowtimeEntry(cinema_name="AMC Tyngsboro", times=["7pm"])
+                    ShowtimeEntry(
+                        cinema_name="AMC Tyngsboro",
+                        times=["7pm"],
+                        date=datetime.date.today().isoformat(),
+                    )
                 ]
             },
         )
