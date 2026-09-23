@@ -22,6 +22,7 @@ detail there, never inline here.
 - [Detection summary + dashboards](detection-summary-and-dashboards.md) — `profiles.py` conventions, dev entrance pairs, HA MCP `config_hash` gotcha, the 5-card view shape
 - [Vestaboard patterns](vestaboard-patterns.md) — event-only controller/automation decoupling (no `get_app`), JSON-stringified grids, provider client + encoding API
 - [dashboard_notify patterns](dashboard-notify-patterns.md) — worker-thread handoff, explicit timers (no tick poller), one-call staging
+- [Media dashboard](media-dashboard-notes.md) — SerpApi is a 250/month free plan (never call it live from a dev session); a listings API with no locale params answers in the exit node's language
 - [school_schedule / PowerSchool](school-schedule-powerschool.md) — never log in from the pod (it evicts the family's session); fixture oracles and sanitisation mapping
 
 ## Key files

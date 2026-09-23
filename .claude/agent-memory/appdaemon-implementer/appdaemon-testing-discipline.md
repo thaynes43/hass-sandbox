@@ -40,6 +40,14 @@ handles = itertools.count()
 app.run_in = MagicMock(side_effect=lambda *a, **k: f"handle-{next(handles)}")
 ```
 
+## Never `git checkout <file>` to undo a probe in a file you are also editing
+
+Reverting a temporary experiment with `git checkout -- tests/test_x.py` throws
+away *every* uncommitted change in that file, including the new tests just
+written into it. It cost a full re-application of ~450 lines on 2026-09-22.
+Restore a deliberately broken file from a `cp` backup taken before the
+mutation, or make a WIP commit first — never from git's index.
+
 ## Watch for tests that encode timing that cannot happen
 
 Two round-3 tests fired `batch_ready("Album B")` without changing the files on
