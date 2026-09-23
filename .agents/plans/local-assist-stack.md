@@ -14,7 +14,7 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 | STT | haynes-ops `ai/whisper` on `talosm01` (A2000) | `ghcr.io/thaynes43/wyoming-whisper-gpu:3.8.1-2`, **NVIDIA Parakeet TDT 0.6B v2** via onnx-asr on CUDA, `whisper.ai.svc.cluster.local:10300`, HA entry `faster-whisper` → `stt.faster_whisper`. Measured in HA: 0.30 s cold / 0.05 s warm vs HA Cloud 1.14 / 0.86 s, same transcript with punctuation. |
 | TTS | haynes-ops `ai/kokoro` on `talosm01` | `flight777/kokoro-wyoming-ml` (CUDA), Kokoro-82M, `kokoro.ai.svc.cluster.local:10210`, HA entry `01M34V1S24J5SBNZXXFW00JF1K` → `tts.kokoro`, 54 voices, **no streaming synthesis** (that image reports `supports_synthesize_streaming: False`). 0.28–0.50 s to first audio vs cloud 0.39–0.62 s. Piper is still there as fallback. A2000 total ≈ 8.1 GB of 12 (vexa 3.9 + Parakeet 3.4 + Kokoro 0.6). |
 | HA agent | `llama_cpp` integration, entry `01M34TQMBVCKW0BG0KZW5JG5YM` | subentry `01M34TQMBVMNR9CJZX892KD8VJ` → **`conversation.muse_glimmer_30b`**, `llm_hass_api: [assist]`, prompt = JARVIS persona + the shared spoken-aloud block (backup in `agent-docs/voice-agent-prompts.md`; write back with `ha_config_set_helper(helper_type="config_subentry", …)`). |
-| Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. **Rumpus Room Voice PE** runs it with wake word **Hey Jarvis** (`select.rumpus_room_voice_assistant` / `select.rumpus_room_voice_wake_word`; revert = "Rumpus Room Assist" / "Okay Nabu"). Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept, and that agent got the cigar-journal API (Tom's request, 2026-09-22 evening). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
+| Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. **Rumpus Room Voice PE** runs it with wake word **Hey Jarvis** (`select.rumpus_room_voice_assistant` / `select.rumpus_room_voice_wake_word`; revert = "Rumpus Room Assist" / "Okay Nabu"). Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept (it carried the cigar-journal API for one evening; removed again the same night — ~2 s per turn, see Tool track 1). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
 | Removed | — | `ollama-assist01` (haynes-ops#3108, PVC orphan haynes-ops#3109) and its HA entry (had zero models). `ollama-assist02` on the RTX 2000 Ada still serves AppDaemon's detection summaries (`qwen3.5:9b`). |
 
 ### What the numbers mean
@@ -82,18 +82,22 @@ for a compact/voice output mode (or per-tool `limit` defaults) — the model can
 result it never sees. Prompt caching does carry the 28k tool preamble across turns (only the first
 turn after a restart pays ~30 s cold), but the cache is per slot and there are two slots.
 - **Who holds the cigar-journal API (2026-09-22 evening):**
-  - the **Kitchen** OpenAI agent `conversation.chatgpt_2` (subentry `01JZ8DWMCR7G2EJN8KVNVCR7QF`) —
-    **satellite-backed** (the Kitchen Voice PE), added at Tom's request for his own tool tests;
+  - the **Kitchen** OpenAI agent had it for one evening (Tom's tool tests) and **lost it again the same
+    night**: the 35 schemas cost ~2 s per turn on OpenAI (isolation bench, bedroom as control), which
+    Tom ruled unaffordable for a room agent — `conversation.chatgpt_2` is Assist-only again;
   - a second `llama_cpp` subentry (also titled "Muse Glimmer 30b") on **no pipeline**, for text tests;
   - **not** the main Jarvis agent `01M34TQMBVMNR9CJZX892KD8VJ` (Assist only — keeps the room turn
-    28k tokens lighter).
+    28k tokens lighter). Net: **no satellite-backed agent holds the cigar-journal API**; only the
+    pipeline-less test subentry does.
 - **Voice safety, as it stands:** the journal server exposes write tools (`save_smoke`,
-  `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. The guard
-  chosen for the kitchen is the **prompt bullet** ("ask for at most five results … by voice the
-  journal is read-only: never save, record, edit or delete unless the owner explicitly says to") —
-  a prompt rule, not an enforced scope. Still outstanding if this stops being a test: a dedicated
-  read-only `home-assistant` service token (`catalog:read journal:read`) behind the hop, and a
-  compact/voice output mode on the server so results stop being 5k–47k tokens.
+  `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. Today the
+  only holder is the pipeline-less test subentry, so no spoken request can reach them. The guard
+  used while the kitchen had them was a **prompt bullet** ("ask for at most five results … by voice
+  the journal is read-only") — a prompt rule, not an enforced scope; it left the kitchen prompt with
+  the API (the text is kept in `agent-docs/voice-agent-prompts.md`). Before any room agent gets
+  the API again: a dedicated read-only `home-assistant` service token (`catalog:read journal:read`)
+  behind the hop, a compact/voice output mode on the server so results stop being 5k–47k tokens,
+  and the ~2 s-per-turn schema cost on OpenAI (measured) needs to be acceptable or reduced.
 
 ## Tool track 2 — Movie Room recommender (design needed)
 
