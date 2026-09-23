@@ -156,12 +156,9 @@ media_dashboard_app:
   serpapi_api_key_env: SERPAPI_KEY
   mdblist_api_key_env: MDBLIST_API_KEY
   location: "Westford, MA"
-  theaters:
-    - AMC Tyngsboro 12
-    - Showcase Cinema de Lux Lowell
-    - AMC Methuen 20
+  theaters:                      # one SerpApi search per theater per day
     - Cinemark Rockingham Park and XD
-    - AMC Burlington Cinema 10
+    - AMC Methuen 20
   media_fs_root_env: MEDIA_FS_ROOT
 ```
 

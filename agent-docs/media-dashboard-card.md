@@ -359,6 +359,8 @@ To stay under HA's ~16KB WebSocket limit, we keep items lean — metadata only, 
       "tmdb": {"last_ok": "2026-03-29T12:00:00", "status": "ok"},
       "serpapi": {"last_ok": "2026-03-29T06:00:00", "status": "ok"}
     },
+    "showtimes_date": "2026-03-29",
+    "in_theaters_source": "showtimes",
     "friendly_name": "Media Dashboard",
     "icon": "mdi:movie-open-outline"
   }
@@ -529,8 +531,8 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
 ### Flow
 
 1. **Daily batch fetch** (via `showtimes_refresh_interval`, default 24h):
-   - SerpApi fetcher searches ``"showtimes near {location}"`` — one request covers all configured theaters
-   - Results are filtered to configured theater names (case-insensitive substring match)
+   - SerpApi fetcher runs one Google search per configured theater (`"<theater name> showtimes"`, locale pinned to US English) — two theaters = two searches per day
+   - Each theater's result is parsed into per-day entries and keyed by lowercase film title
    - Cached to `{media_fs_root}/{showtime_cache_subdir}` as a JSON file keyed by lowercase film title
 
 2. **`get_detail` relay command** (user taps a poster):
@@ -546,7 +548,7 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
 
 ### Why not on-demand?
 - SerpApi charges per search request — on-demand fetches for each poster tap would be costly
-- One daily search covers all configured theaters (single API call per day)
+- One search per configured theater per calendar day, guarded by the cache date on disk (a forced refresh from the card is the only way to spend more)
 - Cached showtimes don't change intra-day, so staleness is not a concern within the same day
 
 ## Failure Modes
@@ -557,10 +559,10 @@ On partial upstream failure, the app **retains last-known-good data** per catego
 |---|---|
 | Tautulli unreachable | Keep existing `plex_movies` and `plex_shows` items. Set `fetch_status.tautulli.status = "error"`. Log warning. |
 | TMDb unreachable | Keep existing `in_theaters` and `coming_soon` items. Set `fetch_status.tmdb.status = "error"`. |
-| SerpApi unreachable | Keep existing showtime cache on disk. Set `fetch_status.serpapi = "error"`. Detail view shows stale showtimes with note. |
+| SerpApi unreachable | Keep existing showtime cache on disk. Set `fetch_status.serpapi = "error"`. A cache dated yesterday is still used (detail note "Showtimes were fetched yesterday"); anything older drops In Theaters to the TMDb now-playing fallback (`in_theaters_source = "tmdb_fallback"`). |
 | Tautulli returns empty | Clear `plex_movies` and `plex_shows` items (genuinely empty library is valid). Set status to `"ok"`. |
 | TMDb returns empty | Clear items for affected category. Set status to `"ok"`. |
-| SerpApi returns no configured theaters | Set `has_showtimes = false` for all in-theater movies. |
+| SerpApi returns nothing (outage, auth, spent quota) | The fetcher never raises; a zero-film result is logged at ERROR, sets `fetch_status.serpapi = "error"`, is **not** written to disk (that would lose the previous showtimes and make the daily guard skip retries until tomorrow), and the row is recomposed against the previous cache. |
 | All sources fail simultaneously | All categories retain last-known-good data. All `fetch_status` entries show `"error"`. |
 | Stale data TTL | Items older than `stale_ttl` (configurable, default 7 days) are evicted even if refresh keeps failing. Prevents showing week-old "now playing" data. |
 
