@@ -157,6 +157,21 @@ HOW YOU ACT
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
 
+### Movie Room — watch history (added 2026-09-23)
+
+The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
+(`llm_hass_api: ["assist", "mcp-<Watch history entry id>"]`; haynesnetwork ADR-087 / DESIGN-049). The block
+below is appended to its prompt after the shared block. No other room agent gets the API: every attached
+tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools).
+
+```text
+WATCH HISTORY
+- The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
+- "What haven't I finished" or "what was I watching": use unfinished. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
+- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
+- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
+```
+
 ## Why the shared block says what it says
 
 - **Question marks:** HA sets `continue_conversation` when the reply ends with `?` and the Voice PE
