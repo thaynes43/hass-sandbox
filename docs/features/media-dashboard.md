@@ -6,7 +6,7 @@ A wall-display card that aggregates media content from four sources into a singl
 
 The media dashboard shows what's worth watching right now across four categories:
 
-- **In Theaters** -- movies currently playing at local cinemas, ranked by quality and popularity, with showtimes for nearby theaters
+- **In Theaters** -- movies playing this week at the configured theaters, matched title-by-title against that day's showtime listings and ranked by quality and popularity; when showtime data is unavailable the row falls back to TMDb's now-playing list
 - **Plex Movies** -- recently added movies on the home Plex server, ranked by runtime and rating
 - **Plex Shows** -- recently added TV shows on the home Plex server, quality scored using a 50-minute episode runtime normalization instead of the 120-minute movie baseline
 - **Coming Soon** -- upcoming theatrical and streaming releases
@@ -39,7 +39,7 @@ Dismissed items appear in a "Hidden (N)" toggle below each category's poster row
 |--------|-----------------|-----------------|
 | **Tautulli** | Recently added Plex movies and shows, poster images via `pms_image_proxy` | Every 2 hours |
 | **TMDb** | Now-playing and upcoming movies, popularity/vote metadata, poster CDN, director/certification/revenue via detail endpoint | Every 12 hours |
-| **SerpApi** | Theater showtimes via Google search for configured local cinemas | Once daily |
+| **SerpApi** | Theater showtimes via Google search for configured local cinemas, one search per theater with the locale pinned to US English | Once per calendar day |
 | **MDbList** | External ratings aggregator -- IMDb, Rotten Tomatoes (critics + audience), Metacritic; enriches items during each refresh | On each refresh |
 
 ## Architecture
@@ -73,6 +73,16 @@ All items are scored using a unified heuristic combining three factors:
 | Prominence | 30% | TMDb popularity (log-scale), vote count, genre presence |
 
 Liked items are boosted to the top of their category after scoring.
+
+## Showtime freshness
+
+Showtimes are fetched once per calendar day and cached on disk, so tapping a poster costs no API call. Freshness is judged by calendar day, not by an hour count:
+
+| Cache | In Theaters row | Detail panel |
+|-------|-----------------|--------------|
+| Fetched today | Films with showtimes at the configured theaters | Showtimes for today onward |
+| Fetched yesterday | Same, still showtime-backed | Showtimes with a "fetched yesterday" note; past days dropped |
+| Older or missing | TMDb now-playing fallback | "Showtimes not available (last fetched ...)" |
 
 ## Related
 

@@ -29,11 +29,14 @@ _repo_root = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_repo_root / "apps"))
 sys.path.insert(0, str(_repo_root))
 
+import media_dashboard_app.media_dashboard_app as mda
 from media_dashboard_app.media_dashboard_app import (
     MediaDashboardApp,
     SENSOR_STATUS,
     SENSOR_DETAIL,
     COMMAND_EVENT,
+    _classify_showtime_cache,
+    _showtime_title_matches,
 )
 from providers.media_providers.types import (
     FetchResult,
@@ -60,6 +63,7 @@ def _make_item(
     local_poster: str = "",
     media_type: str = "movie",
     runtime_min: int = 0,
+    release_type: str = "",
 ) -> MediaItem:
     return MediaItem(
         id=id,
@@ -74,6 +78,7 @@ def _make_item(
         local_poster=local_poster or f"{id}.jpg",
         media_type=media_type,
         runtime_min=runtime_min,
+        release_type=release_type,
     )
 
 
@@ -84,6 +89,59 @@ def _now_iso() -> str:
 def _days_ago_iso(days: int) -> str:
     dt = datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(days=days)
     return dt.isoformat()
+
+
+def _today_iso() -> str:
+    return datetime.date.today().isoformat()
+
+
+def _date_iso(offset_days: int) -> str:
+    return (datetime.date.today() + datetime.timedelta(days=offset_days)).isoformat()
+
+
+def _entry(date_offset: int = 0, cinema: str = "AMC Methuen 20", times=None):
+    """A ShowtimeEntry dated relative to today (the fetcher always sets a date)."""
+    iso = _date_iso(date_offset)
+    return ShowtimeEntry(
+        cinema_name=cinema,
+        times=list(times or ["7:00pm"]),
+        day=iso,
+        date=iso,
+    )
+
+
+class _FrozenDateTimeModule:
+    """Stand-in for the ``datetime`` module with a pinned local clock.
+
+    Patched onto the app module only (it rebinds that module's global name), so
+    the rest of the process keeps the real clock.  Used to prove the calendar
+    comparison does not care what time of day it is — the old hour-based check
+    called a cache fetched this morning "stale" at 23:59 local, because 23:59
+    EDT is already 03:59 UTC the next day.
+    """
+
+    def __init__(self, now_local: datetime.datetime) -> None:
+        frozen = now_local
+
+        class _Date(datetime.date):
+            @classmethod
+            def today(cls):
+                return frozen.date()
+
+        class _DateTime(datetime.datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return frozen.astimezone(tz) if tz else frozen.replace(tzinfo=None)
+
+        self.date = _Date
+        self.datetime = _DateTime
+        self.timedelta = datetime.timedelta
+        self.timezone = datetime.timezone
+
+
+def _freeze(app_now: datetime.datetime):
+    """Patch the app module's ``datetime`` with a frozen clock."""
+    return patch.object(mda, "datetime", _FrozenDateTimeModule(app_now))
 
 
 # ---------------------------------------------------------------------------
@@ -766,12 +824,8 @@ class TestShowtimeCache:
         app = _make_app(tmpdir=td)
 
         cache = ShowtimeCache(
-            date=datetime.date.today().isoformat(),
-            films={
-                "thunderbolts": [
-                    ShowtimeEntry(cinema_name="AMC Tyngsboro", times=["7pm"])
-                ]
-            },
+            date=_today_iso(),
+            films={"thunderbolts": [_entry(0, cinema="AMC Tyngsboro")]},
         )
         app._write_showtime_cache(cache)
 
@@ -780,6 +834,7 @@ class TestShowtimeCache:
 
         assert len(result["entries"]) == 1
         assert result["entries"][0]["cinema_name"] == "AMC Tyngsboro"
+        assert "stale" not in result
 
     def test_get_showtimes_returns_empty_when_no_cache(self):
         td = tempfile.mkdtemp(prefix="mda_noshow_")
@@ -790,25 +845,22 @@ class TestShowtimeCache:
 
         assert result["entries"] == []
 
-    def test_get_showtimes_omits_stale_cache(self):
+    def test_get_showtimes_omits_cache_older_than_yesterday(self):
+        """A cache two calendar days old is not shown, whatever it contains."""
         td = tempfile.mkdtemp(prefix="mda_stale_")
         app = _make_app(tmpdir=td)
 
-        old_date = (
-            datetime.datetime.now(tz=datetime.timezone.utc) - datetime.timedelta(hours=50)
-        ).isoformat()
         cache = ShowtimeCache(
-            date=old_date,
-            films={"oldfilm": [ShowtimeEntry(cinema_name="AMC", times=["noon"])]},
+            date=_date_iso(-2),
+            films={"oldfilm": [_entry(0, cinema="AMC", times=["noon"])]},
         )
         app._write_showtime_cache(cache)
 
         item = _make_item("tmdb-1", title="Oldfilm")
         result = app._get_showtimes_for_item(item)
 
-        # Too old — omit
         assert result["entries"] == []
-        assert "too old" in result.get("note", "").lower()
+        assert result["note"] == f"Showtimes not available (last fetched {_date_iso(-2)})"
 
     # ----- Daily-cache guard (SerpApi quota protection) -----
 
@@ -1243,3 +1295,389 @@ class TestPlexCategorySplit:
 
         assert len(app._categories["plex_movies"]) == 0
         assert len(app._categories["plex_shows"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: showtime title matching
+# ---------------------------------------------------------------------------
+
+class TestShowtimeTitleMatching:
+    def test_identical_titles_match(self):
+        assert _showtime_title_matches("Thunderbolts*", "thunderbolts*")
+
+    def test_case_and_punctuation_ignored(self):
+        assert _showtime_title_matches("Wicked: For Good", "wicked for good")
+
+    def test_ampersand_expanded_to_and(self):
+        assert _showtime_title_matches("Tom & Jerry", "tom and jerry")
+
+    def test_cinema_qualifier_suffix_matches(self):
+        """Cinemas append re-release qualifiers to the title."""
+        assert _showtime_title_matches(
+            "Ghost in the Shell", "ghost in the shell 30th anniversary 4k"
+        )
+
+    def test_substring_alone_does_not_match(self):
+        """The old substring rule let 'Hope' match anything containing it."""
+        assert not _showtime_title_matches("Hope", "hopeless")
+        assert not _showtime_title_matches("Hope", "the hope diamond")
+
+    def test_foreign_language_titles_do_not_match(self):
+        """A locale regression must not silently cross-match."""
+        assert not _showtime_title_matches("Resident Evil", "absoliutus blogis")
+        assert not _showtime_title_matches("Hope", "vilties uostas")
+        assert not _showtime_title_matches("Avengers: Endgame", "keršytojai. pabaiga")
+
+    def test_prefix_rule_is_one_directional(self):
+        """A shorter cache title is not a match for a longer TMDb title."""
+        assert not _showtime_title_matches(
+            "Ghost in the Shell 30th Anniversary", "ghost in the shell"
+        )
+
+    def test_empty_titles_never_match(self):
+        assert not _showtime_title_matches("", "")
+        assert not _showtime_title_matches("Thunderbolts", "")
+        assert not _showtime_title_matches("", "thunderbolts")
+
+
+# ---------------------------------------------------------------------------
+# Tests: calendar-day showtime freshness
+# ---------------------------------------------------------------------------
+
+class TestShowtimeFreshness:
+    def test_cache_fetched_today_is_fresh_at_2359_local(self):
+        """23:59 local is the same calendar day, even though UTC has rolled over."""
+        td = tempfile.mkdtemp(prefix="mda_fresh_2359_")
+        app = _make_app(tmpdir=td)
+        # A date that is deliberately NOT the real "today", so the test fails
+        # outright if the frozen clock is not in effect.
+        app._write_showtime_cache(
+            ShowtimeCache(
+                date="2027-03-14",
+                films={
+                    "thunderbolts": [
+                        ShowtimeEntry(
+                            cinema_name="AMC Methuen 20",
+                            times=["7:00pm"],
+                            day="2027-03-14",
+                            date="2027-03-14",
+                        )
+                    ]
+                },
+            )
+        )
+        item = _make_item("tmdb-1", title="Thunderbolts")
+
+        eastern = datetime.timezone(datetime.timedelta(hours=-4))
+        # 23:59 EDT on the 14th == 03:59 UTC on the 15th
+        with _freeze(datetime.datetime(2027, 3, 14, 23, 59, tzinfo=eastern)):
+            result = app._get_showtimes_for_item(item)
+
+        assert len(result["entries"]) == 1
+        assert "stale" not in result
+        assert "note" not in result
+
+    def test_yesterdays_cache_is_usable_with_note(self):
+        td = tempfile.mkdtemp(prefix="mda_fresh_yday_")
+        app = _make_app(tmpdir=td)
+        yesterday = _date_iso(-1)
+        app._write_showtime_cache(
+            ShowtimeCache(date=yesterday, films={"thunderbolts": [_entry(0)]})
+        )
+
+        result = app._get_showtimes_for_item(_make_item("tmdb-1", title="Thunderbolts"))
+
+        assert len(result["entries"]) == 1
+        assert result["stale"] is True
+        assert result["note"] == f"Showtimes were fetched yesterday ({yesterday})"
+
+    def test_entries_dated_before_today_are_dropped(self):
+        """Yesterday's fetch carries yesterday's screenings — they are past."""
+        td = tempfile.mkdtemp(prefix="mda_fresh_past_")
+        app = _make_app(tmpdir=td)
+        app._write_showtime_cache(
+            ShowtimeCache(
+                date=_date_iso(-1),
+                films={"thunderbolts": [_entry(-1), _entry(0), _entry(1)]},
+            )
+        )
+
+        result = app._get_showtimes_for_item(_make_item("tmdb-1", title="Thunderbolts"))
+
+        dates = [e["date"] for e in result["entries"]]
+        assert dates == [_date_iso(0), _date_iso(1)]
+
+    def test_yesterdays_cache_with_only_past_entries_is_unusable(self):
+        td = tempfile.mkdtemp(prefix="mda_fresh_allpast_")
+        app = _make_app(tmpdir=td)
+        yesterday = _date_iso(-1)
+        app._write_showtime_cache(
+            ShowtimeCache(date=yesterday, films={"thunderbolts": [_entry(-1)]})
+        )
+
+        result = app._get_showtimes_for_item(_make_item("tmdb-1", title="Thunderbolts"))
+
+        assert result["entries"] == []
+        assert result["note"] == f"Showtimes not available (last fetched {yesterday})"
+
+    def test_note_names_configured_theaters_when_film_absent(self):
+        td = tempfile.mkdtemp(prefix="mda_fresh_absent_")
+        app = _make_app(
+            tmpdir=td,
+            extra_args={
+                "theaters": ["Cinemark Rockingham Park and XD", "AMC Methuen 20"]
+            },
+        )
+        app._write_showtime_cache(
+            ShowtimeCache(date=_today_iso(), films={"some other film": [_entry(0)]})
+        )
+
+        result = app._get_showtimes_for_item(_make_item("tmdb-1", title="Thunderbolts"))
+
+        assert result["entries"] == []
+        assert result["note"] == (
+            "Not playing at Cinemark Rockingham Park and XD or AMC Methuen 20 this week"
+        )
+
+    def test_no_cache_file_keeps_original_note(self):
+        td = tempfile.mkdtemp(prefix="mda_fresh_nocache_")
+        app = _make_app(tmpdir=td)
+
+        result = app._get_showtimes_for_item(_make_item("tmdb-1", title="Anything"))
+
+        assert result["entries"] == []
+        assert result["note"] == "No showtime data available"
+
+    def test_classify_rejects_unparseable_date(self):
+        cache = ShowtimeCache(date="not-a-date", films={"f": [_entry(0)]})
+        usable, note, reason = _classify_showtime_cache(cache, datetime.date.today())
+        assert usable is False
+        assert note == ""
+        assert "unparseable" in reason
+
+    def test_classify_rejects_missing_date(self):
+        cache = ShowtimeCache(date="", films={"f": [_entry(0)]})
+        usable, _note, reason = _classify_showtime_cache(cache, datetime.date.today())
+        assert usable is False
+        assert reason == "cache has no date"
+
+    def test_classify_rejects_missing_cache(self):
+        usable, _note, reason = _classify_showtime_cache(None, datetime.date.today())
+        assert usable is False
+        assert reason == "no cache on disk"
+
+
+# ---------------------------------------------------------------------------
+# Tests: In Theaters composition
+# ---------------------------------------------------------------------------
+
+class TestComposeInTheaters:
+    def _app_with_pool(self, pool, cache=None, extra_args=None):
+        td = tempfile.mkdtemp(prefix="mda_compose_")
+        app = _make_app(tmpdir=td, extra_args=extra_args)
+        app._tmdb_in_theaters_pool = pool
+        if cache is not None:
+            app._write_showtime_cache(cache)
+        return app
+
+    def test_only_titles_with_showtimes_are_published(self):
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Not Playing Movie", release_type="in_theaters"),
+            ],
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]}),
+        )
+
+        app._compose_in_theaters()
+
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+        assert app._tmdb_in_theaters_pool[0].has_showtimes is True
+        assert app._tmdb_in_theaters_pool[1].has_showtimes is False
+
+    def test_trending_only_rerelease_with_showtimes_is_included(self):
+        """A trending-only title playing locally (a re-release) still belongs."""
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Now Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Ghost in the Shell", release_type="trending"),
+            ],
+            ShowtimeCache(
+                date=_today_iso(),
+                films={
+                    "now playing movie": [_entry(0)],
+                    "ghost in the shell 30th anniversary 4k": [_entry(1)],
+                },
+            ),
+        )
+
+        app._compose_in_theaters()
+
+        assert sorted(i.id for i in app._categories["in_theaters"]) == [
+            "tmdb-1",
+            "tmdb-2",
+        ]
+
+    def test_trending_only_without_showtimes_is_excluded(self):
+        """Trending injected months-old films into the row — no longer."""
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Now Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+            ],
+            ShowtimeCache(date=_today_iso(), films={"now playing movie": [_entry(0)]}),
+        )
+
+        app._compose_in_theaters()
+
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+
+    def test_fallback_shows_now_playing_only_when_no_cache(self):
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Now Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+            ]
+        )
+
+        app._compose_in_theaters()
+
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+        assert all(not i.has_showtimes for i in app._tmdb_in_theaters_pool)
+
+    def test_fallback_clears_flags_from_an_older_cache(self):
+        app = self._app_with_pool(
+            [
+                _make_item(
+                    "tmdb-1",
+                    "Now Playing Movie",
+                    release_type="in_theaters",
+                    has_showtimes=True,
+                )
+            ],
+            ShowtimeCache(date=_date_iso(-3), films={"now playing movie": [_entry(0)]}),
+        )
+
+        app._compose_in_theaters()
+
+        assert app._tmdb_in_theaters_pool[0].has_showtimes is False
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+
+    def test_tmdb_refresh_keeps_showtime_flags(self):
+        """Regression: the 12h TMDb refresh used to wipe has_showtimes."""
+        td = tempfile.mkdtemp(prefix="mda_compose_tmdb_")
+        app = _make_app(tmpdir=td)
+        app._write_showtime_cache(
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]})
+        )
+        app._tmdb.fetch_in_theaters = AsyncMock(
+            return_value=FetchResult(
+                items=[
+                    _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+                    _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+                ],
+                status="ok",
+            )
+        )
+
+        _run(app._refresh_tmdb())
+
+        row = app._categories["in_theaters"]
+        assert [i.id for i in row] == ["tmdb-1"]
+        assert row[0].has_showtimes is True
+
+    def test_cached_showtimes_skip_path_composes_the_row(self):
+        """The daily-cache skip path must compose the row, not just flag it."""
+        td = tempfile.mkdtemp(prefix="mda_compose_skip_")
+        app = _make_app(tmpdir=td)
+        app._tmdb_in_theaters_pool = [
+            _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+            _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+        ]
+        app._write_showtime_cache(
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]})
+        )
+        app._serpapi.fetch_showtimes.reset_mock()
+
+        _run(app._refresh_showtimes())
+
+        app._serpapi.fetch_showtimes.assert_not_called()
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+
+    def test_fetched_showtimes_path_composes_the_row(self):
+        td = tempfile.mkdtemp(prefix="mda_compose_fetch_")
+        app = _make_app(tmpdir=td)
+        app._tmdb_in_theaters_pool = [
+            _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+            _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+        ]
+        app._serpapi.fetch_showtimes = AsyncMock(
+            return_value=ShowtimeCache(
+                date=_today_iso(), films={"playing movie": [_entry(0)]}
+            )
+        )
+
+        _run(app._refresh_showtimes(force=True))
+
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+        assert app._tmdb_in_theaters_pool[0].has_showtimes is True
+
+    def test_showtimes_date_published_on_status_sensor(self):
+        app = self._app_with_pool(
+            [_make_item("tmdb-1", "Playing Movie", release_type="in_theaters")],
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]}),
+        )
+
+        app._compose_in_theaters()
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["showtimes_date"] == _today_iso()
+
+    def test_showtimes_date_empty_without_cache(self):
+        app = self._app_with_pool(
+            [_make_item("tmdb-1", "Playing Movie", release_type="in_theaters")]
+        )
+
+        app._compose_in_theaters()
+        app._publish_sensor()
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["showtimes_date"] == ""
+
+    def test_logs_match_count_and_theaters(self):
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+            ],
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]}),
+            extra_args={
+                "theaters": ["Cinemark Rockingham Park and XD", "AMC Methuen 20"]
+            },
+        )
+
+        app._compose_in_theaters()
+
+        messages = [c[0][0] for c in app.log.call_args_list if c[0]]
+        assert any(
+            m.startswith(
+                "In Theaters: 1 of 2 TMDb titles have showtimes at "
+                "Cinemark Rockingham Park and XD or AMC Methuen 20 (cache "
+            )
+            for m in messages
+        )
+
+    def test_logs_fallback_reason(self):
+        app = self._app_with_pool(
+            [_make_item("tmdb-1", "Now Playing Movie", release_type="in_theaters")]
+        )
+
+        app._compose_in_theaters()
+
+        messages = [c[0][0] for c in app.log.call_args_list if c[0]]
+        assert any(
+            m == "In Theaters: no usable showtime data (no cache on disk); "
+                 "showing TMDb now-playing (1)"
+            for m in messages
+        )

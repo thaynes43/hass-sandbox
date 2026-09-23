@@ -538,10 +538,11 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
    - App reads showtimes from the **disk cache** — no SerpApi call
    - Publishes combined result to `sensor.media_dashboard_detail`
 
-3. **Staleness handling**:
-   - If showtime cache is >24h old and refresh fails, show stale data with a "Showtimes from yesterday" note
-   - If showtime cache is >48h old, omit showtimes entirely — show "Showtimes unavailable" in the detail view
-   - `has_showtimes` field in the main sensor reflects whether current-day data exists
+3. **Staleness handling** (as implemented — calendar days, not hours):
+   - Cache stamped with today's date: fresh, whatever the time of day
+   - Cache stamped yesterday: still used, with a `Showtimes were fetched yesterday (YYYY-MM-DD)` note; entries for days already past are dropped
+   - Anything older, missing or unparseable: no showtimes, and the In Theaters row falls back to TMDb now-playing
+   - `has_showtimes` reflects a current-day-or-later screening at a configured theater, and is re-derived on every TMDb *and* showtime refresh
 
 ### Why not on-demand?
 - SerpApi charges per search request — on-demand fetches for each poster tap would be costly
@@ -589,7 +590,7 @@ Since fetchers live in `providers/media_providers/`, they must be testable indep
 | **Partial-source failure** | Tautulli failure retains `plex_movies` + `plex_shows` items. TMDb failure retains `in_theaters` + `coming_soon`. `fetch_status` updated correctly. |
 | **Stale data TTL** | Items older than `stale_ttl` evicted. Fresh items retained. |
 | **Relay command handling** | `refresh` triggers correct fetcher(s). `get_detail` reads from cache and publishes detail sensor. `dismiss`/`like`/`undo_dismiss` update preferences and re-publish main sensor. |
-| **Showtime cache** | Daily fetch writes cache file. `get_detail` reads from cache (no API call). Stale cache >24h shows warning. Stale cache >48h omits showtimes. |
+| **Showtime cache** | Daily fetch writes cache file. `get_detail` reads from cache (no API call). Yesterday's cache is used with a note; older than that omits showtimes and drops In Theaters to the TMDb now-playing fallback. |
 
 ### Integration tests (`tests/integration-tests/`) — env-gated
 

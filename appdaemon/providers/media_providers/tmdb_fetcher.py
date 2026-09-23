@@ -79,21 +79,44 @@ class TmdbFetcher:
 
     # -- Public fetch methods -------------------------------------------------
 
+    #: How many pages of /movie/now_playing to pull.  One page is 20 titles,
+    #: which is fewer than a large multiplex actually screens in a week, so the
+    #: first pages alone miss films that are genuinely playing locally.
+    NOW_PLAYING_PAGES = 3
+
     async def fetch_in_theaters(self) -> FetchResult:
         """Fetch movies currently in theaters.
 
-        Merges results from /3/movie/now_playing and /3/trending/movie/week,
-        deduplicates by TMDb ID, applies popularity/vote filters, and returns
-        items sorted by popularity descending.
+        Pages /3/movie/now_playing (up to ``NOW_PLAYING_PAGES`` pages, stopping
+        early at the last page) and merges /3/trending/movie/week, deduplicates
+        by TMDb ID, applies popularity/vote filters, and returns items sorted by
+        popularity descending.
+
+        ``release_type`` records where each item came from:
+
+        - ``"in_theaters"`` — the title is on TMDb's US now-playing list.
+        - ``"trending"``    — the title is only trending this week.  Trending
+          carries streaming hits and months-old releases, so the app only shows
+          those when a configured theater actually has showtimes for them
+          (a re-release, for instance).
 
         Returns:
             FetchResult with status="ok" on success, "error" on failure.
         """
         await self._ensure_genre_map()
 
+        now_playing: List[dict] = []
         try:
             async with self._create_client() as client:
-                now_playing_resp = await client.get_now_playing()
+                for page in range(1, self.NOW_PLAYING_PAGES + 1):
+                    resp = await client.get_now_playing(page=page)
+                    now_playing.extend(resp.get("results", []) or [])
+                    try:
+                        total_pages = int(resp.get("total_pages", 1) or 1)
+                    except (TypeError, ValueError):
+                        total_pages = 1
+                    if page >= total_pages:
+                        break
                 trending_resp = await client.get_trending("movie", "week")
         except Exception as exc:
             logger.error(
@@ -101,25 +124,33 @@ class TmdbFetcher:
             )
             return FetchResult(status="error", error_message=str(exc))
 
-        now_playing = now_playing_resp.get("results", [])
         trending = trending_resp.get("results", [])
 
-        # Merge and deduplicate by TMDb numeric ID
+        # Merge and deduplicate by TMDb numeric ID.  now_playing is walked
+        # first so a title on both lists keeps release_type="in_theaters".
         seen: set[int] = set()
         merged: List[MediaItem] = []
-        for raw in now_playing + trending:
+        trending_only = 0
+        for raw, release_type in (
+            [(r, "in_theaters") for r in now_playing]
+            + [(r, "trending") for r in trending]
+        ):
             tmdb_id = raw.get("id")
             if tmdb_id is None or tmdb_id in seen:
                 continue
             seen.add(tmdb_id)
             item = self._normalize_movie(raw)
-            item.release_type = "in_theaters"
+            item.release_type = release_type
+            if release_type == "trending":
+                trending_only += 1
             merged.append(item)
 
         filtered = self._apply_filters(merged)
         logger.info(
-            "TmdbFetcher.fetch_in_theaters: %d raw -> %d after filters",
-            len(merged),
+            "TmdbFetcher.fetch_in_theaters: %d now_playing raw + %d trending-only "
+            "-> %d after filters",
+            len(merged) - trending_only,
+            trending_only,
             len(filtered),
         )
         return FetchResult(items=filtered)

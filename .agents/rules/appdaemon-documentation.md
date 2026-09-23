@@ -95,7 +95,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
 | `school_schedule` | `appdaemon/providers/school_schedule/README.md` | Finalsite calendar (ICS) + PowerSchool guardian portal scrapers |
-| `media_providers` | `appdaemon/providers/media_providers/README.md` | HTTP clients and fetchers for Tautulli, TMDb, and MovieGlu |
+| `media_providers` | `appdaemon/providers/media_providers/README.md` | HTTP clients and fetchers for Tautulli, TMDb, SerpApi (Google showtimes) and MDbList |
 | `vestaboard` | `appdaemon/providers/vestaboard/README.md` | Vestaboard local API client and character encoding |
 
 ### Repository docs (`agent-docs/`)

@@ -77,6 +77,14 @@ class SerpApiClient:
         data about movies and their theaters.  On non-2xx responses the
         method raises ``aiohttp.ClientResponseError``.
 
+        Locale is pinned to US English (``hl=en``, ``gl=us``,
+        ``google_domain=google.com``).  Without it SerpApi's exit node
+        decides the locale, and Google then answers in whatever language
+        that node resolves to — a 2026-09-22 cache came back with one
+        theater's entire film list in Lithuanian ("absoliutus blogis" for
+        "Resident Evil"), which matches no TMDb title and whose day labels
+        ("Šiandien") parse as nothing.
+
         Args:
             query: Search query string, e.g. ``"showtimes near 01886"``.
             location: Optional SerpApi location string.  Must be a value
@@ -93,6 +101,10 @@ class SerpApiClient:
             "engine": "google",
             "q": query,
             "api_key": self._api_key,
+            # Pin the result locale — see the docstring above.
+            "hl": "en",
+            "gl": "us",
+            "google_domain": "google.com",
         }
         if location:
             params["location"] = location
