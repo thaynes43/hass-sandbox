@@ -100,30 +100,60 @@ turn after a restart pays ~30 s cold), but the cache is per slot and there are t
   behind the hop, a compact/voice output mode on the server so results stop being 5k–47k tokens,
   and the ~2 s-per-turn schema cost on OpenAI (measured) needs to be acceptable or reduced.
 
-## Tool track 2 — Movie Room recommender (design needed)
+## Tool track 2 — Movie Room recommender (RATIFIED 2026-09-23: built in haynesnetwork, not here)
 
-Goal (Tom, 2026-09-22): tune an agent for the Movie Room that recommends new things to watch for him
-and the family (Tom, Kellie, Jackson, Penelope).
+Goal (Tom, 2026-09-22): tune an agent for the Movie Room that recommends new things to watch. Refined
+by Tom on 2026-09-23: "specialized agents for specialized things", the Movie Room agent knows **his
+watch history on all servers**, answers "what series haven't I finished" and "what should I watch
+next" without repeating anything he has seen, and accepts "I already watched X, recommend a new show";
+dev-env gets the same tools. He pointed it at **haynesnetwork**, which already holds the Tautulli trio,
+the Plex owner tokens, the ledger with ratings and genres, and his identity.
 
-What exists (surveyed 2026-09-22): hass-sandbox `appdaemon/providers/media_providers/` has Tautulli
-(recently added, popular; `get_history`/`get_users` one wrapper away), TMDB (trending/discover/detail;
-similar + watch-providers via `append_to_response`), mdblist ratings (**hard 1 req/s**), SerpAPI
-showtimes (quota-bound). `media_dashboard_app` computes household rows only and is `disable: true` in
-prod. In haynes-ops `media/`: Plex ×2 (`plex`, `plexops`), Tautulli ×2, **Seerr v3.4.1** (request path,
-`/api/v1`), Radarr/Sonarr, Kometa (holds TMDB/mdblist keys). No media MCP server exists; no Trakt.
-Movie Room players: `media_player.movie_room` (Sonos Port), the LG TV, the AVR.
+**Where it lives now:** haynesnetwork ADR-087 (the in-cluster `/api/mcp` surface and its hop),
+ADR-088 (watch history read-model, Watch Marks, Plex write-back), ADR-089 (deterministic
+recommendations), DESIGN-049, PLAN-068, OPS-015. The standalone `ai/media-mcp` proposal above this
+line is retired.
 
-Proposed shape (not yet ratified): a small **media MCP server** in haynes-ops (`ai/media-mcp` or under
-`media/`), read-mostly, exposing 5–6 tools with tiny schemas: `recently_watched(person)`,
-`library_search(query)`, `similar_to(title)`, `trending(kind)`, `ratings(title)`, and one guarded write
-`request_title(title)` → Seerr. Ratings/trending pre-computed on a cadence (mdblist limit), so a voice
-turn never waits on it. HA attaches it via the `mcp` integration (no auth → URL only) and the Movie
-Room agent gets it in `llm_hass_api`. Person = spoken name ("for Penelope"), never inferred.
+**What HA sees:** an `mcp` entry named "Watch history" at
+`http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp` (the hop injects the consumer token;
+HA holds no credential), granted to the **Movie Room agent only** (`conversation.chatgpt_5`), with a
+WATCH HISTORY block in its prompt (`agent-docs/voice-agent-prompts.md`). Seven tools, `tools/list`
+≤ 3 KB, spoken-text results ≤ 1,200 characters — the voice budget that keeps this from repeating the
+cigar-journal 2 s-per-turn cost (Tool track 1). With two APIs on the agent, HA namespaces every tool:
+`watch_history__recommend`, and Assist's become `assist__…`.
 
-Questions for Tom (ask one at a time, at the moment each blocks work):
-- Q-01 Which Plex/Tautulli pair is the family's (k8plex vs plexops)?
-- Q-02 May the assistant *request* titles through Seerr by voice, or recommend only?
-- Q-03 Which model drives the Movie Room agent for this — the local resident model or the OpenAI one?
+Answers to the three questions:
+- Q-01 (which Plex/Tautulli pair): **all of them** — Tom, 2026-09-23 ("find my watch history via plex or
+  Tautulli (all servers)"). HaynesTower holds his history since 2023-09, HaynesOps since 2026-07; plex.tv
+  view-state sync is on for his account.
+- Q-02 (Seerr requests by voice): still open, carried as haynesnetwork PRD Q-13. v1 only says "not on Plex
+  yet".
+- Q-03 (local or OpenAI): v1 runs on the room's existing OpenAI agent (`gpt-5.6-terra`, reasoning none),
+  because the owner's 2026-09-22 latency ruling rules out the throttled local card for a room agent
+  (tool turns 8–34 s). Revisit after the Qwen bake-off.
+- New, open: household persons by spoken name (Kellie, Penelope, Jackson) — haynesnetwork PRD Q-12. v1
+  answers for Tom's account only, and the prompt says so.
+
+Measured cost (voice bench, text as the agent, 3 reps, `conv` mode, 2026-09-23; pass = at most 0.5 s
+median added latency on questions that use no watch tool, haynesnetwork R-245):
+
+| Question (no watch tool) | Assist only, median | Assist + Watch history, median |
+|---|---|---|
+| Is it warm in the movie room? | 4.62 s | 3.12 s (3.87 / 3.12 / 2.69) |
+| Give me a one line movie trivia fact. | 1.87 s | 1.57 s (1.95 / 1.29 / 1.57) |
+| Are the movie room lights on? | 2.98 s | 2.96 s (3.23 / 2.96 / 2.57) |
+
+No median rose: the seven-tool list is 2,712 bytes and every result is spoken text under 1,200
+characters, so the per-turn schema cost that sank Tool track 1 does not appear. The three US-13
+questions, asked as text to `conversation.chatgpt_5`: "What shows haven't I finished?" 3.5 s
+("Our Flag Means Death, next up season two, episode one. Spider-Noir has three left…"); "What should
+I watch next?" 3.1 s (Arcane, Daredevil, Terminator 2, each with a reason); "I already watched
+Severance, recommend a new show" 3.6 s (marked, then Arcane / FROM) and "Undo that" 3.4 s ("Undone.
+Severance is no longer marked watched."). Attached with `scripts/voice-bench/attach_watch_history.py`
+(mcp entry `01M381GTWER1BG9K4MWG3GDEGR`, LLM API `mcp-01M381GTWER1BG9K4MWG3GDEGR`). One side effect of
+the OpenAI reconfigure flow: it re-derives the agent's `city` from `zone.home` on every save
+(Northborough → Bedford → Grafton → Leominster across three saves); the value only feeds web-search
+localisation and cannot be pinned through the flow.
 
 ## Tool track 3 — voice dispatch to dev-env agents (design needed)
 
