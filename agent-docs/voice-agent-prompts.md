@@ -89,11 +89,10 @@ HOW YOU ACT
 - You are in the kitchen. "The lights", "the shades", "in here" mean this room unless another room is named.
 - Prefer the purpose-built tools: Window Shades for every shade or blind request (a plain "open" is the everyday position; "all the way" is fully open); a room's Bright, Dim and mode tools for lighting looks; Play Music for music.
 - Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
-- The owner's cigar journal is available through its tools. Its results are long: always ask for at most five results (limit five), never fetch the whole humidor or catalog at once, and summarise in a sentence rather than list. By voice the journal is read-only: never save, record, edit or delete anything in it unless the owner explicitly says to save it.
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
 
-(The cigar-journal bullet was added 2026-09-22 and the kitchen agent briefly carried `llm_hass_api: ["assist", "mcp-01M34ZKF449AB21P6K1EGW6880"]`; **the API was removed again the same night** (Tom: the 35 schemas cost ~2 s per turn on OpenAI, measured — see *Kitchen — additions*). The agent is Assist-only; the bullet stays in the prompt as a harmless guard in case the API is re-attached.)
+(On 2026-09-22 this agent briefly carried `llm_hass_api: ["assist", "mcp-01M34ZKF449AB21P6K1EGW6880"]` plus a cigar-journal bullet; **both were removed again the same night** — the 35 schemas cost ~2 s per turn on OpenAI, and a bullet asserting the journal is available would be a false capability claim on an Assist-only agent. The bullet text is kept in *Kitchen — additions* below for whenever the API is re-attached; add both together.)
 
 ## Movie Room
 
@@ -217,7 +216,7 @@ Tested as the Rumpus satellite in text on 2026-09-22 (13/13 correct: local inten
 
 ## Kitchen — additions on 2026-09-22
 
-The Kitchen pipeline (`01jbqv0j9wjz49e4rnz3wptffh`) now uses local STT (`stt.faster_whisper`, Parakeet) and local TTS (`tts.kokoro`, voice `af_sarah`, en-US); the agent is still `conversation.chatgpt_2`. Its subentry `01JZ8DWMCR7G2EJN8KVNVCR7QF` briefly gained the cigar-journal MCP API and one bullet in HOW YOU ACT (before the web-search line) for Tom's tool tests. An isolation bench the same night (3 reps, bedroom as the concurrent control) showed the 35 tool schemas cost **~2 s on every kitchen turn** (time-to-first-tool-call 2.1–2.9 s → 1.1–1.6 s without them; single-tool questions 4.9 → 2.3–3.1 s, matching the bedroom), so **Tom had the API removed again** (`llm_hass_api: ["assist"]`). The bullet remains in the prompt:
+The Kitchen pipeline (`01jbqv0j9wjz49e4rnz3wptffh`) now uses local STT (`stt.faster_whisper`, Parakeet) and local TTS (`tts.kokoro`, voice `af_sarah`, en-US); the agent is still `conversation.chatgpt_2`. Its subentry `01JZ8DWMCR7G2EJN8KVNVCR7QF` briefly gained the cigar-journal MCP API and one bullet in HOW YOU ACT (before the web-search line) for Tom's tool tests. An isolation bench the same night (3 reps, bedroom as the concurrent control) showed the 35 tool schemas cost **~2 s on every kitchen turn** (time-to-first-tool-call 2.1–2.9 s → 1.1–1.6 s without them; single-tool questions 4.9 → 2.3–3.1 s, matching the bedroom), so **Tom had the API removed again** (`llm_hass_api: ["assist"]`), and the bullet came out of the live prompt with it (it asserts the journal is available). Re-add both together; the bullet to use:
 
 ```text
 - The owner's cigar journal is available through its tools. Its results are long: always ask for at most five results (limit five), never fetch the whole humidor or catalog at once, and summarise in a sentence rather than list. By voice the journal is read-only: never save, record, edit or delete anything in it unless the owner explicitly says to save it.

@@ -90,12 +90,14 @@ turn after a restart pays ~30 s cold), but the cache is per slot and there are t
     28k tokens lighter). Net: **no satellite-backed agent holds the cigar-journal API**; only the
     pipeline-less test subentry does.
 - **Voice safety, as it stands:** the journal server exposes write tools (`save_smoke`,
-  `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. The guard
-  chosen for the kitchen is the **prompt bullet** ("ask for at most five results … by voice the
-  journal is read-only: never save, record, edit or delete unless the owner explicitly says to") —
-  a prompt rule, not an enforced scope. Still outstanding if this stops being a test: a dedicated
-  read-only `home-assistant` service token (`catalog:read journal:read`) behind the hop, and a
-  compact/voice output mode on the server so results stop being 5k–47k tokens.
+  `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. Today the
+  only holder is the pipeline-less test subentry, so no spoken request can reach them. The guard
+  used while the kitchen had them was a **prompt bullet** ("ask for at most five results … by voice
+  the journal is read-only") — a prompt rule, not an enforced scope; it left the kitchen prompt with
+  the API (the text is kept in `agent-docs/voice-agent-prompts.md`). Before any room agent gets
+  the API again: a dedicated read-only `home-assistant` service token (`catalog:read journal:read`)
+  behind the hop, a compact/voice output mode on the server so results stop being 5k–47k tokens,
+  and the ~2 s-per-turn schema cost on OpenAI (measured) needs to be acceptable or reduced.
 
 ## Tool track 2 — Movie Room recommender (design needed)
 
