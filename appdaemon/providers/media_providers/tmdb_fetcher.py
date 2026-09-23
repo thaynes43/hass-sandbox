@@ -130,7 +130,6 @@ class TmdbFetcher:
         # first so a title on both lists keeps release_type="in_theaters".
         seen: set[int] = set()
         merged: List[MediaItem] = []
-        trending_only = 0
         for raw, release_type in (
             [(r, "in_theaters") for r in now_playing]
             + [(r, "trending") for r in trending]
@@ -141,16 +140,15 @@ class TmdbFetcher:
             seen.add(tmdb_id)
             item = self._normalize_movie(raw)
             item.release_type = release_type
-            if release_type == "trending":
-                trending_only += 1
             merged.append(item)
 
         filtered = self._apply_filters(merged)
         logger.info(
-            "TmdbFetcher.fetch_in_theaters: %d now_playing raw + %d trending-only "
-            "-> %d after filters",
-            len(merged) - trending_only,
-            trending_only,
+            "TmdbFetcher.fetch_in_theaters: %d now_playing raw + %d trending raw "
+            "-> %d unique -> %d after filters",
+            len(now_playing),
+            len(trending),
+            len(merged),
             len(filtered),
         )
         return FetchResult(items=filtered)

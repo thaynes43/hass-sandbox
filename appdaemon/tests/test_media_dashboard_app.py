@@ -1317,6 +1317,18 @@ class TestShowtimeTitleMatching:
             "Ghost in the Shell", "ghost in the shell 30th anniversary 4k"
         )
 
+    def test_hyphen_and_space_variants_are_equal(self):
+        """TMDb and Google disagree about hyphens; that must not split a title."""
+        assert _showtime_title_matches("Spider-Man", "spider man")
+        assert _showtime_title_matches("Spider Man", "spider-man")
+
+    def test_no_space_variant_is_equal(self):
+        assert _showtime_title_matches("Spider-Man", "spiderman")
+        assert _showtime_title_matches("Spiderman", "spider man")
+
+    def test_hyphenated_title_still_prefix_matches_a_qualifier(self):
+        assert _showtime_title_matches("Spider-Man", "spider man brand new day")
+
     def test_substring_alone_does_not_match(self):
         """The old substring rule let 'Hope' match anything containing it."""
         assert not _showtime_title_matches("Hope", "hopeless")
@@ -1531,6 +1543,66 @@ class TestComposeInTheaters:
         app._compose_in_theaters()
 
         assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+
+    def test_usable_cache_matching_nothing_falls_back_instead_of_emptying(self):
+        """A fresh cache that matches no pool title is a data fault, not an empty week."""
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Now Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+            ],
+            ShowtimeCache(
+                date=_today_iso(),
+                films={"absoliutus blogis": [_entry(0)], "sukilimas": [_entry(1)]},
+            ),
+        )
+
+        app._compose_in_theaters()
+
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+        assert all(not i.has_showtimes for i in app._tmdb_in_theaters_pool)
+
+    def test_usable_cache_matching_nothing_logs_a_warning(self):
+        app = self._app_with_pool(
+            [
+                _make_item("tmdb-1", "Now Playing Movie", release_type="in_theaters"),
+                _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+            ],
+            ShowtimeCache(date=_today_iso(), films={"absoliutus blogis": [_entry(0)]}),
+        )
+        app.log.reset_mock()  # drop the init-time MDbList warning
+
+        app._compose_in_theaters()
+
+        warnings = [
+            c[0][0]
+            for c in app.log.call_args_list
+            if c[0] and c[1].get("level") == "WARNING"
+        ]
+        assert warnings == [
+            f"In Theaters: usable cache ({_today_iso()}) matched none of 2 "
+            "TMDb titles — falling back to TMDb now-playing"
+        ]
+
+    def test_composes_against_a_passed_cache_when_the_write_fails(self):
+        """A failed cache write is logged and swallowed — the row must not suffer."""
+        td = tempfile.mkdtemp(prefix="mda_compose_nowrite_")
+        app = _make_app(tmpdir=td)
+        app._tmdb_in_theaters_pool = [
+            _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+            _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+        ]
+        fetched = ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]})
+        app._serpapi.fetch_showtimes = AsyncMock(return_value=fetched)
+        # Simulate the disk write failing the way _write_showtime_cache does:
+        # log it and carry on, leaving nothing on disk.
+        app._write_showtime_cache = MagicMock()
+
+        _run(app._refresh_showtimes(force=True))
+
+        assert app._read_showtime_cache() is None  # nothing was persisted
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+        assert app._tmdb_in_theaters_pool[0].has_showtimes is True
 
     def test_fallback_shows_now_playing_only_when_no_cache(self):
         app = self._app_with_pool(

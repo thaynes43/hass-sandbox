@@ -122,30 +122,48 @@ COMMAND_EVENT = "media_dashboard_command"
 # ---------------------------------------------------------------------------
 
 def _normalize_showtime_title(title: str) -> str:
-    """Normalise a film title so TMDb and Google spellings compare equal.
+    """Normalise a film title to lowercase words separated by single spaces.
 
-    Case-folds, expands ``&`` to ``and``, drops every character that is not a
-    letter, digit or space, and collapses runs of whitespace.
+    Case-folds, expands ``&`` to ``and``, turns every character that is not a
+    letter or digit into a space, and collapses runs of whitespace.  Punctuation
+    becomes a word boundary rather than vanishing, so "Spider-Man: Brand New
+    Day" normalises to "spider man brand new day" — which keeps the
+    prefix-with-boundary rule below working on hyphenated titles.
     """
     text = (title or "").casefold().replace("&", " and ")
-    cleaned = "".join(ch for ch in text if ch.isalnum() or ch.isspace())
+    cleaned = "".join(ch if ch.isalnum() else " " for ch in text)
     return " ".join(cleaned.split())
+
+
+def _compact_showtime_title(title: str) -> str:
+    """Normalise a title down to letters and digits only (no spaces).
+
+    Used for the *equality* test only, so "Spider-Man", "Spider Man" and
+    "Spiderman" compare equal.  Never used for the prefix test — without a
+    word boundary "hope" would prefix-match "hopeless".
+    """
+    return _normalize_showtime_title(title).replace(" ", "")
 
 
 def _showtime_title_matches(tmdb_title: str, cache_title: str) -> bool:
     """True when a showtime-cache film title refers to a TMDb title.
 
-    Matches on normalised equality, or when the cache title *starts with* the
-    TMDb title followed by a space — cinemas append qualifiers ("Ghost in the
-    Shell 30th Anniversary 4K" for "Ghost in the Shell").  Deliberately **not**
-    a substring test: that let "Hope" match "Hopeless" and any foreign-language
-    title that happened to contain the word.
+    Two rules:
+
+    - **Equality** on the compact form (letters and digits only), so the two
+      sources may disagree about hyphens and spacing.
+    - **Prefix with a word boundary** on the spaced form, because cinemas
+      append qualifiers ("Ghost in the Shell 30th Anniversary 4K" for "Ghost
+      in the Shell").
+
+    Deliberately **not** a substring test: that let "Hope" match "Hopeless" and
+    any foreign-language title that happened to contain the word.
     """
     tmdb_norm = _normalize_showtime_title(tmdb_title)
     cache_norm = _normalize_showtime_title(cache_title)
     if not tmdb_norm or not cache_norm:
         return False
-    if tmdb_norm == cache_norm:
+    if _compact_showtime_title(tmdb_title) == _compact_showtime_title(cache_title):
         return True
     return cache_norm.startswith(tmdb_norm + " ")
 
@@ -532,7 +550,7 @@ class MediaDashboardApp(hass.Hass):
             today = datetime.date.today().isoformat()
             cached = self._read_showtime_cache()
             if cached is not None and cached.date == today:
-                self._compose_in_theaters()
+                self._compose_in_theaters(cached)
                 self._fetch_status["serpapi"] = "ok"
                 self._publish_sensor()
                 self.log(
@@ -548,7 +566,10 @@ class MediaDashboardApp(hass.Hass):
             # Write cache to disk
             self._write_showtime_cache(cache)
 
-            self._compose_in_theaters()
+            # Compose against the cache we just fetched, not a re-read: a failed
+            # write is logged and swallowed, and the row must not silently fall
+            # back to whatever (if anything) is still on disk.
+            self._compose_in_theaters(cache)
 
             self._fetch_status["serpapi"] = "ok"
             self._publish_sensor()
@@ -568,21 +589,33 @@ class MediaDashboardApp(hass.Hass):
         """Configured theater names as user-facing prose ("A or B")."""
         return " or ".join(self._theaters) or "the configured theaters"
 
-    def _compose_in_theaters(self) -> None:
+    def _compose_in_theaters(self, cache: Optional[ShowtimeCache] = None) -> None:
         """Rebuild the In Theaters row from the TMDb pool + the showtime cache.
 
         "In Theaters" means *playing at the configured theaters this week*, so
-        the row is the TMDb pool intersected with the showtime cache.  When the
-        cache is unusable (missing, older than yesterday, or carrying nothing
-        dated today or later) the row falls back to TMDb's now-playing list
-        only — never to trending, which carries streaming hits and months-old
-        releases that are not in any local cinema.
+        the row is the TMDb pool intersected with the showtime cache.  The row
+        falls back to TMDb's now-playing list only — never to trending, which
+        carries streaming hits and months-old releases that are not in any
+        local cinema — when either:
+
+        - the cache is unusable (missing, older than yesterday, or carrying
+          nothing dated today or later), or
+        - a usable cache matches *no* pool title at all, which means something
+          is wrong with the data (a locale regression, a theater that stopped
+          answering) rather than that nothing is playing.
 
         Both the TMDb refresh and the showtime refresh call this, so the
         ``has_showtimes`` flags cannot be dropped by whichever runs last.
+
+        Args:
+            cache: The cache to compose against.  The showtime refresh passes
+                   the one it just fetched or read, so a failed cache *write*
+                   (which is logged and swallowed) does not silently compose
+                   against a stale or missing file.  Defaults to reading disk.
         """
         pool = self._tmdb_in_theaters_pool
-        cache = self._read_showtime_cache()
+        if cache is None:
+            cache = self._read_showtime_cache()
         today = datetime.date.today()
         usable, _note, reason = _classify_showtime_cache(cache, today)
         today_iso = today.isoformat()
@@ -603,17 +636,27 @@ class MediaDashboardApp(hass.Hass):
             if has:
                 matched += 1
 
-        if usable:
+        now_playing = [item for item in pool if item.release_type == "in_theaters"]
+
+        if usable and matched:
             selected = [item for item in pool if item.has_showtimes]
             self.log(
                 f"In Theaters: {matched} of {len(pool)} TMDb titles have showtimes "
                 f"at {self._theater_list_text()} (cache {self._showtimes_date})",
                 level="INFO",
             )
+        elif usable:
+            # A cache that is fresh and full of screenings but matches nothing
+            # is a data fault, not an empty week — never publish an empty row
+            # because of it.
+            selected = now_playing
+            self.log(
+                f"In Theaters: usable cache ({self._showtimes_date}) matched none "
+                f"of {len(pool)} TMDb titles — falling back to TMDb now-playing",
+                level="WARNING",
+            )
         else:
-            selected = [
-                item for item in pool if item.release_type == "in_theaters"
-            ]
+            selected = now_playing
             self.log(
                 f"In Theaters: no usable showtime data ({reason}); "
                 f"showing TMDb now-playing ({len(selected)})",

@@ -413,6 +413,37 @@ class TestFetchInTheaters:
         assert [i.release_type for i in result.items] == ["in_theaters"]
 
     @pytest.mark.asyncio
+    async def test_logs_raw_unique_and_filtered_counts(self, caplog):
+        """The summary must show where titles were lost: dedupe vs filters."""
+        mock_client = _make_mock_client()
+        shared = _movie(tmdb_id=5, title="Both Lists", popularity=30.0)
+        mock_client.get_now_playing = AsyncMock(
+            return_value={
+                "results": [shared, _movie(tmdb_id=6, popularity=50.0),
+                            _movie(tmdb_id=7, popularity=1.0)],
+            }
+        )
+        mock_client.get_trending = AsyncMock(
+            return_value={"results": [shared, _movie(tmdb_id=8, popularity=40.0)]}
+        )
+
+        with patch(
+            "providers.media_providers.tmdb_fetcher.TmdbClient",
+            return_value=mock_client,
+        ), patch("providers.secrets.resolve_secret", return_value="test-key"), \
+                caplog.at_level("INFO", logger="providers.media_providers.tmdb_fetcher"):
+            fetcher = TmdbFetcher(api_key_env="TMDB_API_KEY", poster_dir="/tmp/test")
+            result = await fetcher.fetch_in_theaters()
+
+        # 3 raw + 2 raw -> 4 unique (id 5 on both) -> 3 after the popularity filter
+        assert len(result.items) == 3
+        assert any(
+            "TmdbFetcher.fetch_in_theaters: 3 now_playing raw + 2 trending raw "
+            "-> 4 unique -> 3 after filters" == r.getMessage()
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
     async def test_returns_error_on_failure(self):
         mock_client = _make_mock_client()
         mock_client.get_now_playing = AsyncMock(side_effect=Exception("network error"))

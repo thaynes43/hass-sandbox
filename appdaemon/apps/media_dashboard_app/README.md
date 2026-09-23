@@ -293,12 +293,14 @@ State: selected item ID (e.g., `tmdb-11111`), or `none` when nothing is selected
 | `in_theaters` | On TMDb's US now-playing list |
 | `trending` | Only trending this week — streaming hits and months-old releases live here too |
 
-The app keeps that pool in memory (`_tmdb_in_theaters_pool`) and `_compose_in_theaters()` builds the published row from it against the showtime cache. Both the TMDb refresh and the showtime refresh (its cached-skip path *and* its fetched path) call it, so a TMDb refresh can no longer drop the `has_showtimes` flags the showtime refresh set.
+The app keeps that pool in memory (`_tmdb_in_theaters_pool`) and `_compose_in_theaters(cache=None)` builds the published row from it against the showtime cache. Both the TMDb refresh and the showtime refresh (its cached-skip path *and* its fetched path) call it, so a TMDb refresh can no longer drop the `has_showtimes` flags the showtime refresh set. The showtime refresh passes the cache it just fetched or read; only the TMDb refresh re-reads the file, so a failed cache write (logged and swallowed) cannot make the row fall back to a stale or missing file.
 
 Two tiers:
 
 1. **Showtime data usable** — the row is every pool item whose title matches a cached film with a screening today or later, ranked as usual. Trending-only titles are included when they are genuinely playing (a 4K re-release, for instance).
 2. **Showtime data unusable** — the row falls back to pool items with `release_type == "in_theaters"` only. Trending-only titles are never shown without showtimes; that is what put months-old films on the wall display.
+
+A usable cache that matches **no** pool title at all takes the same fallback and logs a WARNING: a fresh cache full of screenings that matches nothing is a data fault (a locale regression, a theater that stopped answering), not an empty week, and must never publish an empty row.
 
 One INFO line per composition says which tier ran:
 
@@ -307,9 +309,20 @@ In Theaters: 12 of 41 TMDb titles have showtimes at Cinemark Rockingham Park and
 In Theaters: no usable showtime data (cache is dated 2026-09-19); showing TMDb now-playing (23)
 ```
 
+and, at WARNING, the zero-match case:
+
+```
+In Theaters: usable cache (2026-09-22) matched none of 41 TMDb titles — falling back to TMDb now-playing
+```
+
 ### Title matching
 
-TMDb and Google spell titles differently, so `_showtime_title_matches()` normalises both sides (case-fold, `&` → `and`, drop everything that is not a letter/digit/space, collapse whitespace) and matches on equality **or** when the cached title starts with the TMDb title followed by a space ("Ghost in the Shell 30th Anniversary 4K" matches "Ghost in the Shell"). It is deliberately not a substring test — that let "Hope" match "Hopeless" and any foreign-language title containing the word.
+TMDb and Google spell titles differently, so `_showtime_title_matches()` normalises both sides (case-fold, `&` → `and`, every other non-alphanumeric character becomes a space, collapse whitespace) and applies two rules:
+
+- **Equality** on the compact form — the normalised title with its spaces removed — so "Spider-Man", "Spider Man" and "Spiderman" are the same film.
+- **Prefix with a word boundary** on the spaced form: the cached title starts with the TMDb title plus a space ("Ghost in the Shell 30th Anniversary 4K" matches "Ghost in the Shell", and "Spider-Man" matches "spider man brand new day").
+
+It is deliberately not a substring test, and the compact form is never used for the prefix rule — either would let "Hope" match "Hopeless" and any foreign-language title containing the word.
 
 ## Showtime Caching
 
