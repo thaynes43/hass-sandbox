@@ -73,7 +73,7 @@ EXPECTED_TITLE = "Watch history"
 # agent-docs/voice-agent-prompts.md. Change both together.
 WATCH_BLOCK = """WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
-- "What haven't I finished" or "what was I watching": use unfinished. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
+- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
 - When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
 - "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine."""
 WATCH_HEADER = WATCH_BLOCK.splitlines()[0]  # "WATCH HISTORY"

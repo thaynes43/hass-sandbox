@@ -134,8 +134,26 @@ Answers to the three questions:
 - New, open: household persons by spoken name (Kellie, Penelope, Jackson) — haynesnetwork PRD Q-12. v1
   answers for Tom's account only, and the prompt says so.
 
-Measured cost (voice bench, text as the agent, 3 reps, `conv` mode): see the S13 table in haynesnetwork
-PLAN-068 and the numbers below once the attach is done.
+Measured cost (voice bench, text as the agent, 3 reps, `conv` mode, 2026-09-23; pass = at most 0.5 s
+median added latency on questions that use no watch tool, haynesnetwork R-245):
+
+| Question (no watch tool) | Assist only, median | Assist + Watch history, median |
+|---|---|---|
+| Is it warm in the movie room? | 4.62 s | 3.12 s (3.87 / 3.12 / 2.69) |
+| Give me a one line movie trivia fact. | 1.87 s | 1.57 s (1.95 / 1.29 / 1.57) |
+| Are the movie room lights on? | 2.98 s | 2.96 s (3.23 / 2.96 / 2.57) |
+
+No median rose: the seven-tool list is 2,712 bytes and every result is spoken text under 1,200
+characters, so the per-turn schema cost that sank Tool track 1 does not appear. The three US-13
+questions, asked as text to `conversation.chatgpt_5`: "What shows haven't I finished?" 3.5 s
+("Our Flag Means Death, next up season two, episode one. Spider-Noir has three left…"); "What should
+I watch next?" 3.1 s (Arcane, Daredevil, Terminator 2, each with a reason); "I already watched
+Severance, recommend a new show" 3.6 s (marked, then Arcane / FROM) and "Undo that" 3.4 s ("Undone.
+Severance is no longer marked watched."). Attached with `scripts/voice-bench/attach_watch_history.py`
+(mcp entry `01M381GTWER1BG9K4MWG3GDEGR`, LLM API `mcp-01M381GTWER1BG9K4MWG3GDEGR`). One side effect of
+the OpenAI reconfigure flow: it re-derives the agent's `city` from `zone.home` on every save
+(Northborough → Bedford → Grafton → Leominster across three saves); the value only feeds web-search
+localisation and cannot be pinned through the flow.
 
 ## Tool track 3 — voice dispatch to dev-env agents (design needed)
 
