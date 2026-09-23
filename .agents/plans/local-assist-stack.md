@@ -93,8 +93,9 @@ turn after a restart pays ~30 s cold), but the cache is per slot and there are t
   `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. Today the
   only holder is the pipeline-less test subentry, so no spoken request can reach them. The guard
   used while the kitchen had them was a **prompt bullet** ("ask for at most five results … by voice
-  the journal is read-only") — a prompt rule, not an enforced scope; it left the kitchen prompt with
-  the API (the text is kept in `agent-docs/voice-agent-prompts.md`). Before any room agent gets
+  the journal is read-only") — a prompt rule, not an enforced scope; it came out of the live kitchen
+  prompt together with the API, and is parked in *Kitchen — additions* in
+  `agent-docs/voice-agent-prompts.md`. Before any room agent gets
   the API again: a dedicated read-only `home-assistant` service token (`catalog:read journal:read`)
   behind the hop, a compact/voice output mode on the server so results stop being 5k–47k tokens,
   and the ~2 s-per-turn schema cost on OpenAI (measured) needs to be acceptable or reduced.
