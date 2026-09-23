@@ -267,12 +267,15 @@ State: selected item ID (e.g., `tmdb-11111`), or `none` when nothing is selected
   "summary": "A team of antiheroes is recruited by Valentina Allegra de Fontaine...",
   "release_type": "in_theaters",
   "showtimes": {
-    "AMC Tyngsboro 12": ["13:30", "16:15", "19:00", "21:45"],
-    "Showcase Lowell": ["13:00", "15:45", "18:30", "21:15"],
-    "AMC Methuen 20": ["14:00", "17:30", "20:15", "22:30"],
-    "Cinemark Salem XD": ["13:15", "16:00", "19:30"]
+    "entries": [
+      {"cinema_name": "Cinemark Rockingham Park and XD", "times": ["1:30pm", "4:15pm", "7:00pm"], "day": "Today — Tue, Sep 22", "date": "2026-09-22"},
+      {"cinema_name": "AMC Methuen 20", "times": ["2:00pm", "5:30pm", "8:15pm"], "day": "Today — Tue, Sep 22", "date": "2026-09-22"},
+      {"cinema_name": "Cinemark Rockingham Park and XD", "times": ["4:00pm", "7:30pm"], "day": "Tomorrow — Wed, Sep 23", "date": "2026-09-23"}
+    ],
+    "stale": false,
+    "note": ""
   },
-  "showtimes_date": "2026-03-29",
+  "showtimes_date": "2026-09-22",
   "friendly_name": "Media Dashboard Detail",
   "icon": "mdi:movie-open-outline"
 }

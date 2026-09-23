@@ -41,30 +41,29 @@ A new AppDaemon-powered dashboard card that displays media content across four c
 
 ### 3. SerpApi — Theater Showtimes
 
-**API**: SerpApi Google Showtimes (paid plan required; single API key, no per-theater calls)
+**API**: SerpApi Google search (free plan, 250 searches/month; one search per configured theater per day)
 
 **Endpoint used**:
-- `GET /search?engine=google&q=showtimes+near+{location}&location={location}&api_key={key}` — returns `showtimes_results` structured data grouping movies by theater
+- `GET /search?engine=google&q=<theater name>+showtimes&hl=en&gl=us&google_domain=google.com&api_key={key}` — one call per theater; returns a `showtimes` array grouped by day, each day listing movies with their showing times
 
 **Signup**: SerpApi account required. API key stored as `SERPAPI_KEY` env var.
 
 **Coverage**: Uses Google's live showtime data — covers all major US chains (AMC, Cinemark, Showcase, Regal, etc.).
 
-**Refresh cadence**: Once daily (one search covers all configured theaters)
+**Refresh cadence**: Once per calendar day, one search per theater, guarded by the cache date on disk
 
-**Theater filtering**: Response includes many theaters; results are filtered to the configured `theaters` list using case-insensitive substring matching (e.g. configured `"Showcase Cinema de Lux Lowell"` matches API name `"Showcase Cinema de Lux Lowell"`).
+**Theater matching**: each search targets one theater by name, so no filtering is needed; film titles are matched to TMDb titles with the normalised equality/prefix rule described in the app README.
 
-**Fallback**: If SerpApi returns no results or fails, TMDb still provides "now playing" and "upcoming" theater data (just no showtimes). The card degrades gracefully — movie posters and metadata still show, just without specific showtime data.
+**Fallback**: If no usable showtime cache exists (missing, older than yesterday, or matching nothing), the In Theaters row falls back to TMDb now-playing (`in_theaters_source = "tmdb_fallback"`); a zero-film fetch never overwrites the previous cache.
 
 ### Configured Theaters (01886 area)
 
-| Theater | Location | Priority |
-|---------|----------|----------|
-| AMC Tyngsboro 12 | 440 Middlesex Rd, Tyngsborough, MA 01879 | High |
-| Showcase Cinema de Lux Lowell | 32 Reiss Ave, Lowell, MA 01851 | High |
-| AMC Methuen 20 (The Loop) | 90 Pleasant Valley St, Methuen, MA 01844 | High |
-| Cinemark Rockingham Park and XD | 99 Rockingham Park Blvd, Salem, NH 03079 | Medium |
-| AMC Burlington Cinema 10 | 20 South Ave, Burlington, MA 01803 | Low |
+| Theater | Location |
+|---------|----------|
+| Cinemark Rockingham Park and XD | 99 Rockingham Park Blvd, Salem, NH 03079 |
+| AMC Methuen 20 (The Loop) | 90 Pleasant Valley St, Methuen, MA 01844 |
+
+Trimmed from five to these two on 2026-06-18: each theater is one SerpApi search per day, and the plan is 250 searches/month.
 
 ## Content Filtering & Thumbs Up/Down
 
@@ -430,12 +429,9 @@ media_dashboard_app:
   # SerpApi — Google Showtimes
   serpapi_api_key_env: SERPAPI_KEY
   location: "Westford, MA"
-  theaters:
-    - name: "AMC Tyngsboro 12"
-    - name: "Showcase Cinema de Lux Lowell"
-    - name: "AMC Methuen 20"
-    - name: "Cinemark Rockingham Park and XD"
-    - name: "AMC Burlington Cinema 10"
+  theaters:                          # plain strings, one SerpApi search each per day
+    - Cinemark Rockingham Park and XD
+    - AMC Methuen 20
   # Refresh intervals (seconds)
   plex_refresh_interval: 7200       # 2 hours
   tmdb_refresh_interval: 43200      # 12 hours
@@ -537,7 +533,7 @@ Showtimes are **batch-fetched daily and cached on disk**, never fetched on-deman
 
 2. **`get_detail` relay command** (user taps a poster):
    - App reads the item's full metadata from the in-memory fetcher cache
-   - App reads showtimes from the **disk cache** — no SerpApi call
+   - App reads showtimes from the **in-memory copy of the daily cache** (disk only on first use) — no SerpApi call
    - Publishes combined result to `sensor.media_dashboard_detail`
 
 3. **Staleness handling** (as implemented — calendar days, not hours):
