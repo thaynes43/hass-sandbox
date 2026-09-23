@@ -708,6 +708,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#showtime-freshness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Showtime freshness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1050,6 +1061,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#showtime-freshness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Showtime freshness
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#related" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1085,7 +1107,7 @@
 <h2 id="overview">Overview</h2>
 <p>The media dashboard shows what's worth watching right now across four categories:</p>
 <ul>
-<li><strong>In Theaters</strong> -- movies currently playing at local cinemas, ranked by quality and popularity, with showtimes for nearby theaters</li>
+<li><strong>In Theaters</strong> -- movies playing this week at the configured theaters, matched title-by-title against that day's showtime listings and ranked by quality and popularity; when showtime data is unavailable the row falls back to TMDb's now-playing list</li>
 <li><strong>Plex Movies</strong> -- recently added movies on the home Plex server, ranked by runtime and rating</li>
 <li><strong>Plex Shows</strong> -- recently added TV shows on the home Plex server, quality scored using a 50-minute episode runtime normalization instead of the 120-minute movie baseline</li>
 <li><strong>Coming Soon</strong> -- upcoming theatrical and streaming releases</li>
@@ -1128,8 +1150,8 @@
 </tr>
 <tr>
 <td><strong>SerpApi</strong></td>
-<td>Theater showtimes via Google search for configured local cinemas</td>
-<td>Once daily</td>
+<td>Theater showtimes via Google search for configured local cinemas, one search per theater with the locale pinned to US English</td>
+<td>Once per calendar day</td>
 </tr>
 <tr>
 <td><strong>MDbList</strong></td>
@@ -1182,6 +1204,34 @@
 </tbody>
 </table>
 <p>Liked items are boosted to the top of their category after scoring.</p>
+<h2 id="showtime-freshness">Showtime freshness</h2>
+<p>Showtimes are fetched once per calendar day and cached on disk, so tapping a poster costs no API call. Freshness is judged by calendar day, not by an hour count:</p>
+<table>
+<thead>
+<tr>
+<th>Cache</th>
+<th>In Theaters row</th>
+<th>Detail panel</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Fetched today</td>
+<td>Films with showtimes at the configured theaters</td>
+<td>Showtimes for today onward</td>
+</tr>
+<tr>
+<td>Fetched yesterday</td>
+<td>Same, still showtime-backed</td>
+<td>Showtimes with a "fetched yesterday" note; past days dropped</td>
+</tr>
+<tr>
+<td>Older or missing</td>
+<td>TMDb now-playing fallback</td>
+<td>"Showtimes not available (last fetched ...)"</td>
+</tr>
+</tbody>
+</table>
 <h2 id="related">Related</h2>
 <ul>
 <li>App README: <code>appdaemon/apps/media_dashboard_app/README.md</code></li>
