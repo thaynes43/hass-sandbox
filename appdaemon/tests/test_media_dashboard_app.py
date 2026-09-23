@@ -1694,6 +1694,140 @@ class TestComposeInTheaters:
         assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
         assert app._tmdb_in_theaters_pool[0].has_showtimes is True
 
+    def test_zero_film_fetch_keeps_the_previous_cache(self):
+        """SerpApiFetcher returns an empty cache on outage/auth/quota failure."""
+        td = tempfile.mkdtemp(prefix="mda_zero_films_")
+        app = _make_app(tmpdir=td)
+        app._tmdb_in_theaters_pool = [
+            _make_item("tmdb-1", "Playing Movie", release_type="in_theaters"),
+            _make_item("tmdb-2", "Toy Story 5", release_type="trending"),
+        ]
+        app._write_showtime_cache(
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]})
+        )
+        app._compose_in_theaters()  # loads the good cache into memory
+        app._serpapi.fetch_showtimes = AsyncMock(
+            return_value=ShowtimeCache(date=_today_iso(), films={})
+        )
+        app.log.reset_mock()
+
+        _run(app._refresh_showtimes(force=True))
+
+        # The good cache is still on disk — the empty one was not written
+        on_disk = app._read_showtime_cache()
+        assert on_disk is not None
+        assert "playing movie" in on_disk.films
+        # ...the failure is reported, not swallowed as "ok"
+        assert app._fetch_status["serpapi"] == "error"
+        # ...and the row is still composed from the previous cache
+        assert [i.id for i in app._categories["in_theaters"]] == ["tmdb-1"]
+        assert app._tmdb_in_theaters_pool[0].has_showtimes is True
+        assert app._in_theaters_source == "showtimes"
+
+    def test_zero_film_fetch_logs_an_error(self):
+        td = tempfile.mkdtemp(prefix="mda_zero_films_log_")
+        app = _make_app(tmpdir=td)
+        app._write_showtime_cache(
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]})
+        )
+        app._serpapi.fetch_showtimes = AsyncMock(
+            return_value=ShowtimeCache(date=_today_iso(), films={})
+        )
+        app.log.reset_mock()
+
+        _run(app._refresh_showtimes(force=True))
+
+        errors = [
+            c[0][0]
+            for c in app.log.call_args_list
+            if c[0] and c[1].get("level") == "ERROR"
+        ]
+        assert errors == [
+            "Showtime refresh returned 0 films for 1 theaters — "
+            "keeping the previous cache"
+        ]
+
+    def test_in_theaters_source_is_showtimes_when_backed(self):
+        app = self._app_with_pool(
+            [_make_item("tmdb-1", "Playing Movie", release_type="in_theaters")],
+            ShowtimeCache(date=_today_iso(), films={"playing movie": [_entry(0)]}),
+        )
+
+        app._compose_in_theaters()
+        app._publish_sensor()
+
+        assert app.set_state.call_args[1]["attributes"]["in_theaters_source"] == (
+            "showtimes"
+        )
+
+    def test_in_theaters_source_is_fallback_when_cache_unusable(self):
+        app = self._app_with_pool(
+            [_make_item("tmdb-1", "Playing Movie", release_type="in_theaters")]
+        )
+
+        app._compose_in_theaters()
+        app._publish_sensor()
+
+        assert app.set_state.call_args[1]["attributes"]["in_theaters_source"] == (
+            "tmdb_fallback"
+        )
+
+    def test_in_theaters_source_is_fallback_on_zero_match(self):
+        app = self._app_with_pool(
+            [_make_item("tmdb-1", "Playing Movie", release_type="in_theaters")],
+            ShowtimeCache(date=_today_iso(), films={"absoliutus blogis": [_entry(0)]}),
+        )
+
+        app._compose_in_theaters()
+        app._publish_sensor()
+
+        assert app.set_state.call_args[1]["attributes"]["in_theaters_source"] == (
+            "tmdb_fallback"
+        )
+
+    def test_detail_lookup_uses_the_composed_cache_not_the_disk(self):
+        """A failed cache write must not strand the popup on stale disk data."""
+        td = tempfile.mkdtemp(prefix="mda_detail_memcache_")
+        app = _make_app(tmpdir=td)
+        item = _make_item("tmdb-1", "Playing Movie", release_type="in_theaters")
+        app._tmdb_in_theaters_pool = [item]
+        app._serpapi.fetch_showtimes = AsyncMock(
+            return_value=ShowtimeCache(
+                date=_today_iso(), films={"playing movie": [_entry(0)]}
+            )
+        )
+        app._write_showtime_cache = MagicMock()  # write fails, logged and swallowed
+
+        _run(app._refresh_showtimes(force=True))
+
+        assert app._read_showtime_cache() is None  # nothing on disk to read
+        disk_reads = MagicMock(wraps=app._read_showtime_cache)
+        app._read_showtime_cache = disk_reads
+
+        result = app._get_showtimes_for_item(item)
+
+        assert len(result["entries"]) == 1
+        assert disk_reads.call_count == 0  # served from memory, no per-tap read
+
+    def test_detail_sensor_date_matches_the_entries_it_published(self):
+        td = tempfile.mkdtemp(prefix="mda_detail_datematch_")
+        app = _make_app(tmpdir=td)
+        item = _make_item("tmdb-1", "Playing Movie", release_type="in_theaters")
+        app._tmdb_in_theaters_pool = [item]
+        app._serpapi.fetch_showtimes = AsyncMock(
+            return_value=ShowtimeCache(
+                date=_today_iso(), films={"playing movie": [_entry(0)]}
+            )
+        )
+        app._write_showtime_cache = MagicMock()
+
+        _run(app._refresh_showtimes(force=True))
+        _run(app._handle_get_detail({"id": "tmdb-1"}))
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert attrs["showtimes_date"] == _today_iso()
+        assert len(attrs["showtimes"]["entries"]) == 1
+
     def test_showtimes_date_published_on_status_sensor(self):
         app = self._app_with_pool(
             [_make_item("tmdb-1", "Playing Movie", release_type="in_theaters")],

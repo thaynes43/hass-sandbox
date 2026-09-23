@@ -296,8 +296,14 @@ class MediaDashboardApp(hass.Hass):
         # composed from this pool plus the showtime cache (see
         # _compose_in_theaters), so a TMDb refresh cannot drop showtime flags.
         self._tmdb_in_theaters_pool: List[MediaItem] = []
-        # Date stamp of the showtime cache the row was last composed against.
+        # The showtime cache the row was last composed against, kept in memory so
+        # a per-tap detail lookup does not re-read the file (and so a failed
+        # cache write cannot strand the detail popup on stale disk data).
+        self._showtime_cache: Optional[ShowtimeCache] = None
+        # Date stamp of that cache, and which branch of _compose_in_theaters
+        # produced the published row ("showtimes" / "tmdb_fallback").
         self._showtimes_date: str = ""
+        self._in_theaters_source: str = ""
         self._fetch_status: Dict[str, str] = {
             "tautulli": "pending",
             "tmdb": "pending",
@@ -563,6 +569,22 @@ class MediaDashboardApp(hass.Hass):
         try:
             cache = await self._serpapi.fetch_showtimes()
 
+            if not cache.films:
+                # SerpApiFetcher never raises: an outage, an auth failure or a
+                # spent quota all come back as an empty cache stamped today.
+                # Writing that over yesterday's good data would lose the
+                # showtimes *and* make the daily guard skip every retry until
+                # tomorrow.  Keep the previous cache and report the failure.
+                self.log(
+                    f"Showtime refresh returned 0 films for "
+                    f"{len(self._theaters)} theaters — keeping the previous cache",
+                    level="ERROR",
+                )
+                self._fetch_status["serpapi"] = "error"
+                self._compose_in_theaters(self._showtime_cache)
+                self._publish_sensor()
+                return
+
             # Write cache to disk
             self._write_showtime_cache(cache)
 
@@ -616,6 +638,7 @@ class MediaDashboardApp(hass.Hass):
         pool = self._tmdb_in_theaters_pool
         if cache is None:
             cache = self._read_showtime_cache()
+        self._showtime_cache = cache
         today = datetime.date.today()
         usable, _note, reason = _classify_showtime_cache(cache, today)
         today_iso = today.isoformat()
@@ -639,6 +662,7 @@ class MediaDashboardApp(hass.Hass):
         now_playing = [item for item in pool if item.release_type == "in_theaters"]
 
         if usable and matched:
+            self._in_theaters_source = "showtimes"
             selected = [item for item in pool if item.has_showtimes]
             self.log(
                 f"In Theaters: {matched} of {len(pool)} TMDb titles have showtimes "
@@ -649,6 +673,7 @@ class MediaDashboardApp(hass.Hass):
             # A cache that is fresh and full of screenings but matches nothing
             # is a data fault, not an empty week — never publish an empty row
             # because of it.
+            self._in_theaters_source = "tmdb_fallback"
             selected = now_playing
             self.log(
                 f"In Theaters: usable cache ({self._showtimes_date}) matched none "
@@ -656,6 +681,7 @@ class MediaDashboardApp(hass.Hass):
                 level="WARNING",
             )
         else:
+            self._in_theaters_source = "tmdb_fallback"
             selected = now_playing
             self.log(
                 f"In Theaters: no usable showtime data ({reason}); "
@@ -784,6 +810,7 @@ class MediaDashboardApp(hass.Hass):
             "hidden_eligible": hidden_eligible,
             "fetch_status": dict(self._fetch_status),
             "showtimes_date": self._showtimes_date,
+            "in_theaters_source": self._in_theaters_source,
             "last_updated": datetime.datetime.now().isoformat(timespec="seconds"),
             "friendly_name": "Media Dashboard Status",
             "icon": "mdi:movie-roll",
@@ -1138,7 +1165,11 @@ class MediaDashboardApp(hass.Hass):
         - ``note``: human-readable explanation when there is nothing to show,
           or the staleness line when there is
         """
-        cache = self._read_showtime_cache()
+        # The cache the row was composed against, so the popup and the row
+        # always agree — and a tap costs no disk read.
+        cache = self._showtime_cache
+        if cache is None:
+            cache = self._read_showtime_cache()
         if cache is None:
             return {"entries": [], "note": "No showtime data available"}
 

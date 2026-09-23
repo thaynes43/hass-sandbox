@@ -9,7 +9,7 @@ AppDaemon app that aggregates media content from Tautulli (Plex), TMDb, and Serp
 3. Applies popularity filtering (TMDb score + vote count thresholds), genre filtering, and user preference boosts/hides to rank each category.
 4. Downloads poster images for each item to a shared `/media/` directory, then calls a `shell_command` to sync them to `/config/www/` where HA can serve them.
 5. Composes the In Theaters row from the TMDb result *and* the showtime cache (see [In Theaters semantics](#in-theaters-semantics)), then publishes the four categories (In Theaters, Plex Movies, Plex Shows, Coming Soon) to `sensor.media_dashboard_status` with local poster URLs and metadata.
-6. When a user taps a poster, the card sends `get_detail` via relay. The app reads full metadata and cached showtimes from disk (no API call) and publishes to `sensor.media_dashboard_detail`.
+6. When a user taps a poster, the card sends `get_detail` via relay. The app serves full metadata and the showtimes from the in-memory cache the row was composed against (no API call, no disk read) and publishes to `sensor.media_dashboard_detail`.
 7. Scheduled timers refresh each source on its own cadence (Tautulli: 2h, TMDb: 12h, showtimes: 24h). On partial upstream failure, the app retains last-known-good data per category.
 8. Thumbs-down (`dismiss`) and thumbs-up (`like`) commands persist to a JSON preferences file and take effect on the next sensor publish.
 
@@ -114,7 +114,7 @@ appdaemon/tests/
 | Entity | Type | Purpose |
 |--------|------|---------|
 | `sensor.media_dashboard_status` | Virtual sensor (`set_state`) | Primary sensor — categories with items, poster URLs, fetch status. State: `ok` / `degraded` / `error`. |
-| `sensor.media_dashboard_detail` | Virtual sensor (`set_state`) | On-demand detail for the selected item — full synopsis, showtimes from disk cache. State: selected item ID. |
+| `sensor.media_dashboard_detail` | Virtual sensor (`set_state`) | On-demand detail for the selected item — full synopsis, showtimes from the cache the row was composed against, and that cache's date in `showtimes_date`. State: selected item ID. |
 | `script.media_dashboard_relay` | Script | Relay card commands to the `media_dashboard_command` AppDaemon event |
 
 ## Associated Cards
@@ -243,12 +243,13 @@ State: `ok` | `degraded` | `error`
     "serpapi": "ok"
   },
   "showtimes_date": "2026-03-29",
+  "in_theaters_source": "showtimes",
   "friendly_name": "Media Dashboard Status",
   "icon": "mdi:movie-roll"
 }
 ```
 
-`showtimes_date` is the date stamped on the showtime cache the In Theaters row was last composed against (empty string when there is no cache) — the one attribute that says whether the row is showtime-backed or the TMDb now-playing fallback.
+`in_theaters_source` says how the In Theaters row was built: `showtimes` (titles matched against the cache) or `tmdb_fallback` (TMDb now-playing, because the cache was unusable or matched nothing). `showtimes_date` is only the date stamped on the cache the row was composed against — empty when there is no cache, and *not* a freshness verdict on its own: a cache can carry today's date and still have produced the fallback.
 
 The `hidden_eligible` attribute contains items that passed quality/stale filters but were dismissed by the user. The detail card shows these in a collapsible "Hidden (N)" section with a restore button per category.
 
@@ -326,7 +327,7 @@ It is deliberately not a substring test, and the compact form is never used for 
 
 ## Showtime Caching
 
-Showtimes are batch-fetched daily and cached to `{media_fs_root}/{showtime_cache_subdir}/showtime-cache.json`. The `get_detail` command reads from this disk cache — no API call on user interaction. SerpApi is queried once per calendar day (one search per configured theater), and the on-disk cache date is the guard, so restarts and card refreshes do not spend quota.
+Showtimes are batch-fetched daily and cached to `{media_fs_root}/{showtime_cache_subdir}/showtime-cache.json`. The app also keeps the cache it last composed against in memory (`_showtime_cache`), and `get_detail` serves from that — no API call *and* no disk read on user interaction, and the popup can never disagree with the row it was opened from. SerpApi is queried once per calendar day (one search per configured theater), and the on-disk cache date is the guard, so restarts and card refreshes do not spend quota.
 
 ### Locale
 
@@ -376,7 +377,8 @@ Preferences are loaded on startup and written back on each `dismiss`, `like`, `u
 | Tautulli unreachable | Retain last-known-good `plex_movies` and `plex_shows` items; set `fetch_status.tautulli.status = "error"` |
 | TMDb unreachable | Retain last-known-good `in_theaters` and `coming_soon`; set `fetch_status.tmdb.status = "error"` |
 | SerpApi unreachable | Retain cached showtimes on disk; set `fetch_status.serpapi = "error"`. Yesterday's cache is still used (with a "fetched yesterday" note); anything older drops In Theaters to the TMDb now-playing fallback |
-| Source returns empty | Clear that category's items (genuinely empty is valid); set status to `"ok"` |
+| SerpApi returns nothing (outage, auth, spent quota) | `SerpApiFetcher.fetch_showtimes()` never raises — it returns an empty cache stamped today. A zero-film result is logged at ERROR, sets `fetch_status.serpapi = "error"`, and is **not** written to disk: writing it would lose the previous showtimes *and* make the daily guard skip every retry until tomorrow. The row is recomposed against the previous cache |
+| Tautulli/TMDb returns empty | Clear that category's items (genuinely empty is valid); set status to `"ok"`. SerpApi is the exception — see the row above |
 
 ## Manual Setup Required
 
