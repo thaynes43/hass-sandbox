@@ -92,6 +92,15 @@ def _note_totals(note: FrameNote) -> dict[str, int]:
     }
 
 
+def _sent_ceilings(notes: Sequence[FrameNote]) -> dict[str, int]:
+    """The most of each category that any image actually sent shows."""
+    ceilings: dict[str, int] = {}
+    for note in notes:
+        for name, n in _note_totals(note).items():
+            ceilings[name] = max(ceilings.get(name, 0), n)
+    return ceilings
+
+
 def _join_words(words: Sequence[str]) -> str:
     """'people', 'people and animals', 'people, animals and packages'."""
     words = [w for w in words if w]
@@ -100,13 +109,21 @@ def _join_words(words: Sequence[str]) -> str:
     return f"{', '.join(words[:-1])} and {words[-1]}"
 
 
-def _category_count_line(cat: SubjectCategory, consensus: Mapping[str, Any]) -> Optional[str]:
+def _category_count_line(
+    cat: SubjectCategory, consensus: Mapping[str, Any], ceilings: Mapping[str, int]
+) -> Optional[str]:
     """How many of one category to draw: an exact number when the frames agree.
 
     Drawn from the category total per frame (see
     ``population.compute_population_consensus``), so a person the scorer read
     as a man in one frame and a woman in another is still one person. A caller
     whose consensus predates the totals falls back to summing the signals.
+
+    The consensus covers every scored frame, but the images sent can be fewer:
+    trimmed to the workflow's slots, or a candidate whose file is missing. So
+    each count is capped at the most any sent image shows (``ceilings``), or a
+    dropped frame would leave behind an "exactly 1" that no image the model
+    receives can satisfy, which is a phantom subject.
 
     No breakdown by signal ("1 man"): the scorer's gender reading varies from
     frame to frame, and a majority reading can contradict Image 1, which is
@@ -128,6 +145,10 @@ def _category_count_line(cat: SubjectCategory, consensus: Mapping[str, Any]) -> 
         if most_raw is not None
         else sum(_as_count(consensus.get(f"max_{s}")) for s in signals)
     )
+    ceiling = ceilings.get(name.lower())
+    if ceiling is not None:
+        most = min(most, ceiling)
+        likely = min(likely, most)
     if most <= 0:
         return f"- {name}: none"
     if likely < most:
@@ -136,19 +157,25 @@ def _category_count_line(cat: SubjectCategory, consensus: Mapping[str, Any]) -> 
     return f"- {name}: exactly {most}"
 
 
-def _profile_count_lines(consensus: Mapping[str, Any], profile: DetectionProfile) -> list[str]:
+def _profile_count_lines(
+    consensus: Mapping[str, Any], profile: DetectionProfile, ceilings: Mapping[str, int]
+) -> list[str]:
     lines: list[str] = []
     for cat in profile.categories:
-        line = _category_count_line(cat, consensus)
+        line = _category_count_line(cat, consensus, ceilings)
         if line:
             lines.append(line)
     return lines
 
 
-def _bounds_count_lines(bounds: Mapping[str, Any]) -> list[str]:
+def _bounds_count_lines(bounds: Mapping[str, Any], ceilings: Mapping[str, int]) -> list[str]:
     """Ceilings from the per-signal maxima alone, for a caller without a profile."""
     people = _as_count(bounds.get("max_male_count")) + _as_count(bounds.get("max_female_count"))
     animals = _as_count(bounds.get("max_animal_count"))
+    if "people" in ceilings:
+        people = min(people, ceilings["people"])
+    if "animals" in ceilings:
+        animals = min(animals, ceilings["animals"])
     return [
         f"- People: at most {people}" if people else "- People: none",
         f"- Animals: at most {animals}" if animals else "- Animals: none",
@@ -235,7 +262,9 @@ class ImagePromptBuilder:
         the note's own ``is_primary``, not from being first.
 
         The counts come from ``consensus_bounds`` when a ``profile`` is given,
-        else from the per-signal maxima in ``population_bounds``.
+        else from the per-signal maxima in ``population_bounds``. Either way,
+        each is capped at the most any note shows, so the prompt never counts
+        a subject that only a frame it was not sent could show.
         """
         notes = list(frame_notes or [])
         image_count = max(1, int(input_paths_count or 1))
@@ -245,10 +274,11 @@ class ImagePromptBuilder:
             subjects = _join_words([(c.display_name or c.name).lower() for c in profile.categories])
         else:
             subjects = "people and animals"
+        ceilings = _sent_ceilings(notes)
         if consensus_bounds and profile:
-            count_lines = _profile_count_lines(consensus_bounds, profile)
+            count_lines = _profile_count_lines(consensus_bounds, profile, ceilings)
         else:
-            count_lines = _bounds_count_lines(population_bounds or {})
+            count_lines = _bounds_count_lines(population_bounds or {}, ceilings)
 
         refs = "the reference image" if image_count == 1 else "the reference images"
 

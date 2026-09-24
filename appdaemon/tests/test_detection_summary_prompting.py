@@ -490,6 +490,53 @@ class TestImagePromptBuilder:
         ]
         assert "keep the people, animals and packages where it shows them" in result.prompt
 
+    def test_counts_never_exceed_what_the_sent_images_show(self):
+        """The consensus covers every scored frame; the images sent can be fewer.
+
+        A frame trimmed to fit the workflow's slots (or skipped because its
+        file is missing) must take its count with it, or "exactly 1" asks for
+        a package no image the model receives shows.
+        """
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            consensus_bounds={
+                "consensus_people_total": 2,
+                "max_people_total": 3,
+                "consensus_animals_total": 0,
+                "max_animals_total": 1,
+                "consensus_packages_total": 1,
+                "max_packages_total": 1,
+            },
+            profile=PROFILE_PACKAGES,
+            frame_notes=[
+                FrameNote(
+                    male_count=1,
+                    is_primary=True,
+                    category_counts=(("people", 1), ("animals", 0), ("packages", 0)),
+                ),
+                FrameNote(
+                    male_count=2,
+                    category_counts=(("people", 2), ("animals", 1), ("packages", 0)),
+                ),
+            ],
+            input_paths_count=2,
+        )
+        assert _count_lines(result) == [
+            "- People: exactly 2",
+            "- Animals: at most 1",
+            "- Packages: none",
+        ]
+
+    def test_counts_without_a_profile_are_capped_by_the_sent_images_too(self):
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={"max_male_count": 2, "max_female_count": 1, "max_animal_count": 2},
+            frame_notes=[FrameNote(male_count=1, animal_count=1, is_primary=True)],
+            input_paths_count=1,
+        )
+        assert _count_lines(result) == ["- People: at most 1", "- Animals: at most 1"]
+
     def test_consensus_without_totals_falls_back_to_the_signals(self):
         result = ImagePromptBuilder().build(
             base_instructions="Base",

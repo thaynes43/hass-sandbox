@@ -686,6 +686,38 @@ def test_a_profile_category_decides_what_counts_as_new() -> None:
     )
 
 
+def test_a_trimmed_frame_leaves_no_count_behind() -> None:
+    """On the packages profile a fourth candidate can be trimmed off a three-slot workflow.
+
+    Most scored frames show the package, so the consensus says exactly one,
+    but the only frame showing it is the fourth candidate. With it trimmed, no
+    image the model receives shows a package, and the prompt must not ask for
+    one.
+    """
+    app = _make_app(_args(detection_profile="packages"))
+    _initialize(app)
+
+    package = {"package_count": 1}
+    scored = {
+        0: _score(frame_score=3.0, summary="a package", extra_signals=package),
+        1: _score(animal=1, frame_score=4.0, summary="a dog"),
+        2: _score(male=2, frame_score=5.0, summary="two men"),
+        3: _score(male=1, frame_score=9.0, summary="a man at the door"),
+        # Frames with no file of their own: they only move the consensus.
+        4: _score(frame_score=1.0, extra_signals=package),
+        5: _score(frame_score=1.0, extra_signals=package),
+        6: _score(frame_score=1.0, extra_signals=package),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-trim-count", max_input_images=3, scores=_scores_with_best(scored, 3)
+    )
+
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_002.jpg", "frame_001.jpg"]
+    prompt = provider.edit_image.call_args.kwargs["prompt"]
+    assert "- Packages: none" in prompt
+    assert "- Packages: exactly" not in prompt
+
+
 def test_a_missing_best_frame_falls_back_to_the_next_best_frame() -> None:
     """With nothing else to send, a run whose best.jpg never appeared still renders."""
     app = _make_app(_args())

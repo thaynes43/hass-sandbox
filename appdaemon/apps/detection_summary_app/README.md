@@ -188,9 +188,12 @@ the prompt, so the prompt describes exactly the frames the model receives:
   not among the uploads and no note claims to be it;
 - only Image 1's note carries its own summary; every later note says what that
   image adds to Image 1 (see below);
+- the subject counts are capped at the most any sent image shows, so a
+  trimmed frame cannot leave behind a count that no image sent can satisfy;
 - a trim logs one DEBUG line with the zone, the selected count and the sent
-  count. It is a config-shaped condition — the app's `max_refs` outgrew the
-  workflow — not a per-run fault.
+  count. It is expected, not a fault: more frames add a subject than the
+  selected workflow has slots — a one-slot rollback entry, or a packages run
+  where people, animals and packages each add one.
 
 The provider truncates as well, so an untrimmed caller still cannot overrun the
 slots and anything dropped there is recorded in the run's meta as
@@ -245,9 +248,10 @@ best-scoring frame whose file exists is sent in its place.
 - **The frames show the same subjects.** Anyone or anything in several images
   is one individual, drawn once.
 - **Exact counts, stated positively.** `People: exactly 1` when the frames
-  agree, `at most M` when they do not. People are counted from each frame's
-  total, so one person the scorer read as a man in one frame and a woman in the
-  next is still one person, not a man and a woman. The count line carries no
+  agree, `at most M` when they do not, each capped at the most any sent image
+  shows. People are counted from each frame's total, so one person the scorer
+  read as a man in one frame and a woman in the next is still one person, not
+  a man and a woman. The count line carries no
   gender breakdown, because a majority reading across frames can contradict
   Image 1. Image 1's own note and the image carry gender.
 - **Later images are described by what they add, never in their own words.**

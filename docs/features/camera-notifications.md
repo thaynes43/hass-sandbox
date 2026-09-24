@@ -46,8 +46,8 @@ frames are expensive, so they are normally given just the best one.
 How many frames a workflow takes is something the app asks it before it builds
 the prompt, so the notes it writes about the scene ("Image 1 … Image 2 …")
 describe exactly the frames the model is looking at — the best one first. A
-run that turns up a fourth good frame simply drops it rather than telling the
-model about a picture it was never sent.
+camera rolled back to a one-frame workflow simply drops the extra frames, and
+the prompt neither describes nor counts anything that only they showed.
 
 Extra frames bring their own risk. They show the *same* people seconds apart,
 and an image-editing model handed several pictures is trained to combine what
@@ -58,7 +58,7 @@ someone the best frame misses. A frame that shows the same person somewhere
 else adds nothing but a second copy, so a one-person visit renders from the
 best frame alone. Second, the prompt asks for one moment, the one in the best
 frame, with each person and animal drawn exactly once, and describes any other
-frame only by what it adds ("one animal that the best frame misses"). The run's
+frame only by what it adds, such as one animal more than the best frame. The run's
 narrative still goes into the notification text but stays out of the picture,
 because a model drawing "walked up, paused, walked away" draws three people.
 
