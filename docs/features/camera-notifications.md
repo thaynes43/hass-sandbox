@@ -48,6 +48,16 @@ describe exactly the frames the model is looking at — the best one first. A
 run that turns up a fourth good frame simply drops it rather than telling the
 model about a picture it was never sent.
 
+Extra frames bring their own risk. They show the *same* people seconds apart,
+and an image-editing model handed several pictures is trained to combine what
+each one shows. Asked for "a composite of the event", it drew the same person
+once per frame: walking up, at the door, walking away, all in one picture. So
+the prompt now asks for one moment, the one in the best frame, with each person
+and animal drawn exactly once. The other frames are described only by what they
+add ("nobody new", or "one animal that the best frame misses"). The run's
+narrative still goes into the notification text but stays out of the picture,
+because a model drawing "walked up, paused, walked away" draws three people.
+
 Changing a camera's look, or rolling one back, is a config change in a normal
 release; a single-frame Qwen-Image-2.1 entry and the original pre-2026-09 graph
 are both kept unchanged for exactly that purpose. Which workflow produced any

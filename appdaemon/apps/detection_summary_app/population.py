@@ -77,7 +77,15 @@ def compute_population_consensus(
     Compute consensus counts across frames using the profile's strategy.
 
     Returns dict with keys like "consensus_male_count", "max_male_count", etc.
-    for each count signal in the profile's categories.
+    for each count signal in the profile's categories, plus
+    "consensus_<category>_total" / "max_<category>_total" for each category
+    that has count signals.
+
+    A category total is the sum of its signals *within one frame*, aggregated
+    across frames — not the sum of the per-signal results. The scorer can read
+    the same person as a man in one frame and a woman in the next; the
+    per-signal maxima then say one man AND one woman, while no frame ever held
+    more than one person. The image prompt draws people from the total.
     """
     strategy_fn = _STRATEGY_MAP.get(profile.consensus_strategy, _mode_value)
     result: dict[str, Any] = {}
@@ -89,110 +97,30 @@ def compute_population_consensus(
             if sig not in all_count_signals:
                 all_count_signals.append(sig)
 
-    for sig_key in all_count_signals:
-        values: list[int] = []
-        for _idx, r in (scored or {}).items():
-            if not r:
-                continue
+    # One {signal: count} row per scored frame.
+    frame_values: list[dict[str, int]] = []
+    for _idx, r in (scored or {}).items():
+        if not r:
+            continue
+        row: dict[str, int] = {}
+        for sig_key in all_count_signals:
             try:
-                val = int(_get_signal_value(r, sig_key) or 0)
-                values.append(max(0, val))
+                row[sig_key] = max(0, int(_get_signal_value(r, sig_key) or 0))
             except (TypeError, ValueError):
-                values.append(0)
+                row[sig_key] = 0
+        frame_values.append(row)
 
+    for sig_key in all_count_signals:
+        values = [row[sig_key] for row in frame_values]
         result[f"consensus_{sig_key}"] = strategy_fn(values) if values else 0
         result[f"max_{sig_key}"] = max(values) if values else 0
 
+    for cat in profile.categories:
+        if not cat.count_signals:
+            continue
+        signals = dict.fromkeys(cat.count_signals)
+        totals = [sum(row[sig] for sig in signals) for row in frame_values]
+        result[f"consensus_{cat.name}_total"] = strategy_fn(totals) if totals else 0
+        result[f"max_{cat.name}_total"] = max(totals) if totals else 0
+
     return result
-
-
-def augment_image_instructions(base_instructions: str, bounds: dict[str, Any]) -> str:
-    """
-    Augment the image-edit prompt with facts derived from analyzed frames.
-    """
-    base = str(base_instructions or "").strip()
-    b = bounds or {}
-    try:
-        mm = int(b.get("max_male_count", 0) or 0)
-        ff = int(b.get("max_female_count", 0) or 0)
-        aa = int(b.get("max_animal_count", 0) or 0)
-    except Exception:
-        mm, ff, aa = 0, 0, 0
-
-    lines: list[str] = []
-    if base:
-        lines.append(base)
-
-    lines.extend(
-        [
-            "",
-            "Additional context (derived from multiple analyzed snapshots in this run):",
-            f"- The scene may include up to {mm} male person(s) and up to {ff} female person(s).",
-            f"- The scene may include up to {aa} animal(s)/pet(s).",
-            "- Important: the best snapshot used for the illustration may show fewer/different people/animals than these maxima.",
-            "- Preserve the apparent gender presentation of people in the input image; avoid defaulting women to men.",
-            "- If animals are visible in any provided input image(s), include them in the illustration.",
-            "",
-            "Hard constraints (do not violate):",
-            f"- Do NOT include more than {mm} male person(s).",
-            f"- Do NOT include more than {ff} female person(s).",
-            f"- Do NOT include more than {aa} animal(s)/pet(s).",
-        ]
-    )
-    return "\n".join(lines).strip()
-
-
-def augment_image_instructions_with_consensus(
-    base_instructions: str,
-    consensus: dict[str, Any],
-    profile: DetectionProfile,
-) -> str:
-    """
-    Augment the image-edit prompt using consensus data from profile-driven analysis.
-
-    Uses "most likely" + "hard limit" language when consensus is available.
-    """
-    base = str(base_instructions or "").strip()
-    lines: list[str] = []
-    if base:
-        lines.append(base)
-
-    lines.append("")
-    lines.append("Additional context (derived from multiple analyzed snapshots in this run):")
-
-    # Build per-category context lines
-    for cat in profile.categories:
-        for sig in cat.count_signals:
-            consensus_val = int(consensus.get(f"consensus_{sig}", 0))
-            max_val = int(consensus.get(f"max_{sig}", 0))
-            label = sig.replace("_", " ")
-            lines.append(
-                f"- The scene most likely contains {consensus_val} {label} (max: {max_val})"
-            )
-
-    lines.extend([
-        "- Important: the best snapshot used for the illustration may show fewer/different subjects than these estimates.",
-        "- Preserve the apparent gender presentation of people in the input image; avoid defaulting women to men.",
-        "- If animals are visible in any provided input image(s), include them in the illustration.",
-    ])
-
-    # Hard constraints from max values
-    lines.append("")
-    lines.append("Hard constraints (do not violate):")
-    for cat in profile.categories:
-        for sig in cat.count_signals:
-            max_val = int(consensus.get(f"max_{sig}", 0))
-            label = sig.replace("_", " ")
-            lines.append(f"- Do NOT include more than {max_val} {label}.")
-
-    # Profile-specific hallucination guardrails for non-default categories
-    extra_cats = [c for c in profile.categories if c.name not in ("people", "animals")]
-    if extra_cats:
-        lines.append("")
-        lines.append("Category-specific guardrails:")
-        for cat in extra_cats:
-            lines.append(
-                f"- Do NOT include {cat.display_name or cat.name} unless clearly visible in the reference frames."
-            )
-
-    return "\n".join(lines).strip()

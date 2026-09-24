@@ -1103,10 +1103,9 @@ class DetectionSummary(hass.Hass):
                         selected_frames = selected_frames[:max_input_images]
                         input_paths = [p for _ii, p in selected_frames]
 
-                    # Narrative context is helpful, but should not be treated as a "hard rule" about subject count.
-                    narrative_text = ""
-                    if isinstance(run_narrative, dict):
-                        narrative_text = str(run_narrative.get("run_summary") or "").strip()
+                    # The run narrative stays out of the image prompt: it tells the
+                    # whole event as a sequence ("walked up, paused, walked away"),
+                    # and an image model draws a sequence as that many people.
 
                     # Compact per-frame notes for the images we are providing —
                     # one per frame in `selected_frames`, in that exact order,
@@ -1152,7 +1151,6 @@ class DetectionSummary(hass.Hass):
                     prompt_result = self._image_prompt_builder.build(
                         base_instructions=str(self.image_instructions),
                         population_bounds=population_bounds,
-                        narrative_text=narrative_text,
                         frame_notes=notes if notes else None,
                         input_paths_count=len(input_paths),
                         bundle_augmentation=getattr(provider_cfg, "image_prompt_augmentation", None),

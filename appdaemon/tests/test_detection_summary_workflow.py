@@ -603,10 +603,15 @@ def test_the_notes_describe_the_frames_sent_in_the_order_sent() -> None:
     prompt = provider.edit_image.call_args.kwargs["prompt"]
     assert _notes_block(prompt) == [
         "- Image 1 (primary frame) t=3.0s: the clearest view (m=1, f=1, animals=1)",
-        "- Image 2 t=1.0s: three dogs (m=0, f=0, animals=3)",
-        "- Image 3 t=2.0s: five men (m=5, f=0, animals=0)",
+        "- Image 2 t=1.0s: the same scene at another moment, with 2 animals more than Image 1: "
+        "add only those, each once; everyone else in it is already in Image 1.",
+        "- Image 3 t=2.0s: the same scene at another moment, with 3 people more than Image 1: "
+        "add only those, each once; everyone else in it is already in Image 1.",
     ]
-    # The trimmed frame's summary must not appear at all.
+    # A later image is described by what it adds, never in its own words, and
+    # the trimmed frame's summary must not appear at all.
+    assert "three dogs" not in prompt
+    assert "five men" not in prompt
     assert "two women leaving" not in prompt
 
 
@@ -617,9 +622,33 @@ def test_the_prompt_counts_the_frames_actually_sent() -> None:
     provider = _drive_four_frame_image_gen(app, "run-count", max_input_images=3)
 
     kwargs = provider.edit_image.call_args.kwargs
-    assert "You are provided 3 image(s)" in kwargs["prompt"]
+    assert "You are provided 3 images" in kwargs["prompt"]
     assert len(kwargs["input_image_paths"]) == 3
     assert len(_notes_block(kwargs["prompt"])) == 3
+
+
+def test_the_run_narrative_stays_out_of_the_image_prompt() -> None:
+    """The narrative tells the event as a sequence of actions.
+
+    An image model draws "walked up, paused at the door, walked away" as one
+    person per action, so the narrative feeds the notification text only.
+    """
+    app = _make_app(_args())
+    _initialize(app)
+    app.run_narrative_enabled = True
+    app._get_simple_text_provider = MagicMock()
+    narrative = {
+        "run_summary": "A man walked up the drive, paused at the door, then walked away.",
+        "confidence": 8,
+    }
+
+    with patch("detection_summary_app.manager.synthesize_run_narrative", return_value=narrative) as synth:
+        provider = _drive_four_frame_image_gen(app, "run-narrative", max_input_images=3)
+
+    assert synth.call_count == 1
+    prompt = provider.edit_image.call_args.kwargs["prompt"]
+    assert "paused at the door" not in prompt
+    assert "narrative" not in prompt.lower()
 
 
 def test_a_trim_is_logged_at_debug_with_the_zone_and_the_counts() -> None:
@@ -709,6 +738,8 @@ def test_no_note_claims_primary_when_the_best_frame_never_materialised() -> None
     assert "primary frame" not in kwargs["prompt"]
     assert _notes_block(kwargs["prompt"]) == [
         "- Image 1 t=1.0s: three dogs (m=0, f=0, animals=3)",
-        "- Image 2 t=2.0s: five men (m=5, f=0, animals=0)",
-        "- Image 3 t=0.0s: two women leaving (m=0, f=2, animals=0)",
+        "- Image 2 t=2.0s: the same scene at another moment, with 5 people more than Image 1: "
+        "add only those, each once; everyone else in it is already in Image 1.",
+        "- Image 3 t=0.0s: the same scene at another moment, with 2 people more than Image 1: "
+        "add only those, each once; everyone else in it is already in Image 1.",
     ]
