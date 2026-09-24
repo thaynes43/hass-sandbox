@@ -1048,7 +1048,12 @@ class DetectionSummary(hass.Hass):
             # notes describe exactly the frames sent, in the order sent.
             selected_frames: list[tuple[int, Path]] = []
             for ii in candidate_idxs:
-                p = best_dst if int(ii) == int(best_idx) else (frames_dir / f"frame_{int(ii):03d}.jpg")
+                if int(ii) == int(best_idx):
+                    # best.jpg is copied from the capture once, above; a capture
+                    # that landed after that copy exists only as itself.
+                    p = best_dst if best_dst.exists() else best_src
+                else:
+                    p = frames_dir / f"frame_{int(ii):03d}.jpg"
                 if p.exists():
                     selected_frames.append((int(ii), p))
                 else:
@@ -1056,16 +1061,13 @@ class DetectionSummary(hass.Hass):
                         f"DetectionSummary[{self.bundle_key}]: image gen missing candidate frame idx={int(ii)} path={p}",
                         level="WARNING",
                     )
-            if not selected_frames and best_dst.exists():
-                selected_frames = [(int(best_idx), best_dst)]
             if not selected_frames:
-                # best.jpg never appeared and no other candidate is on disk
-                # (in a one-person run there is no other candidate). Try the
-                # best frame's own capture first: best.jpg is copied from it
-                # once, above, so a capture that landed after that copy is only
-                # here. Then the other frames on disk, ranked by `_pick_key`,
+                # No candidate is on disk: not best.jpg, not the best frame's
+                # own capture, and no other candidate (a one-person run has
+                # none). Draw from the frames that are, ranked by `_pick_key`,
                 # the key that chose the best frame. It leads with whether
                 # anyone is in the frame, so a sharp empty frame comes last.
+                # The best frame stays first in case its capture just landed.
                 for ii, _rr in sorted(
                     ((int(i), r) for i, r in scored.items() if r is not None),
                     key=lambda t: (t[0] == int(best_idx), _pick_key(t[1])),
@@ -1153,10 +1155,10 @@ class DetectionSummary(hass.Hass):
                                 male_count=m,
                                 female_count=f,
                                 animal_count=a,
-                                # The best frame is normally first, but it is
-                                # skipped above when best.jpg never appeared
-                                # (`best_src` missing, or the wait timed out),
-                                # and then no reference is the primary one.
+                                # The best frame is first whenever it is sent,
+                                # as best.jpg or as its own capture. When
+                                # neither is on disk it is skipped above, and
+                                # then no reference is the primary one.
                                 is_primary=int(ii) == int(best_idx),
                                 # The same totals the frame was picked on, so
                                 # its note names what it adds (a package too).

@@ -822,6 +822,49 @@ def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None
     ]
 
 
+def test_a_late_best_frame_stays_image_1_when_another_frame_adds_someone() -> None:
+    """The late-capture case again, on a run that also sends an extra frame.
+
+    With an extra candidate on disk, nothing falls back. So the best frame
+    must be resolved to its own capture where it is chosen, or the added
+    frame becomes Image 1 and nothing is the primary frame.
+    """
+    app = _make_app(_args(external_image_gen_wait_for_best_s=0.05))
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-late-best-extra")
+    frames_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir)
+        / app.bundle_runs_subdir
+        / "run-late-best-extra"
+        / app.captured_subdir
+    )
+    late = frames_dir / "frame_001.jpg"
+    content = late.read_bytes()
+    late.unlink()
+
+    def _capture_lands(_seconds: float) -> None:
+        late.write_bytes(content)
+
+    scored = {
+        0: _score(male=2, frame_score=6.0, person_score=5.0, summary="two men"),
+        1: _score(male=1, frame_score=3.0, person_score=9.0, summary="a man at the door"),
+    }
+    with patch("detection_summary_app.manager.time.sleep", side_effect=_capture_lands):
+        provider = _drive_four_frame_image_gen(
+            app,
+            "run-late-best-extra",
+            max_input_images=3,
+            scores=_scores_with_best(scored, 1),
+            run=run,
+        )
+
+    assert _sent_names(provider) == ["frame_001.jpg", "frame_000.jpg"]
+    assert _notes_block(provider.edit_image.call_args.kwargs["prompt"])[0] == (
+        "- Image 1 (primary frame) t=1.0s: a man at the door (m=1, f=0, animals=0)"
+    )
+
+
 def test_the_fallback_prefers_a_frame_with_someone_in_it() -> None:
     """With the best frame gone for good, the fallback ranks like selection does.
 

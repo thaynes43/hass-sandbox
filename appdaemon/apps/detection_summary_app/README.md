@@ -186,8 +186,9 @@ the prompt, so the prompt describes exactly the frames the model receives:
   position (`Image 1 (primary frame)`, `Image 2`, …), because every upload is
   renamed on the way out and a filename would name nothing the model can see.
   The `(primary frame)` qualifier is carried on the note, not inferred from
-  being first: `best.jpg` is allowed to be missing, and then the best frame is
-  not among the uploads and no note claims to be it;
+  being first. The best frame is sent as `best.jpg`, or as its own capture if
+  that landed after the copy to `best.jpg`. If neither is on disk, the best
+  frame is not among the uploads and no note claims to be it;
 - only Image 1's note carries its own summary; every later note says what that
   image adds to Image 1 (see below);
 - the subject counts are capped at the most any sent image shows, so a
@@ -239,11 +240,11 @@ sent only if, for some profile category, it shows more than the best frame
 does, counted by category total (people = men + women). A frame that shows the
 same person somewhere else, or reads their gender differently, adds nobody, so
 a one-person visit renders from the best frame alone, as every run did before
-1.21.0. If `best.jpg` never appeared and no other candidate is on disk, the
-best frame's own capture is sent instead, if it landed after the copy to
-`best.jpg`. Otherwise the next frame on disk is sent, ranked as selection
-ranks frames (anyone in the frame first), so a sharp empty frame is never
-picked over one with the person in it.
+1.21.0. If `best.jpg` never appeared, the best frame is sent from its own
+capture, which may have landed after the copy. If neither is on disk and no
+other candidate is either, the next frame on disk is sent, ranked the way
+selection ranks frames (anyone in the frame first), so a sharp empty frame is
+never picked over one with the person in it.
 
 **The prompt says one thing throughout:**
 

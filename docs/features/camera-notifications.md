@@ -23,8 +23,9 @@ The `detection_summary_viewer` provides a Lovelace dashboard card for browsing h
 
 ### Stylised images
 
-Between scoring and publishing, the best frames of the event are turned into a
-single stylised illustration — the picture that actually lands on your phone.
+Between scoring and publishing, the best frame of the event (sometimes more
+than one, see below) is turned into a single stylised illustration — the
+picture that actually lands on your phone.
 That render runs on a local ComfyUI box.
 
 Which ComfyUI *workflow* does the rendering is named in the AppDaemon config,
@@ -54,11 +55,12 @@ and an image-editing model handed several pictures is trained to combine what
 each one shows. Asked for "a composite of the event", it drew the same person
 once per frame: walking up, at the door, walking away, all in one picture. Two
 changes stop that. First, the app now sends another frame only when it shows
-someone the best frame misses. A frame that shows the same person somewhere
-else adds nothing but a second copy, so a one-person visit renders from the
-best frame alone. Second, the prompt asks for one moment, the one in the best
-frame, with each person and animal drawn exactly once, and describes any other
-frame only by what it adds, such as one animal more than the best frame. The run's
+a person, an animal or a package the best frame misses. A frame that shows the
+same person somewhere else adds nothing but a second copy, so a one-person
+visit renders from the best frame alone. Second, the prompt asks for one
+moment, the one in the best frame, with each person, animal and package drawn
+exactly once, and describes any other frame only by what it adds, such as one
+animal more than the best frame. The run's
 narrative still goes into the notification text but stays out of the picture,
 because a model drawing "walked up, paused, walked away" draws three people.
 
