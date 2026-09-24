@@ -240,8 +240,10 @@ does, counted by category total (people = men + women). A frame that shows the
 same person somewhere else, or reads their gender differently, adds nobody, so
 a one-person visit renders from the best frame alone, as every run did before
 1.21.0. If `best.jpg` never appeared and no other candidate is on disk, the
-best-scoring frame whose capture is on disk is sent in its place. That can be
-the best frame's own capture, if it landed after the copy to `best.jpg`.
+best frame's own capture is sent instead, if it landed after the copy to
+`best.jpg`. Otherwise the next frame on disk is sent, ranked as selection
+ranks frames (anyone in the frame first), so a sharp empty frame is never
+picked over one with the person in it.
 
 **The prompt says one thing throughout:**
 

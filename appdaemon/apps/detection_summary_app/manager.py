@@ -36,7 +36,7 @@ from .bundle import (
     write_trace,
 )
 from .capture import CaptureConfig, CaptureState, CapturedFrame, next_delay_s, should_stop_capture
-from .selection import ScoreResult, SelectionMeta, _get_signal_value, adaptive_select_and_score
+from .selection import ScoreResult, SelectionMeta, _get_signal_value, _pick_key, adaptive_select_and_score
 from .population import compute_population_bounds, compute_population_consensus
 from .narrative import NarrativeConfig, synthesize_run_narrative
 from .publish_gate import should_publish_bundle
@@ -1060,17 +1060,15 @@ class DetectionSummary(hass.Hass):
                 selected_frames = [(int(best_idx), best_dst)]
             if not selected_frames:
                 # best.jpg never appeared and no other candidate is on disk
-                # (in a one-person run there is no other candidate): draw from
-                # the best-scoring frame whose capture is on disk instead. That
-                # can be the best frame's own: best.jpg is copied from it once,
-                # above, so a capture that landed after that copy is only here.
+                # (in a one-person run there is no other candidate). Try the
+                # best frame's own capture first: best.jpg is copied from it
+                # once, above, so a capture that landed after that copy is only
+                # here. Then the other frames on disk, ranked by `_pick_key`,
+                # the key that chose the best frame. It leads with whether
+                # anyone is in the frame, so a sharp empty frame comes last.
                 for ii, _rr in sorted(
                     ((int(i), r) for i, r in scored.items() if r is not None),
-                    key=lambda t: (
-                        float(getattr(t[1], "frame_score", 0.0) or 0.0),
-                        float(getattr(t[1], "face_score", 0.0) or 0.0),
-                        float(getattr(t[1], "person_score", 0.0) or 0.0),
-                    ),
+                    key=lambda t: (t[0] == int(best_idx), _pick_key(t[1])),
                     reverse=True,
                 ):
                     p = frames_dir / f"frame_{ii:03d}.jpg"

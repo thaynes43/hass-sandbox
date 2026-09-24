@@ -477,15 +477,18 @@ def _score(
     female: int = 0,
     animal: int = 0,
     frame_score: float = 1.0,
+    person_score: float | None = None,
+    face_score: float | None = None,
     summary: str = "",
     extra_signals: Dict[str, Any] | None = None,
 ):
+    """A score; person and face scores follow `frame_score` unless given."""
     return _selection_mod.ScoreResult(
         male_count=male,
         female_count=female,
         animal_count=animal,
-        person_score=frame_score,
-        face_score=frame_score,
+        person_score=frame_score if person_score is None else person_score,
+        face_score=frame_score if face_score is None else face_score,
         frame_score=frame_score,
         pose="standing",
         summary=summary,
@@ -797,10 +800,12 @@ def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None
     def _capture_lands(_seconds: float) -> None:
         late.write_bytes(content)
 
+    # Independent scores, as the scorer returns them: the best frame (by
+    # `_pick_key`, person first) is not the sharpest one.
     scored = {
-        0: _score(male=1, frame_score=5.0, summary="a man walking in"),
-        1: _score(male=1, frame_score=9.0, summary="a man at the door"),
-        2: _score(male=1, frame_score=7.0, summary="a man walking away"),
+        0: _score(male=1, frame_score=9.5, person_score=2.0, summary="a man walking in"),
+        1: _score(male=1, frame_score=3.0, person_score=9.0, summary="a man at the door"),
+        2: _score(male=1, frame_score=6.0, person_score=5.0, summary="a man walking away"),
     }
     with patch("detection_summary_app.manager.time.sleep", side_effect=_capture_lands):
         provider = _drive_four_frame_image_gen(
@@ -815,6 +820,36 @@ def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None
     assert _notes_block(provider.edit_image.call_args.kwargs["prompt"]) == [
         "- Image 1 (primary frame) t=1.0s: a man at the door (m=1, f=0, animals=0)"
     ]
+
+
+def test_the_fallback_prefers_a_frame_with_someone_in_it() -> None:
+    """With the best frame gone for good, the fallback ranks like selection does.
+
+    A sharp, empty frame must not beat a softer frame with the person in it:
+    `_pick_key` leads with whether anyone is in the frame.
+    """
+    app = _make_app(_args(external_image_gen_wait_for_best_s=0))
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-fallback-subject")
+    local_run_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir) / app.bundle_runs_subdir / "run-fallback-subject"
+    )
+    (local_run_dir / app.captured_subdir / "frame_001.jpg").unlink()
+    scored = {
+        0: _score(frame_score=9.0, person_score=0.0, face_score=0.0, summary="an empty driveway"),
+        1: _score(male=1, frame_score=5.0, person_score=9.0, summary="a man at the door"),
+        2: _score(male=1, frame_score=3.0, person_score=8.0, summary="a man walking away"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app,
+        "run-fallback-subject",
+        max_input_images=3,
+        scores=_scores_with_best(scored, 1),
+        run=run,
+    )
+
+    assert _sent_names(provider) == ["frame_002.jpg"]
 
 
 def test_candidates_are_trimmed_to_the_workflow_slots() -> None:
