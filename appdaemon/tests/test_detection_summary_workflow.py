@@ -686,36 +686,61 @@ def test_a_profile_category_decides_what_counts_as_new() -> None:
     )
 
 
-def test_a_trimmed_frame_leaves_no_count_behind() -> None:
-    """On the packages profile a fourth candidate can be trimmed off a three-slot workflow.
+def _packages_trim_scores():
+    """A packages run with four candidates for a three-slot workflow.
 
-    Most scored frames show the package, so the consensus says exactly one,
-    but the only frame showing it is the fourth candidate. With it trimmed, no
-    image the model receives shows a package, and the prompt must not ask for
-    one.
+    The best frame (3) shows one man. Frame 2 adds a person, frame 1 an
+    animal, and frame 0 a package. Frames 4-6 have no file of their own and
+    only move the consensus: most scored frames show the package.
     """
-    app = _make_app(_args(detection_profile="packages"))
-    _initialize(app)
-
     package = {"package_count": 1}
     scored = {
         0: _score(frame_score=3.0, summary="a package", extra_signals=package),
         1: _score(animal=1, frame_score=4.0, summary="a dog"),
         2: _score(male=2, frame_score=5.0, summary="two men"),
         3: _score(male=1, frame_score=9.0, summary="a man at the door"),
-        # Frames with no file of their own: they only move the consensus.
         4: _score(frame_score=1.0, extra_signals=package),
         5: _score(frame_score=1.0, extra_signals=package),
         6: _score(frame_score=1.0, extra_signals=package),
     }
+    return _scores_with_best(scored, 3)
+
+
+def test_the_profile_s_own_category_survives_the_trim() -> None:
+    """On a packages camera the package frame is the last one to lose.
+
+    Extras used to follow profile order (people, animals, packages), so the
+    three-slot trim always cut the package frame, the one the profile exists
+    for.
+    """
+    app = _make_app(_args(detection_profile="packages"))
+    _initialize(app)
+
     provider = _drive_four_frame_image_gen(
-        app, "run-trim-count", max_input_images=3, scores=_scores_with_best(scored, 3)
+        app, "run-keep-package", max_input_images=3, scores=_packages_trim_scores()
     )
 
-    assert _sent_names(provider) == [app.bundle_best_filename, "frame_002.jpg", "frame_001.jpg"]
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg", "frame_002.jpg"]
+    assert "- Packages: exactly 1" in provider.edit_image.call_args.kwargs["prompt"]
+
+
+def test_a_trimmed_frame_leaves_no_count_behind() -> None:
+    """The frame the trim drops takes its count with it.
+
+    Here that is the animal frame: an animal was scored, but no image the
+    model receives shows one, so the prompt must not leave room for one.
+    """
+    app = _make_app(_args(detection_profile="packages"))
+    _initialize(app)
+
+    provider = _drive_four_frame_image_gen(
+        app, "run-trim-count", max_input_images=3, scores=_packages_trim_scores()
+    )
+
+    assert "frame_001.jpg" not in _sent_names(provider)
     prompt = provider.edit_image.call_args.kwargs["prompt"]
-    assert "- Packages: none" in prompt
-    assert "- Packages: exactly" not in prompt
+    assert "- Animals: none" in prompt
+    assert "- People: at most 2" in prompt
 
 
 def test_a_missing_best_frame_falls_back_to_the_next_best_frame() -> None:
@@ -745,6 +770,51 @@ def test_a_missing_best_frame_falls_back_to_the_next_best_frame() -> None:
     prompt = provider.edit_image.call_args.kwargs["prompt"]
     assert "primary frame" not in prompt
     assert _notes_block(prompt) == ["- Image 1 t=2.0s: a man walking away (m=1, f=0, animals=0)"]
+
+
+def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None:
+    """best.jpg is copied once; a capture that arrives later is found by the fallback.
+
+    The best frame's file is missing when `_build_bundle` copies it to
+    best.jpg and lands during the wait for best.jpg, which nothing else ever
+    writes. The fallback must send that capture, as the primary frame, not
+    the next-best frame.
+    """
+    app = _make_app(_args(external_image_gen_wait_for_best_s=0.05))
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-late-best")
+    frames_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir)
+        / app.bundle_runs_subdir
+        / "run-late-best"
+        / app.captured_subdir
+    )
+    late = frames_dir / "frame_001.jpg"
+    content = late.read_bytes()
+    late.unlink()
+
+    def _capture_lands(_seconds: float) -> None:
+        late.write_bytes(content)
+
+    scored = {
+        0: _score(male=1, frame_score=5.0, summary="a man walking in"),
+        1: _score(male=1, frame_score=9.0, summary="a man at the door"),
+        2: _score(male=1, frame_score=7.0, summary="a man walking away"),
+    }
+    with patch("detection_summary_app.manager.time.sleep", side_effect=_capture_lands):
+        provider = _drive_four_frame_image_gen(
+            app,
+            "run-late-best",
+            max_input_images=3,
+            scores=_scores_with_best(scored, 1),
+            run=run,
+        )
+
+    assert _sent_names(provider) == ["frame_001.jpg"]
+    assert _notes_block(provider.edit_image.call_args.kwargs["prompt"]) == [
+        "- Image 1 (primary frame) t=1.0s: a man at the door (m=1, f=0, animals=0)"
+    ]
 
 
 def test_candidates_are_trimmed_to_the_workflow_slots() -> None:

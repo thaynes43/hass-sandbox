@@ -175,11 +175,13 @@ and OpenAI, which send every frame they are given. The manager builds the
 provider first, trims its candidate list to that number, and only then builds
 the prompt, so the prompt describes exactly the frames the model receives:
 
-- the frames are sent in rank order — best frame first, then, in profile
-  category order, the best-scoring frame that shows more of that category than
-  the best frame does — and a trim drops from the tail;
-- the prompt's `You are provided N images` line counts the frames sent, not
-  the frames selected;
+- the frames are sent in rank order — best frame first, then, per category,
+  the best-scoring frame that shows more of it than the best frame does, with
+  the profile's own categories (packages, vehicles) ahead of people and
+  animals — and a trim drops from the tail, so it cuts a people or animals
+  frame before a package or vehicle frame;
+- the prompt's `You are provided N images` line (`You are provided 1 image`
+  on a one-frame run) counts the frames sent, not the frames selected;
 - the per-frame notes run in the same order as the uploads and are labelled by
   position (`Image 1 (primary frame)`, `Image 2`, …), because every upload is
   renamed on the way out and a filename would name nothing the model can see.
@@ -237,8 +239,9 @@ sent only if, for some profile category, it shows more than the best frame
 does, counted by category total (people = men + women). A frame that shows the
 same person somewhere else, or reads their gender differently, adds nobody, so
 a one-person visit renders from the best frame alone, as every run did before
-1.21.0. If `best.jpg` never appeared and no other frame adds anyone, the
-best-scoring frame whose file exists is sent in its place.
+1.21.0. If `best.jpg` never appeared and no other candidate is on disk, the
+best-scoring frame whose capture is on disk is sent in its place. That can be
+the best frame's own capture, if it landed after the copy to `best.jpg`.
 
 **The prompt says one thing throughout:**
 

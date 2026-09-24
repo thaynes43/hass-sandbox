@@ -1022,9 +1022,13 @@ class DetectionSummary(hass.Hass):
             # only a duplicate. Counted by category total (people = men +
             # women), so a frame where the scorer read the same person's gender
             # differently is not a new person. Most runs send one frame.
+            # The profile's own categories (packages, vehicles) go ahead of
+            # people and animals: a trim to the workflow's slots drops from the
+            # tail, and the frame a packages camera exists for is the last one
+            # to lose. The sort is stable, so profile order holds otherwise.
             best_res = scored.get(int(best_idx))
             candidate_idxs: list[int] = [int(best_idx)]
-            for cat in self._profile.categories:
+            for cat in sorted(self._profile.categories, key=lambda c: c.name in ("people", "animals")):
                 if not cat.count_signals:
                     continue
                 extra = _pick_best_idx_with_max(scored, lambda r, c=cat: _category_total(r, c))
@@ -1057,9 +1061,11 @@ class DetectionSummary(hass.Hass):
             if not selected_frames:
                 # best.jpg never appeared and no other candidate is on disk
                 # (in a one-person run there is no other candidate): draw from
-                # the best-scoring frame whose file is there instead.
+                # the best-scoring frame whose capture is on disk instead. That
+                # can be the best frame's own: best.jpg is copied from it once,
+                # above, so a capture that landed after that copy is only here.
                 for ii, _rr in sorted(
-                    ((int(i), r) for i, r in scored.items() if r is not None and int(i) != int(best_idx)),
+                    ((int(i), r) for i, r in scored.items() if r is not None),
                     key=lambda t: (
                         float(getattr(t[1], "frame_score", 0.0) or 0.0),
                         float(getattr(t[1], "face_score", 0.0) or 0.0),
