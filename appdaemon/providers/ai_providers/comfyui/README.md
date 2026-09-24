@@ -34,7 +34,7 @@ expect from it.
 
 | Workflow | Model released | Added | Frames | Expect |
 |---|---|---|---|---|
-| `qwen-image-2.1-2609-25step-edit-3frame` **(registry default / fallback)** | 2026-09-20 | 2026-09-21 | up to 3 | Same clean, painterly result as the single-frame entry, with the extra frames used to confirm who and what is in the scene. About 16 GB of VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is thermally throttled. |
+| `qwen-image-2.1-2609-25step-edit-3frame` **(registry default / fallback)** | 2026-09-20 | 2026-09-21 | up to 3 | Same clean, painterly result as the single-frame entry, with the extra frames used for a subject the first one misses. About 16 GB of VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is thermally throttled. |
 | `qwen-image-2.1-2609-25step-edit-3frame-gpu1` **(what the bundle runs)** | 2026-09-20 | 2026-09-21 | up to 3 | Identical output to the plain three-frame entry. About 55-60 s per image even back-to-back, where the first GPU drops to ~115 s once it heats up. The first render after a ComfyUI restart or after switching cards pays a one-off model load of a few minutes. |
 | `qwen-image-2.1-2609-25step-edit` | 2026-09-20 | 2026-09-21 | 1 | Clean, painterly restyles that keep the scene, people and vehicles where they are; natural colour, no burnt shadows. About 16 GB of VRAM and roughly 45 s per image on a cool 3090, 2-3x that when thermally throttled. |
 | `qwen-image-edit-2509-lightning4-legacy` | 2025-09-22 | 2026-09-21 | 1 | What production sent until 2026-09: strong stylisation but over-saturated colour and crushed shadows, because cfg 3.5 fights the 4-step LoRA. About 40-50 s per image. |
@@ -77,7 +77,7 @@ slots are pruned, so a single-frame caller renders the same graph the one-slot
 entry does — picking a one-slot entry narrows the app to the best frame alone,
 which is a real rollback and not just a cost saving. On this 7B model the
 extra frames are close to free — about 50 s against 45 s for one — which is why
-three frames is the default rather than an opt-in. (On the 20B 2509 model they
+the three-slot entry is the default rather than an opt-in. (On the 20B 2509 model they
 cost several times more, so its three-frame entry stayed opt-in.)
 
 Three rollbacks from what the bundle runs, each one line:
@@ -254,8 +254,9 @@ holds 55-60 s render after render.
 
 Frame count is what separates the two models here: on Qwen-Image-2.1 (7B) a
 third reference frame costs about 5 s, while on Qwen-Image-Edit-2509 (20B) it
-multiplies the render. That is why the 2.1 default sends three frames and the
-2509 three-frame entry is opt-in.
+multiplies the render. That is why the 2.1 default has three slots and the
+2509 three-frame entry is opt-in. How many of those slots a run fills is the
+app's call: only frames that show someone the best frame misses.
 
 ComfyUI serves one queue, so a slow workflow starves every other camera —
 worth weighing before pointing every zone at a slow one.

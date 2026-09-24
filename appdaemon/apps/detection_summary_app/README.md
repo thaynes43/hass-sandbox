@@ -197,7 +197,23 @@ slots and anything dropped there is recorded in the run's meta as
 `ignored_input_paths`. With the manager trimming first that list is normally
 absent.
 
-#### One moment, each subject drawn once
+Three one-line rollbacks on a single camera: `image_workflow:
+qwen-image-2.1-2609-25step-edit-3frame` renders exactly the same image but
+drops the `gpu:1` pin, `image_workflow: qwen-image-2.1-2609-25step-edit` keeps
+the model but sends only the best frame, and `image_workflow:
+qwen-image-edit-2509-lightning4-legacy` goes back to the pre-2.1 model.
+
+The workflow that produced each image is recorded on the `image gen start` INFO
+line, in `generated_image.workflow_name` / `workflow_source` in the bundle, and
+on the `image_edit` LLM event. If the provider had to fall back because ComfyUI
+rejected the configured graph, `workflow_name` names what actually rendered and
+`workflow_fallback_reason` says why.
+
+See
+[`providers/ai_providers/comfyui/README.md`](../../providers/ai_providers/comfyui/README.md#choosing-a-workflow)
+for the registry table and how to roll back.
+
+### One moment, each subject drawn once
 
 The reference frames are one camera, seconds apart, so they show the same
 people at different moments. The image models are editors that, handed
@@ -245,22 +261,6 @@ best-scoring frame whose file exists is sent in its place.
   sequence, comic panels, or a repeated pattern. The style and setting headers
   repeat "each drawn once", because some styles lean towards repetition
   (Warhol-style pop art, comic panels, sticker sheets).
-
-Three one-line rollbacks on a single camera: `image_workflow:
-qwen-image-2.1-2609-25step-edit-3frame` renders exactly the same image but
-drops the `gpu:1` pin, `image_workflow: qwen-image-2.1-2609-25step-edit` keeps
-the model but sends only the best frame, and `image_workflow:
-qwen-image-edit-2509-lightning4-legacy` goes back to the pre-2.1 model.
-
-The workflow that produced each image is recorded on the `image gen start` INFO
-line, in `generated_image.workflow_name` / `workflow_source` in the bundle, and
-on the `image_edit` LLM event. If the provider had to fall back because ComfyUI
-rejected the configured graph, `workflow_name` names what actually rendered and
-`workflow_fallback_reason` says why.
-
-See
-[`providers/ai_providers/comfyui/README.md`](../../providers/ai_providers/comfyui/README.md#choosing-a-workflow)
-for the registry table and how to roll back.
 
 ## Config reference (apps.yaml)
 
