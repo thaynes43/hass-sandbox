@@ -11,7 +11,6 @@ from detection_summary_app.population import (
     _max_value,
     _median_value,
     _mode_value,
-    augment_image_instructions_with_consensus,
     compute_population_consensus,
 )
 from detection_summary_app.profiles import PROFILE_DEFAULT, PROFILE_PACKAGES, DetectionProfile, SubjectCategory
@@ -122,48 +121,57 @@ class TestConsensusComputation:
         assert result["max_male_count"] == 3
 
 
-class TestAugmentInstructions:
-    def test_augment_instructions_with_consensus(self):
-        """Instructions include 'most likely' + 'max' language."""
-        consensus = {
-            "consensus_male_count": 1,
-            "max_male_count": 2,
-            "consensus_female_count": 0,
-            "max_female_count": 1,
-            "consensus_animal_count": 1,
-            "max_animal_count": 1,
-        }
-        result = augment_image_instructions_with_consensus("BASE", consensus, PROFILE_DEFAULT)
-        assert "BASE" in result
-        assert "most likely" in result.lower()
-        assert "max:" in result.lower() or "max: " in result
-        assert "Do NOT include more than" in result
+class TestCategoryTotals:
+    """Per-frame category totals: what the image prompt counts people with."""
 
-    def test_augment_instructions_backward_compat(self):
-        """When no consensus data, values are zero."""
-        consensus = {
-            "consensus_male_count": 0,
-            "max_male_count": 0,
-            "consensus_female_count": 0,
-            "max_female_count": 0,
-            "consensus_animal_count": 0,
-            "max_animal_count": 0,
-        }
-        result = augment_image_instructions_with_consensus("BASE", consensus, PROFILE_DEFAULT)
-        assert "BASE" in result
+    @staticmethod
+    def _sr(male: int = 0, female: int = 0, animal: int = 0) -> ScoreResult:
+        return ScoreResult(
+            male_count=male, female_count=female, animal_count=animal,
+            person_score=5.0, face_score=5.0, frame_score=5.0,
+            pose="standing", summary="", structured={},
+        )
 
-    def test_augment_instructions_packages_guardrails(self):
-        """Instructions for packages profile include hallucination guardrails."""
-        consensus = {
-            "consensus_male_count": 1,
-            "max_male_count": 1,
-            "consensus_female_count": 0,
-            "max_female_count": 0,
-            "consensus_animal_count": 0,
-            "max_animal_count": 0,
-            "consensus_package_count": 1,
-            "max_package_count": 2,
-        }
-        result = augment_image_instructions_with_consensus("BASE", consensus, PROFILE_PACKAGES)
-        assert "Packages" in result
-        assert "clearly visible" in result.lower()
+    def test_one_person_read_as_both_genders_totals_one(self):
+        """Per-signal maxima say 1 man AND 1 woman; no frame ever held two people."""
+        scored = {0: self._sr(male=1), 1: self._sr(female=1), 2: self._sr(male=1)}
+        result = compute_population_consensus(scored, PROFILE_DEFAULT)
+        assert result["max_male_count"] == 1
+        assert result["max_female_count"] == 1
+        assert result["consensus_people_total"] == 1
+        assert result["max_people_total"] == 1
+
+    def test_totals_follow_the_profile_strategy(self):
+        scored = {0: self._sr(male=1, female=1), 1: self._sr(male=1), 2: self._sr(male=1, animal=2)}
+        result = compute_population_consensus(scored, PROFILE_DEFAULT)
+        # people per frame: [2, 1, 1] -> mode 1, max 2
+        assert result["consensus_people_total"] == 1
+        assert result["max_people_total"] == 2
+        # animals per frame: [0, 0, 2] -> mode 0, max 2
+        assert result["consensus_animals_total"] == 0
+        assert result["max_animals_total"] == 2
+
+    def test_every_category_with_signals_gets_a_total(self):
+        scored = {0: ScoreResult(
+            male_count=0, female_count=0, animal_count=0, person_score=0.0, face_score=0.0,
+            frame_score=5.0, pose="", summary="", structured={}, extra_signals={"package_count": 3},
+        )}
+        result = compute_population_consensus(scored, PROFILE_PACKAGES)
+        assert result["consensus_packages_total"] == 3
+        assert result["max_packages_total"] == 3
+        assert result["max_people_total"] == 0
+
+    def test_a_category_without_signals_has_no_total(self):
+        profile = DetectionProfile(
+            name="t",
+            categories=(SubjectCategory(name="context", count_signals=()),),
+            score_fields=DEFAULT_SCORE_FIELDS,
+        )
+        result = compute_population_consensus({0: self._sr(male=1)}, profile)
+        assert "consensus_context_total" not in result
+        assert "max_context_total" not in result
+
+    def test_no_scored_frames_totals_zero(self):
+        result = compute_population_consensus({}, PROFILE_DEFAULT)
+        assert result["consensus_people_total"] == 0
+        assert result["max_people_total"] == 0

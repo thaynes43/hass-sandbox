@@ -36,7 +36,7 @@ from .bundle import (
     write_trace,
 )
 from .capture import CaptureConfig, CaptureState, CapturedFrame, next_delay_s, should_stop_capture
-from .selection import ScoreResult, SelectionMeta, adaptive_select_and_score
+from .selection import ScoreResult, SelectionMeta, _get_signal_value, _pick_key, adaptive_select_and_score
 from .population import compute_population_bounds, compute_population_consensus
 from .narrative import NarrativeConfig, synthesize_run_narrative
 from .publish_gate import should_publish_bundle
@@ -944,24 +944,35 @@ class DetectionSummary(hass.Hass):
                 },
             }
 
-        # Create best.jpg for this run
+        # Create best.jpg for this run from the best frame's capture, and
+        # mirror it to a stable path under the zone dir (for a local_file
+        # camera to point at). The capture can still be landing here, so this
+        # runs again while image generation waits for it and where the best
+        # frame is resolved for sending: a late capture still becomes this
+        # run's best.jpg and mirror, rather than leaving no best.jpg and the
+        # previous run's frame in the mirror.
         best_src = frames_dir / f"frame_{best_idx:03d}.jpg"
         best_dst = local_run_dir / self.bundle_best_filename
-        if best_src.exists():
-            best_dst.write_bytes(best_src.read_bytes())
 
-        # Mirror best.jpg to a stable path under the zone dir (for a local_file camera to point at).
-        try:
-            stable_best_local = self._ha_path_to_local_fs(stable_best_ha_path(cfg))
-            stable_best_local.parent.mkdir(parents=True, exist_ok=True)
+        def _materialize_best() -> bool:
             if best_dst.exists():
+                return True
+            if not best_src.exists():
+                return False
+            best_dst.write_bytes(best_src.read_bytes())
+            try:
+                stable_best_local = self._ha_path_to_local_fs(stable_best_ha_path(cfg))
+                stable_best_local.parent.mkdir(parents=True, exist_ok=True)
                 stable_best_local.write_bytes(best_dst.read_bytes())
                 self.log(
                     f"DetectionSummary[{self.bundle_key}]: mirrored best run_id={run_id} stable={stable_best_local}",
                     level="INFO",
                 )
-        except Exception as e:
-            self.log(f"DetectionSummary[{self.bundle_key}]: failed to mirror best image: {e!r}", level="WARNING")
+            except Exception as e:
+                self.log(f"DetectionSummary[{self.bundle_key}]: failed to mirror best image: {e!r}", level="WARNING")
+            return True
+
+        _materialize_best()
 
         # Generate image from best.jpg to per-run generated.png, then mirror to stable
         generated_image: Optional[dict[str, Any]] = None
@@ -969,10 +980,11 @@ class DetectionSummary(hass.Hass):
         consensus_bounds = compute_population_consensus(scored, self._profile)
         if self.external_image_gen_enabled:
             out_path = local_run_dir / self.external_generated_filename
-            # wait for best to exist
+            # Wait for the best frame's capture, if it has not landed yet, and
+            # turn it into best.jpg the moment it does.
             if self.external_image_gen_wait_for_best_s > 0:
                 deadline = time.time() + float(self.external_image_gen_wait_for_best_s)
-                while time.time() < deadline and not best_dst.exists():
+                while time.time() < deadline and not _materialize_best():
                     time.sleep(0.2)
 
             def _pick_best_idx_with_max(sc: dict[int, ScoreResult], get_count) -> Optional[int]:
@@ -1002,47 +1014,47 @@ class DetectionSummary(hass.Hass):
                     ),
                 )[0]
 
-            # Provide multiple reference frames to reduce "phantom" additions:
-            # - best overall frame (always)
-            # - best-scoring frame that contains the max animals / max males / max females (deduped)
-            best_animals_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "animal_count", 0))
-            best_males_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "male_count", 0))
-            best_females_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "female_count", 0))
+            def _category_total(res: Optional[ScoreResult], cat: Any) -> int:
+                if res is None:
+                    return 0
+                total = 0
+                for sig in dict.fromkeys(cat.count_signals):
+                    try:
+                        total += max(0, int(_get_signal_value(res, sig) or 0))
+                    except (TypeError, ValueError):
+                        continue
+                return total
 
+            # Reference frames: the best frame, plus, per profile category, the
+            # best-scoring frame that shows MORE of that category than the best
+            # frame and every frame already chosen (a dog that crossed later, a
+            # second person). Every, not just the best: a frame picked for its
+            # package can already show the second person. Nothing
+            # else: the frames are one camera seconds apart, so any other frame
+            # shows the same people somewhere else, and a multi-image edit
+            # model draws what each image shows. A frame that adds nobody adds
+            # only a duplicate. Counted by category total (people = men +
+            # women), so a frame where the scorer read the same person's gender
+            # differently is not a new person. Most runs send one frame.
+            # The profile's own categories (packages, vehicles) go ahead of
+            # people and animals: a trim to the workflow's slots drops from the
+            # tail, and the frame a packages camera exists for is the last one
+            # to lose. The sort is stable, so profile order holds otherwise.
             candidate_idxs: list[int] = [int(best_idx)]
-            for extra in (best_animals_idx, best_males_idx, best_females_idx):
-                if extra is None:
+            chosen: list[Optional[ScoreResult]] = [scored.get(int(best_idx))]
+            for cat in sorted(self._profile.categories, key=lambda c: c.name in ("people", "animals")):
+                if not cat.count_signals:
                     continue
-                ii = int(extra)
-                if ii not in candidate_idxs:
-                    candidate_idxs.append(ii)
+                extra = _pick_best_idx_with_max(scored, lambda r, c=cat: _category_total(r, c))
+                if extra is None or int(extra) in candidate_idxs:
+                    continue
+                extra_res = scored.get(int(extra))
+                if _category_total(extra_res, cat) <= max(_category_total(r, cat) for r in chosen):
+                    continue
+                candidate_idxs.append(int(extra))
+                chosen.append(extra_res)
 
-            # Ensure we send more than one reference when we have more than one scored frame.
-            # This helps prevent "phantom" subjects when the best frame is missing a transient subject.
-            min_refs = 2
             max_refs = 4
-
-            def _ref_rank(res: ScoreResult) -> tuple:
-                # Similar spirit to selection._pick_key, tuned for reference quality.
-                has_subject = 1 if (int(getattr(res, "animal_count", 0) or 0) > 0 or float(getattr(res, "person_score", 0.0) or 0.0) > 0) else 0
-                has_summary = 1 if (str(getattr(res, "summary", "") or "").strip()) else 0
-                return (
-                    has_subject,
-                    float(getattr(res, "frame_score", 0.0) or 0.0),
-                    float(getattr(res, "face_score", 0.0) or 0.0),
-                    float(getattr(res, "person_score", 0.0) or 0.0),
-                    int(getattr(res, "animal_count", 0) or 0),
-                    has_summary,
-                )
-
-            if len(scored) > 1 and len(candidate_idxs) < min_refs:
-                ranked = sorted([(int(ii), rr) for ii, rr in (scored or {}).items() if rr is not None], key=lambda t: _ref_rank(t[1]), reverse=True)
-                for ii, _rr in ranked:
-                    if ii not in candidate_idxs:
-                        candidate_idxs.append(int(ii))
-                    if len(candidate_idxs) >= min_refs:
-                        break
-
             if len(candidate_idxs) > max_refs:
                 candidate_idxs = candidate_idxs[:max_refs]
 
@@ -1052,7 +1064,13 @@ class DetectionSummary(hass.Hass):
             # notes describe exactly the frames sent, in the order sent.
             selected_frames: list[tuple[int, Path]] = []
             for ii in candidate_idxs:
-                p = best_dst if int(ii) == int(best_idx) else (frames_dir / f"frame_{int(ii):03d}.jpg")
+                if int(ii) == int(best_idx):
+                    # A capture that landed after the wait still becomes
+                    # best.jpg here; with no capture there is no best.jpg.
+                    _materialize_best()
+                    p = best_dst
+                else:
+                    p = frames_dir / f"frame_{int(ii):03d}.jpg"
                 if p.exists():
                     selected_frames.append((int(ii), p))
                 else:
@@ -1060,8 +1078,22 @@ class DetectionSummary(hass.Hass):
                         f"DetectionSummary[{self.bundle_key}]: image gen missing candidate frame idx={int(ii)} path={p}",
                         level="WARNING",
                     )
-            if not selected_frames and best_dst.exists():
-                selected_frames = [(int(best_idx), best_dst)]
+            if not selected_frames:
+                # No candidate is on disk: not best.jpg, not the best frame's
+                # own capture, and no other candidate (a one-person run has
+                # none). Draw from the frames that are, ranked by `_pick_key`,
+                # the key that chose the best frame. It leads with whether
+                # anyone is in the frame, so a sharp empty frame comes last.
+                # The best frame stays first in case its capture just landed.
+                for ii, _rr in sorted(
+                    ((int(i), r) for i, r in scored.items() if r is not None),
+                    key=lambda t: (t[0] == int(best_idx), _pick_key(t[1])),
+                    reverse=True,
+                ):
+                    p = frames_dir / f"frame_{ii:03d}.jpg"
+                    if p.exists():
+                        selected_frames = [(ii, p)]
+                        break
             input_paths: list[Path] = [p for _ii, p in selected_frames]
 
             if input_paths:
@@ -1103,10 +1135,9 @@ class DetectionSummary(hass.Hass):
                         selected_frames = selected_frames[:max_input_images]
                         input_paths = [p for _ii, p in selected_frames]
 
-                    # Narrative context is helpful, but should not be treated as a "hard rule" about subject count.
-                    narrative_text = ""
-                    if isinstance(run_narrative, dict):
-                        narrative_text = str(run_narrative.get("run_summary") or "").strip()
+                    # The run narrative stays out of the image prompt: it tells the
+                    # whole event as a sequence ("walked up, paused, walked away"),
+                    # and an image model draws a sequence as that many people.
 
                     # Compact per-frame notes for the images we are providing —
                     # one per frame in `selected_frames`, in that exact order,
@@ -1141,18 +1172,24 @@ class DetectionSummary(hass.Hass):
                                 male_count=m,
                                 female_count=f,
                                 animal_count=a,
-                                # The best frame is normally first, but it is
-                                # skipped above when best.jpg never appeared
-                                # (`best_src` missing, or the wait timed out),
-                                # and then no reference is the primary one.
+                                # The best frame is first whenever it is sent,
+                                # as best.jpg or as its own capture. When
+                                # neither is on disk it is skipped above, and
+                                # then no reference is the primary one.
                                 is_primary=int(ii) == int(best_idx),
+                                # The same totals the frame was picked on, so
+                                # its note names what it adds (a package too).
+                                category_counts=tuple(
+                                    ((cat.display_name or cat.name).lower(), _category_total(rr, cat))
+                                    for cat in self._profile.categories
+                                    if cat.count_signals
+                                ),
                             )
                         )
 
                     prompt_result = self._image_prompt_builder.build(
                         base_instructions=str(self.image_instructions),
                         population_bounds=population_bounds,
-                        narrative_text=narrative_text,
                         frame_notes=notes if notes else None,
                         input_paths_count=len(input_paths),
                         bundle_augmentation=getattr(provider_cfg, "image_prompt_augmentation", None),

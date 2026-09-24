@@ -61,7 +61,7 @@ workflows:
       it also serves single-frame callers. Needs ComfyUI >= 0.37.0.
     expect: >-
       Same clean, painterly result as the single-frame entry, with the extra
-      frames used to confirm who and what is in the scene. About 16 GB of
+      frames used for a subject the first one misses. About 16 GB of
       VRAM; roughly 50 s per image on a cool 3090, 2-3x that when the card is
       thermally throttled.
     graph: workflows/qwen_image_2_1_edit_3frame_API.json

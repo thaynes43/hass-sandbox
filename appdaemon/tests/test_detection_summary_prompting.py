@@ -31,6 +31,8 @@ from detection_summary_app.prompting.style_variants import (
     random_environment_variant,
     random_style_profile,
 )
+from detection_summary_app.population import compute_population_consensus
+from detection_summary_app.profiles import PROFILE_DEFAULT, PROFILE_PACKAGES
 from detection_summary_app.selection import ScoreResult
 
 
@@ -167,8 +169,45 @@ class TestScoreNormalizer:
         assert res.pose == ""
 
 
+def _score(male: int = 0, female: int = 0, animal: int = 0, **extra: int) -> ScoreResult:
+    return ScoreResult(
+        male_count=male,
+        female_count=female,
+        animal_count=animal,
+        person_score=5.0,
+        face_score=5.0,
+        frame_score=5.0,
+        pose="standing",
+        summary="",
+        structured={},
+        extra_signals=dict(extra),
+    )
+
+
+def _count_lines(result: ImagePromptResult) -> list[str]:
+    block = result.prompt.split("Subjects to draw, each exactly once:\n")[1]
+    return block.split("\n\n")[0].splitlines()
+
+
+def _note_lines(result: ImagePromptResult) -> list[str]:
+    return [ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")]
+
+
+def _build_from_frames(frames: list[ScoreResult], profile=PROFILE_DEFAULT) -> ImagePromptResult:
+    """Build with counts computed from per-frame scores, the way the manager does."""
+    scored = dict(enumerate(frames))
+    return ImagePromptBuilder().build(
+        base_instructions="Base",
+        population_bounds={},
+        consensus_bounds=compute_population_consensus(scored, profile),
+        profile=profile,
+        style_profile_id="default",
+        environment_variant_id="default",
+    )
+
+
 class TestImagePromptBuilder:
-    def test_build_includes_base_and_constraints(self):
+    def test_build_without_a_profile_counts_from_the_bounds(self):
         builder = ImagePromptBuilder()
         result = builder.build(
             base_instructions="Draw a cartoon",
@@ -176,29 +215,179 @@ class TestImagePromptBuilder:
         )
         assert isinstance(result, ImagePromptResult)
         out = result.prompt
-        assert "Draw a cartoon" in out
-        assert "Reference frames" in out
-        assert "Critical constraints" in out
-        assert "phantom" in out.lower()
-        assert "up to 1 male" in out
-        assert "up to 1 animal" in out
+        assert out.startswith("Draw a cartoon\n")
+        assert _count_lines(result) == ["- People: at most 1", "- Animals: at most 1"]
+        assert "clearly visible" in out
         # Style/env metadata should be populated
         assert result.style_profile_id is not None
         assert result.environment_variant_id is not None
 
-    def test_build_includes_narrative_and_notes(self):
-        builder = ImagePromptBuilder()
-        result = builder.build(
+    def test_the_scene_of_image_1_is_what_gets_drawn(self):
+        """Several references are a composition cue to an edit model; Image 1 is the anchor."""
+        result = ImagePromptBuilder().build(
             base_instructions="Base",
             population_bounds={},
-            narrative_text="Someone arrived.",
-            frame_notes=[FrameNote(summary="Person at door", male_count=1)],
+            frame_notes=[
+                FrameNote(summary="A man at the door.", male_count=1, is_primary=True),
+                FrameNote(summary="A man leaving.", male_count=1),
+            ],
+            input_paths_count=2,
         )
         out = result.prompt
-        assert "Narrative context" in out
-        assert "Someone arrived" in out
-        assert "Frame notes" in out
-        assert "Person at door" in out
+        assert (
+            "Draw the scene of Image 1 (the primary frame): keep its camera view and composition"
+            in out
+        )
+        assert "The illustration shows that one moment." in out
+        assert "Anyone or anything that appears in several images is one individual" in out
+        assert "Use Image 2 only to see a subject more clearly" in out
+
+    def test_the_prompt_never_asks_for_a_composite_of_the_frames(self):
+        """'A composite of the event' is how the same man got drawn once per frame."""
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[FrameNote(summary="x", male_count=1, is_primary=True), FrameNote(male_count=1)],
+            input_paths_count=2,
+        )
+        out = result.prompt.lower()
+        assert "composite" not in out
+        assert "across the provided frames" not in out
+        assert "narrative" not in out
+
+    def test_a_later_image_is_never_described_in_its_own_words(self):
+        """Each later summary places the same person somewhere else — a second person."""
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(
+                    summary="1 man standing at the door, center.",
+                    time_offset_s=7.5,
+                    male_count=1,
+                    is_primary=True,
+                ),
+                FrameNote(summary="1 man walking in, near left.", time_offset_s=0.0, male_count=1),
+                FrameNote(summary="1 man walking away, right side.", time_offset_s=15.0, male_count=1),
+            ],
+            input_paths_count=3,
+        )
+        assert "near left" not in result.prompt
+        assert "right side" not in result.prompt
+        assert _note_lines(result) == [
+            "- Image 1 (primary frame) t=7.5s: 1 man standing at the door, center. (m=1, f=0, animals=0)",
+            "- Image 2 t=0.0s: the same subjects as Image 1 at another moment; nobody new.",
+            "- Image 3 t=15.0s: the same subjects as Images 1-2 at another moment; nobody new.",
+        ]
+
+    def test_a_later_image_names_only_what_it_adds_to_image_1(self):
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(summary="A man at the door.", male_count=1, is_primary=True),
+                FrameNote(summary="A man and a dog.", male_count=1, animal_count=1),
+                FrameNote(summary="Three people.", male_count=2, female_count=1),
+            ],
+            input_paths_count=3,
+        )
+        assert _note_lines(result)[1:] == [
+            "- Image 2: the same scene at another moment, with 1 animal more than Image 1: "
+            "add only that one; everyone and everything else in it is already in Image 1.",
+            "- Image 3: the same scene at another moment, with 2 people more than Images 1-2: "
+            "add only those, each once; everyone and everything else in it is already in Images 1-2.",
+        ]
+
+    def test_a_later_image_is_described_by_its_profile_categories(self):
+        """A frame sent for a package names the package, not just people and animals."""
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(
+                    summary="A courier at the door.",
+                    male_count=1,
+                    is_primary=True,
+                    category_counts=(("people", 1), ("animals", 0), ("packages", 0)),
+                ),
+                FrameNote(
+                    summary="A package on the step.",
+                    category_counts=(("people", 0), ("animals", 0), ("packages", 1)),
+                ),
+                FrameNote(
+                    summary="Two parcels and a dog.",
+                    category_counts=(("people", 1), ("animals", 1), ("packages", 2)),
+                ),
+            ],
+            input_paths_count=3,
+        )
+        assert _note_lines(result)[1:] == [
+            "- Image 2: the same scene at another moment, with 1 package more than Image 1: "
+            "add only that one; everyone and everything else in it is already in Image 1.",
+            "- Image 3: the same scene at another moment, with 1 animal and 1 package more "
+            "than Images 1-2: add only those, each once; everyone and everything else in it is "
+            "already in Images 1-2.",
+        ]
+
+    def test_a_later_image_is_measured_against_every_earlier_image(self):
+        """A person Image 2 already added is not added again by Image 3.
+
+        Measured against Image 1 alone, Images 2 and 3 would each claim the
+        second man, and the additions summed onto Image 1 (1 + 1 + 1) would
+        pass the count line (at most 2): the same man described twice.
+        """
+        consensus = {
+            "consensus_people_total": 1,
+            "max_people_total": 2,
+            "consensus_animals_total": 0,
+            "max_animals_total": 0,
+            "consensus_packages_total": 0,
+            "max_packages_total": 1,
+        }
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            consensus_bounds=consensus,
+            profile=PROFILE_PACKAGES,
+            frame_notes=[
+                FrameNote(
+                    male_count=1,
+                    is_primary=True,
+                    category_counts=(("people", 1), ("animals", 0), ("packages", 0)),
+                ),
+                FrameNote(
+                    male_count=2,
+                    category_counts=(("people", 2), ("animals", 0), ("packages", 1)),
+                ),
+                FrameNote(
+                    male_count=2,
+                    category_counts=(("people", 2), ("animals", 0), ("packages", 0)),
+                ),
+            ],
+            input_paths_count=3,
+        )
+        assert _count_lines(result)[0] == "- People: at most 2"
+        assert _note_lines(result)[1:] == [
+            "- Image 2: the same scene at another moment, with 1 person and 1 package more than "
+            "Image 1: add only those, each once; everyone and everything else in it is already "
+            "in Image 1.",
+            "- Image 3: the same subjects as Images 1-2 at another moment; nobody new.",
+        ]
+
+    def test_a_flipped_gender_is_not_a_new_person(self):
+        """The scorer reading one person as a man, then a woman, adds nobody."""
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(summary="A man at the door.", male_count=1, is_primary=True),
+                FrameNote(summary="A woman at the door.", female_count=1),
+            ],
+            input_paths_count=2,
+        )
+        assert _note_lines(result)[1] == (
+            "- Image 2: the same subjects as Image 1 at another moment; nobody new."
+        )
 
     def test_notes_are_labelled_by_position_not_filename(self):
         """The provider renames every upload, so a filename names nothing.
@@ -226,12 +415,14 @@ class TestImagePromptBuilder:
             ],
             input_paths_count=3,
         )
-        block = result.prompt.split("Frame notes (for the provided references):\n")[1]
+        block = result.prompt.split("What each image shows:\n")[1]
         rendered = "\n".join(block.splitlines()[:3])
         assert rendered == (
             "- Image 1 (primary frame) t=1.2s: A man at the door. (m=1, f=0, animals=0)\n"
-            "- Image 2 t=0.5s: A dog crosses the drive. (m=0, f=0, animals=1)\n"
-            "- Image 3: (no summary) (m=0, f=2, animals=0)"
+            "- Image 2 t=0.5s: the same scene at another moment, with 1 animal more than Image 1: "
+            "add only that one; everyone and everything else in it is already in Image 1.\n"
+            "- Image 3: the same scene at another moment, with 1 person more than Images 1-2: "
+            "add only that one; everyone and everything else in it is already in Images 1-2."
         )
         # No filename the model never receives.
         assert "frame_0" not in result.prompt
@@ -253,10 +444,9 @@ class TestImagePromptBuilder:
             ],
             input_paths_count=2,
         )
-        lines = [ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")]
-        assert lines == [
+        assert _note_lines(result) == [
             "- Image 1 (primary frame) t=4.0s: best, captured late (m=0, f=0, animals=0)",
-            "- Image 2 t=0.0s: earliest frame (m=0, f=0, animals=0)",
+            "- Image 2 t=0.0s: the same subjects as Image 1 at another moment; nobody new.",
         ]
 
     def test_no_note_claims_to_be_primary_when_the_best_frame_was_not_sent(self):
@@ -277,9 +467,11 @@ class TestImagePromptBuilder:
             input_paths_count=2,
         )
         assert "primary frame" not in result.prompt
-        assert [ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")] == [
+        assert "Draw the scene of Image 1: keep its camera view" in result.prompt
+        assert _note_lines(result) == [
             "- Image 1 t=1.0s: best-animals frame (m=0, f=0, animals=2)",
-            "- Image 2 t=0.0s: best-females frame (m=0, f=1, animals=0)",
+            "- Image 2 t=0.0s: the same scene at another moment, with 1 person more than Image 1: "
+            "add only that one; everyone and everything else in it is already in Image 1.",
         ]
 
     def test_count_matches_the_number_of_notes(self):
@@ -292,8 +484,136 @@ class TestImagePromptBuilder:
             frame_notes=notes,
             input_paths_count=len(notes),
         )
-        assert "You are provided 3 image(s)" in result.prompt
-        assert len([ln for ln in result.prompt.splitlines() if ln.startswith("- Image ")]) == 3
+        assert "You are provided 3 images" in result.prompt
+        assert "Use Images 2-3 only" in result.prompt
+        assert len(_note_lines(result)) == 3
+
+    def test_one_image_is_described_as_one(self):
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[FrameNote(summary="A man at the door.", male_count=1, is_primary=True)],
+            input_paths_count=1,
+        )
+        out = result.prompt
+        assert "You are provided 1 image:" in out
+        assert "Draw the scene of the reference image" in out
+        assert "Image 2" not in out
+        assert "several images" not in out
+
+    def test_counts_are_exact_when_the_frames_agree(self):
+        result = _build_from_frames([_score(male=1), _score(male=1), _score(male=1)])
+        assert _count_lines(result) == ["- People: exactly 1", "- Animals: none"]
+
+    def test_a_person_read_as_both_genders_is_still_one_person(self):
+        """No frame held two people, so the total is one whatever the per-gender maxima say."""
+        result = _build_from_frames([_score(male=1), _score(female=1), _score(male=1)])
+        assert _count_lines(result)[0] == "- People: exactly 1"
+
+        result = _build_from_frames([_score(male=1), _score(female=1)])
+        assert _count_lines(result)[0] == "- People: exactly 1"
+
+    def test_a_group_is_counted_as_one_total(self):
+        """Gender is left to Image 1 and its note; the count line carries no breakdown."""
+        result = _build_from_frames([_score(male=1, female=1), _score(male=1, female=1)])
+        assert _count_lines(result)[0] == "- People: exactly 2"
+
+    def test_counts_are_a_ceiling_when_the_frames_disagree(self):
+        result = _build_from_frames(
+            [_score(male=1), _score(male=2), _score(male=1, animal=1)]
+        )
+        assert _count_lines(result) == ["- People: at most 2", "- Animals: at most 1"]
+
+    def test_extra_profile_categories_are_counted(self):
+        result = _build_from_frames(
+            [_score(package_count=1), _score(package_count=1)], profile=PROFILE_PACKAGES
+        )
+        assert _count_lines(result) == [
+            "- People: none",
+            "- Animals: none",
+            "- Packages: exactly 1",
+        ]
+        assert "keep the people, animals and packages where it shows them" in result.prompt
+
+    def test_counts_never_exceed_what_the_sent_images_show(self):
+        """The consensus covers every scored frame; the images sent can be fewer.
+
+        A frame trimmed to fit the workflow's slots (or skipped because its
+        file is missing) must take its count with it, or "exactly 1" asks for
+        a package no image the model receives shows.
+        """
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            consensus_bounds={
+                "consensus_people_total": 2,
+                "max_people_total": 3,
+                "consensus_animals_total": 0,
+                "max_animals_total": 1,
+                "consensus_packages_total": 1,
+                "max_packages_total": 1,
+            },
+            profile=PROFILE_PACKAGES,
+            frame_notes=[
+                FrameNote(
+                    male_count=1,
+                    is_primary=True,
+                    category_counts=(("people", 1), ("animals", 0), ("packages", 0)),
+                ),
+                FrameNote(
+                    male_count=2,
+                    category_counts=(("people", 2), ("animals", 1), ("packages", 0)),
+                ),
+            ],
+            input_paths_count=2,
+        )
+        assert _count_lines(result) == [
+            "- People: exactly 2",
+            "- Animals: at most 1",
+            "- Packages: none",
+        ]
+
+    def test_counts_without_a_profile_are_capped_by_the_sent_images_too(self):
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={"max_male_count": 2, "max_female_count": 1, "max_animal_count": 2},
+            frame_notes=[FrameNote(male_count=1, animal_count=1, is_primary=True)],
+            input_paths_count=1,
+        )
+        assert _count_lines(result) == ["- People: at most 1", "- Animals: at most 1"]
+
+    def test_consensus_without_totals_falls_back_to_the_signals(self):
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            consensus_bounds={
+                "consensus_male_count": 1,
+                "max_male_count": 1,
+                "consensus_female_count": 0,
+                "max_female_count": 0,
+                "consensus_animal_count": 0,
+                "max_animal_count": 2,
+            },
+            profile=PROFILE_DEFAULT,
+        )
+        assert _count_lines(result) == ["- People: exactly 1", "- Animals: at most 2"]
+
+    def test_style_and_setting_directives_keep_each_subject_once(self):
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            style_profile_id="pop-art",
+            environment_variant_id="underwater",
+        )
+        out = result.prompt
+        assert (
+            "Rendering style directive (apply to visual appearance only — "
+            "keep exactly the subjects above, each drawn once, in one scene):"
+        ) in out
+        assert (
+            "Environment/setting directive (modify background and setting only — "
+            "the subjects above must stay clearly present, each drawn once):"
+        ) in out
 
     def test_build_includes_bundle_augmentation(self):
         builder = ImagePromptBuilder()

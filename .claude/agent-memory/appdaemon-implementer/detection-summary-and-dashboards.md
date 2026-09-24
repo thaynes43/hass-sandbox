@@ -14,6 +14,26 @@ metadata:
 - `PROFILE_PACKAGES`: adds a `package_count` `ScoreFieldSpec`; all 3 categories `required_for_publish=True`.
 - `PROFILE_VEHICLES`: adds `vehicle_count` + `vehicle_type` `ScoreFieldSpec`.
 
+## Image prompt policy (`prompting/image_prompt_builder.py`)
+
+The reference frames show the SAME people seconds apart, and a multi-image
+edit model combines what each image shows, so the generated image repeated the
+same person once per frame (fixed in 1.22.2). Keep the prompt saying one thing:
+draw Image 1's moment, each subject once.
+- `manager.py` sends only the best frame plus, per profile category, a frame
+  showing MORE of that category than the best frame (by category total).
+  Never re-add a min_refs-style "second best frame": in a one-person run that
+  is the same person again.
+- Never ask for a "composite" of the frames. Never put a later frame's own
+  summary in the prompt (it places the same person somewhere else). Never put
+  the run narrative in the prompt (a sequence of actions is drawn as that many
+  people).
+- Counts come from per-frame category totals (`consensus_<cat>_total`), so a
+  person scored as a man, then a woman, stays one person.
+- A multi-image edit is anchored on Image 1 by the prompt alone: the 2.1
+  workflows start from an empty latent at denoise 1.0, and at cfg 1 the
+  negative prompt does nothing.
+
 Key files: `appdaemon/apps/detection_summary_app/profiles.py`,
 `appdaemon/tests/test_detection_profiles.py` (import path via `sys.path.insert`
 into `apps/`), `appdaemon/apps/detection_summary_app/README.md` (profiles table).

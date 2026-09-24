@@ -1,4 +1,4 @@
-"""Unit tests for population bounds + image prompt augmentation."""
+"""Unit tests for population bounds."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 # Add apps to path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "apps"))
 
-from detection_summary_app.population import augment_image_instructions, compute_population_bounds  # noqa: E402
+from detection_summary_app.population import compute_population_bounds  # noqa: E402
 from detection_summary_app.selection import ScoreResult  # noqa: E402
 
 
@@ -32,16 +32,3 @@ def test_compute_population_bounds_maxes():
         "max_female_count": 1,
         "max_animal_count": 3,
     }
-
-
-def test_augment_image_instructions_includes_bounds_and_caveat():
-    out = augment_image_instructions(
-        "BASE",
-        {"max_male_count": 2, "max_female_count": 1, "max_animal_count": 4},
-    )
-    assert "BASE" in out
-    assert "up to 2 male" in out
-    assert "up to 1 female" in out
-    assert "up to 4 animal" in out
-    assert "best snapshot" in out.lower()
-

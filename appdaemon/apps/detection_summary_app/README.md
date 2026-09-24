@@ -17,7 +17,7 @@ detection_summary_app/
 ├── capture.py          — Motion-ended capture loop state machine
 ├── selection.py        — Adaptive frame selection (ternary search + cutoff heuristic)
 ├── publish_gate.py     — Profile-driven publish/skip decision
-├── population.py       — Multi-frame signal consensus (mode/max/median)
+├── population.py       — Multi-frame signal consensus (mode/max/median), per signal and per category
 ├── bundle.py           — Bundle dict assembly, stable image mirroring, trace artifacts
 ├── narrative.py        — Run-level narrative synthesis (second LLM step)
 ├── retention.py        — Run directory lifecycle (monthly archival and cleanup)
@@ -25,7 +25,7 @@ detection_summary_app/
     ├── schema_specs.py         — ScoreFieldSpec + ScoreSchemaSpec; schema_from_profile()
     ├── score_prompt_builder.py — Scoring instructions for the multimodal LLM
     ├── score_normalizer.py     — Raw LLM output → ScoreResult (populates extra_signals)
-    ├── image_prompt_builder.py — Image-generation prompt; profile-aware guardrails
+    ├── image_prompt_builder.py — Image-generation prompt: one moment, each subject once; profile-aware counts
     ├── narrative_prompt_builder.py — Run narrative instructions
     └── style_variants.py       — Style profiles and environment variants applied to image-generation prompts
 ```
@@ -84,8 +84,8 @@ Omitting `detection_profile` uses the `default` profile (current behavior, fully
 | **Score normalization** | Non-standard fields (e.g. `package_count`) land in `ScoreResult.extra_signals` |
 | **Frame selection** | `_pick_key` sums all category count signals; profile-aware frames rank higher |
 | **Publish gate** | Publishes if ANY `required_for_publish` category meets `min_count_for_publish` in any frame |
-| **Population consensus** | Aggregates all count signals per strategy; generates `consensus_X` + `max_X` keys |
-| **Image prompt** | "Most likely N (max M)" language per signal; category-specific hallucination guardrails |
+| **Population consensus** | Aggregates all count signals per strategy; generates `consensus_X` + `max_X` keys, plus `consensus_<category>_total` + `max_<category>_total` from each frame's category total |
+| **Image prompt** | One line per category: `exactly N` when the frames agree, `at most M` when they do not, `none` at zero; people are counted by category total, so a gender the scorer flips between frames is still one person |
 | **Bundle** | `extra_signals` included in candidate data and summary scores; trace meta includes extras |
 
 ### Consensus strategies
@@ -111,9 +111,9 @@ Trigger (motion on)
        └─ ScoreResult per frame (standard fields + extra_signals)
   └─ Publish gate (profile-driven)
        └─ None → skip (reset cooldown, no image gen)
-  └─ Run narrative (text LLM, optional)
+  └─ Run narrative (text LLM, optional; notification text only, never the image prompt)
   └─ Population consensus (profile-aware)
-  └─ Image generation (image-to-image edit)
+  └─ Image generation (image-to-image edit of Image 1, the best frame)
   └─ Bundle assembly + publish
   └─ Cooldown / backoff
 ```
@@ -156,9 +156,11 @@ deployment; changing it is a normal AppDaemon release. An unregistered name
 raises at `initialize()` rather than failing at render time.
 
 The bundle default is `qwen-image-2.1-2609-25step-edit-3frame-gpu1` (needs
-ComfyUI >= 0.37.0). The app picks 2-4 candidate frames per run, so the default
-graph takes up to three of them as references — the extras are what let it
-confirm who and what is in the scene when one frame is ambiguous. The `gpu1`
+ComfyUI >= 0.37.0). The app sends the best frame, plus a frame for each
+profile category that another frame shows more of (a dog that crossed later, a
+second person), so the default graph takes up to three references and most
+runs send one. See [One moment, each subject drawn once](#one-moment-each-subject-drawn-once)
+for why a frame that adds nobody is never sent. The `gpu1`
 suffix is the same graph pinned to the host's second GPU, which throttles far
 less; the registry's own default stays GPU-agnostic because it is what a
 rejected graph falls back to. See the
@@ -173,19 +175,30 @@ and OpenAI, which send every frame they are given. The manager builds the
 provider first, trims its candidate list to that number, and only then builds
 the prompt, so the prompt describes exactly the frames the model receives:
 
-- the frames are sent in rank order — best frame first, then the extras that
-  carry the most animals / males / females — and a trim drops from the tail;
-- the prompt's `You are provided N image(s)` line counts the frames sent, not
-  the frames selected;
+- the frames are sent in rank order — best frame first, then, per category,
+  the best-scoring frame that shows more of it than the best frame does, with
+  the profile's own categories (packages, vehicles) ahead of people and
+  animals — and a trim drops from the tail, so it cuts a people or animals
+  frame before a package or vehicle frame;
+- the prompt's `You are provided N images` line (`You are provided 1 image`
+  on a one-frame run) counts the frames sent, not the frames selected;
 - the per-frame notes run in the same order as the uploads and are labelled by
   position (`Image 1 (primary frame)`, `Image 2`, …), because every upload is
   renamed on the way out and a filename would name nothing the model can see.
   The `(primary frame)` qualifier is carried on the note, not inferred from
-  being first: `best.jpg` is allowed to be missing, and then the best frame is
-  not among the uploads and no note claims to be it;
+  being first. A best frame whose capture lands late still becomes this run's
+  `best.jpg` and stable mirror: image generation waits for the capture itself,
+  up to `external_image_gen_wait_for_best_s`, and copies it the moment it
+  lands. If it never lands, the best frame is not among the uploads and no
+  note claims to be it;
+- only Image 1's note carries its own summary; every later note says what that
+  image adds to Image 1 (see below);
+- the subject counts are capped at the most any sent image shows, so a
+  trimmed frame cannot leave behind a count that no image sent can satisfy;
 - a trim logs one DEBUG line with the zone, the selected count and the sent
-  count. It is a config-shaped condition — the app's `max_refs` outgrew the
-  workflow — not a per-run fault.
+  count. It is expected, not a fault: more frames add a subject than the
+  selected workflow has slots — a one-slot rollback entry, or a packages run
+  where people, animals and packages each add one.
 
 The provider truncates as well, so an untrimmed caller still cannot overrun the
 slots and anything dropped there is recorded in the run's meta as
@@ -207,6 +220,63 @@ rejected the configured graph, `workflow_name` names what actually rendered and
 See
 [`providers/ai_providers/comfyui/README.md`](../../providers/ai_providers/comfyui/README.md#choosing-a-workflow)
 for the registry table and how to roll back.
+
+### One moment, each subject drawn once
+
+The reference frames are one camera, seconds apart, so they show the same
+people at different moments. The image models are editors that, handed
+several images, are trained to combine what each one shows (Qwen's own
+multi-image examples put the subject of image 1 next to the subject of image
+2). The 2.1 workflows also start from an empty latent at full denoise, so no
+frame pins the layout. Before 1.22.2 the prompt asked for "a composite of the
+event", described the same person once per frame ("near left", then "at the
+door", then "walking away"), and appended the run narrative ("walked up,
+paused, walked away"). The model drew one person per description, and the one
+guard against it was a negated "Do NOT depict the same individual multiple
+times" line. At `cfg 1` the workflow has no negative prompt to back that up.
+
+Two changes stop it, one in which frames are sent and one in the prompt.
+
+**Only frames that add someone are sent.** Besides the best frame, a frame is
+sent only if, for some profile category, it shows more than the best frame
+and every frame already chosen, counted by category total (people = men +
+women). A frame that shows the
+same person somewhere else, or reads their gender differently, adds nobody, so
+a one-person visit renders from the best frame alone, as every run did before
+1.21.0. A best frame whose capture lands late still becomes `best.jpg`. If it
+never lands and no other candidate is on disk, the next frame on disk is sent,
+ranked the way selection ranks frames (anyone in the frame first), so a sharp
+empty frame is never picked over one with the person in it.
+
+**The prompt says one thing throughout:**
+
+- **Draw the scene of Image 1** (the best frame): its camera view,
+  composition, and each subject's position and pose. The other images are
+  there to see a subject more clearly, or to find one Image 1 misses.
+- **The frames show the same subjects.** Anyone or anything in several images
+  is one individual, drawn once.
+- **Exact counts, stated positively.** `People: exactly 1` when the frames
+  agree, `at most M` when they do not, each capped at the most any sent image
+  shows. People are counted from each frame's total, so one person the scorer
+  read as a man in one frame and a woman in the next is still one person, not
+  a man and a woman. The count line carries no
+  gender breakdown, because a majority reading across frames can contradict
+  Image 1. Image 1's own note and the image carry gender.
+- **Later images are described by what they add, never in their own words.**
+  `Image 2: … with 1 animal more than Image 1: add only that one; everyone and
+  everything else in it is already in Image 1`. The delta is taken on the same
+  per-category totals the frame was picked on (`FrameNote.category_counts`),
+  so a frame sent for a package names the package. Each later image is
+  measured against every image before it, not just Image 1, so a person Image
+  2 already added is not added again by Image 3. The additions summed onto
+  Image 1 never pass the count line. `nobody new` never comes out of the app's
+  own selection, where every later frame adds something to the frames before
+  it.
+- **No sequence.** The run narrative stays in the notification and out of the
+  image prompt, and the rules ask for one continuous scene rather than a
+  sequence, comic panels, or a repeated pattern. The style and setting headers
+  repeat "each drawn once", because some styles lean towards repetition
+  (Warhol-style pop art, comic panels, sticker sheets).
 
 ## Config reference (apps.yaml)
 
