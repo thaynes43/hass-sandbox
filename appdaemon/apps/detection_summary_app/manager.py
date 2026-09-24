@@ -1015,7 +1015,9 @@ class DetectionSummary(hass.Hass):
 
             # Reference frames: the best frame, plus, per profile category, the
             # best-scoring frame that shows MORE of that category than the best
-            # frame does (a dog that crossed later, a second person). Nothing
+            # frame and every frame already chosen (a dog that crossed later, a
+            # second person). Every, not just the best: a frame picked for its
+            # package can already show the second person. Nothing
             # else: the frames are one camera seconds apart, so any other frame
             # shows the same people somewhere else, and a multi-image edit
             # model draws what each image shows. A frame that adds nobody adds
@@ -1026,17 +1028,19 @@ class DetectionSummary(hass.Hass):
             # people and animals: a trim to the workflow's slots drops from the
             # tail, and the frame a packages camera exists for is the last one
             # to lose. The sort is stable, so profile order holds otherwise.
-            best_res = scored.get(int(best_idx))
             candidate_idxs: list[int] = [int(best_idx)]
+            chosen: list[Optional[ScoreResult]] = [scored.get(int(best_idx))]
             for cat in sorted(self._profile.categories, key=lambda c: c.name in ("people", "animals")):
                 if not cat.count_signals:
                     continue
                 extra = _pick_best_idx_with_max(scored, lambda r, c=cat: _category_total(r, c))
                 if extra is None or int(extra) in candidate_idxs:
                     continue
-                if _category_total(scored.get(int(extra)), cat) <= _category_total(best_res, cat):
+                extra_res = scored.get(int(extra))
+                if _category_total(extra_res, cat) <= max(_category_total(r, cat) for r in chosen):
                     continue
                 candidate_idxs.append(int(extra))
+                chosen.append(extra_res)
 
             max_refs = 4
             if len(candidate_idxs) > max_refs:

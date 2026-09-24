@@ -39,10 +39,9 @@ scene, people and vehicles where they are, in roughly a minute per image. It
 can take up to three of the run's frames rather than one, so a dog that
 crossed after the best frame, or a second person who arrived later, still makes
 it into the picture. On this model the extra frames cost about five seconds.
-Most runs send only the best frame (see below). The older
-Qwen-Image-Edit-2509 workflows are still registered and render a little faster
-from one frame, at the cost of harsher colour; on that larger model extra
-frames are expensive, so they are normally given just the best one.
+The older Qwen-Image-Edit-2509 workflows are still registered and render a
+little faster from one frame, at the cost of harsher colour; on that larger
+model extra frames are expensive, so they are normally given just the best one.
 
 How many frames a workflow takes is something the app asks it before it builds
 the prompt, so the notes it writes about the scene ("Image 1 … Image 2 …")
@@ -60,9 +59,9 @@ same person somewhere else adds nothing but a second copy, so a one-person
 visit renders from the best frame alone. Second, the prompt asks for one
 moment, the one in the best frame, with each person, animal and package drawn
 exactly once, and describes any other frame only by what it adds, such as one
-animal more than the best frame. The run's
-narrative still goes into the notification text but stays out of the picture,
-because a model drawing "walked up, paused, walked away" draws three people.
+animal more than the best frame. The run's narrative still goes into the
+notification text but stays out of the picture, because a model drawing
+"walked up, paused, walked away" draws three people.
 
 Changing a camera's look, or rolling one back, is a config change in a normal
 release; a single-frame Qwen-Image-2.1 entry and the original pre-2026-09 graph
@@ -89,7 +88,8 @@ detection_summary_app
   ├─ captures snapshot via HA
   ├─ sends to multimodal LLM
   ├─ renders a stylised image on ComfyUI
-  │    (up to 3 frames; workflow named in the app's config)
+  │    (best frame + any frame that adds a subject, up to 3;
+  │     workflow named in the app's config)
   ├─ writes bundle to /media/
   └─ fires HA event
         │

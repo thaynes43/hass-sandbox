@@ -633,6 +633,28 @@ def test_a_frame_that_adds_a_person_is_sent() -> None:
     assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg"]
 
 
+def test_a_frame_that_adds_nobody_beyond_the_chosen_frames_is_not_sent() -> None:
+    """Each extra must beat every frame already chosen, not just the best one.
+
+    The package frame (0) already shows the second man. The people pick then
+    lands, on a frame-score tie-break, on frame 2: two men, no package, more
+    people than the best frame but nobody frame 0 does not already show.
+    """
+    app = _make_app(_args(detection_profile="packages"))
+    _initialize(app)
+
+    scored = {
+        0: _score(male=2, frame_score=3.0, summary="two men and a package", extra_signals={"package_count": 1}),
+        2: _score(male=2, frame_score=5.0, summary="two men"),
+        3: _score(male=1, frame_score=9.0, summary="a man at the door"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-no-repeat", max_input_images=3, scores=_scores_with_best(scored, 3)
+    )
+
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg"]
+
+
 def test_a_frame_where_the_gender_reads_differently_is_not_sent() -> None:
     """One person scored as a man, then a woman, is not a second person."""
     app = _make_app(_args())
@@ -935,8 +957,8 @@ def test_the_notes_describe_the_frames_sent_in_the_order_sent() -> None:
         "- Image 1 (primary frame) t=3.0s: the clearest view (m=1, f=1, animals=1)",
         "- Image 2 t=2.0s: the same scene at another moment, with 3 people more than Image 1: "
         "add only those, each once; everyone and everything else in it is already in Image 1.",
-        "- Image 3 t=1.0s: the same scene at another moment, with 2 animals more than Image 1: "
-        "add only those, each once; everyone and everything else in it is already in Image 1.",
+        "- Image 3 t=1.0s: the same scene at another moment, with 2 animals more than Images 1-2: "
+        "add only those, each once; everyone and everything else in it is already in Images 1-2.",
     ]
     # A later image is described by what it adds, never in its own words, and
     # a frame that adds nobody is not sent, so its summary never appears.

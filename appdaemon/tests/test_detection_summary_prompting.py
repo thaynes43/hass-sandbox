@@ -277,7 +277,7 @@ class TestImagePromptBuilder:
         assert _note_lines(result) == [
             "- Image 1 (primary frame) t=7.5s: 1 man standing at the door, center. (m=1, f=0, animals=0)",
             "- Image 2 t=0.0s: the same subjects as Image 1 at another moment; nobody new.",
-            "- Image 3 t=15.0s: the same subjects as Image 1 at another moment; nobody new.",
+            "- Image 3 t=15.0s: the same subjects as Images 1-2 at another moment; nobody new.",
         ]
 
     def test_a_later_image_names_only_what_it_adds_to_image_1(self):
@@ -294,8 +294,8 @@ class TestImagePromptBuilder:
         assert _note_lines(result)[1:] == [
             "- Image 2: the same scene at another moment, with 1 animal more than Image 1: "
             "add only that one; everyone and everything else in it is already in Image 1.",
-            "- Image 3: the same scene at another moment, with 2 people more than Image 1: "
-            "add only those, each once; everyone and everything else in it is already in Image 1.",
+            "- Image 3: the same scene at another moment, with 2 people more than Images 1-2: "
+            "add only those, each once; everyone and everything else in it is already in Images 1-2.",
         ]
 
     def test_a_later_image_is_described_by_its_profile_categories(self):
@@ -324,9 +324,54 @@ class TestImagePromptBuilder:
         assert _note_lines(result)[1:] == [
             "- Image 2: the same scene at another moment, with 1 package more than Image 1: "
             "add only that one; everyone and everything else in it is already in Image 1.",
-            "- Image 3: the same scene at another moment, with 1 animal and 2 packages more "
-            "than Image 1: add only those, each once; everyone and everything else in it is "
-            "already in Image 1.",
+            "- Image 3: the same scene at another moment, with 1 animal and 1 package more "
+            "than Images 1-2: add only those, each once; everyone and everything else in it is "
+            "already in Images 1-2.",
+        ]
+
+    def test_a_later_image_is_measured_against_every_earlier_image(self):
+        """A person Image 2 already added is not added again by Image 3.
+
+        Measured against Image 1 alone, Images 2 and 3 would each claim the
+        second man, and the additions summed onto Image 1 (1 + 1 + 1) would
+        pass the count line (at most 2): the same man described twice.
+        """
+        consensus = {
+            "consensus_people_total": 1,
+            "max_people_total": 2,
+            "consensus_animals_total": 0,
+            "max_animals_total": 0,
+            "consensus_packages_total": 0,
+            "max_packages_total": 1,
+        }
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            consensus_bounds=consensus,
+            profile=PROFILE_PACKAGES,
+            frame_notes=[
+                FrameNote(
+                    male_count=1,
+                    is_primary=True,
+                    category_counts=(("people", 1), ("animals", 0), ("packages", 0)),
+                ),
+                FrameNote(
+                    male_count=2,
+                    category_counts=(("people", 2), ("animals", 0), ("packages", 1)),
+                ),
+                FrameNote(
+                    male_count=2,
+                    category_counts=(("people", 2), ("animals", 0), ("packages", 0)),
+                ),
+            ],
+            input_paths_count=3,
+        )
+        assert _count_lines(result)[0] == "- People: at most 2"
+        assert _note_lines(result)[1:] == [
+            "- Image 2: the same scene at another moment, with 1 person and 1 package more than "
+            "Image 1: add only those, each once; everyone and everything else in it is already "
+            "in Image 1.",
+            "- Image 3: the same subjects as Images 1-2 at another moment; nobody new.",
         ]
 
     def test_a_flipped_gender_is_not_a_new_person(self):
@@ -376,8 +421,8 @@ class TestImagePromptBuilder:
             "- Image 1 (primary frame) t=1.2s: A man at the door. (m=1, f=0, animals=0)\n"
             "- Image 2 t=0.5s: the same scene at another moment, with 1 animal more than Image 1: "
             "add only that one; everyone and everything else in it is already in Image 1.\n"
-            "- Image 3: the same scene at another moment, with 1 person more than Image 1: "
-            "add only that one; everyone and everything else in it is already in Image 1."
+            "- Image 3: the same scene at another moment, with 1 person more than Images 1-2: "
+            "add only that one; everyone and everything else in it is already in Images 1-2."
         )
         # No filename the model never receives.
         assert "frame_0" not in result.prompt

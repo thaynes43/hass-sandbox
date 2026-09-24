@@ -182,7 +182,7 @@ def _bounds_count_lines(bounds: Mapping[str, Any], ceilings: Mapping[str, int]) 
     ]
 
 
-def _render_frame_note(note: FrameNote, position: int, first: FrameNote) -> str:
+def _render_frame_note(note: FrameNote, position: int, earlier: Mapping[str, int]) -> str:
     """Render one note, labelled by the position the image is sent in.
 
     Positions, not filenames: the provider renames every upload before it
@@ -193,7 +193,10 @@ def _render_frame_note(note: FrameNote, position: int, first: FrameNote) -> str:
     Every later image shows the same subjects somewhere else, and its own
     summary would place them there too ("a man near left", then "a man at the
     door"), which the model draws as a second man. A later image is described
-    by what it adds to Image 1, from the counts.
+    by what it adds to every image before it (``earlier``: the most of each
+    category any of them shows), so a person Image 2 already added is not
+    added again by Image 3, and the additions summed onto Image 1 never pass
+    the count line.
     """
     label = f"Image {position}" + (" (primary frame)" if note.is_primary else "")
     offset = note.time_offset_s
@@ -209,19 +212,19 @@ def _render_frame_note(note: FrameNote, position: int, first: FrameNote) -> str:
 
     # By category total, for the same reason the counts use totals: a gender
     # the scorer flipped between frames is not a new person.
-    first_totals = _note_totals(first)
+    before = "Image 1" if position == 2 else f"Images 1-{position - 1}"
     extra = [
-        (name, n - first_totals.get(name, 0))
+        (name, n - earlier.get(name, 0))
         for name, n in _note_totals(note).items()
-        if n - first_totals.get(name, 0) > 0
+        if n - earlier.get(name, 0) > 0
     ]
     if not extra:
-        return f"- {label}{time_part}: the same subjects as Image 1 at another moment; nobody new."
+        return f"- {label}{time_part}: the same subjects as {before} at another moment; nobody new."
     added = _join_words([f"{n} {_category_noun(name, n)}" for name, n in extra])
     take = "add only that one" if sum(n for _name, n in extra) == 1 else "add only those, each once"
     return (
         f"- {label}{time_part}: the same scene at another moment, with {added} "
-        f"more than Image 1: {take}; everyone and everything else in it is already in Image 1."
+        f"more than {before}: {take}; everyone and everything else in it is already in {before}."
     )
 
 
@@ -341,10 +344,12 @@ class ImagePromptBuilder:
             ]
         )
         if notes:
-            rendered_notes = [
-                _render_frame_note(note, position, notes[0])
-                for position, note in enumerate(notes, start=1)
-            ]
+            rendered_notes: list[str] = []
+            earlier: dict[str, int] = {}
+            for position, note in enumerate(notes, start=1):
+                rendered_notes.append(_render_frame_note(note, position, earlier))
+                for name, n in _note_totals(note).items():
+                    earlier[name] = max(earlier.get(name, 0), n)
             prompt_lines.extend(["", "What each image shows:", *rendered_notes])
 
         prompt = "\n".join([ln.rstrip() for ln in prompt_lines]).strip()

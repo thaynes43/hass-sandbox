@@ -237,7 +237,8 @@ Two changes stop it, one in which frames are sent and one in the prompt.
 
 **Only frames that add someone are sent.** Besides the best frame, a frame is
 sent only if, for some profile category, it shows more than the best frame
-does, counted by category total (people = men + women). A frame that shows the
+and every frame already chosen, counted by category total (people = men +
+women). A frame that shows the
 same person somewhere else, or reads their gender differently, adds nobody, so
 a one-person visit renders from the best frame alone, as every run did before
 1.21.0. If `best.jpg` never appeared, the best frame is sent from its own
@@ -264,8 +265,12 @@ never picked over one with the person in it.
   `Image 2: … with 1 animal more than Image 1: add only that one; everyone and
   everything else in it is already in Image 1`. The delta is taken on the same
   per-category totals the frame was picked on (`FrameNote.category_counts`),
-  so a frame sent for a package names the package. `nobody new` appears only
-  when Image 1 is not the best frame, i.e. `best.jpg` never appeared.
+  so a frame sent for a package names the package. Each later image is
+  measured against every image before it, not just Image 1, so a person Image
+  2 already added is not added again by Image 3. The additions summed onto
+  Image 1 never pass the count line. `nobody new` never comes out of the app's
+  own selection, where every later frame adds something to the frames before
+  it.
 - **No sequence.** The run narrative stays in the notification and out of the
   image prompt, and the rules ask for one continuous scene rather than a
   sequence, comic panels, or a repeated pattern. The style and setting headers
