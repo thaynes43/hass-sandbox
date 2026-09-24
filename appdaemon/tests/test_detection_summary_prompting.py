@@ -293,9 +293,40 @@ class TestImagePromptBuilder:
         )
         assert _note_lines(result)[1:] == [
             "- Image 2: the same scene at another moment, with 1 animal more than Image 1: "
-            "add only that one; everyone else in it is already in Image 1.",
+            "add only that one; everyone and everything else in it is already in Image 1.",
             "- Image 3: the same scene at another moment, with 2 people more than Image 1: "
-            "add only those, each once; everyone else in it is already in Image 1.",
+            "add only those, each once; everyone and everything else in it is already in Image 1.",
+        ]
+
+    def test_a_later_image_is_described_by_its_profile_categories(self):
+        """A frame sent for a package names the package, not just people and animals."""
+        result = ImagePromptBuilder().build(
+            base_instructions="Base",
+            population_bounds={},
+            frame_notes=[
+                FrameNote(
+                    summary="A courier at the door.",
+                    male_count=1,
+                    is_primary=True,
+                    category_counts=(("people", 1), ("animals", 0), ("packages", 0)),
+                ),
+                FrameNote(
+                    summary="A package on the step.",
+                    category_counts=(("people", 0), ("animals", 0), ("packages", 1)),
+                ),
+                FrameNote(
+                    summary="Two parcels and a dog.",
+                    category_counts=(("people", 1), ("animals", 1), ("packages", 2)),
+                ),
+            ],
+            input_paths_count=3,
+        )
+        assert _note_lines(result)[1:] == [
+            "- Image 2: the same scene at another moment, with 1 package more than Image 1: "
+            "add only that one; everyone and everything else in it is already in Image 1.",
+            "- Image 3: the same scene at another moment, with 1 animal and 2 packages more "
+            "than Image 1: add only those, each once; everyone and everything else in it is "
+            "already in Image 1.",
         ]
 
     def test_a_flipped_gender_is_not_a_new_person(self):
@@ -344,9 +375,9 @@ class TestImagePromptBuilder:
         assert rendered == (
             "- Image 1 (primary frame) t=1.2s: A man at the door. (m=1, f=0, animals=0)\n"
             "- Image 2 t=0.5s: the same scene at another moment, with 1 animal more than Image 1: "
-            "add only that one; everyone else in it is already in Image 1.\n"
+            "add only that one; everyone and everything else in it is already in Image 1.\n"
             "- Image 3: the same scene at another moment, with 1 person more than Image 1: "
-            "add only that one; everyone else in it is already in Image 1."
+            "add only that one; everyone and everything else in it is already in Image 1."
         )
         # No filename the model never receives.
         assert "frame_0" not in result.prompt
@@ -395,7 +426,7 @@ class TestImagePromptBuilder:
         assert _note_lines(result) == [
             "- Image 1 t=1.0s: best-animals frame (m=0, f=0, animals=2)",
             "- Image 2 t=0.0s: the same scene at another moment, with 1 person more than Image 1: "
-            "add only that one; everyone else in it is already in Image 1.",
+            "add only that one; everyone and everything else in it is already in Image 1.",
         ]
 
     def test_count_matches_the_number_of_notes(self):

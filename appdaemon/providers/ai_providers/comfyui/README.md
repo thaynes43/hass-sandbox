@@ -67,9 +67,12 @@ entry is rejected, its one retry on the default is rejected too, and the render
 fails rather than quietly landing on an older graph; the fix is to point the
 bundle at a 2509 entry and ship it.
 
-It takes up to three reference frames because that is what the callers have:
-every detection_summary camera app picks 2-4 candidate frames, trims them to
-this entry's three slots and tells the model how many it is looking at. Unused
+It takes up to three reference frames because that is what the callers can
+have: every detection_summary camera app sends its best frame plus any frame
+that shows someone the best frame misses (1-4 frames, most runs one), trims
+them to this entry's three slots and tells the model how many it is looking at.
+Frames of the same people are never sent twice, because a multi-image edit
+draws each one it gets (see the app README). Unused
 slots are pruned, so a single-frame caller renders the same graph the one-slot
 entry does — picking a one-slot entry narrows the app to the best frame alone,
 which is a real rollback and not just a cost saving. On this 7B model the

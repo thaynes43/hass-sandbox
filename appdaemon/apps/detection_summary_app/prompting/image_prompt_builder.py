@@ -59,6 +59,11 @@ class FrameNote:
     # the primary one would be the same kind of untrue claim this labelling
     # exists to prevent. No note carries it when the best frame was not sent.
     is_primary: bool = False
+    # This frame's total for each profile category, as (name, count) with the
+    # name as the prompt says it ("people", "animals", "packages"). A later
+    # image is described by how far these exceed Image 1's. Empty means
+    # people and animals only, from the counts above.
+    category_counts: tuple[tuple[str, int], ...] = ()
 
 
 def _as_count(value: Any) -> int:
@@ -66,6 +71,25 @@ def _as_count(value: Any) -> int:
         return max(0, int(value or 0))
     except (TypeError, ValueError):
         return 0
+
+
+# Singular of a category name when it is not the name without its final "s".
+_SINGULAR: dict[str, str] = {"people": "person"}
+
+
+def _category_noun(category: str, n: int) -> str:
+    if n != 1:
+        return category
+    return _SINGULAR.get(category) or (category[:-1] if category.endswith("s") else category)
+
+
+def _note_totals(note: FrameNote) -> dict[str, int]:
+    if note.category_counts:
+        return {str(name): _as_count(n) for name, n in note.category_counts}
+    return {
+        "people": _as_count(note.male_count) + _as_count(note.female_count),
+        "animals": _as_count(note.animal_count),
+    }
 
 
 def _join_words(words: Sequence[str]) -> str:
@@ -156,23 +180,21 @@ def _render_frame_note(note: FrameNote, position: int, first: FrameNote) -> str:
         )
         return f"- {label}{time_part}: {summary} {counts}"
 
-    # People as one total, for the same reason the counts use totals: a
-    # gender the scorer flipped between frames is not a new person.
-    new_people = (_as_count(note.male_count) + _as_count(note.female_count)) - (
-        _as_count(first.male_count) + _as_count(first.female_count)
-    )
-    new_animals = _as_count(note.animal_count) - _as_count(first.animal_count)
-    added = []
-    if new_people > 0:
-        added.append(f"{new_people} {'person' if new_people == 1 else 'people'}")
-    if new_animals > 0:
-        added.append(f"{new_animals} {'animal' if new_animals == 1 else 'animals'}")
-    if not added:
+    # By category total, for the same reason the counts use totals: a gender
+    # the scorer flipped between frames is not a new person.
+    first_totals = _note_totals(first)
+    extra = [
+        (name, n - first_totals.get(name, 0))
+        for name, n in _note_totals(note).items()
+        if n - first_totals.get(name, 0) > 0
+    ]
+    if not extra:
         return f"- {label}{time_part}: the same subjects as Image 1 at another moment; nobody new."
-    take = "add only that one" if max(new_people, 0) + max(new_animals, 0) == 1 else "add only those, each once"
+    added = _join_words([f"{n} {_category_noun(name, n)}" for name, n in extra])
+    take = "add only that one" if sum(n for _name, n in extra) == 1 else "add only those, each once"
     return (
-        f"- {label}{time_part}: the same scene at another moment, with {_join_words(added)} "
-        f"more than Image 1: {take}; everyone else in it is already in Image 1."
+        f"- {label}{time_part}: the same scene at another moment, with {added} "
+        f"more than Image 1: {take}; everyone and everything else in it is already in Image 1."
     )
 
 

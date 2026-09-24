@@ -36,7 +36,7 @@ from .bundle import (
     write_trace,
 )
 from .capture import CaptureConfig, CaptureState, CapturedFrame, next_delay_s, should_stop_capture
-from .selection import ScoreResult, SelectionMeta, adaptive_select_and_score
+from .selection import ScoreResult, SelectionMeta, _get_signal_value, adaptive_select_and_score
 from .population import compute_population_bounds, compute_population_consensus
 from .narrative import NarrativeConfig, synthesize_run_narrative
 from .publish_gate import should_publish_bundle
@@ -1002,47 +1002,39 @@ class DetectionSummary(hass.Hass):
                     ),
                 )[0]
 
-            # Provide multiple reference frames to reduce "phantom" additions:
-            # - best overall frame (always)
-            # - best-scoring frame that contains the max animals / max males / max females (deduped)
-            best_animals_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "animal_count", 0))
-            best_males_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "male_count", 0))
-            best_females_idx = _pick_best_idx_with_max(scored, lambda r: getattr(r, "female_count", 0))
+            def _category_total(res: Optional[ScoreResult], cat: Any) -> int:
+                if res is None:
+                    return 0
+                total = 0
+                for sig in dict.fromkeys(cat.count_signals):
+                    try:
+                        total += max(0, int(_get_signal_value(res, sig) or 0))
+                    except (TypeError, ValueError):
+                        continue
+                return total
 
+            # Reference frames: the best frame, plus, per profile category, the
+            # best-scoring frame that shows MORE of that category than the best
+            # frame does (a dog that crossed later, a second person). Nothing
+            # else: the frames are one camera seconds apart, so any other frame
+            # shows the same people somewhere else, and a multi-image edit
+            # model draws what each image shows. A frame that adds nobody adds
+            # only a duplicate. Counted by category total (people = men +
+            # women), so a frame where the scorer read the same person's gender
+            # differently is not a new person. Most runs send one frame.
+            best_res = scored.get(int(best_idx))
             candidate_idxs: list[int] = [int(best_idx)]
-            for extra in (best_animals_idx, best_males_idx, best_females_idx):
-                if extra is None:
+            for cat in self._profile.categories:
+                if not cat.count_signals:
                     continue
-                ii = int(extra)
-                if ii not in candidate_idxs:
-                    candidate_idxs.append(ii)
+                extra = _pick_best_idx_with_max(scored, lambda r, c=cat: _category_total(r, c))
+                if extra is None or int(extra) in candidate_idxs:
+                    continue
+                if _category_total(scored.get(int(extra)), cat) <= _category_total(best_res, cat):
+                    continue
+                candidate_idxs.append(int(extra))
 
-            # Ensure we send more than one reference when we have more than one scored frame.
-            # This helps prevent "phantom" subjects when the best frame is missing a transient subject.
-            min_refs = 2
             max_refs = 4
-
-            def _ref_rank(res: ScoreResult) -> tuple:
-                # Similar spirit to selection._pick_key, tuned for reference quality.
-                has_subject = 1 if (int(getattr(res, "animal_count", 0) or 0) > 0 or float(getattr(res, "person_score", 0.0) or 0.0) > 0) else 0
-                has_summary = 1 if (str(getattr(res, "summary", "") or "").strip()) else 0
-                return (
-                    has_subject,
-                    float(getattr(res, "frame_score", 0.0) or 0.0),
-                    float(getattr(res, "face_score", 0.0) or 0.0),
-                    float(getattr(res, "person_score", 0.0) or 0.0),
-                    int(getattr(res, "animal_count", 0) or 0),
-                    has_summary,
-                )
-
-            if len(scored) > 1 and len(candidate_idxs) < min_refs:
-                ranked = sorted([(int(ii), rr) for ii, rr in (scored or {}).items() if rr is not None], key=lambda t: _ref_rank(t[1]), reverse=True)
-                for ii, _rr in ranked:
-                    if ii not in candidate_idxs:
-                        candidate_idxs.append(int(ii))
-                    if len(candidate_idxs) >= min_refs:
-                        break
-
             if len(candidate_idxs) > max_refs:
                 candidate_idxs = candidate_idxs[:max_refs]
 
@@ -1062,6 +1054,23 @@ class DetectionSummary(hass.Hass):
                     )
             if not selected_frames and best_dst.exists():
                 selected_frames = [(int(best_idx), best_dst)]
+            if not selected_frames:
+                # best.jpg never appeared and no other candidate is on disk
+                # (in a one-person run there is no other candidate): draw from
+                # the best-scoring frame whose file is there instead.
+                for ii, _rr in sorted(
+                    ((int(i), r) for i, r in scored.items() if r is not None and int(i) != int(best_idx)),
+                    key=lambda t: (
+                        float(getattr(t[1], "frame_score", 0.0) or 0.0),
+                        float(getattr(t[1], "face_score", 0.0) or 0.0),
+                        float(getattr(t[1], "person_score", 0.0) or 0.0),
+                    ),
+                    reverse=True,
+                ):
+                    p = frames_dir / f"frame_{ii:03d}.jpg"
+                    if p.exists():
+                        selected_frames = [(ii, p)]
+                        break
             input_paths: list[Path] = [p for _ii, p in selected_frames]
 
             if input_paths:
@@ -1145,6 +1154,13 @@ class DetectionSummary(hass.Hass):
                                 # (`best_src` missing, or the wait timed out),
                                 # and then no reference is the primary one.
                                 is_primary=int(ii) == int(best_idx),
+                                # The same totals the frame was picked on, so
+                                # its note names what it adds (a package too).
+                                category_counts=tuple(
+                                    ((cat.display_name or cat.name).lower(), _category_total(rr, cat))
+                                    for cat in self._profile.categories
+                                    if cat.count_signals
+                                ),
                             )
                         )
 

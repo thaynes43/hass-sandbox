@@ -459,17 +459,26 @@ def test_image_gen_start_log_names_the_workflow() -> None:
     assert f"workflow_source={SOURCE_APP_CONFIG}" in start_logs[0]
 
 
-# ---------- reference frames vs the workflow's image slots ----------
+# ---------- which frames are sent, and the workflow's image slots ----------
 #
-# The app picks 2-4 candidate frames; the provider sends only as many as the
-# selected workflow has image slots. The prompt tells the model how many images
-# it has and carries one note per image, so the app has to trim to the
-# provider's `max_input_images` BEFORE building either — otherwise the prompt
-# counts and describes frames that were never uploaded.
+# The app sends the best frame plus, per profile category, a frame that shows
+# more of that category than the best frame — never a frame that adds nobody,
+# because it only shows the same people elsewhere and the model draws them
+# again. The provider sends only as many as the selected workflow has image
+# slots. The prompt tells the model how many images it has and carries one
+# note per image, so the app has to trim to the provider's `max_input_images`
+# BEFORE building either — otherwise the prompt counts and describes frames
+# that were never uploaded.
 
 
 def _score(
-    *, male: int = 0, female: int = 0, animal: int = 0, frame_score: float = 1.0, summary: str = ""
+    *,
+    male: int = 0,
+    female: int = 0,
+    animal: int = 0,
+    frame_score: float = 1.0,
+    summary: str = "",
+    extra_signals: Dict[str, Any] | None = None,
 ):
     return _selection_mod.ScoreResult(
         male_count=male,
@@ -481,6 +490,7 @@ def _score(
         pose="standing",
         summary=summary,
         structured={},
+        extra_signals=dict(extra_signals or {}),
     )
 
 
@@ -512,12 +522,30 @@ def _four_frame_run(app: DetectionSummary, run_id: str) -> _Run:
     )
 
 
-def _four_frame_scores(**_: Any):
-    """Four candidates whose rank order is deliberately not chronological.
+def _scores_with_best(scored: Dict[int, Any], best_idx: int):
+    """An `adaptive_select_and_score` stand-in returning these scores."""
+    indices = sorted(scored)
 
-    `candidate_idxs` is [best, best-animals, best-males, best-females], so
-    scoring the LAST captured frame best makes rank order [3, 1, 2, 0] against
-    a chronological [0, 1, 2, 3] — the case the notes used to be built in.
+    def _select(**_: Any):
+        return scored, SelectionMeta(
+            budget=len(indices),
+            scored_indices=indices,
+            probes=indices,
+            cutoff_idx_inclusive=indices[-1],
+            best_idx=best_idx,
+        )
+
+    return _select
+
+
+def _four_frame_scores(**_: Any):
+    """Three candidates whose rank order is deliberately not chronological.
+
+    The best frame (3, captured last) holds 2 people and 1 animal. Frame 2
+    holds more people (5) and frame 1 more animals (3), so each is sent;
+    frame 0 holds 2 people, no more than the best frame, so it is not. Rank
+    order is therefore [3, 2, 1] against a chronological [1, 2, 3] — the case
+    the notes used to be built in.
     """
     scored = {
         0: _score(female=2, frame_score=3.0, summary="two women leaving"),
@@ -525,16 +553,19 @@ def _four_frame_scores(**_: Any):
         2: _score(male=5, frame_score=5.0, summary="five men"),
         3: _score(male=1, female=1, animal=1, frame_score=9.0, summary="the clearest view"),
     }
-    return scored, SelectionMeta(
-        budget=4, scored_indices=[0, 1, 2, 3], probes=[0, 1, 2, 3], cutoff_idx_inclusive=3, best_idx=3
-    )
+    return _scores_with_best(scored, 3)()
 
 
 def _drive_four_frame_image_gen(
-    app: DetectionSummary, run_id: str, *, max_input_images: Any
+    app: DetectionSummary,
+    run_id: str,
+    *,
+    max_input_images: Any,
+    scores: Any = _four_frame_scores,
+    run: _Run | None = None,
 ) -> MagicMock:
     """Run `_build_bundle` to the render against a provider with a slot count."""
-    run = _four_frame_run(app, run_id)
+    run = run or _four_frame_run(app, run_id)
 
     fake_provider = MagicMock()
     fake_provider.capabilities = MagicMock(
@@ -544,7 +575,7 @@ def _drive_four_frame_image_gen(
     fake_provider.workflow_name = _EDIT_META["workflow_name"]
     fake_provider.workflow_source = _EDIT_META["workflow_source"]
 
-    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=_four_frame_scores), \
+    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=scores), \
          patch("detection_summary_app.manager.should_publish_bundle", return_value=True), \
          patch("detection_summary_app.manager.build_image_provider", return_value=fake_provider), \
          patch("detection_summary_app.manager.delete_run_dir", return_value=False):
@@ -554,24 +585,147 @@ def _drive_four_frame_image_gen(
     return fake_provider
 
 
+def _sent_names(provider: MagicMock) -> list[str]:
+    return [Path(p).name for p in provider.edit_image.call_args.kwargs["input_image_paths"]]
+
+
 def _notes_block(prompt: str) -> list[str]:
     return [ln for ln in prompt.splitlines() if ln.startswith("- Image ")]
 
 
-def test_four_selected_frames_are_trimmed_to_three_slots() -> None:
-    """The default workflow has three slots; the fourth candidate is dropped here."""
+def test_a_one_person_run_sends_only_the_best_frame() -> None:
+    """The other frames show the same man elsewhere; sent, he is drawn again."""
     app = _make_app(_args())
     _initialize(app)
 
-    provider = _drive_four_frame_image_gen(app, "run-trim", max_input_images=3)
+    scored = {
+        0: _score(male=1, frame_score=5.0, summary="a man walking in, near left"),
+        1: _score(male=1, frame_score=9.0, summary="a man at the door, center"),
+        2: _score(male=1, frame_score=7.0, summary="a man walking away, right"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-one", max_input_images=3, scores=_scores_with_best(scored, 1)
+    )
 
-    sent = provider.edit_image.call_args.kwargs["input_image_paths"]
-    assert len(sent) == 3
+    assert _sent_names(provider) == [app.bundle_best_filename]
+    prompt = provider.edit_image.call_args.kwargs["prompt"]
+    assert "You are provided 1 image:" in prompt
+    assert "near left" not in prompt
+    assert "walking away" not in prompt
+
+
+def test_a_frame_that_adds_a_person_is_sent() -> None:
+    app = _make_app(_args())
+    _initialize(app)
+
+    scored = {
+        0: _score(male=2, frame_score=5.0, summary="two men"),
+        1: _score(male=1, frame_score=9.0, summary="a man at the door"),
+        2: _score(male=1, frame_score=7.0, summary="a man"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-plus-one", max_input_images=3, scores=_scores_with_best(scored, 1)
+    )
+
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg"]
+
+
+def test_a_frame_where_the_gender_reads_differently_is_not_sent() -> None:
+    """One person scored as a man, then a woman, is not a second person."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    scored = {
+        0: _score(female=1, frame_score=6.0, summary="a woman at the door"),
+        1: _score(male=1, frame_score=9.0, summary="a man at the door"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-flip", max_input_images=3, scores=_scores_with_best(scored, 1)
+    )
+
+    assert _sent_names(provider) == [app.bundle_best_filename]
+
+
+def test_an_animal_seen_only_in_another_frame_is_sent() -> None:
+    app = _make_app(_args())
+    _initialize(app)
+
+    scored = {
+        0: _score(male=1, animal=1, frame_score=5.0, summary="a man and a dog"),
+        1: _score(male=1, frame_score=9.0, summary="a man at the door"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-dog", max_input_images=3, scores=_scores_with_best(scored, 1)
+    )
+
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg"]
+    assert _notes_block(provider.edit_image.call_args.kwargs["prompt"])[1] == (
+        "- Image 2 t=0.0s: the same scene at another moment, with 1 animal more than Image 1: "
+        "add only that one; everyone and everything else in it is already in Image 1."
+    )
+
+
+def test_a_profile_category_decides_what_counts_as_new() -> None:
+    """On the packages profile a frame showing a package the best frame lacks is sent."""
+    app = _make_app(_args(detection_profile="packages"))
+    _initialize(app)
+
+    scored = {
+        0: _score(frame_score=5.0, summary="a package on the step", extra_signals={"package_count": 1}),
+        1: _score(male=1, frame_score=9.0, summary="a courier at the door"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app, "run-package", max_input_images=3, scores=_scores_with_best(scored, 1)
+    )
+
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg"]
+    # Its note names what it was sent for.
+    assert _notes_block(provider.edit_image.call_args.kwargs["prompt"])[1] == (
+        "- Image 2 t=0.0s: the same scene at another moment, with 1 package more than Image 1: "
+        "add only that one; everyone and everything else in it is already in Image 1."
+    )
+
+
+def test_a_missing_best_frame_falls_back_to_the_next_best_frame() -> None:
+    """With nothing else to send, a run whose best.jpg never appeared still renders."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    run = _four_frame_run(app, "run-fallback-frame")
+    local_run_dir = (
+        app._ha_path_to_local_fs(app.snapshot_ha_dir) / app.bundle_runs_subdir / "run-fallback-frame"
+    )
+    (local_run_dir / app.captured_subdir / "frame_001.jpg").unlink()
+    scored = {
+        0: _score(male=1, frame_score=5.0, summary="a man walking in"),
+        1: _score(male=1, frame_score=9.0, summary="a man at the door"),
+        2: _score(male=1, frame_score=7.0, summary="a man walking away"),
+    }
+    provider = _drive_four_frame_image_gen(
+        app,
+        "run-fallback-frame",
+        max_input_images=3,
+        scores=_scores_with_best(scored, 1),
+        run=run,
+    )
+
+    assert _sent_names(provider) == ["frame_002.jpg"]
+    prompt = provider.edit_image.call_args.kwargs["prompt"]
+    assert "primary frame" not in prompt
+    assert _notes_block(prompt) == ["- Image 1 t=2.0s: a man walking away (m=1, f=0, animals=0)"]
+
+
+def test_candidates_are_trimmed_to_the_workflow_slots() -> None:
+    """A two-slot workflow takes the best frame and the first extra; the rest is dropped."""
+    app = _make_app(_args())
+    _initialize(app)
+
+    provider = _drive_four_frame_image_gen(app, "run-trim", max_input_images=2)
+
     # Rank order is preserved: best frame (best.jpg) first, then the extras.
-    assert Path(sent[0]).name == app.bundle_best_filename
-    assert [Path(p).name for p in sent[1:]] == ["frame_001.jpg", "frame_002.jpg"]
-    # The dropped candidate is the lowest-ranked one, frame_000.
-    assert not any(Path(p).name == "frame_000.jpg" for p in sent)
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_002.jpg"]
+    # The dropped candidate is the lowest-ranked one, frame_001.
+    assert "frame_001.jpg" not in _sent_names(provider)
 
 
 def test_every_selected_frame_is_sent_when_the_provider_has_no_limit() -> None:
@@ -581,12 +735,8 @@ def test_every_selected_frame_is_sent_when_the_provider_has_no_limit() -> None:
 
     provider = _drive_four_frame_image_gen(app, "run-nolimit", max_input_images=None)
 
-    sent = provider.edit_image.call_args.kwargs["input_image_paths"]
-    assert len(sent) == 4
-    assert [Path(p).name for p in sent] == [
-        app.bundle_best_filename, "frame_001.jpg", "frame_002.jpg", "frame_000.jpg"
-    ]
-    assert len(_notes_block(provider.edit_image.call_args.kwargs["prompt"])) == 4
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_002.jpg", "frame_001.jpg"]
+    assert len(_notes_block(provider.edit_image.call_args.kwargs["prompt"])) == 3
 
 
 def test_the_notes_describe_the_frames_sent_in_the_order_sent() -> None:
@@ -603,13 +753,13 @@ def test_the_notes_describe_the_frames_sent_in_the_order_sent() -> None:
     prompt = provider.edit_image.call_args.kwargs["prompt"]
     assert _notes_block(prompt) == [
         "- Image 1 (primary frame) t=3.0s: the clearest view (m=1, f=1, animals=1)",
-        "- Image 2 t=1.0s: the same scene at another moment, with 2 animals more than Image 1: "
-        "add only those, each once; everyone else in it is already in Image 1.",
-        "- Image 3 t=2.0s: the same scene at another moment, with 3 people more than Image 1: "
-        "add only those, each once; everyone else in it is already in Image 1.",
+        "- Image 2 t=2.0s: the same scene at another moment, with 3 people more than Image 1: "
+        "add only those, each once; everyone and everything else in it is already in Image 1.",
+        "- Image 3 t=1.0s: the same scene at another moment, with 2 animals more than Image 1: "
+        "add only those, each once; everyone and everything else in it is already in Image 1.",
     ]
     # A later image is described by what it adds, never in its own words, and
-    # the trimmed frame's summary must not appear at all.
+    # a frame that adds nobody is not sent, so its summary never appears.
     assert "three dogs" not in prompt
     assert "five men" not in prompt
     assert "two women leaving" not in prompt
@@ -619,12 +769,12 @@ def test_the_prompt_counts_the_frames_actually_sent() -> None:
     app = _make_app(_args())
     _initialize(app)
 
-    provider = _drive_four_frame_image_gen(app, "run-count", max_input_images=3)
+    provider = _drive_four_frame_image_gen(app, "run-count", max_input_images=2)
 
     kwargs = provider.edit_image.call_args.kwargs
-    assert "You are provided 3 images" in kwargs["prompt"]
-    assert len(kwargs["input_image_paths"]) == 3
-    assert len(_notes_block(kwargs["prompt"])) == 3
+    assert "You are provided 2 images" in kwargs["prompt"]
+    assert len(kwargs["input_image_paths"]) == 2
+    assert len(_notes_block(kwargs["prompt"])) == 2
 
 
 def test_the_run_narrative_stays_out_of_the_image_prompt() -> None:
@@ -655,13 +805,13 @@ def test_a_trim_is_logged_at_debug_with_the_zone_and_the_counts() -> None:
     app = _make_app(_args())
     _initialize(app)
 
-    _drive_four_frame_image_gen(app, "run-trimlog", max_input_images=3)
+    _drive_four_frame_image_gen(app, "run-trimlog", max_input_images=2)
 
     trims = [str(c) for c in app.log.mock_calls if "trimmed reference frames" in str(c)]
     assert len(trims) == 1
     assert "zone=garage" in trims[0]
-    assert "selected=4" in trims[0]
-    assert "sent=3" in trims[0]
+    assert "selected=3" in trims[0]
+    assert "sent=2" in trims[0]
     assert "DEBUG" in trims[0]
 
 
@@ -670,7 +820,7 @@ def test_nothing_is_logged_when_no_frame_is_trimmed() -> None:
     app = _make_app(_args())
     _initialize(app)
 
-    _drive_four_frame_image_gen(app, "run-notrim", max_input_images=4)
+    _drive_four_frame_image_gen(app, "run-notrim", max_input_images=3)
 
     assert not [c for c in app.log.mock_calls if "trimmed reference frames" in str(c)]
 
@@ -682,7 +832,7 @@ def test_the_llm_event_records_only_the_frames_sent() -> None:
 
     run = _four_frame_run(app, "run-event")
     fake_provider = MagicMock()
-    fake_provider.capabilities = MagicMock(supports_image_to_image=True, max_input_images=3)
+    fake_provider.capabilities = MagicMock(supports_image_to_image=True, max_input_images=2)
     fake_provider.edit_image.return_value = dict(_EDIT_META)
     fake_provider.workflow_name = _EDIT_META["workflow_name"]
     fake_provider.workflow_source = _EDIT_META["workflow_source"]
@@ -696,8 +846,8 @@ def test_the_llm_event_records_only_the_frames_sent() -> None:
     event = [
         e for e in bundle["summary"]["summarized_llm_events"] if e.get("type") == "image_edit"
     ][0]
-    assert len(event["input_paths"]) == 3
-    assert not any(p.endswith("frame_000.jpg") for p in event["input_paths"])
+    assert len(event["input_paths"]) == 2
+    assert not any(p.endswith("frame_001.jpg") for p in event["input_paths"])
 
 
 def test_no_note_claims_primary_when_the_best_frame_never_materialised() -> None:
@@ -718,28 +868,13 @@ def test_no_note_claims_primary_when_the_best_frame_never_materialised() -> None
     )
     (local_run_dir / app.captured_subdir / "frame_003.jpg").unlink()
 
-    fake_provider = MagicMock()
-    fake_provider.capabilities = MagicMock(supports_image_to_image=True, max_input_images=3)
-    fake_provider.edit_image.return_value = dict(_EDIT_META)
-    fake_provider.workflow_name = _EDIT_META["workflow_name"]
-    fake_provider.workflow_source = _EDIT_META["workflow_source"]
+    provider = _drive_four_frame_image_gen(app, "run-nobest", max_input_images=3, run=run)
 
-    with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=_four_frame_scores), \
-         patch("detection_summary_app.manager.should_publish_bundle", return_value=True), \
-         patch("detection_summary_app.manager.build_image_provider", return_value=fake_provider), \
-         patch("detection_summary_app.manager.delete_run_dir", return_value=False):
-        bundle = app._build_bundle(run)
-
-    assert bundle is not None
-    kwargs = fake_provider.edit_image.call_args.kwargs
-    assert [Path(p).name for p in kwargs["input_image_paths"]] == [
-        "frame_001.jpg", "frame_002.jpg", "frame_000.jpg"
-    ]
+    kwargs = provider.edit_image.call_args.kwargs
+    assert _sent_names(provider) == ["frame_002.jpg", "frame_001.jpg"]
     assert "primary frame" not in kwargs["prompt"]
     assert _notes_block(kwargs["prompt"]) == [
-        "- Image 1 t=1.0s: three dogs (m=0, f=0, animals=3)",
-        "- Image 2 t=2.0s: the same scene at another moment, with 5 people more than Image 1: "
-        "add only those, each once; everyone else in it is already in Image 1.",
-        "- Image 3 t=0.0s: the same scene at another moment, with 2 people more than Image 1: "
-        "add only those, each once; everyone else in it is already in Image 1.",
+        "- Image 1 t=2.0s: five men (m=5, f=0, animals=0)",
+        "- Image 2 t=1.0s: the same scene at another moment, with 3 animals more than Image 1: "
+        "add only those, each once; everyone and everything else in it is already in Image 1.",
     ]

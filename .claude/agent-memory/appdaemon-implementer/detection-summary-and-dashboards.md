@@ -16,10 +16,14 @@ metadata:
 
 ## Image prompt policy (`prompting/image_prompt_builder.py`)
 
-The 2-3 reference frames show the SAME people seconds apart, and a multi-image
+The reference frames show the SAME people seconds apart, and a multi-image
 edit model combines what each image shows, so the generated image repeated the
 same person once per frame (fixed in 1.22.2). Keep the prompt saying one thing:
 draw Image 1's moment, each subject once.
+- `manager.py` sends only the best frame plus, per profile category, a frame
+  showing MORE of that category than the best frame (by category total).
+  Never re-add a min_refs-style "second best frame": in a one-person run that
+  is the same person again.
 - Never ask for a "composite" of the frames. Never put a later frame's own
   summary in the prompt (it places the same person somewhere else). Never put
   the run narrative in the prompt (a sequence of actions is drawn as that many

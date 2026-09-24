@@ -156,9 +156,11 @@ deployment; changing it is a normal AppDaemon release. An unregistered name
 raises at `initialize()` rather than failing at render time.
 
 The bundle default is `qwen-image-2.1-2609-25step-edit-3frame-gpu1` (needs
-ComfyUI >= 0.37.0). The app picks 2-4 candidate frames per run, so the default
-graph takes up to three of them as references — the extras are what let it
-confirm who and what is in the scene when one frame is ambiguous. The `gpu1`
+ComfyUI >= 0.37.0). The app sends the best frame, plus a frame for each
+profile category that another frame shows more of (a dog that crossed later, a
+second person), so the default graph takes up to three references and most
+runs send one. See [One moment, each subject drawn once](#one-moment-each-subject-drawn-once)
+for why a frame that adds nobody is never sent. The `gpu1`
 suffix is the same graph pinned to the host's second GPU, which throttles far
 less; the registry's own default stays GPU-agnostic because it is what a
 rejected graph falls back to. See the
@@ -173,8 +175,9 @@ and OpenAI, which send every frame they are given. The manager builds the
 provider first, trims its candidate list to that number, and only then builds
 the prompt, so the prompt describes exactly the frames the model receives:
 
-- the frames are sent in rank order — best frame first, then the extras that
-  carry the most animals / males / females — and a trim drops from the tail;
+- the frames are sent in rank order — best frame first, then, in profile
+  category order, the best-scoring frame that shows more of that category than
+  the best frame does — and a trim drops from the tail;
 - the prompt's `You are provided N images` line counts the frames sent, not
   the frames selected;
 - the per-frame notes run in the same order as the uploads and are labelled by
@@ -208,7 +211,17 @@ paused, walked away"). The model drew one person per description, and the one
 guard against it was a negated "Do NOT depict the same individual multiple
 times" line. At `cfg 1` the workflow has no negative prompt to back that up.
 
-The prompt now says one thing throughout:
+Two changes stop it, one in which frames are sent and one in the prompt.
+
+**Only frames that add someone are sent.** Besides the best frame, a frame is
+sent only if, for some profile category, it shows more than the best frame
+does, counted by category total (people = men + women). A frame that shows the
+same person somewhere else, or reads their gender differently, adds nobody, so
+a one-person visit renders from the best frame alone, as every run did before
+1.21.0. If `best.jpg` never appeared and no other frame adds anyone, the
+best-scoring frame whose file exists is sent in its place.
+
+**The prompt says one thing throughout:**
 
 - **Draw the scene of Image 1** (the best frame): its camera view,
   composition, and each subject's position and pose. The other images are
@@ -222,9 +235,11 @@ The prompt now says one thing throughout:
   gender breakdown, because a majority reading across frames can contradict
   Image 1. Image 1's own note and the image carry gender.
 - **Later images are described by what they add, never in their own words.**
-  `Image 2: the same subjects as Image 1 at another moment; nobody new`, or
-  `…with 1 animal more than Image 1: add only that one`. The delta is taken on
-  the people total, for the same reason as the counts.
+  `Image 2: … with 1 animal more than Image 1: add only that one; everyone and
+  everything else in it is already in Image 1`. The delta is taken on the same
+  per-category totals the frame was picked on (`FrameNote.category_counts`),
+  so a frame sent for a package names the package. `nobody new` appears only
+  when Image 1 is not the best frame, i.e. `best.jpg` never appeared.
 - **No sequence.** The run narrative stays in the notification and out of the
   image prompt, and the rules ask for one continuous scene rather than a
   sequence, comic panels, or a repeated pattern. The style and setting headers
