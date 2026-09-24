@@ -798,12 +798,13 @@ def test_a_missing_best_frame_falls_back_to_the_next_best_frame() -> None:
 
 
 def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None:
-    """best.jpg is copied once; a capture that arrives later is found by the fallback.
+    """A capture that lands during the wait becomes this run's best.jpg.
 
-    The best frame's file is missing when `_build_bundle` copies it to
-    best.jpg and lands during the wait for best.jpg, which nothing else ever
-    writes. The fallback must send that capture, as the primary frame, not
-    the next-best frame.
+    The best frame's file is missing when `_build_bundle` first copies it to
+    best.jpg and lands during the wait for it. It must be the frame drawn (as
+    the primary frame, not the next-best frame), become best.jpg and the
+    stable mirror (not leave the previous run's frame there), and end the
+    wait as soon as it lands.
     """
     app = _make_app(_args(external_image_gen_wait_for_best_s=0.05))
     _initialize(app)
@@ -816,8 +817,11 @@ def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None
         / app.captured_subdir
     )
     late = frames_dir / "frame_001.jpg"
-    content = late.read_bytes()
+    content = b"late-capture"
     late.unlink()
+    stable = app._ha_path_to_local_fs(f"{app.snapshot_ha_dir}/{app.published_best_filename}")
+    stable.parent.mkdir(parents=True, exist_ok=True)
+    stable.write_bytes(b"previous-run")
 
     def _capture_lands(_seconds: float) -> None:
         late.write_bytes(content)
@@ -829,7 +833,7 @@ def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None
         1: _score(male=1, frame_score=3.0, person_score=9.0, summary="a man at the door"),
         2: _score(male=1, frame_score=6.0, person_score=5.0, summary="a man walking away"),
     }
-    with patch("detection_summary_app.manager.time.sleep", side_effect=_capture_lands):
+    with patch("detection_summary_app.manager.time.sleep", side_effect=_capture_lands) as sleep:
         provider = _drive_four_frame_image_gen(
             app,
             "run-late-best",
@@ -838,10 +842,14 @@ def test_a_best_frame_that_lands_after_the_copy_is_still_the_one_drawn() -> None
             run=run,
         )
 
-    assert _sent_names(provider) == ["frame_001.jpg"]
+    assert _sent_names(provider) == [app.bundle_best_filename]
     assert _notes_block(provider.edit_image.call_args.kwargs["prompt"]) == [
         "- Image 1 (primary frame) t=1.0s: a man at the door (m=1, f=0, animals=0)"
     ]
+    assert (frames_dir.parent / app.bundle_best_filename).read_bytes() == content
+    assert stable.read_bytes() == content
+    # The wait watches the capture, so it ends the moment the capture lands.
+    assert sleep.call_count == 1
 
 
 def test_a_late_best_frame_stays_image_1_when_another_frame_adds_someone() -> None:
@@ -881,7 +889,7 @@ def test_a_late_best_frame_stays_image_1_when_another_frame_adds_someone() -> No
             run=run,
         )
 
-    assert _sent_names(provider) == ["frame_001.jpg", "frame_000.jpg"]
+    assert _sent_names(provider) == [app.bundle_best_filename, "frame_000.jpg"]
     assert _notes_block(provider.edit_image.call_args.kwargs["prompt"])[0] == (
         "- Image 1 (primary frame) t=1.0s: a man at the door (m=1, f=0, animals=0)"
     )

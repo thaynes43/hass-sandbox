@@ -186,9 +186,11 @@ the prompt, so the prompt describes exactly the frames the model receives:
   position (`Image 1 (primary frame)`, `Image 2`, …), because every upload is
   renamed on the way out and a filename would name nothing the model can see.
   The `(primary frame)` qualifier is carried on the note, not inferred from
-  being first. The best frame is sent as `best.jpg`, or as its own capture if
-  that landed after the copy to `best.jpg`. If neither is on disk, the best
-  frame is not among the uploads and no note claims to be it;
+  being first. A best frame whose capture lands late still becomes this run's
+  `best.jpg` and stable mirror: image generation waits for the capture itself,
+  up to `external_image_gen_wait_for_best_s`, and copies it the moment it
+  lands. If it never lands, the best frame is not among the uploads and no
+  note claims to be it;
 - only Image 1's note carries its own summary; every later note says what that
   image adds to Image 1 (see below);
 - the subject counts are capped at the most any sent image shows, so a
@@ -241,11 +243,10 @@ and every frame already chosen, counted by category total (people = men +
 women). A frame that shows the
 same person somewhere else, or reads their gender differently, adds nobody, so
 a one-person visit renders from the best frame alone, as every run did before
-1.21.0. If `best.jpg` never appeared, the best frame is sent from its own
-capture, which may have landed after the copy. If neither is on disk and no
-other candidate is either, the next frame on disk is sent, ranked the way
-selection ranks frames (anyone in the frame first), so a sharp empty frame is
-never picked over one with the person in it.
+1.21.0. A best frame whose capture lands late still becomes `best.jpg`. If it
+never lands and no other candidate is on disk, the next frame on disk is sent,
+ranked the way selection ranks frames (anyone in the frame first), so a sharp
+empty frame is never picked over one with the person in it.
 
 **The prompt says one thing throughout:**
 

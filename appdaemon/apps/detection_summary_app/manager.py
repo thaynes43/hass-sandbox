@@ -944,24 +944,35 @@ class DetectionSummary(hass.Hass):
                 },
             }
 
-        # Create best.jpg for this run
+        # Create best.jpg for this run from the best frame's capture, and
+        # mirror it to a stable path under the zone dir (for a local_file
+        # camera to point at). The capture can still be landing here, so this
+        # runs again while image generation waits for it and where the best
+        # frame is resolved for sending: a late capture still becomes this
+        # run's best.jpg and mirror, rather than leaving no best.jpg and the
+        # previous run's frame in the mirror.
         best_src = frames_dir / f"frame_{best_idx:03d}.jpg"
         best_dst = local_run_dir / self.bundle_best_filename
-        if best_src.exists():
-            best_dst.write_bytes(best_src.read_bytes())
 
-        # Mirror best.jpg to a stable path under the zone dir (for a local_file camera to point at).
-        try:
-            stable_best_local = self._ha_path_to_local_fs(stable_best_ha_path(cfg))
-            stable_best_local.parent.mkdir(parents=True, exist_ok=True)
+        def _materialize_best() -> bool:
             if best_dst.exists():
+                return True
+            if not best_src.exists():
+                return False
+            best_dst.write_bytes(best_src.read_bytes())
+            try:
+                stable_best_local = self._ha_path_to_local_fs(stable_best_ha_path(cfg))
+                stable_best_local.parent.mkdir(parents=True, exist_ok=True)
                 stable_best_local.write_bytes(best_dst.read_bytes())
                 self.log(
                     f"DetectionSummary[{self.bundle_key}]: mirrored best run_id={run_id} stable={stable_best_local}",
                     level="INFO",
                 )
-        except Exception as e:
-            self.log(f"DetectionSummary[{self.bundle_key}]: failed to mirror best image: {e!r}", level="WARNING")
+            except Exception as e:
+                self.log(f"DetectionSummary[{self.bundle_key}]: failed to mirror best image: {e!r}", level="WARNING")
+            return True
+
+        _materialize_best()
 
         # Generate image from best.jpg to per-run generated.png, then mirror to stable
         generated_image: Optional[dict[str, Any]] = None
@@ -969,10 +980,11 @@ class DetectionSummary(hass.Hass):
         consensus_bounds = compute_population_consensus(scored, self._profile)
         if self.external_image_gen_enabled:
             out_path = local_run_dir / self.external_generated_filename
-            # wait for best to exist
+            # Wait for the best frame's capture, if it has not landed yet, and
+            # turn it into best.jpg the moment it does.
             if self.external_image_gen_wait_for_best_s > 0:
                 deadline = time.time() + float(self.external_image_gen_wait_for_best_s)
-                while time.time() < deadline and not best_dst.exists():
+                while time.time() < deadline and not _materialize_best():
                     time.sleep(0.2)
 
             def _pick_best_idx_with_max(sc: dict[int, ScoreResult], get_count) -> Optional[int]:
@@ -1053,9 +1065,10 @@ class DetectionSummary(hass.Hass):
             selected_frames: list[tuple[int, Path]] = []
             for ii in candidate_idxs:
                 if int(ii) == int(best_idx):
-                    # best.jpg is copied from the capture once, above; a capture
-                    # that landed after that copy exists only as itself.
-                    p = best_dst if best_dst.exists() else best_src
+                    # A capture that landed after the wait still becomes
+                    # best.jpg here; with no capture there is no best.jpg.
+                    _materialize_best()
+                    p = best_dst
                 else:
                     p = frames_dir / f"frame_{int(ii):03d}.jpg"
                 if p.exists():
