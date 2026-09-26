@@ -591,7 +591,8 @@ async def detach(s: aiohttp.ClientSession) -> None:
         raise Refused(f"llm_hass_api has no {api_id} to remove but still holds {others}; detaching would strip "
                       "the prompt block and leave those tools attached. Check ENTRY_ID (ACTION=status lists the "
                       f"entries and marks the attached one); if {api_id} is right and its API was removed by hand, "
-                      f"{run_line('detach', ' BLOCK_ONLY=1')} changes only the prompt")
+                      f"{run_line('detach', (f' PROMPT_FILE={PROMPT_FILE}' if PROMPT_FILE else '') + ' BLOCK_ONLY=1')} "
+                      "changes only the prompt")
     if PROMPT_FILE:
         new_prompt = load_backup_prompt(PROMPT_FILE)
         if blk := one_block(new_prompt, "it is not a backup this helper wrote"):
