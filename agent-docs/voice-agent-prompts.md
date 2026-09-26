@@ -175,7 +175,10 @@ on Plex."), so the bullet makes it say back the title and year and always say wh
 earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
 `ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
 to make it: it replaces the earlier block in place through the same reconfigure flow as `attach`,
-backup first, and leaves `llm_hass_api` alone. HA's `mcp` integration reads a server's tool list only
+backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
+backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
+back in place, API kept. The backup lives in the HA pod's `/tmp` until the pod restarts; after that the
+way back is the backup's `prompt` pasted into the agent's instructions in HA's UI. HA's `mcp` integration reads a server's tool list only
 when the entry is set up, so new or removed tools reach the agent only after
 `homeassistant.reload_config_entry` on the mcp entry (or an HA restart).
 

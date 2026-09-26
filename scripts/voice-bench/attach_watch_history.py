@@ -8,7 +8,8 @@ never printed). One ACTION per run:
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=attach ENTRY_ID=<mcp entry id>"
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1"   # prints, changes nothing
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id>"
-    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=detach ENTRY_ID=<mcp entry id> [PROMPT_FILE=<path in the HA pod>]"
+    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<update backup in the HA pod> [DRY_RUN=1]"   # undoes an update
+    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=detach ENTRY_ID=<mcp entry id> [PROMPT_FILE=<attach backup in the HA pod>]"
 
 How each action talks to HA (read against the HA 2026.9.3 source in the pod):
 
@@ -25,7 +26,16 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
   line before the next blank line) whose text is WATCH_BLOCK (nothing to do) or one of
   PREVIOUS_WATCH_BLOCKS, and llm_hass_api must already carry the entry's API; anything else is
   refused. llm_hass_api is resubmitted unchanged. DRY_RUN=1 prints the block before and after and
-  the length change, and starts no flow.
+  the length change, and starts no flow. With PROMPT_FILE, the block swapped in is the one in that
+  backup instead of WATCH_BLOCK (it too must be WATCH_BLOCK or one of PREVIOUS_WATCH_BLOCKS): that is
+  how an update is undone, and the update prints the exact line.
+- Undoing a change: attach, update and detach print the subentry data they replace (BACKUP_BEGIN ..
+  BACKUP_END) and write it to /tmp in the HA pod, which a pod restart wipes, then print the line
+  that undoes them. An attach made from a prompt with no block is undone by
+  ACTION=detach PROMPT_FILE=<its backup> (the prompt byte for byte, the API removed); an update by
+  ACTION=update PROMPT_FILE=<its backup> (its block back in place, the API kept). A detach has no
+  exact undo: ACTION=attach attaches again with the current WATCH_BLOCK. Once /tmp is gone, restore
+  the backup's prompt by hand in HA's UI (the agent's Instructions field).
 - attach / update / detach: the OpenAI conversation subentry's reconfigure flow, REST only. HA has no
   websocket command for subentry flows, and the websocket `config_entries/subentries/update`
   changes the title only. (components/openai_conversation/config_flow.py OpenAISubentryFlowHandler)
@@ -278,7 +288,9 @@ def credential_like(key: str) -> bool:
     return any(w in k for w in CRED_WORDS) or any(p in CRED_PARTS for p in re.split(r"[^a-z0-9]+", k))
 
 
-def backup(data: dict) -> None:
+def backup(data: dict, undo: str) -> None:
+    """Print the subentry data and write it to /tmp in the pod. `undo` says how to reverse the
+    change; "{path}" in it becomes the file's path."""
     creds = [k for k in data if credential_like(k)]
     if creds:
         raise Refused(f"subentry data has credential-like keys {creds}; not printing a backup, not changing anything")
@@ -286,21 +298,29 @@ def backup(data: dict) -> None:
     print("BACKUP_BEGIN")
     print(line)
     print("BACKUP_END")
-    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%S.%fZ")  # a backup never overwrites another
     path = f"/tmp/watch-history-backup-{SUBENTRY}-{stamp}.json"
     try:
-        with open(path, "w") as f:
+        with open(path, "x") as f:
             f.write(line + "\n")
-        print(f"   (also written in the HA pod at {path}: PROMPT_FILE={path} restores it until the pod restarts)")
+        print(f"   (also written in the HA pod at {path}, until the pod restarts)")
+        print("   to undo:", undo.format(path=path))
     except OSError as ex:
         print(f"   (could not write the in-pod copy: {ex}; save the lines above)")
+        print("   to undo:", undo.format(path="<a file in the HA pod holding the lines above>"))
 
 
 def load_backup_prompt(path: str) -> str:
-    text = open(path, encoding="utf-8").read()
-    if "BACKUP_BEGIN" in text:
-        text = text.split("BACKUP_BEGIN", 1)[1].split("BACKUP_END", 1)[0]
-    obj = json.loads(text)
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        if "BACKUP_BEGIN" in text:
+            text = text.split("BACKUP_BEGIN", 1)[1].split("BACKUP_END", 1)[0]
+        obj = json.loads(text)
+    except (OSError, ValueError) as ex:
+        raise Refused(f"cannot read a backup from {path} in the HA pod ({type(ex).__name__}: {ex}); a pod restart wipes /tmp")
+    if not isinstance(obj, dict):
+        raise Refused(f"{path} does not hold a JSON object")
     if isinstance(obj.get("data"), dict):
         obj = obj["data"]
     prompt = obj.get("prompt")
@@ -393,9 +413,10 @@ async def require_mcp_loaded(s: aiohttp.ClientSession) -> None:
         raise Refused(f"mcp entry {ENTRY_ID} is {state}; HA only offers a loaded entry's API to the agent")
 
 
-async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_prompt: str, need_apis: list[str]) -> None:
+async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_prompt: str, need_apis: list[str],
+                 undo: str) -> None:
     await require_openai_loaded(s)
-    backup(current)
+    backup(current, undo)
     target = dict(current, llm_hass_api=new_api, prompt=new_prompt)
     await reconfigure(s, current, target, need_apis)
     print("subentry updated")
@@ -430,6 +451,16 @@ def print_block(label: str, text: str) -> None:
         print(f"   | {line}")
 
 
+def block_version(text: str) -> str:
+    if text == WATCH_BLOCK:
+        return "the current block"
+    return f"earlier version {PREVIOUS_WATCH_BLOCKS.index(text) + 1} of {len(PREVIOUS_WATCH_BLOCKS)}"
+
+
+def run_line(action: str, extra: str = "") -> str:
+    return f'run.sh attach_watch_history.py "ACTION={action} ENTRY_ID={ENTRY_ID}{extra}"'
+
+
 async def attach(s: aiohttp.ClientSession) -> None:
     api_id = need_entry_id()
     entries = load_entries()
@@ -439,8 +470,11 @@ async def attach(s: aiohttp.ClientSession) -> None:
     prompt = current.get("prompt", "")
     block = one_block(prompt, "fix it by hand")
     if block and block[2] in PREVIOUS_WATCH_BLOCKS:
-        raise Refused("the prompt carries an earlier WATCH HISTORY block; ACTION=update replaces it "
-                      "(with the API attached), ACTION=detach removes it")
+        if api_id in api:
+            raise Refused("the prompt carries an earlier WATCH HISTORY block and the API is attached; "
+                          "ACTION=update replaces the block in place")
+        raise Refused(f"the prompt carries an earlier WATCH HISTORY block and llm_hass_api lacks {api_id}; "
+                      "ACTION=detach first (it removes the block), then ACTION=attach (the API and the current block)")
     if block and block[2] != WATCH_BLOCK:
         raise Refused("the prompt already has a WATCH HISTORY block with different text; fix it by hand or detach with PROMPT_FILE first")
     if block:
@@ -458,8 +492,13 @@ async def attach(s: aiohttp.ClientSession) -> None:
         return
     if new_api != ["assist", api_id]:
         print(f"   NOTE: llm_hass_api will be {json.dumps(new_api)} (existing APIs kept)")
+    if block:  # only the API changes; the prompt already held the current block
+        undo = (f"{run_line('detach')} removes the API and the block together (no helper action puts back "
+                "a block without its API; the backup above holds the prompt as it was)")
+    else:
+        undo = f"{run_line('detach', ' PROMPT_FILE={path}')} restores this prompt byte for byte and removes the API"
     await require_mcp_loaded(s)
-    await change(s, current, new_api, new_prompt, [api_id])
+    await change(s, current, new_api, new_prompt, [api_id], undo)
 
 
 async def update(s: aiohttp.ClientSession) -> None:
@@ -469,24 +508,39 @@ async def update(s: aiohttp.ClientSession) -> None:
     current = dict(get_subentry(entries)["data"])
     api = list(current.get("llm_hass_api") or [])
     prompt = current.get("prompt", "")
-    if api_id not in api:
-        raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}; ACTION=attach adds the API and the current block together")
+    known = [WATCH_BLOCK, *PREVIOUS_WATCH_BLOCKS]
+    target = WATCH_BLOCK
+    if PROMPT_FILE:  # undoing an update: swap the backup's block back in
+        backed_up = one_block(load_backup_prompt(PROMPT_FILE), "it is not a backup this helper wrote")
+        if backed_up is None:
+            raise Refused(f"{PROMPT_FILE} has no WATCH HISTORY block, so it is an attach backup: "
+                          "ACTION=detach with this PROMPT_FILE restores it")
+        target = backed_up[2]
+        if target not in known:
+            raise Refused(f"{PROMPT_FILE}'s WATCH HISTORY block matches no copy in this script; restore it by hand")
     block = one_block(prompt, "fix it by hand")
+    if api_id not in api:
+        if block and block[2] != WATCH_BLOCK:
+            raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds a block other than the "
+                          "current one; ACTION=detach first (it removes the block), then ACTION=attach (the API and the current block)")
+        raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}; ACTION=attach adds the API "
+                      + ("(the block is already current)" if block else "and the current block together"))
     if block is None:
         raise Refused("the prompt has no WATCH HISTORY block; ACTION=attach appends the current one")
     start, end, old = block
-    if old == WATCH_BLOCK:
-        print(f"already current: the WATCH HISTORY block matches this script's copy, llm_hass_api={json.dumps(api)}; nothing done")
+    if old == target:
+        print(f"already {'as in ' + PROMPT_FILE if PROMPT_FILE else 'current'}: the WATCH HISTORY block is "
+              f"{block_version(old)}, llm_hass_api={json.dumps(api)}; nothing done")
         return
-    if old not in PREVIOUS_WATCH_BLOCKS:
+    if old not in known:
         raise Refused("the prompt's WATCH HISTORY block matches neither the current text nor any earlier one in this script; "
                       "fix it by hand (ACTION=status shows the prompt tail)")
-    version = PREVIOUS_WATCH_BLOCKS.index(old) + 1
-    new_prompt = prompt[:start] + WATCH_BLOCK + prompt[end:]
+    new_prompt = prompt[:start] + target + prompt[end:]
     where = "at the end of the prompt" if end == len(prompt) else f"at characters {start} to {end} of {len(prompt)}"
-    print(f"   the live block is earlier version {version} of {len(PREVIOUS_WATCH_BLOCKS)}, {where}; replacing it in place")
+    source = f" from {PROMPT_FILE}" if PROMPT_FILE else ""
+    print(f"   the live block is {block_version(old)}, {where}; replacing it in place with {block_version(target)}{source}")
     print_block("block now", old)
-    print_block("block after", WATCH_BLOCK)
+    print_block("block after", target)
     print(f"   prompt length: {len(prompt)} -> {len(new_prompt)} ({len(new_prompt) - len(prompt):+d} characters)")
     print(f"   llm_hass_api stays {json.dumps(api)}")
     await require_mcp_loaded(s)
@@ -494,7 +548,8 @@ async def update(s: aiohttp.ClientSession) -> None:
         await require_openai_loaded(s)
         print("DRY_RUN: no flow started, nothing changed")
         return
-    await change(s, current, api, new_prompt, [api_id])
+    undo = f"{run_line('update', ' PROMPT_FILE={path}')} puts this block back in place and keeps the API"
+    await change(s, current, api, new_prompt, [api_id], undo)
 
 
 async def detach(s: aiohttp.ClientSession) -> None:
@@ -506,7 +561,8 @@ async def detach(s: aiohttp.ClientSession) -> None:
     if PROMPT_FILE:
         new_prompt = load_backup_prompt(PROMPT_FILE)
         if find_blocks(new_prompt):
-            raise Refused(f"{PROMPT_FILE} still carries a WATCH HISTORY block; use the backup printed by attach")
+            raise Refused(f"{PROMPT_FILE} still carries a WATCH HISTORY block, so it is not an attach backup; "
+                          "ACTION=update with this PROMPT_FILE puts an update backup's block back")
     elif block := one_block(prompt, "pass PROMPT_FILE"):
         start, end, text = block
         if text != WATCH_BLOCK and text not in PREVIOUS_WATCH_BLOCKS:
@@ -523,7 +579,9 @@ async def detach(s: aiohttp.ClientSession) -> None:
         return
     if new_api != ["assist"]:
         print(f"   NOTE: llm_hass_api will be {json.dumps(new_api)} (only {api_id} removed)")
-    await change(s, current, new_api, new_prompt, [])
+    undo = (f"{run_line('attach')} attaches again with this script's current block (not byte for byte: "
+            "the backup above holds the prompt as it was)")
+    await change(s, current, new_api, new_prompt, [], undo)
 
 
 async def main() -> int:

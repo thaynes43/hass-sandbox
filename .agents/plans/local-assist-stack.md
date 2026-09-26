@@ -170,7 +170,8 @@ download it. Two things learned putting them live:
   Plex."), so the WATCH HISTORY block gained a last bullet that makes it say back the title and year and
   always say when a title will download. The helper puts a changed block live with
   `ACTION=update ENTRY_ID=01M381GTWER1BG9K4MWG3GDEGR` (`DRY_RUN=1` first): it swaps a known earlier block
-  in place and leaves `llm_hass_api` alone.
+  in place and leaves `llm_hass_api` alone. It prints its own undo, the same action with
+  `PROMPT_FILE=<its backup>`, which puts the old block back while the pod's `/tmp` lasts.
 - **Nine tools still cost nothing measurable.** Same bench on 2026-09-26, text as `conversation.chatgpt_5`,
   3 reps, `conv` mode: no median rose (table below).
 
