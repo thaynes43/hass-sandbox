@@ -1,7 +1,7 @@
 """Reusable async health-check primitives.
 
-Provides ``ping_check`` and ``http_check`` for use by health-checker
-AppDaemon apps.  These are lightweight wrappers around ``asyncio``
+Provides ``ping_check``, ``http_check``, ``http_reachable_check`` and
+``wyoming_check`` for use by health-checker AppDaemon apps.  These are lightweight wrappers around ``asyncio``
 subprocesses and ``aiohttp`` that return a uniform result dict::
 
     {"status": "ok" | "critical", "detail": "<human-readable detail>"}
@@ -14,6 +14,7 @@ failing checks are downgraded to **warning** instead of **critical**.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 import time
@@ -138,6 +139,127 @@ async def http_check(url: str, timeout_s: int = 5) -> Dict[str, str]:
     except Exception as exc:
         logger.warning("http_check %s error: %s", url, exc)
         return {"status": "critical", "detail": f"Error: {exc}"}
+
+
+async def http_reachable_check(
+    url: str, timeout_s: int = 5, label: str = "reachable"
+) -> Dict[str, str]:
+    """HTTP GET *url* and report whether the service answered at all.
+
+    Unlike ``http_check``, any response below 500 is ok: an authenticated
+    API answering 401/403 to an anonymous request proves the endpoint is up
+    and reachable from this host without holding its credential.  A 5xx,
+    timeout or connection error is critical.
+
+    Returns::
+
+        {"status": "ok", "detail": "reachable · 163ms"}
+        {"status": "critical", "detail": "HTTP 503"}
+        {"status": "critical", "detail": "timeout"}
+    """
+    timeout = aiohttp.ClientTimeout(total=timeout_s)
+    start = time.monotonic()
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.get(url) as resp:
+                elapsed_ms = (time.monotonic() - start) * 1000
+                if resp.status < 500:
+                    logger.debug("http_reachable_check %s -> %s", url, resp.status)
+                    return {"status": "ok", "detail": f"{label} · {elapsed_ms:.0f}ms"}
+                logger.debug("http_reachable_check %s -> HTTP %s", url, resp.status)
+                return {"status": "critical", "detail": f"HTTP {resp.status}"}
+    except asyncio.TimeoutError:
+        logger.warning("http_reachable_check %s timed out after %ss", url, timeout_s)
+        return {"status": "critical", "detail": "timeout"}
+    except aiohttp.ClientError as exc:
+        logger.warning("http_reachable_check %s client error: %s", url, exc)
+        return {"status": "critical", "detail": f"Connection error: {exc}"}
+    except Exception as exc:
+        logger.warning("http_reachable_check %s error: %s", url, exc)
+        return {"status": "critical", "detail": f"Error: {exc}"}
+
+
+# Largest Wyoming ``info`` body accepted (a TTS server lists every voice; the
+# 54-voice Kokoro server answers with a few tens of KB).
+_WYOMING_MAX_DATA = 4 * 1024 * 1024
+
+
+async def wyoming_check(
+    host: str, port: int, service: str, timeout_s: int = 5
+) -> Dict[str, str]:
+    """Wyoming ``describe`` handshake against *host*:*port*.
+
+    Sends the same ``describe`` event Home Assistant's Wyoming integration
+    sends, reads the ``info`` reply and checks that it lists an installed
+    program for *service*: ``"asr"`` (speech-to-text) or ``"tts"``
+    (text-to-speech).  A Wyoming event is one JSON header line, optionally
+    followed by ``data_length`` bytes of JSON data (older servers inline
+    ``data`` in the header instead) and ``payload_length`` bytes of payload.
+
+    Returns::
+
+        {"status": "ok", "detail": "nemo-parakeet-tdt-0.6b-v2 · 5ms"}
+        {"status": "ok", "detail": "kokoro, 54 voices · 3ms"}
+        {"status": "critical", "detail": "no speech-to-text installed"}
+        {"status": "critical", "detail": "timeout"}
+        {"status": "critical", "detail": "Connection error: <msg>"}
+    """
+    if service not in ("asr", "tts"):
+        raise ValueError(f"wyoming_check service must be 'asr' or 'tts', not {service!r}")
+    kind = "speech-to-text" if service == "asr" else "text-to-speech"
+    start = time.monotonic()
+    writer = None
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port, limit=_WYOMING_MAX_DATA),
+            timeout=timeout_s,
+        )
+        writer.write((json.dumps({"type": "describe", "data": {}}) + "\n").encode())
+        await writer.drain()
+        line = await asyncio.wait_for(reader.readline(), timeout=timeout_s)
+        if not line:
+            return {"status": "critical", "detail": "Connection error: closed without a reply"}
+        header = json.loads(line)
+        data = dict(header.get("data") or {})
+        data_length = int(header.get("data_length") or 0)
+        if data_length > _WYOMING_MAX_DATA:
+            return {"status": "critical", "detail": f"info too large ({data_length} bytes)"}
+        if data_length:
+            raw = await asyncio.wait_for(reader.readexactly(data_length), timeout=timeout_s)
+            data.update(json.loads(raw))
+        elapsed_ms = (time.monotonic() - start) * 1000
+    except asyncio.TimeoutError:
+        logger.warning("wyoming_check %s:%s timed out after %ss", host, port, timeout_s)
+        return {"status": "critical", "detail": "timeout"}
+    except (OSError, asyncio.IncompleteReadError) as exc:
+        logger.warning("wyoming_check %s:%s connection error: %s", host, port, exc)
+        return {"status": "critical", "detail": f"Connection error: {exc}"}
+    except (ValueError, TypeError) as exc:
+        logger.warning("wyoming_check %s:%s bad reply: %s", host, port, exc)
+        return {"status": "critical", "detail": f"bad reply: {exc}"}
+    finally:
+        if writer is not None:
+            writer.close()
+
+    if header.get("type") != "info":
+        return {"status": "critical", "detail": f"unexpected reply: {header.get('type')!r}"}
+
+    programs = [p for p in (data.get(service) or []) if isinstance(p, dict) and p.get("installed")]
+    if not programs:
+        return {"status": "critical", "detail": f"no {kind} installed"}
+    program = programs[0]
+    if service == "asr":
+        models = [m.get("name", "?") for m in program.get("models") or [] if m.get("installed")]
+        if not models:
+            return {"status": "critical", "detail": f"{program.get('name', kind)}: no model installed"}
+        return {"status": "ok", "detail": f"{models[0]} · {elapsed_ms:.0f}ms"}
+    voices = [v for v in program.get("voices") or [] if v.get("installed", True)]
+    if not voices:
+        return {"status": "critical", "detail": f"{program.get('name', kind)}: no voice installed"}
+    return {
+        "status": "ok",
+        "detail": f"{program.get('name', kind)}, {len(voices)} voices · {elapsed_ms:.0f}ms",
+    }
 
 
 # ------------------------------------------------------------------

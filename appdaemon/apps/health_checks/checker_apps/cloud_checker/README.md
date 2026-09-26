@@ -45,6 +45,7 @@ Uses `http_check()` from `shared/check_utils.py`.
 Cloud is a root-level dependency. Other checkers depend on it:
 - `cielo` (Cielo Home) — cloud-connected HVAC
 - `lock_batteries` (Schlage) — cloud-connected locks
+- `voice` (its **Assistant** check) — the LLM API behind the voice agents
 
 ## Manual Setup
 

@@ -14,7 +14,7 @@ iterating on it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| (none, first card) | "Assist" bubble button (`mdi:microphone`): `assist` action on the **Phone Assist** pipeline, listening at once (see *Assist on Tom's iPhone* below) |
+| (none, first card) | "Phone Assist" bubble button: status badge from the **Voice** health checker, state line `sensor.phone_assist_status`, sub-buttons **Chat** / **Voice** (see *Assist on Tom's iPhone* below) |
 | Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
@@ -41,11 +41,28 @@ pickers after native Assist is opened again, or after the refresh button in an i
 
 - **Pipeline:** Phone Assist `01m3fwd8phf6qxyaax31evjt7a`, a roomless agent with no persona (Tom wanted
   "something equivalent to Siri"). Its settings and prompt are in `agent-docs/voice-agent-prompts.md`.
-- **Button:** the first card calls `tap_action: {action: assist, pipeline_id: 01m3fwd8phf6qxyaax31evjt7a,
-  start_listening: true}` on both the icon and the body. Bubble Card passes it to HA's `hass-action`,
-  and in the app the frontend sends `assist/show` with the pipeline id. The app honours that, but its
-  own Assist start-mode setting (auto/voice/text) can override `start_listening`. Without an explicit
-  `start_listening: true` the action opens in text mode.
+- **Card** (the first card; Tom asked on 2026-09-26 for a status badge plus Chat and Voice as sub-buttons, so he can choose):
+  - **Chat** / **Voice** sub-buttons: `tap_action: {action: assist, pipeline_id: 01m3fwd8phf6qxyaax31evjt7a,
+    start_listening: false | true}`. Chat opens Assist ready to type; Voice opens it listening.
+    Bubble Card passes the action to HA's `hass-action`, and in the app the frontend sends `assist/show`
+    with the pipeline id. The app honours both fields, but its own Assist start-mode setting
+    (auto/voice/text) can override `start_listening`.
+  - **Status badge:** the main icon and its tint come from the AppDaemon **Voice** health checker
+    (`checkers.voice.status` on `sensor.health_check_status`, `health_checks/checker_apps/voice_health_checker`):
+    - `ok` = `mdi:check-circle` (green);
+    - `critical` = `mdi:alert-circle` (red);
+    - `warning`/`degraded` = `mdi:alert` (amber);
+    - missing = `mdi:help-circle` (grey).
+
+    The icon is set by the card's `styles` JS, as the bike charger cards do.
+  - **State line:** `sensor.phone_assist_status`, a Template helper (config entry `01M3FYTH3MPEWWV0ZVMECW2RFE`,
+    created 2026-09-26, live only). It reads `Ready`, `<check names> down`, `<check names> unknown` (masked by
+    a dependency, or not run yet), or `Unknown` (no Voice checker reporting).
+  - **Tapping the card** (icon or body) opens `#health-check-popup`, where the Voice checker's three checks
+    and their details are listed.
+  - Why a checker: HA's `stt.*`, `tts.*` and `conversation.*` entities stay "available" while the servers
+    behind them are down (10 days of history, 2026-09-26: they went unavailable only for seconds during
+    entry reloads), so they cannot drive a status.
 - **Other ways in for a non-admin:**
   - the dashboard's Assist item (in the ⋮ menu at phone width; there is no admin check);
   - `?conversation=1` on a dashboard URL;
@@ -53,8 +70,8 @@ pickers after native Assist is opened again, or after the refresh button in an i
     Shortcut, which needs no cached list.
   There is no Assist panel, so Assist cannot go in the sidebar.
 - **Checked in a browser 2026-09-26** (admin session, Chromium at 390×844 with a fake microphone):
-  the tap opened Assist on "Phone Assist" listening, and the pipeline's debug runs showed the STT run.
-  Not checked on the phone itself.
+  Voice opened Assist on "Phone Assist" listening, and the pipeline's debug runs showed the STT run;
+  Chat opened it in text mode. Not checked on the phone itself.
 
 ## Key entities
 

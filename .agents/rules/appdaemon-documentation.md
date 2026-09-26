@@ -111,7 +111,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `agent-docs/appdaemon-app-decoupling.md` | Event-based app decoupling pattern for split dev/prod deployment |
 | `agent-docs/hue-power-on-behavior.md` | Hue startup attributes: why the HA `power_on_behavior` select is not enough, `hue_power_on_behavior: recover`, new-bulb onboarding |
 | `agent-docs/shepherd-runbooks/` | Per-checker Shepherd triage runbooks (one per `checker_id`); format and sanctioned-action ladder in that directory's `README.md` |
-| `agent-docs/voice-agent-prompts.md` | Live backup of the four room voice-agent prompts (persona + shared block) and the rationale for each shared rule |
+| `agent-docs/voice-agent-prompts.md` | Live backup of the room voice-agent prompts (persona + shared block), the local Jarvis agent and the roomless Phone Assist, and the rationale for each shared rule |
 | `agent-docs/voice-control-map.md` | What already controls each floor (buttons → concepts → automation ownership, holds) for the voice-exposure work |
 
 ### Root
@@ -174,7 +174,7 @@ health_check_controller (listens for health_check_command events from all checke
   │      shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair helpers via
   │      ha_provisioner, reads them with the first-run guard, clamps the delay, applies card commands
   ├─ cloud_checker/cloud (root dependency)
-  │    └─ depended on by: cielo, lock_batteries
+  │    └─ depended on by: cielo, lock_batteries, voice (Assistant check)
   ├─ mqtt_broker_checker/mqtt_broker (root dependency)
   │    └─ depended on by: zigbee, basement_lights, downstairs_lights, upstairs_lights, exterior_lights
   ├─ network_protocol_checker/zigbee (depends on: mqtt_broker)
@@ -195,7 +195,8 @@ health_check_controller (listens for health_check_command events from all checke
   ├─ shade_gateway_checker/shade_gateway (supports_repair; cooperates with shade_batteries via
   │    shared/check_utils.is_implausible_battery_drop — not a registered dependency)
   ├─ protect_health_checker/protect (uses ha_provisioner HaAdminClient for discovery + config-entry reload)
-  └─ imagegen_health_checker/imagegen (uses ai_providers/comfyui status client)
+  ├─ imagegen_health_checker/imagegen (uses ai_providers/comfyui status client)
+  └─ voice_health_checker/voice (Wyoming STT/TTS + agent/LLM reachability; Assistant check depends on: cloud)
 
 countdown_app
   └─ depends on: ai_providers (image generation), ha_provisioner (relay script provisioning)

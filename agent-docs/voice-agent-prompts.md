@@ -253,7 +253,7 @@ Tested as the Rumpus satellite in text on 2026-09-22 (13/13 correct: local inten
 
 `conversation.phone_assist` · subentry `01M3FWW3MMFE079D9A7F2NF66F` · entry `01JBM33KVTM1FHF795G01R2C4X` · pipeline **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`: Parakeet STT → this agent → Kokoro `af_heart` (en-US). `prefer_local_intents` is true. The agent has the same OpenAI settings as the room agents, plus `store_responses: false` and `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]` (the house tools and Watch history).
 
-No satellite uses it. Tom reaches it from the iPhone app: the *Assist* button on Tom Mobile, and the widget, Control Center and Action Button pickers (see `agent-docs/tom-mobile-dashboard.md`).
+No satellite uses it. Tom reaches it from the iPhone app: the *Phone Assist* card on Tom Mobile (Chat and Voice sub-buttons), and the widget, Control Center and Action Button pickers (see `agent-docs/tom-mobile-dashboard.md`).
 
 Tom's rulings on 2026-09-26:
 - the brain is OpenAI, like the rooms, rather than the local model or the rooms' model plus the cigar journal;

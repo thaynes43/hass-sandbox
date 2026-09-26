@@ -15,21 +15,47 @@ views:
     cards:
     - type: custom:bubble-card
       card_type: button
-      button_type: name
-      name: Assist
-      icon: mdi:microphone
+      button_type: state
+      entity: sensor.phone_assist_status
+      name: Phone Assist
+      icon: mdi:help-circle
+      show_name: true
+      show_state: true
       tap_action:
-        action: assist
-        pipeline_id: 01m3fwd8phf6qxyaax31evjt7a
-        start_listening: true
+        action: navigate
+        navigation_path: '#health-check-popup'
       button_action:
         tap_action:
-          action: assist
-          pipeline_id: 01m3fwd8phf6qxyaax31evjt7a
-          start_listening: true
+          action: navigate
+          navigation_path: '#health-check-popup'
       sub_button:
-        main: []
+        main:
+        - name: Chat
+          icon: mdi:message-text-outline
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: assist
+            pipeline_id: 01m3fwd8phf6qxyaax31evjt7a
+            start_listening: false
+        - name: Voice
+          icon: mdi:microphone
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: assist
+            pipeline_id: 01m3fwd8phf6qxyaax31evjt7a
+            start_listening: true
         bottom: []
+      styles: "${icon.setAttribute(\"icon\", (() => {\n  const s = hass.states['sensor.health_check_status']?.attributes?.checkers?.voice?.status;\n\
+        \  if (s === 'ok') return 'mdi:check-circle';\n  if (s === 'critical') return 'mdi:alert-circle';\n\
+        \  if (s === 'warning' || s === 'degraded') return 'mdi:alert';\n  return 'mdi:help-circle';\n\
+        })())}\n.bubble-icon-container {\n  background-color: ${(() => {\n    const s = hass.states['sensor.health_check_status']?.attributes?.checkers?.voice?.status;\n\
+        \    if (s === 'ok') return 'rgba(76, 175, 80, 0.35)';\n    if (s === 'critical') return 'rgba(244,\
+        \ 67, 54, 0.45)';\n    if (s === 'warning' || s === 'degraded') return 'rgba(255, 152, 0, 0.45)';\n\
+        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}"
     - type: custom:bubble-card
       card_type: separator
       name: Outdoors

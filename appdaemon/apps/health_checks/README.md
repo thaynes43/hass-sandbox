@@ -123,6 +123,14 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `ImageGenHealthChecker` watches the ComfyUI image-generation service by polling `GET /prompt` (`exec_info.queue_remaining`) via `ComfyUIStatusClient`. Two checks: **API Reachable** is a warning while the endpoint is unreachable, escalating to critical after `unreachable_after_s`; **Queue Progress** goes critical when the queue counter stays > 0 without any movement for `queue_stuck_after_s`. A wedged ComfyUI is the canonical symptom of the GPU falling off the PCI bus on the Proxmox host — only a host reboot fixes that — so this checker is **page-only**: no repair support. The 30-minute stuck threshold sits safely above the ~10.5-minute cold-start generation, and ComfyUI's in-memory queue resets to 0 on restart, which simply reads as healthy.
 
+### Voice Health Checker
+
+`VoiceHealthChecker` checks whether the voice assistant stack works, which HA's own `stt`/`tts`/`conversation` entities cannot show: they stay available while the servers behind them are down. Each configured check is one probe:
+- **wyoming**: a Wyoming `describe` handshake to a speech-to-text or text-to-speech server, which must list an installed program.
+- **agent**: the conversation agent entity must be loaded, and its LLM API must answer an anonymous GET below HTTP 500 (a 401 counts as reachable; no key is held).
+
+No cross-check: any piece down breaks voice and is critical. The Assistant check depends on `cloud`. The Tom Mobile Phone Assist card uses this checker's status as its icon.
+
 ### Dependency System
 
 Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker is unhealthy (`critical`/`degraded`) or missing entirely, the affected checks are overridden to `unknown` with detail `"dependency unavailable"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down. A dependency that is merely `unknown` (registered but not reporting) does **not** mask its dependents: an unknown dependency raises no Alertmanager alert of its own, so masking would let a genuine dependent failure go completely silent.
@@ -231,7 +239,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
-- `aiohttp` — HTTP health checks (in `shared/check_utils.py`)
+- `aiohttp` — HTTP health checks (in `shared/check_utils.py`); the Wyoming probe uses plain `asyncio` streams
 - `prometheus-client` — metrics exposition (controller)
 
 ## Self-Provisioned Entities
@@ -458,12 +466,16 @@ health_checks/
 │   │   ├── __init__.py
 │   │   ├── shade_gateway_checker.py
 │   │   └── README.md
-│   └── imagegen_health_checker/
+│   ├── imagegen_health_checker/
+│   │   ├── __init__.py
+│   │   └── imagegen_health_checker.py
+│   └── voice_health_checker/
 │       ├── __init__.py
-│       └── imagegen_health_checker.py
+│       ├── voice_health_checker.py
+│       └── README.md
 ├── shared/                          # shared library code, the one exception to
 │   ├── __init__.py                  # "no shared code under apps/"
-│   ├── check_utils.py               # ping/HTTP checks + the cross-check downgrade
+│   ├── check_utils.py               # ping/HTTP/Wyoming checks + the cross-check downgrade
 │   ├── alertmanager_bridge.py       # pure alert decision logic (no HTTP)
 │   └── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
 │                                    # toggle/delay helpers, shared by all seven
