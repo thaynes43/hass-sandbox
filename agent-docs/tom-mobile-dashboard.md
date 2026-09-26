@@ -57,7 +57,21 @@ pickers after native Assist is opened again, or after the refresh button in an i
     The icon is set by the card's `styles` JS, as the bike charger cards do.
   - **State line:** `sensor.phone_assist_status`, a Template helper (config entry `01M3FYTH3MPEWWV0ZVMECW2RFE`,
     created 2026-09-26, live only). It reads `Ready`, `<check names> down`, `<check names> unknown` (masked by
-    a dependency, or not run yet), or `Unknown` (no Voice checker reporting).
+    a dependency, or not run yet), or `Unknown` (no Voice checker reporting). Its state template, as live
+    (Settings → Helpers → Phone Assist Status; recreate it as a Template sensor with this state if it is lost):
+    ```jinja
+    {%- set c = (state_attr('sensor.health_check_status', 'checkers') or {}).get('voice') -%}
+    {%- if c is not mapping -%}Unknown
+    {%- elif c.status == 'ok' -%}Ready
+    {%- else -%}
+    {%- set bad = (c.checks or []) | rejectattr('status', 'eq', 'ok') | list -%}
+    {%- set down = bad | rejectattr('status', 'eq', 'unknown') | map(attribute='name') | list -%}
+    {%- if down -%}{{ down | join(', ') }} down
+    {%- elif bad -%}{{ bad | map(attribute='name') | join(', ') }} unknown
+    {%- else -%}{{ c.status | title }}
+    {%- endif -%}
+    {%- endif -%}
+    ```
   - **Tapping the card** (icon or body) opens `#health-check-popup`, where the Voice checker's three checks
     and their details are listed.
   - Why a checker: HA's `stt.*`, `tts.*` and `conversation.*` entities stay "available" while the servers

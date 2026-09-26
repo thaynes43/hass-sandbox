@@ -91,7 +91,15 @@ class VoiceHealthChecker(hass.Hass):
         if kind == "agent" and not entry.get("entity_id"):
             self.log(f"Skipping agent check {name!r}: needs entity_id", level="WARNING")
             return None
-        return dict(entry)
+        check = dict(entry)
+        dep = check.get("dependency")
+        if dep is not None and not isinstance(dep, str):
+            self.log(
+                f"Dropping dependency of check {name!r}: must be a checker_id string, got {dep!r}",
+                level="WARNING",
+            )
+            del check["dependency"]
+        return check
 
     def _on_startup(self, kwargs: Any) -> None:
         """run_in callback — launches the async startup coroutine."""

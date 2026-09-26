@@ -150,6 +150,44 @@ class TestWyomingCheck:
         assert result["status"] == "critical"
         assert "no voice installed" in result["detail"]
 
+    @pytest.mark.parametrize("info, service", [
+        ({"tts": [dict(TTS_INFO["tts"][0], voices=["af_heart", "af_bella"])]}, "tts"),
+        ({"asr": [dict(ASR_INFO["asr"][0], models=["parakeet"])]}, "asr"),
+    ])
+    def test_non_dict_models_or_voices_are_ignored(self, info, service):
+        """Bare-string entries are not installed items: critical, never an exception."""
+        result, _ = _run(_probe(_info_reply(info), service))
+        assert result["status"] == "critical"
+        assert "installed" in result["detail"]
+
+    def test_non_object_data_is_bad_reply(self):
+        async def reply(reader, writer, line):
+            body = b"[1, 2]"
+            writer.write((json.dumps({"type": "info", "data_length": len(body)}) + "\n").encode() + body)
+            await writer.drain()
+        result, _ = _run(_probe(reply, "asr"))
+        assert result["status"] == "critical"
+        assert result["detail"].startswith("bad reply")
+
+    def test_timeout_bounds_the_whole_handshake(self):
+        """Each step fits in timeout_s but the handshake does not: one deadline, so timeout.
+
+        (With a per-step budget the header and the data would each arrive in time and the
+        probe would take ~0.7 s against timeout_s=0.5.)
+        """
+        body = json.dumps(ASR_INFO).encode()
+
+        async def reply(reader, writer, line):
+            await asyncio.sleep(0.35)
+            writer.write((json.dumps({"type": "info", "data_length": len(body)}) + "\n").encode())
+            await writer.drain()
+            await asyncio.sleep(0.35)
+            writer.write(body)
+            await writer.drain()
+
+        result, _ = _run(_probe(reply, "asr", timeout_s=0.5))
+        assert result == {"status": "critical", "detail": "timeout"}
+
     def test_unexpected_event_type_is_critical(self):
         result, _ = _run(_probe(_info_reply(ASR_INFO, event_type="error"), "asr"))
         assert result["status"] == "critical"
@@ -325,6 +363,17 @@ class TestConfig:
         app.initialize()
         assert [c["name"] for c in app._checks] == ["Speech to Text"]
         assert any("Skipping" in str(c.args[0]) for c in app.log.call_args_list)
+
+
+class TestDependencyValidation:
+    def test_non_string_dependency_is_dropped_and_registration_works(self):
+        checks = [dict(DEFAULT_ARGS["checks"][2], dependency={"checker_id": "cloud"})]
+        app = _make_app({"checks": checks})
+        app.initialize()
+        assert "dependency" not in app._checks[0]
+        app._register()
+        assert "dependencies" not in _fired(app, "register_checker")
+        assert any("Dropping dependency" in str(c.args[0]) for c in app.log.call_args_list)
 
 
 class TestRegistration:

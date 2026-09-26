@@ -207,27 +207,39 @@ async def wyoming_check(
     if service not in ("asr", "tts"):
         raise ValueError(f"wyoming_check service must be 'asr' or 'tts', not {service!r}")
     kind = "speech-to-text" if service == "asr" else "text-to-speech"
+
+    async def _describe():
+        """Connect, send describe, read the reply event. None = closed without a reply."""
+        reader, writer = await asyncio.open_connection(host, port, limit=_WYOMING_MAX_DATA)
+        try:
+            writer.write((json.dumps({"type": "describe", "data": {}}) + "\n").encode())
+            await writer.drain()
+            line = await reader.readline()
+            if not line:
+                return None
+            header = json.loads(line)
+            if not isinstance(header, dict):
+                raise ValueError("header is not a JSON object")
+            data = header.get("data") or {}
+            if not isinstance(data, dict):
+                raise ValueError("data is not a JSON object")
+            data = dict(data)
+            data_length = int(header.get("data_length") or 0)
+            if data_length > _WYOMING_MAX_DATA:
+                raise ValueError(f"info too large ({data_length} bytes)")
+            if data_length:
+                extra = json.loads(await reader.readexactly(data_length))
+                if not isinstance(extra, dict):
+                    raise ValueError("data is not a JSON object")
+                data.update(extra)
+            return header, data
+        finally:
+            writer.close()
+
     start = time.monotonic()
-    writer = None
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, port, limit=_WYOMING_MAX_DATA),
-            timeout=timeout_s,
-        )
-        writer.write((json.dumps({"type": "describe", "data": {}}) + "\n").encode())
-        await writer.drain()
-        line = await asyncio.wait_for(reader.readline(), timeout=timeout_s)
-        if not line:
-            return {"status": "critical", "detail": "Connection error: closed without a reply"}
-        header = json.loads(line)
-        data = dict(header.get("data") or {})
-        data_length = int(header.get("data_length") or 0)
-        if data_length > _WYOMING_MAX_DATA:
-            return {"status": "critical", "detail": f"info too large ({data_length} bytes)"}
-        if data_length:
-            raw = await asyncio.wait_for(reader.readexactly(data_length), timeout=timeout_s)
-            data.update(json.loads(raw))
-        elapsed_ms = (time.monotonic() - start) * 1000
+        # One deadline for the whole handshake, so check_timeout_s bounds the probe.
+        reply = await asyncio.wait_for(_describe(), timeout=timeout_s)
     except asyncio.TimeoutError:
         logger.warning("wyoming_check %s:%s timed out after %ss", host, port, timeout_s)
         return {"status": "critical", "detail": "timeout"}
@@ -237,9 +249,10 @@ async def wyoming_check(
     except (ValueError, TypeError) as exc:
         logger.warning("wyoming_check %s:%s bad reply: %s", host, port, exc)
         return {"status": "critical", "detail": f"bad reply: {exc}"}
-    finally:
-        if writer is not None:
-            writer.close()
+    if reply is None:
+        return {"status": "critical", "detail": "Connection error: closed without a reply"}
+    header, data = reply
+    elapsed_ms = (time.monotonic() - start) * 1000
 
     if header.get("type") != "info":
         return {"status": "critical", "detail": f"unexpected reply: {header.get('type')!r}"}
@@ -248,18 +261,22 @@ async def wyoming_check(
     if not programs:
         return {"status": "critical", "detail": f"no {kind} installed"}
     program = programs[0]
+    name = program.get("name", kind)
     if service == "asr":
-        models = [m.get("name", "?") for m in program.get("models") or [] if m.get("installed")]
+        models = [
+            m.get("name", "?")
+            for m in program.get("models") or []
+            if isinstance(m, dict) and m.get("installed")
+        ]
         if not models:
-            return {"status": "critical", "detail": f"{program.get('name', kind)}: no model installed"}
+            return {"status": "critical", "detail": f"{name}: no model installed"}
         return {"status": "ok", "detail": f"{models[0]} · {elapsed_ms:.0f}ms"}
-    voices = [v for v in program.get("voices") or [] if v.get("installed", True)]
+    voices = [
+        v for v in program.get("voices") or [] if isinstance(v, dict) and v.get("installed", True)
+    ]
     if not voices:
-        return {"status": "critical", "detail": f"{program.get('name', kind)}: no voice installed"}
-    return {
-        "status": "ok",
-        "detail": f"{program.get('name', kind)}, {len(voices)} voices · {elapsed_ms:.0f}ms",
-    }
+        return {"status": "critical", "detail": f"{name}: no voice installed"}
+    return {"status": "ok", "detail": f"{name}, {len(voices)} voices · {elapsed_ms:.0f}ms"}
 
 
 # ------------------------------------------------------------------
