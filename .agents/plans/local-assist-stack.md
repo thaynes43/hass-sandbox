@@ -173,9 +173,9 @@ download it. Two things learned putting them live:
   in place and leaves `llm_hass_api` alone. It prints its own undo, the same action with
   `PROMPT_FILE=<its backup>`, which puts the old block back while the pod's `/tmp` lasts.
 - **Nine tools still cost nothing measurable.** Same bench on 2026-09-26 at 10:40Z, after the entry reload and
-  with the new prompt line live (the agent answered "Is FROM on my watchlist?" from `watchlist` just before),
-  text as `conversation.chatgpt_5`, 3 reps, `conv` mode: every median is below both 2026-09-23 medians (table
-  below). An earlier run that day (08:36Z) was published here as the nine-tool column, but it ran before the
+  with the new prompt line live (right after it, "What is on my watchlist?" went through the `watchlist` tool,
+  which only the nine-tool list has), text as `conversation.chatgpt_5`, 3 reps, `conv` mode: every median is
+  below both 2026-09-23 medians (table below). An earlier run that day (08:36Z) was published here as the nine-tool column, but it ran before the
   reload, so the agent still had seven tools; it is now its own column.
 
 | Question (no watch tool) | Assist only (2026-09-23), median | Seven tools (2026-09-23), median | Seven tools (2026-09-26 08:36Z, before the reload), median | Nine tools (2026-09-26 10:40Z), median |
