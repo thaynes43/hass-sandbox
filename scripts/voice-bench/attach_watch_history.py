@@ -559,7 +559,7 @@ async def detach(s: aiohttp.ClientSession) -> None:
     prompt = current.get("prompt", "")
     new_api = [a for a in api if a != api_id]
     others = [a for a in api if a.startswith("mcp-") and a != api_id]
-    if api_id not in api and others:
+    if api_id not in api and others and (PROMPT_FILE or find_blocks(prompt)):
         # Nothing to remove for this id while another mcp API is attached: ENTRY_ID names the wrong entry (a
         # typo or another server's), and detaching would strip the block and leave that API's tools unguided.
         # An id whose entry is gone, with no mcp API left, is the legitimate "entry already deleted" case.
