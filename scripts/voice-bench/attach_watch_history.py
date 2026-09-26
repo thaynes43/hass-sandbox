@@ -535,9 +535,13 @@ async def update(s: aiohttp.ClientSession) -> None:
             raise Refused(f"{PROMPT_FILE}'s WATCH HISTORY block matches no copy in this script; restore it by hand")
     block = one_block(prompt, "fix it by hand")
     if api_id not in api:
+        if block and block[2] in PREVIOUS_WATCH_BLOCKS:
+            raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds an earlier "
+                          "WATCH HISTORY block; " + detach_then_attach(api, api_id))
         if block and block[2] != WATCH_BLOCK:
-            raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds a block other than the "
-                          "current one; " + detach_then_attach(api, api_id))
+            raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds a WATCH HISTORY "
+                          "block that matches no copy in this script; fix it by hand (ACTION=status shows the prompt "
+                          "tail), or ACTION=detach with PROMPT_FILE=<an attach backup> removes it")
         raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}; ACTION=attach adds the API "
                       + ("(the block is already current)" if block else "and the current block together"))
     if block is None:
@@ -574,6 +578,10 @@ async def detach(s: aiohttp.ClientSession) -> None:
     prompt = current.get("prompt", "")
     new_api = [a for a in api if a != api_id]
     others = other_mcp_apis(api, api_id)
+    if BLOCK_ONLY and api_id in api:
+        raise Refused(f"BLOCK_ONLY says {api_id}'s API was already removed by hand, but llm_hass_api is "
+                      f"{json.dumps(api)} and still holds it, so this run would remove it too; "
+                      f"{run_line('detach')} removes the API and the block together")
     if api_id not in api and others and (PROMPT_FILE or find_blocks(prompt)) and not BLOCK_ONLY:
         # Nothing to remove for this id while another mcp API is attached: ENTRY_ID usually names the wrong
         # entry (a typo or another server's), and detaching would strip the block and leave that API's tools
