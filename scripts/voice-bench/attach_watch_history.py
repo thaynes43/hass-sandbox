@@ -6,6 +6,8 @@ never printed). One ACTION per run:
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=status"      # read-only, the default
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=add-entry URL=http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp"
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=attach ENTRY_ID=<mcp entry id>"
+    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1"   # prints, changes nothing
+    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id>"
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=detach ENTRY_ID=<mcp entry id> [PROMPT_FILE=<path in the HA pod>]"
 
 How each action talks to HA (read against the HA 2026.9.3 source in the pod):
@@ -18,7 +20,13 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
   handshake without a 401 gets its entry created right there, titled with the server's
   initialize `serverInfo.name`, data {"url": URL}. A 401 would divert into OAuth discovery
   (auth_discovery -> credentials_choice); this helper cancels that instead of following it.
-- attach / detach: the OpenAI conversation subentry's reconfigure flow, REST only. HA has no
+- update: swaps an earlier WATCH HISTORY block for the current one, in place, when the block text
+  changes. The live prompt must hold exactly one WATCH HISTORY block (its header line through the
+  line before the next blank line) whose text is WATCH_BLOCK (nothing to do) or one of
+  PREVIOUS_WATCH_BLOCKS, and llm_hass_api must already carry the entry's API; anything else is
+  refused. llm_hass_api is resubmitted unchanged. DRY_RUN=1 prints the block before and after and
+  the length change, and starts no flow.
+- attach / update / detach: the OpenAI conversation subentry's reconfigure flow, REST only. HA has no
   websocket command for subentry flows, and the websocket `config_entries/subentries/update`
   changes the title only. (components/openai_conversation/config_flow.py OpenAISubentryFlowHandler)
   POST /api/config/config_entries/subentries/flow {"handler": [entry_id, "conversation"], "subentry_id": id}
@@ -40,13 +48,18 @@ Known limits:
   printed.
 - Saving the subentry fires the OpenAI entry's update listener, which reloads the entry: every
   agent under it is briefly unavailable.
-- attach needs the mcp entry LOADED: the llm_hass_api selector only accepts registered API ids.
+- attach and update need the mcp entry LOADED: the llm_hass_api selector only accepts registered
+  API ids.
+- HA's mcp integration reads the server's tool list once, when the entry is set up (its coordinator
+  has no listeners, so the 30-minute refresh never runs). After the server gains or loses a tool,
+  reload the mcp entry (homeassistant.reload_config_entry) or restart HA; this helper does neither.
 """
 
 import asyncio
 import datetime
 import json
 import os
+import re
 import sys
 
 import aiohttp
@@ -62,6 +75,7 @@ ACTION = os.environ.get("ACTION", "status")
 URL = os.environ.get("URL", "http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp")
 ENTRY_ID = os.environ.get("ENTRY_ID", "")
 PROMPT_FILE = os.environ.get("PROMPT_FILE", "")
+DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0")  # ACTION=update only
 
 OPENAI_ENTRY = "01JK456T3JV6CPBG2ZQ2FS10GE"
 SUBENTRY = "01JZ8DWMCRND9599AR8EFJVN0A"  # "Movie Room ChatGPT", type conversation
@@ -70,17 +84,32 @@ FLOW = "/api/config/config_entries/flow"
 EXPECTED_TITLE = "Watch history"
 
 # Byte-identical copy of the fenced block under "Movie Room — watch history" in
-# agent-docs/voice-agent-prompts.md. Change both together.
+# agent-docs/voice-agent-prompts.md. Change both together, and move the text it replaces, verbatim,
+# into PREVIOUS_WATCH_BLOCKS so ACTION=update recognises the copy that is live in HA.
 WATCH_BLOCK = """WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
 - "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
 - When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
-- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine."""
+- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
+- His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download."""
+
+# Every earlier WATCH_BLOCK, verbatim, oldest first. ACTION=update replaces one of these in place.
+PREVIOUS_WATCH_BLOCKS = [
+    # 2026-09-23: attached with the seven watch-history tools
+    """WATCH HISTORY
+- The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
+- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
+- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
+- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.""",
+]
 WATCH_HEADER = WATCH_BLOCK.splitlines()[0]  # "WATCH HISTORY"
 SEP = "\n\n"  # one blank line between the existing prompt and the block
 
 LOCATION_KEYS = ("city", "region", "country", "timezone")  # re-derived by the "model" step
-CRED_WORDS = ("api_key", "password", "secret", "access_token", "refresh_token")
+# A key is credential-like when it contains one of CRED_WORDS or one of its _-separated words is in
+# CRED_PARTS: a bare "token" or "key" field counts, "max_tokens" does not.
+CRED_WORDS = ("api_key", "apikey", "password", "passwd", "secret", "access_token", "refresh_token")
+CRED_PARTS = ("key", "token", "secret", "password")
 
 
 class Refused(Exception):
@@ -108,12 +137,39 @@ def mcp_entries(entries: list[dict]) -> list[dict]:
     return [e for e in entries if e["domain"] == "mcp"]
 
 
+def find_blocks(prompt: str) -> list[tuple[int, int]]:
+    """(start, end) of each WATCH HISTORY block in the prompt: a line that is exactly the header,
+    through the last line before a blank line, another header, or the end (no trailing newline)."""
+    lines = prompt.split("\n")
+    starts, pos = [], 0
+    for line in lines:
+        starts.append(pos)
+        pos += len(line) + 1
+    spans, i = [], 0
+    while i < len(lines):
+        if lines[i] != WATCH_HEADER:
+            i += 1
+            continue
+        j = i
+        while j + 1 < len(lines) and lines[j + 1].strip() and lines[j + 1] != WATCH_HEADER:
+            j += 1
+        spans.append((starts[i], starts[j] + len(lines[j])))
+        i = j + 1
+    return spans
+
+
 def block_state(prompt: str) -> str:
-    if WATCH_BLOCK in prompt:
-        return "present (exact text)"
-    if WATCH_HEADER in prompt.splitlines():
-        return "a WATCH HISTORY header is present but the text differs from this script's copy"
-    return "absent"
+    spans = find_blocks(prompt)
+    if not spans:
+        return "absent"
+    if len(spans) > 1:
+        return f"{len(spans)} WATCH HISTORY headers (unexpected: fix the prompt by hand)"
+    text = prompt[spans[0][0]:spans[0][1]]
+    if text == WATCH_BLOCK:
+        return "present (current text)"
+    if text in PREVIOUS_WATCH_BLOCKS:
+        return "present, an earlier version this script knows (ACTION=update replaces it)"
+    return "a WATCH HISTORY header is present but the text differs from every copy in this script"
 
 
 async def req(s: aiohttp.ClientSession, method: str, path: str, body: dict | None = None):
@@ -138,6 +194,12 @@ async def wait_state(s: aiohttp.ClientSession, domain: str, entry_id: str, want:
             break
         await asyncio.sleep(1)
     return state
+
+
+def shown_url(url) -> str:
+    """A URL for printing: any query string (where a server token could ride) is left out."""
+    url = str(url)
+    return url.split("?", 1)[0] + ("?<query hidden>" if "?" in url else "")
 
 
 def summarize(r) -> str:
@@ -170,7 +232,7 @@ async def status(s: aiohttp.ClientSession) -> None:
     for e in mcps:
         eid = e["entry_id"]
         tag = " | ATTACHED to the Movie Room agent" if f"mcp-{eid}" in apis else ""
-        print(f"   {eid} | {e['title']} | url={e['data'].get('url')} | state={states.get(eid, '?')} | llm api mcp-{eid}{tag}")
+        print(f"   {eid} | {e['title']} | url={shown_url(e['data'].get('url'))} | state={states.get(eid, '?')} | llm api mcp-{eid}{tag}")
     print(f"== {OPENAI_ENTRY} (state={openai_state}) subentry {SUBENTRY} ({sub['subentry_type']}) {sub['title']!r}")
     print("   llm_hass_api:", json.dumps(apis))
     prompt = sub["data"].get("prompt", "")
@@ -182,7 +244,7 @@ async def status(s: aiohttp.ClientSession) -> None:
 async def add_entry(s: aiohttp.ClientSession) -> None:
     for e in mcp_entries(load_entries()):
         if e["data"].get("url") == URL:
-            print(f"already exists: {e['entry_id']} | {e['title']} | url={URL}; nothing done")
+            print(f"already exists: {e['entry_id']} | {e['title']} | url={shown_url(URL)}; nothing done")
             return
     st, r = await req(s, "POST", FLOW, {"handler": "mcp", "show_advanced_options": False})
     flow_id = r.get("flow_id") if isinstance(r, dict) else None
@@ -190,7 +252,7 @@ async def add_entry(s: aiohttp.ClientSession) -> None:
         if flow_id:
             await cancel(s, FLOW, flow_id)
         raise Refused(f"unexpected mcp flow start: HTTP {st} {summarize(r)}")
-    print(f"   mcp flow {flow_id}: step user, submitting url={URL}")
+    print(f"   mcp flow {flow_id}: step user, submitting url={shown_url(URL)}")
     st, r = await req(s, "POST", f"{FLOW}/{flow_id}", {"url": URL})
     kind = r.get("type") if isinstance(r, dict) else None
     if st == 200 and kind == "create_entry":
@@ -211,8 +273,13 @@ async def add_entry(s: aiohttp.ClientSession) -> None:
     raise Refused(f"no entry created: HTTP {st} {summarize(r)}")
 
 
+def credential_like(key: str) -> bool:
+    k = key.lower()
+    return any(w in k for w in CRED_WORDS) or any(p in CRED_PARTS for p in re.split(r"[^a-z0-9]+", k))
+
+
 def backup(data: dict) -> None:
-    creds = [k for k in data if any(w in k.lower() for w in CRED_WORDS)]
+    creds = [k for k in data if credential_like(k)]
     if creds:
         raise Refused(f"subentry data has credential-like keys {creds}; not printing a backup, not changing anything")
     line = json.dumps(data, ensure_ascii=True, sort_keys=True)
@@ -314,10 +381,20 @@ async def verify(s: aiohttp.ClientSession, before: dict, target: dict) -> None:
     print("   OpenAI entry after its reload:", await wait_state(s, "openai_conversation", OPENAI_ENTRY, "loaded", 60))
 
 
-async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_prompt: str, need_apis: list[str]) -> None:
+async def require_openai_loaded(s: aiohttp.ClientSession) -> None:
     openai_state = (await entry_states(s, "openai_conversation")).get(OPENAI_ENTRY)
     if openai_state != "loaded":
         raise Refused(f"OpenAI entry is {openai_state}; its subentry flow aborts unless the entry is loaded")
+
+
+async def require_mcp_loaded(s: aiohttp.ClientSession) -> None:
+    state = (await entry_states(s, "mcp")).get(ENTRY_ID)
+    if state != "loaded":
+        raise Refused(f"mcp entry {ENTRY_ID} is {state}; HA only offers a loaded entry's API to the agent")
+
+
+async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_prompt: str, need_apis: list[str]) -> None:
+    await require_openai_loaded(s)
     backup(current)
     target = dict(current, llm_hass_api=new_api, prompt=new_prompt)
     await reconfigure(s, current, target, need_apis)
@@ -331,18 +408,43 @@ def need_entry_id() -> str:
     return f"mcp-{ENTRY_ID}"
 
 
+def need_mcp_entry(entries: list[dict]) -> None:
+    if not any(e["entry_id"] == ENTRY_ID for e in mcp_entries(entries)):
+        raise Refused(f"{ENTRY_ID} is not an mcp config entry")
+
+
+def one_block(prompt: str, fix: str) -> tuple[int, int, str] | None:
+    """The prompt's only WATCH HISTORY block as (start, end, text), or None; two or more refuse."""
+    spans = find_blocks(prompt)
+    if len(spans) > 1:
+        raise Refused(f"the prompt has {len(spans)} WATCH HISTORY headers; {fix}")
+    if not spans:
+        return None
+    start, end = spans[0]
+    return start, end, prompt[start:end]
+
+
+def print_block(label: str, text: str) -> None:
+    print(f"   {label}:")
+    for line in text.split("\n"):
+        print(f"   | {line}")
+
+
 async def attach(s: aiohttp.ClientSession) -> None:
     api_id = need_entry_id()
     entries = load_entries()
-    if not any(e["entry_id"] == ENTRY_ID for e in mcp_entries(entries)):
-        raise Refused(f"{ENTRY_ID} is not an mcp config entry")
+    need_mcp_entry(entries)
     current = dict(get_subentry(entries)["data"])
     api = list(current.get("llm_hass_api") or [])
     prompt = current.get("prompt", "")
-    if WATCH_BLOCK in prompt:
-        new_prompt = prompt
-    elif WATCH_HEADER in prompt.splitlines():
+    block = one_block(prompt, "fix it by hand")
+    if block and block[2] in PREVIOUS_WATCH_BLOCKS:
+        raise Refused("the prompt carries an earlier WATCH HISTORY block; ACTION=update replaces it "
+                      "(with the API attached), ACTION=detach removes it")
+    if block and block[2] != WATCH_BLOCK:
         raise Refused("the prompt already has a WATCH HISTORY block with different text; fix it by hand or detach with PROMPT_FILE first")
+    if block:
+        new_prompt = prompt
     elif not prompt:
         new_prompt = WATCH_BLOCK
     else:
@@ -356,10 +458,43 @@ async def attach(s: aiohttp.ClientSession) -> None:
         return
     if new_api != ["assist", api_id]:
         print(f"   NOTE: llm_hass_api will be {json.dumps(new_api)} (existing APIs kept)")
-    state = (await entry_states(s, "mcp")).get(ENTRY_ID)
-    if state != "loaded":
-        raise Refused(f"mcp entry {ENTRY_ID} is {state}; HA only offers a loaded entry's API to the agent")
+    await require_mcp_loaded(s)
     await change(s, current, new_api, new_prompt, [api_id])
+
+
+async def update(s: aiohttp.ClientSession) -> None:
+    api_id = need_entry_id()
+    entries = load_entries()
+    need_mcp_entry(entries)
+    current = dict(get_subentry(entries)["data"])
+    api = list(current.get("llm_hass_api") or [])
+    prompt = current.get("prompt", "")
+    if api_id not in api:
+        raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}; ACTION=attach adds the API and the current block together")
+    block = one_block(prompt, "fix it by hand")
+    if block is None:
+        raise Refused("the prompt has no WATCH HISTORY block; ACTION=attach appends the current one")
+    start, end, old = block
+    if old == WATCH_BLOCK:
+        print(f"already current: the WATCH HISTORY block matches this script's copy, llm_hass_api={json.dumps(api)}; nothing done")
+        return
+    if old not in PREVIOUS_WATCH_BLOCKS:
+        raise Refused("the prompt's WATCH HISTORY block matches neither the current text nor any earlier one in this script; "
+                      "fix it by hand (ACTION=status shows the prompt tail)")
+    version = PREVIOUS_WATCH_BLOCKS.index(old) + 1
+    new_prompt = prompt[:start] + WATCH_BLOCK + prompt[end:]
+    where = "at the end of the prompt" if end == len(prompt) else f"at characters {start} to {end} of {len(prompt)}"
+    print(f"   the live block is earlier version {version} of {len(PREVIOUS_WATCH_BLOCKS)}, {where}; replacing it in place")
+    print_block("block now", old)
+    print_block("block after", WATCH_BLOCK)
+    print(f"   prompt length: {len(prompt)} -> {len(new_prompt)} ({len(new_prompt) - len(prompt):+d} characters)")
+    print(f"   llm_hass_api stays {json.dumps(api)}")
+    await require_mcp_loaded(s)
+    if DRY_RUN:
+        await require_openai_loaded(s)
+        print("DRY_RUN: no flow started, nothing changed")
+        return
+    await change(s, current, api, new_prompt, [api_id])
 
 
 async def detach(s: aiohttp.ClientSession) -> None:
@@ -370,16 +505,17 @@ async def detach(s: aiohttp.ClientSession) -> None:
     new_api = [a for a in api if a != api_id]
     if PROMPT_FILE:
         new_prompt = load_backup_prompt(PROMPT_FILE)
-        if WATCH_HEADER in new_prompt.splitlines():
+        if find_blocks(new_prompt):
             raise Refused(f"{PROMPT_FILE} still carries a WATCH HISTORY block; use the backup printed by attach")
-    elif prompt.endswith(SEP + WATCH_BLOCK):
-        new_prompt = prompt[: -len(SEP + WATCH_BLOCK)]
-    elif WATCH_BLOCK in prompt:
-        cut = SEP + WATCH_BLOCK if SEP + WATCH_BLOCK in prompt else WATCH_BLOCK
-        new_prompt = prompt.replace(cut, "", 1)
-        print("   NOTE: the block was not at the end of the prompt; removed it where it was")
-    elif WATCH_HEADER in prompt.splitlines():
-        raise Refused("the prompt has a WATCH HISTORY block whose text differs from this script's copy; pass PROMPT_FILE")
+    elif block := one_block(prompt, "pass PROMPT_FILE"):
+        start, end, text = block
+        if text != WATCH_BLOCK and text not in PREVIOUS_WATCH_BLOCKS:
+            raise Refused("the prompt has a WATCH HISTORY block whose text differs from every copy in this script; pass PROMPT_FILE")
+        if prompt[:start].endswith(SEP):
+            start -= len(SEP)
+        if end != len(prompt):
+            print("   NOTE: the block was not at the end of the prompt; removed it where it was")
+        new_prompt = prompt[:start] + prompt[end:]
     else:
         new_prompt = prompt
     if new_api == api and new_prompt == prompt:
@@ -391,9 +527,12 @@ async def detach(s: aiohttp.ClientSession) -> None:
 
 
 async def main() -> int:
-    actions = {"status": status, "add-entry": add_entry, "attach": attach, "detach": detach}
+    actions = {"status": status, "add-entry": add_entry, "attach": attach, "update": update, "detach": detach}
     if ACTION not in actions:
         print(f"unknown ACTION={ACTION!r}; one of {', '.join(actions)}")
+        return 2
+    if DRY_RUN and ACTION not in ("status", "update"):
+        print(f"DRY_RUN is only for ACTION=update; ACTION={ACTION} has no dry run. Nothing done.")
         return 2
     async with aiohttp.ClientSession() as s:
         try:

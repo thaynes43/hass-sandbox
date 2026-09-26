@@ -9,7 +9,7 @@
 #   scripts/voice-bench/run.sh persona_check.py                            # text-only persona + spoken-rules check, all four room agents
 #   scripts/voice-bench/run.sh door_status_check.py                        # truth vs what the agents SAY about locks/garage (read-only)
 #   scripts/voice-bench/run.sh mcp_oauth_setup.py "MCP_URL=<https://host/mcp> NAME=<name>"   # register HA as an OAuth client of an MCP server (no secrets printed)
-#   scripts/voice-bench/run.sh attach_watch_history.py "ACTION=status"      # add-entry | attach ENTRY_ID=<mcp id> | detach ENTRY_ID=<mcp id>: Watch history MCP on the Movie Room agent (read the script first)
+#   scripts/voice-bench/run.sh attach_watch_history.py "ACTION=status"      # add-entry | attach ENTRY_ID=<mcp id> | update ENTRY_ID=<mcp id> [DRY_RUN=1] | detach ENTRY_ID=<mcp id>: Watch history MCP on the Movie Room agent (read the script first)
 #   scripts/voice-bench/run.sh voice_samples.py "ENGINE=tts.kokoro VOICES=bm_george,bm_daniel TTS_LANG=en-GB OUT=/tmp/samples"   # synthesize voice samples in the pod (nothing plays)
 # The HA token comes from the AppDaemon pod's env and travels over stdin: it never
 # appears in argv, in the transcript, or on disk.
