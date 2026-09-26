@@ -257,26 +257,27 @@ async def wyoming_check(
     if header.get("type") != "info":
         return {"status": "critical", "detail": f"unexpected reply: {header.get('type')!r}"}
 
-    programs = [p for p in (data.get(service) or []) if isinstance(p, dict) and p.get("installed")]
+    # A listed program, model or voice without an "installed" field counts as installed.
+    programs = [
+        p for p in (data.get(service) or []) if isinstance(p, dict) and p.get("installed", True)
+    ]
     if not programs:
         return {"status": "critical", "detail": f"no {kind} installed"}
-    program = programs[0]
-    name = program.get("name", kind)
-    if service == "asr":
-        models = [
-            m.get("name", "?")
-            for m in program.get("models") or []
-            if isinstance(m, dict) and m.get("installed")
+    items_key = "models" if service == "asr" else "voices"
+    for program in programs:
+        items = [
+            i for i in program.get(items_key) or []
+            if isinstance(i, dict) and i.get("installed", True)
         ]
-        if not models:
-            return {"status": "critical", "detail": f"{name}: no model installed"}
-        return {"status": "ok", "detail": f"{models[0]} · {elapsed_ms:.0f}ms"}
-    voices = [
-        v for v in program.get("voices") or [] if isinstance(v, dict) and v.get("installed", True)
-    ]
-    if not voices:
-        return {"status": "critical", "detail": f"{name}: no voice installed"}
-    return {"status": "ok", "detail": f"{name}, {len(voices)} voices · {elapsed_ms:.0f}ms"}
+        if not items:
+            continue
+        if service == "asr":
+            return {"status": "ok", "detail": f"{items[0].get('name', '?')} · {elapsed_ms:.0f}ms"}
+        name = program.get("name", kind)
+        return {"status": "ok", "detail": f"{name}, {len(items)} voices · {elapsed_ms:.0f}ms"}
+    name = programs[0].get("name", kind)
+    what = "model" if service == "asr" else "voice"
+    return {"status": "critical", "detail": f"{name}: no {what} installed"}
 
 
 # ------------------------------------------------------------------

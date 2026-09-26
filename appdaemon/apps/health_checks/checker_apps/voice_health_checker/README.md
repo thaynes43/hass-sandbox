@@ -29,10 +29,9 @@ voice_health_checker:
       port: 10210
     - name: Assistant
       type: agent
-      entity_id: conversation.phone_assist
-      reachability_url: https://api.openai.com/v1/models
-      reachability_name: OpenAI
-      dependency: cloud
+      entity_id: conversation.phone_assist_local
+      reachability_url: http://llama-server.ai.svc.cluster.local:8080/health
+      reachability_name: Local LLM
 ```
 
 ### Parameters
@@ -53,12 +52,12 @@ Each entry in `checks` has a `name`, a `type`, and optionally a `dependency` (a 
 ## Check Logic
 
 - **wyoming**: sends a Wyoming `describe` event, the same handshake HA's Wyoming integration uses, and reads the `info` reply.
-  - **ok** when it lists an installed program for `service`: for `asr`, one with an installed model (detail: model name and round trip); for `tts`, one with voices (detail: program, voice count and round trip).
+  - **ok** when an installed program for `service` holds an installed model (`asr`; detail: model name and round trip) or voices (`tts`; detail: program, voice count and round trip). Every installed program is searched, and a program, model or voice listed without an `installed` field counts as installed.
   - **critical** on a timeout, a refused or closed connection, a malformed reply, or nothing installed.
 - **agent**: the agent entity must exist and not be `unavailable` (its integration is loaded).
-  - With a `reachability_url`, an anonymous GET must then answer below HTTP 500. A 401 proves the API is up and reachable without the checker holding its key.
+  - With a `reachability_url`, an anonymous GET must then answer below HTTP 500. In production that is the local llama-server's `/health`, which answers 503 while a model loads. For a cloud LLM, a 401 on its API proves it is up without the checker holding a key.
   - **critical** otherwise.
-  - The check cannot see an exhausted quota or a revoked key: that would need a real, billed request on every cycle.
+  - The check sees neither a slow model (a thermally throttled GPU still answers `/health`) nor, for a cloud LLM, an exhausted quota.
 
 There is no cross-check. Each check is a separate service, and any one of them down breaks voice, so each goes **critical** on its own. A sustained critical pages after the controller's `alert_for_seconds.critical` like any checker, and it can be muted from the health card.
 
@@ -66,7 +65,7 @@ Uses `wyoming_check()` and `http_reachable_check()` from `shared/check_utils.py`
 
 ## Dependencies
 
-- `cloud`: the **Assistant** check declares it, so an internet outage (already paged by Cloud) shows the agent as `unknown` instead of paging twice.
+None in production: the local LLM needs no internet. A check that reaches a cloud LLM should declare `dependency: cloud`, so an internet outage (already paged by Cloud) shows it as `unknown` instead of paging twice.
 
 ## Manual Setup
 

@@ -970,8 +970,8 @@ voice_health_checker:
   checker_name: Voice
   check_interval_s: 120
   check_timeout_s: 5
-  # The Assist stack behind the room boxes and Phone Assist. HA's stt/tts/conversation
-  # entities stay "available" while these servers are down, so probe them directly.
+  # The Assist stack behind Phone Assist (its local STT/TTS also serve the Kitchen box). HA's
+  # stt/tts/conversation entities stay "available" while these servers are down, so probe them.
   checks:
     - name: Speech to Text
       type: wyoming
@@ -983,12 +983,13 @@ voice_health_checker:
       service: tts
       host: kokoro.ai.svc.cluster.local
       port: 10210
+    # Phone Assist runs on the local LLM since 2026-09-26: the agent must be loaded and
+    # llama-server healthy (/health answers 503 while a model loads).
     - name: Assistant
       type: agent
-      entity_id: conversation.phone_assist
-      reachability_url: https://api.openai.com/v1/models
-      reachability_name: OpenAI
-      dependency: cloud
+      entity_id: conversation.phone_assist_local
+      reachability_url: http://llama-server.ai.svc.cluster.local:8080/health
+      reachability_name: Local LLM
 
 mqtt_broker_checker:
   module: health_checks.checker_apps.mqtt_broker_checker.mqtt_broker_checker

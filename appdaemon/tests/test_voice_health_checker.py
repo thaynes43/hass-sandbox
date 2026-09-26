@@ -144,6 +144,18 @@ class TestWyomingCheck:
         assert result["status"] == "critical"
         assert "no model installed" in result["detail"]
 
+    def test_model_without_installed_field_counts_as_installed(self):
+        info = {"asr": [dict(ASR_INFO["asr"][0], models=[{"name": "parakeet"}])]}
+        result, _ = _run(_probe(_info_reply(info), "asr"))
+        assert result["status"] == "ok"
+        assert result["detail"].startswith("parakeet · ")
+
+    def test_models_on_a_second_program_are_found(self):
+        info = {"asr": [dict(ASR_INFO["asr"][0], name="empty", models=[]), ASR_INFO["asr"][0]]}
+        result, _ = _run(_probe(_info_reply(info), "asr"))
+        assert result["status"] == "ok"
+        assert result["detail"].startswith("nemo-parakeet-tdt-0.6b-v2 · ")
+
     def test_tts_without_voices_is_critical(self):
         info = {"tts": [dict(TTS_INFO["tts"][0], voices=[])]}
         result, _ = _run(_probe(_info_reply(info), "tts"))

@@ -174,7 +174,7 @@ health_check_controller (listens for health_check_command events from all checke
   │      shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair helpers via
   │      ha_provisioner, reads them with the first-run guard, clamps the delay, applies card commands
   ├─ cloud_checker/cloud (root dependency)
-  │    └─ depended on by: cielo, lock_batteries, voice (Assistant check)
+  │    └─ depended on by: cielo, lock_batteries
   ├─ mqtt_broker_checker/mqtt_broker (root dependency)
   │    └─ depended on by: zigbee, basement_lights, downstairs_lights, upstairs_lights, exterior_lights
   ├─ network_protocol_checker/zigbee (depends on: mqtt_broker)
@@ -196,7 +196,7 @@ health_check_controller (listens for health_check_command events from all checke
   │    shared/check_utils.is_implausible_battery_drop — not a registered dependency)
   ├─ protect_health_checker/protect (uses ha_provisioner HaAdminClient for discovery + config-entry reload)
   ├─ imagegen_health_checker/imagegen (uses ai_providers/comfyui status client)
-  └─ voice_health_checker/voice (Wyoming STT/TTS + agent/LLM reachability; Assistant check depends on: cloud)
+  └─ voice_health_checker/voice (Wyoming STT/TTS + phone agent loaded + local llama-server /health)
 
 countdown_app
   └─ depends on: ai_providers (image generation), ha_provisioner (relay script provisioning)

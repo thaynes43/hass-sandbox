@@ -129,7 +129,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 - **wyoming**: a Wyoming `describe` handshake to a speech-to-text or text-to-speech server, which must list an installed program.
 - **agent**: the conversation agent entity must be loaded, and its LLM API must answer an anonymous GET below HTTP 500 (a 401 counts as reachable; no key is held).
 
-No cross-check: any piece down breaks voice and is critical. The Assistant check depends on `cloud`. The Tom Mobile Phone Assist card uses this checker's status as its icon.
+No cross-check: any piece down breaks voice and is critical. In production the Assistant check is the local phone agent plus llama-server's `/health`. The Tom Mobile Phone Assist card uses this checker's status as its icon.
 
 ### Dependency System
 
