@@ -14,7 +14,7 @@ iterating on it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| (none, first card) | "Talk to Jarvis" bubble button: `assist` action on the **Phone Jarvis** pipeline, listening at once (see *Assist on Tom's iPhone* below) |
+| (none, first card) | "Assist" bubble button (`mdi:microphone`): `assist` action on the **Phone Assist** pipeline, listening at once (see *Assist on Tom's iPhone* below) |
 | Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
@@ -39,8 +39,8 @@ admin. The app does not refresh the list at launch or on a timer. A pipeline cre
 pickers after native Assist is opened again, or after the refresh button in an in-app picker is tapped.
 (Read from iOS@`2bca3df`, frontend@`5c187a4` and core@`087bf87` source on 2026-09-26.)
 
-- **Pipeline:** Phone Jarvis `01m3fwd8phf6qxyaax31evjt7a`, a roomless agent. Its settings and prompt
-  are in `agent-docs/voice-agent-prompts.md`.
+- **Pipeline:** Phone Assist `01m3fwd8phf6qxyaax31evjt7a`, a roomless agent with no persona (Tom wanted
+  "something equivalent to Siri"). Its settings and prompt are in `agent-docs/voice-agent-prompts.md`.
 - **Button:** the first card calls `tap_action: {action: assist, pipeline_id: 01m3fwd8phf6qxyaax31evjt7a,
   start_listening: true}` on both the icon and the body. Bubble Card passes it to HA's `hass-action`,
   and in the app the frontend sends `assist/show` with the pipeline id. The app honours that, but its
@@ -53,7 +53,7 @@ pickers after native Assist is opened again, or after the refresh button in an i
     Shortcut, which needs no cached list.
   There is no Assist panel, so Assist cannot go in the sidebar.
 - **Checked in a browser 2026-09-26** (admin session, Chromium at 390×844 with a fake microphone):
-  the tap opened Assist on "Phone Jarvis" listening, and the pipeline's debug runs showed the STT run.
+  the tap opened Assist on "Phone Assist" listening, and the pipeline's debug runs showed the STT run.
   Not checked on the phone itself.
 
 ## Key entities

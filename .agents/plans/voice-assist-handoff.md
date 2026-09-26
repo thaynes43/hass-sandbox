@@ -233,12 +233,12 @@ Room's OpenAI agent is also a "Jarvis" persona — the local one is the one on t
 
 ## Phone (added 2026-09-26)
 
-A roomless pipeline for Tom's iPhone: **Phone Jarvis** `01m3fwd8phf6qxyaax31evjt7a`, which runs Parakeet
-into `conversation.phone_jarvis` (OpenAI, like the rooms, with Tom's Jarvis persona, the house tools and
-Watch history) and speaks with Kokoro `bm_george`. Tom's app is the non-admin user `thaynes`. He starts it
-from the *Talk to Jarvis* button on Tom Mobile, and that first open also fills the app's pipeline list for
-the widget and Action Button. How that works, and the other ways in: `agent-docs/tom-mobile-dashboard.md`.
-Prompt: `agent-docs/voice-agent-prompts.md`.
+A roomless pipeline for Tom's iPhone: **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`, which runs Parakeet
+into `conversation.phone_assist` and speaks with Kokoro `af_heart`. The agent is OpenAI, like the rooms,
+with the house tools and Watch history and **no persona** (Tom: "something equivalent to Siri"). Tom's app
+is the non-admin user `thaynes`. He starts it from the *Assist* button on Tom Mobile, and that first open
+also fills the app's pipeline list for the widget and Action Button. How that works, and the other ways in:
+`agent-docs/tom-mobile-dashboard.md`. Prompt: `agent-docs/voice-agent-prompts.md`.
 
 ## Still open after testing
 

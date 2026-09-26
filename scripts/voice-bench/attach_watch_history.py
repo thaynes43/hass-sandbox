@@ -1,6 +1,7 @@
 """Attach haynesnetwork's "Watch history" MCP API to the Movie Room agent, or roll it back.
 
-AGENT=phone (on any action) works on the Phone Jarvis agent instead, which carries the same block.
+AGENT=phone (on any action) works on the Phone Assist agent instead, which carries the same block.
+A PROMPT_FILE whose name marks it as the other agent's backup is refused.
 
 Runs INSIDE the Home Assistant pod via run.sh (the HA token arrives on stdin as HA_TOKEN and is
 never printed). One ACTION per run:
@@ -95,7 +96,7 @@ BLOCK_ONLY = os.environ.get("BLOCK_ONLY", "") not in ("", "0")
 # The agents that carry WATCH_BLOCK: (OpenAI config entry, conversation subentry, label).
 AGENTS = {
     "movie": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCRND9599AR8EFJVN0A", "Movie Room"),  # "Movie Room ChatGPT"
-    "phone": ("01JBM33KVTM1FHF795G01R2C4X", "01M3FWCWQWVWAFTK90JBES1JQ5", "Phone Jarvis"),  # "Phone Jarvis"
+    "phone": ("01JBM33KVTM1FHF795G01R2C4X", "01M3FWW3MMFE079D9A7F2NF66F", "Phone Assist"),  # "Phone Assist"
 }
 AGENT = os.environ.get("AGENT", "movie")
 if AGENT not in AGENTS:
@@ -106,8 +107,10 @@ FLOW = "/api/config/config_entries/flow"
 EXPECTED_TITLE = "Watch history"
 
 # Byte-identical copy of the fenced block under "Movie Room — watch history" in
-# agent-docs/voice-agent-prompts.md. Change both together, and move the text it replaces, verbatim,
-# into PREVIOUS_WATCH_BLOCKS so ACTION=update recognises the copy that is live in HA.
+# agent-docs/voice-agent-prompts.md (the Phone Assist section points at that copy rather than
+# repeating it). Change both together, and move the text it replaces, verbatim, into
+# PREVIOUS_WATCH_BLOCKS so ACTION=update recognises the copy that is live in HA; then run the update
+# once per agent in AGENTS.
 WATCH_BLOCK = """WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
 - "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
@@ -323,6 +326,12 @@ def backup(data: dict, undo: str) -> None:
 
 
 def load_backup_prompt(path: str) -> str:
+    # Backups name their subentry (see backup()). A detach restores the WHOLE prompt from the file,
+    # so another agent's backup would silently swap in that agent's prompt. A hand-made file with
+    # no such name is still accepted.
+    others = [sub for _, sub, _ in AGENTS.values() if sub != SUBENTRY]
+    if any(f"watch-history-backup-{sub}-" in os.path.basename(path) for sub in others):
+        raise Refused(f"{path} is a backup of another agent's subentry; AGENT={AGENT} works on {SUBENTRY}")
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
