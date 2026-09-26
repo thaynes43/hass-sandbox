@@ -14,6 +14,7 @@ iterating on it.
 
 | Section (bubble separator) | Cards |
 |---|---|
+| (none, first card) | "Talk to Jarvis" bubble button: `assist` action on the **Phone Jarvis** pipeline, listening at once (see *Assist on Tom's iPhone* below) |
 | Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
@@ -25,6 +26,35 @@ iterating on it.
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).
+
+## Assist on Tom's iPhone (added 2026-09-26)
+
+Tom's iPhone app is logged in as **`thaynes`, a non-admin user**, and he wants it kept that way. The
+app's Assist widget, Control Center control, Action Button and "Assist in app" Shortcut all pick a
+pipeline from a list the app caches on the phone, and that list starts empty ("Can't find your Assist
+pipeline? Open Assist in the app to refresh pipelines list."). The app refills it every time its
+native Assist screen opens, which calls `assist_pipeline/pipeline/list`. Core allows that call and
+`assist_pipeline/run` for non-admins; only creating, editing and setting the preferred pipeline need
+admin. The app does not refresh the list at launch or on a timer. A pipeline created later reaches the
+pickers after native Assist is opened again, or after the refresh button in an in-app picker is tapped.
+(Read from iOS@`2bca3df`, frontend@`5c187a4` and core@`087bf87` source on 2026-09-26.)
+
+- **Pipeline:** Phone Jarvis `01m3fwd8phf6qxyaax31evjt7a`, a roomless agent. Its settings and prompt
+  are in `agent-docs/voice-agent-prompts.md`.
+- **Button:** the first card calls `tap_action: {action: assist, pipeline_id: 01m3fwd8phf6qxyaax31evjt7a,
+  start_listening: true}` on both the icon and the body. Bubble Card passes it to HA's `hass-action`,
+  and in the app the frontend sends `assist/show` with the pipeline id. The app honours that, but its
+  own Assist start-mode setting (auto/voice/text) can override `start_listening`. Without an explicit
+  `start_listening: true` the action opens in text mode.
+- **Other ways in for a non-admin:**
+  - the dashboard's Assist item (in the ⋮ menu at phone width; there is no admin check);
+  - `?conversation=1` on a dashboard URL;
+  - `homeassistant://assist?pipelineId=01m3fwd8phf6qxyaax31evjt7a&startListening=true` from a
+    Shortcut, which needs no cached list.
+  There is no Assist panel, so Assist cannot go in the sidebar.
+- **Checked in a browser 2026-09-26** (admin session, Chromium at 390×844 with a fake microphone):
+  the tap opened Assist on "Phone Jarvis" listening, and the pipeline's debug runs showed the STT run.
+  Not checked on the phone itself.
 
 ## Key entities
 

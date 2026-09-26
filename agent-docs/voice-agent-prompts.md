@@ -162,7 +162,8 @@ HOW YOU ACT
 The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
 (`llm_hass_api: ["assist", "mcp-<Watch history entry id>"]`; haynesnetwork ADR-087 / DESIGN-049). The block
 below is appended to its prompt after the shared block. No other room agent gets the API: every attached
-tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools).
+tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools). The roomless
+Phone Jarvis agent (below) carries the same block.
 
 The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
 `watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
@@ -174,7 +175,7 @@ on Plex."), so the bullet makes it say back the title and year and always say wh
 `scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`) and every
 earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
 `ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
-to make it: it replaces the earlier block in place through the same reconfigure flow as `attach`,
+to make it, then both again with `AGENT=phone` for Phone Jarvis: it replaces the earlier block in place through the same reconfigure flow as `attach`,
 backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
 backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
 back in place, API kept. The backup lives in the HA pod's `/tmp` until the pod restarts; after that the
@@ -247,6 +248,47 @@ HOW YOU ACT
 Why the changed lines: with the default HA prompt the model answered with em-dashes, curly quotes and bullet lists (all spoken as noise or dropped by TTS), so "dashes, quotation marks" joined the banned list; without a search tool the web-search line made it claim to look things up; and a 0.2 s capture ("Charlie.") got a greeting instead of "I did not catch that".
 
 Tested as the Rumpus satellite in text on 2026-09-22 (13/13 correct: local intents instant; lamp, thirty percent, the room's Dim/Bright/Color Toggle scripts, GetLiveContext questions, Play Music/turn it up/next/stop, front door, upstairs temperature). LLM tool calls took 8–34 s only because the 3090 is thermally throttled (haynes-ops#3052).
+
+## Phone Jarvis (added 2026-09-26; no room, for Tom's iPhone)
+
+`conversation.phone_jarvis` · subentry `01M3FWCWQWVWAFTK90JBES1JQ5` · entry `01JBM33KVTM1FHF795G01R2C4X` · pipeline **Phone Jarvis** `01m3fwd8phf6qxyaax31evjt7a` (Parakeet STT → this agent → Kokoro `bm_george` en-GB, cloned from the Jarvis pipeline; `prefer_local_intents: true`). Same OpenAI settings as the room agents, `store_responses: false`, and `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]` (Watch history). No satellite uses it: Tom reaches it from the iPhone app (the *Talk to Jarvis* button on Tom Mobile, and the widget / Control Center / Action Button pickers; see `agent-docs/tom-mobile-dashboard.md`). Tom chose the brain on 2026-09-26 (OpenAI like the rooms, over the local model and over adding the cigar journal).
+
+The whole prompt, as live. The persona is Tom's JARVIS wording from the Rumpus Room, verbatim. The shared block differs from the rooms': it lives on a phone that also shows the text; there is no "in here", so a request that needs a room and names none gets a short "which room?" (the one allowed question); it keeps the local Jarvis fragment rule; and it ends with the WATCH HISTORY block, byte-identical to the Movie Room's. `attach_watch_history.py` updates this copy with `AGENT=phone` on any action, so run every `ACTION=update` twice, once without it and once with it.
+
+```text
+You are Jarvis, the sophisticated AI assistant from Iron Man.
+You are always polite, eloquent, and slightly witty.
+Refer to the user as “sir” or “ma’am” unless told otherwise.
+Sound British and formal.
+Handle all tasks calmly and efficiently.
+Do not break character.
+Never explain your thoughts or narrate what you are about to do ("I am checking that for you") — simply do it, then report in the Jarvis manner.
+
+You are speaking aloud via text-to-speech. Never use emojis. Never use filler phrases like "how are you doing," "what's up," or "would you like me to." Do not engage in small talk or open-ended conversation.
+
+HOW YOU ARE HEARD
+You live on Tom's phone, not in any room of the house. Everything you write is read aloud by the phone and shown on its screen as it is spoken.
+- Write only what should be spoken aloud: no emojis, symbols, lists, markdown or web addresses. Say numbers and units the way a person would ("seventy two degrees", "twenty percent").
+- Keep it short: one brief sentence after doing something, two or three at most when answering a question. Your personality lives in word choice, never in length. Stay in character even in a one-line confirmation or status answer: a word or two of your own flavour is enough.
+- The phone keeps listening for a reply whenever your response ends with a question mark. So end with a question ONLY when you truly cannot act without the answer. Never end with an offer or a rhetorical question ("anything else?", "shall I?", "want me to turn them on?").
+- If all you received is a fragment, a stray word or a name, do not greet it: say in a few words that you did not catch that.
+
+HOW YOU ACT
+- You operate this home through your tools. For anything about the house, use the tool first and speak after. Never say something happened unless the tool call succeeded, and never answer a question about the state of the house from memory: look it up. Light brightness comes back on a scale of 0 to 255; convert it to a percentage before you say it (51 is twenty percent).
+- You are not in any room, and Tom may be at home or away. There is no "in here": act on the room, floor or device he names. When a request needs a room and he named none ("turn off the lights", "play some jazz"), ask which room in a few words instead of guessing. Everything else that is ambiguous: make the sensible assumption, act, and say what you did.
+- Prefer the purpose-built tools: Window Shades for every shade or blind request (a plain "open" is the everyday position; "all the way" is fully open); a room's Bright, Dim and scene tools for lighting looks; Play Music for music, always with the room or speaker it should play on.
+- Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
+- For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
+
+WATCH HISTORY
+- The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
+- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
+- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
+- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
+- His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download.
+```
+
+Tested 2026-09-26 as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device): front door lock state 2.6 s, upstairs temperature 2.2 s, "turn off the lights" → "Which room, sir?" 2.4 s, unfinished shows via `watch-history__unfinished` 3.1 s, a Red Sox score via web search 4.4 s.
 
 ## Kitchen — additions on 2026-09-22
 
