@@ -251,22 +251,58 @@ Tested as the Rumpus satellite in text on 2026-09-22 (13/13 correct: local inten
 
 ## Phone Assist (added 2026-09-26; no room, for Tom's iPhone)
 
-`conversation.phone_assist` · subentry `01M3FWW3MMFE079D9A7F2NF66F` · entry `01JBM33KVTM1FHF795G01R2C4X` · pipeline **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`: Parakeet STT → this agent → Kokoro `af_heart` (en-US). `prefer_local_intents` is true. The agent has the same OpenAI settings as the room agents, plus `store_responses: false` and `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]` (the house tools and Watch history).
+Pipeline **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`: Parakeet STT → the agent → Kokoro `af_heart` (en-US), `prefer_local_intents: true`. No satellite uses it. Tom reaches it from the iPhone app: the *Phone Assist* card on Tom Mobile (Chat and Voice sub-buttons), and the widget, Control Center and Action Button pickers (see `agent-docs/tom-mobile-dashboard.md`). The AppDaemon **Voice** health checker watches the agent below and llama-server's `/health` (the card's badge).
 
-No satellite uses it. Tom reaches it from the iPhone app: the *Phone Assist* card on Tom Mobile (Chat and Voice sub-buttons), and the widget, Control Center and Action Button pickers (see `agent-docs/tom-mobile-dashboard.md`).
+**Live agent: local, since the evening of 2026-09-26.** `conversation.phone_assist_local` · `llama_cpp` entry `01M34TQMBVCKW0BG0KZW5JG5YM` · subentry `01M3FZMH71M9JQ8GJ5CMG5VTVN`. It runs Muse Glimmer 30B on llama-server, `recommended: true`, and `llm_hass_api: ["assist"]` (house tools only, for now).
+- The `llama_cpp` subentry flow has no name field, so it was created as "Muse Glimmer 30b". It was retitled "Phone Assist Local" with the websocket `config_entries/subentries/update` (title only), and the entity was renamed from `conversation.muse_glimmer_30b_3`.
+- Write the prompt back with `ha_config_set_helper(helper_type="config_subentry", …)`. The form has `prompt`, `llm_hass_api`, `chat_model` and `recommended`.
 
 Tom's rulings on 2026-09-26:
-- the brain is OpenAI, like the rooms, rather than the local model or the rooms' model plus the cigar journal;
-- **no persona**: "something equivalent to Siri but a Home Assistant Assist agent". A Jarvis-persona first cut (`conversation.phone_jarvis`, Kokoro `bm_george`) lived for half an hour and was deleted, and the pipeline kept its id.
+- **No persona**: "something equivalent to Siri but a Home Assistant Assist agent". A Jarvis-persona first cut (`conversation.phone_jarvis`, Kokoro `bm_george`) lived for half an hour and was deleted, and the pipeline kept its id.
+- **Brain.** Tom first chose OpenAI, like the rooms, over the local model or the rooms' model plus the cigar journal. The same evening he moved the phone to the local model: "the phone agent uses the local LLM muse glimmer since that'll be hit more and will help with cost". He also moved the Rumpus Room box back to OpenAI.
+- **Which MCP servers the local agent carries** is decided after a benchmark of their cost and tool accuracy on this model. Tom: "I can live with it being just a home control agent for now".
+- **Swap now anyway**, although 3090 #1 was thermally throttled (240–525 MHz under load at 76 °C, fan 100 %). At those clocks decode is ~12 tok/s against ~38 healthy, and house questions took 5–28 s warm.
 
-So this prompt has no persona. It is the rooms' shared block with the character lines taken out and three changes:
+The prompt has no persona. It is the rooms' shared block with the character lines taken out, and it keeps the local Jarvis fragment rule. It changes the room block in three ways:
 - it lives on a phone that also shows the text;
 - there is no "in here", so a request that needs a room and names none gets a short "which room?" (the one allowed question);
-- it answers everyday questions as well as house ones.
+- it answers what it can without tools. The local agent has no web search, so its last line says so, and "dashes, quotation marks" are banned the way the local Jarvis prompt bans them.
 
-It keeps the local Jarvis fragment rule.
+Live prompt (local agent), whole:
 
-Live prompt, up to its last section:
+```text
+You are Assist, the voice assistant on Tom's phone. Work like Siri: neutral, friendly and to the point, with no character, catchphrases or jokes. You control the family's home in Westford, Massachusetts.
+
+HOW YOU ARE HEARD
+Everything you write is read aloud by the phone and shown on its screen as it is spoken.
+- Write only what should be spoken aloud: no emojis, symbols, dashes, quotation marks, lists, markdown or web addresses. Say numbers and units the way a person would ("seventy two degrees", "twenty percent").
+- Keep it short: one brief sentence after doing something, two or three at most when answering a question. No greetings, filler or small talk ("sure thing", "happy to help", "would you like me to").
+- The phone keeps listening for a reply whenever your response ends with a question mark. So end with a question ONLY when you truly cannot act without the answer. Never end with an offer or a rhetorical question ("anything else?", "shall I?", "want me to turn them on?").
+- If all you received is a fragment, a stray word or a name, say in a few words that you did not catch that.
+
+HOW YOU ACT
+- You operate this home through your tools. For anything about the house, use the tool first and speak after. Never say something happened unless the tool call succeeded, and never answer a question about the state of the house from memory: look it up. Light brightness comes back on a scale of 0 to 255; convert it to a percentage before you say it (51 is twenty percent).
+- You are not in any room, and Tom may be at home or away. There is no "in here": act on the room, floor or device he names. When a request needs a room and he named none ("turn off the lights", "play some jazz"), ask which room in a few words instead of guessing. Everything else that is ambiguous: make the sensible assumption, act, and say what you did.
+- Prefer the purpose-built tools: Window Shades for every shade or blind request (a plain "open" is the everyday position; "all the way" is fully open); a room's Bright, Dim and scene tools for lighting looks; Play Music for music, always with the room or speaker it should play on.
+- Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
+- You have no web search. A quick calculation, conversion or definition you can answer in a sentence; for news, scores or anything else outside this home, say in one line that you cannot look that up.
+```
+
+Tested 2026-09-26 as text (`bench.py MODE=conv AGENT=conversation.phone_assist_local`, throttled card), all answers correct:
+
+| Request | Reply | Time |
+|---|---|---|
+| Front door | "The front door is locked." | 32.7 s cold, then 7.7 s |
+| Upstairs temperature | "Upstairs is 70.4 degrees." | 17.9–22.4 s |
+| Turn off the lights | "Which room should I turn the lights off in?" | 4.3 s |
+| Ounces in a liter | answered directly | 4.4–4.8 s |
+| Red Sox score | "I cannot look that up." | 9.3 s |
+| Kitchen light | "The kitchen lights are off." | 11.4–16.1 s |
+| Garage doors | "Both garage doors are closed." | 23.3–27.7 s |
+
+The model spends up to ~250 decode tokens before some tool calls, which is what the throttled clocks turn into seconds.
+
+**OpenAI fallback** (`conversation.phone_assist`, subentry `01M3FWW3MMFE079D9A7F2NF66F`, entry `01JBM33KVTM1FHF795G01R2C4X`: `gpt-5.6-terra`, the room agents' settings, `store_responses: false`, `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`). It is kept and unchanged; to switch back, point the pipeline's conversation agent at it. Its prompt, up to its last section:
 
 ```text
 You are Assist, the voice assistant on Tom's phone. Work like Siri: neutral, friendly and to the point, with no character, catchphrases or jokes. You control the family's home in Westford, Massachusetts, and you answer everyday questions.
@@ -288,7 +324,7 @@ HOW YOU ACT
 
 After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` once without it and once with it.
 
-Tested on 2026-09-26 as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device):
+Tested on 2026-09-26, while it was the live agent, as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device):
 
 | Request | Reply | Time |
 |---|---|---|

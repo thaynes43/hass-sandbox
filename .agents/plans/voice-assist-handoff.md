@@ -233,12 +233,11 @@ Room's OpenAI agent is also a "Jarvis" persona — the local one is the one on t
 
 ## Phone (added 2026-09-26)
 
-A roomless pipeline for Tom's iPhone: **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`, which runs Parakeet
-into `conversation.phone_assist` and speaks with Kokoro `af_heart`. The agent is OpenAI, like the rooms,
-with the house tools and Watch history and **no persona** (Tom: "something equivalent to Siri"). Tom's app
-is the non-admin user `thaynes`. He starts it from the *Phone Assist* card on Tom Mobile (Chat or Voice; its badge is the Voice health checker), and that first open
-also fills the app's pipeline list for the widget and Action Button. How that works, and the other ways in:
-`agent-docs/tom-mobile-dashboard.md`. Prompt: `agent-docs/voice-agent-prompts.md`.
+A roomless pipeline for Tom's iPhone: **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`. It runs Parakeet into the agent and speaks with Kokoro `af_heart`.
+- **Agent:** since the evening of 2026-09-26, the local `conversation.phone_assist_local` (Muse Glimmer 30B, house tools only, **no persona**). Tom: "something equivalent to Siri". He moved it off OpenAI for cost.
+- **Fallback:** the OpenAI `conversation.phone_assist` is kept.
+- **Access:** Tom's app is the non-admin user `thaynes`. He starts it from the *Phone Assist* card on Tom Mobile (Chat or Voice; its badge is the Voice health checker). That first open also fills the app's pipeline list for the widget and Action Button.
+- **References:** how that works and the other ways in are in `agent-docs/tom-mobile-dashboard.md`; the prompts and rulings are in `agent-docs/voice-agent-prompts.md`.
 
 ## Still open after testing
 
