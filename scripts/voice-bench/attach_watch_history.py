@@ -84,7 +84,7 @@ STORAGE = "/config/.storage/core.config_entries"
 ACTION = os.environ.get("ACTION", "status")
 URL = os.environ.get("URL", "http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp")
 ENTRY_ID = os.environ.get("ENTRY_ID", "")
-PROMPT_FILE = os.environ.get("PROMPT_FILE", "")
+PROMPT_FILE = os.environ.get("PROMPT_FILE", "")  # ACTION=update (an update backup) or detach (an attach backup) only
 DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0")  # ACTION=update only
 
 OPENAI_ENTRY = "01JK456T3JV6CPBG2ZQ2FS10GE"
@@ -458,7 +458,7 @@ def block_version(text: str) -> str:
 
 
 def run_line(action: str, extra: str = "") -> str:
-    return f'run.sh attach_watch_history.py "ACTION={action} ENTRY_ID={ENTRY_ID}{extra}"'
+    return f'scripts/voice-bench/run.sh attach_watch_history.py "ACTION={action} ENTRY_ID={ENTRY_ID}{extra}"'
 
 
 async def attach(s: aiohttp.ClientSession) -> None:
@@ -591,6 +591,10 @@ async def main() -> int:
         return 2
     if DRY_RUN and ACTION not in ("status", "update"):
         print(f"DRY_RUN is only for ACTION=update; ACTION={ACTION} has no dry run. Nothing done.")
+        return 2
+    if PROMPT_FILE and ACTION not in ("update", "detach"):
+        print(f"PROMPT_FILE is only for ACTION=update (an update backup) and ACTION=detach (an attach "
+              f"backup); ACTION={ACTION} would ignore it. Nothing done.")
         return 2
     async with aiohttp.ClientSession() as s:
         try:
