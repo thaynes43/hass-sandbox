@@ -1,7 +1,7 @@
 """Attach haynesnetwork's "Watch history" MCP API to the Movie Room agent, or roll it back.
 
 AGENT=phone (on any action) works on the Phone Assist agent instead, which carries the same block.
-A PROMPT_FILE whose name marks it as the other agent's backup is refused.
+A PROMPT_FILE whose name marks it as a backup of any other subentry is refused.
 
 Runs INSIDE the Home Assistant pod via run.sh (the HA token arrives on stdin as HA_TOKEN and is
 never printed). One ACTION per run:
@@ -327,11 +327,11 @@ def backup(data: dict, undo: str) -> None:
 
 def load_backup_prompt(path: str) -> str:
     # Backups name their subentry (see backup()). A detach restores the WHOLE prompt from the file,
-    # so another agent's backup would silently swap in that agent's prompt. A hand-made file with
-    # no such name is still accepted.
-    others = [sub for _, sub, _ in AGENTS.values() if sub != SUBENTRY]
-    if any(f"watch-history-backup-{sub}-" in os.path.basename(path) for sub in others):
-        raise Refused(f"{path} is a backup of another agent's subentry; AGENT={AGENT} works on {SUBENTRY}")
+    # so a backup of any other subentry (another agent, or one since deleted) would silently swap in
+    # its prompt. A hand-made file with no such name is still accepted.
+    named = re.search(r"watch-history-backup-([0-9A-Z]{26})-", os.path.basename(path))
+    if named and named.group(1) != SUBENTRY:
+        raise Refused(f"{path} is a backup of subentry {named.group(1)}; AGENT={AGENT} works on {SUBENTRY}")
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
