@@ -559,11 +559,13 @@ async def detach(s: aiohttp.ClientSession) -> None:
     prompt = current.get("prompt", "")
     new_api = [a for a in api if a != api_id]
     others = [a for a in api if a.startswith("mcp-") and a != api_id]
-    if api_id not in api and others and not any(e["entry_id"] == ENTRY_ID for e in mcp_entries(load_entries())):
-        # A mistyped ENTRY_ID would strip the block and leave the real API attached. (An id that is not an
-        # entry any more, with no other mcp API attached, is the legitimate "entry already deleted" case.)
-        raise Refused(f"{ENTRY_ID} is not an mcp config entry and llm_hass_api still holds {others}; "
-                      "check ENTRY_ID (ACTION=status lists the entries)")
+    if api_id not in api and others:
+        # Nothing to remove for this id while another mcp API is attached: ENTRY_ID names the wrong entry (a
+        # typo or another server's), and detaching would strip the block and leave that API's tools unguided.
+        # An id whose entry is gone, with no mcp API left, is the legitimate "entry already deleted" case.
+        raise Refused(f"llm_hass_api has no {api_id} to remove but still holds {others}; detaching would strip "
+                      "the prompt block and leave those tools attached. Check ENTRY_ID (ACTION=status lists the "
+                      "entries and marks the attached one)")
     if PROMPT_FILE:
         new_prompt = load_backup_prompt(PROMPT_FILE)
         if blk := one_block(new_prompt, "it is not a backup this helper wrote"):
