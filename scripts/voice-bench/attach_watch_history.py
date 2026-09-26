@@ -513,8 +513,8 @@ async def update(s: aiohttp.ClientSession) -> None:
     if PROMPT_FILE:  # undoing an update: swap the backup's block back in
         backed_up = one_block(load_backup_prompt(PROMPT_FILE), "it is not a backup this helper wrote")
         if backed_up is None:
-            raise Refused(f"{PROMPT_FILE} has no WATCH HISTORY block, so it is an attach backup: "
-                          "ACTION=detach with this PROMPT_FILE restores it")
+            raise Refused(f"{PROMPT_FILE} holds no WATCH HISTORY block, so there is none to swap back; a backup "
+                          "that attach took from a prompt with no block is restored by ACTION=detach with this PROMPT_FILE")
         target = backed_up[2]
         if target not in known:
             raise Refused(f"{PROMPT_FILE}'s WATCH HISTORY block matches no copy in this script; restore it by hand")
@@ -560,9 +560,13 @@ async def detach(s: aiohttp.ClientSession) -> None:
     new_api = [a for a in api if a != api_id]
     if PROMPT_FILE:
         new_prompt = load_backup_prompt(PROMPT_FILE)
-        if find_blocks(new_prompt):
-            raise Refused(f"{PROMPT_FILE} still carries a WATCH HISTORY block, so it is not an attach backup; "
-                          "ACTION=update with this PROMPT_FILE puts an update backup's block back")
+        if blk := one_block(new_prompt, "it is not a backup this helper wrote"):
+            if blk[2] not in (WATCH_BLOCK, *PREVIOUS_WATCH_BLOCKS):
+                raise Refused(f"{PROMPT_FILE} holds a WATCH HISTORY block that matches no copy in this script; "
+                              "restore it by hand")
+            raise Refused(f"{PROMPT_FILE} holds a WATCH HISTORY block, and a detach never leaves one behind: "
+                          f"{run_line('detach')} removes the API and the block together, and ACTION=update with "
+                          "this PROMPT_FILE puts that block back and keeps the API")
     elif block := one_block(prompt, "pass PROMPT_FILE"):
         start, end, text = block
         if text != WATCH_BLOCK and text not in PREVIOUS_WATCH_BLOCKS:
