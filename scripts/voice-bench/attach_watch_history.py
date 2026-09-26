@@ -9,7 +9,7 @@ never printed). One ACTION per run:
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1"   # prints, changes nothing
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id>"
     scripts/voice-bench/run.sh attach_watch_history.py "ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<update backup in the HA pod> [DRY_RUN=1]"   # undoes an update
-    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=detach ENTRY_ID=<mcp entry id> [PROMPT_FILE=<attach backup in the HA pod>]"
+    scripts/voice-bench/run.sh attach_watch_history.py "ACTION=detach ENTRY_ID=<mcp entry id> [PROMPT_FILE=<attach backup in the HA pod>] [BLOCK_ONLY=1]"
 
 How each action talks to HA (read against the HA 2026.9.3 source in the pod):
 
@@ -86,6 +86,9 @@ URL = os.environ.get("URL", "http://haynesnetwork-mcp-hop.frontend.svc.cluster.l
 ENTRY_ID = os.environ.get("ENTRY_ID", "")
 PROMPT_FILE = os.environ.get("PROMPT_FILE", "")  # ACTION=update (an update backup) or detach (an attach backup) only
 DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0")  # ACTION=update only
+# ACTION=detach only: this id's API is already gone (removed by hand) while another mcp API is attached;
+# change only the prompt. Without it that state refuses, because a mistyped ENTRY_ID looks the same.
+BLOCK_ONLY = os.environ.get("BLOCK_ONLY", "") not in ("", "0")
 
 OPENAI_ENTRY = "01JK456T3JV6CPBG2ZQ2FS10GE"
 SUBENTRY = "01JZ8DWMCRND9599AR8EFJVN0A"  # "Movie Room ChatGPT", type conversation
@@ -461,6 +464,18 @@ def run_line(action: str, extra: str = "") -> str:
     return f'scripts/voice-bench/run.sh attach_watch_history.py "ACTION={action} ENTRY_ID={ENTRY_ID}{extra}"'
 
 
+def other_mcp_apis(api: list, api_id: str) -> list:
+    return [a for a in api if a.startswith("mcp-") and a != api_id]
+
+
+def detach_then_attach(api: list, api_id: str) -> str:
+    """The way out when the prompt holds an earlier block and llm_hass_api lacks api_id (the same
+    line from attach, update and detach's own refusal)."""
+    extra = " BLOCK_ONLY=1" if other_mcp_apis(api, api_id) else ""
+    return (f"first {run_line('detach', extra)} (it removes the block), then {run_line('attach')} "
+            "(the API and the current block)")
+
+
 async def attach(s: aiohttp.ClientSession) -> None:
     api_id = need_entry_id()
     entries = load_entries()
@@ -474,7 +489,7 @@ async def attach(s: aiohttp.ClientSession) -> None:
             raise Refused("the prompt carries an earlier WATCH HISTORY block and the API is attached; "
                           "ACTION=update replaces the block in place")
         raise Refused(f"the prompt carries an earlier WATCH HISTORY block and llm_hass_api lacks {api_id}; "
-                      "ACTION=detach first (it removes the block), then ACTION=attach (the API and the current block)")
+                      + detach_then_attach(api, api_id))
     if block and block[2] != WATCH_BLOCK:
         raise Refused("the prompt already has a WATCH HISTORY block with different text; fix it by hand or detach with PROMPT_FILE first")
     if block:
@@ -522,7 +537,7 @@ async def update(s: aiohttp.ClientSession) -> None:
     if api_id not in api:
         if block and block[2] != WATCH_BLOCK:
             raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds a block other than the "
-                          "current one; ACTION=detach first (it removes the block), then ACTION=attach (the API and the current block)")
+                          "current one; " + detach_then_attach(api, api_id))
         raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}; ACTION=attach adds the API "
                       + ("(the block is already current)" if block else "and the current block together"))
     if block is None:
@@ -558,14 +573,17 @@ async def detach(s: aiohttp.ClientSession) -> None:
     api = list(current.get("llm_hass_api") or [])
     prompt = current.get("prompt", "")
     new_api = [a for a in api if a != api_id]
-    others = [a for a in api if a.startswith("mcp-") and a != api_id]
-    if api_id not in api and others and (PROMPT_FILE or find_blocks(prompt)):
-        # Nothing to remove for this id while another mcp API is attached: ENTRY_ID names the wrong entry (a
-        # typo or another server's), and detaching would strip the block and leave that API's tools unguided.
-        # An id whose entry is gone, with no mcp API left, is the legitimate "entry already deleted" case.
+    others = other_mcp_apis(api, api_id)
+    if api_id not in api and others and (PROMPT_FILE or find_blocks(prompt)) and not BLOCK_ONLY:
+        # Nothing to remove for this id while another mcp API is attached: ENTRY_ID usually names the wrong
+        # entry (a typo or another server's), and detaching would strip the block and leave that API's tools
+        # unguided. The state alone cannot tell that from "this id is right and its API was removed by hand",
+        # so BLOCK_ONLY=1 is the explicit way through. An id whose entry is gone, with no mcp API left, is the
+        # legitimate "entry already deleted" case and needs no flag.
         raise Refused(f"llm_hass_api has no {api_id} to remove but still holds {others}; detaching would strip "
                       "the prompt block and leave those tools attached. Check ENTRY_ID (ACTION=status lists the "
-                      "entries and marks the attached one)")
+                      f"entries and marks the attached one); if {api_id} is right and its API was removed by hand, "
+                      f"{run_line('detach', ' BLOCK_ONLY=1')} changes only the prompt")
     if PROMPT_FILE:
         new_prompt = load_backup_prompt(PROMPT_FILE)
         if blk := one_block(new_prompt, "it is not a backup this helper wrote"):
@@ -605,6 +623,9 @@ async def main() -> int:
         return 2
     if DRY_RUN and ACTION not in ("status", "update"):
         print(f"DRY_RUN is only for ACTION=update; ACTION={ACTION} has no dry run. Nothing done.")
+        return 2
+    if BLOCK_ONLY and ACTION != "detach":
+        print(f"BLOCK_ONLY is only for ACTION=detach; ACTION={ACTION} would ignore it. Nothing done.")
         return 2
     if PROMPT_FILE and ACTION not in ("update", "detach"):
         print(f"PROMPT_FILE is only for ACTION=update (an update backup) and ACTION=detach (an attach "
