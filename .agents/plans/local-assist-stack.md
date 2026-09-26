@@ -117,8 +117,9 @@ line is retired.
 **What HA sees:** an `mcp` entry named "Watch history" at
 `http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp` (the hop injects the consumer token;
 HA holds no credential), granted to the **Movie Room agent only** (`conversation.chatgpt_5`), with a
-WATCH HISTORY block in its prompt (`agent-docs/voice-agent-prompts.md`). Seven tools, `tools/list`
-≤ 3 KB, spoken-text results ≤ 1,200 characters — the voice budget that keeps this from repeating the
+WATCH HISTORY block in its prompt (`agent-docs/voice-agent-prompts.md`). Seven tools at first, nine
+since 2026-09-26 (`watchlist` and `set_watchlist`, below); `tools/list` ≤ 4 KB (3 KB until the
+watchlist tools), spoken-text results ≤ 1,200 characters — the voice budget that keeps this from repeating the
 cigar-journal 2 s-per-turn cost (Tool track 1). With two APIs on the agent, HA namespaces every tool:
 `watch_history__recommend`, and Assist's become `assist__…`.
 
@@ -126,8 +127,9 @@ Answers to the three questions:
 - Q-01 (which Plex/Tautulli pair): **all of them** — Tom, 2026-09-23 ("find my watch history via plex or
   Tautulli (all servers)"). HaynesTower holds his history since 2023-09, HaynesOps since 2026-07; plex.tv
   view-state sync is on for his account.
-- Q-02 (Seerr requests by voice): still open, carried as haynesnetwork PRD Q-13. v1 only says "not on Plex
-  yet".
+- Q-02 (Seerr requests by voice): **resolved 2026-09-25** (Tom: "Add it, say it downloads"). Requests go
+  through his Plex watchlist, which Seerr already auto-requests: `set_watchlist` adds the title and its
+  answer says "It isn't on Plex yet, so Seerr will request it." haynesnetwork never calls Seerr itself.
 - Q-03 (local or OpenAI): v1 runs on the room's existing OpenAI agent (`gpt-5.6-terra`, reasoning none),
   because the owner's 2026-09-22 latency ruling rules out the throttled local card for a room agent
   (tool turns 8–34 s). Revisit after the Qwen bake-off.
@@ -154,6 +156,34 @@ Severance is no longer marked watched."). Attached with `scripts/voice-bench/att
 the OpenAI reconfigure flow: it re-derives the agent's `city` from `zone.home` on every save
 (Northborough → Bedford → Grafton → Leominster across three saves); the value only feeds web-search
 localisation and cannot be pinned through the flow.
+
+**Watchlist tools (2026-09-26).** The server gained `watchlist` (read: his plex.tv watchlist, newest
+first, each title marked on Plex or not) and `set_watchlist` (write: add or remove one title on his real
+plex.tv watchlist; `undo_last_change` reverses it). Adding a title that is not on Plex makes Seerr
+download it. Two things learned putting them live:
+
+- **HA loads an MCP server's tool list once, at entry setup.** The `mcp` integration's
+  DataUpdateCoordinator has no listeners, so its 30-minute `UPDATE_INTERVAL` never fires. A server that
+  gains or loses tools needs `homeassistant.reload_config_entry` on the mcp entry
+  (`01M381GTWER1BG9K4MWG3GDEGR`) or an HA restart. After the reload the Movie Room agent used the new
+  tools with no prompt change, but it paraphrased their answers down to a few words (it dropped "It's on
+  Plex."), so the WATCH HISTORY block gained a last bullet that makes it say back the title and year and
+  always say when a title will download. The helper puts a changed block live with
+  `ACTION=update ENTRY_ID=01M381GTWER1BG9K4MWG3GDEGR` (`DRY_RUN=1` first): it swaps a known earlier block
+  in place and leaves `llm_hass_api` alone. It prints its own undo, the same action with
+  `PROMPT_FILE=<its backup>`, which puts the old block back while the pod's `/tmp` lasts.
+- **Nine tools still cost nothing measurable.** Same bench on 2026-09-26, text as `conversation.chatgpt_5`,
+  3 reps, `conv` mode: no median rose (table below).
+
+| Question (no watch tool) | Assist only (2026-09-23), median | Seven tools (2026-09-23), median | Nine tools (2026-09-26), median |
+|---|---|---|---|
+| Is it warm in the movie room? | 4.62 s | 3.12 s | 2.74 s |
+| Give me a one line movie trivia fact. | 1.87 s | 1.57 s | 1.35 s |
+| Are the movie room lights on? | 2.98 s | 2.96 s | 2.67 s |
+
+The watchlist questions, asked after the reload: "Add The Matrix to my watchlist." 4.45 s
+(`set_watchlist` called, the add written), "Undo that." 2.60 s, "What is on my watchlist?" 2.61 s (the
+`watchlist` tool), "Is FROM on my watchlist?" 2.70 s.
 
 ## Tool track 3 — voice dispatch to dev-env agents (design needed)
 

@@ -157,12 +157,30 @@ HOW YOU ACT
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
 
-### Movie Room — watch history (added 2026-09-23)
+### Movie Room — watch history (added 2026-09-23, watchlist line 2026-09-26)
 
 The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
 (`llm_hass_api: ["assist", "mcp-<Watch history entry id>"]`; haynesnetwork ADR-087 / DESIGN-049). The block
 below is appended to its prompt after the shared block. No other room agent gets the API: every attached
 tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools).
+
+The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
+`watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
+auto-requests his watchlist, so adding a title that is not on Plex downloads it; the tool answer says
+"It isn't on Plex yet, so Seerr will request it." (Tom's ruling: say it downloads). The agent used the
+new tools without a prompt change but paraphrased their answers down to a few words (it dropped "It's
+on Plex."), so the bullet makes it say back the title and year and always say when a title will download.
+
+`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`) and every
+earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
+`ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
+to make it: it replaces the earlier block in place through the same reconfigure flow as `attach`,
+backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
+backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
+back in place, API kept. The backup lives in the HA pod's `/tmp` until the pod restarts; after that the
+way back is the backup's `prompt` pasted into the agent's instructions in HA's UI. HA's `mcp` integration reads a server's tool list only
+when the entry is set up, so new or removed tools reach the agent only after
+`homeassistant.reload_config_entry` on the mcp entry (or an HA restart).
 
 ```text
 WATCH HISTORY
@@ -170,6 +188,7 @@ WATCH HISTORY
 - "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
 - When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
 - "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
+- His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download.
 ```
 
 ## Why the shared block says what it says
