@@ -172,14 +172,17 @@ download it. Two things learned putting them live:
   `ACTION=update ENTRY_ID=01M381GTWER1BG9K4MWG3GDEGR` (`DRY_RUN=1` first): it swaps a known earlier block
   in place and leaves `llm_hass_api` alone. It prints its own undo, the same action with
   `PROMPT_FILE=<its backup>`, which puts the old block back while the pod's `/tmp` lasts.
-- **Nine tools still cost nothing measurable.** Same bench on 2026-09-26, text as `conversation.chatgpt_5`,
-  3 reps, `conv` mode: no median rose (table below).
+- **Nine tools still cost nothing measurable.** Same bench on 2026-09-26 at 10:40Z, after the entry reload and
+  with the new prompt line live (the agent answered "Is FROM on my watchlist?" from `watchlist` just before),
+  text as `conversation.chatgpt_5`, 3 reps, `conv` mode: every median is below both 2026-09-23 medians (table
+  below). An earlier run that day (08:36Z) was published here as the nine-tool column, but it ran before the
+  reload, so the agent still had seven tools; it is now its own column.
 
-| Question (no watch tool) | Assist only (2026-09-23), median | Seven tools (2026-09-23), median | Nine tools (2026-09-26), median |
-|---|---|---|---|
-| Is it warm in the movie room? | 4.62 s | 3.12 s | 2.74 s |
-| Give me a one line movie trivia fact. | 1.87 s | 1.57 s | 1.35 s |
-| Are the movie room lights on? | 2.98 s | 2.96 s | 2.67 s |
+| Question (no watch tool) | Assist only (2026-09-23), median | Seven tools (2026-09-23), median | Seven tools (2026-09-26 08:36Z, before the reload), median | Nine tools (2026-09-26 10:40Z), median |
+|---|---|---|---|---|
+| Is it warm in the movie room? | 4.62 s | 3.12 s | 2.74 s | 2.67 s |
+| Give me a one line movie trivia fact. | 1.87 s | 1.57 s | 1.35 s | 1.36 s |
+| Are the movie room lights on? | 2.98 s | 2.96 s | 2.67 s | 2.89 s |
 
 The watchlist questions, asked after the reload: "Add The Matrix to my watchlist." 4.45 s
 (`set_watchlist` called, the add written), "Undo that." 2.60 s, "What is on my watchlist?" 2.61 s (the
