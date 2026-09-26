@@ -231,6 +231,15 @@ bake-off still owed, and the tool tracks — is in `.agents/plans/local-assist-s
 before touching `ai/` in haynes-ops or the local agent `conversation.muse_glimmer_30b` (the Rumpus
 Room's OpenAI agent is also a "Jarvis" persona — the local one is the one on the box now).
 
+## Phone (added 2026-09-26)
+
+A roomless pipeline for Tom's iPhone: **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`, which runs Parakeet
+into `conversation.phone_assist` and speaks with Kokoro `af_heart`. The agent is OpenAI, like the rooms,
+with the house tools and Watch history and **no persona** (Tom: "something equivalent to Siri"). Tom's app
+is the non-admin user `thaynes`. He starts it from the *Assist* button on Tom Mobile, and that first open
+also fills the app's pipeline list for the widget and Action Button. How that works, and the other ways in:
+`agent-docs/tom-mobile-dashboard.md`. Prompt: `agent-docs/voice-agent-prompts.md`.
+
 ## Still open after testing
 
 - Phase 3 remainder: TVs, the AVR and the Frame (duplicate registrations), Sonos players are

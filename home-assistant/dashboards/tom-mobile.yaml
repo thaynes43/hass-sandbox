@@ -14,6 +14,23 @@ views:
   - type: grid
     cards:
     - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Assist
+      icon: mdi:microphone
+      tap_action:
+        action: assist
+        pipeline_id: 01m3fwd8phf6qxyaax31evjt7a
+        start_listening: true
+      button_action:
+        tap_action:
+          action: assist
+          pipeline_id: 01m3fwd8phf6qxyaax31evjt7a
+          start_listening: true
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
       card_type: separator
       name: Outdoors
       icon: mdi:pine-tree

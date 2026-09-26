@@ -162,7 +162,8 @@ HOW YOU ACT
 The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
 (`llm_hass_api: ["assist", "mcp-<Watch history entry id>"]`; haynesnetwork ADR-087 / DESIGN-049). The block
 below is appended to its prompt after the shared block. No other room agent gets the API: every attached
-tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools).
+tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools). The roomless
+Phone Assist agent (below) carries the same block.
 
 The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
 `watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
@@ -171,10 +172,10 @@ auto-requests his watchlist, so adding a title that is not on Plex downloads it;
 new tools without a prompt change but paraphrased their answers down to a few words (it dropped "It's
 on Plex."), so the bullet makes it say back the title and year and always say when a title will download.
 
-`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`) and every
+`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`; Phone Assist carries it too) and every
 earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
 `ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
-to make it: it replaces the earlier block in place through the same reconfigure flow as `attach`,
+to make it, then both again with `AGENT=phone` for Phone Assist: it replaces the earlier block in place through the same reconfigure flow as `attach`,
 backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
 backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
 back in place, API kept. The backup lives in the HA pod's `/tmp` until the pod restarts; after that the
@@ -247,6 +248,56 @@ HOW YOU ACT
 Why the changed lines: with the default HA prompt the model answered with em-dashes, curly quotes and bullet lists (all spoken as noise or dropped by TTS), so "dashes, quotation marks" joined the banned list; without a search tool the web-search line made it claim to look things up; and a 0.2 s capture ("Charlie.") got a greeting instead of "I did not catch that".
 
 Tested as the Rumpus satellite in text on 2026-09-22 (13/13 correct: local intents instant; lamp, thirty percent, the room's Dim/Bright/Color Toggle scripts, GetLiveContext questions, Play Music/turn it up/next/stop, front door, upstairs temperature). LLM tool calls took 8–34 s only because the 3090 is thermally throttled (haynes-ops#3052).
+
+## Phone Assist (added 2026-09-26; no room, for Tom's iPhone)
+
+`conversation.phone_assist` · subentry `01M3FWW3MMFE079D9A7F2NF66F` · entry `01JBM33KVTM1FHF795G01R2C4X` · pipeline **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`: Parakeet STT → this agent → Kokoro `af_heart` (en-US). `prefer_local_intents` is true. The agent has the same OpenAI settings as the room agents, plus `store_responses: false` and `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]` (the house tools and Watch history).
+
+No satellite uses it. Tom reaches it from the iPhone app: the *Assist* button on Tom Mobile, and the widget, Control Center and Action Button pickers (see `agent-docs/tom-mobile-dashboard.md`).
+
+Tom's rulings on 2026-09-26:
+- the brain is OpenAI, like the rooms, rather than the local model or the rooms' model plus the cigar journal;
+- **no persona**: "something equivalent to Siri but a Home Assistant Assist agent". A Jarvis-persona first cut (`conversation.phone_jarvis`, Kokoro `bm_george`) lived for half an hour and was deleted, and the pipeline kept its id.
+
+So this prompt has no persona. It is the rooms' shared block with the character lines taken out and three changes:
+- it lives on a phone that also shows the text;
+- there is no "in here", so a request that needs a room and names none gets a short "which room?" (the one allowed question);
+- it answers everyday questions as well as house ones.
+
+It keeps the local Jarvis fragment rule.
+
+Live prompt, up to its last section:
+
+```text
+You are Assist, the voice assistant on Tom's phone. Work like Siri: neutral, friendly and to the point, with no character, catchphrases or jokes. You control the family's home in Westford, Massachusetts, and you answer everyday questions.
+
+HOW YOU ARE HEARD
+Everything you write is read aloud by the phone and shown on its screen as it is spoken.
+- Write only what should be spoken aloud: no emojis, symbols, lists, markdown or web addresses. Say numbers and units the way a person would ("seventy two degrees", "twenty percent").
+- Keep it short: one brief sentence after doing something, two or three at most when answering a question. No greetings, filler or small talk ("sure thing", "happy to help", "would you like me to").
+- The phone keeps listening for a reply whenever your response ends with a question mark. So end with a question ONLY when you truly cannot act without the answer. Never end with an offer or a rhetorical question ("anything else?", "shall I?", "want me to turn them on?").
+- If all you received is a fragment, a stray word or a name, say in a few words that you did not catch that.
+
+HOW YOU ACT
+- You operate this home through your tools. For anything about the house, use the tool first and speak after. Never say something happened unless the tool call succeeded, and never answer a question about the state of the house from memory: look it up. Light brightness comes back on a scale of 0 to 255; convert it to a percentage before you say it (51 is twenty percent).
+- You are not in any room, and Tom may be at home or away. There is no "in here": act on the room, floor or device he names. When a request needs a room and he named none ("turn off the lights", "play some jazz"), ask which room in a few words instead of guessing. Everything else that is ambiguous: make the sensible assumption, act, and say what you did.
+- Prefer the purpose-built tools: Window Shades for every shade or blind request (a plain "open" is the everyday position; "all the way" is fully open); a room's Bright, Dim and scene tools for lighting looks; Play Music for music, always with the room or speaker it should play on.
+- Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
+- Answer everyday questions too. For news, scores, showtimes, facts or anything you are not sure of, search the web and answer in a sentence or two; a quick calculation, conversion or definition you can answer directly.
+```
+
+After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` once without it and once with it.
+
+Tested on 2026-09-26 as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device):
+
+| Request | Reply | Time |
+|---|---|---|
+| Is the front door locked? | "Yes, the front door is locked." | 2.6 s |
+| Upstairs temperature | "Upstairs is seventy degrees." | 2.6 s |
+| Turn off the lights | "Which room?" | 1.3 s |
+| Unfinished shows | via `watch-history__unfinished` | 3.0 s |
+| How many ounces in a liter? | answered directly | 1.6 s |
+| Last night's Red Sox game | via web search | 6.1 s |
 
 ## Kitchen — additions on 2026-09-22
 

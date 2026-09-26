@@ -1,5 +1,8 @@
 """Attach haynesnetwork's "Watch history" MCP API to the Movie Room agent, or roll it back.
 
+AGENT=phone (on any action) works on the Phone Assist agent instead, which carries the same block.
+A PROMPT_FILE whose name marks it as a backup of any other subentry is refused.
+
 Runs INSIDE the Home Assistant pod via run.sh (the HA token arrives on stdin as HA_TOKEN and is
 never printed). One ACTION per run:
 
@@ -90,15 +93,24 @@ DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0")  # ACTION=update only
 # change only the prompt. Without it that state refuses, because a mistyped ENTRY_ID looks the same.
 BLOCK_ONLY = os.environ.get("BLOCK_ONLY", "") not in ("", "0")
 
-OPENAI_ENTRY = "01JK456T3JV6CPBG2ZQ2FS10GE"
-SUBENTRY = "01JZ8DWMCRND9599AR8EFJVN0A"  # "Movie Room ChatGPT", type conversation
+# The agents that carry WATCH_BLOCK: (OpenAI config entry, conversation subentry, label).
+AGENTS = {
+    "movie": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCRND9599AR8EFJVN0A", "Movie Room"),  # "Movie Room ChatGPT"
+    "phone": ("01JBM33KVTM1FHF795G01R2C4X", "01M3FWW3MMFE079D9A7F2NF66F", "Phone Assist"),  # "Phone Assist"
+}
+AGENT = os.environ.get("AGENT", "movie")
+if AGENT not in AGENTS:
+    raise SystemExit(f"AGENT={AGENT!r} is not one of {', '.join(AGENTS)}")
+OPENAI_ENTRY, SUBENTRY, AGENT_LABEL = AGENTS[AGENT]
 SUBFLOW = "/api/config/config_entries/subentries/flow"
 FLOW = "/api/config/config_entries/flow"
 EXPECTED_TITLE = "Watch history"
 
 # Byte-identical copy of the fenced block under "Movie Room — watch history" in
-# agent-docs/voice-agent-prompts.md. Change both together, and move the text it replaces, verbatim,
-# into PREVIOUS_WATCH_BLOCKS so ACTION=update recognises the copy that is live in HA.
+# agent-docs/voice-agent-prompts.md (the Phone Assist section points at that copy rather than
+# repeating it). Change both together, and move the text it replaces, verbatim, into
+# PREVIOUS_WATCH_BLOCKS so ACTION=update recognises the copy that is live in HA; then run the update
+# once per agent in AGENTS.
 WATCH_BLOCK = """WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
 - "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
@@ -244,7 +256,7 @@ async def status(s: aiohttp.ClientSession) -> None:
         print("   (none)")
     for e in mcps:
         eid = e["entry_id"]
-        tag = " | ATTACHED to the Movie Room agent" if f"mcp-{eid}" in apis else ""
+        tag = f" | ATTACHED to the {AGENT_LABEL} agent" if f"mcp-{eid}" in apis else ""
         print(f"   {eid} | {e['title']} | url={shown_url(e['data'].get('url'))} | state={states.get(eid, '?')} | llm api mcp-{eid}{tag}")
     print(f"== {OPENAI_ENTRY} (state={openai_state}) subentry {SUBENTRY} ({sub['subentry_type']}) {sub['title']!r}")
     print("   llm_hass_api:", json.dumps(apis))
@@ -314,6 +326,12 @@ def backup(data: dict, undo: str) -> None:
 
 
 def load_backup_prompt(path: str) -> str:
+    # Backups name their subentry (see backup()). A detach restores the WHOLE prompt from the file,
+    # so a backup of any other subentry (another agent, or one since deleted) would silently swap in
+    # its prompt. A hand-made file with no such name is still accepted.
+    named = re.search(r"watch-history-backup-([0-9A-Z]{26})-", os.path.basename(path))
+    if named and named.group(1) != SUBENTRY:
+        raise Refused(f"{path} is a backup of subentry {named.group(1)}; AGENT={AGENT} works on {SUBENTRY}")
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -461,7 +479,8 @@ def block_version(text: str) -> str:
 
 
 def run_line(action: str, extra: str = "") -> str:
-    return f'scripts/voice-bench/run.sh attach_watch_history.py "ACTION={action} ENTRY_ID={ENTRY_ID}{extra}"'
+    agent = "" if AGENT == "movie" else f" AGENT={AGENT}"
+    return f'scripts/voice-bench/run.sh attach_watch_history.py "ACTION={action} ENTRY_ID={ENTRY_ID}{agent}{extra}"'
 
 
 def other_mcp_apis(api: list, api_id: str) -> list:
