@@ -309,7 +309,7 @@ Tested 2026-09-26 as text (`bench.py MODE=conv AGENT=conversation.phone_assist_l
 
 The model spends up to ~250 decode tokens before some tool calls, which is what the throttled clocks turn into seconds.
 
-**MCP benchmark on the local model (2026-09-26, throttled 3090, read-only questions).** It used a TEST llama_cpp subentry (`01M35NNCSS971VX6BVAV52SJZG`, restored afterwards) through the pipeline **Bench Local (test agent)** `01m3g1wwhs6a5w0egwwp7wvvc6` (`prefer_local_intents: false`). That pipeline is left in place for re-benches; there is no pipeline delete tool.
+**MCP benchmark on the local model (2026-09-26, throttled 3090, read-only questions).** It used a TEST llama_cpp subentry (`01M35NNCSS971VX6BVAV52SJZG`, restored afterwards) through the pipeline **Bench Local (test agent)** `01m3g1wwhs6a5w0egwwp7wvvc6` (`prefer_local_intents: false`). That pipeline is left in place for re-benches (there is no pipeline delete tool). **When idle it points at the built-in `conversation.home_assistant`**, set on 2026-09-26. The TEST subentry carries cigar-journal's write tools on a full-scope token, and any pipeline is selectable on a satellite or in the phone's pickers, so the cigar-journal holder must stay on no pipeline. For a bench, point the pipeline at the TEST subentry, run text-only (`MODE=pipe`), then point it back.
 
 | | Assist only | + Watch history | + cigar-journal |
 |---|---|---|---|
