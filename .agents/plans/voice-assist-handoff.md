@@ -165,10 +165,9 @@ file after any re-import. (`pre_actions` is unused since the KEF volume logic wa
 "THIRDREALITY Voice & Music Assistant Dev Edition" (network name `3RSPK-<MAC>`). Tom: it is for
 the cloffice, but **which room it ends up in is decided after onboarding**, and so are its persona,
 agent and pipeline — do not create them first. It needs a **different wake word from the bedroom
-box** (they are in earshot). The Bedroom, Kitchen and Movie Room Voice PEs use "Okay Nabu", and the
-Rumpus Room box uses "Hey Jarvis" (since 2026-09-22; kept when it went back to OpenAI on 2026-09-26).
-The Rumpus Room is in the basement, so "Hey Jarvis" only collides if the new box ends up within earshot
-of it.
+box** (they are in earshot). All four Voice PEs use "Okay Nabu". The Rumpus Room box used "Hey Jarvis"
+from 2026-09-22 and went back to "Okay Nabu" on 2026-09-27: Tom was "having a hell of a time activating
+it", even at the most sensitive setting. That is worth knowing before choosing "Hey Jarvis" for the new box.
 
 What the research found (vendor repo `github.com/thirdreality/voice-music-assistant`; most vendor
 and forum sites are blocked by the pod's egress allowlist, so treat details as unverified until the
@@ -186,7 +185,7 @@ unit is on the network):
   TTS fetch, and HA sits on the IoT L2 at 192.168.50.249, so discovery works like the Voice PEs.
 - **Wake words shipped:** okay_nabu, hey_jarvis, hey_mycroft, hey_home_assistant, okay_computer,
   hey_luna, alexa (+ two novelty ones), two slots, plus a fixed "stop". Custom ones need a firmware
-  rebuild. Suggested to Tom: Hey Jarvis. Update to firmware ≥ 1.2.3 before judging the mic (quiet
+  rebuild. Suggested to Tom on 2026-09-19: Hey Jarvis. Weigh that against the Rumpus Room experience above: "Hey Jarvis" was hard to trigger on a Voice PE, so the box went back to "Okay Nabu" on 2026-09-27. Update to firmware ≥ 1.2.3 before judging the mic (quiet
   mic / garbled audio bugs before that; settings did not survive a power cycle before 1.2.2).
 - **Music:** its `media_player` has no `play_media`; music goes through Music Assistant's
   **Sendspin** provider, which is already enabled (MA 2.10.3; the four Voice PEs are Sendspin
@@ -228,7 +227,7 @@ it cuts off its surrounds and Sub.
 A fully local pipeline exists beside the OpenAI rooms: **Jarvis** (`01jb8sg4njw0mh3gnpqt4j9h6x`, called Regina for a few hours on 2026-09-22)
 = Parakeet STT on the A2000 → `conversation.muse_glimmer_30b` (llama-server on a 3090) → Kokoro TTS.
 The **Rumpus Room** Voice PE ran it from 2026-09-22 until 2026-09-26. The box is back on its OpenAI agent,
-now with Watch history, and keeps the wake word "Hey Jarvis". The phone takes the local model instead
+now with Watch history, and wakes on "Okay Nabu" again since 2026-09-27. The phone takes the local model instead
 (*Phone* below). The Kitchen pipeline uses the same local STT/TTS with its OpenAI agent. Everything
 about it — entry ids, GPU
 layout and the thermal throttling that currently makes multi-round answers take 10 s+, the model
