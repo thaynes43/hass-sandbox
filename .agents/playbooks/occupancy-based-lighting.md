@@ -196,11 +196,12 @@ mode: restart
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Hold restore sets wrong mode after clearing | Script uses `normal_mode: Occupancy (default)` (hardcoded) | Replace with `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode` |
-| Switch autonomously controls load despite automations | `input_select.<zone>_mmwave_normal_mode` not set to `Disabled` | Set to `Disabled` via HA UI so automations own the load |
+| Switch autonomously controls load despite automations | `input_select.<zone>_mmwave_normal_mode` not set to `Disabled`. The device select can read `Disabled` for weeks while the helper is wrong: the next `script.clear_hold_on_all_inovelli_presence_controlled_switches` run pushes the helper value onto the device (garage, 2026-09-21) | Set the **helper** to `Disabled` so automations own the load; the sync automation writes the device |
 | Lights turn off immediately despite hold | Hold guard only checked before delay, not after | Add second hold check after the `delay:` action |
 | Occupancy off delay not respected | Using `for:` on trigger instead of action `delay:` | Remove trigger `for:`, use action `delay:` reading from the helper |
 | Only control switch in hold registry | Extra sensors (non-control) added to hold/clear scripts | Only add the single control switch to hold/clear registries |
 | Lights turn off with someone standing there | mmWave detection area does not cover where people actually stand, and/or sensitivity below `High` | Measure with `mmwavetargetinforeport`, then re-tune — see *Reference: tuning the mmWave detection zone* |
+| Lights relight every few minutes in an empty room | A static reflector inside the detection box (a parked car) reads as one target that never moves, `dop` 0, and flaps occupancy | Measure with `mmwavetargetinforeport`, then mask that spot with an interference area — see *Interference (mask) areas* |
 
 ---
 
@@ -365,8 +366,11 @@ wrong on both axes, and a first "widened" guess of `width -150..300, depth 0..25
 wrong on both. Only the measurement settled it.
 
 A target with a **constant non-zero `dop` that never moves** is a machine, not a person (a
-compressor or a fan). If one sits inside your detection box and holds occupancy on, that is what
-interference areas are for.
+compressor or a fan). A target that never moves with **`dop` 0** is a static object. The garage side
+switch saw the parked Wagoneer as one target pinned within ±10 cm (`x 118..128, y 121..129`,
+2026-09-27). It flapped occupancy about 20 times an hour whenever the car was home and relit an
+empty garage all night. If either kind sits inside your detection box and holds occupancy on, that
+is what interference areas are for.
 
 **Turn reporting back off when you are done** — it is a ~1 Hz MQTT publish and HA state write per
 device, which is real recorder growth if left on.
@@ -378,6 +382,28 @@ never reported. They do not appear as HA entities at all — only in the z2m pay
 be silently masked with no sign of it in Home Assistant. Several switches carry a ~100 cm-deep mask
 band that came from the device's own interference auto-detect, not from hand tuning. When a zone
 misses people, check the mask as well as the detection box.
+
+To mask a measured phantom by hand, publish the z2m composite. It works like the detection area:
+it issues `setInterferenceArea` and then re-queries the device. Up to four areas are allowed
+(`area1`–`area4`). Put the box around the observed spread, with margin for where the object will
+sit next time (a car parks a little differently every day):
+
+```yaml
+action: mqtt.publish
+data:
+  topic: zigbee2mqtt/garage_interior_side_inovelli_presence/set
+  payload: >-
+    {"mmwave_interference_areas": {"area1": {"width_min": 60, "width_max": 200,
+     "depth_min": 80, "depth_max": 180, "height_min": -70, "height_max": 70}}}
+```
+
+Prefer this to the auto-detect (`mmwave_control_commands: {"controlID": "set_interference"}`).
+The auto-detect masks whatever static returns it sees at that moment; that is where the ~100 cm
+bands above came from. It can blank much more than the one phantom. To undo a mask, publish that area with width and depth
+min/max all `0`, which is how an unused area reads back. `clear_interference` also works, but it
+wipes every area on that switch. Leave `mmwavetargetinforeport` on while you verify: masked
+targets stop being reported. Then check that occupancy stays off for longer than the phantom's
+usual gap.
 
 ### Sensitivity
 
