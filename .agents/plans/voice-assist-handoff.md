@@ -166,8 +166,9 @@ file after any re-import. (`pre_actions` is unused since the KEF volume logic wa
 the cloffice, but **which room it ends up in is decided after onboarding**, and so are its persona,
 agent and pipeline — do not create them first. It needs a **different wake word from the bedroom
 box** (they are in earshot). The Bedroom, Kitchen and Movie Room Voice PEs use "Okay Nabu", and the
-Rumpus Room box uses "Hey Jarvis" (since 2026-09-22; kept when it went back to OpenAI on 2026-09-26),
-so "Hey Jarvis" is taken too.
+Rumpus Room box uses "Hey Jarvis" (since 2026-09-22; kept when it went back to OpenAI on 2026-09-26).
+The Rumpus Room is in the basement, so "Hey Jarvis" only collides if the new box ends up within earshot
+of it.
 
 What the research found (vendor repo `github.com/thirdreality/voice-music-assistant`; most vendor
 and forum sites are blocked by the pod's egress allowlist, so treat details as unverified until the
