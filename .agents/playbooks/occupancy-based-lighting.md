@@ -386,24 +386,37 @@ misses people, check the mask as well as the detection box.
 To mask a measured phantom by hand, publish the z2m composite. It works like the detection area:
 it issues `setInterferenceArea` and then re-queries the device. Up to four areas are allowed
 (`area1`–`area4`). Put the box around the observed spread, with margin for where the object will
-sit next time (a car parks a little differently every day):
+sit next time (a car parks a little differently every day). The values below are the garage side
+switch's mask (2026-09-27):
 
 ```yaml
 action: mqtt.publish
 data:
-  topic: zigbee2mqtt/garage_interior_side_inovelli_presence/set
+  # the z2m *friendly name*, as with the detection area above
+  topic: zigbee2mqtt/<switch_name>/set
   payload: >-
     {"mmwave_interference_areas": {"area1": {"width_min": 60, "width_max": 200,
      "depth_min": 80, "depth_max": 180, "height_min": -70, "height_max": 70}}}
 ```
 
-Prefer this to the auto-detect (`mmwave_control_commands: {"controlID": "set_interference"}`).
-The auto-detect masks whatever static returns it sees at that moment; that is where the ~100 cm
-bands above came from. It can blank much more than the one phantom. To undo a mask, publish that area with width and depth
-min/max all `0`, which is how an unused area reads back. `clear_interference` also works, but it
-wipes every area on that switch. Leave `mmwavetargetinforeport` on while you verify: masked
-targets stop being reported. Then check that occupancy stays off for longer than the phantom's
-usual gap.
+Prefer this to the auto-detect. The **Set Interference** button on each zone's advanced card
+(`script.inovelli_mmwave_control`, `command: set_interference`) runs the auto-detect. It masks
+whatever static returns the radar sees at that moment, so it can blank much more than the one
+phantom. **Clear Interference** on the same card sends `clear_interference`, which wipes all four
+areas, including a hand-set mask. After tapping it, re-publish the mask.
+
+Verify in two steps. First, check that the `/set` landed:
+`kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m | grep "topic 'zigbee2mqtt/<switch_name>'" | tail -1`
+must show `mmwave_interference_areas.area1` as the box you sent. No output is not a pass (see
+*Verifying*). The z2m converter also writes the sent values into its own state, so this line
+proves the command reached the right device, not that the radar applied it. Second, check that
+the radar applied it: leave `mmwavetargetinforeport` on, confirm the phantom's coordinates stop
+being reported, and confirm occupancy stays off longer than the phantom's usual gap. On the
+garage, that meant 29 quiet minutes against a pre-fix maximum gap of 10.9.
+
+To remove one mask, publish that area as an unused area reads back:
+`{"width_min": 0, "width_max": 0, "depth_min": 0, "depth_max": 0, "height_min": -600, "height_max": 600}`.
+This path has not been exercised live yet; confirm the read-back.
 
 ### Sensitivity
 
