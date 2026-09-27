@@ -22,7 +22,7 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 
 - The Assist prompt is **~15k tokens per turn** (115 exposed entities + ~30 tool schemas). llama-server's
   prefix cache reuses 98–99.9 % of it, so per-turn prompt cost is ~0.2–0.5 s; a changed system prompt costs
-  one full re-eval (~13 s at 1,100 tok/s) once. Slots are 32k so a longer chat or more tools fit.
+  one full re-eval (~13 s at 1,100 tok/s) once. Slots are 64k since haynes-ops#3113 (`--ctx-size 131072`, 2 slots) so a longer chat or more tools fit.
 - On a healthy card the model decodes ~38 tok/s; a two-round tool question (tool call → answer) is ~2.5 s.
   If answers drift to 10 s+, **sample the card's clocks before touching prompts**
   (`kubectl exec -n observability <nvidia-gpu-exporter pod on talosw01> -- nvidia-smi -i N
