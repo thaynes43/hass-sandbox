@@ -1,6 +1,7 @@
 """Attach haynesnetwork's "Watch history" MCP API to the Movie Room agent, or roll it back.
 
-AGENT=phone (on any action) works on the Phone Assist agent instead, which carries the same block.
+AGENT=phone or AGENT=rumpus (on any action) works on the Phone Assist or Rumpus Room agent instead;
+they carry the same block.
 A PROMPT_FILE whose name marks it as a backup of any other subentry is refused.
 
 Runs INSIDE the Home Assistant pod via run.sh (the HA token arrives on stdin as HA_TOKEN and is
@@ -97,6 +98,7 @@ BLOCK_ONLY = os.environ.get("BLOCK_ONLY", "") not in ("", "0")
 AGENTS = {
     "movie": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCRND9599AR8EFJVN0A", "Movie Room"),  # "Movie Room ChatGPT"
     "phone": ("01JBM33KVTM1FHF795G01R2C4X", "01M3FWW3MMFE079D9A7F2NF66F", "Phone Assist"),  # "Phone Assist"
+    "rumpus": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCR5ZFTVM61SG13HVFR", "Rumpus Room"),  # "Rumpus Room ChatGPT"
 }
 AGENT = os.environ.get("AGENT", "movie")
 if AGENT not in AGENTS:
