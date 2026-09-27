@@ -159,6 +159,8 @@ HOW YOU ACT
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
 
+**The live Rumpus prompt continues past this fence** (since 2026-09-26). After one blank line comes the WATCH HISTORY block below, byte for byte (`WATCH_BLOCK`), and `llm_hass_api` carries `mcp-01M381GTWER1BG9K4MWG3GDEGR`. A restore from this fence alone drops the block while the API stays. Instead, check with `attach_watch_history.py "ACTION=status AGENT=rumpus"` and re-apply with `ACTION=attach ENTRY_ID=01M381GTWER1BG9K4MWG3GDEGR AGENT=rumpus`, which appends the block and keeps the API.
+
 ### Movie Room — watch history (added 2026-09-23, watchlist line 2026-09-26)
 
 The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
