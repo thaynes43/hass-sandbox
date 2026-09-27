@@ -55,7 +55,7 @@ Each entry in `checks` has a `name`, a `type`, and optionally a `dependency` (a 
   - **ok** when an installed program for `service` holds an installed model (`asr`; detail: model name and round trip) or voices (`tts`; detail: program, voice count and round trip). Every installed program is searched, and a program, model or voice listed without an `installed` field counts as installed.
   - **critical** on a timeout, a refused or closed connection, a malformed reply, or nothing installed.
 - **agent**: the agent entity must exist and not be `unavailable` (its integration is loaded).
-  - With a `reachability_url`, an anonymous GET must then answer below HTTP 500. In production that is the local llama-server's `/health`, which answers 503 while a model loads. For a cloud LLM, a 401 on its API proves it is up without the checker holding a key.
+  - With a `reachability_url`, an anonymous GET must then answer below HTTP 500. In production that is the local llama-server's `/health`. It answers 503 while a model loads, so a loading model reads **critical**, and a load that outlasts the controller's 300 s for-gate pages. A restarting pod is critical too (connection refused). For a cloud LLM, a 401 on its API proves it is up without the checker holding a key.
   - **critical** otherwise.
   - The check sees neither a slow model (a thermally throttled GPU still answers `/health`) nor, for a cloud LLM, an exhausted quota.
 
@@ -69,4 +69,4 @@ None in production: the local LLM needs no internet. A check that reaches a clou
 
 ## Manual Setup
 
-None. No HA entities are provisioned. The AppDaemon pod reaches the speech servers by their cluster service names: a `describe` from the pod to both servers, and a GET to the OpenAI API (401), all succeeded on 2026-09-26.
+None. No HA entities are provisioned. The AppDaemon pod reaches the servers by their cluster service names. On 2026-09-26, from the pod, a `describe` to both speech servers succeeded and llama-server `/health` answered 200 `{"status":"ok"}` in 13 ms.

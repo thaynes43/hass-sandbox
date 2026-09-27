@@ -459,16 +459,27 @@ health_checks/
 │   │   ├── device_group_checker.py
 │   │   ├── repairable_device_group_checker.py
 │   │   └── README.md
+│   ├── battery_checker/
+│   │   ├── __init__.py
+│   │   ├── battery_checker.py
+│   │   ├── ups_checker.py
+│   │   └── README.md
+│   ├── cloud_checker/
+│   │   ├── __init__.py
+│   │   ├── cloud_checker.py
+│   │   └── README.md
 │   ├── protect_health_checker/
 │   │   ├── __init__.py
-│   │   └── protect_health_checker.py
+│   │   ├── protect_health_checker.py
+│   │   └── README.md
 │   ├── shade_gateway_checker/
 │   │   ├── __init__.py
 │   │   ├── shade_gateway_checker.py
 │   │   └── README.md
 │   ├── imagegen_health_checker/
 │   │   ├── __init__.py
-│   │   └── imagegen_health_checker.py
+│   │   ├── imagegen_health_checker.py
+│   │   └── README.md
 │   └── voice_health_checker/
 │       ├── __init__.py
 │       ├── voice_health_checker.py

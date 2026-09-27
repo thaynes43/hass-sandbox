@@ -984,7 +984,8 @@ voice_health_checker:
       host: kokoro.ai.svc.cluster.local
       port: 10210
     # Phone Assist runs on the local LLM since 2026-09-26: the agent must be loaded and
-    # llama-server healthy (/health answers 503 while a model loads).
+    # llama-server /health must answer 200. A loading model answers 503 and reads critical,
+    # so a load longer than the 300 s for-gate pages.
     - name: Assistant
       type: agent
       entity_id: conversation.phone_assist_local
