@@ -90,13 +90,14 @@ turn after a restart pays ~30 s cold), but the cache is per slot and there are t
   - the **Kitchen** OpenAI agent had it for one evening (Tom's tool tests) and **lost it again the same
     night**: the 35 schemas cost ~2 s per turn on OpenAI (isolation bench, bedroom as control), which
     Tom ruled unaffordable for a room agent — `conversation.chatgpt_2` is Assist-only again;
-  - a second `llama_cpp` subentry (also titled "Muse Glimmer 30b") on **no pipeline**, for text tests;
-  - **not** the main Jarvis agent `01M34TQMBVMNR9CJZX892KD8VJ` (Assist only — keeps the room turn
-    28k tokens lighter). Net: **no satellite-backed agent holds the cigar-journal API**; only the
+  - the TEST `llama_cpp` subentry `01M35NNCSS971VX6BVAV52SJZG` (`conversation.muse_glimmer_30b_2`, titled "Muse Glimmer 30b") on **no pipeline**, for text tests (the bench pipeline idles on the built-in agent; see *MCP tools on the local model*);
+  - **not** the main Jarvis agent `01M34TQMBVMNR9CJZX892KD8VJ` (no cigar-journal, which keeps its turn
+    28k tokens lighter; it does carry Watch history, see the HA agent row above), and not the phone
+    agent `01M3FZMH71M9JQ8GJ5CMG5VTVN` (house tools only). Net: **no satellite-backed agent holds the cigar-journal API**; only the
     pipeline-less test subentry does.
 - **Voice safety, as it stands:** the journal server exposes write tools (`save_smoke`,
   `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. Today the
-  only holder is the pipeline-less test subentry, so no spoken request can reach them. The guard
+  only holder is the pipeline-less TEST subentry `01M35NNCSS971VX6BVAV52SJZG`, so no spoken request can reach them. The guard
   used while the kitchen had them was a **prompt bullet** ("ask for at most five results … by voice
   the journal is read-only") — a prompt rule, not an enforced scope; it came out of the live kitchen
   prompt together with the API, and is parked in *Kitchen — additions* in
