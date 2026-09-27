@@ -196,11 +196,12 @@ mode: restart
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | Hold restore sets wrong mode after clearing | Script uses `normal_mode: Occupancy (default)` (hardcoded) | Replace with `normal_mode_input_select: input_select.<zone>_mmwave_normal_mode` |
-| Switch autonomously controls load despite automations | `input_select.<zone>_mmwave_normal_mode` not set to `Disabled` | Set to `Disabled` via HA UI so automations own the load |
+| Switch autonomously controls load despite automations | `input_select.<zone>_mmwave_normal_mode` not set to `Disabled`. The device select can read `Disabled` for weeks while the helper is wrong: the next `script.clear_hold_on_all_inovelli_presence_controlled_switches` run pushes the helper value onto the device (garage, 2026-09-21) | Set the **helper** to `Disabled` so automations own the load; the sync automation writes the device |
 | Lights turn off immediately despite hold | Hold guard only checked before delay, not after | Add second hold check after the `delay:` action |
 | Occupancy off delay not respected | Using `for:` on trigger instead of action `delay:` | Remove trigger `for:`, use action `delay:` reading from the helper |
 | Only control switch in hold registry | Extra sensors (non-control) added to hold/clear scripts | Only add the single control switch to hold/clear registries |
 | Lights turn off with someone standing there | mmWave detection area does not cover where people actually stand, and/or sensitivity below `High` | Measure with `mmwavetargetinforeport`, then re-tune — see *Reference: tuning the mmWave detection zone* |
+| Lights relight every few minutes in an empty room | A static reflector inside the detection box (a parked car) reads as one target that never moves, `dop` 0, and flaps occupancy | Measure with `mmwavetargetinforeport`, then mask that spot with an interference area — see *Interference (mask) areas* |
 
 ---
 
@@ -307,7 +308,10 @@ Set the number entities to the same values too, so the HA-facing config matches 
 ### Verifying
 
 `mmwave_detection_areas.area1` in the device's z2m payload is the **device's own answer** to a
-`query_areas`, so it is the source of truth. Confirm the round trip:
+`query_areas`, so it is the source of truth. One caveat: the z2m converter
+(`createMmWaveCompositeAreaConverter`) first writes the values you sent into z2m state. It then
+asks the device to re-query, and the device's answer arrives in a later publish. Read the line a
+few seconds after the `/set`, not the first one. Confirm the round trip:
 
 ```bash
 kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m \
@@ -365,8 +369,11 @@ wrong on both axes, and a first "widened" guess of `width -150..300, depth 0..25
 wrong on both. Only the measurement settled it.
 
 A target with a **constant non-zero `dop` that never moves** is a machine, not a person (a
-compressor or a fan). If one sits inside your detection box and holds occupancy on, that is what
-interference areas are for.
+compressor or a fan). A target that never moves with **`dop` 0** is a static object. The garage side
+switch saw the parked Wagoneer as one target pinned within ±10 cm (`x 118..128, y 121..129`,
+2026-09-27). It flapped occupancy about 20 times an hour whenever the car was home and relit an
+empty garage all night. If either kind sits inside your detection box and holds occupancy on, that
+is what interference areas are for.
 
 **Turn reporting back off when you are done** — it is a ~1 Hz MQTT publish and HA state write per
 device, which is real recorder growth if left on.
@@ -378,6 +385,49 @@ never reported. They do not appear as HA entities at all — only in the z2m pay
 be silently masked with no sign of it in Home Assistant. Several switches carry a ~100 cm-deep mask
 band that came from the device's own interference auto-detect, not from hand tuning. When a zone
 misses people, check the mask as well as the detection box.
+
+To mask a measured phantom by hand, publish the z2m composite. It works like the detection area:
+it issues `setInterferenceArea` and then re-queries the device. Up to four areas are allowed
+(`area1`–`area4`). Put the box around the observed spread, with margin for where the object will
+sit next time (a car parks a little differently every day). The values below are the garage side
+switch's mask (2026-09-27):
+
+```yaml
+action: mqtt.publish
+data:
+  # the z2m *friendly name*, as with the detection area above
+  topic: zigbee2mqtt/<switch_name>/set
+  payload: >-
+    {"mmwave_interference_areas": {"area1": {"width_min": 60, "width_max": 200,
+     "depth_min": 80, "depth_max": 180, "height_min": -70, "height_max": 70}}}
+```
+
+Prefer this to the auto-detect. The **Set Interference** button on each zone's advanced card
+(`script.inovelli_mmwave_control`, `command: set_interference`) runs the auto-detect. It masks
+whatever static returns the radar sees at that moment, so it can blank much more than the one
+phantom. **Clear Interference** on the same card sends `clear_interference`, which wipes all four
+areas, including a hand-set mask. After tapping it, re-publish the mask.
+
+Verify in two steps. First, read the device's answer as in *Verifying*, including its echo
+caveat:
+`kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m | grep "topic 'zigbee2mqtt/<switch_name>'" | tail -1`
+must show `mmwave_interference_areas.area1` as the box you sent. No output is not a pass. Second,
+check the behaviour: leave `mmwavetargetinforeport` on, confirm the phantom's coordinates stop
+being reported, and confirm occupancy stays off longer than the phantom's usual gap. On the
+garage, that meant 29 quiet minutes against a pre-fix maximum gap of 10.9.
+
+To remove one mask, publish that area with the values an unused area reads back as. Width and
+depth are `0`; height is `-600..600`, which is the device's default and not a typo. This path has
+not been exercised live yet, so confirm the read-back:
+
+```yaml
+action: mqtt.publish
+data:
+  topic: zigbee2mqtt/<switch_name>/set
+  payload: >-
+    {"mmwave_interference_areas": {"area1": {"width_min": 0, "width_max": 0,
+     "depth_min": 0, "depth_max": 0, "height_min": -600, "height_max": 600}}}
+```
 
 ### Sensitivity
 
