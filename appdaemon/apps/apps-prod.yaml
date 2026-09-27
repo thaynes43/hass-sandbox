@@ -962,6 +962,36 @@ cloud_checker:
     - url: https://captive.apple.com
       name: Apple
 
+voice_health_checker:
+  module: health_checks.checker_apps.voice_health_checker.voice_health_checker
+  class: VoiceHealthChecker
+  disable: true
+  checker_id: voice
+  checker_name: Voice
+  check_interval_s: 120
+  check_timeout_s: 5
+  # The Assist stack behind Phone Assist (its local STT/TTS also serve the Kitchen box). HA's
+  # stt/tts/conversation entities stay "available" while these servers are down, so probe them.
+  checks:
+    - name: Speech to Text
+      type: wyoming
+      service: asr
+      host: whisper.ai.svc.cluster.local
+      port: 10300
+    - name: Text to Speech
+      type: wyoming
+      service: tts
+      host: kokoro.ai.svc.cluster.local
+      port: 10210
+    # Phone Assist runs on the local LLM since 2026-09-26: the agent must be loaded and
+    # llama-server /health must answer 200. A loading model answers 503 and reads critical,
+    # so a load longer than the 300 s for-gate pages.
+    - name: Assistant
+      type: agent
+      entity_id: conversation.phone_assist_local
+      reachability_url: http://llama-server.ai.svc.cluster.local:8080/health
+      reachability_name: Local LLM
+
 mqtt_broker_checker:
   module: health_checks.checker_apps.mqtt_broker_checker.mqtt_broker_checker
   class: MqttBrokerChecker

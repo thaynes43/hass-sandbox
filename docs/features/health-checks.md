@@ -29,6 +29,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
 | Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
+| Voice assistant | Speech-to-text and text-to-speech servers (Wyoming handshake) and the assistant's language model — what the phone's Assist card shows | `VoiceHealthChecker` |
 | Batteries | Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with an opt-in guard that tells a real low battery from a gateway-disconnect 0% | `BatteryChecker` |
 | Motorized shades | PowerView G3 gateway RF-disconnect detection, with PoE port power-cycle repair | `ShadeGatewayChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
@@ -303,6 +304,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Cielo Home | `DeviceGroupChecker` | AC controller status + IP per room | No |
 | UniFi Protect | `ProtectHealthChecker` | Sensor discovery + availability fast path + camera-event freshness in active hours + entry-sensor group | Yes — config entry reload |
 | Image Gen | `ImageGenHealthChecker` | ComfyUI API reachability + queue progress | No — page only |
+| Voice | `VoiceHealthChecker` | Wyoming `describe` handshake to the speech-to-text and text-to-speech servers; the phone's conversation agent loaded and its local LLM server healthy | No — page only |
 | Shade Batteries | `BatteryChecker` | PowerView shade battery levels; downgrades implausible drops to warning (disconnect-aware) so a gateway blip isn't a low-battery page | No |
 | Shade Gateway | `ShadeGatewayChecker` | Gateway RF-disconnect detection across all PowerView shades (implausible 0% flaps), gateway-wide episode tracking | Yes — PoE port 32 power-cycle |
 
