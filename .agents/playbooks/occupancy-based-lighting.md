@@ -308,7 +308,10 @@ Set the number entities to the same values too, so the HA-facing config matches 
 ### Verifying
 
 `mmwave_detection_areas.area1` in the device's z2m payload is the **device's own answer** to a
-`query_areas`, so it is the source of truth. Confirm the round trip:
+`query_areas`, so it is the source of truth. One caveat: the z2m converter
+(`createMmWaveCompositeAreaConverter`) first writes the values you sent into z2m state. It then
+asks the device to re-query, and the device's answer arrives in a later publish. Read the line a
+few seconds after the `/set`, not the first one. Confirm the round trip:
 
 ```bash
 kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m \
@@ -405,18 +408,26 @@ whatever static returns the radar sees at that moment, so it can blank much more
 phantom. **Clear Interference** on the same card sends `clear_interference`, which wipes all four
 areas, including a hand-set mask. After tapping it, re-publish the mask.
 
-Verify in two steps. First, check that the `/set` landed:
+Verify in two steps. First, read the device's answer as in *Verifying*, including its echo
+caveat:
 `kubectl logs -n home-automation deploy/zigbee2mqtt --since=2m | grep "topic 'zigbee2mqtt/<switch_name>'" | tail -1`
-must show `mmwave_interference_areas.area1` as the box you sent. No output is not a pass (see
-*Verifying*). The z2m converter also writes the sent values into its own state, so this line
-proves the command reached the right device, not that the radar applied it. Second, check that
-the radar applied it: leave `mmwavetargetinforeport` on, confirm the phantom's coordinates stop
+must show `mmwave_interference_areas.area1` as the box you sent. No output is not a pass. Second,
+check the behaviour: leave `mmwavetargetinforeport` on, confirm the phantom's coordinates stop
 being reported, and confirm occupancy stays off longer than the phantom's usual gap. On the
 garage, that meant 29 quiet minutes against a pre-fix maximum gap of 10.9.
 
-To remove one mask, publish that area as an unused area reads back:
-`{"width_min": 0, "width_max": 0, "depth_min": 0, "depth_max": 0, "height_min": -600, "height_max": 600}`.
-This path has not been exercised live yet; confirm the read-back.
+To remove one mask, publish that area with the values an unused area reads back as. Width and
+depth are `0`; height is `-600..600`, which is the device's default and not a typo. This path has
+not been exercised live yet, so confirm the read-back:
+
+```yaml
+action: mqtt.publish
+data:
+  topic: zigbee2mqtt/<switch_name>/set
+  payload: >-
+    {"mmwave_interference_areas": {"area1": {"width_min": 0, "width_max": 0,
+     "depth_min": 0, "depth_max": 0, "height_min": -600, "height_max": 600}}}
+```
 
 ### Sensitivity
 
