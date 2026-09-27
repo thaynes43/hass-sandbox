@@ -244,7 +244,7 @@ A roomless pipeline for Tom's iPhone: **Phone Assist** `01m3fwd8phf6qxyaax31evjt
 ## Still open after testing
 
 - Phase 3 remainder: TVs, the AVR and the Frame (duplicate registrations), Sonos players are
-  Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources (research).
+  Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources: done for the OpenAI agents (Watch history on the Movie Room and Rumpus Room). On the local model it was benchmarked 2026-09-26 and ruled "Neither for now" (`.agents/plans/local-assist-stack.md` *MCP tools on the local model*).
 - Parked with cold-start context: hass-sandbox #144 (live-HA defects the floor maps found, older
   ESPHome devices), #149 (human-facing voice page for the docs site), haynes-ops #2969.
   haynes-ops#2996 (Spotify instances failing to load) is **closed**: Tom rebuilt them on
