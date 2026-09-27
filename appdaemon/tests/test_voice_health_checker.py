@@ -368,6 +368,8 @@ class TestConfig:
         {"name": "X", "type": "ping"},                                          # unknown type
         {"name": "X", "type": "wyoming", "service": "wake", "host": "h", "port": 1},
         {"name": "X", "type": "wyoming", "service": "asr", "port": 1},         # no host
+        {"name": "X", "type": "wyoming", "service": "asr", "host": "h", "port": "10300a"},
+        {"name": "X", "type": "wyoming", "service": "asr", "host": "h", "port": 70000},
         {"name": "X", "type": "agent"},                                         # no entity_id
     ])
     def test_malformed_entry_is_skipped(self, bad):
@@ -386,6 +388,14 @@ class TestDependencyValidation:
         app._register()
         assert "dependencies" not in _fired(app, "register_checker")
         assert any("Dropping dependency" in str(c.args[0]) for c in app.log.call_args_list)
+
+
+class TestPortCoercion:
+    def test_string_port_is_coerced_to_int(self):
+        checks = [dict(DEFAULT_ARGS["checks"][0], port="10300")]
+        app = _make_app({"checks": checks})
+        app.initialize()
+        assert app._checks[0]["port"] == 10300
 
 
 class TestRegistration:

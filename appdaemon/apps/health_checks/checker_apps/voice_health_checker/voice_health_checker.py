@@ -82,12 +82,17 @@ class VoiceHealthChecker(hass.Hass):
             )
             return None
         if kind == "wyoming":
-            if entry.get("service") not in ("asr", "tts") or not entry.get("host") or not entry.get("port"):
+            try:
+                port = int(entry.get("port"))
+            except (TypeError, ValueError):
+                port = 0
+            if entry.get("service") not in ("asr", "tts") or not entry.get("host") or not 0 < port < 65536:
                 self.log(
-                    f"Skipping wyoming check {name!r}: needs service asr|tts, host and port",
+                    f"Skipping wyoming check {name!r}: needs service asr|tts, host and a numeric port",
                     level="WARNING",
                 )
                 return None
+            entry = {**entry, "port": port}
         if kind == "agent" and not entry.get("entity_id"):
             self.log(f"Skipping agent check {name!r}: needs entity_id", level="WARNING")
             return None
@@ -192,7 +197,7 @@ class VoiceHealthChecker(hass.Hass):
         if check["type"] == "wyoming":
             return await wyoming_check(
                 check["host"],
-                int(check["port"]),
+                check["port"],
                 check["service"],
                 timeout_s=self._check_timeout_s,
             )
