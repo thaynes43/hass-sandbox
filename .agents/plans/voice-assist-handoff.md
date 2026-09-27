@@ -224,12 +224,14 @@ it cuts off its surrounds and Sub.
 
 A fully local pipeline exists beside the OpenAI rooms: **Jarvis** (`01jb8sg4njw0mh3gnpqt4j9h6x`, called Regina for a few hours on 2026-09-22)
 = Parakeet STT on the A2000 → `conversation.muse_glimmer_30b` (llama-server on a 3090) → Kokoro TTS.
-The **Rumpus Room** Voice PE runs it (wake word "Hey Jarvis"); the Kitchen pipeline uses the same local
-STT/TTS with its OpenAI agent. Everything about it — entry ids, GPU
+The **Rumpus Room** Voice PE ran it from 2026-09-22 until 2026-09-26. The box is back on its OpenAI agent,
+now with Watch history, and keeps the wake word "Hey Jarvis". The phone takes the local model instead
+(*Phone* below). The Kitchen pipeline uses the same local STT/TTS with its OpenAI agent. Everything
+about it — entry ids, GPU
 layout and the thermal throttling that currently makes multi-round answers take 10 s+, the model
 bake-off still owed, and the tool tracks — is in `.agents/plans/local-assist-stack.md`. Read that
 before touching `ai/` in haynes-ops or the local agent `conversation.muse_glimmer_30b` (the Rumpus
-Room's OpenAI agent is also a "Jarvis" persona — the local one is the one on the box now).
+Room's OpenAI agent is also a "Jarvis" persona, and it is the one on the box again).
 
 ## Phone (added 2026-09-26)
 

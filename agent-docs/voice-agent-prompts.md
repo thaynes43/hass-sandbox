@@ -11,9 +11,10 @@ their values. The prompt is a Jinja template in HA: keep curly-brace pairs out o
 All four OpenAI agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
 `service_tier: priority`, web search on. Bedroom and Movie Room pipelines: HA Cloud STT (`en-US`),
 HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipeline uses local STT
-(`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent, and the
-**Rumpus Room** satellite runs the local **Jarvis** pipeline (see the Jarvis section below) — its
-OpenAI agent below is idle but kept. All pipelines `prefer_local_intents: true`.
+(`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent. The
+**Rumpus Room** satellite ran the local **Jarvis** pipeline from 2026-09-22 and is back on its OpenAI
+agent since 2026-09-26 (Tom: the phone takes the local model instead, for cost). All pipelines
+`prefer_local_intents: true`.
 
 Every prompt = the owner's **persona** (his wording; do not rewrite it) + the **shared block**
 below, identical except for the room name, the room-facts sentence and the tool list.
@@ -126,7 +127,7 @@ HOW YOU ACT
 
 `conversation.rumpus_room_chatgpt_4` · subentry `01JZ8DWMCR5ZFTVM61SG13HVFR` · entry `01JK456T3JV6CPBG2ZQ2FS10GE` · pipeline Rumpus Room Assist `01jtvee3cf1vfbczk2dmst64qy`
 
-**Since 2026-09-22 the Rumpus Room satellite runs the local Jarvis pipeline instead** (wake word "Hey Jarvis"); this OpenAI agent and its pipeline are kept intact as the revert target (`select.rumpus_room_voice_assistant` → "Rumpus Room Assist", wake word → "Okay Nabu"). Its persona below is Tom's own JARVIS wording and is what the local agent now uses too.
+**Live again on the Rumpus Room box since 2026-09-26** (Tom's ruling: Rumpus uses OpenAI, the phone uses the local LLM). From 2026-09-22 the box had run the local Jarvis pipeline. `select.rumpus_room_voice_assistant` = "Rumpus Room Assist"; the wake word stays **Hey Jarvis**, since this agent's persona is Tom's JARVIS wording too. The same day it gained the haynesnetwork **Watch history** API (Tom: "add haynesnetwork MCP to the rumpus room"), attached with `attach_watch_history.py ... AGENT=rumpus`: `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`, with the WATCH HISTORY block from *Movie Room — watch history* appended after the shared block, byte for byte. Text-tested as the satellite: unfinished shows, the lamp, and a movie recommendation, each ~3 s with the right tool.
 
 Persona:
 
@@ -161,9 +162,15 @@ HOW YOU ACT
 
 The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
 (`llm_hass_api: ["assist", "mcp-<Watch history entry id>"]`; haynesnetwork ADR-087 / DESIGN-049). The block
-below is appended to its prompt after the shared block. No other room agent gets the API: every attached
-tool schema rides every voice turn (Tool track 1 measured about 2 s per turn for 35 tools). The roomless
-Phone Assist agent (below) carries the same block.
+below is appended to its prompt after the shared block. Every attached tool schema rides every voice
+turn (Tool track 1 measured about 2 s per turn for 35 tools), so few agents get the API. The same block
+is also on:
+- the **Rumpus Room** agent, since 2026-09-26 on Tom's ruling;
+- the **OpenAI Phone Assist fallback** (below);
+- the idle local **Jarvis** agent.
+
+The live local phone agent does not carry it. `attach_watch_history.py` reaches each of these with
+`AGENT=movie|rumpus|phone`; it does not reach Jarvis, which is not an OpenAI subentry.
 
 The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
 `watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
@@ -213,7 +220,7 @@ WATCH HISTORY
 
 ## Jarvis (local stack, added 2026-09-22; was "Regina" for a few hours that day)
 
-`conversation.muse_glimmer_30b` · `llama_cpp` entry `01M34TQMBVCKW0BG0KZW5JG5YM` · subentry `01M34TQMBVMNR9CJZX892KD8VJ` · pipeline **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (Parakeet STT → this agent → Kokoro `bm_george`, en-GB — voice provisional, Tom choosing among `bm_george/bm_daniel/bm_lewis/bm_fable`). Model: Muse Glimmer 30B on llama-server, `llm_hass_api: [assist]`, `recommended: true`. **Rumpus Room Voice PE** runs it (`select.rumpus_room_voice_assistant` = Jarvis, `select.rumpus_room_voice_wake_word` = Hey Jarvis; revert = "Rumpus Room Assist" / "Okay Nabu"). Write back with the same `ha_config_set_helper(helper_type="config_subentry", …)` call (the `llama_cpp` subentry form has `prompt`, `llm_hass_api`, `chat_model`, `recommended`). Any prompt/API change costs one ~27 s cold turn — pre-warm with a text query (`bench.py MODE=pipe DEVICE_ID=f5875cab40e9e50a156e1e2e69040a85`).
+`conversation.muse_glimmer_30b` · `llama_cpp` entry `01M34TQMBVCKW0BG0KZW5JG5YM` · subentry `01M34TQMBVMNR9CJZX892KD8VJ` · pipeline **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (Parakeet STT → this agent → Kokoro `bm_george`, en-GB — voice provisional, Tom choosing among `bm_george/bm_daniel/bm_lewis/bm_fable`). Model: Muse Glimmer 30B on llama-server, `recommended: true`. **No satellite runs it since 2026-09-26**: the Rumpus Room box went back to its OpenAI agent. From 2026-09-22 to 2026-09-26 the box ran it with wake word Hey Jarvis. Found live on 2026-09-26 and recorded nowhere until then: `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`, with a WATCH HISTORY block in its 4,344-character prompt. The API list below is therefore not the whole live prompt; read `/config/.storage/core.config_entries` before restoring it. Write back with the same `ha_config_set_helper(helper_type="config_subentry", …)` call (the `llama_cpp` subentry form has `prompt`, `llm_hass_api`, `chat_model`, `recommended`). Any prompt/API change costs one ~27 s cold turn — pre-warm with a text query (`bench.py MODE=pipe DEVICE_ID=f5875cab40e9e50a156e1e2e69040a85`).
 
 A second subentry on the same entry (also titled "Muse Glimmer 30b") carries the cigar-journal MCP API for tool tests; it is on no pipeline.
 
@@ -260,7 +267,7 @@ Pipeline **Phone Assist** `01m3fwd8phf6qxyaax31evjt7a`: Parakeet STT → the age
 Tom's rulings on 2026-09-26:
 - **No persona**: "something equivalent to Siri but a Home Assistant Assist agent". A Jarvis-persona first cut (`conversation.phone_jarvis`, Kokoro `bm_george`) lived for half an hour and was deleted, and the pipeline kept its id.
 - **Brain.** Tom first chose OpenAI, like the rooms, over the local model or the rooms' model plus the cigar journal. The same evening he moved the phone to the local model: "the phone agent uses the local LLM muse glimmer since that'll be hit more and will help with cost". He also moved the Rumpus Room box back to OpenAI.
-- **Which MCP servers the local agent carries** is decided after a benchmark of their cost and tool accuracy on this model. Tom: "I can live with it being just a home control agent for now".
+- **Which MCP servers the local agent carries.** Benchmarked on this model on 2026-09-26 (below), then ruled **"Neither for now"**: house tools only. Tom: "I can live with it being just a home control agent for now … I can hook ChatGPT and Claude up to the MCPs".
 - **Swap now anyway**, although 3090 #1 was thermally throttled (240–525 MHz under load at 76 °C, fan 100 %). At those clocks decode is ~12 tok/s against ~38 healthy, and house questions took 5–28 s warm.
 
 The prompt has no persona. It is the rooms' shared block with the character lines taken out, and it keeps the local Jarvis fragment rule. It changes the room block in three ways:
@@ -301,6 +308,21 @@ Tested 2026-09-26 as text (`bench.py MODE=conv AGENT=conversation.phone_assist_l
 | Garage doors | "Both garage doors are closed." | 23.3–27.7 s |
 
 The model spends up to ~250 decode tokens before some tool calls, which is what the throttled clocks turn into seconds.
+
+**MCP benchmark on the local model (2026-09-26, throttled 3090, read-only questions).** It used a TEST llama_cpp subentry (`01M35NNCSS971VX6BVAV52SJZG`, restored afterwards) through the pipeline **Bench Local (test agent)** `01m3g1wwhs6a5w0egwwp7wvvc6` (`prefer_local_intents: false`). That pipeline is left in place for re-benches; there is no pipeline delete tool.
+
+| | Assist only | + Watch history | + cigar-journal |
+|---|---|---|---|
+| Prompt per turn | 14,890 tokens | 16,656 (+1,766) | 43,734 (+28,844) |
+| Cold first turn | est. 24–40 s | 38 s | 135 s |
+| Tool choice | 5/5 | 8/8 | 6/7 (the catalog search ignored "limit five") |
+| Peak context (64k slot) | 15.3k | 17.2k | 62.9k (96 %) |
+
+- Watch history cost no measurable time on warm house questions.
+- cigar-journal adds ~3 s per warm house question, and one catalog result (18.7k tokens) all but fills the slot.
+- Most of each answer's time is the 100–250 hidden reasoning tokens before the first tool call, which the throttled clocks (225–525 MHz) turn into seconds.
+- Answers were accurate against live states, though some numbers came out as digits despite the prompt's rule.
+- Scripts and raw logs were kept in the session scratchpad only.
 
 **OpenAI fallback** (`conversation.phone_assist`, subentry `01M3FWW3MMFE079D9A7F2NF66F`, entry `01JBM33KVTM1FHF795G01R2C4X`: `gpt-5.6-terra`, the room agents' settings, `store_responses: false`, `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`). It is kept and unchanged; to switch back, point the pipeline's conversation agent at it. Its prompt, up to its last section:
 
