@@ -165,7 +165,10 @@ file after any re-import. (`pre_actions` is unused since the KEF volume logic wa
 "THIRDREALITY Voice & Music Assistant Dev Edition" (network name `3RSPK-<MAC>`). Tom: it is for
 the cloffice, but **which room it ends up in is decided after onboarding**, and so are its persona,
 agent and pipeline — do not create them first. It needs a **different wake word from the bedroom
-box** (they are in earshot); all four Voice PEs use "Okay Nabu".
+box** (they are in earshot). The Bedroom, Kitchen and Movie Room Voice PEs use "Okay Nabu", and the
+Rumpus Room box uses "Hey Jarvis" (since 2026-09-22; kept when it went back to OpenAI on 2026-09-26).
+The Rumpus Room is in the basement, so "Hey Jarvis" only collides if the new box ends up within earshot
+of it.
 
 What the research found (vendor repo `github.com/thirdreality/voice-music-assistant`; most vendor
 and forum sites are blocked by the pod's egress allowlist, so treat details as unverified until the
@@ -224,12 +227,14 @@ it cuts off its surrounds and Sub.
 
 A fully local pipeline exists beside the OpenAI rooms: **Jarvis** (`01jb8sg4njw0mh3gnpqt4j9h6x`, called Regina for a few hours on 2026-09-22)
 = Parakeet STT on the A2000 → `conversation.muse_glimmer_30b` (llama-server on a 3090) → Kokoro TTS.
-The **Rumpus Room** Voice PE runs it (wake word "Hey Jarvis"); the Kitchen pipeline uses the same local
-STT/TTS with its OpenAI agent. Everything about it — entry ids, GPU
+The **Rumpus Room** Voice PE ran it from 2026-09-22 until 2026-09-26. The box is back on its OpenAI agent,
+now with Watch history, and keeps the wake word "Hey Jarvis". The phone takes the local model instead
+(*Phone* below). The Kitchen pipeline uses the same local STT/TTS with its OpenAI agent. Everything
+about it — entry ids, GPU
 layout and the thermal throttling that currently makes multi-round answers take 10 s+, the model
 bake-off still owed, and the tool tracks — is in `.agents/plans/local-assist-stack.md`. Read that
 before touching `ai/` in haynes-ops or the local agent `conversation.muse_glimmer_30b` (the Rumpus
-Room's OpenAI agent is also a "Jarvis" persona — the local one is the one on the box now).
+Room's OpenAI agent is also a "Jarvis" persona, and it is the one on the box again).
 
 ## Phone (added 2026-09-26)
 
@@ -242,7 +247,7 @@ A roomless pipeline for Tom's iPhone: **Phone Assist** `01m3fwd8phf6qxyaax31evjt
 ## Still open after testing
 
 - Phase 3 remainder: TVs, the AVR and the Frame (duplicate registrations), Sonos players are
-  Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources (research).
+  Music Assistant-only (no turn_on/turn_off). Phase 5: MCP servers as LLM tool sources: Watch history is on the Movie Room, the Rumpus Room and the OpenAI Phone Assist fallback. On the local model it was benchmarked on 2026-09-26, and Tom ruled "Neither for now" **for the phone agent** (`conversation.phone_assist_local`, house tools only; `.agents/plans/local-assist-stack.md` *MCP tools on the local model*). The idle local Jarvis agent still carries Watch history: re-pointing a satellite at the Jarvis pipeline brings those nine tool schemas with it.
 - Parked with cold-start context: hass-sandbox #144 (live-HA defects the floor maps found, older
   ESPHome devices), #149 (human-facing voice page for the docs site), haynes-ops #2969.
   haynes-ops#2996 (Spotify instances failing to load) is **closed**: Tom rebuilt them on

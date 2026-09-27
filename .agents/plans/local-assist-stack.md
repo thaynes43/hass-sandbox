@@ -10,18 +10,19 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 | Piece | Where | Facts |
 |---|---|---|
 | Resident LLM | haynes-ops `ai/llama-server` on `talosw01` | llama.cpp `server-cuda-b11096`, **Muse Glimmer 30B Q4_K_M** (`Muse-Glimmer-30B-KQuant-17GB-Q4_K_M.gguf` on NFS `misc/llama/models/`), alias `muse-glimmer-30b`, `--parallel 2`, `--reasoning-effort low`, KV q8. `http://llama-server.ai.svc.cluster.local:8080/v1`. Also an Open WebUI connection (haynes-ops#3110). |
-| GPU layout | `talosw01` 2× RTX 3090 | Tom's ruling 2026-09-22 (haynes-ops#2960): per-app pinning via `NVIDIA_VISIBLE_DEVICES`. **LLM on 3090 #1 (`GPU-d8a856f1…`), ComfyUI on 3090 #0 (`GPU-18bf6eab…`)** — swapped the same day because #0 throttles to 225 MHz within ~10 s of load (haynes-ops#3052; 87 °C, fan 100 %). Until airflow is fixed nothing latency-sensitive goes on #0. ComfyUI's AppDaemon and Open WebUI graphs load the same int8 Qwen-Image-2.1 files, so one resident copy serves both. |
+| GPU layout | `talosw01` 2× RTX 3090 | Tom's ruling 2026-09-22 (haynes-ops#2960): per-app pinning via `NVIDIA_VISIBLE_DEVICES`. **LLM on 3090 #1 (`GPU-d8a856f1…`), ComfyUI on 3090 #0 (`GPU-18bf6eab…`)** — swapped the same day because #0 throttles to 225 MHz within ~10 s of load (haynes-ops#3052; 87 °C, fan 100 %). Until airflow is fixed nothing latency-sensitive goes on #0. #1 is not immune. On 2026-09-26 it sat at a 225–360 MHz median under sustained LLM load, with a floor of 225 (an earlier, lighter sample read 240–525), at 76–80 °C with the fan at 100 %. So the clock floor no longer tells the cards apart. What does: #0 runs hotter (87–88 °C vs 76–80 °C), and #0 dropped off the PCIe bus mid-render on 2026-09-23. Host `lspci` read all-FF, the fatal error also wedged #1's CUDA tenants, and a warm host reboot recovered both (haynes-ops#3052 comments of 2026-09-23 [5801453245](https://github.com/thaynes43/haynes-ops/issues/3052#issuecomment-5801453245) and [5802146655](https://github.com/thaynes43/haynes-ops/issues/3052#issuecomment-5802146655)). ComfyUI's AppDaemon and Open WebUI graphs load the same int8 Qwen-Image-2.1 files, so one resident copy serves both. |
 | STT | haynes-ops `ai/whisper` on `talosm01` (A2000) | `ghcr.io/thaynes43/wyoming-whisper-gpu:3.8.1-2`, **NVIDIA Parakeet TDT 0.6B v2** via onnx-asr on CUDA, `whisper.ai.svc.cluster.local:10300`, HA entry `faster-whisper` → `stt.faster_whisper`. Measured in HA: 0.30 s cold / 0.05 s warm vs HA Cloud 1.14 / 0.86 s, same transcript with punctuation. |
 | TTS | haynes-ops `ai/kokoro` on `talosm01` | `flight777/kokoro-wyoming-ml` (CUDA), Kokoro-82M, `kokoro.ai.svc.cluster.local:10210`, HA entry `01M34V1S24J5SBNZXXFW00JF1K` → `tts.kokoro`, 54 voices, **no streaming synthesis** (that image reports `supports_synthesize_streaming: False`). 0.28–0.50 s to first audio vs cloud 0.39–0.62 s. Piper is still there as fallback. A2000 total ≈ 8.1 GB of 12 (vexa 3.9 + Parakeet 3.4 + Kokoro 0.6). |
-| HA agent | `llama_cpp` integration, entry `01M34TQMBVCKW0BG0KZW5JG5YM` | subentry `01M34TQMBVMNR9CJZX892KD8VJ` → **`conversation.muse_glimmer_30b`**, `llm_hass_api: [assist]`, prompt = JARVIS persona + the shared spoken-aloud block (backup in `agent-docs/voice-agent-prompts.md`; write back with `ha_config_set_helper(helper_type="config_subentry", …)`). |
-| Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. **Rumpus Room Voice PE** runs it with wake word **Hey Jarvis** (`select.rumpus_room_voice_assistant` / `select.rumpus_room_voice_wake_word`; revert = "Rumpus Room Assist" / "Okay Nabu"). Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept (it carried the cigar-journal API for one evening; removed again the same night — ~2 s per turn, see Tool track 1). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
+| HA agent | `llama_cpp` integration, entry `01M34TQMBVCKW0BG0KZW5JG5YM` | subentry `01M34TQMBVMNR9CJZX892KD8VJ` → **`conversation.muse_glimmer_30b`** (Jarvis), `llm_hass_api: [assist, mcp-01M381GTWER1BG9K4MWG3GDEGR]` (Watch history, with a WATCH HISTORY block in the prompt: found live on 2026-09-26, recorded nowhere before. **Before restoring this prompt, read the live one from `.storage/core.config_entries`**: a restore from the backup alone drops the block while the API stays, leaving nine unguided tools, and `attach_watch_history.py` cannot reach this agent), prompt = JARVIS persona + the shared spoken-aloud block (backup in `agent-docs/voice-agent-prompts.md`; write back with `ha_config_set_helper(helper_type="config_subentry", …)`). |
+| Phone agent (2026-09-26) | same entry | subentry `01M3FZMH71M9JQ8GJ5CMG5VTVN` ("Phone Assist Local") → **`conversation.phone_assist_local`**, `llm_hass_api: [assist]` only (Tom: "Neither for now" after the MCP benchmark), neutral no-persona prompt; runs the **Phone Assist** pipeline `01m3fwd8phf6qxyaax31evjt7a` (Parakeet → it → Kokoro `af_heart`). Backup and benchmark: `agent-docs/voice-agent-prompts.md` *Phone Assist*. The AppDaemon Voice health checker watches it + llama-server `/health`. |
+| Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. The **Rumpus Room Voice PE** ran it with wake word **Hey Jarvis** from 2026-09-22 to 2026-09-26. Tom then moved the box back to OpenAI ("Rumpus Room Assist", wake word still Hey Jarvis, now with Watch history) and gave the local model to the phone instead, for cost. No satellite runs Jarvis now. Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept (it carried the cigar-journal API for one evening; removed again the same night — ~2 s per turn, see Tool track 1). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
 | Removed | — | `ollama-assist01` (haynes-ops#3108, PVC orphan haynes-ops#3109) and its HA entry (had zero models). `ollama-assist02` on the RTX 2000 Ada still serves AppDaemon's detection summaries (`qwen3.5:9b`). |
 
 ### What the numbers mean
 
 - The Assist prompt is **~15k tokens per turn** (115 exposed entities + ~30 tool schemas). llama-server's
   prefix cache reuses 98–99.9 % of it, so per-turn prompt cost is ~0.2–0.5 s; a changed system prompt costs
-  one full re-eval (~13 s at 1,100 tok/s) once. Slots are 32k so a longer chat or more tools fit.
+  one full re-eval (~13 s at 1,100 tok/s) once. Slots are 64k since haynes-ops#3113 (`--ctx-size 131072`, 2 slots) so a longer chat or more tools fit.
 - On a healthy card the model decodes ~38 tok/s; a two-round tool question (tool call → answer) is ~2.5 s.
   If answers drift to 10 s+, **sample the card's clocks before touching prompts**
   (`kubectl exec -n observability <nvidia-gpu-exporter pod on talosw01> -- nvidia-smi -i N
@@ -29,6 +30,10 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 - Bench harness: `scripts/voice-bench/run.sh bench.py "MODE=conv AGENT=conversation.muse_glimmer_30b
   QUERIES='…'"` (text, read-only questions are safe) and `MODE=stt,tts STT=… TTS=…` (synthesis only).
   Never `MODE=voice` against a room.
+
+## MCP tools on the local model (benchmarked 2026-09-26)
+
+Assist only is ~14.9k tokens per turn. Watch history adds 1.8k and cost no measurable time on warm house questions; it chose the right tool 8/8. cigar-journal adds 28.8k: a 135 s cold turn, and one catalog search filled 96 % of the 64k slot. Most of each answer's time is 100–250 hidden reasoning tokens before the first tool call, turned into seconds by the throttled 3090. Tom ruled the phone agent house-tools only for now. Table and details: `agent-docs/voice-agent-prompts.md` *Phone Assist*. Re-bench through the pipeline **Bench Local (test agent)** `01m3g1wwhs6a5w0egwwp7wvvc6` and the TEST subentry `01M35NNCSS971VX6BVAV52SJZG` (restore its prompt and API after). The pipeline idles on the built-in `conversation.home_assistant`: point it at the TEST subentry only for the bench, then back, so the cigar-journal holder stays on no pipeline.
 
 ## Model bake-off still owed
 
@@ -85,13 +90,14 @@ turn after a restart pays ~30 s cold), but the cache is per slot and there are t
   - the **Kitchen** OpenAI agent had it for one evening (Tom's tool tests) and **lost it again the same
     night**: the 35 schemas cost ~2 s per turn on OpenAI (isolation bench, bedroom as control), which
     Tom ruled unaffordable for a room agent — `conversation.chatgpt_2` is Assist-only again;
-  - a second `llama_cpp` subentry (also titled "Muse Glimmer 30b") on **no pipeline**, for text tests;
-  - **not** the main Jarvis agent `01M34TQMBVMNR9CJZX892KD8VJ` (Assist only — keeps the room turn
-    28k tokens lighter). Net: **no satellite-backed agent holds the cigar-journal API**; only the
+  - the TEST `llama_cpp` subentry `01M35NNCSS971VX6BVAV52SJZG` (`conversation.muse_glimmer_30b_2`, titled "Muse Glimmer 30b") on **no pipeline**, for text tests (the bench pipeline idles on the built-in agent; see *MCP tools on the local model*);
+  - **not** the main Jarvis agent `01M34TQMBVMNR9CJZX892KD8VJ` (no cigar-journal, which keeps its turn
+    28k tokens lighter; it does carry Watch history, see the HA agent row above), and not the phone
+    agent `01M3FZMH71M9JQ8GJ5CMG5VTVN` (house tools only). Net: **no satellite-backed agent holds the cigar-journal API**; only the
     pipeline-less test subentry does.
 - **Voice safety, as it stands:** the journal server exposes write tools (`save_smoke`,
   `record_purchase`, …) and the hop carries the dev-env consumer's **full-scope** token. Today the
-  only holder is the pipeline-less test subentry, so no spoken request can reach them. The guard
+  only holder is the pipeline-less TEST subentry `01M35NNCSS971VX6BVAV52SJZG`, so no spoken request can reach them. The guard
   used while the kitchen had them was a **prompt bullet** ("ask for at most five results … by voice
   the journal is read-only") — a prompt rule, not an enforced scope; it came out of the live kitchen
   prompt together with the API, and is parked in *Kitchen — additions* in
@@ -116,8 +122,8 @@ line is retired.
 
 **What HA sees:** an `mcp` entry named "Watch history" at
 `http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp` (the hop injects the consumer token;
-HA holds no credential), granted to the **Movie Room agent only** (`conversation.chatgpt_5`), with a
-WATCH HISTORY block in its prompt (`agent-docs/voice-agent-prompts.md`). Seven tools at first, nine
+HA holds no credential), granted first to the **Movie Room agent** (`conversation.chatgpt_5`), and since 2026-09-26 also to the **Rumpus Room** agent (voice-live), the OpenAI **Phone Assist** fallback and the idle local **Jarvis** agent (see the HA agent row above). Each has a
+WATCH HISTORY block in its prompt; Jarvis's is a variant (`agent-docs/voice-agent-prompts.md`). Seven tools at first, nine
 since 2026-09-26 (`watchlist` and `set_watchlist`, below); `tools/list` ≤ 4 KB (3 KB until the
 watchlist tools), spoken-text results ≤ 1,200 characters — the voice budget that keeps this from repeating the
 cigar-journal 2 s-per-turn cost (Tool track 1). With two APIs on the agent, HA namespaces every tool:
