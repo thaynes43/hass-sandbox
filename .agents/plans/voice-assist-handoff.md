@@ -185,7 +185,7 @@ unit is on the network):
   TTS fetch, and HA sits on the IoT L2 at 192.168.50.249, so discovery works like the Voice PEs.
 - **Wake words shipped:** okay_nabu, hey_jarvis, hey_mycroft, hey_home_assistant, okay_computer,
   hey_luna, alexa (+ two novelty ones), two slots, plus a fixed "stop". Custom ones need a firmware
-  rebuild. Suggested to Tom: Hey Jarvis. Update to firmware ≥ 1.2.3 before judging the mic (quiet
+  rebuild. Suggested to Tom on 2026-09-19: Hey Jarvis. Weigh that against the Rumpus Room experience above: "Hey Jarvis" was hard to trigger on a Voice PE, so the box went back to "Okay Nabu" on 2026-09-27. Update to firmware ≥ 1.2.3 before judging the mic (quiet
   mic / garbled audio bugs before that; settings did not survive a power cycle before 1.2.2).
 - **Music:** its `media_player` has no `play_media`; music goes through Music Assistant's
   **Sendspin** provider, which is already enabled (MA 2.10.3; the four Voice PEs are Sendspin
