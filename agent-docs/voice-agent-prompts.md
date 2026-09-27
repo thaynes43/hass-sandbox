@@ -14,7 +14,8 @@ HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipel
 (`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent. The
 **Rumpus Room** satellite ran the local **Jarvis** pipeline from 2026-09-22 and is back on its OpenAI
 agent since 2026-09-26 (Tom: the phone takes the local model instead, for cost). All pipelines
-`prefer_local_intents: true`.
+`prefer_local_intents: true`, except **Bench Local (test agent)**. That one is `false` on purpose, so every
+benchmark question reaches the model (*Phone Assist* below); don't flip it.
 
 Every prompt = the owner's **persona** (his wording; do not rewrite it) + the **shared block**
 below, identical except for the room name, the room-facts sentence and the tool list.

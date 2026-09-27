@@ -122,8 +122,8 @@ line is retired.
 
 **What HA sees:** an `mcp` entry named "Watch history" at
 `http://haynesnetwork-mcp-hop.frontend.svc.cluster.local:8080/mcp` (the hop injects the consumer token;
-HA holds no credential), granted to the **Movie Room agent only** (`conversation.chatgpt_5`), with a
-WATCH HISTORY block in its prompt (`agent-docs/voice-agent-prompts.md`). Seven tools at first, nine
+HA holds no credential), granted first to the **Movie Room agent** (`conversation.chatgpt_5`), and since 2026-09-26 also to the **Rumpus Room** agent (voice-live), the OpenAI **Phone Assist** fallback and the idle local **Jarvis** agent (see the HA agent row above). Each has a
+WATCH HISTORY block in its prompt; Jarvis's is a variant (`agent-docs/voice-agent-prompts.md`). Seven tools at first, nine
 since 2026-09-26 (`watchlist` and `set_watchlist`, below); `tools/list` ≤ 4 KB (3 KB until the
 watchlist tools), spoken-text results ≤ 1,200 characters — the voice budget that keeps this from repeating the
 cigar-journal 2 s-per-turn cost (Tool track 1). With two APIs on the agent, HA namespaces every tool:
