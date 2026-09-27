@@ -165,10 +165,9 @@ file after any re-import. (`pre_actions` is unused since the KEF volume logic wa
 "THIRDREALITY Voice & Music Assistant Dev Edition" (network name `3RSPK-<MAC>`). Tom: it is for
 the cloffice, but **which room it ends up in is decided after onboarding**, and so are its persona,
 agent and pipeline — do not create them first. It needs a **different wake word from the bedroom
-box** (they are in earshot). The Bedroom, Kitchen and Movie Room Voice PEs use "Okay Nabu", and the
-Rumpus Room box uses "Hey Jarvis" (since 2026-09-22; kept when it went back to OpenAI on 2026-09-26).
-The Rumpus Room is in the basement, so "Hey Jarvis" only collides if the new box ends up within earshot
-of it.
+box** (they are in earshot). All four Voice PEs use "Okay Nabu". The Rumpus Room box used "Hey Jarvis"
+from 2026-09-22 and went back to "Okay Nabu" on 2026-09-27: Tom was "having a hell of a time activating
+it", even at the most sensitive setting. That is worth knowing before choosing "Hey Jarvis" for the new box.
 
 What the research found (vendor repo `github.com/thirdreality/voice-music-assistant`; most vendor
 and forum sites are blocked by the pod's egress allowlist, so treat details as unverified until the
@@ -228,7 +227,7 @@ it cuts off its surrounds and Sub.
 A fully local pipeline exists beside the OpenAI rooms: **Jarvis** (`01jb8sg4njw0mh3gnpqt4j9h6x`, called Regina for a few hours on 2026-09-22)
 = Parakeet STT on the A2000 → `conversation.muse_glimmer_30b` (llama-server on a 3090) → Kokoro TTS.
 The **Rumpus Room** Voice PE ran it from 2026-09-22 until 2026-09-26. The box is back on its OpenAI agent,
-now with Watch history, and keeps the wake word "Hey Jarvis". The phone takes the local model instead
+now with Watch history, and wakes on "Okay Nabu" again since 2026-09-27. The phone takes the local model instead
 (*Phone* below). The Kitchen pipeline uses the same local STT/TTS with its OpenAI agent. Everything
 about it — entry ids, GPU
 layout and the thermal throttling that currently makes multi-round answers take 10 s+, the model
