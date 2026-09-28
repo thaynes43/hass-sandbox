@@ -98,6 +98,11 @@ class PowerCycleResult:
 #: Carried by a failed result whose switch entity was missing from Home
 #: Assistant (the unifi integration dropping a PDU's outlet entities): the
 #: fix is reloading the integration, not the outlet.
+#: Carried by a failed result whose switch could not be read at all (get_state
+#: raised — most likely the AppDaemon↔HA plugin was disconnected, which also
+#: drops the un-awaited turn_off/turn_on). Not "the entity is missing".
+READ_ERROR_NOTE = "the switch could not be read — see the AppDaemon log"
+
 MISSING_ENTITY_NOTE = (
     "the entity is missing from Home Assistant — reload the integration "
     "that owns it"
@@ -143,21 +148,30 @@ def _parse_changed(value: Any) -> Optional[datetime.datetime]:
 
 async def _read_switch(
     app: Any, switch: str
-) -> Tuple[Optional[str], Optional[datetime.datetime]]:
-    """Return ``(state, last_changed)``; ``(None, None)`` when unreadable."""
+) -> Tuple[Optional[str], Optional[datetime.datetime], bool]:
+    """Return ``(state, last_changed, read_ok)``.
+
+    ``state`` is None both when the entity is missing (``read_ok`` True) and
+    when the read raised (``read_ok`` False) — only the first means "reload
+    the integration that owns it".
+    """
     try:
         full = await app.get_state(switch, attribute="all")
     except Exception as exc:
-        app.log(f"Could not read {switch}: {exc!r}", level="DEBUG")
-        return None, None
+        # WARNING, not DEBUG: most likely the HASS plugin is disconnected (the
+        # un-awaited turn_off/turn_on were dropped too), and this is the only
+        # record of it.
+        app.log(f"Could not read {switch}: {exc!r}", level="WARNING")
+        return None, None, False
     if full is None:
-        return None, None
+        return None, None, True
     if not isinstance(full, dict):
-        return str(full), None
+        return str(full), None, True
     state = full.get("state")
     return (
         None if state is None else str(state),
         _parse_changed(full.get("last_changed")),
+        True,
     )
 
 
@@ -166,10 +180,11 @@ async def _confirm_on(
     switch: str,
     cycle_started: datetime.datetime,
     saw_off: bool = False,
-) -> Tuple[bool, Optional[str], bool, bool]:
+) -> Tuple[bool, Optional[str], bool, bool, bool]:
     """Wait up to ``SWITCH_CONFIRM_TIMEOUT_S`` for *switch* to report ``on``.
 
-    Returns ``(confirmed, last_state_read, never_off, saw_off)``.  An ``on``
+    Returns ``(confirmed, last_state_read, never_off, saw_off, read_ok)``;
+    ``read_ok`` is False when the last read raised.  An ``on``
     confirms early when its ``last_changed`` is after the cycle started, or
     when an ``off`` was read earlier in this cycle (*saw_off*, carried across
     both windows): either proves HA registered the cycle, whatever the
@@ -181,16 +196,17 @@ async def _confirm_on(
     poll_s = max(1, SWITCH_CONFIRM_POLL_S)
     waited = 0
     state: Optional[str] = None
+    read_ok = True
     while waited < timeout_s:
         await asyncio.sleep(poll_s)
         waited += poll_s
-        state, changed = await _read_switch(app, switch)
+        state, changed, read_ok = await _read_switch(app, switch)
         if state == "off":
             saw_off = True
         fresh = changed is not None and changed >= cycle_started
         if state == "on" and (fresh or saw_off):
             app.log(f"{switch} confirmed on after {waited}s", level="INFO")
-            return True, state, False, saw_off
+            return True, state, False, saw_off, read_ok
     if state == "on":
         # Not a failure (the device is powered, and the outlet may still have
         # cycled while HA missed the `off`), so not an ERROR; WARNING because
@@ -202,8 +218,8 @@ async def _confirm_on(
             f"cycle — Home Assistant never saw it go off; accepting it as on",
             level="WARNING",
         )
-        return True, state, True, saw_off
-    return False, state, False, saw_off
+        return True, state, True, saw_off, read_ok
+    return False, state, False, saw_off, read_ok
 
 
 async def power_cycle_switch(
@@ -232,7 +248,7 @@ async def power_cycle_switch(
 
     app.log(f"Turning on {label}", level="INFO")
     app.call_service("switch/turn_on", entity_id=switch)
-    confirmed, state, never_off, saw_off = await _confirm_on(
+    confirmed, state, never_off, saw_off, read_ok = await _confirm_on(
         app, switch, cycle_started
     )
     if confirmed:
@@ -244,13 +260,18 @@ async def power_cycle_switch(
         level="WARNING",
     )
     app.call_service("switch/turn_on", entity_id=switch)
-    confirmed, state, never_off, saw_off = await _confirm_on(
+    confirmed, state, never_off, saw_off, read_ok = await _confirm_on(
         app, switch, cycle_started, saw_off
     )
     if confirmed:
         return _confirmed(never_off)
 
-    note = MISSING_ENTITY_NOTE if state is None else ""
+    if not read_ok:
+        note = READ_ERROR_NOTE
+    elif state is None:
+        note = MISSING_ENTITY_NOTE
+    else:
+        note = ""
     app.log(
         f"{label} still not on after a second turn_on (state: {state!r})"
         f"{' — ' + note if note else ''} — ending the repair without waiting "

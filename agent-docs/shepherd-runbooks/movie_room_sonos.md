@@ -91,6 +91,10 @@ only `…_outlet_21`.
      that owns it` → the unifi integration dropped the PDU's outlet entities (seen
      2026-09-28): `homeassistant.reload_config_entry` on the unifi entry, then check
      outlet 21 is `on`.
+   - `failed` + `… the switch could not be read — see the AppDaemon log` → AppDaemon's
+     `get_state` raised (most likely its Home Assistant connection dropped, which also
+     drops the turn_off/turn_on): read the `Could not read …` WARNINGs in the
+     AppDaemon log, check outlet 21 is `on`, and do not reload UniFi for this.
    - `failed` + `Did not recover after 300s` → the outlet came back on and the
      Port still does not answer.
    - `failed` + `Relapsed after a successful repair` → the power cycle worked

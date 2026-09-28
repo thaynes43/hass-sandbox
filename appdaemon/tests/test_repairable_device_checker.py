@@ -620,6 +620,25 @@ class TestTurnOnConfirmation:
         app._run_checks_only.assert_not_awaited()
         assert _logged(app, "ERROR", "the entity is missing")
 
+    def test_a_read_that_raises_is_not_a_missing_entity(self):
+        """get_state raising (e.g. the HASS plugin disconnected) must not be
+        reported as "reload the integration": the detail says the switch
+        could not be read, and the exception is logged at WARNING."""
+        app = self._app()
+        app.get_state = AsyncMock(side_effect=RuntimeError("plugin disconnected"))
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            f"{SWITCH} did not turn back on — "
+            f"{switch_power_cycle.READ_ERROR_NOTE}"
+        )
+        assert "reload the integration" not in app._repair_detail
+        assert _logged(app, "WARNING", "plugin disconnected")
+        app._run_checks_only.assert_not_awaited()
+
     def test_a_stale_on_is_not_a_confirmation(self):
         """HA reports late: the first reads after turn_on can still be the
         ``on`` from before the cycle. Taking it would confirm a lost turn_on."""
