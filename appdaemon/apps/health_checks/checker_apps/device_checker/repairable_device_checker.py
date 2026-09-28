@@ -33,7 +33,11 @@ from health_checks.checker_apps.device_checker.device_checker import (
 )
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check
-from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
+from shared.switch_power_cycle import (
+    power_cycle_switch,
+    switch_not_on_detail,
+    with_note,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +48,13 @@ REPAIR_SUCCESS = "success"
 REPAIR_FAILED = "failed"
 
 REPAIR_POLL_INTERVAL_S = 5
+
+#: Check statuses that count as recovered while polling after a power cycle.
+#: `warning` is included for one reason only: BasicDeviceChecker's checks
+#: produce it solely when ping_host does not resolve and ping_fallback_host
+#: answers — the device is up, DNS is not — and a DNS outage must not turn a
+#: power cycle that worked into "did not recover".
+_RECOVERED_STATUSES = ("ok", "warning")
 
 
 class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
@@ -240,7 +251,13 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
             # auto-repair is no longer allowed to reach.
             self._stand_down_pending_repair("Auto-repair disabled")
 
-        if self._repair_status == REPAIR_SUCCESS:
+        if self._repair_status == REPAIR_SUCCESS and any_bad:
+            # Gated on any_bad (critical/degraded), not on "not all ok": an
+            # `unknown` — a ping_host that did not resolve, i.e. a DNS outage —
+            # or a `warning` says nothing about the device, so it must not
+            # turn a good repair into a failure. Such a cycle falls through to
+            # the `not any_bad` return below and arms nothing.
+            #
             # A relapse: the device is bad again before a fully healthy cycle
             # (that returned above). `success` was judged moments after the
             # power cycle, and left standing it is one of the bridge's
@@ -321,10 +338,10 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
 
     async def _execute_repair(self) -> None:
         try:
-            switch_on = await power_cycle_switch(
+            cycle = await power_cycle_switch(
                 self, self._repair_switch, self._repair_off_duration_s
             )
-            if not switch_on:
+            if not cycle.switch_on:
                 # The helper has logged the ERROR. Waiting for recovery would
                 # only burn the recovery window on an unpowered device.
                 self._repair_status = REPAIR_FAILED
@@ -344,12 +361,16 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
                 elapsed += REPAIR_POLL_INTERVAL_S
 
                 results = await self._run_checks_only()
-                if all(r["status"] == "ok" for r in results):
+                if all(r["status"] in _RECOVERED_STATUSES for r in results):
                     self._repair_status = REPAIR_SUCCESS
                     self._repair_detail = f"Recovered after {elapsed}s"
                     self._unhealthy_since = None
+                    # A note is not worth the card on success: log only.
                     self.log(
-                        f"Repair successful — recovered after {elapsed}s",
+                        with_note(
+                            f"Repair successful — recovered after {elapsed}s",
+                            cycle.note,
+                        ),
                         level="INFO",
                     )
                     self._pending_repair_events.append({
@@ -364,11 +385,18 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
                 )
 
             self._repair_status = REPAIR_FAILED
-            self._repair_detail = (
-                f"Did not recover after {self._repair_recovery_wait_s}s"
+            # The note (e.g. the outlet never reported off) goes into the
+            # detail, so the card and the Alertmanager description say it.
+            self._repair_detail = with_note(
+                f"Did not recover after {self._repair_recovery_wait_s}s",
+                cycle.note,
             )
             self.log(
-                f"Repair failed — no recovery after {self._repair_recovery_wait_s}s",
+                with_note(
+                    f"Repair failed — no recovery after "
+                    f"{self._repair_recovery_wait_s}s",
+                    cycle.note,
+                ),
                 level="WARNING",
             )
             self._pending_repair_events.append({

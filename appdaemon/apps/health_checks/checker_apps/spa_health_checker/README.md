@@ -29,7 +29,9 @@ Supports auto-repair via power cycling a smart switch. The repair action:
    `device_checker/README.md` for why). If it still is not on, the attempt
    fails at once with `"<switch> did not turn back on — check the outlet"`,
    skips the recovery wait, and counts on the backoff ladder like any other
-   failed attempt
+   failed attempt. If the switch reads `on` but never reported `off`, the
+   attempt goes ahead; should it then fail, its detail ends
+   `(the outlet never reported off — it may not have been power cycled)`
 4. Polls health checks every ~5 seconds for up to `repair_recovery_wait_s`,
    counted from the moment the switch is confirmed on
 5. Reports success immediately when all checks go green, or failure after timeout

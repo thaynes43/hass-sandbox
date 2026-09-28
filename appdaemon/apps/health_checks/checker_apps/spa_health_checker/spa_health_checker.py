@@ -41,7 +41,11 @@ import hassapi as hass
 from providers.ha_provisioner import HAProvisioner
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check, ping_check
-from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
+from shared.switch_power_cycle import (
+    power_cycle_switch,
+    switch_not_on_detail,
+    with_note,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -660,10 +664,10 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
     async def _execute_repair(self) -> None:
         """Power cycle the spa and poll for recovery."""
         try:
-            switch_on = await power_cycle_switch(
+            cycle = await power_cycle_switch(
                 self, self._repair_switch, self._repair_power_off_s
             )
-            if not switch_on:
+            if not cycle.switch_on:
                 # The helper has logged the ERROR. A switch that will not
                 # come back on is a failed attempt like any other — it climbs
                 # the backoff ladder — and the recovery wait is skipped: it
@@ -704,8 +708,12 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     self._repair_attempts = 0
                     self._next_retry_at = None
                     self._record_repair_event("success", duration_s=elapsed)
+                    # A note is not worth the card on success: log only.
                     self.log(
-                        f"Repair successful — recovered after {elapsed}s",
+                        with_note(
+                            f"Repair successful — recovered after {elapsed}s",
+                            cycle.note,
+                        ),
                         level="INFO",
                     )
                     self._report_repair_status_only()
@@ -716,8 +724,14 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 )
 
             # Timed out — repair failed; schedule the next backoff retry
+            # A normal failed attempt on the ladder, note or not; the note
+            # (e.g. the outlet never reported off) goes into the detail so the
+            # card and the Alertmanager description say it.
             self._register_repair_failure(
-                f"Did not recover after {self._repair_recovery_wait_s}s"
+                with_note(
+                    f"Did not recover after {self._repair_recovery_wait_s}s",
+                    cycle.note,
+                )
             )
             self._record_repair_event(
                 "failed", duration_s=self._repair_recovery_wait_s

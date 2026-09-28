@@ -1,8 +1,9 @@
 # Runbook: `movie_room_sonos` — Movie Room Sonos Port
 
 A `RepairableDeviceChecker` instance for the Sonos Port that feeds the Movie
-Room receiver. One check, `Ping`, against `movieroomsonos.haynesnetwork` (DHCP
-reservation 192.168.0.70), 3 pings per cycle, ok on the first reply.
+Room receiver. One check, `Ping`, against `movieroomsonos.haynesnetwork`, 3
+pings per cycle, ok on the first reply; `ping_fallback_host: 192.168.0.70` (its
+DHCP reservation) is pinged instead only when the name does not resolve.
 `check_interval_s: 180`. `supports_repair: yes` — power-cycles UniFi USP PDU
 Hi-Density outlet 21, `switch.power_distribution_hi_density_outlet_21`.
 **Auto-repair defaults ON**, 10 min dwell. No dependencies, no for-override
@@ -28,11 +29,20 @@ only `…_outlet_21`.
   outlet back `on`; and once, around a re-provision, the unifi integration
   dropped **all** of the PDU's outlet entities until the integration was
   reloaded. That is why the repair confirms the outlet came back on.
-- **DNS failures are `unknown`, not `critical`.** When
-  `movieroomsonos.haynesnetwork` does not resolve, `ping` exits with "bad address"
-  and `ping_check` reports `unknown` — "cannot resolve movieroomsonos.haynesnetwork
-  (3 attempts)" — which never arms a repair (since v1.24.0; before that it read
-  as a timeout and would have power-cycled a healthy Port).
+- **A DNS failure never power-cycles a healthy Port, and never hides a dead
+  one.** When `movieroomsonos.haynesnetwork` does not resolve, `ping` exits
+  with "bad address" and `ping_check` reports `unknown` (since v1.24.0; before
+  that it read as a timeout and would have power-cycled a healthy Port). The
+  checker then pings the fallback, 192.168.0.70:
+  - Port answers → `Ping` is **warning**,
+    `4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`. The
+    Port is fine and DNS is not. Warning never pages and never arms a repair;
+    the AppDaemon log has one WARNING
+    `movieroomsonos.haynesnetwork does not resolve — pinging 192.168.0.70 instead until it does`
+    (and an INFO when it resolves again).
+  - Port silent → `Ping` is **critical**,
+    `timeout (3 attempts) via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`,
+    and auto-repair and paging run as normal.
 
 ## What auto-repair does
 
@@ -46,9 +56,13 @@ only `…_outlet_21`.
    and no recovery wait.
 4. Outlet confirmed on → up to 300 s of recovery polling (the Port takes a
    while to boot and rejoin). Ping back → `success`; otherwise `failed`,
-   `Did not recover after 300s`. Ping lost again after a `success`, before a
-   fully healthy cycle → `failed`,
-   `Relapsed after a successful repair — recovery did not stick`.
+   `Did not recover after 300s`. Ping lost again (critical) after a
+   `success`, before a fully healthy cycle → `failed`,
+   `Relapsed after a successful repair — recovery did not stick`; a DNS
+   `unknown` or fallback `warning` does not count as a relapse. If the outlet
+   read `on` without ever reporting `off` (HA may have missed it, or the
+   `turn_off` was lost), a failure detail ends
+   `(the outlet never reported off — it may not have been power cycled)`.
 5. One repair per outage: after `failed` it stays `failed` (no automatic
    retry) until a fully healthy cycle. `failed` releases the page.
 
@@ -56,7 +70,8 @@ only `…_outlet_21`.
 
 - Alert `checker=movie_room_sonos` (default alertname
   `MovieRoomSonosUnhealthy`), severity critical.
-- `Ping` critical, detail `timeout (3 attempts)`.
+- `Ping` critical, detail `timeout (3 attempts)` — or, during a DNS outage,
+  `timeout (3 attempts) via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`.
 - `media_player.movie_room` unavailable; the Movie Room is missing from Music
   Assistant's players.
 
@@ -75,10 +90,13 @@ only `…_outlet_21`.
    - `idle` while critical → auto-repair is off
      (`input_boolean.movie_room_sonos_health_auto_repair`) or the dwell has not
      run out.
-2. Rule out the network and DNS before blaming the Port: are the other
-   `*.haynesnetwork` pings (`zigbee` Coordinator Ping, `zwave` Radio Ping) also
-   failing? If they are, this is DNS or the network — triage that, not the
-   Port.
+2. Rule out the network and DNS before blaming the Port. A detail ending
+   `via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork` means DNS
+   is down as well: the verdict is the fallback IP's (a timeout there is a real
+   Port outage; a warning means the Port is fine — fix DNS, not the Port). Are
+   the other `*.haynesnetwork` pings (`zigbee` Coordinator Ping, `zwave` Radio
+   Ping) also failing, or `unknown`? Then it is DNS or the network — triage
+   that, not the Port.
 3. Read `switch.power_distribution_hi_density_outlet_21`:
    - `on` → powered.
    - `off` → the outlet was left off (a repair's `turn_on` was lost, or a human

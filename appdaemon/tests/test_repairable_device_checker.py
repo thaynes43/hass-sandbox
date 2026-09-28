@@ -294,6 +294,32 @@ class TestRepairStateMachine:
         assert "No repair switch" in app._repair_detail
 
 
+class TestWarningNeverArmsARepair:
+    """The DNS-fallback `warning` (device up, name broken) is UI-only: even
+    long past the dwell it neither schedules nor starts a power cycle."""
+
+    def test_idle_long_warning_does_nothing(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = closing_create_task()
+        warning = [{
+            "name": "Ping",
+            "status": "warning",
+            "detail": "4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork",
+        }]
+
+        for _ in range(4):
+            app._evaluate_auto_repair(warning)
+        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(hours=2)
+        app._evaluate_auto_repair(warning)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+        app.create_task.assert_not_called()
+
+
 class TestRelapseAfterSuccess:
     """A ``success`` that does not stick must not stand for the rest of the
     outage: it is one of the bridge's repair-hold states, so it would keep
@@ -352,6 +378,38 @@ class TestRelapseAfterSuccess:
         state = _report_payloads(app)[-1]["repair_state"]
         assert state["status"] == REPAIR_FAILED
         assert state["status"] not in _REPAIR_HOLD_STATES
+
+    def test_success_plus_unknown_ping_is_left_alone(self):
+        """A ping_host that stops resolving (DNS outage) is `unknown`: it says
+        nothing about the device, so a good repair stays `success`, no relapse
+        is logged, and nothing is armed."""
+        app = self._app()
+        unresolved = [{
+            "name": "Ping",
+            "status": "unknown",
+            "detail": "cannot resolve movieroomsonos.haynesnetwork (3 attempts)",
+        }]
+
+        app._evaluate_auto_repair(unresolved)
+
+        assert app._repair_status == REPAIR_SUCCESS
+        assert app._repair_detail == "Recovered after 45s"
+        assert not _logged(app, "WARNING", "relapsed")
+        assert app._unhealthy_since is None
+        assert app._auto_repair_deadline is None
+        app.create_task.assert_not_called()
+
+    def test_success_plus_fallback_warning_is_left_alone(self):
+        app = self._app()
+
+        app._evaluate_auto_repair([{
+            "name": "Ping",
+            "status": "warning",
+            "detail": "4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork",
+        }])
+
+        assert app._repair_status == REPAIR_SUCCESS
+        app.create_task.assert_not_called()
 
     def test_success_then_healthy_still_goes_idle(self):
         app = self._app()
@@ -562,8 +620,44 @@ class TestTurnOnConfirmation:
 
         assert _turn_ons(app) == 1
         assert app.get_state.await_count == _CONFIRM_POLLS
-        assert _logged(app, "WARNING", "never saw it go off")
+        assert _logged(app, "INFO", "never saw it go off")
+        assert not any(
+            c[1].get("level") == "WARNING" for c in app.log.call_args_list
+        )
         assert app._repair_status == REPAIR_SUCCESS
+        # On success the note is logged only — the card keeps a plain detail.
+        assert app._repair_detail == "Recovered after 5s"
+        assert _logged(app, "INFO", switch_power_cycle.NEVER_OFF_NOTE)
+
+    def test_never_off_note_reaches_the_failure_detail(self):
+        """The outlet may still have cycled, so it is not a failure — but if
+        the device then does not recover, the card and the page say so."""
+        app = self._app()
+        app.get_state = AsyncMock(return_value=_stale("on"))
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Ping", "status": "critical", "detail": "timeout"},
+        ])
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            "Did not recover after 10s (the outlet never reported off — "
+            "it may not have been power cycled)"
+        )
+        state = _report_payloads(app)[-1]["repair_state"]
+        assert state["detail"] == app._repair_detail
+
+    def test_no_note_leaves_the_failure_detail_plain(self):
+        app = self._app()
+        _switch_reports(app)
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Ping", "status": "critical", "detail": "timeout"},
+        ])
+
+        _run(app._execute_repair())
+
+        assert app._repair_detail == "Did not recover after 10s"
 
     def test_confirm_window_constants_are_overridable(self):
         app = self._app()
@@ -576,6 +670,50 @@ class TestTurnOnConfirmation:
 
         # 10 s / 5 s = two reads a window, two windows.
         assert app.get_state.await_count == 4
+        assert app._repair_status == REPAIR_FAILED
+
+    def test_helper_result_carries_switch_on_and_note(self):
+        app = self._app()
+        _switch_reports(app)
+        ok = _run(switch_power_cycle.power_cycle_switch(app, SWITCH, 0))
+        assert ok == switch_power_cycle.PowerCycleResult(switch_on=True, note="")
+
+        app = self._app()
+        app.get_state = AsyncMock(return_value=_stale("on"))
+        never_off = _run(switch_power_cycle.power_cycle_switch(app, SWITCH, 0))
+        assert never_off == switch_power_cycle.PowerCycleResult(
+            switch_on=True, note=switch_power_cycle.NEVER_OFF_NOTE
+        )
+
+        app = self._app()
+        _switch_reports(app, on_after_turn_ons=None)
+        dead = _run(switch_power_cycle.power_cycle_switch(app, SWITCH, 0))
+        assert dead == switch_power_cycle.PowerCycleResult(switch_on=False)
+
+    def test_recovery_accepts_the_dns_fallback_warning(self):
+        """Ping answered via ping_fallback_host (warning) = the device is up:
+        a DNS outage must not turn a power cycle that worked into a failure."""
+        app = self._app()
+        _switch_reports(app)
+        app._run_checks_only = AsyncMock(return_value=[{
+            "name": "Ping",
+            "status": "warning",
+            "detail": "4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork",
+        }])
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_SUCCESS
+
+    def test_recovery_does_not_accept_unknown(self):
+        app = self._app()
+        _switch_reports(app)
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Ping", "status": "unknown", "detail": "cannot resolve x"},
+        ])
+
+        _run(app._execute_repair())
+
         assert app._repair_status == REPAIR_FAILED
 
     def test_unreadable_switch_counts_as_not_on(self):
@@ -749,6 +887,7 @@ class TestMovieRoomSonosProdConfig:
 
         assert app._entities == []
         assert app._build_check_names() == ["Ping"]
+        assert app._ping_fallback_host == "192.168.0.70"
         assert app._repair_switch == "switch.power_distribution_hi_density_outlet_21"
         assert app._cached_auto_repair_enabled is True
         assert app._cached_auto_repair_delay_min == 10
@@ -764,6 +903,25 @@ class TestMovieRoomSonosProdConfig:
         assert results == [{"name": "Ping", "status": "ok", "detail": "4ms"}]
         # Nothing but the ping is read — no entity state at all.
         app.get_state.assert_not_called()
+
+    def test_an_unresolved_name_falls_back_to_the_reserved_ip(self):
+        app = self._app()
+        answers = {
+            "movieroomsonos.haynesnetwork": {
+                "status": "unknown",
+                "detail": "cannot resolve movieroomsonos.haynesnetwork (3 attempts)",
+            },
+            "192.168.0.70": {"status": "critical", "detail": "timeout (3 attempts)"},
+        }
+        ping = AsyncMock(side_effect=lambda host, attempts=1: answers[host])
+
+        with patch(f"{self.MOD_BASE}.ping_check", new=ping):
+            results = _run(app._run_checks_only())
+
+        assert ping.await_args_list[1].args == ("192.168.0.70",)
+        assert ping.await_args_list[1].kwargs == {"attempts": 3}
+        # A dead Port during a DNS outage is still critical: it repairs and pages.
+        assert results[0]["status"] == "critical"
 
     def test_a_sustained_ping_failure_arms_then_fires_the_power_cycle(self):
         app = self._app()

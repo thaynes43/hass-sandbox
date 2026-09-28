@@ -676,6 +676,24 @@ class TestTurnOnConfirmation:
             for c in app.log.call_args_list
         )
 
+    def test_never_off_note_reaches_the_device_failure_detail(self):
+        app = self._app()
+        stale = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+        ).isoformat()
+        app.get_state = AsyncMock(return_value={"state": "on", "last_changed": stale})
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Movie Room Status", "status": "critical", "detail": "off"},
+            {"name": "Movie Room Ping", "status": "critical", "detail": "timeout"},
+        ])
+
+        _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._device_repair_states["Movie Room"]["detail"] == (
+            "Did not recover after 10s (the outlet never reported off — "
+            "it may not have been power cycled)"
+        )
+
     def test_missing_entity_fails_the_device(self):
         app = self._app()
         app.get_state = AsyncMock(return_value=None)

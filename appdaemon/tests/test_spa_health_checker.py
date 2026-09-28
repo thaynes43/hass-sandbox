@@ -871,6 +871,51 @@ class TestTurnOnConfirmation:
         delta_min = (app._next_retry_at - before).total_seconds() / 60
         assert abs(delta_min - 30) < 0.5
 
+    def test_never_off_note_reaches_the_failure_detail_as_a_normal_attempt(self):
+        """The switch reads on but never reported off: not a failure by itself
+        (the outlet may still have cycled), but if the spa then does not
+        recover the detail says so — and it is an ordinary attempt on the
+        ladder."""
+        app = self._app()
+        stale = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+        ).isoformat()
+        app.get_state = AsyncMock(
+            return_value={"entity_id": SWITCH, "state": "on", "last_changed": stale}
+        )
+        app._run_health_checks_only = AsyncMock(
+            return_value=[{"name": "Gateway Ping", "status": "critical", "detail": "timeout"}]
+        )
+
+        _run(app._execute_repair())
+
+        assert _turn_ons(app) == 1
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail.startswith(
+            "Did not recover after 10s (the outlet never reported off — it may "
+            "not have been power cycled) (attempt 1; retry at "
+        )
+        assert app._repair_attempts == 1
+
+    def test_never_off_note_is_only_logged_on_success(self):
+        app = self._app()
+        stale = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+        ).isoformat()
+        app.get_state = AsyncMock(
+            return_value={"entity_id": SWITCH, "state": "on", "last_changed": stale}
+        )
+        app._run_health_checks_only = AsyncMock(return_value=self._OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_SUCCESS
+        assert app._repair_detail == "Recovered after 5s"
+        assert any(
+            c[1].get("level") == "INFO" and "never reported off" in c[0][0]
+            for c in app.log.call_args_list
+        )
+
     def test_missing_entity_fails(self):
         app = self._app()
         app.get_state = AsyncMock(return_value=None)

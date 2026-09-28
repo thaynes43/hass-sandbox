@@ -205,6 +205,114 @@ class TestPingCheck:
         mock_ping.assert_awaited_once_with("192.168.50.159", attempts=3)
 
 
+class TestPingFallbackHost:
+    """``ping_fallback_host`` is pinged only when ``ping_host`` does not
+    resolve, so a DNS outage that lasts can neither hide a dead device (its
+    ``unknown`` would never page) nor make a live one look dead."""
+
+    HOST = "movieroomsonos.haynesnetwork"
+    FALLBACK = "192.168.0.70"
+    PING = "health_checks.checker_apps.device_checker.device_checker.ping_check"
+    UNRESOLVED = {"status": "unknown", "detail": f"cannot resolve {HOST} (3 attempts)"}
+
+    def _app(self, fallback: str | None = FALLBACK):
+        extra = {"ping_host": self.HOST, "ping_attempts": 3, "entities": []}
+        if fallback is not None:
+            extra["ping_fallback_host"] = fallback
+        app = _make_app(extra)
+        _init_only(app)
+        return app
+
+    def _ping(self, primary: dict, fallback: dict | None = None) -> AsyncMock:
+        def _answer(host, attempts=1):
+            return primary if host == self.HOST else fallback
+
+        return AsyncMock(side_effect=_answer)
+
+    def test_resolved_ok_never_touches_the_fallback(self):
+        app = self._app()
+        ping = self._ping({"status": "ok", "detail": "4ms"})
+
+        with patch(self.PING, new=ping):
+            result = _run(app._check_ping())
+
+        assert result == {"name": "Ping", "status": "ok", "detail": "4ms"}
+        ping.assert_awaited_once_with(self.HOST, attempts=3)
+
+    def test_resolved_but_dead_is_critical_without_the_fallback(self):
+        """A timeout means the name resolved: the fallback has nothing to add."""
+        app = self._app()
+        ping = self._ping({"status": "critical", "detail": "timeout (3 attempts)"})
+
+        with patch(self.PING, new=ping):
+            result = _run(app._check_ping())
+
+        assert result["status"] == "critical"
+        ping.assert_awaited_once_with(self.HOST, attempts=3)
+
+    def test_unresolved_and_fallback_ok_is_a_warning(self):
+        app = self._app()
+        ping = self._ping(self.UNRESOLVED, {"status": "ok", "detail": "4ms"})
+
+        with patch(self.PING, new=ping):
+            result = _run(app._check_ping())
+
+        assert result == {
+            "name": "Ping",
+            "status": "warning",
+            "detail": f"4ms via {self.FALLBACK} — cannot resolve {self.HOST}",
+        }
+        assert ping.await_args_list[1].args == (self.FALLBACK,)
+        assert ping.await_args_list[1].kwargs == {"attempts": 3}
+
+    def test_unresolved_and_fallback_dead_is_critical(self):
+        """A dead device still pages and repairs during a DNS outage."""
+        app = self._app()
+        ping = self._ping(
+            self.UNRESOLVED, {"status": "critical", "detail": "timeout (3 attempts)"}
+        )
+
+        with patch(self.PING, new=ping):
+            result = _run(app._check_ping())
+
+        assert result == {
+            "name": "Ping",
+            "status": "critical",
+            "detail": (
+                f"timeout (3 attempts) via {self.FALLBACK} — "
+                f"cannot resolve {self.HOST}"
+            ),
+        }
+
+    def test_unresolved_without_a_fallback_stays_unknown(self):
+        app = self._app(fallback=None)
+        ping = self._ping(self.UNRESOLVED)
+
+        with patch(self.PING, new=ping):
+            result = _run(app._check_ping())
+
+        assert result == {"name": "Ping", **self.UNRESOLVED}
+        ping.assert_awaited_once()
+
+    def test_fallback_use_is_logged_on_the_transitions_only(self):
+        app = self._app()
+        unresolved = self._ping(self.UNRESOLVED, {"status": "ok", "detail": "4ms"})
+        resolved = self._ping({"status": "ok", "detail": "4ms"})
+
+        with patch(self.PING, new=unresolved):
+            _run(app._check_ping())
+            _run(app._check_ping())
+        with patch(self.PING, new=resolved):
+            _run(app._check_ping())
+            _run(app._check_ping())
+
+        levels = [
+            c[1].get("level") for c in app.log.call_args_list
+            if self.HOST in str(c[0][0]) and "initialising" not in str(c[0][0])
+        ]
+        assert levels == ["WARNING", "INFO"]
+
+
 class TestRunChecks:
     def test_reports_all_results(self):
         app = _make_app()

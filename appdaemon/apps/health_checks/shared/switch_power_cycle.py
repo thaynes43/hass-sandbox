@@ -7,6 +7,11 @@ Shared by ``RepairableDeviceChecker`` and ``RepairableDeviceGroupChecker``
 
     from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
 
+    result = await power_cycle_switch(self, switch, off_duration_s)
+    if not result.switch_on:
+        ...  # fail the repair now, no recovery wait
+    ...      # recovery wait; on failure append f" ({result.note})" if any
+
 Why the turn-on is confirmed
 ----------------------------
 The repair used to be fire-and-forget: ``switch/turn_off``, sleep,
@@ -31,7 +36,8 @@ Turn off, wait ``off_duration_s``, turn on, then read the switch every
 ``SWITCH_CONFIRM_POLL_S`` for up to ``SWITCH_CONFIRM_TIMEOUT_S``.  If it is not
 on, log a WARNING and ``turn_on`` once more, then confirm again for the same
 window.  Still not on (the entity missing included) → log an ERROR and return
-``False``: the caller ends the repair as failed and skips the recovery wait.
+``switch_on=False``: the caller ends the repair as failed and skips the
+recovery wait.
 
 What counts as "on"
 -------------------
@@ -42,9 +48,12 @@ reported the ``off``.  Taking that at face value would confirm a switch whose
 ``last_changed`` is at or after the moment the cycle started: a transition HA
 registered after the ``turn_off``.  An ``on`` that has not changed since
 before the cycle is accepted only at the end of the window, by when HA has had
-far longer than the PDU's re-provision to report the ``off``; it means the
-switch never went off at all (the ``turn_off`` was lost or coalesced), so the
-device is powered but may not have been cycled — logged as a WARNING.
+far longer than the PDU's re-provision to report the ``off``; it means HA
+never saw the switch go off (the ``turn_off`` was lost or coalesced, or HA
+simply missed the ``off``).  The device is powered, so that is not a failure,
+but it may not have been cycled: the result carries ``NEVER_OFF_NOTE``, which
+the callers append to the detail if the recovery wait then fails, so the card
+and the Alertmanager description say it.
 
 ``call_service`` stays un-awaited, as at every other repair call site: on the
 event loop AppDaemon's ``sync_decorator`` returns a Task, so a bare call still
@@ -57,6 +66,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+from dataclasses import dataclass
 from typing import Any, Optional, Tuple
 
 #: How long to wait for the switch to report ``on`` after each ``turn_on``.
@@ -64,6 +74,24 @@ SWITCH_CONFIRM_TIMEOUT_S = 60
 
 #: How often to read the switch while waiting.
 SWITCH_CONFIRM_POLL_S = 5
+
+#: Carried by a result whose ``on`` was never preceded by a reported ``off``.
+NEVER_OFF_NOTE = "the outlet never reported off — it may not have been power cycled"
+
+
+@dataclass(frozen=True)
+class PowerCycleResult:
+    """What :func:`power_cycle_switch` observed.
+
+    ``switch_on`` — the switch is confirmed on; the caller may start its
+    recovery wait.  False means it is still not on after a second
+    ``turn_on``: fail the repair now.
+    ``note`` — something a human should know if the repair then fails (empty
+    when there is nothing to add).  Never a failure by itself.
+    """
+
+    switch_on: bool
+    note: str = ""
 
 
 def switch_not_on_detail(switch: str) -> str:
@@ -111,11 +139,12 @@ async def _read_switch(
 
 async def _confirm_on(
     app: Any, switch: str, cycle_started: datetime.datetime
-) -> Tuple[bool, Optional[str]]:
+) -> Tuple[bool, Optional[str], bool]:
     """Wait up to ``SWITCH_CONFIRM_TIMEOUT_S`` for *switch* to report ``on``.
 
-    Returns ``(confirmed, last_state_read)``.  See the module docstring for
-    why an unchanged ``on`` only counts at the end of the window.
+    Returns ``(confirmed, last_state_read, never_off)``; ``never_off`` is True
+    when the confirmation was an ``on`` unchanged since before the cycle.  See
+    the module docstring for why that only counts at the end of the window.
     """
     timeout_s = SWITCH_CONFIRM_TIMEOUT_S
     poll_s = max(1, SWITCH_CONFIRM_POLL_S)
@@ -127,31 +156,35 @@ async def _confirm_on(
         state, changed = await _read_switch(app, switch)
         if state == "on" and changed is not None and changed >= cycle_started:
             app.log(f"{switch} confirmed on after {waited}s", level="INFO")
-            return True, state
+            return True, state, False
     if state == "on":
+        # Not a failure (the device is powered, and the outlet may still have
+        # cycled while HA missed the `off`), so INFO; the note rides on the
+        # result and reaches the detail only if the recovery wait fails.
         app.log(
             f"{switch} reads on but has not changed since before the power "
-            f"cycle — Home Assistant never saw it go off, so the device may "
-            f"not have been power cycled",
-            level="WARNING",
+            f"cycle — Home Assistant never saw it go off; accepting it as on",
+            level="INFO",
         )
-        return True, state
-    return False, state
+        return True, state, True
+    return False, state, False
 
 
 async def power_cycle_switch(
     app: Any, switch: str, off_duration_s: float, target: str = ""
-) -> bool:
+) -> PowerCycleResult:
     """Turn *switch* off, wait, turn it back on and confirm it is on.
 
     *app* is the calling AppDaemon app (for ``call_service``, ``get_state``
     and ``log``); *target* names the device in log lines when one switch is
     one of several (the device group checker).
 
-    Returns True once the switch is confirmed on — the caller may start its
-    recovery wait.  Returns False when it is still not on after a second
-    ``turn_on``; the ERROR is already logged, and the caller must end the
-    repair as failed without waiting for recovery.
+    ``result.switch_on`` is True once the switch is confirmed on — the caller
+    may start its recovery wait — and False when it is still not on after a
+    second ``turn_on``; the ERROR is already logged, and the caller must end
+    the repair as failed without waiting for recovery.  ``result.note`` is
+    ``NEVER_OFF_NOTE`` when the ``on`` was never preceded by a reported
+    ``off``.
     """
     label = f"{switch} for {target}" if target else switch
     cycle_started = _utcnow()
@@ -163,9 +196,9 @@ async def power_cycle_switch(
 
     app.log(f"Turning on {label}", level="INFO")
     app.call_service("switch/turn_on", entity_id=switch)
-    confirmed, state = await _confirm_on(app, switch, cycle_started)
+    confirmed, state, never_off = await _confirm_on(app, switch, cycle_started)
     if confirmed:
-        return True
+        return _confirmed(never_off)
 
     app.log(
         f"{label} did not report on within {SWITCH_CONFIRM_TIMEOUT_S}s "
@@ -173,9 +206,9 @@ async def power_cycle_switch(
         level="WARNING",
     )
     app.call_service("switch/turn_on", entity_id=switch)
-    confirmed, state = await _confirm_on(app, switch, cycle_started)
+    confirmed, state, never_off = await _confirm_on(app, switch, cycle_started)
     if confirmed:
-        return True
+        return _confirmed(never_off)
 
     missing = (
         " — the entity is missing; reload the integration that owns it"
@@ -187,4 +220,15 @@ async def power_cycle_switch(
         f"{missing} — ending the repair without waiting for recovery",
         level="ERROR",
     )
-    return False
+    return PowerCycleResult(switch_on=False)
+
+
+def _confirmed(never_off: bool) -> PowerCycleResult:
+    return PowerCycleResult(
+        switch_on=True, note=NEVER_OFF_NOTE if never_off else ""
+    )
+
+
+def with_note(detail: str, note: str) -> str:
+    """*detail* with the power cycle's note appended, if it has one."""
+    return f"{detail} ({note})" if note else detail

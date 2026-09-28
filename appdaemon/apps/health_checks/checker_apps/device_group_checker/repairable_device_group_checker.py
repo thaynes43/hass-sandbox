@@ -39,7 +39,11 @@ from health_checks.checker_apps.device_group_checker.device_group_checker import
 )
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check_per_device
-from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
+from shared.switch_power_cycle import (
+    power_cycle_switch,
+    switch_not_on_detail,
+    with_note,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -518,10 +522,10 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
         self._report_repair_status_only()
 
         try:
-            switch_on = await power_cycle_switch(
+            cycle = await power_cycle_switch(
                 self, repair_switch, self._repair_off_duration_s, target=dev_name
             )
-            if not switch_on:
+            if not cycle.switch_on:
                 # The helper has logged the ERROR. Waiting for recovery would
                 # only burn the recovery window on an unpowered device.
                 dr["status"] = REPAIR_FAILED
@@ -551,8 +555,13 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
                     dr["detail"] = f"Recovered after {elapsed}s"
                     self._repair_status = self._aggregate_repair_status()
                     self._unhealthy_since = None
+                    # A note is not worth the card on success: log only.
                     self.log(
-                        f"{dev_name} repair successful — recovered after {elapsed}s",
+                        with_note(
+                            f"{dev_name} repair successful — recovered after "
+                            f"{elapsed}s",
+                            cycle.note,
+                        ),
                         level="INFO",
                     )
                     self._pending_repair_events.append({
@@ -570,13 +579,19 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
 
             # Timeout
             dr["status"] = REPAIR_FAILED
-            dr["detail"] = (
-                f"Did not recover after {self._repair_recovery_wait_s}s"
+            # The note (e.g. the outlet never reported off) goes into the
+            # detail, so the card and the Alertmanager description say it.
+            dr["detail"] = with_note(
+                f"Did not recover after {self._repair_recovery_wait_s}s",
+                cycle.note,
             )
             self._repair_status = self._aggregate_repair_status()
             self.log(
-                f"{dev_name} repair failed — no recovery after "
-                f"{self._repair_recovery_wait_s}s",
+                with_note(
+                    f"{dev_name} repair failed — no recovery after "
+                    f"{self._repair_recovery_wait_s}s",
+                    cycle.note,
+                ),
                 level="WARNING",
             )
             self._pending_repair_events.append({

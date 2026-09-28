@@ -5,7 +5,9 @@ optional IP ping.  Each instance monitors one device with configurable
 checks:
 
 1. **Entity checks** — verify one or more HA entities match expected states
-2. **IP ping** — ICMP ping the device (optional)
+2. **IP ping** — ICMP ping the device (optional). A ``ping_host`` given as a
+   name can also take a ``ping_fallback_host`` (its IP), pinged only when the
+   name does not resolve — see ``_check_ping``.
 
 No repair support — this is a lightweight monitor for devices that
 cannot be auto-repaired from AppDaemon.
@@ -53,6 +55,11 @@ class BasicDeviceChecker(hass.Hass):
         # Wi-Fi devices in power-save routinely drop a lone ping; retry before
         # calling it a miss (ok on the first success).
         self._ping_attempts: int = max(1, int(args.get("ping_attempts", 1)))
+        # Optional IP for a ping_host given as a name: pinged only when the
+        # name does not resolve, so a DNS outage cannot hide a dead device.
+        self._ping_fallback_host: str = args.get("ping_fallback_host", "") or ""
+        # Whether the last ping went via the fallback (for transition logs).
+        self._ping_using_fallback: bool = False
 
         # Entity checks (list of dicts with entity_id, healthy_state, name)
         # healthy_state can be:
@@ -219,6 +226,18 @@ class BasicDeviceChecker(hass.Hass):
             result = await ping_check(
                 self._ping_host, attempts=self._ping_attempts
             )
+            unresolved = result["status"] == "unknown" and str(
+                result.get("detail", "")
+            ).startswith("cannot resolve")
+            if unresolved and self._ping_fallback_host:
+                result = await self._ping_fallback()
+            elif self._ping_using_fallback:
+                self._ping_using_fallback = False
+                self.log(
+                    f"{self._ping_host} resolves again — back to pinging it "
+                    f"by name",
+                    level="INFO",
+                )
             return {
                 "name": self._ping_check_name,
                 "status": result["status"],
@@ -231,6 +250,37 @@ class BasicDeviceChecker(hass.Hass):
                 "status": "critical",
                 "detail": f"Error: {exc}",
             }
+
+    async def _ping_fallback(self) -> Dict[str, str]:
+        """Ping ``ping_fallback_host`` because ``ping_host`` did not resolve.
+
+        An unresolvable name is ``unknown`` (``ping_check``), which neither
+        pages nor arms a repair — right for a short DNS blip, but a DNS outage
+        that lasts would hide a dead device behind it indefinitely. So:
+
+        * fallback answers → ``warning``: the device is up and the name is
+          broken. Warning is UI-only (``alertmanager_bridge`` maps it to
+          ``severity=warning``, and only critical reaches the phone) and
+          never arms a repair (``any_bad`` is critical/degraded only).
+        * fallback does not answer → its own status (``critical``), so a dead
+          device still repairs and pages during the DNS outage.
+        """
+        fallback = self._ping_fallback_host
+        if not self._ping_using_fallback:
+            self._ping_using_fallback = True
+            self.log(
+                f"{self._ping_host} does not resolve — pinging {fallback} "
+                f"instead until it does",
+                level="WARNING",
+            )
+        result = await ping_check(fallback, attempts=self._ping_attempts)
+        detail = (
+            f"{result['detail']} via {fallback} — "
+            f"cannot resolve {self._ping_host}"
+        )
+        if result["status"] == "ok":
+            return {"status": "warning", "detail": detail}
+        return {"status": result["status"], "detail": detail}
 
     async def _check_entity_state(self, entity_conf: dict) -> Dict[str, str]:
         entity_id = entity_conf["entity_id"]
