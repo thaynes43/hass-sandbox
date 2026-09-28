@@ -8,18 +8,23 @@
 # Some days the district prints building-specific options: a letter-code group in front ("X/Y/Z Pizza")
 # or a one-word building name and a colon ("Name: Pizza"). The kids' buildings are kept OUT of this
 # public repo, like the district itself: they live in the live-only helper
-# input_text.school_lunch_buildings, format `<School>: <tag>, <tag>; <School>: <tag>`, where <School>
-# is a school name as in the sensor (Elementary, Middle School) and each <tag> is the building's letter
-# code or one-word name exactly as the menu prints it (any case). Never copy its value into git.
-# For a school listed there, options tagged for another building are dropped and the kids' own tags are
-# stripped; if that would leave nothing, all options come back with their tags. A school not listed
-# there (and an empty or missing helper) gets every option, tags included. A one-word "Word:" prefix
-# counts as a building tag; multi-word ones ("Pasta Bar:", "BURGER BAR:") do not. Three-plus letters
-# make a letter code ("R/F Potato Chips" = reduced fat, not a building).
-# Day selection mirrors the lunch card: with no day given, today's lunch until the sensor's
+# input_text.school_lunch_buildings, format `<School>: <tag>, <tag>, -<tag>; <School>: <tag>, -<tag>`,
+# where <School> is a school name as in the sensor (Elementary, Middle School) and each <tag> is a
+# building's letter code or one-word name exactly as the menu prints it (any case): plain = the kid's
+# own building, `-` = another building of that school whose "Name:" options are dropped. Never copy
+# its value into git.
+# For a school listed there: a letter-code option (three-plus capital letters, "X/Y/Z Pizza") is kept
+# only when one of the letters is the kid's own; a one-word "Name:" option is kept when Name is the
+# kid's own tag, dropped when it is a `-` tag, and kept unchanged when it is neither, so an unknown
+# label ("Deli: Turkey Sub") is read out rather than lost. The kid's own tags are stripped. If that
+# leaves nothing, all options come back with their tags. A school not listed there (and an empty or
+# missing helper) gets every option, tags included. "R/F Potato Chips" (reduced fat) and multi-word
+# labels ("Pasta Bar:", "BURGER BAR:") are never building tags.
+# Day selection: with no day given it mirrors the lunch card: today's lunch until the sensor's
 # show_tomorrow_after cutoff (12:00), then the next day, skipping forward (up to 14 days) past weekends
-# and no-school days to the first day with a lunch. An explicit day or date is answered as asked,
-# including weekends, no-school notices and months whose menu is not published yet.
+# and no-school days to the first day with a lunch. A weekday name is the coming one, or today when it
+# is that day (at any hour). An explicit day or date is answered as asked, including weekends,
+# no-school notices, days with no options and months whose menu is not published yet.
 # "Includes" items (on 75%+ of days, e.g. milk) are left out: they would pad every spoken answer.
 # Problems come back as a `response` sentence with a plain stop (see voice_thermostat.yaml: an
 # `error: true` stop reaches the agent as an empty SUCCESS).
@@ -56,7 +61,7 @@ fields:
   day:
     name: Day
     description: 'Which day: next (the default: the next school lunch), today, tomorrow, or a weekday
-      name for the coming one. For any other day (a date, next week, a day that has passed) send date
+      name (the coming one, or today when it is that day). For any other day (a date, next week, a day that has passed) send date
       instead.'
     required: false
     selector:
@@ -78,8 +83,8 @@ fields:
     selector:
       date: {}
 sequence:
-- alias: 'Whose menus, which buildings, which day. building_tags maps a lower-case school name to the
-    upper-case tags of the kids'' own buildings, read from the live-only helper (see the header)'
+- alias: 'Whose menus, which buildings, which day. building_tags maps a lower-case school name to its
+    upper-case tags from the live-only helper, other buildings'' still prefixed with - (see the header)'
   variables:
     kids:
       penelope:
@@ -115,9 +120,8 @@ sequence:
       or ''12:00:00'') }}'
     start: '{% set today = now().date() %}{% if exact %}{% set d = as_datetime(exact, none) %}{{ d.date()
       if d else '''' }}{% elif wanted_day == ''today'' %}{{ today }}{% elif wanted_day == ''tomorrow'' %}{{
-      today + timedelta(days=1) }}{% elif wanted_day in weekdays %}{% set off = (weekdays.index(wanted_day)
-      - today.weekday()) % 7 %}{{ today + timedelta(days=7 if off == 0 and not before_cutoff else off)
-      }}{% else %}{{ today if before_cutoff else today + timedelta(days=1) }}{% endif %}'
+      today + timedelta(days=1) }}{% elif wanted_day in weekdays %}{{ today + timedelta(days=(weekdays.index(wanted_day)
+      - today.weekday()) % 7) }}{% else %}{{ today if before_cutoff else today + timedelta(days=1) }}{% endif %}'
     find_next: '{{ not exact and wanted_day not in weekdays and wanted_day not in [''today'', ''tomorrow'']
       }}'
     problem: '{% if targets | count == 0 %}No menu for that: ask for Penelope, Jackson, both, or the elementary,
@@ -147,21 +151,25 @@ sequence:
       * 100 + c.day %}{% set out = namespace(lunches=[]) %}{% for t in targets %}{% set days = (schools
       | selectattr(''name'', ''eq'', t.school) | map(attribute=''days'') | first) or [] %}{% set entry =
       days | selectattr(''year'', ''eq'', c.year) | selectattr(''month'', ''eq'', c.month) | selectattr(''day'',
-      ''eq'', c.day) | list %}{% set tags = building_tags.get(t.school | lower, []) %}{% set o = namespace(all=[],
+      ''eq'', c.day) | list %}{% set tags = building_tags.get(t.school | lower, []) %}{% set own = tags | reject(''match'',
+      ''-'') | list %}{% set other = tags | select(''match'', ''-'') | map(''regex_replace'', ''^-\s*'', '''')
+      | list %}{% set o = namespace(all=[],
       mine=[], first=99999999, last=0) %}{% for d in days %}{% set v = d[''year''] * 10000 + d[''month'']
       * 100 + d[''day''] %}{% set o.first = [o.first, v] | min %}{% set o.last = [o.last, v] | max %}{% endfor
       %}{% for i in (entry[0][''items''] if entry else []) if i.role != ''includes'' and (i.name | string
       | trim) %}{% set n = i.name | string | trim | regex_replace(''\s{2,}'', '' '') %}{% set code = n | regex_findall(''^([A-Z](?:/[A-Z]){2,})/?\s'')
       %}{% set named = n | regex_findall(''^([A-Za-z]+):\s'') %}{% set o.all = o.all + [n] %}{% if not code
       and not named %}{% set o.mine = o.mine + [n] %}{% elif (code and (code[0].split(''/'') | select(''in'',
-      tags) | list | count > 0)) or (named and (named[0] | upper) in tags) %}{% set o.mine = o.mine + [n
-      | regex_replace(''^(?:[A-Z](?:/[A-Z]){2,}/?|[A-Za-z]+:)\s+'', '''') | trim] %}{% endif %}{% endfor
-      %}{% set notice = (entry[0].get(''notice'') or '''') if entry else (''No school on the weekend.'' if
+      own) | list | count > 0)) or (named and (named[0] | upper) in own) %}{% set o.mine = o.mine + [n
+      | regex_replace(''^(?:[A-Z](?:/[A-Z]){2,}/?|[A-Za-z]+:)\s+'', '''') | trim] %}{% elif named and (named[0]
+      | upper) not in other %}{% set o.mine = o.mine + [n] %}{% endif %}{% endfor
+      %}{% set notice = (entry[0].get(''notice'') or '''') if entry else '''' %}{% if not notice and not o.all
+      %}{% set notice = (''No school on the weekend.'' if
       c.weekday() >= 5 else (''This menu is not available right now.'' if not days else (''Not published
       yet: the menu for that day is not out.'' if cv > o.last else (''Only the current menus are loaded:
       that day is too far back.'' if cv < o.first else ''No lunch is listed for that day, which usually
-      means no school.'')))) %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
-      ''options'': o.mine if (tags and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
+      means no school.'')))) %}{% endif %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
+      ''options'': o.mine if (own and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
       notice=notice) if notice else rec] %}{% endfor %}{{ out.lunches }}'
 - variables:
     result:
