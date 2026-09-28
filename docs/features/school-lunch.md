@@ -99,7 +99,8 @@ The tool is the Home Assistant script `script.voice_school_lunch`
 `sensor.school_lunch_menu` and the buildings helper described below, and changes nothing.
 
 - With no day named it gives the next school lunch. That's today's until the `show_tomorrow_after`
-  cutoff, then the next day's, skipping weekends and no-school days, as the at-a-glance card does.
+  cutoff, then the next day's, like the at-a-glance card. Unlike the card, it also skips no-school
+  days, not just weekends.
 - A day that has no lunch comes back as a notice: no school, a holiday, the weekend, or "not
   published yet" for a month the district has not posted.
 - Some days the district lists different options for different buildings. The voice answer drops

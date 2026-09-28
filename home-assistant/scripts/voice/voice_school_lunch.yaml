@@ -1,7 +1,8 @@
 # script.voice_school_lunch ("School Lunch Menu") — voice tool, created live via MCP 2026-09-27 on
 # Tom's request: let the "Okay Nabu" boxes answer "what's for lunch tomorrow?" from the menus the
 # school_lunch_app AppDaemon app already scrapes into sensor.school_lunch_menu (the same data the
-# wall display and UniFi Connect lunch cards show). Read-only: it only reads that sensor.
+# wall display and UniFi Connect lunch cards show). Read-only: it reads that sensor and the building
+# helper below, and changes nothing.
 # Kids are mapped HERE, not in the agent prompts, so every agent (the four OpenAI rooms, the local
 # Phone Assist and Jarvis) gets the same answer: Penelope = the Elementary menu, Jackson = the Middle
 # School menu. When a kid changes school, change `kids` below (and the building helper).
@@ -20,9 +21,9 @@
 # leaves nothing, all options come back with their tags. A school not listed there (and an empty or
 # missing helper) gets every option, tags included. "R/F Potato Chips" (reduced fat) and multi-word
 # labels ("Pasta Bar:", "BURGER BAR:") are never building tags.
-# Day selection: with no day given it mirrors the lunch card: today's lunch until the sensor's
-# show_tomorrow_after cutoff (12:00), then the next day, skipping forward (up to 14 days) past weekends
-# and no-school days to the first day with a lunch. A weekday name is the coming one, or today when it
+# Day selection: with no day given it starts like the at-a-glance lunch card (today's lunch until the
+# sensor's show_tomorrow_after cutoff, 12:00, then the next day), but where the card only skips weekends
+# it skips forward (up to 14 days) past weekends AND no-school days to the first day with a lunch. A weekday name is the coming one, or today when it
 # is that day (at any hour). An explicit day or date is answered as asked, including weekends,
 # no-school notices, days with no options and months whose menu is not published yet.
 # "Includes" items (on 75%+ of days, e.g. milk) are left out: they would pad every spoken answer.
@@ -142,7 +143,7 @@ sequence:
   - stop: No menu
     response_variable: result
 - alias: With no day given, move forward to the first day on which any requested menu has a lunch (skips
-    weekends and no-school days, like the lunch card on the wall display)
+    weekends and no-school days; the wall-display card only skips weekends)
   variables:
     menu_date: '{% set first = strptime(start, ''%Y-%m-%d'').date() %}{% set ns = namespace(date=first,
       found=false) %}{% if find_next %}{% for i in range(14) if not ns.found %}{% set c = first + timedelta(days=i)
