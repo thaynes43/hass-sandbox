@@ -145,14 +145,15 @@ Run these gates first, in order — several send you straight to skip/escalate:
    so the overall `sensor.health_check_status`) read `unknown` while they
    wait to hear from every device. That is by design and never pages. You
    can see the window directly: the checker's `checks[]` has `<device> MQTT`
-   rows at `unknown` with detail `no MQTT data yet`, and the AppDaemon pod
-   is young (`kubectl get pod -n home-automation -l
-   app.kubernetes.io/name=appdaemon`, `.status.startTime`) or Loki shows a
-   recent `HealthCheckController started` line. The one case in that window
-   that **does** page: a light `unavailable` in HA reads `critical` rather
-   than `warning`, because the cross-check only downgrades a failure when the
-   device's MQTT side is healthy (`<device> State` = `state: unavailable`
-   with no `(MQTT ok)` suffix, beside `<device> MQTT` = `no MQTT data yet`).
+   rows at `unknown` with detail `no MQTT data yet`, and Loki shows a recent
+   startup, logged once per restart:
+   `{namespace="home-automation", app="appdaemon"} |= "HealthCheckController started"`.
+   The one case in that window that **does** page: a light whose HA state
+   read fails reads `critical` rather than `warning`, because the cross-check
+   only downgrades a failure when the device's MQTT side is healthy. Its
+   `<device> State` row says `state: unavailable`, `state: unknown`,
+   `state: not found` or `error: …`, with no `(MQTT ok)` suffix, beside
+   `<device> MQTT` = `no MQTT data yet`.
    Don't remediate either case in that window. Re-check once that device's
    MQTT row has left `unknown`, and treat it as real only if it is still bad
    then, or if an `unknown` outlasts about 45 min.
