@@ -68,7 +68,7 @@ appdaemon -c appdaemon
 
 ### Deploy AppDaemon
 
-Merging to `main` triggers the Docker image build and push to GHCR automatically. The rollout is **not** automatic: the haynes-ops HelmRelease pins `tag:`, so bump it (branch + PR, self-merge), `flux reconcile`, `rollout status`, and confirm the pod runs the new tag — in the same session (`.agents/rules/git-workflow.md` step 6).
+Merging to `main` triggers the Docker image build and push to GHCR automatically. The rollout is **not** automatic: the haynes-ops HelmRelease pins `tag:`, so bump it (branch + PR, self-merge), `flux reconcile`, `rollout status`, and confirm the pod runs the new tag — in the same session (`.agents/rules/git-workflow.md` step 6). After any AppDaemon restart, the overall `sensor.health_check_status` reads `unknown` for about 30–35 min **by design** (the MQTT lights checkers warm up): verify the checker you changed, not the overall state.
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. **Before bumping, compare against `main` (`git show main:VERSION`)** — if already bumped on this branch, do not bump again.
 

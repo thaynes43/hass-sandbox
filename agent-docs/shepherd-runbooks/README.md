@@ -140,7 +140,13 @@ Run these gates first, in order — several send you straight to skip/escalate:
    it run; do not fire a second `start_repair`.
 3. **Attempt budget exhausted → escalate.** ≥2 Shepherd remediation attempts
    for this checker in the last 6h → skip to **Escalate**.
-4. **Dependency first.** If the checker declares a `health_dependencies` entry
+4. **Fresh AppDaemon restart → not an incident.** For about 30–35 min after
+   any AppDaemon restart, the `*_lights` MQTT checkers (and so the overall
+   `sensor.health_check_status`) read `unknown` while they wait to hear from
+   every device. That is by design and never pages. Don't remediate an
+   `unknown` in that window; only a `warning`/`critical`, or an `unknown`
+   that outlasts about 45 min, is worth a look.
+5. **Dependency first.** If the checker declares a `health_dependencies` entry
    (e.g. spa/locks depend on `cloud`, zigbee batteries depend on `zigbee`)
    and that dependency is itself critical, triage the dependency's runbook —
    the leaf alert is a symptom.

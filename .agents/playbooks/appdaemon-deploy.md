@@ -11,7 +11,7 @@ Before deploying to production, run the pre-deploy security audit: `.agents/play
 3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
 4. Verify the tag exists in GHCR (anon pull token + `GET /v2/thaynes43/appdaemon/manifests/<VERSION>` with an `Accept` header that includes `application/vnd.oci.image.manifest.v1+json` — the index types alone return a false 404)
 5. Bump `tag:` in the haynes-ops HelmRelease (branch + PR, self-merge) — Flux does **not** track new tags on its own
-6. `flux reconcile kustomization appdaemon -n home-automation --with-source`, then `kubectl rollout status deploy/appdaemon -n home-automation`; confirm the pod runs `:<VERSION>` and the changed behaviour shows in its logs
+6. `flux reconcile kustomization appdaemon -n home-automation --with-source`, then `kubectl rollout status deploy/appdaemon -n home-automation`; confirm the pod runs `:<VERSION>` and the changed behaviour shows in its logs. The overall `sensor.health_check_status` then reads `unknown` for about 30–35 min **by design** (the MQTT lights checkers warm up). Verify the checker you changed via `checkers.<id>.status`, not the overall state; see `.agents/rules/git-workflow.md` step 6
 7. The container's entrypoint copies baked-in app code to `/conf/apps/` and starts AppDaemon
 
 ## Versioning

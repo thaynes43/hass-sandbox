@@ -47,7 +47,7 @@ appdaemon -c appdaemon
 
 ### Deploy to production
 
-Production deploys are half automatic. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux does **not** pick it up on its own: the haynes-ops HelmRelease pins `tag:`, so the rollout is a haynes-ops tag-bump PR + `flux reconcile` + `rollout status`, done by the same agent in the same session (`.agents/rules/git-workflow.md` step 6).
+Production deploys are half automatic. Merging to `main` triggers a GitHub Actions workflow that builds and pushes `ghcr.io/thaynes43/appdaemon:<version>` to GHCR. Flux does **not** pick it up on its own: the haynes-ops HelmRelease pins `tag:`, so the rollout is a haynes-ops tag-bump PR + `flux reconcile` + `rollout status`, done by the same agent in the same session (`.agents/rules/git-workflow.md` step 6). After any AppDaemon restart, the overall `sensor.health_check_status` reads `unknown` for about 30–35 min **by design**, while the MQTT lights checkers warm up. Verify the checker you changed via `checkers.<id>.status` instead of waiting for it (same step 6).
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. The merge to `main` then automatically produces the semver tag.
 
