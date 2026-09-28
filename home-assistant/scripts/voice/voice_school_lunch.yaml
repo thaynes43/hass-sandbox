@@ -26,6 +26,8 @@
 # is that day (at any hour). An explicit day or date is answered as asked, including weekends,
 # no-school notices, days with no options and months whose menu is not published yet.
 # "Includes" items (on 75%+ of days, e.g. milk) are left out: they would pad every spoken answer.
+# Home Assistant 2026.9 does NOT check a tool call's arguments against the field selectors (ActionTool
+# passes them straight to the service), so an unknown who or day is refused here, never guessed.
 # Problems come back as a `response` sentence with a plain stop (see voice_thermostat.yaml: an
 # `error: true` stop reaches the agent as an empty SUCCESS).
 # Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-27.
@@ -125,8 +127,9 @@ sequence:
     find_next: '{{ not exact and wanted_day not in weekdays and wanted_day not in [''today'', ''tomorrow'']
       }}'
     problem: '{% if targets | count == 0 %}No menu for that: ask for Penelope, Jackson, both, or the elementary,
-      middle or high school.{% elif not start %}That date was not understood: send it as YYYY-MM-DD.{% elif
-      schools | count == 0 %}The school lunch menus are not available right now.{% endif %}'
+      middle or high school.{% elif not exact and wanted_day not in [''next'', ''today'', ''tomorrow''] + weekdays
+      %}Unknown day: send next, today, tomorrow or a weekday name, or send the date as YYYY-MM-DD.{% elif not
+      start %}That date was not understood: send it as YYYY-MM-DD.{% elif schools | count == 0 %}The school lunch menus are not available right now.{% endif %}'
 - if:
   - condition: template
     value_template: '{{ problem | trim | length > 0 }}'
