@@ -159,17 +159,17 @@ Run these gates first, in order — several send you straight to skip/escalate:
    `<device> MQTT` = `no MQTT data yet`.
    The `*_lights` checkers set no `supports_repair`, so `start_repair` is
    rejected and **Escalate** is the only lever; this gate holds it back.
-   Re-check once the *rest* of that checker's MQTT rows have settled, or
-   after about 45 min, whichever comes first. Don't wait on the failing
+   The action on *this* wake: `record_note` a deferral that names the
+   device and an absolute deadline about 45 min after the restart, e.g.
+   `post-restart warm-up; re-check <device> after <YYYY-MM-DD HH:MM>`, then
+   skip. Notes persist in `alert_history`, so a bare "no action" would read
+   to the **Idempotency** guardrail as a finished triage and every later
+   wake would skip too. On the first wake after that deadline this gate no
+   longer holds: re-triage from the top, and if the `<device> State` row is still
+   bad it is a real outage → **Escalate**. Never wait on the failing
    device's own MQTT row: a dead device never publishes, so it stays
-   `no MQTT data yet` for good. If its `<device> State` row is still bad
-   then, it is a real outage → **Escalate**. Otherwise `record_note` a
-   deferral that names the device and a deadline, e.g. `post-restart
-   warm-up; re-check <device> after <YYYY-MM-DD HH:MM>`, and skip. Notes persist in
-   `alert_history`, so a bare "no action" would read to the **Idempotency**
-   guardrail as a finished triage and every later wake would skip too. A
-   deferral note whose deadline has passed is not an in-flight marker:
-   re-triage from the top. An `unknown` alone is worth a
+   `no MQTT data yet` for good. Write no deferral once the row has cleared;
+   the episode is over. An `unknown` alone is worth a
    look only when, after about 45 min, most of a `*_lights` checker's
    devices still have a `no MQTT data yet` row. Count those rows in
    `checks[]` (it always keeps every non-ok row) against
