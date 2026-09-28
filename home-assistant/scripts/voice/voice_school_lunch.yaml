@@ -14,7 +14,7 @@
 # own building, `-` = another building of that school whose "Name:" options are dropped. Never copy
 # its value into git.
 # For a school listed there: a letter-code option (three-plus capital letters, "X/Y/Z Pizza") is kept
-# only when one of the letters is the kid's own (kept unchanged when the entry names no own tag); a one-word "Name:" option is kept when Name is the
+# only when one of the letters is the kid's own (kept unchanged when the entry names no own letter); a one-word "Name:" option is kept when Name is the
 # kid's own tag, dropped when it is a `-` tag, and kept unchanged when it is neither, so an unknown
 # label ("Deli: Turkey Sub") is read out rather than lost. The kid's own tags are stripped. If that
 # leaves nothing, all options come back with their tags. A school not listed there (and an empty or
@@ -161,7 +161,7 @@ sequence:
       %}{% set named = n | regex_findall(''^([A-Za-z]+):\s'') %}{% set o.all = o.all + [n] %}{% if not code
       and not named %}{% set o.mine = o.mine + [n] %}{% elif (code and (code[0].split(''/'') | select(''in'',
       own) | list | count > 0)) or (named and (named[0] | upper) in own) %}{% set o.mine = o.mine + [n
-      | regex_replace(''^(?:[A-Z](?:/[A-Z]){2,}/?|[A-Za-z]+:)\s+'', '''') | trim] %}{% elif (code and not own) or (named and
+      | regex_replace(''^(?:[A-Z](?:/[A-Z]){2,}/?|[A-Za-z]+:)\s+'', '''') | trim] %}{% elif (code and not (own | select(''match'', ''^[A-Z]$'') | list)) or (named and
       (named[0] | upper) not in other) %}{% set o.mine = o.mine + [n] %}{% endif %}{% endfor
       %}{% set notice = (entry[0].get(''notice'') or '''') if entry else '''' %}{% if not notice and not o.all
       %}{% set notice = (''No school on the weekend.'' if
