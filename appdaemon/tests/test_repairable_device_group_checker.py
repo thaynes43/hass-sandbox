@@ -694,6 +694,27 @@ class TestTurnOnConfirmation:
             "it may not have been power cycled)"
         )
 
+    def test_recovery_wait_ends_by_wall_clock(self):
+        app = _make_app({"repair_recovery_wait_s": 300, "repair_off_duration_s": 0})
+        _init_only(app)
+        _switch_reports(app)
+        clock = {"now": 1000.0}
+
+        async def _slow_checks():
+            clock["now"] += 60
+            return [
+                {"name": "Movie Room Status", "status": "critical", "detail": "off"},
+                {"name": "Movie Room Ping", "status": "critical", "detail": "timeout"},
+            ]
+
+        app._run_checks_only = AsyncMock(side_effect=_slow_checks)
+
+        with patch("time.monotonic", new=lambda: clock["now"]):
+            _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._run_checks_only.await_count == 6  # starts at 0, 60, …, 300 s
+        assert app._device_repair_states["Movie Room"]["status"] == REPAIR_FAILED
+
     def test_missing_entity_fails_the_device(self):
         app = self._app()
         app.get_state = AsyncMock(return_value=None)

@@ -32,8 +32,9 @@ Supports auto-repair via power cycling a smart switch. The repair action:
    failed attempt. If the switch reads `on` but never reported `off`, the
    attempt goes ahead; should it then fail, its detail ends
    `(the outlet never reported off — it may not have been power cycled)`
-4. Polls health checks every ~5 seconds for up to `repair_recovery_wait_s`,
-   counted from the moment the switch is confirmed on
+4. Polls health checks every ~5 seconds for up to `repair_recovery_wait_s` of
+   wall-clock time (checks included, not just the sleeps), counted from the
+   moment the switch is confirmed on
 5. Reports success immediately when all checks go green, or failure after timeout
 
 ### Repair State Machine

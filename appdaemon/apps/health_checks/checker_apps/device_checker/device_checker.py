@@ -17,11 +17,13 @@ Communication with the controller is event-only (never ``get_app``).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import socket
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 # Add health_checks package root so we can import shared utilities
 _health_checks_root = str(Path(__file__).resolve().parents[2])
@@ -33,6 +35,31 @@ import hassapi as hass
 from shared.check_utils import apply_cross_check, ping_check
 
 logger = logging.getLogger(__name__)
+
+#: How long ``_check_ping`` waits for ``ping_host`` to resolve before treating
+#: the name path as broken (a hung resolver). Only used with a
+#: ``ping_fallback_host``.
+PING_RESOLVE_TIMEOUT_S = 3
+
+
+async def _resolve_ipv4(host: str) -> Tuple[bool, str]:
+    """Whether *host* resolves to an IPv4 address; ``(False, why)`` if not.
+
+    ``socket.gaierror`` (NXDOMAIN and friends) and a resolver that does not
+    answer within ``PING_RESOLVE_TIMEOUT_S`` both mean "no". Anything else is
+    re-raised: the caller cannot tell, so it must not blame DNS.
+    """
+    loop = asyncio.get_running_loop()
+    try:
+        await asyncio.wait_for(
+            loop.getaddrinfo(host, None, family=socket.AF_INET),
+            timeout=PING_RESOLVE_TIMEOUT_S,
+        )
+        return True, ""
+    except socket.gaierror as exc:
+        return False, f"resolver error: {exc}"
+    except asyncio.TimeoutError:
+        return False, f"resolver timed out after {PING_RESOLVE_TIMEOUT_S}s"
 
 
 class BasicDeviceChecker(hass.Hass):
@@ -225,21 +252,12 @@ class BasicDeviceChecker(hass.Hass):
 
     async def _check_ping(self) -> Dict[str, str]:
         try:
-            result = await ping_check(
-                self._ping_host, attempts=self._ping_attempts
-            )
-            # Any failed ping by name tries the fallback, not only a fast
-            # "cannot resolve": a resolver that stops *answering* (the likely
-            # companion of a switch blip) leaves getaddrinfo blocking past
-            # ping_check's timeout, which reads as a plain "timeout".
-            if result["status"] != "ok" and self._ping_fallback_host:
-                result = await self._ping_fallback(result)
-            elif self._ping_using_fallback:
-                self._ping_using_fallback = False
-                self.log(
-                    f"{self._ping_host} answers by name again — back to "
-                    f"pinging it by name only",
-                    level="INFO",
+            if self._ping_fallback_host:
+                result = await self._ping_with_fallback()
+            else:
+                # No fallback: exactly the plain ping by name (no pre-resolve).
+                result = await ping_check(
+                    self._ping_host, attempts=self._ping_attempts
                 )
             return {
                 "name": self._ping_check_name,
@@ -254,37 +272,65 @@ class BasicDeviceChecker(hass.Hass):
                 "detail": f"Error: {exc}",
             }
 
-    async def _ping_fallback(self, primary: Dict[str, str]) -> Dict[str, str]:
-        """Ping ``ping_fallback_host`` because the ping by name failed.
+    async def _ping_with_fallback(self) -> Dict[str, str]:
+        """Resolve ``ping_host`` first, then decide which address to ping.
 
-        The ping by name can fail for reasons that say nothing about the
-        device: ``cannot resolve <host>`` (a resolver that answers NXDOMAIN)
-        or a plain ``timeout`` (a resolver that stops answering, so the name
-        never resolves inside ping_check's timeout).  For a repairable checker
-        either would power-cycle a healthy device.  With an IP to fall back
-        on, the device answers for itself instead:
+        Resolve first, because only the resolver can say whether the *name*
+        is the problem. If it resolves, the ping by name is authoritative and
+        its result stands — no fallback, so a device that merely drops ICMP
+        keeps the configured miss tolerance (``ping_attempts``) and is not
+        blamed on DNS. If it does not (``socket.gaierror``, or no answer
+        within ``PING_RESOLVE_TIMEOUT_S`` — a hung resolver), the fallback IP
+        answers instead. A name that resolves here but not a moment later in
+        ``ping`` (``cannot resolve``, a race) takes the fallback too.
+        """
+        resolves, why = await _resolve_ipv4(self._ping_host)
+        if not resolves:
+            return await self._ping_fallback(why)
 
-        * fallback answers → ``warning``: the device is up and the name path
-          is broken. Warning is UI-only (``alertmanager_bridge`` maps it to
-          ``severity=warning``, and only critical reaches the phone) and never
-          arms a repair (``any_bad`` is critical/degraded only).
-        * fallback does not answer → its own status (``critical``), so a dead
-          device still repairs and pages, whatever DNS is doing.
+        result = await ping_check(self._ping_host, attempts=self._ping_attempts)
+        if str(result.get("detail", "")).startswith("cannot resolve"):
+            return await self._ping_fallback("ping could not resolve it")
+        if self._ping_using_fallback:
+            self._ping_using_fallback = False
+            self.log(
+                f"{self._ping_host} resolves again — back to pinging it by name",
+                level="INFO",
+            )
+        return result
+
+    async def _ping_fallback(self, why: str) -> Dict[str, str]:
+        """Ping ``ping_fallback_host`` because ``ping_host`` does not resolve.
+
+        For a repairable checker an unresolvable name would otherwise read as
+        a dead device (``ping_check``: critical, ``cannot resolve <host>``)
+        and power-cycle a healthy one. With an IP to fall back on, the device
+        answers for itself; the detail always says the name did not resolve:
+
+        * fallback answers → ``warning``,
+          ``"<ms> via <fallback> — cannot resolve <host>"``: the device is up
+          and DNS is not. Warning is UI-only (``alertmanager_bridge`` maps it
+          to ``severity=warning``, and only critical reaches the phone) and
+          never arms a repair (``any_bad`` is critical/degraded only).
+        * fallback does not answer → its own status (``critical``), same
+          detail shape, so a dead device still repairs and pages during a DNS
+          outage.
+
+        *why* is for the log only (resolver error, resolver timeout, race).
         """
         fallback = self._ping_fallback_host
         if not self._ping_using_fallback:
             self._ping_using_fallback = True
             self.log(
-                f"{self._ping_host} did not answer by name "
-                f"({primary.get('detail', '')}) — also pinging {fallback} "
-                f"until it does",
+                f"{self._ping_host} does not resolve ({why}) — pinging "
+                f"{fallback} instead until it does",
                 level="WARNING",
             )
         result = await ping_check(fallback, attempts=self._ping_attempts)
-        why = str(primary.get("detail", ""))
-        if not why.startswith("cannot resolve"):
-            why = f"{self._ping_host}: {why}"
-        detail = f"{result['detail']} via {fallback} — {why}"
+        detail = (
+            f"{result['detail']} via {fallback} — "
+            f"cannot resolve {self._ping_host}"
+        )
         if result["status"] == "ok":
             return {"status": "warning", "detail": detail}
         return {"status": result["status"], "detail": detail}

@@ -916,6 +916,29 @@ class TestTurnOnConfirmation:
             for c in app.log.call_args_list
         )
 
+    def test_recovery_wait_ends_by_wall_clock(self):
+        """Slow checks count: every check here takes 60 s, so a 300 s wait is
+        6 checks, not 60 — and the failure is one attempt on the ladder."""
+        app = _make_app({"repair_recovery_wait_s": 300})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._cached_auto_repair_delay_min = 15
+        _switch_reports(app)
+        clock = {"now": 1000.0}
+
+        async def _slow_checks():
+            clock["now"] += 60
+            return [{"name": "Gateway Ping", "status": "critical", "detail": "timeout"}]
+
+        app._run_health_checks_only = AsyncMock(side_effect=_slow_checks)
+
+        with patch("time.monotonic", new=lambda: clock["now"]):
+            _run(app._execute_repair())
+
+        assert app._run_health_checks_only.await_count == 6  # starts at 0, 60, …, 300 s
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_attempts == 1
+
     def test_missing_entity_fails(self):
         app = self._app()
         app.get_state = AsyncMock(return_value=None)

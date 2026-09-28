@@ -16,6 +16,7 @@ import datetime
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -362,10 +363,18 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
             self._repair_detail = "Waiting for recovery..."
             self._report_repair_status_only()
 
+            # Wall-clock time, not just the sleeps: each iteration's checks
+            # take time too (a timed-out ping is seconds), and counting only
+            # the sleeps let a "300 s" wait run for many minutes. The sleep
+            # term keeps it advancing when sleeps are patched out in tests.
+            started = time.monotonic()
             elapsed = 0
             while elapsed < self._repair_recovery_wait_s:
                 await asyncio.sleep(REPAIR_POLL_INTERVAL_S)
-                elapsed += REPAIR_POLL_INTERVAL_S
+                elapsed = max(
+                    elapsed + REPAIR_POLL_INTERVAL_S,
+                    int(time.monotonic() - started),
+                )
 
                 results = await self._run_checks_only()
                 if all(r["status"] in _RECOVERED_STATUSES for r in results):

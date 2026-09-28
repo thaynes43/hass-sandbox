@@ -826,7 +826,7 @@ printer_health_checker:
 # (labelled "Sonos Port"); its power sensor reads 0 W at idle, so draw is no
 # health signal either. One repair per outage: after a failed repair it stays
 # failed until a fully healthy cycle, which caps the PDU churn.
-# ping_fallback_host (its DHCP reservation) is also pinged whenever the ping by name fails.
+# ping_fallback_host (its DHCP reservation) is pinged only when the name does not resolve.
 movie_room_sonos_health_checker:
   module: health_checks.checker_apps.device_checker.repairable_device_checker
   class: RepairableDeviceChecker

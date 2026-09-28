@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import datetime
 import json
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -786,6 +787,53 @@ class TestTurnOnConfirmation:
 
         assert app._repair_status == REPAIR_SUCCESS
 
+    def test_recovery_wait_ends_by_wall_clock(self):
+        """Each check takes time too (a timed-out ping is seconds): the wait
+        must end after repair_recovery_wait_s of *wall-clock* time, not after
+        that many seconds of sleeps. Here every check takes 60 s, so a 300 s
+        wait is 6 checks (starting at 0, 60, …, 300 s), not 60."""
+        app = _make_app({"repair_recovery_wait_s": 300, "repair_off_duration_s": 0})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
+        clock = {"now": 1000.0}
+
+        async def _slow_checks():
+            clock["now"] += 60
+            return [{"name": "Ping", "status": "critical", "detail": "timeout"}]
+
+        app._run_checks_only = AsyncMock(side_effect=_slow_checks)
+
+        with patch("time.monotonic", new=lambda: clock["now"]):
+            _run(app._execute_repair())
+
+        assert app._run_checks_only.await_count == 6  # starts at 0, 60, …, 300 s
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == "Did not recover after 300s"
+
+    def test_recovery_duration_is_wall_clock_on_success(self):
+        app = _make_app({"repair_recovery_wait_s": 300, "repair_off_duration_s": 0})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
+        clock = {"now": 1000.0}
+        calls = {"n": 0}
+
+        async def _checks():
+            calls["n"] += 1
+            clock["now"] += 40
+            status = "ok" if calls["n"] == 2 else "critical"
+            return [{"name": "Ping", "status": status, "detail": ""}]
+
+        app._run_checks_only = AsyncMock(side_effect=_checks)
+
+        with patch("time.monotonic", new=lambda: clock["now"]):
+            _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_SUCCESS
+        # Measured when the recovering check started: 0 s, then 40 s.
+        assert app._repair_detail == "Recovered after 40s"
+
     def test_recovery_does_not_accept_unknown(self):
         app = self._app()
         _switch_reports(app)
@@ -963,6 +1011,20 @@ class TestMovieRoomSonosProdConfig:
         _init_only(app)
         return app
 
+    @staticmethod
+    def _resolver(resolves: bool):
+        """Patch the loop's getaddrinfo — unit tests never touch real DNS."""
+
+        async def _getaddrinfo(host, port, *args, **kwargs):
+            if not resolves:
+                raise socket.gaierror(-2, "Name does not resolve")
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.70", 0))]
+
+        return patch.object(
+            asyncio.BaseEventLoop, "getaddrinfo",
+            new=AsyncMock(side_effect=_getaddrinfo),
+        )
+
     def test_ping_is_the_only_check(self):
         app = self._app()
 
@@ -977,7 +1039,7 @@ class TestMovieRoomSonosProdConfig:
         app = self._app()
         ping = AsyncMock(return_value={"status": "ok", "detail": "4ms"})
 
-        with patch(f"{self.MOD_BASE}.ping_check", new=ping):
+        with self._resolver(True), patch(f"{self.MOD_BASE}.ping_check", new=ping):
             results = _run(app._run_checks_only())
 
         ping.assert_awaited_once_with("movieroomsonos.haynesnetwork", attempts=3)
@@ -987,20 +1049,14 @@ class TestMovieRoomSonosProdConfig:
 
     def test_an_unresolved_name_falls_back_to_the_reserved_ip(self):
         app = self._app()
-        answers = {
-            "movieroomsonos.haynesnetwork": {
-                "status": "critical",
-                "detail": "cannot resolve movieroomsonos.haynesnetwork (3 attempts)",
-            },
-            "192.168.0.70": {"status": "critical", "detail": "timeout (3 attempts)"},
-        }
-        ping = AsyncMock(side_effect=lambda host, attempts=1: answers[host])
+        ping = AsyncMock(
+            return_value={"status": "critical", "detail": "timeout (3 attempts)"}
+        )
 
-        with patch(f"{self.MOD_BASE}.ping_check", new=ping):
+        with self._resolver(False), patch(f"{self.MOD_BASE}.ping_check", new=ping):
             results = _run(app._run_checks_only())
 
-        assert ping.await_args_list[1].args == ("192.168.0.70",)
-        assert ping.await_args_list[1].kwargs == {"attempts": 3}
+        ping.assert_awaited_once_with("192.168.0.70", attempts=3)
         # A dead Port during a DNS outage is still critical: it repairs and pages.
         assert results[0]["status"] == "critical"
 

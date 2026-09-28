@@ -3,7 +3,7 @@
 A `RepairableDeviceChecker` instance for the Sonos Port that feeds the Movie
 Room receiver. One check, `Ping`, against `movieroomsonos.haynesnetwork`, 3
 pings per cycle, ok on the first reply; `ping_fallback_host: 192.168.0.70` (its
-DHCP reservation) is also pinged whenever the ping by name fails.
+DHCP reservation) is pinged instead only when the name does not resolve.
 `check_interval_s: 180`. `supports_repair: yes` — power-cycles UniFi USP PDU
 Hi-Density outlet 21, `switch.power_distribution_hi_density_outlet_21`.
 **Auto-repair defaults ON**, 10 min dwell. No dependencies, no for-override
@@ -30,21 +30,25 @@ only `…_outlet_21`.
   dropped **all** of the PDU's outlet entities until the integration was
   reloaded. That is why the repair confirms the outlet came back on.
 - **A DNS failure never power-cycles a healthy Port, and never hides a dead
-  one.** The ping by name fails either way when DNS breaks: a resolver that
-  answers NXDOMAIN gives `cannot resolve movieroomsonos.haynesnetwork (3 attempts)`
-  (ping's "bad address"; since v1.24.0, before that it said `timeout`), and a
-  resolver that stops answering gives a plain `timeout (3 attempts)`. On its
-  own either would page and power-cycle a healthy Port, so **any** failed ping
-  by name also pings `ping_fallback_host` 192.168.0.70, and that decides:
-  - Port answers → `Ping` is **warning**,
-    `4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork (3 attempts)`
-    or `4ms via 192.168.0.70 — movieroomsonos.haynesnetwork: timeout (3 attempts)`.
-    The Port is fine and the name path is not. Warning never pages and never
-    arms a repair (it stands a pending one down); the AppDaemon log has one
-    WARNING `movieroomsonos.haynesnetwork did not answer by name (…) — also pinging 192.168.0.70 until it does`
-    (and an INFO when it answers by name again).
-  - Port silent → `Ping` is **critical**, `timeout (3 attempts) via 192.168.0.70 — …`,
-    and auto-repair and paging run as normal.
+  one.** The checker resolves `movieroomsonos.haynesnetwork` itself before
+  each ping (3 s timeout):
+  - **It resolves** → the ping by name decides, exactly as without a fallback:
+    a Port that does not answer is `timeout (3 attempts)` critical, and DNS is
+    not involved.
+  - **It does not resolve** (NXDOMAIN, or the resolver does not answer within
+    3 s) → the checker pings 192.168.0.70 (`ping_fallback_host`) instead:
+    - Port answers → `Ping` is **warning**,
+      `4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`.
+      The Port is fine and DNS is not. Warning never pages and never arms a
+      repair (it stands a pending one down); the AppDaemon log has one WARNING
+      `movieroomsonos.haynesnetwork does not resolve (…) — pinging 192.168.0.70 instead until it does`
+      and an INFO `… resolves again — back to pinging it by name` when DNS is back.
+    - Port silent → `Ping` is **critical**,
+      `timeout (3 attempts) via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`,
+      and auto-repair and paging run as normal.
+  Without the fallback an unresolvable name would be critical
+  `cannot resolve movieroomsonos.haynesnetwork (3 attempts)` (since v1.24.0;
+  before that the detail said `timeout`) and would power-cycle a healthy Port.
 
 ## What auto-repair does
 
@@ -59,8 +63,8 @@ only `…_outlet_21`.
    `switch.power_distribution_hi_density_outlet_21 did not turn back on — check the outlet`
    (or `… — the entity is missing from Home Assistant — reload the integration that owns it`
    when the unifi integration has dropped the PDU's outlet entities), and no recovery wait.
-4. Outlet confirmed on → up to 300 s of recovery polling (the Port takes a
-   while to boot and rejoin). Ping back → `success`; otherwise `failed`,
+4. Outlet confirmed on → up to 300 s of recovery polling, by the wall clock
+   (the Port takes a while to boot and rejoin). Ping back → `success`; otherwise `failed`,
    `Did not recover after 300s`. Ping lost again (critical) after a
    `success`, before a fully healthy cycle → `failed`,
    `Relapsed after a successful repair — recovery did not stick`; the DNS
@@ -137,7 +141,10 @@ only `…_outlet_21`.
 ## Verify
 
 - After `start_repair`: 10 s off + up to 120 s of turn-on confirmation + up to
-  300 s recovery + one `check_interval_s` (180 s) ≈ **10 min**.
+  300 s of recovery polling by the wall clock (its last check starts at the
+  300 s mark; a dead Port's 3 pings add a few seconds) + one
+  `check_interval_s` (180 s) ≈ **10 min** worst case. (Before 1.24.0 the 300 s
+  counted only the sleeps between checks, so it could stretch much longer.)
 - Recovery = `Ping` ok and `repair_state.status == success`; the bridge
   resolves the page itself.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import socket
 import sys
 from pathlib import Path
 from typing import Any, Dict
@@ -206,16 +207,22 @@ class TestPingCheck:
 
 
 class TestPingFallbackHost:
-    """``ping_fallback_host`` is pinged whenever the ping by name fails —
-    ``cannot resolve <host>`` (resolver says NXDOMAIN) or a plain ``timeout``
-    (resolver stopped answering, or the device is down) — so the device
-    answers for itself: up → warning, down → critical. Without a fallback a
-    failed ping stays critical."""
+    """With a ``ping_fallback_host``, ``ping_host`` is resolved first.
+
+    Resolves → the ping by name is authoritative: its result stands and the
+    fallback is never pinged, so a device that merely drops ICMP keeps the
+    configured miss tolerance and is not blamed on DNS. Does not resolve
+    (``gaierror``, or a resolver that hangs past ``PING_RESOLVE_TIMEOUT_S``) →
+    the fallback IP answers: up → warning, down → critical. Without a
+    fallback nothing changes: no pre-resolve, the plain ping by name.
+    """
 
     HOST = "movieroomsonos.haynesnetwork"
     FALLBACK = "192.168.0.70"
-    PING = "health_checks.checker_apps.device_checker.device_checker.ping_check"
-    UNRESOLVED = {"status": "critical", "detail": f"cannot resolve {HOST} (3 attempts)"}
+    MOD = "health_checks.checker_apps.device_checker.device_checker"
+    PING = f"{MOD}.ping_check"
+    UP = {"status": "ok", "detail": "4ms"}
+    DOWN = {"status": "critical", "detail": "timeout (3 attempts)"}
 
     def _app(self, fallback: str | None = FALLBACK):
         extra = {"ping_host": self.HOST, "ping_attempts": 3, "entities": []}
@@ -225,119 +232,143 @@ class TestPingFallbackHost:
         _init_only(app)
         return app
 
-    def _ping(self, primary: dict, fallback: dict | None = None) -> AsyncMock:
+    def _ping(self, by_name: dict | None = None, fallback: dict | None = None) -> AsyncMock:
         def _answer(host, attempts=1):
-            return primary if host == self.HOST else fallback
+            return by_name if host == self.HOST else fallback
 
         return AsyncMock(side_effect=_answer)
 
-    def test_resolved_ok_never_touches_the_fallback(self):
-        app = self._app()
-        ping = self._ping({"status": "ok", "detail": "4ms"})
+    @staticmethod
+    def _resolver(outcome):
+        """Patch the event loop's getaddrinfo: "ok", "nxdomain" or "hang"."""
 
-        with patch(self.PING, new=ping):
+        async def _getaddrinfo(host, port, *args, **kwargs):
+            if outcome == "nxdomain":
+                raise socket.gaierror(-2, "Name does not resolve")
+            if outcome == "hang":
+                await asyncio.Event().wait()
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.168.0.70", 0))]
+
+        return patch.object(
+            asyncio.BaseEventLoop, "getaddrinfo",
+            new=AsyncMock(side_effect=_getaddrinfo),
+        )
+
+    def _check(self, app, ping, resolver="ok"):
+        with self._resolver(resolver) as getaddrinfo, patch(self.PING, new=ping):
             result = _run(app._check_ping())
+        return result, getaddrinfo
 
-        assert result == {"name": "Ping", "status": "ok", "detail": "4ms"}
+    def test_resolves_and_ping_ok(self):
+        app = self._app()
+        ping = self._ping(self.UP)
+
+        result, getaddrinfo = self._check(app, ping)
+
+        assert result == {"name": "Ping", **self.UP}
+        getaddrinfo.assert_awaited_once_with(self.HOST, None, family=socket.AF_INET)
         ping.assert_awaited_once_with(self.HOST, attempts=3)
 
-    def test_timeout_by_name_with_fallback_up_is_a_warning(self):
-        """A resolver that stops answering makes the ping by name a plain
-        timeout, not "cannot resolve": the fallback must engage for that too,
-        or a DNS hang power-cycles a healthy device."""
+    def test_resolves_and_ping_times_out_is_critical_without_the_fallback(self):
+        """The name resolved, so the ping by name is authoritative: the device
+        is down (or dropping ICMP). One ping_check of 3 attempts, no fallback —
+        the miss tolerance stays 3, and DNS is not blamed."""
         app = self._app()
-        ping = self._ping(
-            {"status": "critical", "detail": "timeout (3 attempts)"},
-            {"status": "ok", "detail": "4ms"},
-        )
+        ping = self._ping(self.DOWN, self.UP)
 
-        with patch(self.PING, new=ping):
-            result = _run(app._check_ping())
+        result, _ = self._check(app, ping)
+
+        assert result == {"name": "Ping", **self.DOWN}
+        ping.assert_awaited_once_with(self.HOST, attempts=3)
+
+    def test_nxdomain_and_fallback_up_is_a_warning(self):
+        app = self._app()
+        ping = self._ping(fallback=self.UP)
+
+        result, _ = self._check(app, ping, "nxdomain")
 
         assert result == {
             "name": "Ping",
             "status": "warning",
-            "detail": f"4ms via {self.FALLBACK} — {self.HOST}: timeout (3 attempts)",
+            "detail": f"4ms via {self.FALLBACK} — cannot resolve {self.HOST}",
         }
+        # The name is never pinged; the fallback gets the same attempts.
+        ping.assert_awaited_once_with(self.FALLBACK, attempts=3)
 
-    def test_timeout_by_name_and_fallback_dead_is_critical(self):
-        """The device really down: both fail, it stays critical (repairs, pages)."""
+    def test_resolver_timeout_and_fallback_up_is_a_warning(self):
+        """A hung resolver (no answer at all) is a broken name path too."""
         app = self._app()
-        ping = self._ping(
-            {"status": "critical", "detail": "timeout (3 attempts)"},
-            {"status": "critical", "detail": "timeout (3 attempts)"},
-        )
+        ping = self._ping(fallback=self.UP)
 
-        with patch(self.PING, new=ping):
-            result = _run(app._check_ping())
-
-        assert result["status"] == "critical"
-        assert result["detail"] == (
-            f"timeout (3 attempts) via {self.FALLBACK} — {self.HOST}: timeout (3 attempts)"
-        )
-        assert ping.await_count == 2
-
-    def test_unresolved_and_fallback_ok_is_a_warning(self):
-        app = self._app()
-        ping = self._ping(self.UNRESOLVED, {"status": "ok", "detail": "4ms"})
-
-        with patch(self.PING, new=ping):
-            result = _run(app._check_ping())
+        with patch(f"{self.MOD}.PING_RESOLVE_TIMEOUT_S", 0.05):
+            result, _ = self._check(app, ping, "hang")
 
         assert result == {
             "name": "Ping",
             "status": "warning",
-            "detail": f"4ms via {self.FALLBACK} — cannot resolve {self.HOST} (3 attempts)",
+            "detail": f"4ms via {self.FALLBACK} — cannot resolve {self.HOST}",
         }
-        assert ping.await_args_list[1].args == (self.FALLBACK,)
-        assert ping.await_args_list[1].kwargs == {"attempts": 3}
+        ping.assert_awaited_once_with(self.FALLBACK, attempts=3)
 
-    def test_unresolved_and_fallback_dead_is_critical(self):
+    def test_nxdomain_and_fallback_dead_is_critical(self):
         """A dead device still pages and repairs during a DNS outage."""
         app = self._app()
-        ping = self._ping(
-            self.UNRESOLVED, {"status": "critical", "detail": "timeout (3 attempts)"}
-        )
+        ping = self._ping(fallback=self.DOWN)
 
-        with patch(self.PING, new=ping):
-            result = _run(app._check_ping())
+        result, _ = self._check(app, ping, "nxdomain")
 
         assert result == {
             "name": "Ping",
             "status": "critical",
             "detail": (
                 f"timeout (3 attempts) via {self.FALLBACK} — "
-                f"cannot resolve {self.HOST} (3 attempts)"
+                f"cannot resolve {self.HOST}"
             ),
         }
 
-    def test_unresolved_without_a_fallback_stays_critical(self):
+    def test_ping_that_cannot_resolve_after_a_good_lookup_uses_the_fallback(self):
+        """A race: the name resolved here, then not in ``ping``."""
+        app = self._app()
+        ping = self._ping(
+            {"status": "critical", "detail": f"cannot resolve {self.HOST} (3 attempts)"},
+            self.UP,
+        )
+
+        result, _ = self._check(app, ping)
+
+        assert result["status"] == "warning"
+        assert result["detail"] == f"4ms via {self.FALLBACK} — cannot resolve {self.HOST}"
+
+    def test_no_fallback_means_no_resolve_call(self):
         app = self._app(fallback=None)
-        ping = self._ping(self.UNRESOLVED)
+        unresolved = {
+            "status": "critical",
+            "detail": f"cannot resolve {self.HOST} (3 attempts)",
+        }
+        ping = self._ping(unresolved)
 
-        with patch(self.PING, new=ping):
-            result = _run(app._check_ping())
+        result, getaddrinfo = self._check(app, ping, "nxdomain")
 
-        assert result == {"name": "Ping", **self.UNRESOLVED}
-        ping.assert_awaited_once()
+        getaddrinfo.assert_not_called()
+        ping.assert_awaited_once_with(self.HOST, attempts=3)
+        assert result == {"name": "Ping", **unresolved}
 
     def test_fallback_use_is_logged_on_the_transitions_only(self):
         app = self._app()
-        unresolved = self._ping(self.UNRESOLVED, {"status": "ok", "detail": "4ms"})
-        resolved = self._ping({"status": "ok", "detail": "4ms"})
+        ping = self._ping(self.UP, self.UP)
 
-        with patch(self.PING, new=unresolved):
-            _run(app._check_ping())
-            _run(app._check_ping())
-        with patch(self.PING, new=resolved):
-            _run(app._check_ping())
-            _run(app._check_ping())
+        for outcome in ("nxdomain", "nxdomain", "ok", "ok"):
+            self._check(app, ping, outcome)
 
-        levels = [
-            c[1].get("level") for c in app.log.call_args_list
+        lines = [
+            (c[1].get("level"), c[0][0]) for c in app.log.call_args_list
             if self.HOST in str(c[0][0]) and "initialising" not in str(c[0][0])
         ]
-        assert levels == ["WARNING", "INFO"]
+        assert [level for level, _ in lines] == ["WARNING", "INFO"]
+        # startswith, not `in`: the resolver's own error text says
+        # "Name does not resolve", which would satisfy a bare substring check.
+        assert lines[0][1].startswith(f"{self.HOST} does not resolve (")
+        assert lines[1][1].startswith(f"{self.HOST} resolves again")
 
 
 class TestRunChecks:
