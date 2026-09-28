@@ -97,7 +97,10 @@ sequence:
     target:
       entity_id: media_player.str_az5000es
     data:
-      volume_level: '{{ target_step / 100 }}'
+      volume_level: '{{ [target_step / 100 + 0.000001, 1] | min }}'
+    alias: 'songpal truncates: int(volume_level x 100), and 29/100, 57/100, 58/100 come back one step
+      low in float64 (58 = Tom''s Plex -5.5 dB); a nudge far below half a step fixes all three and stays
+      harmless if songpal ever rounds'
   - alias: 'Let the new level land before the next queued run reads it (dashboard taps queue up). A wait_template,
       not wait_for_trigger: songpal writes the level from a websocket push that can arrive before volume_set
       returns, and a trigger registered afterwards would miss it and sit out the timeout'

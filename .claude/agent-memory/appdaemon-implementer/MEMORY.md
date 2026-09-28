@@ -8,7 +8,7 @@ detail there, never inline here.
 - [set_state value filtering](appdaemon-set-state-semantics.md) — AD 4.5.13 drops `0`/`False` (and `state=0`), turns `True` into `"true"`; `""` and `[]` survive. Publish attributes as non-empty strings
 - [Service calls and HA staging](appdaemon-service-calls-and-staging.md) — `call_service(callback=)` is the only non-blocking form and where its callback runs; shell_command results are untrustworthy (60s kill), verify by HTTP probe; `keep_gens` prune design
 - [Async/lifecycle bug shapes](appdaemon-async-lifecycle-bugs.md) — callback-released latches, fixed timeout margins, mutable "latest" fields read late, arrival-order metadata, memory-only counters across reloads
-- [Probe design](appdaemon-probe-design.md) — a boolean probe hides which failures never self-heal; preserve what the other side said
+- [Probe design](appdaemon-probe-design.md) — a boolean probe hides which failures never self-heal; ping_check reports DNS failure as "timeout"; confirm a switch via last_changed, not state
 
 ## Testing
 
