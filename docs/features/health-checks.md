@@ -23,7 +23,8 @@ This architecture means adding a new health check is often just a YAML config ch
 | MQTT infrastructure | Broker publish/subscribe round-trip | `MqttBrokerChecker` |
 | MQTT devices | Zigbee2MQTT device availability + linkquality | `MqttDeviceChecker` |
 | Environmental sensors | Temperature and humidity with threshold alerts | `TempHumidityChecker` |
-| Smart devices | Printers, Vestaboards, any entity + optional ping | `BasicDeviceChecker` |
+| Smart devices | Vestaboard, any entity + optional ping | `BasicDeviceChecker` |
+| Powered devices | The printer and the Movie Room Sonos Port — repaired by power-cycling their smart plug or PDU outlet | `RepairableDeviceChecker` |
 | Device groups | Cielo AC controllers, TP-Link plugs — related devices as one unit | `DeviceGroupChecker` |
 | Ceiling fans | Modern Forms fans with per-fan repair | `FanHealthChecker` |
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
@@ -111,11 +112,13 @@ Some checkers support automatic repair, typically via smart switch power cycling
 - **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy — except where a checker declares its own retry budget: the fans climb a CrashLoopBackOff ladder, and the Z-Wave bridge retries up to 3 times in 24 hours, 15 minutes apart, before giving up and paging
 - **Unknown does not trigger repair** — if AppDaemon itself is restarting, repair actions are suppressed
 - **Cancellable** — a pending repair can be cancelled via the detail popup before the power cycle executes
+- **Power comes back on, or it says so** — a repair that switches a smart plug or power-strip outlet off and on (the printer, the Movie Room Sonos Port, the hot tub, device groups) checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet" (or, if Home Assistant has lost track of the outlet altogether, a pointer to reload the integration that owns it). A repair must never quietly leave a device switched off
 
 The repair state machine:
 
 ```
 idle → pending → in_progress → success → idle (checks stay healthy)
+         │                   │        └──▶ failed (relapsed before a fully healthy cycle — no second repair this outage)
          │                   → failed  → idle (checks recover naturally)
          └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
 ```
@@ -194,6 +197,10 @@ Two things had to change. The checker now presses that ESPHome restart button on
 
 The budget is the point. This board is fragile — its predecessor was killed by repeated power cycling — so the repair is a *software* restart, never a power cut, and it is fenced in on every side: five minutes of sustained failure before the first attempt, fifteen minutes between attempts, and at most three in any rolling day, after which it stops trying and pages a human instead. It only acts on the exact fingerprint above — controller down *while the radio still answers* — because if the board has genuinely dropped off the network, a software restart is not a thing that can help. That case now pages instead, which it previously didn't: a dead board still leaves the web UI answering, so the same "two of three checks are fine" arithmetic was quietly hiding it too. And the counter that enforces the daily cap is written to its own Home Assistant helper, so an AppDaemon deploy landing in the middle of an outage resumes the ladder where it left off instead of starting over with a fresh three restarts.
 
+**The Movie Room Sonos Port** is the simplest case, and a good example of choosing the signal carefully. After a network switch hiccup one day the Port kept its cable link but stopped answering anything at all, and the Movie Room silently dropped out of the music system for six days — until a twelve-second power cycle of its outlet on the UniFi power strip brought it straight back. Now a checker pings it every three minutes; after ten minutes of silence it power-cycles that outlet and waits up to five minutes for the Port to return, paging only if it doesn't. What it deliberately does *not* watch is the Movie Room player itself: that disappears every time the music server restarts, and a routine restart must never cut power to the Port.
+
+The power strip taught a second lesson. Switching one of its outlets makes the whole strip reconfigure itself for about forty seconds, Home Assistant can take well over ten seconds to notice, and once the integration lost track of every outlet on it until it was reloaded. A power cycle that simply says "on" and moves on could leave the Port switched off while it waits for it to recover. So every repair that switches an outlet now waits to see it actually report on — not trusting an "on" left over from before the cycle unless nothing else ever comes back, in which case it goes ahead but says so in the repair detail if the device then doesn't recover — tries once more if it doesn't, and fails loudly with "check the outlet" if it still won't come back. (The ceiling fans' repair works through a scene-controller relay and the shade gateway's through a PoE port, so they have no outlet to watch.)
+
 ## Dashboard Experience
 
 ### Compact Health Bar
@@ -257,6 +264,8 @@ nas_health_checker:
 
 A Wi-Fi device that sleeps its radio will drop the odd ping while working perfectly, and one dropped ping turns its card yellow for a whole cycle. Add `ping_attempts: 3` and the checker pings up to three times, accepting the first reply — the Vestaboard and the Cielo units run this way. A device that is really down still fails all three.
 
+A device pinged by a DNS name can also be given its fixed IP as `ping_fallback_host`. Then a DNS problem can't masquerade as a dead device: if the name won't resolve, the checker pings the IP instead. A device that answers there shows a warning — "the name is broken, the device is fine" — which never pages and never power-cycles anything; a device that doesn't answer there is down for real, and repairs and pages as usual. The Movie Room Sonos Port is set up this way.
+
 ### Adding Environmental Monitoring (Config Only)
 
 The `TempHumidityChecker` supports configurable warning and critical thresholds:
@@ -286,7 +295,7 @@ For monitoring that goes beyond entity state and ping — such as the MQTT round
 2. Periodically run checks and report results via `health_check_command` events
 3. Listen for `health_check_recheck` to support on-demand re-checks
 
-The shared `check_utils` module provides reusable building blocks like `ping_check()` and `http_check()`.
+The shared `check_utils` module provides reusable building blocks like `ping_check()` and `http_check()`, and `switch_power_cycle` provides `power_cycle_switch()` for a repair that turns an outlet off and back on and confirms it came back.
 
 ## Current Checkers
 
@@ -300,6 +309,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Spa | `SpaHealthChecker` | Gateway ping, connections, multi-entity staleness (OR logic across thermostat/lights/pumps) | Yes — power cycle |
 | Fans | `FanHealthChecker` | Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down | Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder |
 | Printer | `RepairableDeviceChecker` | Entity state + IP ping | Yes — power cycle |
+| Movie Room Sonos | `RepairableDeviceChecker` | Ping only — the music player itself is deliberately not watched | Yes — power cycle of its UniFi power-strip outlet, on by default |
 | Vestaboard | `BasicDeviceChecker` | Controller + configuration status | No |
 | Cielo Home | `DeviceGroupChecker` | AC controller status + IP per room | No |
 | UniFi Protect | `ProtectHealthChecker` | Sensor discovery + availability fast path + camera-event freshness in active hours + entry-sensor group | Yes — config entry reload |

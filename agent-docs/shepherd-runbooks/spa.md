@@ -50,7 +50,12 @@ with every tracked entity dark Staleness is critical at once —
    blip that already cleared shows green on the next report. Wait ~120s, re-read.
 3. If still critical and `repair_state.status == idle`: `start_repair`
    `{"checker_id":"spa"}` — power-cycles `switch.spa_intouch3_switch` (off,
-   10s, on) and polls health for up to `repair_recovery_wait_s` (300s). Do
+   `repair_power_off_s` = 60s, on — then confirms the switch reports `on`,
+   with one retry; a switch that never comes back fails the attempt at once and
+   skips the wait, with `did not turn back on — check the outlet`, `… — the entity
+   is missing from Home Assistant — reload the integration that owns it`, or
+   `… — the switch could not be read — see the AppDaemon log`) and polls
+   health for up to `repair_recovery_wait_s` (420s of wall clock since v1.24.0 — the old sleep-counted 300 ran about that long). Do
    **not** toggle the switch directly — `start_repair` carries the recovery
    verification.
 4. If `repair_state.status` is already `pending`/`in_progress`, wait — do not
@@ -58,8 +63,10 @@ with every tracked entity dark Staleness is critical at once —
 
 ## Verify
 
-- After `start_repair`, allow up to `repair_recovery_wait_s` (300s) plus one
-  `check_interval_s` (120s) ≈ **7 min** budget.
+- After `start_repair`, allow the power cut (`repair_power_off_s`, 60s) plus up
+  to 120s of turn-on confirmation (two 60s windows) plus `repair_recovery_wait_s`
+  (420s, wall clock since v1.24.0) plus one `check_interval_s` (120s) ≈ **12 min**
+  budget.
 - Recovery = all `checks[]` back to `ok` and `repair_state.status == success`;
   the bridge posts `[RESOLVED]` automatically.
 

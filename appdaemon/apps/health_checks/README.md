@@ -1,6 +1,6 @@
 # Health Checks
 
-System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave — with rate-limited ESPHome software-restart repair for the Z-Wave TCP serial bridge), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, printers) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
+System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave — with rate-limited ESPHome software-restart repair for the Z-Wave TCP serial bridge), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, the printer, the Movie Room Sonos Port) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
 
 ## Architecture
 
@@ -93,6 +93,8 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `device_checker/README.md` for details.
 
+`RepairableDeviceChecker` extends it with a smart-switch power-cycle repair, used by the `printer` and `movie_room_sonos` instances. `movie_room_sonos` watches the Movie Room Sonos Port by ping alone — deliberately no entity checks, so a Music Assistant restart (which takes `media_player.movie_room` unavailable) can never power-cycle it — and repairs it by power-cycling UniFi PDU Hi-Density outlet 21, auto-repair on by default after a 10-minute dwell. Every power cycle goes through `shared/switch_power_cycle.py`: after `turn_on` the switch must report `on` before the recovery wait starts, with one retry, and a switch that never comes back fails the repair immediately (`"<switch> did not turn back on — check the outlet"`) instead of leaving the device unpowered. `RepairableDeviceGroupChecker` and `SpaHealthChecker` use the same helper.
+
 ### Device Group Checker
 
 `DeviceGroupChecker` monitors multiple devices as a single checker. Each device can have one or more entity checks and an optional IP ping. Check names are prefixed with the device name (e.g. "Movie Room Status", "Movie Room Ping"). No repair support.
@@ -181,7 +183,7 @@ Mechanics:
 - **For-duration gate (flap suppression)** — a checker that is non-ok for only a poll or two should not page. Each severity has a configurable `for` duration (`alert_for_seconds` on the controller, with per-checker `alert_for_overrides`). When a checker first goes non-ok the alert is held *pending* — nothing is posted — and only promoted to firing once it has stayed non-ok for `>= for` seconds, confirmed on a **later** status report (Prometheus `for:` semantics: a single-sample blip can never be promoted). If the checker recovers while pending, the alert is dropped silently (no page, no `[RESOLVED]` noise). `for=0` (the default when unconfigured) raises immediately. Most checkers poll every 300s, so `critical: 300` ≈ "two consecutive failing checks": a sustained 0%/offline still pages, a one-poll glitch does not.
 - **Escalation gate** — a *severity escalation* of an already-firing alert (warning → critical) goes through the same for-duration gate instead of paging immediately: the firing warning stays up while the critical escalation is held *pending*, and only after the checker has stayed critical for `>= for(critical)` seconds is the warning resolved and the critical raised. If the checker de-escalates — or falls back to the severity already firing — while the escalation is pending, the pending escalation is dropped silently and the warning keeps firing, so a warning↔critical flapper can never page. Everything raises immediately when `for=0`. A de-escalation (critical → warning) of an already-*firing* alert applies immediately only while `alert_improve_hold_s=0` — otherwise it goes through the improvement hold below.
 - **Improvement hold (resolve/de-escalation hysteresis)** — the mirror image of the for-duration gate. Once an alert is firing, any *improvement* — the checker going `ok`/`unknown` (resolve) or de-escalating critical → warning — must be sustained for `alert_improve_hold_s` seconds before the bridge acts on it. Meanwhile the firing alert stays up unchanged (annotations still refreshed, so the UI shows what is failing right now). If the checker deteriorates again inside the window the improvement is discarded and nothing was ever posted, so an oscillating condition produces exactly one `[FIRING]` and one `[RESOLVED]` page instead of a pair per flap — the cluster's Pushover receiver sets `send_resolved: true`, which is what turns unheld flapping into a page storm (a Wi-Fi ceiling fan flapping for five hours sent 18 notifications on 2026-08-31). *Escalations are never held*: anything at or above the firing severity cancels the hold on the spot. `alert_improve_hold_s=0` (the default) restores act-immediately behaviour.
-- **Repair hold** — while a repair-capable checker's auto-repair is scheduled or running (`repair_state.status` of `pending`/`in_progress`), a *due* critical promotion is withheld so auto-repair gets a chance to fix the problem before anyone is paged — up to `alert_repair_hold_cap_s` total pending time (default 1800s) so a stuck repair can never permanently silence a real outage. A failed repair releases the hold on the next report. Checkers with `for=0` (explicit "page now" overrides) never enter the pending gate and are therefore never held.
+- **Repair hold** — while a repair-capable checker's auto-repair is scheduled or running (`repair_state.status` of `pending`/`in_progress`, and `success` — held to bridge the gap before a successful repair's recovery reaches the controller, which is why `RepairableDeviceChecker` turns a relapse after `success` into `failed`), a *due* critical promotion is withheld so auto-repair gets a chance to fix the problem before anyone is paged — up to `alert_repair_hold_cap_s` total pending time (default 1800s) so a stuck repair can never permanently silence a real outage. A failed repair releases the hold on the next report. Checkers with `for=0` (explicit "page now" overrides) never enter the pending gate and are therefore never held.
 - **Label-set identity** — `alertname` + `severity` + `source=appdaemon-health-check` + `checker=<id>` identify the alert. If the labels change, the old alert is resolved and a new one raised; if only the failing-check details change, annotations are refreshed in place. A severity change that *escalates* (warning → critical) is held by the escalation gate above first; a de-escalation swaps once the improvement hold has elapsed (immediately when `alert_improve_hold_s=0`).
 - **Re-post keep-alive** — Alertmanager auto-resolves silent alerts after its `resolve_timeout` (5m in this cluster), so the controller re-posts all firing alerts every `alertmanager_repost_interval_s` (default 120s — must stay below the resolve_timeout).
 - **Immediate resolve** — once a recovery is applied (after the improvement hold, if any) the bridge sends one final post with `endsAt=now`, producing an immediate `[RESOLVED]` notification instead of waiting out the resolve_timeout.
@@ -239,6 +241,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
+- `shared/switch_power_cycle` — `power_cycle_switch()`: turn a repair switch off, wait, turn it back on and confirm it reports `on` (one retry), shared by `RepairableDeviceChecker`, `RepairableDeviceGroupChecker` and `SpaHealthChecker`
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`); the Wyoming probe uses plain `asyncio` streams
 - `prometheus-client` — metrics exposition (controller)
 
@@ -252,6 +255,13 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 | `input_text.health_check_mute_<checker_id>` | Helper | Per-checker mute state as JSON (lazily provisioned on first mute) |
 | `input_boolean.spa_health_auto_repair` | Helper | Auto-repair toggle (provisioned by SpaHealthChecker) |
 | `input_number.spa_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by SpaHealthChecker) |
+| `input_boolean.fans_health_auto_repair` | Helper | Auto-repair toggle (provisioned by FanHealthChecker, default OFF) |
+| `input_number.fans_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by FanHealthChecker, default 5) |
+| `input_text.fans_health_repair_ladder` | Helper | Per-fan repair backoff ladder, so it survives an AppDaemon restart (provisioned by FanHealthChecker) |
+| `input_boolean.printer_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableDeviceChecker per `checker_id`, default OFF) |
+| `input_number.printer_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableDeviceChecker per `checker_id`, 1-60, default 5) |
+| `input_boolean.movie_room_sonos_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableDeviceChecker per `checker_id`, default ON) |
+| `input_number.movie_room_sonos_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableDeviceChecker per `checker_id`, 1-60, default 10) |
 | `input_boolean.protect_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ProtectHealthChecker) |
 | `input_number.protect_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by ProtectHealthChecker) |
 | `input_boolean.shade_gateway_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ShadeGatewayChecker, default ON) |
@@ -414,6 +424,7 @@ zwave_health_checker:
    - `/local/health-checks/health-check-detail-card.js`
 2. **Copy card JS** to `/config/www/health-checks/` on the HA instance
 3. **Add cards** to the Wall-Display dashboard (see `home-assistant/cards/wall-display/`)
+4. **`movie_room_sonos` network prerequisites** (UniFi, not provisionable from HA) — the Sonos Port's DHCP reservation for `192.168.0.70` (its `ping_fallback_host`) with the local DNS record `movieroomsonos.haynesnetwork` (its `ping_host`), both created 2026-09-28
 
 ## Folder Structure
 
@@ -488,9 +499,11 @@ health_checks/
 │   ├── __init__.py                  # "no shared code under apps/"
 │   ├── check_utils.py               # ping/HTTP/Wyoming checks + the cross-check downgrade
 │   ├── alertmanager_bridge.py       # pure alert decision logic (no HTTP)
-│   └── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
-│                                    # toggle/delay helpers, shared by all seven
-│                                    # repair-capable checkers
+│   ├── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
+│   │                                # toggle/delay helpers, shared by all seven
+│   │                                # repair-capable checkers
+│   └── switch_power_cycle.py        # power-cycle a repair switch and confirm it
+│                                    # came back on (device, device group + spa checkers)
 ├── cards/
 │   ├── health-check-card.js
 │   └── health-check-detail-card.js

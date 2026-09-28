@@ -28,4 +28,32 @@ The same rule applies to a status sensor: distinguish "I could not look"
 real counts plus the error). `apps/assist_exposure_guard/_publish_status` is the
 worked example.
 
+## Same trap in `ping_check` (fixed in v1.24.0, 2026-09-28)
+
+The AppDaemon image's busybox `ping` exits 1 with "bad address" for an
+unresolvable name, and `check_utils._ping_once` used to map every non-zero exit
+to detail `"timeout"`, so a DNS failure on a `*.haynesnetwork` `ping_host` read
+exactly like a dead device and armed a power cycle on a repairable checker. It
+now matches the resolver messages (`_UNRESOLVED_MARKERS`: busybox, iputils,
+macOS) and returns **`critical` / "cannot resolve <host>"** — same status,
+honest detail. Not `unknown`: that was tried in PR #208 and reverted, because
+pass-through callers (`NetworkProtocolChecker`'s zigbee/zwave radio pings on
+`tubeszb-*.haynesnetwork`) silently lost their DNS-failure alerts — `unknown`
+resolves the page. A caller that can tell DNS from the device keys off the
+detail instead: `BasicDeviceChecker` with `ping_fallback_host` (an IP) pings
+that and takes its result (up → `warning`, down → `critical`).
+**Lesson:** before changing what a shared probe returns, grep every caller that
+passes its status straight through; change the detail, not the severity.
+
+## Confirming a switch after a service call needs `last_changed`, not just state
+
+After `switch/turn_on` (fire-and-forget), an awaited `get_state` seconds later
+can still return the `on` from *before* the power cycle — HA had not yet
+reported the `off` (UniFi PDU outlets: >10 s latency, ~40 s re-provision). An
+`on` only proves the new command landed if `get_state(e, attribute="all")`
+shows `last_changed >= cycle start` (HA timestamps are tz-aware ISO; compare to
+`datetime.now(timezone.utc)`). An unchanged `on` at the end of a generous window
+means the `off` never registered. Worked example:
+`apps/health_checks/shared/switch_power_cycle.py`.
+
 Related: [[appdaemon-service-calls-and-staging]]

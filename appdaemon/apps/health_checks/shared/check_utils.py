@@ -48,6 +48,14 @@ async def ping_check(
         {"status": "critical", "detail": "timeout"}
         {"status": "critical", "detail": "timeout (3 attempts)"}
         {"status": "critical", "detail": "ping failed: <error>"}
+        {"status": "critical", "detail": "cannot resolve <host> (3 attempts)"}
+
+    A host name that does not resolve is still ``critical`` — callers such as
+    ``NetworkProtocolChecker``'s radio ping pass the status straight through,
+    and a DNS failure must keep paging there — but with an honest detail,
+    ``cannot resolve <host>``, instead of ``timeout``.  A caller that can tell
+    a DNS outage from a dead device acts on the detail:
+    ``BasicDeviceChecker`` pings its ``ping_fallback_host`` (an IP) then.
     """
     attempts = max(1, int(attempts))
     last_result: Dict[str, str] = {"status": "critical", "detail": "timeout"}
@@ -65,6 +73,17 @@ async def ping_check(
             "detail": f"{last_result['detail']} ({attempts} attempts)",
         }
     return last_result
+
+
+#: What ``ping`` prints when the host name does not resolve: busybox (the
+#: AppDaemon image), iputils, and macOS.
+_UNRESOLVED_MARKERS = (
+    "bad address",
+    "name or service not known",
+    "unknown host",
+    "cannot resolve",
+    "temporary failure in name resolution",
+)
 
 
 async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
@@ -92,12 +111,17 @@ async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
             logger.debug("ping %s succeeded in %.1fms", host, elapsed_ms)
             return {"status": "ok", "detail": f"{elapsed_ms:.0f}ms"}
 
-        logger.debug(
-            "ping %s failed (rc=%s): %s",
-            host,
-            proc.returncode,
-            stderr.decode(errors="replace").strip(),
-        )
+        err = (
+            stderr.decode(errors="replace") + stdout.decode(errors="replace")
+        ).strip()
+        logger.debug("ping %s failed (rc=%s): %s", host, proc.returncode, err)
+        if any(marker in err.lower() for marker in _UNRESOLVED_MARKERS):
+            # The name did not resolve. Still critical (pass-through callers
+            # such as the radio pings must keep alerting on it), but say so:
+            # "timeout" would send triage after the device. Only a host given
+            # as a name can take this path; callers that have an IP to fall
+            # back on key off the "cannot resolve" detail.
+            return {"status": "critical", "detail": f"cannot resolve {host}"}
         return {"status": "critical", "detail": "timeout"}
 
     except asyncio.TimeoutError:

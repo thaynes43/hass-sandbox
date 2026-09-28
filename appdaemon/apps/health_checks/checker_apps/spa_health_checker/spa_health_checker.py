@@ -8,7 +8,8 @@ Performs four checks on a configurable interval:
 4. **Thermostat Staleness** — detect zombie state by checking how recently
    the thermostat entity was updated
 
-Supports a repair action (power-cycle via a smart switch) with auto-repair
+Supports a repair action (power-cycle via a smart switch, confirming the
+switch came back on — ``shared/switch_power_cycle.py``) with auto-repair
 capability.  Repair config is persisted in self-provisioned HA helpers so it
 survives AppDaemon restarts and can be adjusted from the Lovelace card.
 
@@ -22,6 +23,7 @@ import datetime
 import json
 import logging
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -40,6 +42,11 @@ import hassapi as hass
 from providers.ha_provisioner import HAProvisioner
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check, ping_check
+from shared.switch_power_cycle import (
+    power_cycle_switch,
+    switch_not_on_detail,
+    with_note,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -658,30 +665,45 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
     async def _execute_repair(self) -> None:
         """Power cycle the spa and poll for recovery."""
         try:
-            # Turn off
-            self.log(f"Turning off {self._repair_switch}", level="INFO")
-            self.call_service(
-                "switch/turn_off",
-                entity_id=self._repair_switch,
+            cycle = await power_cycle_switch(
+                self, self._repair_switch, self._repair_power_off_s
             )
+            if not cycle.switch_on:
+                # The helper has logged the ERROR. A switch that will not
+                # come back on is a failed attempt like any other — it climbs
+                # the backoff ladder — and the recovery wait is skipped: it
+                # would only burn the window on an unpowered gateway.
+                self._register_repair_failure(
+                    switch_not_on_detail(self._repair_switch, cycle.note)
+                )
+                # No duration_s: the recovery wait never started.
+                self._record_repair_event("failed")
+                self.log(
+                    f"Repair failed — {self._repair_switch} did not come back "
+                    f"on (attempt {self._repair_attempts}; next retry at "
+                    f"{self._next_retry_at.isoformat(timespec='seconds')})",
+                    level="WARNING",
+                )
+                self._report_repair_status_only()
+                return
 
-            await asyncio.sleep(self._repair_power_off_s)
-
-            # Turn on
-            self.log(f"Turning on {self._repair_switch}", level="INFO")
-            self.call_service(
-                "switch/turn_on",
-                entity_id=self._repair_switch,
-            )
-
+            # The recovery clock starts only now, with the switch confirmed on.
             self._repair_detail = "Waiting for recovery..."
             self._report_repair_status_only()
 
             # Poll for recovery
+            # Wall-clock time, not just the sleeps: each iteration's checks
+            # take time too (a timed-out ping is seconds), and counting only
+            # the sleeps let a "300 s" wait run for many minutes. The sleep
+            # term keeps it advancing when sleeps are patched out in tests.
+            started = time.monotonic()
             elapsed = 0
             while elapsed < self._repair_recovery_wait_s:
                 await asyncio.sleep(REPAIR_POLL_INTERVAL_S)
-                elapsed += REPAIR_POLL_INTERVAL_S
+                elapsed = max(
+                    elapsed + REPAIR_POLL_INTERVAL_S,
+                    int(time.monotonic() - started),
+                )
 
                 results = await self._run_health_checks_only()
                 all_ok = all(r["status"] == "ok" for r in results)
@@ -695,8 +717,12 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                     self._repair_attempts = 0
                     self._next_retry_at = None
                     self._record_repair_event("success", duration_s=elapsed)
+                    # A note is not worth the card on success: log only.
                     self.log(
-                        f"Repair successful — recovered after {elapsed}s",
+                        with_note(
+                            f"Repair successful — recovered after {elapsed}s",
+                            cycle.note,
+                        ),
                         level="INFO",
                     )
                     self._report_repair_status_only()
@@ -707,8 +733,14 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 )
 
             # Timed out — repair failed; schedule the next backoff retry
+            # A normal failed attempt on the ladder, note or not; the note
+            # (e.g. the outlet never reported off) goes into the detail so the
+            # card and the Alertmanager description say it.
             self._register_repair_failure(
-                f"Did not recover after {self._repair_recovery_wait_s}s"
+                with_note(
+                    f"Did not recover after {self._repair_recovery_wait_s}s",
+                    cycle.note,
+                )
             )
             self._record_repair_event(
                 "failed", duration_s=self._repair_recovery_wait_s

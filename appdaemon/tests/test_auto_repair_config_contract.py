@@ -302,6 +302,20 @@ class Spec:
         )
 
 
+# -- repair switches -----------------------------------------------------------
+
+#: A power-cycle repair switch as ``get_state(attribute="all")`` returns it once
+#: it is back on: ``shared/switch_power_cycle`` confirms the switch before the
+#: recovery wait, and only a ``last_changed`` after the cycle started counts
+#: early. A day ahead is "after" for the whole session.
+_SWITCH_BACK_ON = {
+    "state": "on",
+    "last_changed": (
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=1)
+    ).isoformat(),
+}
+
+
 # -- device checker (printer) ------------------------------------------------
 
 MOD_DEVICE = "health_checks.checker_apps.device_checker.repairable_device_checker"
@@ -460,11 +474,15 @@ SPECS = [
         "device", MOD_DEVICE, t_device._make_app, "printer", 1, 60, 1,
         _device_arm, _device_fire,
         lambda app: _service_calls(app, "switch/turn_off"),
+        base_states={t_device.DEFAULT_ARGS["repair_switch"]: _SWITCH_BACK_ON},
     ),
     Spec(
         "device_group", MOD_GROUP, t_group._make_app, "cielo", 1, 60, 1,
         _group_arm, _group_fire,
         lambda app: _service_calls(app, "switch/turn_off"),
+        base_states={
+            d["repair_switch"]: _SWITCH_BACK_ON for d in t_group.SAMPLE_DEVICES
+        },
         reported_status=lambda app: app._aggregate_repair_status(),
     ),
     Spec(
@@ -477,6 +495,7 @@ SPECS = [
         "spa", MOD_SPA, t_spa._make_app, "spa", 1, 60, 1,
         _spa_arm, _spa_fire,
         lambda app: _service_calls(app, "switch/turn_off"),
+        base_states={t_spa.DEFAULT_ARGS["repair_switch"]: _SWITCH_BACK_ON},
     ),
     Spec(
         "shade_gateway", MOD_SHADE, t_shade._make_app, "shade_gateway",

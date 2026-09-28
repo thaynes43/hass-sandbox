@@ -149,6 +149,50 @@ def _last_report_payload(app: RepairableDeviceGroupChecker) -> dict:
     return json.loads(calls[-1][1]["payload"])
 
 
+@pytest.fixture(autouse=True)
+def _no_real_sleeps():
+    """Every sleep in the repair path is a wait, not a condition — skip them.
+
+    Elapsed times are counted from the constants, not the clock, so the
+    duration assertions are unaffected.
+    """
+    with patch("asyncio.sleep", new=AsyncMock(return_value=None)) as sleep:
+        yield sleep
+
+
+def _turn_ons(app, switch: str | None = None) -> int:
+    return sum(
+        1 for c in app.call_service.call_args_list
+        if c.args and c.args[0] == "switch/turn_on"
+        and (switch is None or c.kwargs.get("entity_id") == switch)
+    )
+
+
+def _switch_reports(app, on_after_turn_ons: int | None = 1) -> None:
+    """Install an awaited ``get_state`` for the repair switches.
+
+    A switch reads a fresh ``off`` until it has had *on_after_turn_ons*
+    ``turn_on`` calls, then a fresh ``on`` (``last_changed`` an hour ahead, so
+    after any power-cycle start). ``None`` = it never comes back.
+    """
+    fresh = (
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+    ).isoformat()
+
+    def _state(entity_id=None, attribute=None, **kwargs):
+        on = (
+            on_after_turn_ons is not None
+            and _turn_ons(app, entity_id) >= on_after_turn_ons
+        )
+        return {
+            "entity_id": entity_id,
+            "state": "on" if on else "off",
+            "last_changed": fresh,
+        }
+
+    app.get_state = AsyncMock(side_effect=_state)
+
+
 # ---------------------------------------------------------------------------
 # Tests — Lifecycle
 # ---------------------------------------------------------------------------
@@ -450,6 +494,7 @@ class TestRepairExecution:
     def test_execute_device_repair_calls_switch_services(self):
         app = _make_app()
         _init_only(app)
+        _switch_reports(app)
 
         # Mock checks to return ok immediately after repair
         app._run_checks_only = AsyncMock(
@@ -472,6 +517,7 @@ class TestRepairExecution:
     def test_execute_device_repair_timeout(self):
         app = _make_app({"repair_recovery_wait_s": 10})
         _init_only(app)
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(
             return_value=[
@@ -558,6 +604,126 @@ class TestRepairExecution:
         _init_only(app)
         switch = app._get_repair_switch_for_device(app._devices[0])
         assert switch == "switch.shared_power"
+
+
+# ---------------------------------------------------------------------------
+# Tests — the repair switch must come back on
+# ---------------------------------------------------------------------------
+
+_MOVIE_ROOM_OK = [
+    {"name": "Movie Room Status", "status": "ok", "detail": "on"},
+    {"name": "Movie Room Ping", "status": "ok", "detail": "3ms"},
+]
+
+
+class TestTurnOnConfirmation:
+    """Same contract as the device checker (``shared/switch_power_cycle``):
+    confirm the switch is on before the recovery wait, retry ``turn_on``
+    once, and fail the device's repair at once if it never comes back.
+    ``get_state`` is an ``AsyncMock`` — see the device checker's tests."""
+
+    def _app(self):
+        app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
+        _init_only(app)
+        return app
+
+    def test_confirmed_only_after_the_retry(self):
+        app = self._app()
+        _switch_reports(app, on_after_turn_ons=2)
+        turn_ons_when_recovery_polled: list[int] = []
+
+        async def _checks():
+            turn_ons_when_recovery_polled.append(_turn_ons(app))
+            return _MOVIE_ROOM_OK
+
+        app._run_checks_only = AsyncMock(side_effect=_checks)
+
+        _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert _turn_ons(app, "switch.movie_room_power") == 2
+        assert app._device_repair_states["Movie Room"]["status"] == REPAIR_SUCCESS
+        assert turn_ons_when_recovery_polled == [2]
+        assert _last_report_payload(app)["repair_events"] == [
+            {"result": "success", "duration_s": 5, "device": "Movie Room"}
+        ]
+
+    def test_never_on_fails_the_device_without_the_recovery_wait(self):
+        app = self._app()
+        _switch_reports(app, on_after_turn_ons=None)
+        app._run_checks_only = AsyncMock(return_value=_MOVIE_ROOM_OK)
+
+        _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        dr = app._device_repair_states["Movie Room"]
+        assert dr["status"] == REPAIR_FAILED
+        assert dr["detail"] == (
+            "switch.movie_room_power did not turn back on — check the outlet"
+        )
+        assert _turn_ons(app, "switch.movie_room_power") == 2
+        app._run_checks_only.assert_not_awaited()
+        assert app._aggregate_repair_status() == REPAIR_FAILED
+        payload = _last_report_payload(app)
+        assert payload["repair_events"] == [
+            {"result": "failed", "device": "Movie Room"}
+        ]
+        assert payload["repair_state"]["device_repairs"]["Movie Room"]["status"] == (
+            REPAIR_FAILED
+        )
+        # The log names the device the switch belongs to.
+        assert any(
+            c[1].get("level") == "ERROR"
+            and "switch.movie_room_power for Movie Room" in c[0][0]
+            for c in app.log.call_args_list
+        )
+
+    def test_never_off_note_reaches_the_device_failure_detail(self):
+        app = self._app()
+        stale = (
+            datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=1)
+        ).isoformat()
+        app.get_state = AsyncMock(return_value={"state": "on", "last_changed": stale})
+        app._run_checks_only = AsyncMock(return_value=[
+            {"name": "Movie Room Status", "status": "critical", "detail": "off"},
+            {"name": "Movie Room Ping", "status": "critical", "detail": "timeout"},
+        ])
+
+        _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._device_repair_states["Movie Room"]["detail"] == (
+            "Did not recover after 10s (the outlet never reported off — "
+            "it may not have been power cycled)"
+        )
+
+    def test_recovery_wait_ends_by_wall_clock(self):
+        app = _make_app({"repair_recovery_wait_s": 300, "repair_off_duration_s": 0})
+        _init_only(app)
+        _switch_reports(app)
+        clock = {"now": 1000.0}
+
+        async def _slow_checks():
+            clock["now"] += 60
+            return [
+                {"name": "Movie Room Status", "status": "critical", "detail": "off"},
+                {"name": "Movie Room Ping", "status": "critical", "detail": "timeout"},
+            ]
+
+        app._run_checks_only = AsyncMock(side_effect=_slow_checks)
+
+        with patch("time.monotonic", new=lambda: clock["now"]):
+            _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._run_checks_only.await_count == 6  # starts at 0, 60, …, 300 s
+        assert app._device_repair_states["Movie Room"]["status"] == REPAIR_FAILED
+
+    def test_missing_entity_fails_the_device(self):
+        app = self._app()
+        app.get_state = AsyncMock(return_value=None)
+        app._run_checks_only = AsyncMock(return_value=_MOVIE_ROOM_OK)
+
+        _run(app._execute_device_repair(SAMPLE_DEVICES[0]))
+
+        assert app._device_repair_states["Movie Room"]["status"] == REPAIR_FAILED
+        app._run_checks_only.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------
@@ -678,6 +844,7 @@ class TestRepairEvents:
     def test_success_queues_event_with_duration_and_device(self):
         app = _make_app({"repair_recovery_wait_s": 5, "repair_off_duration_s": 0})
         _init_only(app)
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(
             return_value=[
@@ -704,6 +871,7 @@ class TestRepairEvents:
     def test_timeout_failure_queues_event_with_wait_budget(self):
         app = _make_app({"repair_recovery_wait_s": 5, "repair_off_duration_s": 0})
         _init_only(app)
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(
             return_value=[
@@ -770,6 +938,7 @@ class TestRepairEvents:
         repeat it (would double-count in the exporter)."""
         app = _make_app({"repair_recovery_wait_s": 5, "repair_off_duration_s": 0})
         _init_only(app)
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(
             return_value=[

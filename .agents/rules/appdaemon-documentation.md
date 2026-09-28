@@ -174,9 +174,13 @@ media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publis
 
 health_check_controller (listens for health_check_command events from all checkers)
   │    — mirrors checker health → Alertmanager (providers/alertmanager) when alertmanager_url set
-  │    — every repair-capable checker (printer, fans, spa, shade_gateway, protect, zwave) mixes in
-  │      shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair helpers via
-  │      ha_provisioner, reads them with the first-run guard, clamps the delay, applies card commands
+  │    — every repair-capable checker (printer, movie_room_sonos, fans, spa, shade_gateway, protect,
+  │      zwave) mixes in shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair
+  │      helpers via ha_provisioner, reads them with the first-run guard, clamps the delay, applies card
+  │      commands
+  │    — the switch power-cycle checkers (repairable_device_checker, repairable_device_group_checker,
+  │      spa_health_checker) share shared/switch_power_cycle.power_cycle_switch: off, wait, on +
+  │      confirm it reports on
   ├─ cloud_checker/cloud (root dependency)
   │    └─ depended on by: cielo, lock_batteries
   ├─ mqtt_broker_checker/mqtt_broker (root dependency)
@@ -192,6 +196,7 @@ health_check_controller (listens for health_check_command events from all checke
   ├─ ups_checker/ups
   ├─ device_checker/vestaboard
   ├─ repairable_device_checker/printer
+  ├─ repairable_device_checker/movie_room_sonos (ping only; power-cycles UniFi PDU outlet 21)
   ├─ device_group_checker/cielo (depends on: cloud)
   ├─ fan_health_checker/fans
   ├─ spa_health_checker/spa (depends on: cloud)

@@ -76,6 +76,7 @@ Extends `DeviceGroupChecker` with per-device repair via smart switch power cycli
 
 ### Repair logic
 
+- A repair turns the device's switch off, waits `repair_off_duration_s`, turns it on and **confirms it reports `on`** before the recovery wait starts — every 5 s for up to 60 s, then one more `turn_on` and another 60 s (`shared/switch_power_cycle.py`, shared with `RepairableDeviceChecker`; see `device_checker/README.md` for why). A switch that never comes back fails that device's repair at once — detail `"<switch> did not turn back on — check the outlet"`, a failed `repair_event` without `duration_s`, no recovery wait. A switch that reads `on` but never reported `off` is accepted; if that device's recovery wait then fails, its detail ends `(the outlet never reported off — it may not have been power cycled)`
 - Each device gets one auto-repair attempt (marked `failed` if unsuccessful, never retried automatically)
 - Devices are repaired sequentially — one at a time
 - A device that recovers naturally (without repair) resets to `idle`
@@ -153,4 +154,5 @@ For `checker_id: cielo`:
 
 - `shared/check_utils` — `ping_check()` for device IP pings, `apply_cross_check_per_device()` for the partial-failure downgrade
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: the auto-repair toggle/delay helpers (`RepairableDeviceGroupChecker` only)
+- `shared/switch_power_cycle` — `power_cycle_switch()`: the off / wait / on + confirm sequence (`RepairableDeviceGroupChecker` only)
 - `providers/ha_provisioner` — creates the auto-repair helpers on startup (`RepairableDeviceGroupChecker` only)
