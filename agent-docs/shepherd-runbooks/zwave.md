@@ -84,7 +84,7 @@ up** or was never applicable. Do not expect to fix it with another restart.
    (which usually means auto-repair was switched off, since it defaults on):
    `start_repair` `{"checker_id":"zwave"}`. This presses the ESPHome software
    restart and polls `Integration Status` for recovery for up to
-   `repair_recovery_wait_s` (300s). It skips the dwell but **not** the rate
+   `repair_recovery_wait_s` (300s of wall clock). It skips the dwell but **not** the rate
    limits — a refusal will come back as `Cap reached` / `Rate limited`.
 6. If `repair_state.status` is `pending` or `in_progress`, **wait** — do not
    stack a manual repair on top. Recovery is normally ~17s after the press.
@@ -100,7 +100,7 @@ here.
 
 ## Verify
 
-- After `start_repair`, allow up to `repair_recovery_wait_s` (300s) plus one
+- After `start_repair`, allow up to `repair_recovery_wait_s` (300s, wall clock) plus one
   `check_interval_s` (180s) ≈ **8 min** budget. A working restart normally
   recovers in well under a minute — the board reboots, the stale client drops,
   and the waiting `zwave-js-ui` reconnect succeeds (~17s, measured 2026-09-09).

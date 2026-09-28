@@ -1411,7 +1411,12 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         Returns True when free, False if still busy after SCRIPT_BUSY_WAIT_S.
         Errors reading the script state are treated as free — a transient WS
         hiccup must not block a repair.
+
+        Measured on the wall clock like the recovery wait (#210). The read is
+        AppDaemon's local state cache, so the sleeps alone were already close;
+        the sleep term keeps it advancing when sleeps are patched out in tests.
         """
+        started = time.monotonic()
         elapsed = 0
         while True:
             try:
@@ -1432,7 +1437,10 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 f"{elapsed}s/{SCRIPT_BUSY_WAIT_S}s"
             )
             await asyncio.sleep(REPAIR_POLL_INTERVAL_S)
-            elapsed += REPAIR_POLL_INTERVAL_S
+            elapsed = max(
+                elapsed + REPAIR_POLL_INTERVAL_S,
+                int(time.monotonic() - started),
+            )
 
     async def _run_health_checks_only(self) -> List[Dict[str, str]]:
         """Run all health checks without reporting to controller."""

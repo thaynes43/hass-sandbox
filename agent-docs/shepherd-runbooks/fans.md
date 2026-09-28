@@ -6,7 +6,7 @@ as one checker. **2 checks per fan**: `{name} State` (`get_state` not
 `check_interval_s: 180`. **`supports_repair: yes`** — per-fan repair via
 `script.zen32_hard_reset`, which power-cycles that fan through its ZEN32 scene
 controller's relay. Auto-repair default **OFF**, delay 5 min,
-`repair_recovery_wait_s: 300`. Failed repairs retry forever on a
+`repair_recovery_wait_s: 300` (wall clock). Failed repairs retry forever on a
 **CrashLoopBackOff ladder** (below) — there is no "one attempt per failure".
 
 ## Domain fact (read this first)
@@ -283,7 +283,10 @@ power-cycle of another fan that merely blipped.
    pre-repair grace countdown is checker-wide. So the state meaning "a power-cycle is
    about to fire on its own" is not here — it is `repair_state.status: pending` with
    `repair_state.auto_repair_deadline`, which is what Remediation step 3 gates on.
-   - `in_progress` → a ZEN32 cycle is running (budget 300s) — wait.
+   - `in_progress` → a ZEN32 cycle is running (budget 300s of wall clock) — wait.
+     If its detail reads `Waiting for repair script to be free...`, the cycle has
+     not started yet: `script.zen32_hard_reset` is still busy from another fan, and
+     the checker waits up to 660s for it before failing the attempt as `busy`.
    - `failed` with `(attempt N; retry at HH:MM)` → the ladder is climbing;
      attempt N already ran and did not stick. **This is expected behaviour,
      not a stuck repair.** Note N — a high N means the fan is crashlooping and
@@ -446,9 +449,12 @@ power-cycle of another fan that merely blipped.
 
 ## Verify
 
-- After `start_repair`, budget = `repair_recovery_wait_s` (300s) per fan plus
-  one `check_interval_s` (180s). For a single failing fan ≈ **~8 min**; more
-  fans repair sequentially, so extend the wait accordingly.
+- After `start_repair`, budget = `repair_recovery_wait_s` (300s of wall clock;
+  a failed wait lands ~310-320s after the `Calling script.zen32_hard_reset` log
+  line, because the last check pass starts at the deadline) per fan plus one
+  `check_interval_s` (180s). For a single failing fan ≈ **~8 min**; more fans
+  repair sequentially, each one after the script is free again (up to 660s),
+  so extend the wait accordingly.
 - Recovery = the fan's `State` and `Ping` both back to `ok`. The page then
   resolves once **all** fans are healthy *and* that health has held for the
   controller's 15-minute improvement hold — budget ~**~23 min** end to end

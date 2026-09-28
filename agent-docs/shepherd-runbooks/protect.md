@@ -52,8 +52,8 @@ hard outages (UNVR down / auth 401s → all sensors `unavailable`).
 ## Verify
 
 - After `start_repair`, the checker moves its freeze baseline to
-  reload-completion + `repair_settle_s` (60s) and polls every 30s up to
-  `repair_recovery_wait_s` (600s) for a **genuine** post-reload event. Budget
+  reload-completion + `repair_settle_s` (60s) and polls every 30s for up to
+  `repair_recovery_wait_s` (600s of wall clock) for a **genuine** post-reload event. Budget
   ≈ **~10 min** — but recovery needs real motion, so it can lag until someone/
   something trips a camera. During active hours (08:00–23:00) that's usually
   quick.

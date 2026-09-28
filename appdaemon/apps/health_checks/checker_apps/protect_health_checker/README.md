@@ -70,7 +70,7 @@ Auto-heal reloads the Protect config entry via the HA REST API:
 1. Discover the loaded config entry at runtime — `HaAdminClient.list_config_entries(integration_domain)`, keeping only `state == "loaded"` (an ignored UDM discovery entry also exists and must not be reloaded; never hardcode the entry ID). Warns and uses the first if multiple are loaded.
 2. Reload it via `HaAdminClient.reload_config_entry()` — REST rather than `call_service` because AppDaemon cancels service calls after ~60s and a Protect reload can take longer.
 3. Move the event baseline to reload-completion + `repair_settle_s` (see above).
-4. Poll every 30s for up to `repair_recovery_wait_s` for a sensor with `last_changed` newer than the baseline.
+4. Poll every 30s for up to `repair_recovery_wait_s` of wall-clock time for a sensor with `last_changed` newer than the baseline.
 5. Report **success** (and unfreeze) on the first genuine event, or **failed** after the timeout — the alert stays firing.
 
 ### Repair State Machine

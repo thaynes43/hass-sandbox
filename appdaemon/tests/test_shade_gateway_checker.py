@@ -709,6 +709,85 @@ class TestRepairExecution:
         # Episode must still be considered active (not silently cleared).
         assert app._disconnect_since is not None
 
+    def _repairing_app(self):
+        app = _make_app({"repair_settle_s": 180, "repair_recovery_wait_s": 900})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._repair_attempted_this_episode = True
+        app._disconnect_since = datetime.datetime.now() - datetime.timedelta(minutes=130)
+        return app
+
+    @staticmethod
+    def _run_on_clock(app, clock):
+        """Run the repair with every sleep taking exactly as long as it says."""
+
+        async def _sleep(seconds):
+            clock["now"] += seconds
+
+        with patch("time.monotonic", new=lambda: clock["now"]), patch(
+            "asyncio.sleep", new=AsyncMock(side_effect=_sleep)
+        ):
+            _run(app._execute_repair())
+
+    def test_recovery_wait_ends_by_wall_clock(self):
+        """The 900 s budget is wall-clock time since the button press, not
+        the settle plus that many seconds of 5 s sleeps (#210). Here each poll
+        takes 60 s (a 5 s sleep plus 55 s the event loop spent elsewhere), so
+        the checks start 180, 240, …, 900 s after the press: 13, not 145."""
+        app = self._repairing_app()
+        clock = {"now": 1000.0}
+
+        def _slow_check():
+            clock["now"] += 55
+            return False
+
+        app._provisional_recovery_confirmed = MagicMock(side_effect=_slow_check)
+
+        self._run_on_clock(app, clock)
+
+        assert app._provisional_recovery_confirmed.call_count == 13
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            "Gateway power-cycle did not restore shades after 900s — "
+            "manual intervention needed"
+        )
+
+    def test_recovery_duration_is_wall_clock_on_success(self):
+        app = self._repairing_app()
+        clock = {"now": 1000.0}
+        calls = {"n": 0}
+
+        def _check():
+            calls["n"] += 1
+            clock["now"] += 55
+            return calls["n"] == 3
+
+        app._provisional_recovery_confirmed = MagicMock(side_effect=_check)
+
+        self._run_on_clock(app, clock)
+
+        assert app._repair_status == REPAIR_SUCCESS
+        # The third check starts 300 s after the press; counting the settle
+        # and the sleeps alone would say 190 s.
+        assert app._repair_detail == "Gateway recovered after 300s"
+
+    def test_a_late_settle_counts_from_the_press(self):
+        """The settle is one long sleep: if the event loop wakes it late, the
+        first check already reports the real time since the press."""
+        app = self._repairing_app()
+        clock = {"now": 1000.0}
+        app._provisional_recovery_confirmed = MagicMock(return_value=True)
+
+        async def _late_sleep(seconds):
+            clock["now"] += seconds + 30
+
+        with patch("time.monotonic", new=lambda: clock["now"]), patch(
+            "asyncio.sleep", new=AsyncMock(side_effect=_late_sleep)
+        ):
+            _run(app._execute_repair())
+
+        assert app._repair_detail == "Gateway recovered after 210s"
+
     def test_execute_repair_error_handling(self):
         app = _make_app()
         _init_only(app)

@@ -41,6 +41,7 @@ import json
 import logging
 import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -896,9 +897,15 @@ class ShadeGatewayChecker(AutoRepairConfigMixin, hass.Hass):
             )
             self._report_repair_status_only()
 
+            # Wall-clock time since the press, not just the sleeps (#210). A
+            # recovery check here reads only in-memory state, so the two have
+            # always agreed closely; the clock keeps it that way however slow
+            # the event loop gets. The sleep term keeps it advancing when
+            # sleeps are patched out in tests.
+            started = time.monotonic()
             await asyncio.sleep(self._repair_settle_s)
 
-            elapsed = self._repair_settle_s
+            elapsed = max(self._repair_settle_s, int(time.monotonic() - started))
             while elapsed <= self._repair_recovery_wait_s:
                 if self._provisional_recovery_confirmed():
                     self._repair_status = REPAIR_SUCCESS
@@ -921,7 +928,10 @@ class ShadeGatewayChecker(AutoRepairConfigMixin, hass.Hass):
                     f"Waiting for recovery... {elapsed}s/{self._repair_recovery_wait_s}s"
                 )
                 await asyncio.sleep(REPAIR_POLL_INTERVAL_S)
-                elapsed += REPAIR_POLL_INTERVAL_S
+                elapsed = max(
+                    elapsed + REPAIR_POLL_INTERVAL_S,
+                    int(time.monotonic() - started),
+                )
 
             # Timed out — one restart per episode; escalate to a human page.
             self._repair_status = REPAIR_FAILED
