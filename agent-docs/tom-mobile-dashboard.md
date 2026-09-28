@@ -170,7 +170,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
   it off, a one-row card has just Power. One card with hidden sub-buttons left a blank row, because the
   card's height (`rows`) is fixed.
   - **Presets row** (2026-09-28, `rows: 2.438`, groups mode): one button per
-    `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube; -20 to -3.5 dB, the same range as the slider above, so a preset can never pin the slider below its floor), showing its saved level.
+    `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube; -35 to -3.5 dB, the same range as the slider above, so a preset can never pin the slider below its floor; below -19 dB the receiver moves in whole dB, so a half-dB preset there lands on a neighbouring step), showing its saved level.
     Tap = `script.voice_movie_room_receiver_volume` `preset`; hold = `save_preset` with a
     confirmation ("Save the current volume as the Plex level?"), so Tom dials a level in by ear
     and holds the button. A preset lights up (accent) while the receiver sits at its level.
@@ -182,10 +182,11 @@ Every button reuses a script the voice agents or the wall switches already use, 
     hold as HA's `hass-action`, and HA shows "Are you sure?" with Cancel/OK (checked 2026-09-28:
     Cancel runs nothing, OK runs `save_preset`).
   - **Volume ceiling -3.5 dB** (Tom: "I usually won't go louder than -3.5dB"). The slider has
-    `min_value: 29` (-20 dB) and `max_value: 62` (-3.5 dB). Bubble Card v3.4.0 clamps the value to
+    `min_value: 15` (-35 dB; was 29 = -20 dB until 2026-09-28, when YouTube turned out to sit at -29) and `max_value: 62` (-3.5 dB). Bubble Card v3.4.0 clamps the value to
     [min, max] and then sends `volume_level` = value / 100 (read from the installed `bubble-card.js`), so a
-    full-right drag sends 0.62. songpal truncates (`int(volume_level × 100)`), and steps 29, 57 and 58
-    do not survive `/100` → `×100` in float64, so the slider can land 0.5 dB below those three (only
+    full-right drag sends 0.62. songpal truncates (`int(volume_level × 100)`), and of all steps 0–100 only
+    29, 57 and 58 do not survive `/100` → `×100` in float64 (checked over the whole range), so a slider
+    drag can land one step below those three: 0.5 dB at 57/58, 1 dB at 29, which is below the knee (only
     ever lower, never past the cap); the script nudges its level by 1e-6 to hit them exactly.
     − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and
     1 dB, and that script enforces the same ceiling (`max_db`). **No card opens more-info on the
@@ -194,9 +195,9 @@ Every button reuses a script the voice agents or the wall switches already use, 
     remote.
   - **dB readout** = `sensor.movie_room_receiver_volume`, a Template helper (entry
     `01M3MJNHG41WNX9H2QM6SZM5BV`, live only). It is unknown while the receiver is off. State:
-    `{% set v = state_attr('media_player.str_az5000es', 'volume_level') %}{% if is_state('media_player.str_az5000es', 'on') and v is number %}{{ ((v * 100) | round(0) - 69) / 2 }}{% else %}{{ none }}{% endif %}`.
-    Scale: 0–100 steps at 0.5 dB per step, step 69 = 0.0 dB, calibrated from Tom's display reading
-    (see the script mirror's header). The sensor, the script and the slider bounds must change together.
+    `{% set v = state_attr('media_player.str_az5000es', 'volume_level') %}{% if is_state('media_player.str_az5000es', 'on') and v is number %}{% set s = (v * 100) | round(0) %}{{ ((s - 69) / 2) if s >= 31 else (s - 50) }}{% else %}{{ none }}{% endif %}`.
+    Scale: 0–100 steps, 0.5 dB per step from step 31 (-19 dB) up with step 69 = 0.0 dB, and 1 dB per
+    step below step 31, fitted to two of Tom's display readings (see the script mirror's header). The sensor, the script and the slider bounds must change together.
 - **Lights** = `light.basement_movie_room_lights` (recessed; the card body is the brightness slider,
   and the icon toggles them). The top-right buttons are Ambient (toggles
   `light.basement_movie_room_ambient_lighting`, accent when on) and Scene. The bottom row is Bright,

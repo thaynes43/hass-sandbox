@@ -4,15 +4,21 @@
 # (media_player.str_az5000es, songpal) had no name, no area and was not exposed. It stays UNexposed on
 # purpose: the built-in volume intents would drive it with no ceiling. Tom: "I usually won't go louder
 # than -3.5dB"; "anything past 0 is crazy loud".
-# Scale: the receiver reports 0-100 steps (volume_level x 100) and its display shows dB at 0.5 dB per step
-# with step 69 = 0.0 dB. Tom read -3.5 dB at step 62 (2026-09-28, Shield input); his usual Plex level
-# -5.5 dB is step 58, the Shield's most used step in the history, and the fixed Sonos-input level 0.69
-# comes out at exactly 0.0 dB. Below about -20 dB the dB figure is unverified (AVR volume curves usually
-# steepen at the quiet end). The same conversion lives in sensor.movie_room_receiver_volume (Template
-# helper, live only) and the Tom Mobile slider stops at step 62: change all three together.
-# Presets (2026-09-28, Tom: "-5.5 for plex and -17 for YouTube and I'll dial it in and add more"): each
-# preset is a live-only input_number.movie_room_receiver_preset_<name> (-20 to -3.5 dB, 0.5 dB steps — the
-# Tom Mobile slider's range, so a preset can never pin the slider below its floor).
+# Scale: the receiver reports 0-100 steps (volume_level x 100). Its display shows dB at 0.5 dB per step
+# from step 31 (-19 dB) up, with step 69 = 0.0 dB, and 1 dB per step below step 31 (dB = step - 50).
+# Two display readings from Tom: -3.5 dB at step 62 (Shield input) and -29 dB at step 21 (2026-09-28
+# evening, YouTube, where 0.5 dB per step all the way down had said -24). The knee at step 31 is the
+# simplest fit through both readings, not a measured point, and below step 21 the curve is unverified.
+# Below the knee a half dB is not reachable: set rounds to a neighbouring step, and up/down round in
+# their own direction (ceil/floor), so 'up 0.5' at -28 dB goes to -27 instead of answering "nothing to do".
+# Supporting, not read: his usual Plex level -5.5 dB is step 58 (the Shield's most used step), and the
+# fixed Sonos-input level 0.69 comes out at 0.0 dB. The same conversion lives in
+# sensor.movie_room_receiver_volume (Template helper, live only), and the Tom Mobile slider runs from
+# step 15 (-35 dB) to step 62: change all three together.
+# Presets (2026-09-28): Plex -5.5 dB; YouTube -29 dB (Tom first guessed -17, then: "it's -29 dB and is
+# the current volume"). Each preset is a live-only input_number.movie_room_receiver_preset_<name>
+# (-35 to -3.5 dB, 0.5 dB steps: the Tom Mobile slider's range, so a preset can never pin the slider
+# below its floor).
 # action preset goes to one (capped like set), save_preset stores the current level in one. The tool
 # finds presets by name at run time, so for voice a new app is just a new helper with that prefix; the
 # Tom Mobile card also needs a button AND a matching styles block (agent-docs/tom-mobile-dashboard.md).
@@ -51,12 +57,13 @@ fields:
   db:
     name: dB
     description: 'For set: the target volume in dB as the display shows it, a negative number such as
-      -5.5 (''minus six'' is -6). For up and down: how many dB to change by, default 2. Leave empty for
+      -5.5 (''minus six'' is -6). For up and down: how many dB to change by, default 2. Below -19 dB the
+      receiver moves in whole dB, so a half dB there rounds (up for up, down for down). Leave empty for
       check.'
     required: false
     selector:
       number:
-        min: -40
+        min: -45
         max: 40
         step: 0.5
         mode: box
@@ -69,24 +76,28 @@ fields:
     selector:
       text: {}
 sequence:
-- alias: The receiver reports volume as a step from 0 to 100 (volume_level x 100); its display shows dB
-    at 0.5 dB per step, with step 69 = 0.0 dB (Tom read -3.5 dB at step 62 on 2026-09-28). max_db is Tom's
-    ceiling; the Tom Mobile slider stops at the same step (62). sensor.movie_room_receiver_volume uses
-    the same conversion. Presets live between preset_min_db (-20 dB, the Tom Mobile slider's floor, step
-    29) and max_db, the same range as the preset helpers, so a preset can never pin the slider below its
-    floor
+- alias: The receiver reports volume as a step from 0 to 100 (volume_level x 100). Its display shows dB
+    at 0.5 dB per step from step 31 (-19 dB) up, with step 69 = 0.0 dB (Tom read -3.5 dB at step 62),
+    and 1 dB per step below step 31 (Tom read -29 dB at step 21 on 2026-09-28, where 0.5 dB per step said
+    -24). Below step 21 the curve is unverified. max_db is Tom's ceiling; the Tom Mobile slider stops
+    at the same step (62). sensor.movie_room_receiver_volume uses the same conversion. Presets live between
+    preset_min_db (-35 dB, the Tom Mobile slider's floor, step 15) and max_db, the same range as the preset
+    helpers, so a preset can never pin the slider below its floor
   variables:
     receiver: media_player.str_az5000es
     zero_step: 69
+    knee_step: 31
+    knee_db: '{{ (knee_step - zero_step) / 2 }}'
     max_db: -3.5
-    min_db: -34.5
-    preset_min_db: -20
+    min_db: -45
+    preset_min_db: -35
     wanted: '{{ action | default('''', true) | string | lower | trim }}'
     raw_db: '{{ db | default('''') }}'
     has_db: '{{ raw_db | is_number }}'
     db_value: '{{ raw_db | float(0) }}'
     cur_step: '{{ ((state_attr(receiver, ''volume_level'') | float(0)) * 100) | round(0) | int }}'
-    cur_db: '{{ (cur_step - zero_step) / 2 }}'
+    cur_db: '{{ ((cur_step - zero_step) / 2) if cur_step >= knee_step else (cur_step - knee_step + knee_db)
+      }}'
     source: '{{ state_attr(receiver, ''source'') or '''' }}'
     amount: '{{ (db_value | abs) if has_db and db_value != 0 else 2 }}'
     preset_prefix: input_number.movie_room_receiver_preset_
@@ -107,7 +118,9 @@ sequence:
       == ''up'' %}{{ [cur_db, [cur_db + amount, max_db] | min] | max }}{% elif wanted == ''preset'' %}{{
       [[preset_db, max_db] | min, preset_min_db] | max }}{% elif wanted == ''down'' %}{{ [cur_db - amount,
       min_db] | max }}{% else %}{{ cur_db }}{% endif %}'
-    target_step: '{{ [[(zero_step + target_db * 2) | round(0) | int, 0] | max, 100] | min }}'
+    target_step: '{% set d = target_db | float %}{% set m = ''ceil'' if wanted == ''up'' else (''floor''
+      if wanted == ''down'' else ''common'') %}{{ [[((zero_step + d * 2) if d >= knee_db else (knee_step
+      + d - knee_db)) | round(0, m) | int, 0] | max, 100] | min }}'
     problem: '{% if wanted not in [''check'', ''set'', ''up'', ''down'', ''preset'', ''save_preset'']
       %}Nothing was changed: the action must be check, set, up, down, preset or save_preset.{% elif wanted
       in [''preset'', ''save_preset''] and not preset_entity %}Nothing was changed: there is no {{ (preset
@@ -152,7 +165,7 @@ sequence:
     continue_on_timeout: true
     wait_template: '{{ ((state_attr(''media_player.str_az5000es'', ''volume_level'') | float(-1)) * 100)
       | round(0) | int == target_step }}'
-- alias: 'save_preset: store the current level (clamped to the preset range, -20 to -3.5 dB, the helpers''
+- alias: 'save_preset: store the current level (clamped to the preset range, -35 to -3.5 dB, the helpers''
     own range) in the preset helper; the volume itself is not changed'
   if:
   - condition: template
@@ -165,21 +178,22 @@ sequence:
       value: '{{ save_db }}'
 - variables:
     fmt_cur: '{{ (''%.1f'' | format(cur_db)) | replace(''.0'', '''') }}'
-    fmt_target: '{{ (''%.1f'' | format((target_step - zero_step) / 2)) | replace(''.0'', '''') }}'
+    fmt_target: '{% set s = target_step | int %}{{ (''%.1f'' | format(((s - zero_step) / 2) if s >= knee_step
+      else (s - knee_step + knee_db))) | replace(''.0'', '''') }}'
     fmt_save: '{{ (''%.1f'' | format(save_db)) | replace(''.0'', '''') }}'
     result:
       response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ '' on ''
         ~ source if source else '''' }}.{% elif wanted == ''save_preset'' %}Saved {{ fmt_save }} dB as
         the {{ preset_label }} volume{{ '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)''
-        if cur_db > max_db else ('' (presets go no lower than -20 dB; the receiver is at '' ~ fmt_cur
-        ~ '' dB)'' if cur_db < preset_min_db else '''') }}.{% elif target_step == cur_step and wanted
-        == ''up'' and cur_db >= max_db %}Nothing was changed: the receiver is already at {{ fmt_cur }}
-        dB, and this tool does not go above -3.5 dB.{% elif target_step == cur_step %}Nothing to do: the
-        receiver is already at {{ fmt_cur }} dB{{ '', the '' ~ preset_label ~ '' level'' if wanted ==
-        ''preset'' else '''' }}.{% else %}The Movie Room receiver is now at {{ fmt_target }} dB{{ '',
-        the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else '''' }} (it was {{ fmt_cur }}
-        dB).{% if (wanted == ''set'' and db_value > max_db) or (wanted == ''up'' and cur_db + amount >
-        max_db) %} That is the limit: this tool does not go above -3.5 dB.{% endif %}{% endif %}'
+        if cur_db > max_db else ('' (presets go no lower than '' ~ preset_min_db ~ '' dB; the receiver
+        is at '' ~ fmt_cur ~ '' dB)'' if cur_db < preset_min_db else '''') }}.{% elif target_step == cur_step
+        and wanted == ''up'' and cur_db >= max_db %}Nothing was changed: the receiver is already at {{
+        fmt_cur }} dB, and this tool does not go above -3.5 dB.{% elif target_step == cur_step %}Nothing
+        to do: the receiver is already at {{ fmt_cur }} dB{{ '', the '' ~ preset_label ~ '' level'' if
+        wanted == ''preset'' else '''' }}.{% else %}The Movie Room receiver is now at {{ fmt_target }}
+        dB{{ '', the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else '''' }} (it was {{ fmt_cur
+        }} dB).{% if (wanted == ''set'' and db_value > max_db) or (wanted == ''up'' and cur_db + amount
+        > max_db) %} That is the limit: this tool does not go above -3.5 dB.{% endif %}{% endif %}'
   alias: Reply. HA trims leading and trailing whitespace from each rendered variable, so a fragment like
     ' on Shield' is built inline in the response, not as its own variable (it rendered as 'dBon Shield')
 - stop: Done
