@@ -319,6 +319,37 @@ class TestWarningNeverArmsARepair:
         assert app._auto_repair_deadline is None
         app.create_task.assert_not_called()
 
+    def test_warning_stands_down_a_pending_repair(self):
+        """Port down → pending; DNS breaks and the Port comes back (fallback
+        warning). The countdown must not survive, or the next single bad
+        cycle would power-cycle with no dwell at all."""
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 10
+        app.create_task = closing_create_task()
+        critical = [{"name": "Ping", "status": "critical", "detail": "timeout (3 attempts)"}]
+        warning = [{
+            "name": "Ping",
+            "status": "warning",
+            "detail": "4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork",
+        }]
+
+        app._evaluate_auto_repair(critical)
+        assert app._repair_status == REPAIR_PENDING
+        # The deadline passes while the device is up behind broken DNS.
+        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=30)
+        app._evaluate_auto_repair(warning)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._auto_repair_deadline is None
+        assert app._unhealthy_since is None
+
+        # One bad cycle afterwards starts a fresh dwell instead of firing.
+        app._evaluate_auto_repair(critical)
+        assert app._repair_status == REPAIR_PENDING
+        app.create_task.assert_not_called()
+
 
 class TestRelapseAfterSuccess:
     """A ``success`` that does not stick must not stand for the rest of the
@@ -396,7 +427,9 @@ class TestRelapseAfterSuccess:
         assert app._auto_repair_deadline is None
         app.create_task.assert_not_called()
 
-    def test_success_plus_fallback_warning_is_left_alone(self):
+    def test_success_plus_fallback_warning_counts_as_healthy(self):
+        """The fallback warning means the device answered: a healthy cycle,
+        so `success` clears to `idle` — never a relapse, never a repair."""
         app = self._app()
 
         app._evaluate_auto_repair([{
@@ -405,7 +438,8 @@ class TestRelapseAfterSuccess:
             "detail": "4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork",
         }])
 
-        assert app._repair_status == REPAIR_SUCCESS
+        assert app._repair_status == REPAIR_IDLE
+        assert "Relapsed" not in app._repair_detail
         app.create_task.assert_not_called()
 
     def test_success_then_healthy_still_goes_idle(self):

@@ -227,7 +227,12 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
     # ------------------------------------------------------------------
 
     def _evaluate_auto_repair(self, results: List[Dict[str, str]]) -> None:
-        all_ok = all(r["status"] == "ok" for r in results)
+        # "Healthy" uses the same set as the recovery wait: a `warning` here can
+        # only be the DNS fallback answering (the device is up, its name is
+        # not). Treating it as healthy also stands down a `pending` repair, so
+        # a countdown cannot outlive a recovery that happened during a DNS
+        # outage and fire with no dwell on the next single bad cycle.
+        all_ok = all(r["status"] in _RECOVERED_STATUSES for r in results)
         any_bad = any(r["status"] in ("critical", "degraded") for r in results)
 
         if all_ok:
