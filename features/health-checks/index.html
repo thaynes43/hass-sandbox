@@ -1676,12 +1676,12 @@
 <li><strong>Auto-clear on recovery</strong> — after a failed repair, the <code>failed</code> state automatically resets to <code>idle</code> when all checks recover. No auto-retry while checks are still unhealthy — except where a checker declares its own retry budget: the fans climb a CrashLoopBackOff ladder, and the Z-Wave bridge retries up to 3 times in 24 hours, 15 minutes apart, before giving up and paging</li>
 <li><strong>Unknown does not trigger repair</strong> — if AppDaemon itself is restarting, repair actions are suppressed</li>
 <li><strong>Cancellable</strong> — a pending repair can be cancelled via the detail popup before the power cycle executes</li>
-<li><strong>Power comes back on, or it says so</strong> — a repair that switches a smart plug or power-strip outlet off and on (the printer, the Movie Room Sonos Port, the hot tub, device groups) checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet" (or, if Home Assistant has lost track of the outlet altogether, a pointer to reload the integration that owns it). A repair must never quietly leave a device switched off</li>
+<li><strong>Power comes back on, or it says so</strong> — a repair that switches a smart plug or power-strip outlet off and on (the printer, the Movie Room Sonos Port, the hot tub) checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet" (or, if Home Assistant has lost track of the outlet altogether, a pointer to reload the integration that owns it). A repair must never quietly leave a device switched off</li>
 </ul>
 <p>The repair state machine:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idle → pending → in_progress → success → idle (checks stay healthy)
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         │                   │        └──▶ failed (relapsed before a fully healthy cycle — no second repair this outage)
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         │                   → failed  → idle (checks recover naturally)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         │            │           └──▶ failed (relapsed before a fully healthy cycle — no second repair this outage)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         │            └──▶ failed → idle (checks recover naturally)
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>         └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
 </code></pre></div>
 <p>Repair-capable checkers provision their own HA helpers for configuration:</p>
