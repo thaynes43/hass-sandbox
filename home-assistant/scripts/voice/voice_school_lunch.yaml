@@ -169,7 +169,7 @@ sequence:
       yet: the menu for that day is not out.'' if cv > o.last else (''Only the current menus are loaded:
       that day is too far back.'' if cv < o.first else ''No lunch is listed for that day, which usually
       means no school.'')))) %}{% endif %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
-      ''options'': o.mine if (own and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
+      ''options'': o.mine if (tags and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
       notice=notice) if notice else rec] %}{% endfor %}{{ out.lunches }}'
 - variables:
     result:
