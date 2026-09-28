@@ -28,24 +28,4 @@ The same rule applies to a status sensor: distinguish "I could not look"
 real counts plus the error). `apps/assist_exposure_guard/_publish_status` is the
 worked example.
 
-## Same trap in `ping_check` (not fixed, 2026-09-28)
-
-The AppDaemon image's busybox `ping` exits 1 with "bad address" for an
-unresolvable name, and `check_utils._ping_once` maps every non-zero exit to
-detail `"timeout"`. So a DNS failure on a `*.haynesnetwork` `ping_host` reads
-exactly like a dead device — and on a repairable checker it arms a power cycle.
-Runbooks for FQDN-pinged checkers must say "compare the other `.haynesnetwork`
-pings first".
-
-## Confirming a switch after a service call needs `last_changed`, not just state
-
-After `switch/turn_on` (fire-and-forget), an awaited `get_state` seconds later
-can still return the `on` from *before* the power cycle — HA had not yet
-reported the `off` (UniFi PDU outlets: >10 s latency, ~40 s re-provision). An
-`on` only proves the new command landed if `get_state(e, attribute="all")`
-shows `last_changed >= cycle start` (HA timestamps are tz-aware ISO; compare to
-`datetime.now(timezone.utc)`). An unchanged `on` at the end of a generous window
-means the `off` never registered. Worked example:
-`apps/health_checks/shared/switch_power_cycle.py`.
-
 Related: [[appdaemon-service-calls-and-staging]]
