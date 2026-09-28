@@ -94,7 +94,7 @@ spa_health_checker:
     - fan.back_yard_westford_spa_pump_2
   staleness_threshold_s: 10800                 # Seconds before all entities are considered stale (3 hours)
   repair_switch: switch.spa_intouch3_switch    # Z-Wave switch controlling spa power
-  repair_recovery_wait_s: 300                  # Max seconds to wait for recovery after repair
+  repair_recovery_wait_s: 420                  # Max wall-clock seconds to wait for recovery after repair (prod; the old sleep-counted 300 ran ~420 s)
   repair_power_off_s: 60                       # Seconds to hold power off during the cycle
   repair_backoff_max_min: 360                  # Backoff cap for repair retries (minutes)
   check_interval_s: 120                        # Check frequency (seconds)

@@ -55,7 +55,7 @@ with every tracked entity dark Staleness is critical at once —
    skips the wait, with `did not turn back on — check the outlet`, `… — the entity
    is missing from Home Assistant — reload the integration that owns it`, or
    `… — the switch could not be read — see the AppDaemon log`) and polls
-   health for up to `repair_recovery_wait_s` (300s). Do
+   health for up to `repair_recovery_wait_s` (420s of wall clock since v1.24.0 — the old sleep-counted 300 ran about that long). Do
    **not** toggle the switch directly — `start_repair` carries the recovery
    verification.
 4. If `repair_state.status` is already `pending`/`in_progress`, wait — do not
@@ -65,7 +65,7 @@ with every tracked entity dark Staleness is critical at once —
 
 - After `start_repair`, allow the power cut (`repair_power_off_s`, 60s) plus up
   to 120s of turn-on confirmation (two 60s windows) plus `repair_recovery_wait_s`
-  (300s, wall clock since v1.24.0) plus one `check_interval_s` (120s) ≈ **10 min**
+  (420s, wall clock since v1.24.0) plus one `check_interval_s` (120s) ≈ **12 min**
   budget.
 - Recovery = all `checks[]` back to `ok` and `repair_state.status == success`;
   the bridge posts `[RESOLVED]` automatically.
