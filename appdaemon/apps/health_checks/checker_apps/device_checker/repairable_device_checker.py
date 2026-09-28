@@ -347,7 +347,7 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
                 # The helper has logged the ERROR. Waiting for recovery would
                 # only burn the recovery window on an unpowered device.
                 self._repair_status = REPAIR_FAILED
-                self._repair_detail = switch_not_on_detail(self._repair_switch)
+                self._repair_detail = switch_not_on_detail(self._repair_switch, cycle.note)
                 # No duration_s: the recovery wait never started.
                 self._pending_repair_events.append({"result": "failed"})
                 self._report_repair_status_only()

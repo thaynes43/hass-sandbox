@@ -576,8 +576,11 @@ class TestTurnOnConfirmation:
         _run(app._execute_repair())
 
         assert app._repair_status == REPAIR_FAILED
+        # The card and the Alertmanager description point at the real fix:
+        # reloading the integration, not the outlet.
         assert app._repair_detail == (
-            f"{SWITCH} did not turn back on — check the outlet"
+            f"{SWITCH} did not turn back on — the entity is missing from Home "
+            f"Assistant — reload the integration that owns it"
         )
         assert _turn_ons(app) == 2
         app._run_checks_only.assert_not_awaited()

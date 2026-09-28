@@ -94,9 +94,23 @@ class PowerCycleResult:
     note: str = ""
 
 
-def switch_not_on_detail(switch: str) -> str:
-    """The repair detail for a switch that never came back on."""
-    return f"{switch} did not turn back on — check the outlet"
+#: Carried by a failed result whose switch entity was missing from Home
+#: Assistant (the unifi integration dropping a PDU's outlet entities): the
+#: fix is reloading the integration, not the outlet.
+MISSING_ENTITY_NOTE = (
+    "the entity is missing from Home Assistant — reload the integration "
+    "that owns it"
+)
+
+
+def switch_not_on_detail(switch: str, note: str = "") -> str:
+    """The repair detail for a switch that never came back on.
+
+    *note* is the failed :class:`PowerCycleResult`'s note: when it says the
+    entity is missing, that replaces "check the outlet", which would send
+    the operator to the wrong place.
+    """
+    return f"{switch} did not turn back on — {note or 'check the outlet'}"
 
 
 def _utcnow() -> datetime.datetime:
@@ -212,17 +226,14 @@ async def power_cycle_switch(
     if confirmed:
         return _confirmed(never_off)
 
-    missing = (
-        " — the entity is missing; reload the integration that owns it"
-        if state is None
-        else ""
-    )
+    note = MISSING_ENTITY_NOTE if state is None else ""
     app.log(
         f"{label} still not on after a second turn_on (state: {state!r})"
-        f"{missing} — ending the repair without waiting for recovery",
+        f"{' — ' + note if note else ''} — ending the repair without waiting "
+        f"for recovery",
         level="ERROR",
     )
-    return PowerCycleResult(switch_on=False)
+    return PowerCycleResult(switch_on=False, note=note)
 
 
 def _confirmed(never_off: bool) -> PowerCycleResult:

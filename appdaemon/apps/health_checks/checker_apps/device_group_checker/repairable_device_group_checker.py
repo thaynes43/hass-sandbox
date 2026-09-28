@@ -529,7 +529,7 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
                 # The helper has logged the ERROR. Waiting for recovery would
                 # only burn the recovery window on an unpowered device.
                 dr["status"] = REPAIR_FAILED
-                dr["detail"] = switch_not_on_detail(repair_switch)
+                dr["detail"] = switch_not_on_detail(repair_switch, cycle.note)
                 self._repair_status = self._aggregate_repair_status()
                 # No duration_s: the recovery wait never started.
                 self._pending_repair_events.append({

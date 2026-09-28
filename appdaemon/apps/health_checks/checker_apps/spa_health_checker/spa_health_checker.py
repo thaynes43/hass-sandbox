@@ -673,7 +673,7 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
                 # the backoff ladder — and the recovery wait is skipped: it
                 # would only burn the window on an unpowered gateway.
                 self._register_repair_failure(
-                    switch_not_on_detail(self._repair_switch)
+                    switch_not_on_detail(self._repair_switch, cycle.note)
                 )
                 # No duration_s: the recovery wait never started.
                 self._record_repair_event("failed")

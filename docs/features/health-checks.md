@@ -112,7 +112,7 @@ Some checkers support automatic repair, typically via smart switch power cycling
 - **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy — except where a checker declares its own retry budget: the fans climb a CrashLoopBackOff ladder, and the Z-Wave bridge retries up to 3 times in 24 hours, 15 minutes apart, before giving up and paging
 - **Unknown does not trigger repair** — if AppDaemon itself is restarting, repair actions are suppressed
 - **Cancellable** — a pending repair can be cancelled via the detail popup before the power cycle executes
-- **Power comes back on, or it says so** — a power-cycle repair checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet". A repair must never quietly leave a device switched off
+- **Power comes back on, or it says so** — a power-cycle repair checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet" (or, if Home Assistant has lost track of the outlet altogether, a pointer to reload the integration that owns it). A repair must never quietly leave a device switched off
 
 The repair state machine:
 

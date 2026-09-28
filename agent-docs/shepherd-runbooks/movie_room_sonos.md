@@ -54,8 +54,9 @@ only `…_outlet_21`.
 2. Still critical at the deadline → `in_progress`: outlet 21 off, 10 s, on.
 3. The outlet must report `on` within 60 s; if not, one more `turn_on` and
    another 60 s. Still not on → `failed`, detail
-   `switch.power_distribution_hi_density_outlet_21 did not turn back on — check the outlet`,
-   and no recovery wait.
+   `switch.power_distribution_hi_density_outlet_21 did not turn back on — check the outlet`
+   (or `… — the entity is missing from Home Assistant — reload the integration that owns it`
+   when the unifi integration has dropped the PDU's outlet entities), and no recovery wait.
 4. Outlet confirmed on → up to 300 s of recovery polling (the Port takes a
    while to boot and rejoin). Ping back → `success`; otherwise `failed`,
    `Did not recover after 300s`. Ping lost again (critical) after a
@@ -86,6 +87,10 @@ only `…_outlet_21`.
    - `pending` / `in_progress` → auto-repair has it; **wait** (Verify below).
    - `failed` + `did not turn back on — check the outlet` → the outlet, not the
      Port: go to step 3.
+   - `failed` + `… the entity is missing from Home Assistant — reload the integration
+     that owns it` → the unifi integration dropped the PDU's outlet entities (seen
+     2026-09-28): `homeassistant.reload_config_entry` on the unifi entry, then check
+     outlet 21 is `on`.
    - `failed` + `Did not recover after 300s` → the outlet came back on and the
      Port still does not answer.
    - `failed` + `Relapsed after a successful repair` → the power cycle worked
