@@ -48,7 +48,12 @@ up** or was never applicable. Do not expect to fix it with another restart.
    - `Integration Status` red, `Radio Ping` **green** → the stale-client wedge.
      The board is alive and holding a dead TCP session.
    - `Radio Ping` red as well → the board is off the network. This is a
-     power/Wi-Fi/switch-port problem, not a serial one.
+     power/Wi-Fi/switch-port problem, not a serial one. **Unless** its detail
+     reads `cannot resolve tubeszb-zwave01.haynesnetwork` (since v1.24.0; it
+     used to say `timeout`): then the name did not resolve and the board may be
+     fine — check DNS first (do the other `*.haynesnetwork` pings, e.g. zigbee's,
+     fail the same way?), ping the board's reserved IP 192.168.50.65 directly,
+     and do not treat it as an offline board.
 2. Read `checkers.zwave.repair_state`: `repair_attempts_24h` vs
    `repair_max_per_24h` tells you whether the budget is spent, and
    `last_repair_attempt` when it was last tried. `status: failed` with a

@@ -118,6 +118,7 @@ The repair state machine:
 
 ```
 idle → pending → in_progress → success → idle (checks stay healthy)
+         │                   │        └──▶ failed (relapsed before a fully healthy cycle — no second repair this outage)
          │                   → failed  → idle (checks recover naturally)
          └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
 ```
