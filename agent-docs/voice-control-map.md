@@ -81,10 +81,11 @@ unexposed because the built-in volume intents would drive it with no ceiling. Th
 "what is the volume on the receiver" → `check`, "turn the receiver up a little" → `up` 1 dB. The same
 script backs the Tom Mobile receiver card's −/+ (`agent-docs/tom-mobile-dashboard.md`).
 **Per-app presets (2026-09-28):** `preset` / `save_preset` with a `preset` name. Levels live in
-live-only helpers `input_number.movie_room_receiver_preset_<name>` (-34.5 to -3.5 dB, 0.5 dB
-steps; Tom's starting values Plex -5.5, YouTube -17, which he is dialling in). The tool finds
+live-only helpers `input_number.movie_room_receiver_preset_<name>` (-20 to -3.5 dB, the Tom Mobile
+slider's range, 0.5 dB steps; Tom's starting values Plex -5.5, YouTube -17, which he is dialling in). The tool finds
 them by name at run time ("you tube", "YouTube" and "plex!" all match; an unknown name gets the
-list back), so a new app is a new helper with that prefix plus a card button. Text-tested as
+list back), so for voice a new app is a new helper with that prefix; the Tom Mobile card also needs a
+button and a matching `styles` block (`agent-docs/tom-mobile-dashboard.md`). Text-tested as
 the Movie Room satellite: "Set the volume for YouTube." → `preset` YouTube, "Save this as the
 Plex volume." → `save_preset` Plex. The KEF LS50s (the
 Rumpus Room PC's speakers over HDMI) have three registrations: the two non-Music-Assistant ones

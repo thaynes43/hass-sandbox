@@ -11,10 +11,12 @@
 # steepen at the quiet end). The same conversion lives in sensor.movie_room_receiver_volume (Template
 # helper, live only) and the Tom Mobile slider stops at step 62: change all three together.
 # Presets (2026-09-28, Tom: "-5.5 for plex and -17 for YouTube and I'll dial it in and add more"): each
-# preset is a live-only input_number.movie_room_receiver_preset_<name> (-34.5 to -3.5 dB, 0.5 dB steps).
+# preset is a live-only input_number.movie_room_receiver_preset_<name> (-20 to -3.5 dB, 0.5 dB steps — the
+# Tom Mobile slider's range, so a preset can never pin the slider below its floor).
 # action preset goes to one (capped like set), save_preset stores the current level in one. The tool
-# finds presets by name at run time, so a new app is just a new helper with that prefix (plus a button
-# on the Tom Mobile receiver card); an unknown name is answered with the list.
+# finds presets by name at run time, so for voice a new app is just a new helper with that prefix; the
+# Tom Mobile card also needs a button AND a matching styles block (agent-docs/tom-mobile-dashboard.md).
+# An unknown name is answered with the list.
 # Refusals come back as a `response` sentence with a plain stop (see voice_thermostat.yaml).
 # Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-28.
 alias: Movie Room Receiver Volume
@@ -70,12 +72,15 @@ sequence:
 - alias: The receiver reports volume as a step from 0 to 100 (volume_level x 100); its display shows dB
     at 0.5 dB per step, with step 69 = 0.0 dB (Tom read -3.5 dB at step 62 on 2026-09-28). max_db is Tom's
     ceiling; the Tom Mobile slider stops at the same step (62). sensor.movie_room_receiver_volume uses
-    the same conversion
+    the same conversion. Presets live between preset_min_db (-20 dB, the Tom Mobile slider's floor, step
+    29) and max_db, the same range as the preset helpers, so a preset can never pin the slider below its
+    floor
   variables:
     receiver: media_player.str_az5000es
     zero_step: 69
     max_db: -3.5
     min_db: -34.5
+    preset_min_db: -20
     wanted: '{{ action | default('''', true) | string | lower | trim }}'
     raw_db: '{{ db | default('''') }}'
     has_db: '{{ raw_db | is_number }}'
@@ -96,12 +101,12 @@ sequence:
     presets_known: '{{ states.input_number | selectattr(''entity_id'', ''search'', ''^input_number[.]movie_room_receiver_preset_'')
       | map(attribute=''name'') | map(''replace'', ''Movie Room Receiver Preset '', '''') | join('', '')
       }}'
-    preset_db: '{{ states(preset_entity) | float(min_db) if preset_entity else min_db }}'
-    save_db: '{{ [[cur_db, max_db] | min, min_db] | max }}'
+    preset_db: '{{ states(preset_entity) | float(preset_min_db) if preset_entity else preset_min_db }}'
+    save_db: '{{ [[cur_db, max_db] | min, preset_min_db] | max }}'
     target_db: '{% if wanted == ''set'' %}{{ [[db_value, max_db] | min, min_db] | max }}{% elif wanted
       == ''up'' %}{{ [cur_db, [cur_db + amount, max_db] | min] | max }}{% elif wanted == ''preset'' %}{{
-      [[preset_db, max_db] | min, min_db] | max }}{% elif wanted == ''down'' %}{{ [cur_db - amount, min_db]
-      | max }}{% else %}{{ cur_db }}{% endif %}'
+      [[preset_db, max_db] | min, preset_min_db] | max }}{% elif wanted == ''down'' %}{{ [cur_db - amount,
+      min_db] | max }}{% else %}{{ cur_db }}{% endif %}'
     target_step: '{{ [[(zero_step + target_db * 2) | round(0) | int, 0] | max, 100] | min }}'
     problem: '{% if wanted not in [''check'', ''set'', ''up'', ''down'', ''preset'', ''save_preset'']
       %}Nothing was changed: the action must be check, set, up, down, preset or save_preset.{% elif wanted
@@ -147,8 +152,8 @@ sequence:
     continue_on_timeout: true
     wait_template: '{{ ((state_attr(''media_player.str_az5000es'', ''volume_level'') | float(-1)) * 100)
       | round(0) | int == target_step }}'
-- alias: 'save_preset: store the current level (clamped to the preset range, -34.5 to -3.5 dB) in the
-    preset helper; the volume itself is not changed'
+- alias: 'save_preset: store the current level (clamped to the preset range, -20 to -3.5 dB, the helpers''
+    own range) in the preset helper; the volume itself is not changed'
   if:
   - condition: template
     value_template: '{{ wanted == ''save_preset'' }}'
@@ -166,14 +171,15 @@ sequence:
     result:
       response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ on_input
         }}.{% elif wanted == ''save_preset'' %}Saved {{ fmt_save }} dB as the {{ preset_label }} volume{{
-        '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db > max_db else ''''
-        }}.{% elif target_step == cur_step and wanted == ''up'' and cur_db >= max_db %}Nothing was changed:
-        the receiver is already at {{ fmt_cur }} dB, and this tool does not go above -3.5 dB.{% elif target_step
-        == cur_step %}Nothing to do: the receiver is already at {{ fmt_cur }} dB{{ '', the '' ~ preset_label
-        ~ '' level'' if wanted == ''preset'' else '''' }}.{% else %}The Movie Room receiver is now at
-        {{ fmt_target }} dB{{ '', the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else ''''
-        }} (it was {{ fmt_cur }} dB).{% if (wanted == ''set'' and db_value > max_db) or (wanted == ''up''
-        and cur_db + amount > max_db) %} That is the limit: this tool does not go above -3.5 dB.{% endif
-        %}{% endif %}'
+        '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db > max_db else (''
+        (presets go no lower than -20 dB; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db < preset_min_db
+        else '''') }}.{% elif target_step == cur_step and wanted == ''up'' and cur_db >= max_db %}Nothing
+        was changed: the receiver is already at {{ fmt_cur }} dB, and this tool does not go above -3.5
+        dB.{% elif target_step == cur_step %}Nothing to do: the receiver is already at {{ fmt_cur }} dB{{
+        '', the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else '''' }}.{% else %}The Movie
+        Room receiver is now at {{ fmt_target }} dB{{ '', the '' ~ preset_label ~ '' level'' if wanted
+        == ''preset'' else '''' }} (it was {{ fmt_cur }} dB).{% if (wanted == ''set'' and db_value > max_db)
+        or (wanted == ''up'' and cur_db + amount > max_db) %} That is the limit: this tool does not go
+        above -3.5 dB.{% endif %}{% endif %}'
 - stop: Done
   response_variable: result

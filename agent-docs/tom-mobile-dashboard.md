@@ -170,7 +170,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
   it off, a one-row card has just Power. One card with hidden sub-buttons left a blank row, because the
   card's height (`rows`) is fixed.
   - **Presets row** (2026-09-28, `rows: 2.438`, groups mode): one button per
-    `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube), showing its saved level.
+    `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube; -20 to -3.5 dB, the same range as the slider above, so a preset can never pin the slider below its floor), showing its saved level.
     Tap = `script.voice_movie_room_receiver_volume` `preset`; hold = `save_preset` with a
     confirmation ("Save the current volume as the Plex level?"), so Tom dials a level in by ear
     and holds the button. A preset lights up (accent) while the receiver sits at its level.
