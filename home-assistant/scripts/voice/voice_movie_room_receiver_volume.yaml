@@ -60,7 +60,7 @@ sequence:
     max_db: -3.5
     min_db: -34.5
     wanted: '{{ action | default('''', true) | string | lower | trim }}'
-    raw_db: '{{ db | default('''', true) }}'
+    raw_db: '{{ db | default('''') }}'
     has_db: '{{ raw_db | is_number }}'
     db_value: '{{ raw_db | float(0) }}'
     cur_step: '{{ ((state_attr(receiver, ''volume_level'') | float(0)) * 100) | round(0) | int }}'
