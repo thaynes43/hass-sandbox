@@ -126,8 +126,9 @@ reach for a whitelisted switch if a runbook explicitly tells you to.
 - **Idempotency.** Skip an alert already carrying an in-flight/exhausted
   triage marker (Alertmanager annotation or the checker's `record_note`
   history). Don't double-triage the same episode. A `record_note` deferral
-  with a deadline (`re-check <device> after <HH:MM>`) stops counting once
-  that deadline passes.
+  (`re-check <device> after <YYYY-MM-DD HH:MM>`) counts only while its
+  deadline is in the future and it names the device that is failing now:
+  the alert is checker-level, and notes never expire from `alert_history`.
 
 ## Universal preconditions (check before *any* remediation)
 
@@ -164,7 +165,7 @@ Run these gates first, in order — several send you straight to skip/escalate:
    `no MQTT data yet` for good. If its `<device> State` row is still bad
    then, it is a real outage → **Escalate**. Otherwise `record_note` a
    deferral that names the device and a deadline, e.g. `post-restart
-   warm-up; re-check <device> after <HH:MM>`, and skip. Notes persist in
+   warm-up; re-check <device> after <YYYY-MM-DD HH:MM>`, and skip. Notes persist in
    `alert_history`, so a bare "no action" would read to the **Idempotency**
    guardrail as a finished triage and every later wake would skip too. A
    deferral note whose deadline has passed is not an in-flight marker:
