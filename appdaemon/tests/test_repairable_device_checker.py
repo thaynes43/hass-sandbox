@@ -379,18 +379,15 @@ class TestRelapseAfterSuccess:
         assert state["status"] == REPAIR_FAILED
         assert state["status"] not in _REPAIR_HOLD_STATES
 
-    def test_success_plus_unknown_ping_is_left_alone(self):
-        """A ping_host that stops resolving (DNS outage) is `unknown`: it says
-        nothing about the device, so a good repair stays `success`, no relapse
-        is logged, and nothing is armed."""
+    def test_success_plus_unknown_is_left_alone(self):
+        """An `unknown` result says nothing about the device, so a good repair
+        stays `success`, no relapse is logged, and nothing is armed. (DNS no
+        longer produces one — an unresolvable ping is critical — but other
+        paths can.)"""
         app = self._app()
-        unresolved = [{
-            "name": "Ping",
-            "status": "unknown",
-            "detail": "cannot resolve movieroomsonos.haynesnetwork (3 attempts)",
-        }]
+        unknown = [{"name": "Ping", "status": "unknown", "detail": "no data"}]
 
-        app._evaluate_auto_repair(unresolved)
+        app._evaluate_auto_repair(unknown)
 
         assert app._repair_status == REPAIR_SUCCESS
         assert app._repair_detail == "Recovered after 45s"
@@ -620,10 +617,9 @@ class TestTurnOnConfirmation:
 
         assert _turn_ons(app) == 1
         assert app.get_state.await_count == _CONFIRM_POLLS
-        assert _logged(app, "INFO", "never saw it go off")
-        assert not any(
-            c[1].get("level") == "WARNING" for c in app.log.call_args_list
-        )
+        # WARNING: on a successful repair this line is the only record that
+        # HA never saw the outlet go off.
+        assert _logged(app, "WARNING", "never saw it go off")
         assert app._repair_status == REPAIR_SUCCESS
         # On success the note is logged only — the card keeps a plain detail.
         assert app._repair_detail == "Recovered after 5s"
@@ -709,7 +705,7 @@ class TestTurnOnConfirmation:
         app = self._app()
         _switch_reports(app)
         app._run_checks_only = AsyncMock(return_value=[
-            {"name": "Ping", "status": "unknown", "detail": "cannot resolve x"},
+            {"name": "Ping", "status": "unknown", "detail": "no data"},
         ])
 
         _run(app._execute_repair())
@@ -908,7 +904,7 @@ class TestMovieRoomSonosProdConfig:
         app = self._app()
         answers = {
             "movieroomsonos.haynesnetwork": {
-                "status": "unknown",
+                "status": "critical",
                 "detail": "cannot resolve movieroomsonos.haynesnetwork (3 attempts)",
             },
             "192.168.0.70": {"status": "critical", "detail": "timeout (3 attempts)"},

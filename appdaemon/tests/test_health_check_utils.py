@@ -152,8 +152,10 @@ class TestPingCheck:
             result = _run(ping_check("dead.local", timeout_s=2))
         assert result["detail"] == "timeout"
 
-    def test_unresolvable_name_is_unknown_not_critical(self):
-        """busybox 'bad address' (the AppDaemon image) = DNS, not a dead host."""
+    def test_unresolvable_name_is_critical_with_an_honest_detail(self):
+        """busybox 'bad address' (the AppDaemon image): still critical, so
+        pass-through callers (the radio pings) keep alerting, but the detail
+        says DNS rather than "timeout"."""
         proc = _make_process(
             returncode=1,
             stderr=b"ping: bad address 'movieroomsonos.haynesnetwork'",
@@ -171,7 +173,7 @@ class TestPingCheck:
                     retry_delay_s=0,
                 )
             )
-        assert result["status"] == "unknown"
+        assert result["status"] == "critical"
         assert result["detail"] == (
             "cannot resolve movieroomsonos.haynesnetwork (3 attempts)"
         )
@@ -192,7 +194,7 @@ class TestPingCheck:
             ):
                 result = _run(ping_check("foo.invalid", timeout_s=2))
             assert result == {
-                "status": "unknown",
+                "status": "critical",
                 "detail": "cannot resolve foo.invalid",
             }, message
 

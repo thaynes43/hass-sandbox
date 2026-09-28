@@ -48,11 +48,14 @@ async def ping_check(
         {"status": "critical", "detail": "timeout"}
         {"status": "critical", "detail": "timeout (3 attempts)"}
         {"status": "critical", "detail": "ping failed: <error>"}
-        {"status": "unknown", "detail": "cannot resolve <host> (3 attempts)"}
+        {"status": "critical", "detail": "cannot resolve <host> (3 attempts)"}
 
-    A host name that does not resolve is ``unknown``, not ``critical``: a DNS
-    outage says nothing about the device, and a repairable checker must not
-    power-cycle it for one.
+    A host name that does not resolve is still ``critical`` — callers such as
+    ``NetworkProtocolChecker``'s radio ping pass the status straight through,
+    and a DNS failure must keep paging there — but with an honest detail,
+    ``cannot resolve <host>``, instead of ``timeout``.  A caller that can tell
+    a DNS outage from a dead device acts on the detail:
+    ``BasicDeviceChecker`` pings its ``ping_fallback_host`` (an IP) then.
     """
     attempts = max(1, int(attempts))
     last_result: Dict[str, str] = {"status": "critical", "detail": "timeout"}
@@ -113,10 +116,12 @@ async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
         ).strip()
         logger.debug("ping %s failed (rc=%s): %s", host, proc.returncode, err)
         if any(marker in err.lower() for marker in _UNRESOLVED_MARKERS):
-            # The name did not resolve: that says nothing about the device, so
-            # it is "unknown" (never arms a repair), not a dead host. Only a
-            # ping_host given as a name can take this path.
-            return {"status": "unknown", "detail": f"cannot resolve {host}"}
+            # The name did not resolve. Still critical (pass-through callers
+            # such as the radio pings must keep alerting on it), but say so:
+            # "timeout" would send triage after the device. Only a host given
+            # as a name can take this path; callers that have an IP to fall
+            # back on key off the "cannot resolve" detail.
+            return {"status": "critical", "detail": f"cannot resolve {host}"}
         return {"status": "critical", "detail": "timeout"}
 
     except asyncio.TimeoutError:

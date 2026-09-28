@@ -207,13 +207,14 @@ class TestPingCheck:
 
 class TestPingFallbackHost:
     """``ping_fallback_host`` is pinged only when ``ping_host`` does not
-    resolve, so a DNS outage that lasts can neither hide a dead device (its
-    ``unknown`` would never page) nor make a live one look dead."""
+    resolve (``ping_check``: critical, ``cannot resolve <host>``), so during a
+    DNS outage the device answers for itself: up → warning, down →
+    critical. Without a fallback the unresolved ping stays critical."""
 
     HOST = "movieroomsonos.haynesnetwork"
     FALLBACK = "192.168.0.70"
     PING = "health_checks.checker_apps.device_checker.device_checker.ping_check"
-    UNRESOLVED = {"status": "unknown", "detail": f"cannot resolve {HOST} (3 attempts)"}
+    UNRESOLVED = {"status": "critical", "detail": f"cannot resolve {HOST} (3 attempts)"}
 
     def _app(self, fallback: str | None = FALLBACK):
         extra = {"ping_host": self.HOST, "ping_attempts": 3, "entities": []}
@@ -284,7 +285,7 @@ class TestPingFallbackHost:
             ),
         }
 
-    def test_unresolved_without_a_fallback_stays_unknown(self):
+    def test_unresolved_without_a_fallback_stays_critical(self):
         app = self._app(fallback=None)
         ping = self._ping(self.UNRESOLVED)
 

@@ -35,7 +35,15 @@ unresolvable name, and `check_utils._ping_once` used to map every non-zero exit
 to detail `"timeout"`, so a DNS failure on a `*.haynesnetwork` `ping_host` read
 exactly like a dead device and armed a power cycle on a repairable checker. It
 now matches the resolver messages (`_UNRESOLVED_MARKERS`: busybox, iputils,
-macOS) and returns `unknown` / "cannot resolve <host>" — can't-look, not dead.
+macOS) and returns **`critical` / "cannot resolve <host>"** — same status,
+honest detail. Not `unknown`: that was tried in PR #208 and reverted, because
+pass-through callers (`NetworkProtocolChecker`'s zigbee/zwave radio pings on
+`tubeszb-*.haynesnetwork`) silently lost their DNS-failure alerts — `unknown`
+resolves the page. A caller that can tell DNS from the device keys off the
+detail instead: `BasicDeviceChecker` with `ping_fallback_host` (an IP) pings
+that and takes its result (up → `warning`, down → `critical`).
+**Lesson:** before changing what a shared probe returns, grep every caller that
+passes its status straight through; change the detail, not the severity.
 
 ## Confirming a switch after a service call needs `last_changed`, not just state
 

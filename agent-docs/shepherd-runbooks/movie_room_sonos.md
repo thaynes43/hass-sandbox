@@ -31,9 +31,11 @@ only `…_outlet_21`.
   reloaded. That is why the repair confirms the outlet came back on.
 - **A DNS failure never power-cycles a healthy Port, and never hides a dead
   one.** When `movieroomsonos.haynesnetwork` does not resolve, `ping` exits
-  with "bad address" and `ping_check` reports `unknown` (since v1.24.0; before
-  that it read as a timeout and would have power-cycled a healthy Port). The
-  checker then pings the fallback, 192.168.0.70:
+  with "bad address" and `ping_check` reports **critical**,
+  `cannot resolve movieroomsonos.haynesnetwork (3 attempts)` (since v1.24.0;
+  before that the detail said `timeout`). On its own that would page and
+  power-cycle a healthy Port, so `ping_fallback_host` turns it into the
+  fallback's result — the checker pings 192.168.0.70:
   - Port answers → `Ping` is **warning**,
     `4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`. The
     Port is fine and DNS is not. Warning never pages and never arms a repair;
@@ -58,8 +60,9 @@ only `…_outlet_21`.
    while to boot and rejoin). Ping back → `success`; otherwise `failed`,
    `Did not recover after 300s`. Ping lost again (critical) after a
    `success`, before a fully healthy cycle → `failed`,
-   `Relapsed after a successful repair — recovery did not stick`; a DNS
-   `unknown` or fallback `warning` does not count as a relapse. If the outlet
+   `Relapsed after a successful repair — recovery did not stick`; the DNS
+   fallback's `warning` (Port up, name broken) does not count as a relapse,
+   and counts as recovered during the recovery wait. If the outlet
    read `on` without ever reporting `off` (HA may have missed it, or the
    `turn_off` was lost), a failure detail ends
    `(the outlet never reported off — it may not have been power cycled)`.
@@ -95,8 +98,8 @@ only `…_outlet_21`.
    is down as well: the verdict is the fallback IP's (a timeout there is a real
    Port outage; a warning means the Port is fine — fix DNS, not the Port). Are
    the other `*.haynesnetwork` pings (`zigbee` Coordinator Ping, `zwave` Radio
-   Ping) also failing, or `unknown`? Then it is DNS or the network — triage
-   that, not the Port.
+   Ping) also failing — critical with `cannot resolve …` means DNS, `timeout`
+   means the network? Then triage that, not the Port.
 3. Read `switch.power_distribution_hi_density_outlet_21`:
    - `on` → powered.
    - `off` → the outlet was left off (a repair's `turn_on` was lost, or a human

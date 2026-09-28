@@ -56,7 +56,9 @@ class BasicDeviceChecker(hass.Hass):
         # calling it a miss (ok on the first success).
         self._ping_attempts: int = max(1, int(args.get("ping_attempts", 1)))
         # Optional IP for a ping_host given as a name: pinged only when the
-        # name does not resolve, so a DNS outage cannot hide a dead device.
+        # name does not resolve, so the device answers for itself during a
+        # DNS outage (up → warning, down → critical) instead of the outage
+        # reading as a dead device.
         self._ping_fallback_host: str = args.get("ping_fallback_host", "") or ""
         # Whether the last ping went via the fallback (for transition logs).
         self._ping_using_fallback: bool = False
@@ -226,9 +228,12 @@ class BasicDeviceChecker(hass.Hass):
             result = await ping_check(
                 self._ping_host, attempts=self._ping_attempts
             )
-            unresolved = result["status"] == "unknown" and str(
-                result.get("detail", "")
-            ).startswith("cannot resolve")
+            # ping_check reports an unresolvable name as critical with this
+            # detail (any status is accepted here, on purpose: the detail is
+            # the contract, not the severity).
+            unresolved = str(result.get("detail", "")).startswith(
+                "cannot resolve"
+            )
             if unresolved and self._ping_fallback_host:
                 result = await self._ping_fallback()
             elif self._ping_using_fallback:
@@ -254,9 +259,11 @@ class BasicDeviceChecker(hass.Hass):
     async def _ping_fallback(self) -> Dict[str, str]:
         """Ping ``ping_fallback_host`` because ``ping_host`` did not resolve.
 
-        An unresolvable name is ``unknown`` (``ping_check``), which neither
-        pages nor arms a repair — right for a short DNS blip, but a DNS outage
-        that lasts would hide a dead device behind it indefinitely. So:
+        ``ping_check`` reports an unresolvable name as ``critical``,
+        ``cannot resolve <host>`` — right for callers that cannot tell DNS
+        from the device, but for a repairable checker it would power-cycle a
+        healthy device over a DNS outage.  With an IP to fall back on, the
+        device answers for itself instead:
 
         * fallback answers → ``warning``: the device is up and the name is
           broken. Warning is UI-only (``alertmanager_bridge`` maps it to

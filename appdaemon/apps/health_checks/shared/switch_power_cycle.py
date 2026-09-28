@@ -159,12 +159,14 @@ async def _confirm_on(
             return True, state, False
     if state == "on":
         # Not a failure (the device is powered, and the outlet may still have
-        # cycled while HA missed the `off`), so INFO; the note rides on the
-        # result and reaches the detail only if the recovery wait fails.
+        # cycled while HA missed the `off`), so not an ERROR; WARNING because
+        # an `off` HA never reported is an unexpected-but-recoverable
+        # condition, and on a *successful* repair this log line is the only
+        # record — the note only reaches the detail if recovery then fails.
         app.log(
             f"{switch} reads on but has not changed since before the power "
             f"cycle — Home Assistant never saw it go off; accepting it as on",
-            level="INFO",
+            level="WARNING",
         )
         return True, state, True
     return False, state, False

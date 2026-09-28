@@ -253,10 +253,12 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
 
         if self._repair_status == REPAIR_SUCCESS and any_bad:
             # Gated on any_bad (critical/degraded), not on "not all ok": an
-            # `unknown` — a ping_host that did not resolve, i.e. a DNS outage —
-            # or a `warning` says nothing about the device, so it must not
-            # turn a good repair into a failure. Such a cycle falls through to
-            # the `not any_bad` return below and arms nothing.
+            # `unknown` (no data) or a `warning` (the DNS-fallback case: the
+            # name did not resolve but the device answered on its IP) says
+            # nothing bad about the device, so it must not turn a good repair
+            # into a failure. Such a cycle falls through to the `not any_bad`
+            # return below and arms nothing. (An unresolvable name without a
+            # ping_fallback_host is critical, and does count.)
             #
             # A relapse: the device is bad again before a fully healthy cycle
             # (that returned above). `success` was judged moments after the
