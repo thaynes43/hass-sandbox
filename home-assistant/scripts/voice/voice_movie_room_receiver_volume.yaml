@@ -9,6 +9,8 @@
 # Two display readings from Tom: -3.5 dB at step 62 (Shield input) and -29 dB at step 21 (2026-09-28
 # evening, YouTube, where 0.5 dB per step all the way down had said -24). The knee at step 31 is the
 # simplest fit through both readings, not a measured point, and below step 21 the curve is unverified.
+# Below the knee a half dB is not reachable: set rounds to a neighbouring step, and up/down round in
+# their own direction (ceil/floor), so 'up 0.5' at -28 dB goes to -27 instead of answering "nothing to do".
 # Supporting, not read: his usual Plex level -5.5 dB is step 58 (the Shield's most used step), and the
 # fixed Sonos-input level 0.69 comes out at 0.0 dB. The same conversion lives in
 # sensor.movie_room_receiver_volume (Template helper, live only), and the Tom Mobile slider runs from
@@ -55,7 +57,8 @@ fields:
   db:
     name: dB
     description: 'For set: the target volume in dB as the display shows it, a negative number such as
-      -5.5 (''minus six'' is -6). For up and down: how many dB to change by, default 2. Leave empty for
+      -5.5 (''minus six'' is -6). For up and down: how many dB to change by, default 2. Below -19 dB the
+      receiver moves in whole dB, so a half dB there rounds (up for up, down for down). Leave empty for
       check.'
     required: false
     selector:
@@ -115,8 +118,9 @@ sequence:
       == ''up'' %}{{ [cur_db, [cur_db + amount, max_db] | min] | max }}{% elif wanted == ''preset'' %}{{
       [[preset_db, max_db] | min, preset_min_db] | max }}{% elif wanted == ''down'' %}{{ [cur_db - amount,
       min_db] | max }}{% else %}{{ cur_db }}{% endif %}'
-    target_step: '{% set d = target_db | float %}{{ [[((zero_step + d * 2) if d >= knee_db else (knee_step
-      + d - knee_db)) | round(0) | int, 0] | max, 100] | min }}'
+    target_step: '{% set d = target_db | float %}{% set m = ''ceil'' if wanted == ''up'' else (''floor''
+      if wanted == ''down'' else ''common'') %}{{ [[((zero_step + d * 2) if d >= knee_db else (knee_step
+      + d - knee_db)) | round(0, m) | int, 0] | max, 100] | min }}'
     problem: '{% if wanted not in [''check'', ''set'', ''up'', ''down'', ''preset'', ''save_preset'']
       %}Nothing was changed: the action must be check, set, up, down, preset or save_preset.{% elif wanted
       in [''preset'', ''save_preset''] and not preset_entity %}Nothing was changed: there is no {{ (preset
@@ -181,8 +185,8 @@ sequence:
       response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ '' on ''
         ~ source if source else '''' }}.{% elif wanted == ''save_preset'' %}Saved {{ fmt_save }} dB as
         the {{ preset_label }} volume{{ '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)''
-        if cur_db > max_db else ('' (presets go no lower than {{ preset_min_db }} dB; the receiver is
-        at '' ~ fmt_cur ~ '' dB)'' if cur_db < preset_min_db else '''') }}.{% elif target_step == cur_step
+        if cur_db > max_db else ('' (presets go no lower than '' ~ preset_min_db ~ '' dB; the receiver
+        is at '' ~ fmt_cur ~ '' dB)'' if cur_db < preset_min_db else '''') }}.{% elif target_step == cur_step
         and wanted == ''up'' and cur_db >= max_db %}Nothing was changed: the receiver is already at {{
         fmt_cur }} dB, and this tool does not go above -3.5 dB.{% elif target_step == cur_step %}Nothing
         to do: the receiver is already at {{ fmt_cur }} dB{{ '', the '' ~ preset_label ~ '' level'' if
