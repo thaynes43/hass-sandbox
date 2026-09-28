@@ -125,7 +125,10 @@ reach for a whitelisted switch if a runbook explicitly tells you to.
   `script.health_check_relay`, no HA config-entry / helper edits.
 - **Idempotency.** Skip an alert already carrying an in-flight/exhausted
   triage marker (Alertmanager annotation or the checker's `record_note`
-  history). Don't double-triage the same episode.
+  history). Don't double-triage the same episode. A `record_note` deferral
+  (`re-check <device> after <YYYY-MM-DD HH:MM>`) counts only while its
+  deadline is in the future and it names the device that is failing now:
+  the alert is checker-level, and notes never expire from `alert_history`.
 
 ## Universal preconditions (check before *any* remediation)
 
@@ -140,7 +143,40 @@ Run these gates first, in order — several send you straight to skip/escalate:
    it run; do not fire a second `start_repair`.
 3. **Attempt budget exhausted → escalate.** ≥2 Shepherd remediation attempts
    for this checker in the last 6h → skip to **Escalate**.
-4. **Dependency first.** If the checker declares a `health_dependencies` entry
+4. **Fresh AppDaemon restart → re-check, don't remediate.** For about
+   30–35 min after any AppDaemon restart, the `*_lights` MQTT checkers (and
+   so the overall `sensor.health_check_status`) read `unknown` while they
+   wait to hear from every device. That is by design and never pages. You
+   can see the window directly: the checker's `checks[]` has `<device> MQTT`
+   rows at `unknown` with detail `no MQTT data yet`, and Loki shows those
+   checkers starting, one line per warming checker (prefixed with its app key):
+   `{namespace="home-automation", app="appdaemon"} |= "ignoring first 5s for retained"`.
+   The one case in that window that **does** page: a light whose HA state
+   read fails reads `critical` rather than `warning`, because the cross-check
+   only downgrades a failure when the device's MQTT side is healthy. Its
+   `<device> State` row says `state: unavailable`, `state: unknown`,
+   `state: not found` or `error: …`, with no `(MQTT ok)` suffix, beside
+   `<device> MQTT` = `no MQTT data yet`.
+   The `*_lights` checkers set no `supports_repair`, so `start_repair` is
+   rejected and **Escalate** is the only lever; this gate holds it back.
+   The action on *this* wake: `record_note` a deferral that names the
+   device and an absolute deadline about 45 min after the restart, e.g.
+   `post-restart warm-up; re-check <device> after <YYYY-MM-DD HH:MM>`, then
+   skip. Notes persist in `alert_history`, so a bare "no action" would read
+   to the **Idempotency** guardrail as a finished triage and every later
+   wake would skip too. On the first wake after that deadline this gate no
+   longer holds: re-triage from the top, and if the `<device> State` row is still
+   bad it is a real outage → **Escalate**. Never wait on the failing
+   device's own MQTT row: a dead device never publishes, so it stays
+   `no MQTT data yet` for good. Write no deferral once the row has cleared;
+   the episode is over. An `unknown` alone is worth a
+   look only when, after about 45 min, most of a `*_lights` checker's
+   devices still have a `no MQTT data yet` row. Count those rows in
+   `checks[]` (it always keeps every non-ok row) against
+   `checks_summary.total / 2` (each device has a `State` and an `MQTT`
+   row). A single quiet device can stay `unknown` longer, since it leaves
+   `unknown` only when it next publishes.
+5. **Dependency first.** If the checker declares a `health_dependencies` entry
    (e.g. spa/locks depend on `cloud`, zigbee batteries depend on `zigbee`)
    and that dependency is itself critical, triage the dependency's runbook —
    the leaf alert is a symptom.
