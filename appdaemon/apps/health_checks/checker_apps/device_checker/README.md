@@ -18,7 +18,7 @@ A single class that can be instantiated multiple times with different configurat
 | `ping_host` | — | IP or host name to ping; omit to skip the ping check |
 | `ping_check_name` | `Ping` | Display name of the check |
 | `ping_attempts` | `1` | Pings per cycle, ok on the first reply |
-| `ping_fallback_host` | — | For a `ping_host` given as a name: an IP pinged (same attempts) **only** when the name does not resolve. Without it an unresolvable name is `critical`, `cannot resolve <host>` (as for every `ping_check` caller) — so on a repairable checker a DNS outage pages and power-cycles a healthy device. With it, the ping takes the fallback's result instead: fallback answers → `warning`, `"<ms> via <fallback> — cannot resolve <host>"` (UI-only: never pages, never arms a repair); fallback silent → its own `critical`, `"<detail> via <fallback> — cannot resolve <host>"`, so a dead device still repairs and pages. WARNING logged when the name stops resolving, INFO when it resolves again |
+| `ping_fallback_host` | — | For a `ping_host` given as a name: an IP pinged (same attempts) whenever the ping by name fails — `cannot resolve <host>` (the resolver said NXDOMAIN) or a plain `timeout` (a resolver that stops answering never resolves the name inside ping_check's timeout, or the device is down). Without it a failed ping is `critical` (an unresolvable name as `cannot resolve <host>`, as for every `ping_check` caller) — so on a repairable checker a DNS outage pages and power-cycles a healthy device. With it, the ping takes the fallback's result instead: fallback answers → `warning`, `"<ms> via <fallback> — cannot resolve <host>…"` or `"<ms> via <fallback> — <host>: timeout…"` (UI-only: never pages, never arms a repair); fallback silent → its own `critical`, `"<detail> via <fallback> — …"`, so a dead device still repairs and pages. WARNING logged when the name stops answering, INFO when it answers again |
 
 ## Configuration Reference
 
@@ -82,7 +82,7 @@ Self-provisions `input_boolean.{checker_id}_health_auto_repair` and `input_numbe
 
 Why confirm: on a UniFi USP PDU a toggle re-provisions the whole PDU for ~40 s, Home Assistant took more than 10 s to report the outlet back on, and once the unifi integration dropped every outlet entity of the PDU until it was reloaded — a fire-and-forget `turn_on` could leave the device off. Because HA reports late, an `on` read shortly after `turn_on` can still be the state from *before* the cycle, so an `on` confirms early only if its `last_changed` is after the cycle started (a `datetime` or a naive UTC timestamp counts too, as in the protect checker), or if an `off` was read earlier in the same cycle — either proves HA registered it. An `on` that never changed is accepted at the end of the 60 s window (logged at WARNING — on a successful repair that line is the only record): HA never saw the switch go off, so the device is powered but may not have been cycled. That is not a failure, but the result carries a note, and if the recovery wait then fails the detail becomes `"Did not recover after 300s (the outlet never reported off — it may not have been power cycled)"`, so the card and the Alertmanager description say it. On success the note is only logged.
 
-A `warning` counts as healthy as well as `ok`, both during the recovery wait and when auto-repair evaluates a cycle: this checker only produces one when `ping_host` does not resolve and `ping_fallback_host` answers, i.e. the device is up and DNS is not. So a warning-only cycle stands a `pending` repair down (its countdown cannot outlive a recovery that happened during a DNS outage) and clears `success`/`failed` to `idle`.
+A `warning` counts as healthy as well as `ok`, both during the recovery wait and when auto-repair evaluates a cycle: this checker only produces one when the ping by name fails and `ping_fallback_host` answers, i.e. the device is up and its name path (DNS) is not. So a warning-only cycle stands a `pending` repair down (its countdown cannot outlive a recovery that happened during a DNS outage) and clears `success`/`failed` to `idle`.
 
 One repair per outage: after `failed` the checker stays failed until a fully healthy cycle, so a device that does not come back is power-cycled once, not in a loop.
 
@@ -105,7 +105,7 @@ movie_room_sonos_health_checker:
   checker_id: movie_room_sonos
   checker_name: Movie Room Sonos
   ping_host: movieroomsonos.haynesnetwork                  # the FQDN, by Tom's choice
-  ping_fallback_host: "192.168.0.70"                       # its DHCP reservation; pinged only if the name does not resolve
+  ping_fallback_host: "192.168.0.70"                       # its DHCP reservation; also pinged whenever the ping by name fails
   ping_check_name: Ping
   ping_attempts: 3
   check_interval_s: 180

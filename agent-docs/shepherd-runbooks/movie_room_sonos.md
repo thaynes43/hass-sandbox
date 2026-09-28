@@ -3,7 +3,7 @@
 A `RepairableDeviceChecker` instance for the Sonos Port that feeds the Movie
 Room receiver. One check, `Ping`, against `movieroomsonos.haynesnetwork`, 3
 pings per cycle, ok on the first reply; `ping_fallback_host: 192.168.0.70` (its
-DHCP reservation) is pinged instead only when the name does not resolve.
+DHCP reservation) is also pinged whenever the ping by name fails.
 `check_interval_s: 180`. `supports_repair: yes` — power-cycles UniFi USP PDU
 Hi-Density outlet 21, `switch.power_distribution_hi_density_outlet_21`.
 **Auto-repair defaults ON**, 10 min dwell. No dependencies, no for-override
@@ -30,27 +30,29 @@ only `…_outlet_21`.
   dropped **all** of the PDU's outlet entities until the integration was
   reloaded. That is why the repair confirms the outlet came back on.
 - **A DNS failure never power-cycles a healthy Port, and never hides a dead
-  one.** When `movieroomsonos.haynesnetwork` does not resolve, `ping` exits
-  with "bad address" and `ping_check` reports **critical**,
-  `cannot resolve movieroomsonos.haynesnetwork (3 attempts)` (since v1.24.0;
-  before that the detail said `timeout`). On its own that would page and
-  power-cycle a healthy Port, so `ping_fallback_host` turns it into the
-  fallback's result — the checker pings 192.168.0.70:
+  one.** The ping by name fails either way when DNS breaks: a resolver that
+  answers NXDOMAIN gives `cannot resolve movieroomsonos.haynesnetwork (3 attempts)`
+  (ping's "bad address"; since v1.24.0, before that it said `timeout`), and a
+  resolver that stops answering gives a plain `timeout (3 attempts)`. On its
+  own either would page and power-cycle a healthy Port, so **any** failed ping
+  by name also pings `ping_fallback_host` 192.168.0.70, and that decides:
   - Port answers → `Ping` is **warning**,
-    `4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`. The
-    Port is fine and DNS is not. Warning never pages and never arms a repair;
-    the AppDaemon log has one WARNING
-    `movieroomsonos.haynesnetwork does not resolve — pinging 192.168.0.70 instead until it does`
-    (and an INFO when it resolves again).
-  - Port silent → `Ping` is **critical**,
-    `timeout (3 attempts) via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork`,
+    `4ms via 192.168.0.70 — cannot resolve movieroomsonos.haynesnetwork (3 attempts)`
+    or `4ms via 192.168.0.70 — movieroomsonos.haynesnetwork: timeout (3 attempts)`.
+    The Port is fine and the name path is not. Warning never pages and never
+    arms a repair (it stands a pending one down); the AppDaemon log has one
+    WARNING `movieroomsonos.haynesnetwork did not answer by name (…) — also pinging 192.168.0.70 until it does`
+    (and an INFO when it answers by name again).
+  - Port silent → `Ping` is **critical**, `timeout (3 attempts) via 192.168.0.70 — …`,
     and auto-repair and paging run as normal.
 
 ## What auto-repair does
 
 1. First critical cycle → `repair_state.status = pending`, deadline 10 min out
    (`input_number.movie_room_sonos_health_auto_repair_delay`). The controller
-   withholds the critical page while it is pending or in progress (cap 1800 s).
+   withholds the critical page while it is pending, in progress **or success**
+   (cap 1800 s) — `success` is held to bridge the recovery-propagation gap, which is
+   why a relapse after it becomes `failed` (step 4).
 2. Still critical at the deadline → `in_progress`: outlet 21 off, 10 s, on.
 3. The outlet must report `on` within 60 s; if not, one more `turn_on` and
    another 60 s. Still not on → `failed`, detail

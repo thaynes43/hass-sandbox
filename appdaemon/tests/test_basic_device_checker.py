@@ -206,10 +206,11 @@ class TestPingCheck:
 
 
 class TestPingFallbackHost:
-    """``ping_fallback_host`` is pinged only when ``ping_host`` does not
-    resolve (``ping_check``: critical, ``cannot resolve <host>``), so during a
-    DNS outage the device answers for itself: up → warning, down →
-    critical. Without a fallback the unresolved ping stays critical."""
+    """``ping_fallback_host`` is pinged whenever the ping by name fails —
+    ``cannot resolve <host>`` (resolver says NXDOMAIN) or a plain ``timeout``
+    (resolver stopped answering, or the device is down) — so the device
+    answers for itself: up → warning, down → critical. Without a fallback a
+    failed ping stays critical."""
 
     HOST = "movieroomsonos.haynesnetwork"
     FALLBACK = "192.168.0.70"
@@ -240,16 +241,41 @@ class TestPingFallbackHost:
         assert result == {"name": "Ping", "status": "ok", "detail": "4ms"}
         ping.assert_awaited_once_with(self.HOST, attempts=3)
 
-    def test_resolved_but_dead_is_critical_without_the_fallback(self):
-        """A timeout means the name resolved: the fallback has nothing to add."""
+    def test_timeout_by_name_with_fallback_up_is_a_warning(self):
+        """A resolver that stops answering makes the ping by name a plain
+        timeout, not "cannot resolve": the fallback must engage for that too,
+        or a DNS hang power-cycles a healthy device."""
         app = self._app()
-        ping = self._ping({"status": "critical", "detail": "timeout (3 attempts)"})
+        ping = self._ping(
+            {"status": "critical", "detail": "timeout (3 attempts)"},
+            {"status": "ok", "detail": "4ms"},
+        )
+
+        with patch(self.PING, new=ping):
+            result = _run(app._check_ping())
+
+        assert result == {
+            "name": "Ping",
+            "status": "warning",
+            "detail": f"4ms via {self.FALLBACK} — {self.HOST}: timeout (3 attempts)",
+        }
+
+    def test_timeout_by_name_and_fallback_dead_is_critical(self):
+        """The device really down: both fail, it stays critical (repairs, pages)."""
+        app = self._app()
+        ping = self._ping(
+            {"status": "critical", "detail": "timeout (3 attempts)"},
+            {"status": "critical", "detail": "timeout (3 attempts)"},
+        )
 
         with patch(self.PING, new=ping):
             result = _run(app._check_ping())
 
         assert result["status"] == "critical"
-        ping.assert_awaited_once_with(self.HOST, attempts=3)
+        assert result["detail"] == (
+            f"timeout (3 attempts) via {self.FALLBACK} — {self.HOST}: timeout (3 attempts)"
+        )
+        assert ping.await_count == 2
 
     def test_unresolved_and_fallback_ok_is_a_warning(self):
         app = self._app()
@@ -261,7 +287,7 @@ class TestPingFallbackHost:
         assert result == {
             "name": "Ping",
             "status": "warning",
-            "detail": f"4ms via {self.FALLBACK} — cannot resolve {self.HOST}",
+            "detail": f"4ms via {self.FALLBACK} — cannot resolve {self.HOST} (3 attempts)",
         }
         assert ping.await_args_list[1].args == (self.FALLBACK,)
         assert ping.await_args_list[1].kwargs == {"attempts": 3}
@@ -281,7 +307,7 @@ class TestPingFallbackHost:
             "status": "critical",
             "detail": (
                 f"timeout (3 attempts) via {self.FALLBACK} — "
-                f"cannot resolve {self.HOST}"
+                f"cannot resolve {self.HOST} (3 attempts)"
             ),
         }
 

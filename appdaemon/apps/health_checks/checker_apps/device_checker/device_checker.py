@@ -228,19 +228,17 @@ class BasicDeviceChecker(hass.Hass):
             result = await ping_check(
                 self._ping_host, attempts=self._ping_attempts
             )
-            # ping_check reports an unresolvable name as critical with this
-            # detail (any status is accepted here, on purpose: the detail is
-            # the contract, not the severity).
-            unresolved = str(result.get("detail", "")).startswith(
-                "cannot resolve"
-            )
-            if unresolved and self._ping_fallback_host:
-                result = await self._ping_fallback()
+            # Any failed ping by name tries the fallback, not only a fast
+            # "cannot resolve": a resolver that stops *answering* (the likely
+            # companion of a switch blip) leaves getaddrinfo blocking past
+            # ping_check's timeout, which reads as a plain "timeout".
+            if result["status"] != "ok" and self._ping_fallback_host:
+                result = await self._ping_fallback(result)
             elif self._ping_using_fallback:
                 self._ping_using_fallback = False
                 self.log(
-                    f"{self._ping_host} resolves again — back to pinging it "
-                    f"by name",
+                    f"{self._ping_host} answers by name again — back to "
+                    f"pinging it by name only",
                     level="INFO",
                 )
             return {
@@ -256,35 +254,37 @@ class BasicDeviceChecker(hass.Hass):
                 "detail": f"Error: {exc}",
             }
 
-    async def _ping_fallback(self) -> Dict[str, str]:
-        """Ping ``ping_fallback_host`` because ``ping_host`` did not resolve.
+    async def _ping_fallback(self, primary: Dict[str, str]) -> Dict[str, str]:
+        """Ping ``ping_fallback_host`` because the ping by name failed.
 
-        ``ping_check`` reports an unresolvable name as ``critical``,
-        ``cannot resolve <host>`` — right for callers that cannot tell DNS
-        from the device, but for a repairable checker it would power-cycle a
-        healthy device over a DNS outage.  With an IP to fall back on, the
-        device answers for itself instead:
+        The ping by name can fail for reasons that say nothing about the
+        device: ``cannot resolve <host>`` (a resolver that answers NXDOMAIN)
+        or a plain ``timeout`` (a resolver that stops answering, so the name
+        never resolves inside ping_check's timeout).  For a repairable checker
+        either would power-cycle a healthy device.  With an IP to fall back
+        on, the device answers for itself instead:
 
-        * fallback answers → ``warning``: the device is up and the name is
-          broken. Warning is UI-only (``alertmanager_bridge`` maps it to
-          ``severity=warning``, and only critical reaches the phone) and
-          never arms a repair (``any_bad`` is critical/degraded only).
+        * fallback answers → ``warning``: the device is up and the name path
+          is broken. Warning is UI-only (``alertmanager_bridge`` maps it to
+          ``severity=warning``, and only critical reaches the phone) and never
+          arms a repair (``any_bad`` is critical/degraded only).
         * fallback does not answer → its own status (``critical``), so a dead
-          device still repairs and pages during the DNS outage.
+          device still repairs and pages, whatever DNS is doing.
         """
         fallback = self._ping_fallback_host
         if not self._ping_using_fallback:
             self._ping_using_fallback = True
             self.log(
-                f"{self._ping_host} does not resolve — pinging {fallback} "
-                f"instead until it does",
+                f"{self._ping_host} did not answer by name "
+                f"({primary.get('detail', '')}) — also pinging {fallback} "
+                f"until it does",
                 level="WARNING",
             )
         result = await ping_check(fallback, attempts=self._ping_attempts)
-        detail = (
-            f"{result['detail']} via {fallback} — "
-            f"cannot resolve {self._ping_host}"
-        )
+        why = str(primary.get("detail", ""))
+        if not why.startswith("cannot resolve"):
+            why = f"{self._ping_host}: {why}"
+        detail = f"{result['detail']} via {fallback} — {why}"
         if result["status"] == "ok":
             return {"status": "warning", "detail": detail}
         return {"status": result["status"], "detail": detail}
