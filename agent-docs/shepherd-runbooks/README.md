@@ -162,12 +162,12 @@ Run these gates first, in order — several send you straight to skip/escalate:
    `no MQTT data yet` for good. If its `<device> State` row is still bad
    then, it is a real outage → **Escalate**; otherwise `record_note`
    "post-restart warm-up, no action" and skip. An `unknown` alone is worth a
-   look only when a whole `*_lights` checker has heard from almost nothing
-   after about 45 min. Read `checks_summary` (`non_ok` vs `total`) for
-   that, not `checks[]`: once a checker has more than 20 checks the
-   controller publishes only its non-ok rows there. A single quiet device
-   can stay `unknown` longer, since it leaves `unknown` only when it next
-   publishes.
+   look only when, after about 45 min, most of a `*_lights` checker's
+   devices still have a `no MQTT data yet` row. Count those rows in
+   `checks[]` (it always keeps every non-ok row) against
+   `checks_summary.total / 2` (each device has a `State` and an `MQTT`
+   row). A single quiet device can stay `unknown` longer, since it leaves
+   `unknown` only when it next publishes.
 5. **Dependency first.** If the checker declares a `health_dependencies` entry
    (e.g. spa/locks depend on `cloud`, zigbee batteries depend on `zigbee`)
    and that dependency is itself critical, triage the dependency's runbook —
