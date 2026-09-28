@@ -75,10 +75,11 @@ sequence:
       must be check, set, up or down.{% elif states(receiver) in [''unavailable'', ''unknown''] %}The
       Movie Room receiver is not responding right now.{% elif not is_state(receiver, ''on'') %}The Movie
       Room receiver is off{{ '', so its volume was not changed'' if wanted != ''check'' else '''' }}.{%
-      elif wanted == ''set'' and not has_db %}Nothing was changed: say the volume in dB, like minus 5.5.{%
-      elif wanted == ''set'' and db_value > 0 %}Nothing was changed: the volume is set in dB as the display
-      shows it, a negative number such as -5.5. Anything above 0 dB is far too loud, and this tool stops
-      at -3.5 dB.{% endif %}'
+      elif state_attr(receiver, ''volume_level'') is not number %}The Movie Room receiver is not reporting
+      its volume right now, so nothing was changed.{% elif wanted == ''set'' and not has_db %}Nothing
+      was changed: say the volume in dB, like minus 5.5.{% elif wanted == ''set'' and db_value > 0 %}Nothing
+      was changed: the volume is set in dB as the display shows it, a negative number such as -5.5. Anything
+      above 0 dB is far too loud, and this tool stops at -3.5 dB.{% endif %}'
 - if:
   - condition: template
     value_template: '{{ problem | length > 0 }}'

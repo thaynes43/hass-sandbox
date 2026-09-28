@@ -170,9 +170,13 @@ Every button reuses a script the voice agents or the wall switches already use, 
   it off, a one-row card has just Power. One card with hidden sub-buttons left a blank row, because the
   card's height (`rows`) is fixed.
   - **Volume ceiling -3.5 dB** (Tom: "I usually won't go louder than -3.5dB"). The slider has
-    `min_value: 29` (-20 dB) and `max_value: 62` (-3.5 dB); Bubble maps it to `volume_level` = value / 100.
-    − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and 1 dB, and that script
-    enforces the same ceiling (`max_db`). Neither can stop the physical remote.
+    `min_value: 29` (-20 dB) and `max_value: 62` (-3.5 dB). Bubble Card v3.4.0 clamps the value to
+    [min, max] and then sends `volume_level` = value / 100 (read from the installed `bubble-card.js`), so a
+    full-right drag sends 0.62. − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and
+    1 dB, and that script enforces the same ceiling (`max_db`). **No card opens more-info on the
+    receiver**: HA's own media player dialog has an unbounded volume slider. On the "on" card the icon
+    does nothing; on the "off" card, tapping turns the receiver on. Nothing here can stop the physical
+    remote.
   - **dB readout** = `sensor.movie_room_receiver_volume`, a Template helper (entry
     `01M3MJNHG41WNX9H2QM6SZM5BV`, live only). It is unknown while the receiver is off. State:
     `{% set v = state_attr('media_player.str_az5000es', 'volume_level') %}{% if is_state('media_player.str_az5000es', 'on') and v is number %}{{ ((v * 100) | round(0) - 69) / 2 }}{% else %}{{ none }}{% endif %}`.

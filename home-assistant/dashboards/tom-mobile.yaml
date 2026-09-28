@@ -343,7 +343,7 @@ views:
       min_value: 29
       max_value: 62
       tap_action:
-        action: more-info
+        action: none
       card_layout: large-sub-buttons-grid
       rows: 1.719
       sub_button:
@@ -413,10 +413,10 @@ views:
       icon: mdi:audio-video
       show_state: true
       tap_action:
-        action: more-info
+        action: toggle
       button_action:
         tap_action:
-          action: more-info
+          action: toggle
       sub_button:
         main:
         - entity: media_player.str_az5000es
