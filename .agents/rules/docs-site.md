@@ -19,7 +19,13 @@ docs/
 ├── features/
 │   ├── camera-notifications.md     # GenAI detection summaries + door alerts
 │   ├── occupancy-lighting.md       # mmWave + Inovelli zone-based lighting
-│   └── photo-frame.md             # Immich photo slideshow on wall displays
+│   ├── photo-frame.md              # Immich photo slideshow on wall displays
+│   ├── dashboard-notify.md         # AI notification carousel on wall displays
+│   ├── school-lunch.md             # School lunch menus: cards + voice tool
+│   ├── school-schedule.md          # School day rotation card
+│   ├── vestaboard.md               # Vestaboard flip board control
+│   ├── health-checks.md            # System health monitoring
+│   └── media-dashboard.md          # Media dashboard wall card
 ├── architecture/
 │   └── overview.md                # System diagram, data flows, key concepts
 ├── apps/
@@ -41,7 +47,12 @@ Update this map when adding or removing pages.
 | GenAI Camera Notifications | `docs/features/camera-notifications.md` | detection_summary_app, detection_summary_viewer, door_notify |
 | Occupancy-Based Lighting | `docs/features/occupancy-lighting.md` | HA automations, blueprints, Inovelli/Zooz switches |
 | Immich Photo Frame | `docs/features/photo-frame.md` | immich_fetcher, photo_frame_viewer |
+| Dashboard Notify | `docs/features/dashboard-notify.md` | dashboard_notify |
+| School Lunch Menu | `docs/features/school-lunch.md` | school_lunch_app, school-lunch cards, `script.voice_school_lunch` |
 | School Day Rotation | `docs/features/school-schedule.md` | school_schedule_app, school-schedule-card |
+| Vestaboard | `docs/features/vestaboard.md` | vestaboard_apps, vestaboard cards |
+| System Health Monitoring | `docs/features/health-checks.md` | health_checks |
+| Media Dashboard | `docs/features/media-dashboard.md` | media_dashboard_app |
 | Architecture Overview | `docs/architecture/overview.md` | System diagram, data flows, self-provisioning, relay pattern |
 | AppDaemon Apps | `docs/apps/index.md` | App listing, provider listing, dependency graph |
 | Getting Started | `docs/setup/getting-started.md` | Clone, venv, secrets, run, test, serve docs |

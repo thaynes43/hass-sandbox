@@ -92,15 +92,19 @@ mapping lives in the voice tool itself, so every assistant gives the same answer
 instructions.
 
 The tool is the Home Assistant script `script.voice_school_lunch`
-(`home-assistant/scripts/voice/voice_school_lunch.yaml`). It only reads `sensor.school_lunch_menu`:
+(`home-assistant/scripts/voice/voice_school_lunch.yaml`). It is read-only: it reads
+`sensor.school_lunch_menu` and the buildings helper described below, and changes nothing.
 
 - With no day named it gives the next school lunch. That's today's until the `show_tomorrow_after`
   cutoff, then the next day's, skipping weekends and no-school days, as the at-a-glance card does.
 - A day that has no lunch comes back as a notice: no school, a holiday, the weekend, or "not
   published yet" for a month the district has not posted.
-- Some days the district lists different options for different buildings. The voice answer keeps
-  only the options for the kids' own buildings. Those are set in the live helper
-  `input_text.school_lunch_buildings`, which is kept out of this repository on purpose.
+- Some days the district lists different options for different buildings. The voice answer drops
+  the options printed for another building and keeps everything else: options with no building
+  label, and labels it doesn't recognise. If the filter would leave nothing, or a school has no
+  entry in the helper (the high school, for one), every option is read out with its labels. The
+  kids' buildings are set in the live helper `input_text.school_lunch_buildings`, which is kept out
+  of this repository on purpose.
 
 ## Configuration
 
@@ -111,7 +115,12 @@ The app is configured in `apps-prod.yaml`. Key fields:
 | `menu_url_env` | Env var holding the district's menu URL; the site ID (`sid`) is parsed from it so the district never appears in the repo (production: `SCHOOL_LUNCH`, sourced from 1Password) |
 | `menus` | List of `{name, download_id}` — one entry per school |
 | `default_selected` | School names pre-selected in the at-a-glance card |
-| `show_tomorrow_after` | `HH:MM:SS` cutoff time — before this, cards show today's lunch; after, tomorrow's (default `"15:00:00"`) |
+| `show_tomorrow_after` | `HH:MM:SS` cutoff time — before this, cards (and the voice tool's default day) show today's lunch; after, tomorrow's (default `"15:00:00"`; set to `"12:00:00"` in this house) |
+
+| Area | Path |
+|------|------|
+| Voice tool script | `home-assistant/scripts/voice/` |
+| App and cards | `appdaemon/apps/school_lunch_app/` |
 
 See `appdaemon/apps/school_lunch_app/README.md` for the full configuration reference, sensor attribute schema, relay command payload format, and manual setup steps (Lovelace resource registration).
 
