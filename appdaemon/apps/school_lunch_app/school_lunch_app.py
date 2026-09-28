@@ -629,7 +629,13 @@ class SchoolLunchApp(hass.Hass):
         self.create_task(self._do_fetch_month(school_name, menu_id))
 
     async def _do_fetch_month(self, school_name: str, menu_id: str) -> None:
-        """Async: fetch a specific month and update the sensor."""
+        """Async: fetch a specific month and merge it into the sensor.
+
+        The browsed month drives the school's top-level ``month``/``year``/
+        ``prev_month_id``/``next_month_id`` (the detail card's calendar tab),
+        but the days of the daily refresh window (current + next month) are
+        kept alongside it so today's and tomorrow's lunch stay findable.
+        """
         try:
             async with self._client:
                 menu_month = await self._client.fetch_menu(menu_id)
@@ -642,19 +648,65 @@ class SchoolLunchApp(hass.Hass):
             )
             return
 
-        # Replace or add this school's data in the current state
-        updated = [
-            school_dict if s["name"] == school_name else s
-            for s in self._school_data
-        ]
-        # If school wasn't already in the list, append it
-        if school_name not in {s["name"] for s in self._school_data}:
-            updated.append(school_dict)
+        # Merge into (or add) this school's entry. Read _school_data only now,
+        # after the await, so a daily refresh that landed meanwhile is kept.
+        now = datetime.datetime.now()
+        existing = next(
+            (s for s in self._school_data if s["name"] == school_name), None,
+        )
+        if existing is None:
+            self._school_data = self._school_data + [school_dict]
+            kept = 0
+        else:
+            merged = self._merge_browsed_month(existing, school_dict, now)
+            kept = len(merged["days"]) - len(school_dict["days"])
+            self._school_data = [
+                merged if s["name"] == school_name else s
+                for s in self._school_data
+            ]
 
-        self._school_data = updated
         self._publish_sensor(self._school_data)
         self.log(
             f"Updated menu for '{school_name}': "
-            f"month={menu_month.display_month}/{menu_month.year}",
+            f"month={menu_month.display_month}/{menu_month.year}, "
+            f"{len(school_dict['days'])} browsed days + {kept} kept from the "
+            f"current/next-month window",
             level="INFO",
         )
+
+    @staticmethod
+    def _merge_browsed_month(
+        existing: Dict[str, Any],
+        browsed: Dict[str, Any],
+        now: datetime.datetime,
+    ) -> Dict[str, Any]:
+        """Return ``browsed`` with the refresh window's days merged back in.
+
+        Keeps the existing days of the current calendar month and the month
+        after it (what the daily refresh loads), except the browsed month's
+        own days, which the fetch just replaced. Days of any other month are
+        dropped, so repeated browsing never holds more than the window plus
+        one browsed month. Days are sorted by date; the top-level fields stay
+        the browsed month's.
+        """
+        window = {
+            (now.year, now.month),
+            (now.year + now.month // 12, now.month % 12 + 1),
+        }
+        browsed_month = (browsed["year"], browsed["month"])
+        browsed_keys = {
+            (d.get("year"), d.get("month"), d.get("day"))
+            for d in browsed["days"]
+        }
+        kept = [
+            d for d in existing.get("days") or []
+            if (d.get("year"), d.get("month")) in window
+            and (d.get("year"), d.get("month")) != browsed_month
+            and (d.get("year"), d.get("month"), d.get("day")) not in browsed_keys
+        ]
+        merged = dict(browsed)
+        merged["days"] = sorted(
+            kept + browsed["days"],
+            key=lambda d: (d.get("year") or 0, d.get("month") or 0, d.get("day") or 0),
+        )
+        return merged

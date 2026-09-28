@@ -26,6 +26,12 @@ the mutation never lands, and the pytest run that follows passes — looking lik
 the test failed to detect the break. Use `python3` for the mutation step, and
 check the mutation actually applied (grep the line) before trusting the result.
 
+**Worktree-isolated agents:** the harness refuses a Bash command it cannot
+prove stays inside the worktree (a `cat >> file <<'EOF'` append was refused on
+2026-09-27). Write the mutation script to the scratchpad with Write, run it with
+`python3 <script>`, and have it call the borrowed venv's `bin/python -m pytest`
+with `cwd=<worktree>/appdaemon`; append test code with Edit, not a heredoc.
+
 ## Mocked `run_in`/`create_task` returning one shared handle hides cancel bugs
 
 `MagicMock()` returns the **same** `return_value` for every call, so two
