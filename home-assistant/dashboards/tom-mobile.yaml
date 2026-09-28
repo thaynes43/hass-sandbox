@@ -345,7 +345,7 @@ views:
       tap_action:
         action: none
       card_layout: large-sub-buttons-grid
-      rows: 1.719
+      rows: 2.438
       sub_button:
         main:
         - entity: media_player.str_az5000es
@@ -357,50 +357,106 @@ views:
           tap_action:
             action: toggle
         bottom:
-        - sub_button_type: select
-          entity: media_player.str_az5000es
-          name: Input
-          icon: mdi:import
-          select_attribute: source_list
-          show_attribute: true
-          attribute: source
-          show_name: false
-          show_icon: true
-          show_arrow: true
-        - name: Down
-          icon: mdi:volume-minus
-          show_name: false
-          show_icon: true
-          tap_action:
-            action: perform-action
-            perform_action: script.voice_movie_room_receiver_volume
-            target: {}
-            data:
-              action: down
-              db: 1
-        - entity: sensor.movie_room_receiver_volume
-          name: Volume
-          show_name: false
-          show_icon: false
-          show_state: true
-          tap_action:
-            action: none
-        - name: Up
-          icon: mdi:volume-plus
-          show_name: false
-          show_icon: true
-          tap_action:
-            action: perform-action
-            perform_action: script.voice_movie_room_receiver_volume
-            target: {}
-            data:
-              action: up
-              db: 1
+        - name: Volume
+          buttons_layout: inline
+          group:
+          - sub_button_type: select
+            entity: media_player.str_az5000es
+            name: Input
+            icon: mdi:import
+            select_attribute: source_list
+            show_attribute: true
+            attribute: source
+            show_name: false
+            show_icon: true
+            show_arrow: true
+          - name: Down
+            icon: mdi:volume-minus
+            show_name: false
+            show_icon: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: down
+                db: 1
+          - entity: sensor.movie_room_receiver_volume
+            name: Volume
+            show_name: false
+            show_icon: false
+            show_state: true
+            tap_action:
+              action: none
+          - name: Up
+            icon: mdi:volume-plus
+            show_name: false
+            show_icon: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: up
+                db: 1
+        - name: Presets
+          buttons_layout: inline
+          group:
+          - entity: input_number.movie_room_receiver_preset_plex
+            name: Plex
+            icon: mdi:plex
+            show_name: true
+            show_icon: true
+            show_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: preset
+                preset: Plex
+            hold_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: save_preset
+                preset: Plex
+              confirmation:
+                text: Save the current volume as the Plex level?
+          - entity: input_number.movie_room_receiver_preset_youtube
+            name: YouTube
+            icon: mdi:youtube
+            show_name: true
+            show_icon: true
+            show_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: preset
+                preset: YouTube
+            hold_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: save_preset
+                preset: YouTube
+              confirmation:
+                text: Save the current volume as the YouTube level?
         bottom_layout: rows
-      styles: ".bubble-sub-button-1 {\n  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1\
-        \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
+        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7 {\n  transition: background-color\
+        \ 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
         \ === 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n"
+        }\n.bubble-sub-button-6 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+        \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_plex']?.state))\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7\
+        \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+        \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_youtube']?.state))\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
       visibility:
       - condition: state
         entity: media_player.str_az5000es
