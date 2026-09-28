@@ -27,7 +27,9 @@
 # no-school notices, days with no options and months whose menu is not published yet.
 # "Includes" items (on 75%+ of days, e.g. milk) are left out: they would pad every spoken answer.
 # Home Assistant 2026.9 does NOT check a tool call's arguments against the field selectors (ActionTool
-# passes them straight to the service), so an unknown who or day is refused here, never guessed.
+# passes them straight to the service), so an unknown who or day is refused here, never guessed. A date
+# must look like YYYY-MM-DD: HA turns an all-digit "20261002" into a number, which as_datetime would
+# read as a Unix timestamp (1970).
 # Problems come back as a `response` sentence with a plain stop (see voice_thermostat.yaml: an
 # `error: true` stop reaches the agent as an empty SUCCESS).
 # Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-27.
@@ -120,8 +122,8 @@ sequence:
     - sunday
     before_cutoff: '{{ now() < today_at(state_attr(''sensor.school_lunch_menu'', ''show_tomorrow_after'')
       or ''12:00:00'') }}'
-    start: '{% set today = now().date() %}{% if exact %}{% set d = as_datetime(exact, none) %}{{ d.date()
-      if d else '''' }}{% elif wanted_day == ''today'' %}{{ today }}{% elif wanted_day == ''tomorrow'' %}{{
+    start: '{% set today = now().date() %}{% if exact %}{% set d = as_datetime(exact | string, none) if
+      (exact | string) is match(''\d{4}-\d{1,2}-\d{1,2}'') else none %}{{ d.date() if d else '''' }}{% elif wanted_day == ''today'' %}{{ today }}{% elif wanted_day == ''tomorrow'' %}{{
       today + timedelta(days=1) }}{% elif wanted_day in weekdays %}{{ today + timedelta(days=(weekdays.index(wanted_day)
       - today.weekday()) % 7) }}{% else %}{{ today if before_cutoff else today + timedelta(days=1) }}{% endif %}'
     find_next: '{{ not exact and wanted_day not in weekdays and wanted_day not in [''today'', ''tomorrow'']

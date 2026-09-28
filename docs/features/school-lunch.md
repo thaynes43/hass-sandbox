@@ -28,7 +28,8 @@ School Nutrition and Fitness API
             │
             ├──▶ school-lunch-card.js         — compact at-a-glance card
             ├──▶ school-lunch-detail-card.js  — full detail popup card
-            └──▶ script.voice_school_lunch    — voice tool (+ input_text.school_lunch_buildings)
+            └──▶ script.voice_school_lunch    — voice tool: reads the sensor (not the selection)
+                                                and input_text.school_lunch_buildings
 ```
 
 ## Cards
