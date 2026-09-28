@@ -94,7 +94,7 @@ only `…_outlet_21`.
    - `failed` + `did not turn back on — check the outlet` → the outlet, not the
      Port: go to step 3.
    - `failed` + `… the entity is missing from Home Assistant — reload the integration
-     that owns it` → the unifi integration dropped the PDU's outlet entities (seen
+     that owns it` (or `… the entity is unavailable in Home Assistant — …`) → the unifi integration dropped the PDU's outlet entities (seen
      2026-09-28): `homeassistant.reload_config_entry` on the unifi entry, then check
      outlet 21 is `on`.
    - `failed` + `… the switch could not be read — see the AppDaemon log` → AppDaemon's

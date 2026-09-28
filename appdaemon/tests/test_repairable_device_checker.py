@@ -621,6 +621,24 @@ class TestTurnOnConfirmation:
         app._run_checks_only.assert_not_awaited()
         assert _logged(app, "ERROR", "the entity is missing")
 
+    def test_an_unavailable_switch_points_at_the_integration(self):
+        """An integration that lost the device keeps the entity but marks it
+        unavailable: that is not the outlet's fault either."""
+        app = self._app()
+        app.get_state = AsyncMock(return_value={
+            "entity_id": SWITCH, "state": "unavailable", "last_changed": None,
+        })
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            f"{SWITCH} did not turn back on — "
+            f"{switch_power_cycle.UNAVAILABLE_ENTITY_NOTE}"
+        )
+        app._run_checks_only.assert_not_awaited()
+
     def test_a_read_that_raises_is_not_a_missing_entity(self):
         """get_state raising (e.g. the HASS plugin disconnected) must not be
         reported as "reload the integration": the detail says the switch

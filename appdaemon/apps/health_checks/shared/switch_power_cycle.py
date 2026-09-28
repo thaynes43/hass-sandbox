@@ -108,13 +108,22 @@ MISSING_ENTITY_NOTE = (
     "that owns it"
 )
 
+#: Carried by a failed result whose switch entity exists but reads
+#: unavailable/unknown: the integration lost the device (also the likelier face
+#: of the unifi PDU outlet drop), so again reload it rather than check the outlet.
+UNAVAILABLE_ENTITY_NOTE = (
+    "the entity is unavailable in Home Assistant — reload the integration "
+    "that owns it"
+)
+
 
 def switch_not_on_detail(switch: str, note: str = "") -> str:
     """The repair detail for a switch that never came back on.
 
     *note* is the failed :class:`PowerCycleResult`'s note:
-    ``MISSING_ENTITY_NOTE`` or ``READ_ERROR_NOTE`` replaces "check the
-    outlet", which would send the operator to the wrong place for either.
+    ``MISSING_ENTITY_NOTE``, ``UNAVAILABLE_ENTITY_NOTE`` or ``READ_ERROR_NOTE``
+    replaces "check the outlet", which would send the operator to the wrong
+    place for any of them.
     """
     return f"{switch} did not turn back on — {note or 'check the outlet'}"
 
@@ -238,7 +247,8 @@ async def power_cycle_switch(
     with ``switch_on`` True, ``NEVER_OFF_NOTE`` when the ``on`` was never
     preceded by a reported ``off`` (else empty); with ``switch_on`` False,
     ``READ_ERROR_NOTE`` when the last read raised, ``MISSING_ENTITY_NOTE``
-    when the entity is absent, else empty (the outlet itself).
+    when the entity is absent, ``UNAVAILABLE_ENTITY_NOTE`` when it reads
+    unavailable/unknown, else empty (the outlet itself).
     """
     label = f"{switch} for {target}" if target else switch
     cycle_started = _utcnow()
@@ -272,6 +282,8 @@ async def power_cycle_switch(
         note = READ_ERROR_NOTE
     elif state is None:
         note = MISSING_ENTITY_NOTE
+    elif state in ("unavailable", "unknown"):
+        note = UNAVAILABLE_ENTITY_NOTE
     else:
         note = ""
     app.log(
