@@ -12,7 +12,7 @@ detail there, never inline here.
 
 ## Testing
 
-- [Testing discipline](appdaemon-testing-discipline.md) — mutation-check every new test; give mocked `run_in`/`create_task` distinct handles; never encode a sequence the producer cannot emit
+- [Testing discipline](appdaemon-testing-discipline.md) — mutation-check every new test (fresh `PYTHONPYCACHEPREFIX` per run: stale `.pyc` fakes results); distinct mocked handles; no impossible sequences
 - [health_checks test idioms](health-checks-test-idioms.md) — bridge/controller helpers, async `call_service`, `create_task` coroutines that never run, capturing the bridge snapshot
 - Run the suite: `source <a venv>/bin/activate && cd appdaemon && python -m pytest tests/ -q --tb=short` — ~3 min, so run it in the background. Agent worktrees have no `.venv`, and neither does `~/repos/hass-sandbox` — borrow one from another `~/work/hass-sandbox-*/` worktree, calling its `bin/python` directly (some listed `.venv` dirs are empty shells with no `bin/`; check first)
 - Suite size: 4406 passed + 6 integration-skipped, ~3.5 min (2026-09-27)

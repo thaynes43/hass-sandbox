@@ -1347,3 +1347,172 @@ class TestFetchMonthKeepsRefreshWindow:
 
         app.set_state.assert_not_called()
         assert _months_held(app._school_data[0]) == {(2026, 10), (2026, 11)}
+
+
+# ---------------------------------------------------------------------------
+# Client use is serialised (the client shares one session)
+# ---------------------------------------------------------------------------
+
+class _SessionFakeClient:
+    """A stand-in with SchoolMenuClient's session lifecycle, so overlap is real.
+
+    ``__aenter__`` opens a session only when none is open (a second, nested
+    entry reuses it); ``__aexit__`` closes and nulls it, as
+    ``SchoolMenuClient.close`` does. A call with no open session, or whose
+    session was closed while it was in flight, raises. ``gate(menu_id)`` makes
+    that month's fetch wait on an Event so a test can hold it mid-request.
+    """
+
+    def __init__(self, resolve_to: str) -> None:
+        self._session: object | None = None
+        self._resolve_to = resolve_to
+        self._gates: Dict[str, asyncio.Event] = {}
+        self.waiting: set = set()
+
+    def gate(self, menu_id: str) -> asyncio.Event:
+        self._gates[menu_id] = asyncio.Event()
+        return self._gates[menu_id]
+
+    async def __aenter__(self) -> "_SessionFakeClient":
+        if self._session is None:
+            self._session = object()
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        self._session = None
+
+    def _open_session(self) -> object:
+        if self._session is None:
+            raise RuntimeError("SchoolMenuClient has no active session")
+        return self._session
+
+    async def resolve_menu_id(self, download_id: str) -> Dict[str, str]:
+        self._open_session()
+        await asyncio.sleep(0)
+        return {"id": self._resolve_to, "site_code": "100"}
+
+    async def fetch_menu(self, menu_id: str) -> MenuMonth:
+        session = self._open_session()
+        gate = self._gates.get(menu_id)
+        if gate is not None:
+            self.waiting.add(menu_id)
+            await gate.wait()
+            self.waiting.discard(menu_id)
+        else:
+            await asyncio.sleep(0)
+        if self._session is not session:
+            raise RuntimeError("Session is closed")
+        _, year, month = menu_id.split("-")
+        return _weekday_menu(int(year), int(month))
+
+
+async def _until(condition) -> None:
+    for _ in range(200):
+        if condition():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("condition never became true")
+
+
+async def _let_others_run() -> None:
+    for _ in range(50):
+        await asyncio.sleep(0)
+
+
+class TestClientSerialisation:
+    """Two quick month taps, or a tap during the refresh, must both land."""
+
+    def _fake_app(self):
+        app = _make_app(_ONE_SCHOOL)
+        client = _SessionFakeClient(resolve_to=_month_id(2026, 10))
+        _startup(app, _make_mock_provisioner(), client, now=_OCT_NOW)
+        assert _months_held(_published_school(app)) == {(2026, 10), (2026, 11)}
+        app.set_state.reset_mock()
+        app.log.reset_mock()
+        return app, client
+
+    @staticmethod
+    def _published_months(app: SchoolLunchApp) -> List[tuple]:
+        """(state, month, year) of Elementary for every publish, in order."""
+        out = []
+        for c in app.set_state.call_args_list:
+            school = next(
+                s for s in c.kwargs["attributes"]["schools"] if s["name"] == "Elementary"
+            )
+            out.append((c.kwargs["state"], school["month"], school["year"]))
+        return out
+
+    @staticmethod
+    def _problems(app: SchoolLunchApp) -> List[str]:
+        return [
+            str(c.args[0]) for c in app.log.call_args_list
+            if c.kwargs.get("level") in ("WARNING", "ERROR")
+        ]
+
+    def test_two_overlapping_browses_both_apply(self):
+        app, client = self._fake_app()
+        november, december = _month_id(2026, 11), _month_id(2026, 12)
+
+        async def scenario():
+            gate = client.gate(november)
+            first = asyncio.ensure_future(app._do_fetch_month("Elementary", november))
+            await _until(lambda: november in client.waiting)
+            second = asyncio.ensure_future(app._do_fetch_month("Elementary", december))
+            await _let_others_run()
+            gate.set()
+            await asyncio.gather(first, second)
+
+        _run(scenario())
+
+        assert self._problems(app) == []
+        assert self._published_months(app) == [("ok", 11, 2026), ("ok", 12, 2026)]
+        school = _published_school(app)
+        assert school["next_month_id"] == _month_id(2027, 1)
+        assert _months_held(school) == {(2026, 10), (2026, 11), (2026, 12)}
+        assert _find_day(school, 2026, 10, 6) is not None
+
+    def test_browse_during_refresh_runs_after_it(self):
+        app, client = self._fake_app()
+        october, september = _month_id(2026, 10), _month_id(2026, 9)
+
+        async def scenario():
+            gate = client.gate(october)  # the refresh's current-month fetch
+            refresh = asyncio.ensure_future(app._do_daily_fetch())
+            await _until(lambda: october in client.waiting)
+            browse = asyncio.ensure_future(app._do_fetch_month("Elementary", september))
+            await _let_others_run()
+            gate.set()
+            await asyncio.gather(refresh, browse)
+
+        with patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _OCT_NOW
+            mock_dt.time = datetime.time
+            _run(scenario())
+
+        assert self._problems(app) == []
+        assert self._published_months(app) == [("ok", 10, 2026), ("ok", 9, 2026)]
+        school = _published_school(app)
+        assert _months_held(school) == {(2026, 9), (2026, 10), (2026, 11)}
+        assert _find_day(school, 2026, 10, 6) is not None
+
+    def test_refresh_during_browse_runs_after_it(self):
+        app, client = self._fake_app()
+        november = _month_id(2026, 11)
+
+        async def scenario():
+            gate = client.gate(november)
+            browse = asyncio.ensure_future(app._do_fetch_month("Elementary", november))
+            await _until(lambda: november in client.waiting)
+            refresh = asyncio.ensure_future(app._do_daily_fetch())
+            await _let_others_run()
+            gate.set()  # stays set, so the refresh's own November pre-fetch passes too
+            await asyncio.gather(browse, refresh)
+
+        with patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _OCT_NOW
+            mock_dt.time = datetime.time
+            _run(scenario())
+
+        assert self._problems(app) == []
+        assert self._published_months(app) == [("ok", 11, 2026), ("ok", 10, 2026)]
+        assert _months_held(_published_school(app)) == {(2026, 10), (2026, 11)}

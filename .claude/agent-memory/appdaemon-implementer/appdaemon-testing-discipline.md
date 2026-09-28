@@ -26,6 +26,14 @@ the mutation never lands, and the pytest run that follows passes — looking lik
 the test failed to detect the break. Use `python3` for the mutation step, and
 check the mutation actually applied (grep the line) before trusting the result.
 
+**Stale bytecode fakes results:** Python reuses a `.pyc` when the source's
+mtime (whole seconds) and size match. Two same-size mutations written within
+one second — e.g. the same replacement at different sites — make the second
+pytest run execute the FIRST mutation's bytecode (2026-09-27: "unlock site C"
+reported site B's failures). Give every mutation run a fresh cache:
+`env=dict(os.environ, PYTHONPYCACHEPREFIX=tempfile.mkdtemp())`, and delete the
+package's `__pycache__` after restoring the file.
+
 **Worktree-isolated agents:** the harness refuses a Bash command it cannot
 prove stays inside the worktree (a `cat >> file <<'EOF'` append was refused on
 2026-09-27). Write the mutation script to the scratchpad with Write, run it with

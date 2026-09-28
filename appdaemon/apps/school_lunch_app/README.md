@@ -96,6 +96,8 @@ Fetch a specific month for a given school (used for prev/next month navigation i
 
 The browsed month is merged into the school's entry, not swapped in for it. The school-level `month`, `year`, `prev_month_id` and `next_month_id` become the browsed month's, so the calendar tab shows and navigates it. `days` keeps the days of the months the last refresh published (normally the current and next month) next to the browsed month's days, so today's and tomorrow's lunch stay on the sensor for the at-a-glance card and `script.voice_school_lunch`. That window is recorded per school at each successful refresh, so it still holds when the refresh is behind the calendar (summer break, a school publishing late); a school that has never refreshed successfully falls back to the current calendar month and the next. The browsed fetch replaces that month's own days, and days of any other month are dropped, so an entry never holds more than the window plus one browsed month. The next daily refresh replaces the entry outright.
 
+Browses, ID resolution and the refresh share one API client session, so the app runs them one at a time: two quick taps are applied in order, and a tap during the 05:00 refresh runs right after it.
+
 ## Sensor attribute schema
 
 ```json

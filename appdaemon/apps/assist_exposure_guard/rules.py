@@ -153,7 +153,7 @@ DEFAULT_SWITCH_ALLOWLIST: Tuple[str, ...] = (
 #: and in ``apps-prod.yaml`` (a test pins the two together) in the same PR.
 DEFAULT_SCRIPT_ALLOWLIST_GLOBS: Tuple[str, ...] = (
     # The hand-written voice tools: room modes, shades, doors (secure-direction
-    # only), hot tub mode, music, thermostat.
+    # only), hot tub mode, music, thermostat, school lunch (read-only).
     "script.voice_*",
     # Music Assistant request handler
     "script.llm_script_for_music_assistant_voice_requests",

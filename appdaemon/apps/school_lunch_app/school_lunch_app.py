@@ -10,6 +10,7 @@ All external HTTP calls are delegated to ``providers/school_menu/client.py``
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
@@ -86,6 +87,12 @@ class SchoolLunchApp(hass.Hass):
         # never evicts what the refresh loaded, even when the refresh is
         # behind the calendar (summer break, a late-publishing school).
         self._refresh_windows: Dict[str, Set[Tuple[int, int]]] = {}
+
+        # Serialises every `async with self._client` block. The client shares
+        # one session and its __aexit__ closes and nulls it, so two
+        # overlapping uses (two quick month taps, a tap during the 05:00
+        # refresh) would close the session under the other one.
+        self._client_lock = asyncio.Lock()
 
         self.log(
             f"SchoolLunchApp initialising: sid={mask_sid(self._sid)}, "
@@ -252,7 +259,7 @@ class SchoolLunchApp(hass.Hass):
 
     async def _resolve_menu_ids(self) -> None:
         """Resolve all configured download IDs to MongoDB IDs."""
-        async with self._client:
+        async with self._client_lock, self._client:
             for menu_cfg in self._menus:
                 name = menu_cfg.get("name", "")
                 download_id = menu_cfg.get("download_id", "")
@@ -309,7 +316,7 @@ class SchoolLunchApp(hass.Hass):
         now = datetime.datetime.now()
         schools = []
         windows: Dict[str, Set[Tuple[int, int]]] = {}
-        async with self._client:
+        async with self._client_lock, self._client:
             for name, info in self._resolved_menus.items():
                 mongo_id = info["mongo_id"]
                 try:
@@ -670,7 +677,8 @@ class SchoolLunchApp(hass.Hass):
         tomorrow's lunch stay findable.
         """
         try:
-            async with self._client:
+            # Waits behind any other client use (a refresh, an earlier tap).
+            async with self._client_lock, self._client:
                 menu_month = await self._client.fetch_menu(menu_id)
             school_dict = self._build_school_dict(school_name, menu_month)
         except Exception as exc:
@@ -682,7 +690,10 @@ class SchoolLunchApp(hass.Hass):
             return
 
         # Merge into (or add) this school's entry. Read _school_data only now,
-        # after the await, so a daily refresh that landed meanwhile is kept.
+        # after the lock: a refresh fetch that held it has already stored and
+        # published its data (no await between its release and the publish),
+        # so the browse merges into that result; a refresh fetch still to
+        # come replaces the entry anyway. No await from here to the publish.
         existing = next(
             (s for s in self._school_data if s["name"] == school_name), None,
         )
