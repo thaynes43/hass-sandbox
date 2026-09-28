@@ -705,6 +705,35 @@ class TestTurnOnConfirmation:
         assert app.get_state.await_count == 4
         assert app._repair_status == REPAIR_FAILED
 
+    def test_last_changed_as_datetime_or_naive_string_still_confirms_early(self):
+        """AppDaemon can return last_changed as a datetime, and HA's naive
+        timestamps are UTC: both must confirm on the first read, not burn the
+        window and claim HA never saw the outlet go off."""
+        after = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1)
+        for changed in (after, after.replace(tzinfo=None).isoformat()):
+            app = self._app()
+            app.get_state = AsyncMock(return_value={
+                "entity_id": SWITCH, "state": "on", "last_changed": changed,
+            })
+            result = _run(switch_power_cycle.power_cycle_switch(app, SWITCH, 0))
+            assert result == switch_power_cycle.PowerCycleResult(switch_on=True)
+            assert app.get_state.await_count == 1, changed
+            assert not _logged(app, "WARNING", "never saw it go off")
+
+    def test_an_off_read_then_on_confirms_even_without_a_timestamp(self):
+        """If the reads saw the outlet off, HA did register the cycle: the
+        next on confirms, with no timestamp needed and no never-off note."""
+        app = self._app()
+        reads = iter([
+            {"entity_id": SWITCH, "state": "off", "last_changed": None},
+            {"entity_id": SWITCH, "state": "on", "last_changed": "garbage"},
+        ])
+        app.get_state = AsyncMock(side_effect=lambda *a, **k: next(reads))
+        result = _run(switch_power_cycle.power_cycle_switch(app, SWITCH, 0))
+        assert result == switch_power_cycle.PowerCycleResult(switch_on=True)
+        assert app.get_state.await_count == 2
+        assert not _logged(app, "WARNING", "never saw it go off")
+
     def test_helper_result_carries_switch_on_and_note(self):
         app = self._app()
         _switch_reports(app)

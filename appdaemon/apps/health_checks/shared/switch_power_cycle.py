@@ -119,17 +119,26 @@ def _utcnow() -> datetime.datetime:
 
 
 def _parse_changed(value: Any) -> Optional[datetime.datetime]:
-    """Parse a ``last_changed`` timestamp; None when absent or not tz-aware."""
-    if not value or not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.datetime.fromisoformat(value)
-    except ValueError:
+    """Parse a ``last_changed`` into an aware UTC datetime; None when unusable.
+
+    Same shape as ``protect_health_checker._parse_iso_utc``, which reads this
+    same attribute off the same ``get_state(attribute="all")`` dict: AppDaemon
+    can hand it back as a ``datetime`` rather than a string, and a naive
+    timestamp from Home Assistant is UTC.  Dropping either would make every
+    cycle miss the early confirm and end on the unchanged-``on`` path.
+    """
+    if isinstance(value, datetime.datetime):
+        parsed = value
+    elif value:
+        try:
+            parsed = datetime.datetime.fromisoformat(str(value))
+        except (ValueError, TypeError):
+            return None
+    else:
         return None
     if parsed.tzinfo is None:
-        # Cannot be compared with an aware clock — treat as "no evidence".
-        return None
-    return parsed
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed.astimezone(datetime.timezone.utc)
 
 
 async def _read_switch(
@@ -153,13 +162,20 @@ async def _read_switch(
 
 
 async def _confirm_on(
-    app: Any, switch: str, cycle_started: datetime.datetime
-) -> Tuple[bool, Optional[str], bool]:
+    app: Any,
+    switch: str,
+    cycle_started: datetime.datetime,
+    saw_off: bool = False,
+) -> Tuple[bool, Optional[str], bool, bool]:
     """Wait up to ``SWITCH_CONFIRM_TIMEOUT_S`` for *switch* to report ``on``.
 
-    Returns ``(confirmed, last_state_read, never_off)``; ``never_off`` is True
-    when the confirmation was an ``on`` unchanged since before the cycle.  See
-    the module docstring for why that only counts at the end of the window.
+    Returns ``(confirmed, last_state_read, never_off, saw_off)``.  An ``on``
+    confirms early when its ``last_changed`` is after the cycle started, or
+    when an ``off`` was read earlier in this cycle (*saw_off*, carried across
+    both windows): either proves HA registered the cycle, whatever the
+    timestamp says.  ``never_off`` is True when the confirmation was an ``on``
+    with neither proof, accepted only at the end of the window — see the
+    module docstring.
     """
     timeout_s = SWITCH_CONFIRM_TIMEOUT_S
     poll_s = max(1, SWITCH_CONFIRM_POLL_S)
@@ -169,9 +185,12 @@ async def _confirm_on(
         await asyncio.sleep(poll_s)
         waited += poll_s
         state, changed = await _read_switch(app, switch)
-        if state == "on" and changed is not None and changed >= cycle_started:
+        if state == "off":
+            saw_off = True
+        fresh = changed is not None and changed >= cycle_started
+        if state == "on" and (fresh or saw_off):
             app.log(f"{switch} confirmed on after {waited}s", level="INFO")
-            return True, state, False
+            return True, state, False, saw_off
     if state == "on":
         # Not a failure (the device is powered, and the outlet may still have
         # cycled while HA missed the `off`), so not an ERROR; WARNING because
@@ -183,8 +202,8 @@ async def _confirm_on(
             f"cycle — Home Assistant never saw it go off; accepting it as on",
             level="WARNING",
         )
-        return True, state, True
-    return False, state, False
+        return True, state, True, saw_off
+    return False, state, False, saw_off
 
 
 async def power_cycle_switch(
@@ -213,7 +232,9 @@ async def power_cycle_switch(
 
     app.log(f"Turning on {label}", level="INFO")
     app.call_service("switch/turn_on", entity_id=switch)
-    confirmed, state, never_off = await _confirm_on(app, switch, cycle_started)
+    confirmed, state, never_off, saw_off = await _confirm_on(
+        app, switch, cycle_started
+    )
     if confirmed:
         return _confirmed(never_off)
 
@@ -223,7 +244,9 @@ async def power_cycle_switch(
         level="WARNING",
     )
     app.call_service("switch/turn_on", entity_id=switch)
-    confirmed, state, never_off = await _confirm_on(app, switch, cycle_started)
+    confirmed, state, never_off, saw_off = await _confirm_on(
+        app, switch, cycle_started, saw_off
+    )
     if confirmed:
         return _confirmed(never_off)
 
