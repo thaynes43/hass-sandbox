@@ -178,8 +178,9 @@ health_check_controller (listens for health_check_command events from all checke
   │      zwave) mixes in shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair
   │      helpers via ha_provisioner, reads them with the first-run guard, clamps the delay, applies card
   │      commands
-  │    — the switch power-cycle checkers (repairable_device_checker, repairable_device_group_checker)
-  │      share shared/switch_power_cycle.power_cycle_switch: off, wait, on + confirm it reports on
+  │    — the switch power-cycle checkers (repairable_device_checker, repairable_device_group_checker,
+  │      spa_health_checker) share shared/switch_power_cycle.power_cycle_switch: off, wait, on +
+  │      confirm it reports on
   ├─ cloud_checker/cloud (root dependency)
   │    └─ depended on by: cielo, lock_batteries
   ├─ mqtt_broker_checker/mqtt_broker (root dependency)

@@ -1,6 +1,7 @@
 """Power-cycle a repair switch and confirm it came back on.
 
-Shared by ``RepairableDeviceChecker`` and ``RepairableDeviceGroupChecker``
+Shared by ``RepairableDeviceChecker``, ``RepairableDeviceGroupChecker`` and
+``SpaHealthChecker``
 (``appdaemon/apps/`` may not hold shared libraries, with
 ``health_checks/shared/`` as the package's established exception — see
 ``auto_repair_config.py``).  Import it the same way::

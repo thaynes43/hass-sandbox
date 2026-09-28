@@ -93,7 +93,7 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `device_checker/README.md` for details.
 
-`RepairableDeviceChecker` extends it with a smart-switch power-cycle repair, used by the `printer` and `movie_room_sonos` instances. `movie_room_sonos` watches the Movie Room Sonos Port by ping alone — deliberately no entity checks, so a Music Assistant restart (which takes `media_player.movie_room` unavailable) can never power-cycle it — and repairs it by power-cycling UniFi PDU Hi-Density outlet 21, auto-repair on by default after a 10-minute dwell. Every power cycle goes through `shared/switch_power_cycle.py`: after `turn_on` the switch must report `on` before the recovery wait starts, with one retry, and a switch that never comes back fails the repair immediately (`"<switch> did not turn back on — check the outlet"`) instead of leaving the device unpowered. `RepairableDeviceGroupChecker` uses the same helper.
+`RepairableDeviceChecker` extends it with a smart-switch power-cycle repair, used by the `printer` and `movie_room_sonos` instances. `movie_room_sonos` watches the Movie Room Sonos Port by ping alone — deliberately no entity checks, so a Music Assistant restart (which takes `media_player.movie_room` unavailable) can never power-cycle it — and repairs it by power-cycling UniFi PDU Hi-Density outlet 21, auto-repair on by default after a 10-minute dwell. Every power cycle goes through `shared/switch_power_cycle.py`: after `turn_on` the switch must report `on` before the recovery wait starts, with one retry, and a switch that never comes back fails the repair immediately (`"<switch> did not turn back on — check the outlet"`) instead of leaving the device unpowered. `RepairableDeviceGroupChecker` and `SpaHealthChecker` use the same helper.
 
 ### Device Group Checker
 
@@ -241,7 +241,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
-- `shared/switch_power_cycle` — `power_cycle_switch()`: turn a repair switch off, wait, turn it back on and confirm it reports `on` (one retry), shared by `RepairableDeviceChecker` and `RepairableDeviceGroupChecker`
+- `shared/switch_power_cycle` — `power_cycle_switch()`: turn a repair switch off, wait, turn it back on and confirm it reports `on` (one retry), shared by `RepairableDeviceChecker`, `RepairableDeviceGroupChecker` and `SpaHealthChecker`
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`); the Wyoming probe uses plain `asyncio` streams
 - `prometheus-client` — metrics exposition (controller)
 
@@ -255,6 +255,11 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 | `input_text.health_check_mute_<checker_id>` | Helper | Per-checker mute state as JSON (lazily provisioned on first mute) |
 | `input_boolean.spa_health_auto_repair` | Helper | Auto-repair toggle (provisioned by SpaHealthChecker) |
 | `input_number.spa_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by SpaHealthChecker) |
+| `input_boolean.fans_health_auto_repair` | Helper | Auto-repair toggle (provisioned by FanHealthChecker, default OFF) |
+| `input_number.fans_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by FanHealthChecker, default 5) |
+| `input_text.fans_health_repair_ladder` | Helper | Per-fan repair backoff ladder, so it survives an AppDaemon restart (provisioned by FanHealthChecker) |
+| `input_boolean.printer_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableDeviceChecker per `checker_id`, default OFF) |
+| `input_number.printer_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableDeviceChecker per `checker_id`, 1-60, default 5) |
 | `input_boolean.movie_room_sonos_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableDeviceChecker per `checker_id`, default ON) |
 | `input_number.movie_room_sonos_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableDeviceChecker per `checker_id`, 1-60, default 10) |
 | `input_boolean.protect_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ProtectHealthChecker) |
@@ -497,7 +502,7 @@ health_checks/
 │   │                                # toggle/delay helpers, shared by all seven
 │   │                                # repair-capable checkers
 │   └── switch_power_cycle.py        # power-cycle a repair switch and confirm it
-│                                    # came back on (device + device group checkers)
+│                                    # came back on (device, device group + spa checkers)
 ├── cards/
 │   ├── health-check-card.js
 │   └── health-check-detail-card.js
