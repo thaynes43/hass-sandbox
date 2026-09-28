@@ -145,7 +145,9 @@ detection_summary_app
 
 calendar_from_schedule_app (standalone — reads YAML, writes to HA calendar)
 
-school_lunch_app (standalone — fetches school menus, publishes to HA sensor)
+school_lunch_app (no app dependencies — fetches school menus, publishes sensor.school_lunch_menu)
+  └─ read by: school-lunch-card, school-lunch-detail-card, and the HA voice tool
+     script.voice_school_lunch (looks days up by their own day/month/year)
 
 school_schedule_app (standalone — scrapes the school calendar + PowerSchool portal,
                      publishes sensor.school_schedule for school-schedule-card)
