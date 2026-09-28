@@ -19,6 +19,15 @@ wall switches and scene controllers already give people, and must not fight the 
   script with the same arguments as the switch mapping.
 - Voice on/off = paddle press: a light turned off in an occupied zone stays off until the next
   off→on occupancy edge; a light turned on is turned off `off_delay` after the zone clears.
+- **School lunch (2026-09-27):** `script.voice_school_lunch` answers "what's for lunch tomorrow",
+  "what is Penelope having on Friday" from any box. It is read-only over `sensor.school_lunch_menu`
+  (the wall-display lunch cards' data). Kids map to schools inside the script (Penelope = Elementary,
+  Jackson = Middle School), not in the agent prompts. Buildings come from the live-only helper
+  `input_text.school_lunch_buildings`. Its value names the kids' schools, so it **never goes into
+  git**: not in a mirror, a doc, a commit or a PR. Update it and the script's `kids` map when a kid
+  changes school. Measured 2026-09-27: the OpenAI Kitchen agent answers in 3–5 s (it calls
+  `GetDateTime` first for "last Friday"-style dates). The local Phone Assist takes ~25–45 s on the
+  current 15 tokens/s, mostly reasoning tokens.
 
 ## Basement
 
