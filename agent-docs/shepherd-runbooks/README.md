@@ -145,9 +145,9 @@ Run these gates first, in order — several send you straight to skip/escalate:
    so the overall `sensor.health_check_status`) read `unknown` while they
    wait to hear from every device. That is by design and never pages. You
    can see the window directly: the checker's `checks[]` has `<device> MQTT`
-   rows at `unknown` with detail `no MQTT data yet`, and Loki shows a recent
-   startup, logged once per restart:
-   `{namespace="home-automation", app="appdaemon"} |= "HealthCheckController started"`.
+   rows at `unknown` with detail `no MQTT data yet`, and Loki shows those
+   checkers starting, one line per warming checker (prefixed with its app key):
+   `{namespace="home-automation", app="appdaemon"} |= "ignoring first 5s for retained"`.
    The one case in that window that **does** page: a light whose HA state
    read fails reads `critical` rather than `warning`, because the cross-check
    only downgrades a failure when the device's MQTT side is healthy. Its
@@ -156,7 +156,10 @@ Run these gates first, in order — several send you straight to skip/escalate:
    `<device> MQTT` = `no MQTT data yet`.
    Don't remediate either case in that window. Re-check once that device's
    MQTT row has left `unknown`, and treat it as real only if it is still bad
-   then, or if an `unknown` outlasts about 45 min.
+   then. An `unknown` alone is worth a look only when a whole `*_lights`
+   checker still has most rows at `no MQTT data yet` after about 45 min; a
+   single quiet device can stay there longer, since it leaves `unknown` only
+   when it next publishes.
 5. **Dependency first.** If the checker declares a `health_dependencies` entry
    (e.g. spa/locks depend on `cloud`, zigbee batteries depend on `zigbee`)
    and that dependency is itself critical, triage the dependency's runbook —
