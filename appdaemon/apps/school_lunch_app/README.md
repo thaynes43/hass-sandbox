@@ -94,7 +94,7 @@ Fetch a specific month for a given school (used for prev/next month navigation i
 
 `menu_id` is the MongoDB ObjectId from `prev_month_id` or `next_month_id` in the current sensor attributes.
 
-The browsed month is merged into the school's entry, not swapped in for it. The school-level `month`, `year`, `prev_month_id` and `next_month_id` become the browsed month's, so the calendar tab shows and navigates it. `days` keeps the refresh window (the current calendar month and the next one) next to the browsed month's days, so today's and tomorrow's lunch stay on the sensor for the at-a-glance card and `script.voice_school_lunch`. The browsed fetch replaces that month's own days, and days of any other month are dropped, so an entry never holds more than the window plus one browsed month. The next daily refresh replaces the entry outright.
+The browsed month is merged into the school's entry, not swapped in for it. The school-level `month`, `year`, `prev_month_id` and `next_month_id` become the browsed month's, so the calendar tab shows and navigates it. `days` keeps the days of the months the last refresh published (normally the current and next month) next to the browsed month's days, so today's and tomorrow's lunch stay on the sensor for the at-a-glance card and `script.voice_school_lunch`. That window is recorded per school at each successful refresh, so it still holds when the refresh is behind the calendar (summer break, a school publishing late); a school that has never refreshed successfully falls back to the current calendar month and the next. The browsed fetch replaces that month's own days, and days of any other month are dropped, so an entry never holds more than the window plus one browsed month. The next daily refresh replaces the entry outright.
 
 ## Sensor attribute schema
 
@@ -130,7 +130,7 @@ The browsed month is merged into the school's entry, not swapped in for it. The 
 Notes:
 - School-level `month` is **1-indexed** (1 = January, 12 = December) and represents the primary loaded month: the current month after a refresh, or the month last browsed with `fetch_month`.
 - Each day also carries its own `month` and `year` (1-indexed) to support cross-month lookups (e.g., next month's days appended for week views spanning a month boundary). Consumers must look a day up by these fields, never by its position in `days`.
-- `days` only includes school days that have menu data (weekends and holidays are absent), sorted by date. After a refresh it holds the current month plus the next month when that is published; after a `fetch_month` it holds those days plus the browsed month's (see [`fetch_month`](#fetch_month)).
+- `days` only includes school days that have menu data (weekends and holidays are absent), sorted by date. After a refresh it holds the current month plus the next month when that is published (or the last published month, when the current one is not out yet); after a `fetch_month` it holds those days plus the browsed month's (see [`fetch_month`](#fetch_month)).
 - Items have a `role` field: `"option"` for menu choices, `"includes"` for items appearing daily (auto-classified by the app based on 75%+ day frequency).
 - Items starting with "OR " have the prefix stripped; all options are presented without it.
 - `show_tomorrow_after` is the configured cutoff time. Cards read this to determine whether to show today's or tomorrow's lunch.

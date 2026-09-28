@@ -15,7 +15,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import parse_qs, urlparse
 
 # AppDaemon only adds `appdaemon/apps` to sys.path. Our shared libraries
@@ -80,6 +80,12 @@ class SchoolLunchApp(hass.Hass):
 
         # State: last good school data for sensor (list of school dicts)
         self._school_data: List[Dict[str, Any]] = []
+
+        # State: per school, the (year, month) pairs the last successful
+        # refresh published. fetch_month keeps these months' days so browsing
+        # never evicts what the refresh loaded, even when the refresh is
+        # behind the calendar (summer break, a late-publishing school).
+        self._refresh_windows: Dict[str, Set[Tuple[int, int]]] = {}
 
         self.log(
             f"SchoolLunchApp initialising: sid={mask_sid(self._sid)}, "
@@ -295,9 +301,14 @@ class SchoolLunchApp(hass.Hass):
         ``nextMonthPublished`` chain is followed to advance to the current
         month (download IDs are month-specific, so the initial resolve may
         return a stale month).
+
+        Records, per school that fetched OK, the months its dict publishes
+        (``_refresh_windows``). A school whose fetch failed keeps its old
+        record, matching the stale entry ``_merge_school_data`` keeps.
         """
         now = datetime.datetime.now()
         schools = []
+        windows: Dict[str, Set[Tuple[int, int]]] = {}
         async with self._client:
             for name, info in self._resolved_menus.items():
                 mongo_id = info["mongo_id"]
@@ -336,6 +347,7 @@ class SchoolLunchApp(hass.Hass):
                             )
 
                     schools.append(school_dict)
+                    windows[name] = self._published_months(school_dict)
                     self.log(
                         f"Fetched menu for '{name}': "
                         f"month={menu_month.display_month}/{menu_month.year}, "
@@ -348,7 +360,27 @@ class SchoolLunchApp(hass.Hass):
                         f"(mongo_id={mongo_id}): {exc!r}",
                         level="WARNING",
                     )
+        # Committed only once the batch completed, i.e. together with the
+        # data the caller is about to publish.
+        self._refresh_windows.update(windows)
         return schools
+
+    @staticmethod
+    def _published_months(school_dict: Dict[str, Any]) -> Set[Tuple[int, int]]:
+        """The (year, month) pairs a refreshed school dict publishes."""
+        months = {
+            (d.get("year"), d.get("month")) for d in school_dict.get("days") or []
+        }
+        months.add((school_dict["year"], school_dict["month"]))
+        return months
+
+    @staticmethod
+    def _calendar_window(now: datetime.datetime) -> Set[Tuple[int, int]]:
+        """The current calendar month and the one after it."""
+        return {
+            (now.year, now.month),
+            (now.year + now.month // 12, now.month % 12 + 1),
+        }
 
     async def _advance_to_current_month(
         self,
@@ -633,8 +665,9 @@ class SchoolLunchApp(hass.Hass):
 
         The browsed month drives the school's top-level ``month``/``year``/
         ``prev_month_id``/``next_month_id`` (the detail card's calendar tab),
-        but the days of the daily refresh window (current + next month) are
-        kept alongside it so today's and tomorrow's lunch stay findable.
+        but the days of the months the last refresh published (normally the
+        current and next month) are kept alongside it so today's and
+        tomorrow's lunch stay findable.
         """
         try:
             async with self._client:
@@ -650,15 +683,22 @@ class SchoolLunchApp(hass.Hass):
 
         # Merge into (or add) this school's entry. Read _school_data only now,
         # after the await, so a daily refresh that landed meanwhile is kept.
-        now = datetime.datetime.now()
         existing = next(
             (s for s in self._school_data if s["name"] == school_name), None,
         )
         if existing is None:
             self._school_data = self._school_data + [school_dict]
             kept = 0
+            window_source = "none"
         else:
-            merged = self._merge_browsed_month(existing, school_dict, now)
+            window = self._refresh_windows.get(school_name)
+            window_source = "last refresh"
+            if not window:
+                # Never refreshed OK (e.g. first added by a browse): fall
+                # back to what a refresh would load today.
+                window = self._calendar_window(datetime.datetime.now())
+                window_source = "calendar fallback"
+            merged = self._merge_browsed_month(existing, school_dict, window)
             kept = len(merged["days"]) - len(school_dict["days"])
             self._school_data = [
                 merged if s["name"] == school_name else s
@@ -669,8 +709,8 @@ class SchoolLunchApp(hass.Hass):
         self.log(
             f"Updated menu for '{school_name}': "
             f"month={menu_month.display_month}/{menu_month.year}, "
-            f"{len(school_dict['days'])} browsed days + {kept} kept from the "
-            f"current/next-month window",
+            f"{len(school_dict['days'])} browsed days + {kept} kept "
+            f"(window: {window_source})",
             level="INFO",
         )
 
@@ -678,21 +718,18 @@ class SchoolLunchApp(hass.Hass):
     def _merge_browsed_month(
         existing: Dict[str, Any],
         browsed: Dict[str, Any],
-        now: datetime.datetime,
+        window: Set[Tuple[int, int]],
     ) -> Dict[str, Any]:
         """Return ``browsed`` with the refresh window's days merged back in.
 
-        Keeps the existing days of the current calendar month and the month
-        after it (what the daily refresh loads), except the browsed month's
-        own days, which the fetch just replaced. Days of any other month are
+        ``window`` is the set of (year, month) the last refresh published for
+        the school (normally the current and next month). Keeps the existing
+        days of those months, except the browsed month's own days, which the
+        fetch just replaced. Days of any other month (an earlier browse) are
         dropped, so repeated browsing never holds more than the window plus
         one browsed month. Days are sorted by date; the top-level fields stay
         the browsed month's.
         """
-        window = {
-            (now.year, now.month),
-            (now.year + now.month // 12, now.month % 12 + 1),
-        }
         browsed_month = (browsed["year"], browsed["month"])
         browsed_keys = {
             (d.get("year"), d.get("month"), d.get("day"))
