@@ -26,6 +26,9 @@
 # it skips forward (up to 14 days) past weekends AND no-school days to the first day with a lunch. A weekday name is the coming one, or today when it
 # is that day (at any hour). An explicit day or date is answered as asked, including weekends,
 # no-school notices, days with no options and months whose menu is not published yet.
+# A day with no entry is "no school" only when its month is loaded at all: the sensor can hold a gap
+# (the refresh's two months plus a month browsed on the wall display, school_lunch_app 1.23.1), and a
+# day in a missing month gets "not loaded", "not available yet" or "too far back" instead.
 # "Includes" items (on 75%+ of days, e.g. milk) are left out: they would pad every spoken answer.
 # Home Assistant 2026.9 does NOT check a tool call's arguments against the field selectors (ActionTool
 # passes them straight to the service), so an unknown who or day is refused here, never guessed. A date
@@ -160,8 +163,9 @@ sequence:
       ''eq'', c.day) | list %}{% set tags = building_tags.get(t.school | lower, []) %}{% set own = tags | reject(''match'',
       ''-'') | list %}{% set other = tags | select(''match'', ''-'') | map(''regex_replace'', ''^-\s*'', '''')
       | list %}{% set o = namespace(all=[],
-      mine=[], first=99999999, last=0) %}{% for d in days %}{% set v = d[''year''] * 10000 + d[''month'']
-      * 100 + d[''day''] %}{% set o.first = [o.first, v] | min %}{% set o.last = [o.last, v] | max %}{% endfor
+      mine=[], first=99999999, last=0, months=[]) %}{% for d in days %}{% set v = d[''year''] * 10000 +
+      d[''month''] * 100 + d[''day''] %}{% set o.first = [o.first, v] | min %}{% set o.last = [o.last, v] |
+      max %}{% if (v // 100) not in o.months %}{% set o.months = o.months + [v // 100] %}{% endif %}{% endfor
       %}{% for i in (entry[0][''items''] if entry else []) if i.role != ''includes'' and (i.name | string
       | trim) %}{% set n = i.name | string | trim | regex_replace(''\s{2,}'', '' '') %}{% set code = n | regex_findall(''^([A-Z](?:/[A-Z]){2,})/?\s'')
       %}{% set named = n | regex_findall(''^([A-Za-z]+):\s'') %}{% set o.all = o.all + [n] %}{% if not code
@@ -171,10 +175,11 @@ sequence:
       (named[0] | upper) not in other) %}{% set o.mine = o.mine + [n] %}{% endif %}{% endfor
       %}{% set notice = (entry[0].get(''notice'') or '''') if entry else '''' %}{% if not notice and not o.all
       %}{% set notice = (''No school on the weekend.'' if
-      c.weekday() >= 5 else (''This menu is not available right now.'' if not days else (''Not published
-      yet: the menu for that day is not out.'' if cv > o.last else (''Only the current menus are loaded:
-      that day is too far back.'' if cv < o.first else ''No lunch is listed for that day, which usually
-      means no school.'')))) %}{% endif %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
+      c.weekday() >= 5 else (''This menu is not available right now.'' if not days else (''No lunch is listed
+      for that day, which usually means no school.'' if (cv // 100) in o.months else (''Not available yet:
+      the menu for that day has not been published, or is too far ahead.'' if cv > o.last else (''Only
+      the current menus are loaded: that day is too far back.'' if cv < o.first else ''The menu for that
+      month is not loaded right now.''))))) %}{% endif %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
       ''options'': o.mine if (tags and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
       notice=notice) if notice else rec] %}{% endfor %}{{ out.lunches }}'
 - variables:
