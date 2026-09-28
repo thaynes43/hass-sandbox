@@ -585,6 +585,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ask-a-voice-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ask a voice assistant
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1039,6 +1050,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#ask-a-voice-assistant" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ask a voice assistant
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1081,11 +1103,11 @@
 
 
 <h1 id="school-lunch-menu">School Lunch Menu</h1>
-<p>Daily school lunch menus from all configured schools, surfaced on any Lovelace dashboard. An at-a-glance card shows tomorrow's entrees for selected schools; a detail popup provides a full weekly view, month-by-month calendar navigation, and per-school selection settings.</p>
+<p>Daily school lunch menus from all configured schools, surfaced on any Lovelace dashboard and through the voice assistants. An at-a-glance card shows tomorrow's entrees for selected schools; a detail popup provides a full weekly view, month-by-month calendar navigation, and per-school selection settings; and "Okay Nabu, what's for lunch tomorrow?" reads the menu out loud.</p>
 <!-- TODO: Add screenshot of school-lunch-card and school-lunch-detail-card -->
 
 <h2 id="overview">Overview</h2>
-<p>The <code>school_lunch_app</code> AppDaemon app fetches menus from the <a href="https://www.schoolnutritionandfitness.com">School Nutrition and Fitness</a> platform. Multiple schools can be configured in a single app instance. Menus refresh automatically every morning at 5:00 AM and are published to a Home Assistant virtual sensor that both Lovelace cards read from.</p>
+<p>The <code>school_lunch_app</code> AppDaemon app fetches menus from the <a href="https://www.schoolnutritionandfitness.com">School Nutrition and Fitness</a> platform. Multiple schools can be configured in a single app instance. Menus refresh automatically every morning at 5:00 AM and are published to a Home Assistant virtual sensor that both Lovelace cards and the voice tool read from.</p>
 <h2 id="data-flow">Data flow</h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>School Nutrition and Fitness API
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  ├─ downloadMenu.php (HTTP 302)  — resolves download ID → MongoDB ObjectId
@@ -1099,12 +1121,13 @@
 <a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>  school_lunch_app (AppDaemon)
 <a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>       │  publishes structured JSON to
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>       ▼
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  sensor.school_lunch_menu          ← Lovelace cards read from here
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>  sensor.school_lunch_menu          ← Lovelace cards and the voice tool read from here
 <a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>  input_text.school_lunch_selected_schools
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>            │
-<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>            ▼
-<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>  school-lunch-card.js              — compact at-a-glance card
-<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>  school-lunch-detail-card.js       — full detail popup card
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>            ├──▶ school-lunch-card.js         — compact at-a-glance card
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>            ├──▶ school-lunch-detail-card.js  — full detail popup card
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>            └──▶ script.voice_school_lunch    — voice tool: reads the sensor (not the selection)
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>                                                and input_text.school_lunch_buildings
 </code></pre></div>
 <h2 id="cards">Cards</h2>
 <h3 id="at-a-glance-card-customschool-lunch-card">At-a-glance card (<code>custom:school-lunch-card</code>)</h3>
@@ -1144,8 +1167,10 @@
 <p>Menu items are split into numbered <strong>options</strong> (main entree choices) and an <strong>Includes</strong> line for daily items like fruit and milk (auto-classified by the app based on which items appear on 75%+ of days).</p>
 <p>School selection persists in <code>input_text.school_lunch_selected_schools</code> so the choice survives reloads and is shared across all dashboard instances.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom:school-lunch-card</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">menu_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.school_lunch_menu</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">selected_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_text.school_lunch_selected_schools</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">status_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.school_lunch_menu</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">selection_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_text.school_lunch_selected_schools</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nt">navigation_path</span><span class="p">:</span><span class="w"> </span><span class="s">'#school-lunch-popup'</span><span class="w">   </span><span class="c1"># tapping the card opens the detail popup</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">height</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">296</span><span class="w">                              </span><span class="c1"># optional: fixed height, scrollable menu</span>
 </code></pre></div>
 <h3 id="detail-card-customschool-lunch-detail-card">Detail card (<code>custom:school-lunch-detail-card</code>)</h3>
 <p>A popup/dialog card with three tabs:</p>
@@ -1156,8 +1181,8 @@
 </ul>
 <p>Month navigation sends a <code>fetch_month</code> command via <code>script.school_lunch_relay</code> to fetch adjacent months on demand without a full refresh.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom:school-lunch-detail-card</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">menu_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.school_lunch_menu</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">selected_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_text.school_lunch_selected_schools</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">status_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sensor.school_lunch_menu</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">selection_entity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">input_text.school_lunch_selected_schools</span>
 <a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nt">relay_script</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">school_lunch_relay</span>
 </code></pre></div>
 <h2 id="relay-commands">Relay commands</h2>
@@ -1183,6 +1208,29 @@
 </tr>
 </tbody>
 </table>
+<h2 id="ask-a-voice-assistant">Ask a voice assistant</h2>
+<p>The same menus answer out loud. "Okay Nabu, what's for lunch tomorrow?" on any voice box (or the
+Phone Assist on Tom's phone) reads the options for both kids. Other questions work too: "What is
+Penelope having on Friday?", "What did Jackson have last Friday?", "What's the high school lunch on
+Tuesday?". Penelope's lunch is the elementary menu and Jackson's is the middle school menu. That
+mapping lives in the voice tool itself, so every assistant gives the same answer without its own
+instructions.</p>
+<p>The tool is the Home Assistant script <code>script.voice_school_lunch</code>
+(<code>home-assistant/scripts/voice/voice_school_lunch.yaml</code>). It is read-only: it reads
+<code>sensor.school_lunch_menu</code> and the buildings helper described below, and changes nothing.</p>
+<ul>
+<li>With no day named it gives the next school lunch. That's today's until the <code>show_tomorrow_after</code>
+  cutoff, then the next day's, like the at-a-glance card. Unlike the card, it also skips no-school
+  days, not just weekends.</li>
+<li>A day that has no lunch comes back as a notice: no school, a holiday, the weekend, or "not
+  published yet" for a month the district has not posted.</li>
+<li>Some days the district lists different options for different buildings. The voice answer drops
+  the options printed for another building and keeps everything else: options with no building
+  label, and labels it doesn't recognise. If the filter would leave nothing, or a school has no
+  entry in the helper (the high school, for one), every option is read out with its labels. The
+  kids' buildings are set in the live helper <code>input_text.school_lunch_buildings</code>, which is kept out
+  of this repository on purpose.</li>
+</ul>
 <h2 id="configuration">Configuration</h2>
 <p>The app is configured in <code>apps-prod.yaml</code>. Key fields:</p>
 <table>
@@ -1207,7 +1255,26 @@
 </tr>
 <tr>
 <td><code>show_tomorrow_after</code></td>
-<td><code>HH:MM:SS</code> cutoff time — before this, cards show today's lunch; after, tomorrow's (default <code>"15:00:00"</code>)</td>
+<td><code>HH:MM:SS</code> cutoff time — before this, cards (and the voice tool's default day) show today's lunch; after, tomorrow's (default <code>"15:00:00"</code>; set to <code>"12:00:00"</code> in this house)</td>
+</tr>
+</tbody>
+</table>
+<p>Where the pieces live in this repository:</p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Voice tool script</td>
+<td><code>home-assistant/scripts/voice/</code></td>
+</tr>
+<tr>
+<td>App and cards</td>
+<td><code>appdaemon/apps/school_lunch_app/</code></td>
 </tr>
 </tbody>
 </table>
