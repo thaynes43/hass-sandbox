@@ -70,9 +70,24 @@ warnings on the satellite). No HA automation turns the TV/AVR on, but the AVR (S
 "Works with Sonos") **wakes itself** when the Sonos Port `media_player.movie_room` plays: power on
 after ~2 s, volume tracks the Port, input switches to `Sonos` (AVR recorder history, 2026-09-19
 17:08) — so music sent to this room is audible even with everything "off". Four AVR registrations:
-`media_player.str_az5000es` (songpal — the controllable one: power, volume, inputs), `_2` (DLNA),
-`_2210` (Chromecast) and `_2210_2` (Music Assistant's wrapper of the Chromecast; no area, does not
-group with Sonos) — do not expose until phase 3. The KEF LS50s (the
+`media_player.str_az5000es` (songpal — the controllable one: power, volume, inputs; named "Movie Room
+Receiver" and put in the Movie Room area on 2026-09-28), `_2` (DLNA), `_2210` (Chromecast) and `_2210_2`
+(Music Assistant's wrapper of the Chromecast; no area, does not group with Sonos). None of the four is
+exposed. **Receiver volume by voice (2026-09-28):** `script.voice_movie_room_receiver_volume` (check /
+set / up / down, in dB as the display shows it, never above -3.5 dB — Tom's ceiling). Tom asked the
+Movie Room box "what is the volume on the receiver" and it found nothing. The raw entity stays
+unexposed because the built-in volume intents would drive it with no ceiling. The tool's header in
+`home-assistant/scripts/voice/` has the step↔dB calibration. Text-tested as the Movie Room satellite:
+"what is the volume on the receiver" → `check`, "turn the receiver up a little" → `up` 1 dB. The same
+script backs the Tom Mobile receiver card's −/+ (`agent-docs/tom-mobile-dashboard.md`).
+**Per-app presets (2026-09-28):** `preset` / `save_preset` with a `preset` name. Levels live in
+live-only helpers `input_number.movie_room_receiver_preset_<name>` (-20 to -3.5 dB, the Tom Mobile
+slider's range, 0.5 dB steps; Tom's starting values Plex -5.5, YouTube -17, which he is dialling in). The tool finds
+them by name at run time ("you tube", "YouTube" and "plex!" all match; an unknown name gets the
+list back), so for voice a new app is a new helper with that prefix; the Tom Mobile card also needs a
+button and a matching `styles` block (`agent-docs/tom-mobile-dashboard.md`). Text-tested as
+the Movie Room satellite: "Set the volume for YouTube." → `preset` YouTube, "Save this as the
+Plex volume." → `save_preset` Plex. The KEF LS50s (the
 Rumpus Room PC's speakers over HDMI) have three registrations: the two non-Music-Assistant ones
 (`media_player.ls50_wireless_ii_174476_2`, `_3`) stay unexposed; the Music Assistant one
 (`media_player.ls50_wireless_ii_174476_4`, "Rumpus Room Speakers") is in the Rumpus Room area and
@@ -89,9 +104,9 @@ temperature still goes through the built-in intent — which cannot match a Ciel
 (no target-temperature feature in that state); the tool can, when it is given a mode with the
 temperature.
 
-Defects found (open): Movie ZEN37 buttons 3 ×2 / 4 ×2 call
-`number.movie_room_breeze_target_temperature`, which does not exist (the Cielo controller has
-only `climate.movie_room_breeze`) while `button-mappings.md` documents them as working;
+Fixed 2026-09-28: Movie ZEN37 buttons 3 ×2 / 4 ×2 called `number.movie_room_breeze_target_temperature`,
+which does not exist; they now step `climate.movie_room_breeze` down/up 1° in heat or cool (checked with
+synthetic Central Scene events: 74 → 73 → 74). Defects found (open):
 `light.basement_hall_night_light` in the repo's night-light watchdog does not exist live; six
 live ZEN37 hold-dim helper automations and four scripts the buttons call
 (`toggle_hue_colors`, `toggle_hue_colors_for_multiple_targets`,

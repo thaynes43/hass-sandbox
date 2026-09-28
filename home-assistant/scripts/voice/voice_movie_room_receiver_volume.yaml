@@ -1,0 +1,185 @@
+# script.voice_movie_room_receiver_volume ("Movie Room Receiver Volume") — voice tool AND the Tom Mobile
+# receiver card's volume -/+ buttons, created live via MCP 2026-09-28 after Tom asked the Movie Room box
+# "what is the volume on the receiver" and it could not find one: the Sony STR-AZ5000ES
+# (media_player.str_az5000es, songpal) had no name, no area and was not exposed. It stays UNexposed on
+# purpose: the built-in volume intents would drive it with no ceiling. Tom: "I usually won't go louder
+# than -3.5dB"; "anything past 0 is crazy loud".
+# Scale: the receiver reports 0-100 steps (volume_level x 100) and its display shows dB at 0.5 dB per step
+# with step 69 = 0.0 dB. Tom read -3.5 dB at step 62 (2026-09-28, Shield input); his usual Plex level
+# -5.5 dB is step 58, the Shield's most used step in the history, and the fixed Sonos-input level 0.69
+# comes out at exactly 0.0 dB. Below about -20 dB the dB figure is unverified (AVR volume curves usually
+# steepen at the quiet end). The same conversion lives in sensor.movie_room_receiver_volume (Template
+# helper, live only) and the Tom Mobile slider stops at step 62: change all three together.
+# Presets (2026-09-28, Tom: "-5.5 for plex and -17 for YouTube and I'll dial it in and add more"): each
+# preset is a live-only input_number.movie_room_receiver_preset_<name> (-20 to -3.5 dB, 0.5 dB steps — the
+# Tom Mobile slider's range, so a preset can never pin the slider below its floor).
+# action preset goes to one (capped like set), save_preset stores the current level in one. The tool
+# finds presets by name at run time, so for voice a new app is just a new helper with that prefix; the
+# Tom Mobile card also needs a button AND a matching styles block (agent-docs/tom-mobile-dashboard.md).
+# An unknown name is answered with the list.
+# Refusals come back as a `response` sentence with a plain stop (see voice_thermostat.yaml).
+# Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-28.
+alias: Movie Room Receiver Volume
+description: 'Voice tool for the Sony receiver (the AV receiver or amp) in the Movie Room. Checks or changes
+  its volume in dB, the number its display shows, for example -5.5 dB (0 dB is very loud). It never turns
+  the receiver up past -3.5 dB. Use for ''what is the receiver volume'', ''turn the receiver up'', ''set
+  the movie room volume to minus 6'', ''turn it down a little'', ''set the volume for Plex'', ''YouTube
+  volume'', ''save this as the Plex volume'' in the movie room. action check reads the volume and the
+  input; set goes to db; up and down change it by db (2 dB when no amount is given, 1 dB for ''a little'');
+  preset goes to the saved level for an app or device named in preset (for example Plex or YouTube); save_preset
+  stores the current volume as that preset''s level. It does not turn the receiver on. The tool answers
+  with what it did, or why nothing changed: tell the user that.'
+icon: mdi:audio-video
+mode: queued
+max: 10
+fields:
+  action:
+    name: Action
+    description: check reads the current volume; set goes to the db value; up and down change the volume
+      by db; preset goes to the saved level named in preset; save_preset saves the current volume as the
+      level named in preset.
+    required: true
+    selector:
+      select:
+        options:
+        - check
+        - set
+        - up
+        - down
+        - preset
+        - save_preset
+  db:
+    name: dB
+    description: 'For set: the target volume in dB as the display shows it, a negative number such as
+      -5.5 (''minus six'' is -6). For up and down: how many dB to change by, default 2. Leave empty for
+      check.'
+    required: false
+    selector:
+      number:
+        min: -40
+        max: 40
+        step: 0.5
+        mode: box
+        unit_of_measurement: dB
+  preset:
+    name: Preset
+    description: 'For preset and save_preset: the app or device the level is for, as the user says it,
+      for example Plex or YouTube. The tool answers with the list of presets if the name is unknown.'
+    required: false
+    selector:
+      text: {}
+sequence:
+- alias: The receiver reports volume as a step from 0 to 100 (volume_level x 100); its display shows dB
+    at 0.5 dB per step, with step 69 = 0.0 dB (Tom read -3.5 dB at step 62 on 2026-09-28). max_db is Tom's
+    ceiling; the Tom Mobile slider stops at the same step (62). sensor.movie_room_receiver_volume uses
+    the same conversion. Presets live between preset_min_db (-20 dB, the Tom Mobile slider's floor, step
+    29) and max_db, the same range as the preset helpers, so a preset can never pin the slider below its
+    floor
+  variables:
+    receiver: media_player.str_az5000es
+    zero_step: 69
+    max_db: -3.5
+    min_db: -34.5
+    preset_min_db: -20
+    wanted: '{{ action | default('''', true) | string | lower | trim }}'
+    raw_db: '{{ db | default('''') }}'
+    has_db: '{{ raw_db | is_number }}'
+    db_value: '{{ raw_db | float(0) }}'
+    cur_step: '{{ ((state_attr(receiver, ''volume_level'') | float(0)) * 100) | round(0) | int }}'
+    cur_db: '{{ (cur_step - zero_step) / 2 }}'
+    source: '{{ state_attr(receiver, ''source'') or '''' }}'
+    amount: '{{ (db_value | abs) if has_db and db_value != 0 else 2 }}'
+    preset_prefix: input_number.movie_room_receiver_preset_
+    preset_entity: '{% set want = preset | default('''') | string | lower | regex_replace(''[^a-z0-9]'',
+      '''') %}{% set ns = namespace(e='''') %}{% for s in states.input_number if s.entity_id.startswith(preset_prefix)
+      %}{% set key = s.entity_id[preset_prefix | length:] | regex_replace(''[^a-z0-9]'', '''') %}{% set
+      nm = s.name | lower | replace(''movie room receiver preset'', '''') | regex_replace(''[^a-z0-9]'',
+      '''') %}{% if want and (want == key or want == nm) %}{% set ns.e = s.entity_id %}{% endif %}{% endfor
+      %}{{ ns.e }}'
+    preset_label: '{{ state_attr(preset_entity, ''friendly_name'') | replace(''Movie Room Receiver Preset
+      '', '''') if preset_entity else (preset | default('''') | string | trim) }}'
+    presets_known: '{{ states.input_number | selectattr(''entity_id'', ''search'', ''^input_number[.]movie_room_receiver_preset_'')
+      | map(attribute=''name'') | map(''replace'', ''Movie Room Receiver Preset '', '''') | join('', '')
+      }}'
+    preset_db: '{{ states(preset_entity) | float(preset_min_db) if preset_entity else preset_min_db }}'
+    save_db: '{{ [[cur_db, max_db] | min, preset_min_db] | max }}'
+    target_db: '{% if wanted == ''set'' %}{{ [[db_value, max_db] | min, min_db] | max }}{% elif wanted
+      == ''up'' %}{{ [cur_db, [cur_db + amount, max_db] | min] | max }}{% elif wanted == ''preset'' %}{{
+      [[preset_db, max_db] | min, preset_min_db] | max }}{% elif wanted == ''down'' %}{{ [cur_db - amount,
+      min_db] | max }}{% else %}{{ cur_db }}{% endif %}'
+    target_step: '{{ [[(zero_step + target_db * 2) | round(0) | int, 0] | max, 100] | min }}'
+    problem: '{% if wanted not in [''check'', ''set'', ''up'', ''down'', ''preset'', ''save_preset'']
+      %}Nothing was changed: the action must be check, set, up, down, preset or save_preset.{% elif wanted
+      in [''preset'', ''save_preset''] and not preset_entity %}Nothing was changed: there is no {{ (preset
+      | default('''') | string | trim) or ''unnamed'' }} volume preset. The presets are {{ presets_known
+      or ''none yet'' }}.{% elif wanted in [''preset'', ''save_preset''] and not (states(preset_entity)
+      | is_number) %}Nothing was changed: the {{ preset_label }} volume preset is not readable right now.{%
+      elif states(receiver) in [''unavailable'', ''unknown''] %}The Movie Room receiver is not responding
+      right now.{% elif not is_state(receiver, ''on'') %}The Movie Room receiver is off{{ '', so there
+      is no level to save'' if wanted == ''save_preset'' else ('', so its volume was not changed'' if
+      wanted != ''check'' else '''') }}.{% elif state_attr(receiver, ''volume_level'') is not number %}The
+      Movie Room receiver is not reporting its volume right now, so nothing was changed.{% elif wanted
+      == ''set'' and not has_db %}Nothing was changed: say the volume in dB, like minus 5.5.{% elif wanted
+      == ''set'' and db_value > 0 %}Nothing was changed: the volume is set in dB as the display shows
+      it, a negative number such as -5.5. Anything above 0 dB is far too loud, and this tool stops at
+      -3.5 dB.{% endif %}'
+- if:
+  - condition: template
+    value_template: '{{ problem | length > 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ problem }}'
+  - stop: Nothing was changed
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ target_step != cur_step }}'
+  then:
+  - action: media_player.volume_set
+    target:
+      entity_id: media_player.str_az5000es
+    data:
+      volume_level: '{{ [target_step / 100 + 0.000001, 1] | min }}'
+    alias: 'songpal truncates: int(volume_level x 100), and 29/100, 57/100, 58/100 come back one step
+      low in float64 (58 = Tom''s Plex -5.5 dB); a nudge far below half a step fixes all three and stays
+      harmless if songpal ever rounds'
+  - alias: 'Let the new level land before the next queued run reads it (dashboard taps queue up). A wait_template,
+      not wait_for_trigger: songpal writes the level from a websocket push that can arrive before volume_set
+      returns, and a trigger registered afterwards would miss it and sit out the timeout'
+    timeout:
+      seconds: 3
+    continue_on_timeout: true
+    wait_template: '{{ ((state_attr(''media_player.str_az5000es'', ''volume_level'') | float(-1)) * 100)
+      | round(0) | int == target_step }}'
+- alias: 'save_preset: store the current level (clamped to the preset range, -20 to -3.5 dB, the helpers''
+    own range) in the preset helper; the volume itself is not changed'
+  if:
+  - condition: template
+    value_template: '{{ wanted == ''save_preset'' }}'
+  then:
+  - action: input_number.set_value
+    target:
+      entity_id: '{{ preset_entity }}'
+    data:
+      value: '{{ save_db }}'
+- variables:
+    fmt_cur: '{{ (''%.1f'' | format(cur_db)) | replace(''.0'', '''') }}'
+    fmt_target: '{{ (''%.1f'' | format((target_step - zero_step) / 2)) | replace(''.0'', '''') }}'
+    fmt_save: '{{ (''%.1f'' | format(save_db)) | replace(''.0'', '''') }}'
+    on_input: '{{ '' on '' ~ source if source else '''' }}'
+    result:
+      response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ on_input
+        }}.{% elif wanted == ''save_preset'' %}Saved {{ fmt_save }} dB as the {{ preset_label }} volume{{
+        '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db > max_db else (''
+        (presets go no lower than -20 dB; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db < preset_min_db
+        else '''') }}.{% elif target_step == cur_step and wanted == ''up'' and cur_db >= max_db %}Nothing
+        was changed: the receiver is already at {{ fmt_cur }} dB, and this tool does not go above -3.5
+        dB.{% elif target_step == cur_step %}Nothing to do: the receiver is already at {{ fmt_cur }} dB{{
+        '', the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else '''' }}.{% else %}The Movie
+        Room receiver is now at {{ fmt_target }} dB{{ '', the '' ~ preset_label ~ '' level'' if wanted
+        == ''preset'' else '''' }} (it was {{ fmt_cur }} dB).{% if (wanted == ''set'' and db_value > max_db)
+        or (wanted == ''up'' and cur_db + amount > max_db) %} That is the limit: this tool does not go
+        above -3.5 dB.{% endif %}{% endif %}'
+- stop: Done
+  response_variable: result

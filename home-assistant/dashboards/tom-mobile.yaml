@@ -328,6 +328,389 @@ views:
         bottom: []
     - type: custom:bubble-card
       card_type: separator
+      name: Movie Room
+      icon: mdi:theater
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: slider
+      entity: media_player.str_az5000es
+      name: Receiver
+      icon: mdi:audio-video
+      show_state: false
+      min_value: 29
+      max_value: 62
+      tap_action:
+        action: none
+      card_layout: large-sub-buttons-grid
+      rows: 2.438
+      sub_button:
+        main:
+        - entity: media_player.str_az5000es
+          name: Power
+          icon: mdi:power
+          show_name: false
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        bottom:
+        - name: Volume
+          buttons_layout: inline
+          group:
+          - sub_button_type: select
+            entity: media_player.str_az5000es
+            name: Input
+            icon: mdi:import
+            select_attribute: source_list
+            show_attribute: true
+            attribute: source
+            show_name: false
+            show_icon: true
+            show_arrow: true
+          - name: Down
+            icon: mdi:volume-minus
+            show_name: false
+            show_icon: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: down
+                db: 1
+          - entity: sensor.movie_room_receiver_volume
+            name: Volume
+            show_name: false
+            show_icon: false
+            show_state: true
+            tap_action:
+              action: none
+          - name: Up
+            icon: mdi:volume-plus
+            show_name: false
+            show_icon: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: up
+                db: 1
+        - name: Presets
+          buttons_layout: inline
+          group:
+          - entity: input_number.movie_room_receiver_preset_plex
+            name: Plex
+            icon: mdi:plex
+            show_name: true
+            show_icon: true
+            show_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: preset
+                preset: Plex
+            hold_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: save_preset
+                preset: Plex
+              confirmation:
+                text: Save the current volume as the Plex level?
+          - entity: input_number.movie_room_receiver_preset_youtube
+            name: YouTube
+            icon: mdi:youtube
+            show_name: true
+            show_icon: true
+            show_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: preset
+                preset: YouTube
+            hold_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: save_preset
+                preset: YouTube
+              confirmation:
+                text: Save the current volume as the YouTube level?
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
+        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7 {\n  transition: background-color\
+        \ 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+        \ === 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-6 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+        \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_plex']?.state))\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7\
+        \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+        \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_youtube']?.state))\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
+      visibility:
+      - condition: state
+        entity: media_player.str_az5000es
+        state: 'on'
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: media_player.str_az5000es
+      name: Receiver
+      icon: mdi:audio-video
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: toggle
+      sub_button:
+        main:
+        - entity: media_player.str_az5000es
+          name: Power
+          icon: mdi:power
+          show_name: false
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        bottom: []
+      styles: ".bubble-sub-button-1 {\n  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1\
+        \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+        \ === 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n"
+      visibility:
+      - condition: state
+        entity: media_player.str_az5000es
+        state_not: 'on'
+    - type: custom:bubble-card
+      card_type: button
+      button_type: slider
+      entity: light.basement_movie_room_lights
+      name: Lights
+      icon: mdi:light-recessed
+      show_state: true
+      tap_action:
+        action: toggle
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main:
+        - entity: light.basement_movie_room_ambient_lighting
+          name: Ambient
+          icon: mdi:led-strip-variant
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        - name: Scene
+          icon: mdi:palette
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: perform-action
+            perform_action: script.voice_movie_room_ambient_scene
+            target: {}
+            data: {}
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: perform-action
+            perform_action: script.voice_movie_room_bright
+            target: {}
+            data: {}
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: perform-action
+            perform_action: script.voice_movie_room_dim
+            target: {}
+            data: {}
+        - name: Red
+          icon: mdi:weather-night
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: perform-action
+            perform_action: script.voice_movie_room_red_night_mode
+            target: {}
+            data: {}
+        - name: Colors
+          icon: mdi:palette-swatch
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: perform-action
+            perform_action: script.voice_movie_room_color_toggle
+            target: {}
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1 {\n  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1\
+        \ {\n  background-color: ${(() => {\n    return (hass.states['light.basement_movie_room_ambient_lighting']?.state\
+        \ === 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Basement Climate
+      icon: mdi:thermostat
+      show_state: false
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-basement-climate'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-basement-climate'
+      card_layout: large-sub-buttons-grid
+      rows: 2.438
+      sub_button:
+        main: []
+        bottom:
+        - name: Movie
+          group:
+          - entity: climate.movie_room_breeze
+            name: Movie
+            icon: mdi:movie-open
+            show_name: true
+            show_icon: false
+            show_state: true
+            fill_width: false
+            width: 34
+            tap_action:
+              action: more-info
+          - entity: climate.movie_room_breeze
+            name: Dry
+            icon: mdi:water-percent
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: dry
+          - entity: climate.movie_room_breeze
+            name: 72°
+            icon: mdi:fire
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: heat
+                temperature: 72
+          - entity: climate.movie_room_breeze
+            name: 'Off'
+            icon: mdi:power
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: 'off'
+          buttons_layout: inline
+        - name: Rumpus
+          group:
+          - entity: climate.rumpus_room_breeze
+            name: Rumpus
+            icon: mdi:sofa
+            show_name: true
+            show_icon: false
+            show_state: true
+            fill_width: false
+            width: 34
+            tap_action:
+              action: more-info
+          - entity: climate.rumpus_room_breeze
+            name: Dry
+            icon: mdi:water-percent
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: dry
+          - entity: climate.rumpus_room_breeze
+            name: 72°
+            icon: mdi:fire
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: heat
+                temperature: 72
+          - entity: climate.rumpus_room_breeze
+            name: 'Off'
+            icon: mdi:power
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: 'off'
+          buttons_layout: inline
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
+        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
+        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n\
+        \  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'dry') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'heat' && Math.round(hass.states['climate.movie_room_breeze']?.attributes?.temperature ??\
+        \ -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-4 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-5 {\n  background-color: ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'dry') ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'heat' && Math.round(hass.states['climate.rumpus_room_breeze']?.attributes?.temperature\
+        \ ?? -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-8 {\n  background-color: ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state\
+        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n"
+    - type: custom:bubble-card
+      card_type: separator
       name: Bedroom
       icon: mdi:bed-king-outline
       sub_button:
@@ -1190,6 +1573,57 @@ views:
         - type: climate-hvac-modes
       - type: thermostat
         entity: climate.movie_room_breeze
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-basement-climate'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Basement Climate
+
+          '
+      - type: thermostat
+        entity: climate.movie_room_breeze
+        grid_options:
+          columns: 12
+          rows: 5
+        features:
+        - type: climate-hvac-modes
+      - type: thermostat
+        entity: climate.rumpus_room_breeze
         grid_options:
           columns: 12
           rows: 5
