@@ -167,19 +167,20 @@ sequence:
     fmt_cur: '{{ (''%.1f'' | format(cur_db)) | replace(''.0'', '''') }}'
     fmt_target: '{{ (''%.1f'' | format((target_step - zero_step) / 2)) | replace(''.0'', '''') }}'
     fmt_save: '{{ (''%.1f'' | format(save_db)) | replace(''.0'', '''') }}'
-    on_input: '{{ '' on '' ~ source if source else '''' }}'
     result:
-      response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ on_input
-        }}.{% elif wanted == ''save_preset'' %}Saved {{ fmt_save }} dB as the {{ preset_label }} volume{{
-        '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db > max_db else (''
-        (presets go no lower than -20 dB; the receiver is at '' ~ fmt_cur ~ '' dB)'' if cur_db < preset_min_db
-        else '''') }}.{% elif target_step == cur_step and wanted == ''up'' and cur_db >= max_db %}Nothing
-        was changed: the receiver is already at {{ fmt_cur }} dB, and this tool does not go above -3.5
-        dB.{% elif target_step == cur_step %}Nothing to do: the receiver is already at {{ fmt_cur }} dB{{
-        '', the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else '''' }}.{% else %}The Movie
-        Room receiver is now at {{ fmt_target }} dB{{ '', the '' ~ preset_label ~ '' level'' if wanted
-        == ''preset'' else '''' }} (it was {{ fmt_cur }} dB).{% if (wanted == ''set'' and db_value > max_db)
-        or (wanted == ''up'' and cur_db + amount > max_db) %} That is the limit: this tool does not go
-        above -3.5 dB.{% endif %}{% endif %}'
+      response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ '' on ''
+        ~ source if source else '''' }}.{% elif wanted == ''save_preset'' %}Saved {{ fmt_save }} dB as
+        the {{ preset_label }} volume{{ '' (the -3.5 dB limit; the receiver is at '' ~ fmt_cur ~ '' dB)''
+        if cur_db > max_db else ('' (presets go no lower than -20 dB; the receiver is at '' ~ fmt_cur
+        ~ '' dB)'' if cur_db < preset_min_db else '''') }}.{% elif target_step == cur_step and wanted
+        == ''up'' and cur_db >= max_db %}Nothing was changed: the receiver is already at {{ fmt_cur }}
+        dB, and this tool does not go above -3.5 dB.{% elif target_step == cur_step %}Nothing to do: the
+        receiver is already at {{ fmt_cur }} dB{{ '', the '' ~ preset_label ~ '' level'' if wanted ==
+        ''preset'' else '''' }}.{% else %}The Movie Room receiver is now at {{ fmt_target }} dB{{ '',
+        the '' ~ preset_label ~ '' level'' if wanted == ''preset'' else '''' }} (it was {{ fmt_cur }}
+        dB).{% if (wanted == ''set'' and db_value > max_db) or (wanted == ''up'' and cur_db + amount >
+        max_db) %} That is the limit: this tool does not go above -3.5 dB.{% endif %}{% endif %}'
+  alias: Reply. HA trims leading and trailing whitespace from each rendered variable, so a fragment like
+    ' on Shield' is built inline in the response, not as its own variable (it rendered as 'dBon Shield')
 - stop: Done
   response_variable: result

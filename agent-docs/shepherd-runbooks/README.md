@@ -140,12 +140,22 @@ Run these gates first, in order — several send you straight to skip/escalate:
    it run; do not fire a second `start_repair`.
 3. **Attempt budget exhausted → escalate.** ≥2 Shepherd remediation attempts
    for this checker in the last 6h → skip to **Escalate**.
-4. **Fresh AppDaemon restart → not an incident.** For about 30–35 min after
-   any AppDaemon restart, the `*_lights` MQTT checkers (and so the overall
-   `sensor.health_check_status`) read `unknown` while they wait to hear from
-   every device. That is by design and never pages. Don't remediate an
-   `unknown` in that window; only a `warning`/`critical`, or an `unknown`
-   that outlasts about 45 min, is worth a look.
+4. **Fresh AppDaemon restart → re-check, don't remediate.** For about
+   30–35 min after any AppDaemon restart, the `*_lights` MQTT checkers (and
+   so the overall `sensor.health_check_status`) read `unknown` while they
+   wait to hear from every device. That is by design and never pages. You
+   can see the window directly: the checker's `checks[]` has `<device> MQTT`
+   rows at `unknown` with detail `no MQTT data yet`, and the AppDaemon pod
+   is young (`kubectl get pod -n home-automation -l
+   app.kubernetes.io/name=appdaemon`, `.status.startTime`) or Loki shows a
+   recent `HealthCheckController started` line. The one case in that window
+   that **does** page: a light `unavailable` in HA reads `critical` rather
+   than `warning`, because the cross-check only downgrades a failure when the
+   device's MQTT side is healthy (`<device> State` = `state: unavailable`
+   with no `(MQTT ok)` suffix, beside `<device> MQTT` = `no MQTT data yet`).
+   Don't remediate either case in that window. Re-check once that device's
+   MQTT row has left `unknown`, and treat it as real only if it is still bad
+   then, or if an `unknown` outlasts about 45 min.
 5. **Dependency first.** If the checker declares a `health_dependencies` entry
    (e.g. spa/locks depend on `cloud`, zigbee batteries depend on `zigbee`)
    and that dependency is itself critical, triage the dependency's runbook —
