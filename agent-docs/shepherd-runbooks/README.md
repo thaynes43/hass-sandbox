@@ -125,7 +125,9 @@ reach for a whitelisted switch if a runbook explicitly tells you to.
   `script.health_check_relay`, no HA config-entry / helper edits.
 - **Idempotency.** Skip an alert already carrying an in-flight/exhausted
   triage marker (Alertmanager annotation or the checker's `record_note`
-  history). Don't double-triage the same episode.
+  history). Don't double-triage the same episode. A `record_note` deferral
+  with a deadline (`re-check <device> after <HH:MM>`) stops counting once
+  that deadline passes.
 
 ## Universal preconditions (check before *any* remediation)
 
@@ -160,8 +162,13 @@ Run these gates first, in order — several send you straight to skip/escalate:
    after about 45 min, whichever comes first. Don't wait on the failing
    device's own MQTT row: a dead device never publishes, so it stays
    `no MQTT data yet` for good. If its `<device> State` row is still bad
-   then, it is a real outage → **Escalate**; otherwise `record_note`
-   "post-restart warm-up, no action" and skip. An `unknown` alone is worth a
+   then, it is a real outage → **Escalate**. Otherwise `record_note` a
+   deferral that names the device and a deadline, e.g. `post-restart
+   warm-up; re-check <device> after <HH:MM>`, and skip. Notes persist in
+   `alert_history`, so a bare "no action" would read to the **Idempotency**
+   guardrail as a finished triage and every later wake would skip too. A
+   deferral note whose deadline has passed is not an in-flight marker:
+   re-triage from the top. An `unknown` alone is worth a
    look only when, after about 45 min, most of a `*_lights` checker's
    devices still have a `no MQTT data yet` row. Count those rows in
    `checks[]` (it always keeps every non-ok row) against
