@@ -1,0 +1,172 @@
+# script.voice_school_lunch ("School Lunch Menu") — voice tool, created live via MCP 2026-09-27 on
+# Tom's request: let the "Okay Nabu" boxes answer "what's for lunch tomorrow?" from the menus the
+# school_lunch_app AppDaemon app already scrapes into sensor.school_lunch_menu (the same data the
+# wall display and UniFi Connect lunch cards show). Read-only: it only reads that sensor.
+# Kids are mapped HERE, not in the agent prompts, so every agent (the four OpenAI rooms, the local
+# Phone Assist and Jarvis) gets the same answer: Penelope = the Elementary menu, Jackson = the Middle
+# School menu. When a kid changes school, change `kids` below (and the building helper).
+# Some days the district prints building-specific options: a letter-code group in front ("X/Y/Z Pizza")
+# or a one-word building name and a colon ("Name: Pizza"). The kids' buildings are kept OUT of this
+# public repo, like the district itself: they live in the live-only helper
+# input_text.school_lunch_buildings, format `<School>: <tag>, <tag>; <School>: <tag>`, where <School>
+# is a school name as in the sensor (Elementary, Middle School) and each <tag> is the building's letter
+# code or one-word name exactly as the menu prints it (any case). Never copy its value into git.
+# For a school listed there, options tagged for another building are dropped and the kids' own tags are
+# stripped; if that would leave nothing, all options come back with their tags. A school not listed
+# there (and an empty or missing helper) gets every option, tags included. A one-word "Word:" prefix
+# counts as a building tag; multi-word ones ("Pasta Bar:", "BURGER BAR:") do not. Three-plus letters
+# make a letter code ("R/F Potato Chips" = reduced fat, not a building).
+# Day selection mirrors the lunch card: with no day given, today's lunch until the sensor's
+# show_tomorrow_after cutoff (12:00), then the next day, skipping forward (up to 14 days) past weekends
+# and no-school days to the first day with a lunch. An explicit day or date is answered as asked,
+# including weekends, no-school notices and months whose menu is not published yet.
+# "Includes" items (on 75%+ of days, e.g. milk) are left out: they would pad every spoken answer.
+# Problems come back as a `response` sentence with a plain stop (see voice_thermostat.yaml: an
+# `error: true` stop reaches the agent as an empty SUCCESS).
+# Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-27.
+alias: School Lunch Menu
+description: 'Voice tool: the school lunch menu. Penelope goes to the elementary school and Jackson goes
+  to the middle school, so Penelope''s lunch is the elementary menu and Jackson''s lunch is the middle
+  school menu. Use it for ''what''s for lunch tomorrow'', ''what is Penelope having for lunch on Friday'',
+  ''what''s Jackson''s lunch today'', ''what''s for lunch at the high school on October 2nd''. With nobody
+  named it answers for both kids. With no day it gives the next school lunch (today''s until noon, then
+  the next school day''s) and says which date that is. Each lunch lists that day''s options (the kid picks
+  one), or a notice instead (no school, early release, weekend, menu not published yet). Keep the spoken
+  answer short: the day, then for each kid the main dish of each option without the sides, unless the
+  user asks for the details.'
+icon: mdi:food-apple
+mode: parallel
+max: 10
+fields:
+  who:
+    name: Who
+    description: 'Whose lunch: penelope (the elementary school menu), jackson (the middle school menu),
+      both (Penelope and Jackson, the default), or one school''s menu: elementary, middle_school or
+      high_school.'
+    required: false
+    selector:
+      select:
+        options:
+        - both
+        - penelope
+        - jackson
+        - elementary
+        - middle_school
+        - high_school
+  day:
+    name: Day
+    description: 'Which day: next (the default: the next school lunch), today, tomorrow, or a weekday
+      name for the coming one. For any other day (a date, next week, a day that has passed) send date
+      instead.'
+    required: false
+    selector:
+      select:
+        options:
+        - next
+        - today
+        - tomorrow
+        - monday
+        - tuesday
+        - wednesday
+        - thursday
+        - friday
+  date:
+    name: Date
+    description: A specific date as YYYY-MM-DD, for 'October 2nd', 'next Tuesday' or 'last Friday'.
+      Takes precedence over day.
+    required: false
+    selector:
+      date: {}
+sequence:
+- alias: 'Whose menus, which buildings, which day. building_tags maps a lower-case school name to the
+    upper-case tags of the kids'' own buildings, read from the live-only helper (see the header)'
+  variables:
+    kids:
+      penelope:
+        child: Penelope
+        school: Elementary
+      jackson:
+        child: Jackson
+        school: Middle School
+    levels:
+      elementary: Elementary
+      middle_school: Middle School
+      high_school: High School
+    wanted: '{{ who | default(''both'', true) | string | lower | trim }}'
+    targets: '{% if wanted == ''both'' %}{{ [kids.penelope, kids.jackson] }}{% elif wanted in kids %}{{
+      [kids[wanted]] }}{% elif wanted in levels %}{{ [{''child'': '''', ''school'': levels[wanted]}] }}{%
+      else %}{{ [] }}{% endif %}'
+    building_tags: '{% set ns = namespace(pairs=[]) %}{% for part in (states(''input_text.school_lunch_buildings'')
+      | string).split('';'') if '':'' in part %}{% set ns.pairs = ns.pairs + [(part.split('':'')[0] | trim
+      | lower, part.split('':'', 1)[1].split('','') | map(''trim'') | map(''upper'') | reject(''eq'', '''')
+      | list)] %}{% endfor %}{{ dict(ns.pairs) }}'
+    schools: '{{ state_attr(''sensor.school_lunch_menu'', ''schools'') or [] }}'
+    wanted_day: '{{ day | default(''next'', true) | string | lower | trim }}'
+    exact: '{{ date | default('''', true) | string | trim }}'
+    weekdays:
+    - monday
+    - tuesday
+    - wednesday
+    - thursday
+    - friday
+    - saturday
+    - sunday
+    before_cutoff: '{{ now() < today_at(state_attr(''sensor.school_lunch_menu'', ''show_tomorrow_after'')
+      or ''12:00:00'') }}'
+    start: '{% set today = now().date() %}{% if exact %}{% set d = as_datetime(exact, none) %}{{ d.date()
+      if d else '''' }}{% elif wanted_day == ''today'' %}{{ today }}{% elif wanted_day == ''tomorrow'' %}{{
+      today + timedelta(days=1) }}{% elif wanted_day in weekdays %}{% set off = (weekdays.index(wanted_day)
+      - today.weekday()) % 7 %}{{ today + timedelta(days=7 if off == 0 and not before_cutoff else off)
+      }}{% else %}{{ today if before_cutoff else today + timedelta(days=1) }}{% endif %}'
+    find_next: '{{ not exact and wanted_day not in weekdays and wanted_day not in [''today'', ''tomorrow'']
+      }}'
+    problem: '{% if targets | count == 0 %}No menu for that: ask for Penelope, Jackson, both, or the elementary,
+      middle or high school.{% elif not start %}That date was not understood: send it as YYYY-MM-DD.{% elif
+      schools | count == 0 %}The school lunch menus are not available right now.{% endif %}'
+- if:
+  - condition: template
+    value_template: '{{ problem | trim | length > 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ problem | trim }}'
+  - stop: No menu
+    response_variable: result
+- alias: With no day given, move forward to the first day on which any requested menu has a lunch (skips
+    weekends and no-school days, like the lunch card on the wall display)
+  variables:
+    menu_date: '{% set first = strptime(start, ''%Y-%m-%d'').date() %}{% set ns = namespace(date=first,
+      found=false) %}{% if find_next %}{% for i in range(14) if not ns.found %}{% set c = first + timedelta(days=i)
+      %}{% for t in targets %}{% for sc in schools if sc.name == t.school %}{% for d in sc.days if d[''year'']
+      == c.year and d[''month''] == c.month and d[''day''] == c.day and (d[''items''] | rejectattr(''role'',
+      ''eq'', ''includes'') | list | count > 0) %}{% if not ns.found %}{% set ns.found = true %}{% set ns.date
+      = c %}{% endif %}{% endfor %}{% endfor %}{% endfor %}{% endfor %}{% endif %}{{ ns.date }}'
+- alias: 'Each requested menu on that date: its options (building-filtered, see the header) or a notice'
+  variables:
+    lunches: '{% set c = strptime(menu_date, ''%Y-%m-%d'').date() %}{% set cv = c.year * 10000 + c.month
+      * 100 + c.day %}{% set out = namespace(lunches=[]) %}{% for t in targets %}{% set days = (schools
+      | selectattr(''name'', ''eq'', t.school) | map(attribute=''days'') | first) or [] %}{% set entry =
+      days | selectattr(''year'', ''eq'', c.year) | selectattr(''month'', ''eq'', c.month) | selectattr(''day'',
+      ''eq'', c.day) | list %}{% set tags = building_tags.get(t.school | lower, []) %}{% set o = namespace(all=[],
+      mine=[], first=99999999, last=0) %}{% for d in days %}{% set v = d[''year''] * 10000 + d[''month'']
+      * 100 + d[''day''] %}{% set o.first = [o.first, v] | min %}{% set o.last = [o.last, v] | max %}{% endfor
+      %}{% for i in (entry[0][''items''] if entry else []) if i.role != ''includes'' and (i.name | string
+      | trim) %}{% set n = i.name | string | trim | regex_replace(''\s{2,}'', '' '') %}{% set code = n | regex_findall(''^([A-Z](?:/[A-Z]){2,})/?\s'')
+      %}{% set named = n | regex_findall(''^([A-Za-z]+):\s'') %}{% set o.all = o.all + [n] %}{% if not code
+      and not named %}{% set o.mine = o.mine + [n] %}{% elif (code and (code[0].split(''/'') | select(''in'',
+      tags) | list | count > 0)) or (named and (named[0] | upper) in tags) %}{% set o.mine = o.mine + [n
+      | regex_replace(''^(?:[A-Z](?:/[A-Z]){2,}/?|[A-Za-z]+:)\s+'', '''') | trim] %}{% endif %}{% endfor
+      %}{% set notice = (entry[0].get(''notice'') or '''') if entry else (''No school on the weekend.'' if
+      c.weekday() >= 5 else (''This menu is not available right now.'' if not days else (''Not published
+      yet: the menu for that day is not out.'' if cv > o.last else (''Only the current menus are loaded:
+      that day is too far back.'' if cv < o.first else ''No lunch is listed for that day, which usually
+      means no school.'')))) %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
+      ''options'': o.mine if (tags and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
+      notice=notice) if notice else rec] %}{% endfor %}{{ out.lunches }}'
+- variables:
+    result:
+      date: '{% set c = strptime(menu_date, ''%Y-%m-%d'').date() %}{{ c.strftime(''%A, %B '') ~ c.day
+        }}'
+      lunches: '{{ lunches }}'
+- stop: Done
+  response_variable: result

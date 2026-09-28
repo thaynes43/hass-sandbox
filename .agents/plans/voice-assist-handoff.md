@@ -147,7 +147,10 @@ flood light", "patio lights", "shed lights"), hot tub mode ("I'm going in the ho
 their ZEN32s do), both ecobees and the two basement mini splits. Thermostat **modes** ("dry mode",
 "fan only", "set the upstairs thermostat to cool") and anything said to "the basement thermostats"
 go through `script.voice_thermostat` (2026-09-20): Assist has no set-mode intent and its
-set-temperature intent takes one thermostat only.
+set-temperature intent takes one thermostat only. School lunch questions ("what's for lunch
+tomorrow", "what is Jackson having on Friday") go to `script.voice_school_lunch` (2026-09-27,
+read-only). Tested by text on the Kitchen and Phone Assist pipelines; not yet asked out loud. Its
+building helper is private: see `agent-docs/voice-control-map.md` *House-wide mechanisms*.
 
 How music routing works, the patched blueprint, and why the Rumpus KEFs get no special
 handling: rollout plan, *Phase 3*. **The Music Assistant blueprint is locally patched**

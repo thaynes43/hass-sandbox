@@ -82,6 +82,26 @@ Card → AppDaemon communication uses the standard relay script pattern:
 | `select_schools` | Settings tab save | Updates `input_text.school_lunch_selected_schools`; at-a-glance card updates immediately |
 | `fetch_month` | Prev/next month button | Fetches the adjacent month for a specific school and updates its entry in the sensor attributes |
 
+## Ask a voice assistant
+
+The same menus answer out loud. "Okay Nabu, what's for lunch tomorrow?" on any voice box (or the
+Phone Assist on Tom's phone) reads the options for both kids. Other questions work too: "What is
+Penelope having on Friday?", "What did Jackson have last Friday?", "What's the high school lunch on
+Tuesday?". Penelope's lunch is the elementary menu and Jackson's is the middle school menu. That
+mapping lives in the voice tool itself, so every assistant gives the same answer without its own
+instructions.
+
+The tool is the Home Assistant script `script.voice_school_lunch`
+(`home-assistant/scripts/voice/voice_school_lunch.yaml`). It only reads `sensor.school_lunch_menu`:
+
+- With no day named it gives the next school lunch. That's today's until the `show_tomorrow_after`
+  cutoff, then the next day's, skipping weekends and no-school days, as the at-a-glance card does.
+- A day that has no lunch comes back as a notice: no school, a holiday, the weekend, or "not
+  published yet" for a month the district has not posted.
+- Some days the district lists different options for different buildings. The voice answer keeps
+  only the options for the kids' own buildings. Those are set in the live helper
+  `input_text.school_lunch_buildings`, which is kept out of this repository on purpose.
+
 ## Configuration
 
 The app is configured in `apps-prod.yaml`. Key fields:
