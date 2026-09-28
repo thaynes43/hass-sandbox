@@ -117,3 +117,4 @@ The checker listens for relay commands routed by the controller:
 - `providers/ha_provisioner` — creates HA helpers on startup
 - `shared/check_utils` — `ping_check()` for gateway ICMP ping
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: the auto-repair toggle/delay helpers
+- `shared/switch_power_cycle` — `power_cycle_switch()`: the off / wait / on + confirm sequence, `switch_not_on_detail()` and `with_note()` for the repair detail

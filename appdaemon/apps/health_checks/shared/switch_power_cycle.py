@@ -95,14 +95,14 @@ class PowerCycleResult:
     note: str = ""
 
 
-#: Carried by a failed result whose switch entity was missing from Home
-#: Assistant (the unifi integration dropping a PDU's outlet entities): the
-#: fix is reloading the integration, not the outlet.
 #: Carried by a failed result whose switch could not be read at all (get_state
 #: raised — most likely the AppDaemon↔HA plugin was disconnected, which also
 #: drops the un-awaited turn_off/turn_on). Not "the entity is missing".
 READ_ERROR_NOTE = "the switch could not be read — see the AppDaemon log"
 
+#: Carried by a failed result whose switch entity was missing from Home
+#: Assistant (the unifi integration dropping a PDU's outlet entities): the
+#: fix is reloading the integration, not the outlet.
 MISSING_ENTITY_NOTE = (
     "the entity is missing from Home Assistant — reload the integration "
     "that owns it"
@@ -112,9 +112,9 @@ MISSING_ENTITY_NOTE = (
 def switch_not_on_detail(switch: str, note: str = "") -> str:
     """The repair detail for a switch that never came back on.
 
-    *note* is the failed :class:`PowerCycleResult`'s note: when it says the
-    entity is missing, that replaces "check the outlet", which would send
-    the operator to the wrong place.
+    *note* is the failed :class:`PowerCycleResult`'s note:
+    ``MISSING_ENTITY_NOTE`` or ``READ_ERROR_NOTE`` replaces "check the
+    outlet", which would send the operator to the wrong place for either.
     """
     return f"{switch} did not turn back on — {note or 'check the outlet'}"
 
@@ -234,9 +234,11 @@ async def power_cycle_switch(
     ``result.switch_on`` is True once the switch is confirmed on — the caller
     may start its recovery wait — and False when it is still not on after a
     second ``turn_on``; the ERROR is already logged, and the caller must end
-    the repair as failed without waiting for recovery.  ``result.note`` is
-    ``NEVER_OFF_NOTE`` when the ``on`` was never preceded by a reported
-    ``off``.
+    the repair as failed without waiting for recovery.  ``result.note``:
+    with ``switch_on`` True, ``NEVER_OFF_NOTE`` when the ``on`` was never
+    preceded by a reported ``off`` (else empty); with ``switch_on`` False,
+    ``READ_ERROR_NOTE`` when the last read raised, ``MISSING_ENTITY_NOTE``
+    when the entity is absent, else empty (the outlet itself).
     """
     label = f"{switch} for {target}" if target else switch
     cycle_started = _utcnow()
