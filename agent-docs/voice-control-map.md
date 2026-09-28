@@ -79,7 +79,14 @@ Movie Room box "what is the volume on the receiver" and it found nothing. The ra
 unexposed because the built-in volume intents would drive it with no ceiling. The tool's header in
 `home-assistant/scripts/voice/` has the step↔dB calibration. Text-tested as the Movie Room satellite:
 "what is the volume on the receiver" → `check`, "turn the receiver up a little" → `up` 1 dB. The same
-script backs the Tom Mobile receiver card's −/+ (`agent-docs/tom-mobile-dashboard.md`). The KEF LS50s (the
+script backs the Tom Mobile receiver card's −/+ (`agent-docs/tom-mobile-dashboard.md`).
+**Per-app presets (2026-09-28):** `preset` / `save_preset` with a `preset` name. Levels live in
+live-only helpers `input_number.movie_room_receiver_preset_<name>` (-34.5 to -3.5 dB, 0.5 dB
+steps; Tom's starting values Plex -5.5, YouTube -17, which he is dialling in). The tool finds
+them by name at run time ("you tube", "YouTube" and "plex!" all match; an unknown name gets the
+list back), so a new app is a new helper with that prefix plus a card button. Text-tested as
+the Movie Room satellite: "Set the volume for YouTube." → `preset` YouTube, "Save this as the
+Plex volume." → `save_preset` Plex. The KEF LS50s (the
 Rumpus Room PC's speakers over HDMI) have three registrations: the two non-Music-Assistant ones
 (`media_player.ls50_wireless_ii_174476_2`, `_3`) stay unexposed; the Music Assistant one
 (`media_player.ls50_wireless_ii_174476_4`, "Rumpus Room Speakers") is in the Rumpus Room area and
