@@ -7,6 +7,7 @@ network or HA access required.
 from __future__ import annotations
 
 import asyncio
+import calendar
 import datetime
 import json
 import os
@@ -147,13 +148,18 @@ def _run(coro):
 _FROZEN_NOW = datetime.datetime(2026, 3, 15, 12, 0, 0)
 
 
-def _startup(app: SchoolLunchApp, mock_prov: MagicMock, mock_client: MagicMock) -> None:
+def _startup(
+    app: SchoolLunchApp,
+    mock_prov: MagicMock,
+    mock_client: MagicMock,
+    now: datetime.datetime = _FROZEN_NOW,
+) -> None:
     """Initialize the app and run the async startup coroutine."""
     app.initialize()
     with patch("providers.ha_provisioner.HAProvisioner", return_value=mock_prov), \
          patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=mock_client), \
          patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
-        mock_dt.datetime.now.return_value = _FROZEN_NOW
+        mock_dt.datetime.now.return_value = now
         mock_dt.time = datetime.time
         _run(app._async_startup())
 
@@ -921,3 +927,592 @@ class TestListenerRegistration:
         app.listen_event.assert_called_once()
         event_name = app.listen_event.call_args[0][1]
         assert event_name == "school_lunch_command"
+
+
+# ---------------------------------------------------------------------------
+# fetch_month keeps the refresh window (today's/tomorrow's lunch)
+# ---------------------------------------------------------------------------
+
+# A Tuesday in October: the daily refresh window is October + November.
+_OCT_NOW = datetime.datetime(2026, 10, 6, 9, 0, 0)
+_ONE_SCHOOL = {"menus": [{"name": "Elementary", "download_id": "853700"}]}
+
+
+def _month_id(year: int, month: int) -> str:
+    return f"id-{year}-{month:02d}"
+
+
+def _neighbour(year: int, month: int, step: int) -> tuple:
+    index = year * 12 + (month - 1) + step
+    return index // 12, index % 12 + 1
+
+
+def _weekday_menu(year: int, month: int, *, tag: str = "") -> MenuMonth:
+    """One month of weekday lunches; month is 1-indexed.
+
+    Each day's entree names its own date (made-up items only) so a test can
+    tell which fetch a published day came from; ``tag`` marks a re-fetch.
+    """
+    days = [
+        MenuDay(
+            day=d,
+            month=month - 1,  # the API's months are 0-indexed
+            year=year,
+            items=[
+                MenuItem(name=f"Mock Entree {month}/{d}{tag}", category="Entrees"),
+                MenuItem(name="Mock Milk", category="Milk", is_ancillary=True),
+            ],
+        )
+        for d in range(1, calendar.monthrange(year, month)[1] + 1)
+        if datetime.date(year, month, d).weekday() < 5
+    ]
+    prev_year, prev_month = _neighbour(year, month, -1)
+    next_year, next_month = _neighbour(year, month, 1)
+    return MenuMonth(
+        menu_id=_month_id(year, month),
+        menu_type_name="Lunch",
+        month=month - 1,
+        year=year,
+        days=days,
+        previous_month_id=_month_id(prev_year, prev_month),
+        next_month_id=_month_id(next_year, next_month),
+    )
+
+
+def _month_client(
+    now: datetime.datetime,
+    *,
+    last_published: tuple | None = None,
+    resolve_results: Dict[str, Dict[str, str]] | None = None,
+) -> MagicMock:
+    """A client whose download id resolves to a month; any month's id fetches.
+
+    The download id resolves to ``now``'s month, or to ``last_published``
+    (year, month) when the district has not published anything newer yet —
+    that month then has no ``nextMonthPublished``, as in summer.
+    """
+    year, month = last_published or (now.year, now.month)
+    client = _make_mock_client(resolve_results=resolve_results or {
+        "853700": {"id": _month_id(year, month), "site_code": "100"},
+    })
+
+    async def _fetch(menu_id: str) -> MenuMonth:
+        _, y, m = menu_id.split("-")
+        menu = _weekday_menu(int(y), int(m))
+        if last_published and (int(y), int(m)) == last_published:
+            menu.next_month_id = None
+        return menu
+
+    client.fetch_menu = AsyncMock(side_effect=_fetch)
+    return client
+
+
+def _published_school(app: SchoolLunchApp, name: str = "Elementary") -> Dict[str, Any]:
+    attrs = app.set_state.call_args[1]["attributes"]
+    return next(s for s in attrs["schools"] if s["name"] == name)
+
+
+def _find_day(school: Dict[str, Any], year: int, month: int, day: int):
+    """Look a day up the way both cards and the voice script do: by its own fields."""
+    return next(
+        (
+            d for d in school["days"]
+            if d["day"] == day and d["month"] == month and d["year"] == year
+        ),
+        None,
+    )
+
+
+def _entree(day: Dict[str, Any]) -> str:
+    return next(i["name"] for i in day["items"] if i["role"] == "option")
+
+
+def _day_keys(school: Dict[str, Any]) -> List[tuple]:
+    return [(d["year"], d["month"], d["day"]) for d in school["days"]]
+
+
+def _months_held(school: Dict[str, Any]) -> set:
+    return {(d["year"], d["month"]) for d in school["days"]}
+
+
+class TestFetchMonthKeepsRefreshWindow:
+    """Browsing months in the detail card must not evict today's lunch."""
+
+    def _running_app(
+        self,
+        now: datetime.datetime = _OCT_NOW,
+        last_published: tuple | None = None,
+    ):
+        app = _make_app(_ONE_SCHOOL)
+        client = _month_client(now, last_published=last_published)
+        _startup(app, _make_mock_provisioner(), client, now=now)
+        return app, client
+
+    def _browse(
+        self,
+        app: SchoolLunchApp,
+        menu_id: str,
+        now: datetime.datetime = _OCT_NOW,
+        school: str = "Elementary",
+    ) -> None:
+        with patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = now
+            _run(app._do_fetch_month(school, menu_id))
+
+    def test_refresh_holds_current_and_next_month(self):
+        """Baseline the fix relies on: the refresh publishes October + November."""
+        app, _ = self._running_app()
+        school = _published_school(app)
+        assert (school["month"], school["year"]) == (10, 2026)
+        assert _months_held(school) == {(2026, 10), (2026, 11)}
+        assert app._refresh_windows == {"Elementary": {(2026, 10), (2026, 11)}}
+
+    def test_browse_next_month_keeps_todays_lunch(self):
+        app, _ = self._running_app()
+        self._browse(app, _month_id(2026, 11))
+        school = _published_school(app)
+
+        # The calendar tab shows and navigates the browsed month.
+        assert (school["month"], school["year"]) == (11, 2026)
+        assert school["prev_month_id"] == _month_id(2026, 10)
+        assert school["next_month_id"] == _month_id(2026, 12)
+
+        # Today's and tomorrow's lunch are still on the sensor.
+        today = _find_day(school, 2026, 10, 6)
+        assert today is not None
+        assert _entree(today) == "Mock Entree 10/6"
+        assert _find_day(school, 2026, 10, 7) is not None
+        assert _find_day(school, 2026, 11, 2) is not None
+        assert _months_held(school) == {(2026, 10), (2026, 11)}
+        assert len(_day_keys(school)) == len(set(_day_keys(school)))
+
+    def test_browse_past_month_keeps_window_and_points_calendar_at_it(self):
+        app, _ = self._running_app()
+        self._browse(app, _month_id(2026, 9))
+        school = _published_school(app)
+
+        assert (school["month"], school["year"]) == (9, 2026)
+        assert school["prev_month_id"] == _month_id(2026, 8)
+        assert school["next_month_id"] == _month_id(2026, 10)
+
+        assert _find_day(school, 2026, 9, 15) is not None
+        assert _entree(_find_day(school, 2026, 10, 6)) == "Mock Entree 10/6"
+        assert _find_day(school, 2026, 11, 30) is not None
+        assert _months_held(school) == {(2026, 9), (2026, 10), (2026, 11)}
+        # Merged days come out in date order.
+        assert _day_keys(school) == sorted(_day_keys(school))
+
+    def test_browse_same_month_twice_does_not_duplicate_days(self):
+        app, _ = self._running_app()
+        self._browse(app, _month_id(2026, 9))
+        count_after_first = len(_published_school(app)["days"])
+        self._browse(app, _month_id(2026, 9))
+        school = _published_school(app)
+
+        assert len(school["days"]) == count_after_first
+        assert len(_day_keys(school)) == len(set(_day_keys(school)))
+
+    def test_browsing_a_window_month_replaces_its_days(self):
+        """A re-fetched window month replaces that month's days, never doubles them."""
+        app, client = self._running_app()
+        client.fetch_menu = AsyncMock(
+            side_effect=lambda menu_id: _weekday_menu(2026, 11, tag=" (revised)"),
+        )
+        self._browse(app, _month_id(2026, 11))
+        school = _published_school(app)
+
+        november = [d for d in school["days"] if d["month"] == 11]
+        assert november and all(_entree(d).endswith("(revised)") for d in november)
+        assert len(_day_keys(school)) == len(set(_day_keys(school)))
+        assert _entree(_find_day(school, 2026, 10, 6)) == "Mock Entree 10/6"
+
+    def test_day_dropped_from_a_refetched_month_does_not_linger(self):
+        """The browsed fetch is the whole truth for its month."""
+        app, client = self._running_app()
+        revised = _weekday_menu(2026, 11)
+        revised.days = [d for d in revised.days if d.day != 2]
+        client.fetch_menu = AsyncMock(return_value=revised)
+
+        self._browse(app, _month_id(2026, 11))
+        school = _published_school(app)
+
+        assert _find_day(school, 2026, 11, 2) is None
+        assert _find_day(school, 2026, 11, 3) is not None
+
+    def test_browsed_month_carrying_a_neighbour_day_is_not_doubled(self):
+        """A browsed menu that lists a day of a window month keeps one copy of it."""
+        app, client = self._running_app()
+        september = _weekday_menu(2026, 9)
+        september.days.append(MenuDay(
+            day=1, month=9, year=2026,  # 0-indexed month 9 = October 1st
+            items=[MenuItem(name="Mock Spillover Entree", category="Entrees")],
+        ))
+        client.fetch_menu = AsyncMock(return_value=september)
+
+        self._browse(app, _month_id(2026, 9))
+        school = _published_school(app)
+
+        assert _day_keys(school).count((2026, 10, 1)) == 1
+        assert len(_day_keys(school)) == len(set(_day_keys(school)))
+
+    def test_browsing_many_months_never_exceeds_window_plus_one(self):
+        app, _ = self._running_app()
+        window = {(2026, 10), (2026, 11)}
+        for year, month in [
+            (2026, 9), (2026, 8), (2026, 7), (2026, 8), (2026, 9),
+            (2026, 10), (2026, 11), (2026, 12), (2027, 1), (2026, 12),
+        ]:
+            self._browse(app, _month_id(year, month))
+            school = _published_school(app)
+            assert (school["month"], school["year"]) == (month, year)
+            assert _months_held(school) == window | {(year, month)}
+            assert len(_day_keys(school)) == len(set(_day_keys(school)))
+            assert _find_day(school, 2026, 10, 6) is not None
+        # Browsing never moves the recorded window; only a refresh does.
+        assert app._refresh_windows["Elementary"] == window
+
+    def test_summer_browse_keeps_the_last_published_months(self):
+        """Refresh stuck behind the clock (no nextMonthPublished): a browse keeps its days."""
+        july_now = datetime.datetime(2026, 7, 15, 9, 0, 0)
+        app, _ = self._running_app(now=july_now, last_published=(2026, 6))
+        school = _published_school(app)
+        assert _months_held(school) == {(2026, 6)}
+        assert app._refresh_windows["Elementary"] == {(2026, 6)}
+
+        self._browse(app, _month_id(2026, 5), now=july_now)
+        school = _published_school(app)
+
+        assert (school["month"], school["year"]) == (5, 2026)
+        assert school["next_month_id"] == _month_id(2026, 6)
+        assert _months_held(school) == {(2026, 5), (2026, 6)}
+        assert _entree(_find_day(school, 2026, 6, 15)) == "Mock Entree 6/15"
+
+    def test_summer_browsing_many_months_stays_bounded(self):
+        july_now = datetime.datetime(2026, 7, 15, 9, 0, 0)
+        app, _ = self._running_app(now=july_now, last_published=(2026, 6))
+        for year, month in [(2026, 5), (2026, 4), (2026, 5), (2026, 6), (2026, 3)]:
+            self._browse(app, _month_id(year, month), now=july_now)
+            school = _published_school(app)
+            assert _months_held(school) == {(2026, 6), (year, month)}
+            assert len(_day_keys(school)) == len(set(_day_keys(school)))
+
+    def test_no_recorded_window_falls_back_to_the_calendar(self):
+        """A school only ever added by a browse keeps the current + next calendar month."""
+        app, _ = self._running_app()
+        self._browse(app, _month_id(2026, 10), school="Visiting School")
+        assert "Visiting School" not in app._refresh_windows
+
+        for year, month, held in [
+            (2026, 11, {(2026, 10), (2026, 11)}),
+            (2026, 9, {(2026, 9), (2026, 10), (2026, 11)}),
+            (2026, 8, {(2026, 8), (2026, 10), (2026, 11)}),
+        ]:
+            self._browse(app, _month_id(year, month), school="Visiting School")
+            visiting = _published_school(app, "Visiting School")
+            assert (visiting["month"], visiting["year"]) == (month, year)
+            assert _months_held(visiting) == held
+            assert _find_day(visiting, 2026, 10, 6) is not None
+
+    def test_calendar_fallback_wraps_into_january(self):
+        dec_now = datetime.datetime(2026, 12, 8, 9, 0, 0)
+        app, _ = self._running_app(now=dec_now)
+        self._browse(app, _month_id(2027, 1), now=dec_now, school="Visiting School")
+        self._browse(app, _month_id(2026, 11), now=dec_now, school="Visiting School")
+
+        visiting = _published_school(app, "Visiting School")
+        assert _months_held(visiting) == {(2026, 11), (2027, 1)}
+        assert _find_day(visiting, 2027, 1, 4) is not None
+
+    def test_refreshed_month_without_days_stays_in_the_window(self):
+        """The refresh's own month counts even if it published no days yet."""
+        app = _make_app(_ONE_SCHOOL)
+        client = _month_client(_OCT_NOW)
+        full_fetch = client.fetch_menu.side_effect
+
+        async def _october_empty(menu_id: str) -> MenuMonth:
+            menu = await full_fetch(menu_id)
+            if menu_id == _month_id(2026, 10):
+                menu.days = []
+            return menu
+
+        client.fetch_menu = AsyncMock(side_effect=_october_empty)
+        _startup(app, _make_mock_provisioner(), client, now=_OCT_NOW)
+        assert _months_held(_published_school(app)) == {(2026, 11)}
+        assert app._refresh_windows["Elementary"] == {(2026, 10), (2026, 11)}
+
+        # October's lunches appear later; browsing it and then away keeps them.
+        client.fetch_menu = AsyncMock(side_effect=full_fetch)
+        self._browse(app, _month_id(2026, 10))
+        self._browse(app, _month_id(2026, 9))
+
+        school = _published_school(app)
+        assert _months_held(school) == {(2026, 9), (2026, 10), (2026, 11)}
+        assert _find_day(school, 2026, 10, 6) is not None
+
+    def test_failed_refresh_keeps_the_schools_recorded_window(self):
+        """Stale entry kept by _merge_school_data keeps the window it was published with."""
+        two_schools = {"menus": [
+            {"name": "Elementary", "download_id": "853700"},
+            {"name": "Middle School", "download_id": "854234"},
+        ]}
+        june_now = datetime.datetime(2026, 6, 15, 9, 0, 0)
+        july_now = datetime.datetime(2026, 7, 10, 9, 0, 0)
+        app = _make_app(two_schools)
+        client = _month_client(june_now, resolve_results={
+            "853700": {"id": _month_id(2026, 6), "site_code": "100"},
+            "854234": {"id": "mid-2026-06", "site_code": "101"},
+        })
+        _startup(app, _make_mock_provisioner(), client, now=june_now)
+        assert app._refresh_windows == {
+            "Elementary": {(2026, 6), (2026, 7)},
+            "Middle School": {(2026, 6), (2026, 7)},
+        }
+
+        # July refresh: Elementary advances, Middle School's fetch fails.
+        healthy_fetch = client.fetch_menu.side_effect
+
+        async def _middle_down(menu_id: str) -> MenuMonth:
+            if menu_id.startswith("mid-"):
+                raise ValueError("network error")
+            return await healthy_fetch(menu_id)
+
+        client.fetch_menu = AsyncMock(side_effect=_middle_down)
+        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=client), \
+             patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = july_now
+            mock_dt.time = datetime.time
+            _run(app._do_daily_fetch())
+
+        assert app._refresh_windows == {
+            "Elementary": {(2026, 7), (2026, 8)},
+            "Middle School": {(2026, 6), (2026, 7)},
+        }
+        assert _months_held(_published_school(app, "Middle School")) == {(2026, 6), (2026, 7)}
+
+        # Browsing the stale school keeps the months it still publishes.
+        client.fetch_menu = AsyncMock(side_effect=healthy_fetch)
+        self._browse(app, _month_id(2026, 5), now=july_now, school="Middle School")
+        middle = _published_school(app, "Middle School")
+        assert _months_held(middle) == {(2026, 5), (2026, 6), (2026, 7)}
+        assert _find_day(middle, 2026, 6, 15) is not None
+
+    def test_window_wraps_into_january_in_december(self):
+        """In December the window is December + January of the next year."""
+        dec_now = datetime.datetime(2026, 12, 8, 9, 0, 0)
+        app, _ = self._running_app(now=dec_now)
+        assert _months_held(_published_school(app)) == {(2026, 12), (2027, 1)}
+
+        self._browse(app, _month_id(2026, 11), now=dec_now)
+        school = _published_school(app)
+
+        assert (school["month"], school["year"]) == (11, 2026)
+        assert _months_held(school) == {(2026, 11), (2026, 12), (2027, 1)}
+        assert _find_day(school, 2027, 1, 4) is not None
+
+    def test_browse_school_not_loaded_yet_is_appended(self):
+        """A school the refresh never loaded gets the browsed month as-is."""
+        app, _ = self._running_app()
+        self._browse(app, _month_id(2026, 9), school="Visiting School")
+
+        attrs = app.set_state.call_args[1]["attributes"]
+        assert [s["name"] for s in attrs["schools"]] == ["Elementary", "Visiting School"]
+        visiting = attrs["schools"][1]
+        assert (visiting["month"], visiting["year"]) == (9, 2026)
+        assert _months_held(visiting) == {(2026, 9)}
+        # The loaded school is untouched.
+        assert _months_held(attrs["schools"][0]) == {(2026, 10), (2026, 11)}
+
+    def test_daily_refresh_replaces_browsed_data(self):
+        app, client = self._running_app()
+        self._browse(app, _month_id(2026, 8))
+        assert (2026, 8) in _months_held(_published_school(app))
+
+        with patch("school_lunch_app.school_lunch_app.SchoolMenuClient", return_value=client), \
+             patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _OCT_NOW
+            mock_dt.time = datetime.time
+            _run(app._do_daily_fetch())
+
+        school = _published_school(app)
+        assert (school["month"], school["year"]) == (10, 2026)
+        assert school["prev_month_id"] == _month_id(2026, 9)
+        assert _months_held(school) == {(2026, 10), (2026, 11)}
+
+    def test_failed_browse_leaves_sensor_alone(self):
+        app, client = self._running_app()
+        app.set_state.reset_mock()
+        client.fetch_menu = AsyncMock(side_effect=ValueError("network down"))
+
+        self._browse(app, _month_id(2026, 9))
+
+        app.set_state.assert_not_called()
+        assert _months_held(app._school_data[0]) == {(2026, 10), (2026, 11)}
+
+
+# ---------------------------------------------------------------------------
+# Client use is serialised (the client shares one session)
+# ---------------------------------------------------------------------------
+
+class _SessionFakeClient:
+    """A stand-in with SchoolMenuClient's session lifecycle, so overlap is real.
+
+    ``__aenter__`` opens a session only when none is open (a second, nested
+    entry reuses it); ``__aexit__`` closes and nulls it, as
+    ``SchoolMenuClient.close`` does. A call with no open session, or whose
+    session was closed while it was in flight, raises. ``gate(menu_id)`` makes
+    that month's fetch wait on an Event so a test can hold it mid-request.
+    """
+
+    def __init__(self, resolve_to: str) -> None:
+        self._session: object | None = None
+        self._resolve_to = resolve_to
+        self._gates: Dict[str, asyncio.Event] = {}
+        self.waiting: set = set()
+
+    def gate(self, menu_id: str) -> asyncio.Event:
+        self._gates[menu_id] = asyncio.Event()
+        return self._gates[menu_id]
+
+    async def __aenter__(self) -> "_SessionFakeClient":
+        if self._session is None:
+            self._session = object()
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        self._session = None
+
+    def _open_session(self) -> object:
+        if self._session is None:
+            raise RuntimeError("SchoolMenuClient has no active session")
+        return self._session
+
+    async def resolve_menu_id(self, download_id: str) -> Dict[str, str]:
+        self._open_session()
+        await asyncio.sleep(0)
+        return {"id": self._resolve_to, "site_code": "100"}
+
+    async def fetch_menu(self, menu_id: str) -> MenuMonth:
+        session = self._open_session()
+        gate = self._gates.get(menu_id)
+        if gate is not None:
+            self.waiting.add(menu_id)
+            await gate.wait()
+            self.waiting.discard(menu_id)
+        else:
+            await asyncio.sleep(0)
+        if self._session is not session:
+            raise RuntimeError("Session is closed")
+        _, year, month = menu_id.split("-")
+        return _weekday_menu(int(year), int(month))
+
+
+async def _until(condition) -> None:
+    for _ in range(200):
+        if condition():
+            return
+        await asyncio.sleep(0)
+    raise AssertionError("condition never became true")
+
+
+async def _let_others_run() -> None:
+    for _ in range(50):
+        await asyncio.sleep(0)
+
+
+class TestClientSerialisation:
+    """Two quick month taps, or a tap during the refresh, must both land."""
+
+    def _fake_app(self):
+        app = _make_app(_ONE_SCHOOL)
+        client = _SessionFakeClient(resolve_to=_month_id(2026, 10))
+        _startup(app, _make_mock_provisioner(), client, now=_OCT_NOW)
+        assert _months_held(_published_school(app)) == {(2026, 10), (2026, 11)}
+        app.set_state.reset_mock()
+        app.log.reset_mock()
+        return app, client
+
+    @staticmethod
+    def _published_months(app: SchoolLunchApp) -> List[tuple]:
+        """(state, month, year) of Elementary for every publish, in order."""
+        out = []
+        for c in app.set_state.call_args_list:
+            school = next(
+                s for s in c.kwargs["attributes"]["schools"] if s["name"] == "Elementary"
+            )
+            out.append((c.kwargs["state"], school["month"], school["year"]))
+        return out
+
+    @staticmethod
+    def _problems(app: SchoolLunchApp) -> List[str]:
+        return [
+            str(c.args[0]) for c in app.log.call_args_list
+            if c.kwargs.get("level") in ("WARNING", "ERROR")
+        ]
+
+    def test_two_overlapping_browses_both_apply(self):
+        app, client = self._fake_app()
+        november, december = _month_id(2026, 11), _month_id(2026, 12)
+
+        async def scenario():
+            gate = client.gate(november)
+            first = asyncio.ensure_future(app._do_fetch_month("Elementary", november))
+            await _until(lambda: november in client.waiting)
+            second = asyncio.ensure_future(app._do_fetch_month("Elementary", december))
+            await _let_others_run()
+            gate.set()
+            await asyncio.gather(first, second)
+
+        _run(scenario())
+
+        assert self._problems(app) == []
+        assert self._published_months(app) == [("ok", 11, 2026), ("ok", 12, 2026)]
+        school = _published_school(app)
+        assert school["next_month_id"] == _month_id(2027, 1)
+        assert _months_held(school) == {(2026, 10), (2026, 11), (2026, 12)}
+        assert _find_day(school, 2026, 10, 6) is not None
+
+    def test_browse_during_refresh_runs_after_it(self):
+        app, client = self._fake_app()
+        october, september = _month_id(2026, 10), _month_id(2026, 9)
+
+        async def scenario():
+            gate = client.gate(october)  # the refresh's current-month fetch
+            refresh = asyncio.ensure_future(app._do_daily_fetch())
+            await _until(lambda: october in client.waiting)
+            browse = asyncio.ensure_future(app._do_fetch_month("Elementary", september))
+            await _let_others_run()
+            gate.set()
+            await asyncio.gather(refresh, browse)
+
+        with patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _OCT_NOW
+            mock_dt.time = datetime.time
+            _run(scenario())
+
+        assert self._problems(app) == []
+        assert self._published_months(app) == [("ok", 10, 2026), ("ok", 9, 2026)]
+        school = _published_school(app)
+        assert _months_held(school) == {(2026, 9), (2026, 10), (2026, 11)}
+        assert _find_day(school, 2026, 10, 6) is not None
+
+    def test_refresh_during_browse_runs_after_it(self):
+        app, client = self._fake_app()
+        november = _month_id(2026, 11)
+
+        async def scenario():
+            gate = client.gate(november)
+            browse = asyncio.ensure_future(app._do_fetch_month("Elementary", november))
+            await _until(lambda: november in client.waiting)
+            refresh = asyncio.ensure_future(app._do_daily_fetch())
+            await _let_others_run()
+            gate.set()  # stays set, so the refresh's own November pre-fetch passes too
+            await asyncio.gather(browse, refresh)
+
+        with patch("school_lunch_app.school_lunch_app.datetime") as mock_dt:
+            mock_dt.datetime.now.return_value = _OCT_NOW
+            mock_dt.time = datetime.time
+            _run(scenario())
+
+        assert self._problems(app) == []
+        assert self._published_months(app) == [("ok", 11, 2026), ("ok", 10, 2026)]
+        assert _months_held(_published_school(app)) == {(2026, 10), (2026, 11)}
