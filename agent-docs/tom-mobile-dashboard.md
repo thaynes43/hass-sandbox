@@ -19,6 +19,7 @@ iterating on it.
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 | First Floor | "First Floor Lights" toggle (`light.first_floor_chaos_lights`) |
+| Movie Room | "Receiver" (volume slider + Power, Input, −/dB/+), "Lights" (brightness slider + Ambient, Scene, Bright, Dim, Red, Colors), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Bedroom | Primary Bedroom scene card (ported from Kellie Mobile) → `#tom-primary-bedroom` |
 | Climate | Climate Control card w/ 68°/72° presets (ported) → `#tom-climate-control` |
 | Doors & Locks | Locks card → `#tom-locks`, Garage Doors card → `#tom-garage-doors` |
@@ -159,6 +160,48 @@ pickers after native Assist is opened again, or after the refresh button in an i
   `light.downstairs_kitches_under_cabinet_inovelli_dimmer` (typo is real), `light.downstairs_kitchen_lights`
   (itself a Hue group — nesting is fine). If the switch mapping changes, update the group membership too.
 
+### Movie Room (added 2026-09-28)
+Tom asked for one card each for the receiver (volume, inputs, power), the lights and the thermostats.
+Every button reuses a script the voice agents or the wall switches already use, so all three stay in step.
+- **Receiver** = `media_player.str_az5000es` (songpal; the Sony STR-AZ5000ES, named "Movie Room
+  Receiver" and put in the Movie Room area that day). There are **two cards**, swapped by section
+  `visibility` on the receiver being `on`. With the receiver on, the card body is a volume slider and
+  the bottom row is Input (a Bubble `select` sub-button on `source_list`), −, the dB readout and +. With
+  it off, a one-row card has just Power. One card with hidden sub-buttons left a blank row, because the
+  card's height (`rows`) is fixed.
+  - **Volume ceiling -3.5 dB** (Tom: "I usually won't go louder than -3.5dB"). The slider has
+    `min_value: 29` (-20 dB) and `max_value: 62` (-3.5 dB). Bubble Card v3.4.0 clamps the value to
+    [min, max] and then sends `volume_level` = value / 100 (read from the installed `bubble-card.js`), so a
+    full-right drag sends 0.62. songpal truncates (`int(volume_level × 100)`), and steps 29, 57 and 58
+    do not survive `/100` → `×100` in float64, so the slider can land 0.5 dB below those three (only
+    ever lower, never past the cap); the script nudges its level by 1e-6 to hit them exactly.
+    − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and
+    1 dB, and that script enforces the same ceiling (`max_db`). **No card opens more-info on the
+    receiver**: HA's own media player dialog has an unbounded volume slider. On the "on" card the icon
+    does nothing; on the "off" card, tapping turns the receiver on. Nothing here can stop the physical
+    remote.
+  - **dB readout** = `sensor.movie_room_receiver_volume`, a Template helper (entry
+    `01M3MJNHG41WNX9H2QM6SZM5BV`, live only). It is unknown while the receiver is off. State:
+    `{% set v = state_attr('media_player.str_az5000es', 'volume_level') %}{% if is_state('media_player.str_az5000es', 'on') and v is number %}{{ ((v * 100) | round(0) - 69) / 2 }}{% else %}{{ none }}{% endif %}`.
+    Scale: 0–100 steps at 0.5 dB per step, step 69 = 0.0 dB, calibrated from Tom's display reading
+    (see the script mirror's header). The sensor, the script and the slider bounds must change together.
+- **Lights** = `light.basement_movie_room_lights` (recessed; the card body is the brightness slider,
+  and the icon toggles them). The top-right buttons are Ambient (toggles
+  `light.basement_movie_room_ambient_lighting`, accent when on) and Scene. The bottom row is Bright,
+  Dim, Red and Colors. Scene, Bright, Dim, Red and Colors are the `script.voice_movie_room_*` tools,
+  which do exactly what the scene controller and wall switch buttons do (`agent-docs/voice-control-map.md`).
+- **Basement Climate**: one row per mini split (`climate.movie_room_breeze`, `climate.rumpus_room_breeze`;
+  Tom sets them individually): a "Movie · Heat" chip (`fill_width: false`, `width: 34`; tap = that
+  unit's own thermostat dialog), then Dry, 72° and Off. Those three call `script.voice_thermostat`
+  (`thermostat: movie_room|rumpus_room`, `mode: dry` / `mode: heat, temperature: 72` / `mode: off`),
+  which already handles the Cielo quirks. Each one gets the accent tint when the unit is in that state
+  (72° = heat with a 72 target). Tapping the card opens `#tom-basement-climate`, which has both
+  thermostat cards with the hvac-mode bar. `#tom-climate-control` still lists all four thermostats.
+- Groups mode: the climate card's `sub_button.bottom` holds entries like `{name, group: [...],
+  buttons_layout: inline}`, and `bottom_layout: rows` puts each group on its own row. The `.bubble-sub-button-N`
+  numbering runs across all the groups, main buttons first.
+- Four sub-buttons per bottom row is the most that fit at iPhone width; five get truncated (Outdoor Lights).
+
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
 - Locks status text: `input_text.kellie_entry_locks_status`, maintained by
@@ -175,7 +218,7 @@ pickers after native Assist is opened again, or after the refresh button in an i
 - Small edits: `ha_config_get_dashboard(url_path="tom-mobile", entity_id=...)` →
   `ha_config_set_dashboard(python_transform=..., config_hash=<FULL hash>)`. Never truncate the hash.
 - `find_card` cannot see inside bubble pop-up `cards:` lists — for popup edits, index by card
-  position (popups are the last 6 cards of section 0) or do a full-config get.
+  position (popups are the last 8 cards of section 0) or do a full-config get.
 - The original seed was generated by a Python builder script (session scratchpad,
   `build_tom_mobile.py`) that emitted both the live JSON and `tom-mobile.yaml`. For large
   restructures, that pattern (build dict in Python → dump JSON + YAML → one full-config

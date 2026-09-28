@@ -76,13 +76,25 @@ use_blueprint:
         target:
           entity_id: light.basement_movie_room_ambient_lighting
     button_3_2_tap:
-      - action: number.set_value
-        data:
-          value: >-
-            {{ states('number.movie_room_breeze_target_temperature') | float - 1
-            }}
-        target:
-          entity_id: number.movie_room_breeze_target_temperature
+      - alias: >-
+          Step the Movie Room mini split target 1 degree down, not below its
+          min_temp (the range changes with the mode); only heat and cool have a
+          single set point on the Cielo
+        if:
+          - condition: state
+            entity_id: climate.movie_room_breeze
+            state:
+              - heat
+              - cool
+        then:
+          - action: climate.set_temperature
+            target:
+              entity_id: climate.movie_room_breeze
+            data:
+              temperature: >-
+                {{ [(state_attr('climate.movie_room_breeze', 'temperature') |
+                float(72)) - 1, state_attr('climate.movie_room_breeze',
+                'min_temp') | float(60)] | max }}
     button_3_hold:
       - target:
           entity_id: input_boolean.movie_room_zen37_button_3_held
@@ -103,13 +115,25 @@ use_blueprint:
           light_entities: light.basement_movie_hue_play_01, light.basement_movie_hue_play_02
         action: script.cycle_gradient_scene_using_same_light_color
     button_4_2_tap:
-      - action: number.set_value
-        data:
-          value: >-
-            {{ states('number.movie_room_breeze_target_temperature') | float + 1
-            }}
-        target:
-          entity_id: number.movie_room_breeze_target_temperature
+      - alias: >-
+          Step the Movie Room mini split target 1 degree up, not above its
+          max_temp (the range changes with the mode); only heat and cool have a
+          single set point on the Cielo
+        if:
+          - condition: state
+            entity_id: climate.movie_room_breeze
+            state:
+              - heat
+              - cool
+        then:
+          - action: climate.set_temperature
+            target:
+              entity_id: climate.movie_room_breeze
+            data:
+              temperature: >-
+                {{ [(state_attr('climate.movie_room_breeze', 'temperature') |
+                float(72)) + 1, state_attr('climate.movie_room_breeze',
+                'max_temp') | float(86)] | min }}
     button_4_hold:
       - target:
           entity_id: input_boolean.movie_room_zen37_button_4_held

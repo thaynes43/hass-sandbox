@@ -590,8 +590,8 @@ All ZEN32 mappings come from their per-location automation, and share the same u
 |---|---|---|---|---|
 | Button 1 (top large) | Toggle movie room lights → `light.basement_movie_room_lights` | Set movie room lights 100% @ 2750K → `light.basement_movie_room_lights` | Toggle rumpus room lights → `light.basement_rumpus_room_lights` |  |
 | Button 2 (bottom large) | Toggle hue colors → `script.toggle_hue_colors` (movie room lights) | Red night light (15%) → `light.basement_movie_room_lights` | Toggle concessions + hall → `light.basement_concessions_lights`, `light.basement_hall_lights` |  |
-| Button 3 (small left) | Toggle ambient lighting → `light.basement_movie_room_ambient_lighting` | Decrease target temp → `number.movie_room_breeze_target_temperature` |  |  |
-| Button 4 (small right) | Cycle gradient scenes → `script.cycle_gradient_scene_using_same_light_color` | Increase target temp → `number.movie_room_breeze_target_temperature` |  |  |
+| Button 3 (small left) | Toggle ambient lighting → `light.basement_movie_room_ambient_lighting` | Movie Room mini split target −1° → `climate.movie_room_breeze` (heat/cool only; fixed 2026-09-28, it pointed at a non-existent `number` entity) |  |  |
+| Button 4 (small right) | Cycle gradient scenes → `script.cycle_gradient_scene_using_same_light_color` | Movie Room mini split target +1° → `climate.movie_room_breeze` (heat/cool only; fixed 2026-09-28) |  |  |
 
 ### Basement — Rumpus Room — ZEN37
 

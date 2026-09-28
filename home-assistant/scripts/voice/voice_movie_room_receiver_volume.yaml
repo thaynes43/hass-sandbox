@@ -1,0 +1,125 @@
+# script.voice_movie_room_receiver_volume ("Movie Room Receiver Volume") — voice tool AND the Tom Mobile
+# receiver card's volume -/+ buttons, created live via MCP 2026-09-28 after Tom asked the Movie Room box
+# "what is the volume on the receiver" and it could not find one: the Sony STR-AZ5000ES
+# (media_player.str_az5000es, songpal) had no name, no area and was not exposed. It stays UNexposed on
+# purpose: the built-in volume intents would drive it with no ceiling. Tom: "I usually won't go louder
+# than -3.5dB"; "anything past 0 is crazy loud".
+# Scale: the receiver reports 0-100 steps (volume_level x 100) and its display shows dB at 0.5 dB per step
+# with step 69 = 0.0 dB. Tom read -3.5 dB at step 62 (2026-09-28, Shield input); his usual Plex level
+# -5.5 dB is step 58, the Shield's most used step in the history, and the fixed Sonos-input level 0.69
+# comes out at exactly 0.0 dB. Below about -20 dB the dB figure is unverified (AVR volume curves usually
+# steepen at the quiet end). The same conversion lives in sensor.movie_room_receiver_volume (Template
+# helper, live only) and the Tom Mobile slider stops at step 62: change all three together.
+# Refusals come back as a `response` sentence with a plain stop (see voice_thermostat.yaml).
+# Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-28.
+alias: Movie Room Receiver Volume
+description: 'Voice tool for the Sony receiver (the AV receiver or amp) in the Movie Room. Checks or changes
+  its volume in dB, the number its display shows, for example -5.5 dB (0 dB is very loud). It never turns
+  the receiver up past -3.5 dB. Use for ''what is the receiver volume'', ''turn the receiver up'', ''set
+  the movie room volume to minus 6'', ''turn it down a little'' in the movie room. action check reads
+  the volume and the input; set goes to db; up and down change it by db (2 dB when no amount is given,
+  1 dB for ''a little''). It does not turn the receiver on. The tool answers with what it did, or why
+  nothing changed: tell the user that.'
+icon: mdi:audio-video
+mode: queued
+max: 10
+fields:
+  action:
+    name: Action
+    description: check reads the current volume; set goes to the db value; up and down change the volume
+      by db.
+    required: true
+    selector:
+      select:
+        options:
+        - check
+        - set
+        - up
+        - down
+  db:
+    name: dB
+    description: 'For set: the target volume in dB as the display shows it, a negative number such as
+      -5.5 (''minus six'' is -6). For up and down: how many dB to change by, default 2. Leave empty for
+      check.'
+    required: false
+    selector:
+      number:
+        min: -40
+        max: 40
+        step: 0.5
+        mode: box
+        unit_of_measurement: dB
+sequence:
+- alias: The receiver reports volume as a step from 0 to 100 (volume_level x 100); its display shows dB
+    at 0.5 dB per step, with step 69 = 0.0 dB (Tom read -3.5 dB at step 62 on 2026-09-28). max_db is Tom's
+    ceiling; the Tom Mobile slider stops at the same step (62). sensor.movie_room_receiver_volume uses
+    the same conversion
+  variables:
+    receiver: media_player.str_az5000es
+    zero_step: 69
+    max_db: -3.5
+    min_db: -34.5
+    wanted: '{{ action | default('''', true) | string | lower | trim }}'
+    raw_db: '{{ db | default('''') }}'
+    has_db: '{{ raw_db | is_number }}'
+    db_value: '{{ raw_db | float(0) }}'
+    cur_step: '{{ ((state_attr(receiver, ''volume_level'') | float(0)) * 100) | round(0) | int }}'
+    cur_db: '{{ (cur_step - zero_step) / 2 }}'
+    source: '{{ state_attr(receiver, ''source'') or '''' }}'
+    amount: '{{ (db_value | abs) if has_db and db_value != 0 else 2 }}'
+    target_db: '{% if wanted == ''set'' %}{{ [[db_value, max_db] | min, min_db] | max }}{% elif wanted
+      == ''up'' %}{{ [cur_db, [cur_db + amount, max_db] | min] | max }}{% elif wanted == ''down'' %}{{
+      [cur_db - amount, min_db] | max }}{% else %}{{ cur_db }}{% endif %}'
+    target_step: '{{ [[(zero_step + target_db * 2) | round(0) | int, 0] | max, 100] | min }}'
+    problem: '{% if wanted not in [''check'', ''set'', ''up'', ''down''] %}Nothing was changed: the action
+      must be check, set, up or down.{% elif states(receiver) in [''unavailable'', ''unknown''] %}The
+      Movie Room receiver is not responding right now.{% elif not is_state(receiver, ''on'') %}The Movie
+      Room receiver is off{{ '', so its volume was not changed'' if wanted != ''check'' else '''' }}.{%
+      elif state_attr(receiver, ''volume_level'') is not number %}The Movie Room receiver is not reporting
+      its volume right now, so nothing was changed.{% elif wanted == ''set'' and not has_db %}Nothing
+      was changed: say the volume in dB, like minus 5.5.{% elif wanted == ''set'' and db_value > 0 %}Nothing
+      was changed: the volume is set in dB as the display shows it, a negative number such as -5.5. Anything
+      above 0 dB is far too loud, and this tool stops at -3.5 dB.{% endif %}'
+- if:
+  - condition: template
+    value_template: '{{ problem | length > 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ problem }}'
+  - stop: Nothing was changed
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ target_step != cur_step }}'
+  then:
+  - action: media_player.volume_set
+    target:
+      entity_id: media_player.str_az5000es
+    data:
+      volume_level: '{{ [target_step / 100 + 0.000001, 1] | min }}'
+    alias: 'songpal truncates: int(volume_level x 100), and 29/100, 57/100, 58/100 come back one step
+      low in float64 (58 = Tom''s Plex -5.5 dB); a nudge far below half a step fixes all three and stays
+      harmless if songpal ever rounds'
+  - alias: 'Let the new level land before the next queued run reads it (dashboard taps queue up). A wait_template,
+      not wait_for_trigger: songpal writes the level from a websocket push that can arrive before volume_set
+      returns, and a trigger registered afterwards would miss it and sit out the timeout'
+    timeout:
+      seconds: 3
+    continue_on_timeout: true
+    wait_template: '{{ ((state_attr(''media_player.str_az5000es'', ''volume_level'') | float(-1)) * 100)
+      | round(0) | int == target_step }}'
+- variables:
+    fmt_cur: '{{ (''%.1f'' | format(cur_db)) | replace(''.0'', '''') }}'
+    fmt_target: '{{ (''%.1f'' | format((target_step - zero_step) / 2)) | replace(''.0'', '''') }}'
+    on_input: '{{ '' on '' ~ source if source else '''' }}'
+    result:
+      response: '{% if wanted == ''check'' %}The Movie Room receiver is at {{ fmt_cur }} dB{{ on_input
+        }}.{% elif target_step == cur_step and wanted == ''up'' and cur_db >= max_db %}Nothing was changed:
+        the receiver is already at {{ fmt_cur }} dB, and this tool does not go above -3.5 dB.{% elif target_step
+        == cur_step %}Nothing to do: the receiver is already at {{ fmt_cur }} dB.{% else %}The Movie Room
+        receiver is now at {{ fmt_target }} dB (it was {{ fmt_cur }} dB).{% if (wanted == ''set'' and
+        db_value > max_db) or (wanted == ''up'' and cur_db + amount > max_db) %} That is the limit: this
+        tool does not go above -3.5 dB.{% endif %}{% endif %}'
+- stop: Done
+  response_variable: result
