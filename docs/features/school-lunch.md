@@ -23,12 +23,12 @@ School Nutrition and Fitness API
   school_lunch_app (AppDaemon)
        │  publishes structured JSON to
        ▼
-  sensor.school_lunch_menu          ← Lovelace cards read from here
+  sensor.school_lunch_menu          ← Lovelace cards and the voice tool read from here
   input_text.school_lunch_selected_schools
             │
-            ▼
-  school-lunch-card.js              — compact at-a-glance card
-  school-lunch-detail-card.js       — full detail popup card
+            ├──▶ school-lunch-card.js         — compact at-a-glance card
+            ├──▶ school-lunch-detail-card.js  — full detail popup card
+            └──▶ script.voice_school_lunch    — voice tool (+ input_text.school_lunch_buildings)
 ```
 
 ## Cards
@@ -116,6 +116,8 @@ The app is configured in `apps-prod.yaml`. Key fields:
 | `menus` | List of `{name, download_id}` — one entry per school |
 | `default_selected` | School names pre-selected in the at-a-glance card |
 | `show_tomorrow_after` | `HH:MM:SS` cutoff time — before this, cards (and the voice tool's default day) show today's lunch; after, tomorrow's (default `"15:00:00"`; set to `"12:00:00"` in this house) |
+
+Where the pieces live in this repository:
 
 | Area | Path |
 |------|------|
