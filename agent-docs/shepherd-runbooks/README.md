@@ -154,12 +154,17 @@ Run these gates first, in order — several send you straight to skip/escalate:
    `<device> State` row says `state: unavailable`, `state: unknown`,
    `state: not found` or `error: …`, with no `(MQTT ok)` suffix, beside
    `<device> MQTT` = `no MQTT data yet`.
-   Don't remediate either case in that window. Re-check once that device's
-   MQTT row has left `unknown`, and treat it as real only if it is still bad
-   then. An `unknown` alone is worth a look only when a whole `*_lights`
-   checker still has most rows at `no MQTT data yet` after about 45 min; a
-   single quiet device can stay there longer, since it leaves `unknown` only
-   when it next publishes.
+   The `*_lights` checkers set no `supports_repair`, so `start_repair` is
+   rejected and **Escalate** is the only lever; this gate holds it back.
+   Re-check once the *rest* of that checker's MQTT rows have settled, or
+   after about 45 min, whichever comes first. Don't wait on the failing
+   device's own MQTT row: a dead device never publishes, so it stays
+   `no MQTT data yet` for good. If its `<device> State` row is still bad
+   then, it is a real outage → **Escalate**; otherwise `record_note`
+   "post-restart warm-up, no action" and skip. An `unknown` alone is worth a
+   look only when a whole `*_lights` checker still has most rows at
+   `no MQTT data yet` after about 45 min; a single quiet device can stay
+   there longer, since it leaves `unknown` only when it next publishes.
 5. **Dependency first.** If the checker declares a `health_dependencies` entry
    (e.g. spa/locks depend on `cloud`, zigbee batteries depend on `zigbee`)
    and that dependency is itself critical, triage the dependency's runbook —
