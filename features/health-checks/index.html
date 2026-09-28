@@ -1534,8 +1534,13 @@
 </tr>
 <tr>
 <td>Smart devices</td>
-<td>Printers, Vestaboards, any entity + optional ping</td>
+<td>Vestaboard, any entity + optional ping</td>
 <td><code>BasicDeviceChecker</code></td>
+</tr>
+<tr>
+<td>Powered devices</td>
+<td>The printer and the Movie Room Sonos Port — repaired by power-cycling their smart plug or PDU outlet</td>
+<td><code>RepairableDeviceChecker</code></td>
 </tr>
 <tr>
 <td>Device groups</td>
@@ -1671,11 +1676,13 @@
 <li><strong>Auto-clear on recovery</strong> — after a failed repair, the <code>failed</code> state automatically resets to <code>idle</code> when all checks recover. No auto-retry while checks are still unhealthy — except where a checker declares its own retry budget: the fans climb a CrashLoopBackOff ladder, and the Z-Wave bridge retries up to 3 times in 24 hours, 15 minutes apart, before giving up and paging</li>
 <li><strong>Unknown does not trigger repair</strong> — if AppDaemon itself is restarting, repair actions are suppressed</li>
 <li><strong>Cancellable</strong> — a pending repair can be cancelled via the detail popup before the power cycle executes</li>
+<li><strong>Power comes back on, or it says so</strong> — a repair that switches a smart plug or power-strip outlet off and on (the printer, the Movie Room Sonos Port, the hot tub, device groups) checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet" (or, if Home Assistant has lost track of the outlet altogether, a pointer to reload the integration that owns it). A repair must never quietly leave a device switched off</li>
 </ul>
 <p>The repair state machine:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>idle → pending → in_progress → success → idle (checks stay healthy)
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         │                   → failed  → idle (checks recover naturally)
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>         │                   │        └──▶ failed (relapsed before a fully healthy cycle — no second repair this outage)
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>         │                   → failed  → idle (checks recover naturally)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>         └──▶ idle (cancel_repair before the deadline — the dwell restarts, so it defers rather than dismisses)
 </code></pre></div>
 <p>Repair-capable checkers provision their own HA helpers for configuration:</p>
 <ul>
@@ -1728,6 +1735,8 @@
 <p><strong>The Z-Wave bridge</strong> is the case where the <em>partial</em> failure is the whole diagnosis. Z-Wave doesn't reach its radio over USB — it reaches it over TCP, across the house, to a TubesZB board running ESPHome. That board's serial-to-network server accepts exactly one client and never notices when that client goes away. So when a switch reboot dropped the TCP session at 3:24 one morning, nothing looked broken: the board answered every ping, its own "serial connected" sensor still read ON, the web UI still loaded. Only the controller was gone, and with it every lock, every Z-Wave motion sensor, and the door automations that depend on them — silently, for four hours and twenty minutes. Restarting the Z-Wave server doesn't help; the dead socket is on the <em>board's</em> side, and our end sits in <code>FIN_WAIT2</code> waiting for a close that never comes. The one thing that works is telling the board to reboot itself, which drops the stale client so the waiting reconnect succeeds — it recovered in seventeen seconds when we finally did it by hand.</p>
 <p>Two things had to change. The checker now presses that ESPHome restart button on its own, and the outage stops being invisible. The old behaviour is the reason nobody was paged: with the radio still pinging and the web UI still up, the cross-check that exists to suppress noise looked at "two of three checks fine" and downgraded a total Z-Wave outage to a warning — and warnings don't page. Now, once auto-repair has spent its budget, that downgrade is reversed and the alert goes critical.</p>
 <p>The budget is the point. This board is fragile — its predecessor was killed by repeated power cycling — so the repair is a <em>software</em> restart, never a power cut, and it is fenced in on every side: five minutes of sustained failure before the first attempt, fifteen minutes between attempts, and at most three in any rolling day, after which it stops trying and pages a human instead. It only acts on the exact fingerprint above — controller down <em>while the radio still answers</em> — because if the board has genuinely dropped off the network, a software restart is not a thing that can help. That case now pages instead, which it previously didn't: a dead board still leaves the web UI answering, so the same "two of three checks are fine" arithmetic was quietly hiding it too. And the counter that enforces the daily cap is written to its own Home Assistant helper, so an AppDaemon deploy landing in the middle of an outage resumes the ladder where it left off instead of starting over with a fresh three restarts.</p>
+<p><strong>The Movie Room Sonos Port</strong> is the simplest case, and a good example of choosing the signal carefully. After a network switch hiccup one day the Port kept its cable link but stopped answering anything at all, and the Movie Room silently dropped out of the music system for six days — until a twelve-second power cycle of its outlet on the UniFi power strip brought it straight back. Now a checker pings it every three minutes; after ten minutes of silence it power-cycles that outlet and waits up to five minutes for the Port to return, paging only if it doesn't. What it deliberately does <em>not</em> watch is the Movie Room player itself: that disappears every time the music server restarts, and a routine restart must never cut power to the Port.</p>
+<p>The power strip taught a second lesson. Switching one of its outlets makes the whole strip reconfigure itself for about forty seconds, Home Assistant can take well over ten seconds to notice, and once the integration lost track of every outlet on it until it was reloaded. A power cycle that simply says "on" and moves on could leave the Port switched off while it waits for it to recover. So every repair that switches an outlet now waits to see it actually report on — not trusting an "on" left over from before the cycle unless nothing else ever comes back, in which case it goes ahead but says so in the repair detail if the device then doesn't recover — tries once more if it doesn't, and fails loudly with "check the outlet" if it still won't come back. (The ceiling fans' repair works through a scene-controller relay and the shade gateway's through a PoE port, so they have no outlet to watch.)</p>
 <h2 id="dashboard-experience">Dashboard Experience</h2>
 <h3 id="compact-health-bar">Compact Health Bar</h3>
 <p>The compact card is designed for wall-mounted displays where screen space is limited. It shows a single row of colored status indicators — one per checker — with the overall system status.</p>
@@ -1778,6 +1787,7 @@
 <a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Status</span>
 </code></pre></div>
 <p>A Wi-Fi device that sleeps its radio will drop the odd ping while working perfectly, and one dropped ping turns its card yellow for a whole cycle. Add <code>ping_attempts: 3</code> and the checker pings up to three times, accepting the first reply — the Vestaboard and the Cielo units run this way. A device that is really down still fails all three.</p>
+<p>A device pinged by a DNS name can also be given its fixed IP as <code>ping_fallback_host</code>. Then a DNS problem can't masquerade as a dead device: if the name won't resolve, the checker pings the IP instead. A device that answers there shows a warning — "the name is broken, the device is fine" — which never pages and never power-cycles anything; a device that doesn't answer there is down for real, and repairs and pages as usual. The Movie Room Sonos Port is set up this way.</p>
 <h3 id="adding-environmental-monitoring-config-only">Adding Environmental Monitoring (Config Only)</h3>
 <p>The <code>TempHumidityChecker</code> supports configurable warning and critical thresholds:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">server_room_temp_checker</span><span class="p">:</span>
@@ -1802,7 +1812,7 @@
 <li>Periodically run checks and report results via <code>health_check_command</code> events</li>
 <li>Listen for <code>health_check_recheck</code> to support on-demand re-checks</li>
 </ol>
-<p>The shared <code>check_utils</code> module provides reusable building blocks like <code>ping_check()</code> and <code>http_check()</code>.</p>
+<p>The shared <code>check_utils</code> module provides reusable building blocks like <code>ping_check()</code> and <code>http_check()</code>, and <code>switch_power_cycle</code> provides <code>power_cycle_switch()</code> for a repair that turns an outlet off and back on and confirms it came back.</p>
 <h2 id="current-checkers">Current Checkers</h2>
 <table>
 <thead>
@@ -1861,6 +1871,12 @@
 <td><code>RepairableDeviceChecker</code></td>
 <td>Entity state + IP ping</td>
 <td>Yes — power cycle</td>
+</tr>
+<tr>
+<td>Movie Room Sonos</td>
+<td><code>RepairableDeviceChecker</code></td>
+<td>Ping only — the music player itself is deliberately not watched</td>
+<td>Yes — power cycle of its UniFi power-strip outlet, on by default</td>
 </tr>
 <tr>
 <td>Vestaboard</td>
