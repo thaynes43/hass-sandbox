@@ -1,12 +1,12 @@
 # School Lunch Menu
 
-Daily school lunch menus from all configured schools, surfaced on any Lovelace dashboard. An at-a-glance card shows tomorrow's entrees for selected schools; a detail popup provides a full weekly view, month-by-month calendar navigation, and per-school selection settings.
+Daily school lunch menus from all configured schools, surfaced on any Lovelace dashboard and through the voice assistants. An at-a-glance card shows tomorrow's entrees for selected schools; a detail popup provides a full weekly view, month-by-month calendar navigation, and per-school selection settings; and "Okay Nabu, what's for lunch tomorrow?" reads the menu out loud.
 
 <!-- TODO: Add screenshot of school-lunch-card and school-lunch-detail-card -->
 
 ## Overview
 
-The `school_lunch_app` AppDaemon app fetches menus from the [School Nutrition and Fitness](https://www.schoolnutritionandfitness.com) platform. Multiple schools can be configured in a single app instance. Menus refresh automatically every morning at 5:00 AM and are published to a Home Assistant virtual sensor that both Lovelace cards read from.
+The `school_lunch_app` AppDaemon app fetches menus from the [School Nutrition and Fitness](https://www.schoolnutritionandfitness.com) platform. Multiple schools can be configured in a single app instance. Menus refresh automatically every morning at 5:00 AM and are published to a Home Assistant virtual sensor that both Lovelace cards and the voice tool read from.
 
 ## Data flow
 
@@ -52,8 +52,10 @@ School selection persists in `input_text.school_lunch_selected_schools` so the c
 
 ```yaml
 type: custom:school-lunch-card
-menu_entity: sensor.school_lunch_menu
-selected_entity: input_text.school_lunch_selected_schools
+status_entity: sensor.school_lunch_menu
+selection_entity: input_text.school_lunch_selected_schools
+navigation_path: '#school-lunch-popup'   # tapping the card opens the detail popup
+height: 296                              # optional: fixed height, scrollable menu
 ```
 
 ### Detail card (`custom:school-lunch-detail-card`)
@@ -68,8 +70,8 @@ Month navigation sends a `fetch_month` command via `script.school_lunch_relay` t
 
 ```yaml
 type: custom:school-lunch-detail-card
-menu_entity: sensor.school_lunch_menu
-selected_entity: input_text.school_lunch_selected_schools
+status_entity: sensor.school_lunch_menu
+selection_entity: input_text.school_lunch_selected_schools
 relay_script: school_lunch_relay
 ```
 
