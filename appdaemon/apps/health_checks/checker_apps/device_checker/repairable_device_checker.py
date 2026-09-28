@@ -1,8 +1,10 @@
 """Repairable Device Checker — extends BasicDeviceChecker with repair support.
 
 Adds a repair state machine and auto-repair via power-cycling a smart switch.
-The repair action is: turn off the switch, wait, turn on, then poll checks
-for recovery.
+The repair action is: turn off the switch, wait, turn on and confirm the
+switch reports on (``shared/switch_power_cycle.py``), then poll checks for
+recovery.  A switch that will not come back on ends the repair as failed
+straight away, without the recovery wait.
 
 Reusable for any device that can be recovered by toggling a smart switch.
 """
@@ -31,6 +33,7 @@ from health_checks.checker_apps.device_checker.device_checker import (
 )
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check
+from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +241,23 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
             self._stand_down_pending_repair("Auto-repair disabled")
 
         if self._repair_status == REPAIR_SUCCESS:
+            # A relapse: the device is bad again before a fully healthy cycle
+            # (that returned above). `success` was judged moments after the
+            # power cycle, and left standing it is one of the bridge's
+            # repair-hold states — the page would be withheld for a device
+            # that is down again. `failed`, not `idle`: this outage has had
+            # its one repair, `idle` would re-arm another, and `failed` is
+            # what releases the page. It clears on the next all-ok cycle.
+            # Mirrors RepairableDeviceGroupChecker._demote_stale_success.
+            self._repair_status = REPAIR_FAILED
+            self._repair_detail = (
+                "Relapsed after a successful repair — recovery did not stick"
+            )
+            self.log(
+                f"'{self._checker_name}' relapsed after a successful repair — "
+                f"marking the repair failed (no second auto-repair this outage)",
+                level="WARNING",
+            )
             return
 
         if not any_bad:
@@ -301,18 +321,20 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
 
     async def _execute_repair(self) -> None:
         try:
-            self.log(f"Turning off {self._repair_switch}", level="INFO")
-            self.call_service(
-                "switch/turn_off", entity_id=self._repair_switch
+            switch_on = await power_cycle_switch(
+                self, self._repair_switch, self._repair_off_duration_s
             )
+            if not switch_on:
+                # The helper has logged the ERROR. Waiting for recovery would
+                # only burn the recovery window on an unpowered device.
+                self._repair_status = REPAIR_FAILED
+                self._repair_detail = switch_not_on_detail(self._repair_switch)
+                # No duration_s: the recovery wait never started.
+                self._pending_repair_events.append({"result": "failed"})
+                self._report_repair_status_only()
+                return
 
-            await asyncio.sleep(self._repair_off_duration_s)
-
-            self.log(f"Turning on {self._repair_switch}", level="INFO")
-            self.call_service(
-                "switch/turn_on", entity_id=self._repair_switch
-            )
-
+            # The recovery clock starts only now, with the switch confirmed on.
             self._repair_detail = "Waiting for recovery..."
             self._report_repair_status_only()
 

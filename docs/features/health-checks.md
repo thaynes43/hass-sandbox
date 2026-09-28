@@ -23,7 +23,8 @@ This architecture means adding a new health check is often just a YAML config ch
 | MQTT infrastructure | Broker publish/subscribe round-trip | `MqttBrokerChecker` |
 | MQTT devices | Zigbee2MQTT device availability + linkquality | `MqttDeviceChecker` |
 | Environmental sensors | Temperature and humidity with threshold alerts | `TempHumidityChecker` |
-| Smart devices | Printers, Vestaboards, any entity + optional ping | `BasicDeviceChecker` |
+| Smart devices | Vestaboard, any entity + optional ping | `BasicDeviceChecker` |
+| Powered devices | The printer and the Movie Room Sonos Port — repaired by power-cycling their smart plug or PDU outlet | `RepairableDeviceChecker` |
 | Device groups | Cielo AC controllers, TP-Link plugs — related devices as one unit | `DeviceGroupChecker` |
 | Ceiling fans | Modern Forms fans with per-fan repair | `FanHealthChecker` |
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
@@ -111,6 +112,7 @@ Some checkers support automatic repair, typically via smart switch power cycling
 - **Auto-clear on recovery** — after a failed repair, the `failed` state automatically resets to `idle` when all checks recover. No auto-retry while checks are still unhealthy — except where a checker declares its own retry budget: the fans climb a CrashLoopBackOff ladder, and the Z-Wave bridge retries up to 3 times in 24 hours, 15 minutes apart, before giving up and paging
 - **Unknown does not trigger repair** — if AppDaemon itself is restarting, repair actions are suppressed
 - **Cancellable** — a pending repair can be cancelled via the detail popup before the power cycle executes
+- **Power comes back on, or it says so** — a power-cycle repair checks that the switch really reports on again before it starts waiting for the device, tries the turn-on a second time if it doesn't, and if the outlet still won't come back the repair fails straight away with "did not turn back on — check the outlet". A repair must never quietly leave a device switched off
 
 The repair state machine:
 
@@ -193,6 +195,10 @@ The other half of that incident was blame. Each fan declares the UniFi access po
 Two things had to change. The checker now presses that ESPHome restart button on its own, and the outage stops being invisible. The old behaviour is the reason nobody was paged: with the radio still pinging and the web UI still up, the cross-check that exists to suppress noise looked at "two of three checks fine" and downgraded a total Z-Wave outage to a warning — and warnings don't page. Now, once auto-repair has spent its budget, that downgrade is reversed and the alert goes critical.
 
 The budget is the point. This board is fragile — its predecessor was killed by repeated power cycling — so the repair is a *software* restart, never a power cut, and it is fenced in on every side: five minutes of sustained failure before the first attempt, fifteen minutes between attempts, and at most three in any rolling day, after which it stops trying and pages a human instead. It only acts on the exact fingerprint above — controller down *while the radio still answers* — because if the board has genuinely dropped off the network, a software restart is not a thing that can help. That case now pages instead, which it previously didn't: a dead board still leaves the web UI answering, so the same "two of three checks are fine" arithmetic was quietly hiding it too. And the counter that enforces the daily cap is written to its own Home Assistant helper, so an AppDaemon deploy landing in the middle of an outage resumes the ladder where it left off instead of starting over with a fresh three restarts.
+
+**The Movie Room Sonos Port** is the simplest case, and a good example of choosing the signal carefully. After a network switch hiccup one day the Port kept its cable link but stopped answering anything at all, and the Movie Room silently dropped out of the music system for six days — until a twelve-second power cycle of its outlet on the UniFi power strip brought it straight back. Now a checker pings it every three minutes; after ten minutes of silence it power-cycles that outlet and waits up to five minutes for the Port to return, paging only if it doesn't. What it deliberately does *not* watch is the Movie Room player itself: that disappears every time the music server restarts, and a routine restart must never cut power to the Port.
+
+The power strip taught a second lesson. Switching one of its outlets makes the whole strip reconfigure itself for about forty seconds, Home Assistant can take well over ten seconds to notice, and once the integration lost track of every outlet on it until it was reloaded. A power cycle that simply says "on" and moves on could leave the Port switched off while it waits for it to recover. So every power-cycle repair now waits to see the outlet actually report on — ignoring a stale "on" left over from before the cycle — tries once more if it doesn't, and fails loudly with "check the outlet" if it still won't come back.
 
 ## Dashboard Experience
 
@@ -300,6 +306,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Spa | `SpaHealthChecker` | Gateway ping, connections, multi-entity staleness (OR logic across thermostat/lights/pumps) | Yes — power cycle |
 | Fans | `FanHealthChecker` | Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down | Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder |
 | Printer | `RepairableDeviceChecker` | Entity state + IP ping | Yes — power cycle |
+| Movie Room Sonos | `RepairableDeviceChecker` | Ping only — the music player itself is deliberately not watched | Yes — power cycle of its UniFi power-strip outlet, on by default |
 | Vestaboard | `BasicDeviceChecker` | Controller + configuration status | No |
 | Cielo Home | `DeviceGroupChecker` | AC controller status + IP per room | No |
 | UniFi Protect | `ProtectHealthChecker` | Sensor discovery + availability fast path + camera-event freshness in active hours + entry-sensor group | Yes — config entry reload |

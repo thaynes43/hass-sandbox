@@ -23,8 +23,15 @@ Supports auto-repair via power cycling a smart switch. The repair action:
 1. Turns off `repair_switch` (cuts power to the hot tub controller)
 2. Waits `repair_power_off_s` (default 60s — a 10s cut proved too short to
    un-wedge an in.touch3 gateway on 2026-08-26; 60s worked)
-3. Turns on `repair_switch`
-4. Polls health checks every ~5 seconds for up to `repair_recovery_wait_s`
+3. Turns on `repair_switch` and confirms it reports `on` — every 5 s for up
+   to 60 s, then one more `turn_on` and another 60 s
+   (`shared/switch_power_cycle.py`, shared with the device checkers; see
+   `device_checker/README.md` for why). If it still is not on, the attempt
+   fails at once with `"<switch> did not turn back on — check the outlet"`,
+   skips the recovery wait, and counts on the backoff ladder like any other
+   failed attempt
+4. Polls health checks every ~5 seconds for up to `repair_recovery_wait_s`,
+   counted from the moment the switch is confirmed on
 5. Reports success immediately when all checks go green, or failure after timeout
 
 ### Repair State Machine
@@ -34,7 +41,8 @@ idle → pending    (unhealthy for configured duration, auto-repair enabled)
 pending → idle    (checks recover before deadline, OR cancel_repair command received)
 pending → in_progress  (deadline reached, executing power cycle)
 in_progress → success  (checks green during recovery polling)
-in_progress → failed   (timeout without recovery — next retry scheduled)
+in_progress → failed   (timeout without recovery, or the switch never came back
+                        on — next retry scheduled)
 failed → in_progress   (backoff retry due, still critical — CrashLoopBackOff)
 failed → idle    (checks recover naturally — state clears automatically)
 ```

@@ -50,7 +50,10 @@ with every tracked entity dark Staleness is critical at once —
    blip that already cleared shows green on the next report. Wait ~120s, re-read.
 3. If still critical and `repair_state.status == idle`: `start_repair`
    `{"checker_id":"spa"}` — power-cycles `switch.spa_intouch3_switch` (off,
-   10s, on) and polls health for up to `repair_recovery_wait_s` (300s). Do
+   `repair_power_off_s` = 60s, on — then confirms the switch reports `on`,
+   with one retry; a switch that never comes back fails the attempt with
+   `did not turn back on — check the outlet` and skips the wait) and polls
+   health for up to `repair_recovery_wait_s` (300s). Do
    **not** toggle the switch directly — `start_repair` carries the recovery
    verification.
 4. If `repair_state.status` is already `pending`/`in_progress`, wait — do not

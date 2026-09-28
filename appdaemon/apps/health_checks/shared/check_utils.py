@@ -48,6 +48,11 @@ async def ping_check(
         {"status": "critical", "detail": "timeout"}
         {"status": "critical", "detail": "timeout (3 attempts)"}
         {"status": "critical", "detail": "ping failed: <error>"}
+        {"status": "unknown", "detail": "cannot resolve <host> (3 attempts)"}
+
+    A host name that does not resolve is ``unknown``, not ``critical``: a DNS
+    outage says nothing about the device, and a repairable checker must not
+    power-cycle it for one.
     """
     attempts = max(1, int(attempts))
     last_result: Dict[str, str] = {"status": "critical", "detail": "timeout"}
@@ -65,6 +70,17 @@ async def ping_check(
             "detail": f"{last_result['detail']} ({attempts} attempts)",
         }
     return last_result
+
+
+#: What ``ping`` prints when the host name does not resolve: busybox (the
+#: AppDaemon image), iputils, and macOS.
+_UNRESOLVED_MARKERS = (
+    "bad address",
+    "name or service not known",
+    "unknown host",
+    "cannot resolve",
+    "temporary failure in name resolution",
+)
 
 
 async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
@@ -92,12 +108,15 @@ async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
             logger.debug("ping %s succeeded in %.1fms", host, elapsed_ms)
             return {"status": "ok", "detail": f"{elapsed_ms:.0f}ms"}
 
-        logger.debug(
-            "ping %s failed (rc=%s): %s",
-            host,
-            proc.returncode,
-            stderr.decode(errors="replace").strip(),
-        )
+        err = (
+            stderr.decode(errors="replace") + stdout.decode(errors="replace")
+        ).strip()
+        logger.debug("ping %s failed (rc=%s): %s", host, proc.returncode, err)
+        if any(marker in err.lower() for marker in _UNRESOLVED_MARKERS):
+            # The name did not resolve: that says nothing about the device, so
+            # it is "unknown" (never arms a repair), not a dead host. Only a
+            # ping_host given as a name can take this path.
+            return {"status": "unknown", "detail": f"cannot resolve {host}"}
         return {"status": "critical", "detail": "timeout"}
 
     except asyncio.TimeoutError:

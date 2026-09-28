@@ -8,7 +8,8 @@ Performs four checks on a configurable interval:
 4. **Thermostat Staleness** — detect zombie state by checking how recently
    the thermostat entity was updated
 
-Supports a repair action (power-cycle via a smart switch) with auto-repair
+Supports a repair action (power-cycle via a smart switch, confirming the
+switch came back on — ``shared/switch_power_cycle.py``) with auto-repair
 capability.  Repair config is persisted in self-provisioned HA helpers so it
 survives AppDaemon restarts and can be adjusted from the Lovelace card.
 
@@ -40,6 +41,7 @@ import hassapi as hass
 from providers.ha_provisioner import HAProvisioner
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check, ping_check
+from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
 
 logger = logging.getLogger(__name__)
 
@@ -658,22 +660,29 @@ class SpaHealthChecker(AutoRepairConfigMixin, hass.Hass):
     async def _execute_repair(self) -> None:
         """Power cycle the spa and poll for recovery."""
         try:
-            # Turn off
-            self.log(f"Turning off {self._repair_switch}", level="INFO")
-            self.call_service(
-                "switch/turn_off",
-                entity_id=self._repair_switch,
+            switch_on = await power_cycle_switch(
+                self, self._repair_switch, self._repair_power_off_s
             )
+            if not switch_on:
+                # The helper has logged the ERROR. A switch that will not
+                # come back on is a failed attempt like any other — it climbs
+                # the backoff ladder — and the recovery wait is skipped: it
+                # would only burn the window on an unpowered gateway.
+                self._register_repair_failure(
+                    switch_not_on_detail(self._repair_switch)
+                )
+                # No duration_s: the recovery wait never started.
+                self._record_repair_event("failed")
+                self.log(
+                    f"Repair failed — {self._repair_switch} did not come back "
+                    f"on (attempt {self._repair_attempts}; next retry at "
+                    f"{self._next_retry_at.isoformat(timespec='seconds')})",
+                    level="WARNING",
+                )
+                self._report_repair_status_only()
+                return
 
-            await asyncio.sleep(self._repair_power_off_s)
-
-            # Turn on
-            self.log(f"Turning on {self._repair_switch}", level="INFO")
-            self.call_service(
-                "switch/turn_on",
-                entity_id=self._repair_switch,
-            )
-
+            # The recovery clock starts only now, with the switch confirmed on.
             self._repair_detail = "Waiting for recovery..."
             self._report_repair_status_only()
 

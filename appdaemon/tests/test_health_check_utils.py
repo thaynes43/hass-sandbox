@@ -152,6 +152,50 @@ class TestPingCheck:
             result = _run(ping_check("dead.local", timeout_s=2))
         assert result["detail"] == "timeout"
 
+    def test_unresolvable_name_is_unknown_not_critical(self):
+        """busybox 'bad address' (the AppDaemon image) = DNS, not a dead host."""
+        proc = _make_process(
+            returncode=1,
+            stderr=b"ping: bad address 'movieroomsonos.haynesnetwork'",
+        )
+        with patch(
+            "shared.check_utils.asyncio.create_subprocess_exec",
+            new_callable=AsyncMock,
+            return_value=proc,
+        ) as mock_exec:
+            result = _run(
+                ping_check(
+                    "movieroomsonos.haynesnetwork",
+                    timeout_s=2,
+                    attempts=3,
+                    retry_delay_s=0,
+                )
+            )
+        assert result["status"] == "unknown"
+        assert result["detail"] == (
+            "cannot resolve movieroomsonos.haynesnetwork (3 attempts)"
+        )
+        assert mock_exec.call_count == 3
+
+    def test_unresolvable_name_other_ping_builds(self):
+        """iputils and macOS wordings are recognised too."""
+        for message in (
+            b"ping: foo.invalid: Name or service not known",
+            b"ping: cannot resolve foo.invalid: Unknown host",
+            b"ping: foo.invalid: Temporary failure in name resolution",
+        ):
+            proc = _make_process(returncode=2, stderr=message)
+            with patch(
+                "shared.check_utils.asyncio.create_subprocess_exec",
+                new_callable=AsyncMock,
+                return_value=proc,
+            ):
+                result = _run(ping_check("foo.invalid", timeout_s=2))
+            assert result == {
+                "status": "unknown",
+                "detail": "cannot resolve foo.invalid",
+            }, message
+
 
 # ---------------------------------------------------------------------------
 # http_check tests

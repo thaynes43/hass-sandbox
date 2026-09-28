@@ -31,6 +31,10 @@ from health_checks.checker_apps.device_checker.repairable_device_checker import 
     REPAIR_SUCCESS,
 )
 
+# Reached the way the checker reaches it (its import put the health_checks
+# root on sys.path), so patches land on the module object it actually uses.
+import shared.switch_power_cycle as switch_power_cycle  # noqa: E402
+
 
 DEFAULT_ARGS: Dict[str, Any] = {
     "ha_url": "http://ha:8123",
@@ -101,6 +105,63 @@ def _startup(app: RepairableDeviceChecker, mock_prov: MagicMock | None = None) -
 
 def _init_only(app: RepairableDeviceChecker) -> None:
     app.initialize()
+
+
+SWITCH = DEFAULT_ARGS["repair_switch"]
+
+
+@pytest.fixture(autouse=True)
+def _no_real_sleeps():
+    """Every sleep in the repair path is a wait, not a condition — skip them.
+
+    The off duration, the turn-on confirmation polls and the recovery polls
+    would otherwise really sleep (5 s a poll), and the confirmation alone is up
+    to 2 x 60 s.  Elapsed times are counted from the constants, not the clock,
+    so assertions on them are unaffected.
+    """
+    with patch("asyncio.sleep", new=AsyncMock(return_value=None)) as sleep:
+        yield sleep
+
+
+def _ts(offset_s: float) -> str:
+    """An HA-style ``last_changed``, *offset_s* from now (aware, UTC)."""
+    return (
+        datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(seconds=offset_s)
+    ).isoformat()
+
+
+def _fresh(state: str) -> Dict[str, Any]:
+    """The switch in *state*, changed after the power cycle started."""
+    return {"entity_id": SWITCH, "state": state, "last_changed": _ts(3600)}
+
+
+def _stale(state: str) -> Dict[str, Any]:
+    """The switch in *state*, unchanged since well before the power cycle."""
+    return {"entity_id": SWITCH, "state": state, "last_changed": _ts(-86400)}
+
+
+def _turn_ons(app) -> int:
+    return sum(
+        1 for c in app.call_service.call_args_list
+        if c.args and c.args[0] == "switch/turn_on"
+    )
+
+
+def _switch_reports(app, on_after_turn_ons: int | None = 1) -> None:
+    """Install an awaited ``get_state`` for the repair switch.
+
+    The switch reads a fresh ``off`` until *on_after_turn_ons* ``turn_on``
+    calls have been made, then a fresh ``on``.  ``None`` = it never comes back.
+    """
+
+    def _state(entity_id=None, attribute=None, **kwargs):
+        assert entity_id == SWITCH
+        if on_after_turn_ons is not None and _turn_ons(app) >= on_after_turn_ons:
+            return _fresh("on")
+        return _fresh("off")
+
+    app.get_state = AsyncMock(side_effect=_state)
 
 
 class TestLifecycle:
@@ -233,11 +294,89 @@ class TestRepairStateMachine:
         assert "No repair switch" in app._repair_detail
 
 
+class TestRelapseAfterSuccess:
+    """A ``success`` that does not stick must not stand for the rest of the
+    outage: it is one of the bridge's repair-hold states, so it would keep
+    withholding the page for a device that is down again. It becomes
+    ``failed`` — which releases the page — and the one-repair-per-outage cap
+    holds: no second auto-repair until a fully healthy cycle."""
+
+    _DOWN = [{"name": "Ping", "status": "critical", "detail": "timeout (3 attempts)"}]
+    _UP = [{"name": "Ping", "status": "ok", "detail": "3ms"}]
+
+    def _app(self):
+        app = _make_app()
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = closing_create_task()
+        app._repair_status = REPAIR_SUCCESS
+        app._repair_detail = "Recovered after 45s"
+        app._unhealthy_since = None  # cleared by the successful repair
+        return app
+
+    def test_relapse_marks_the_repair_failed(self):
+        app = self._app()
+
+        app._evaluate_auto_repair(self._DOWN)
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            "Relapsed after a successful repair — recovery did not stick"
+        )
+        assert _logged(app, "WARNING", "relapsed after a successful repair")
+        app.create_task.assert_not_called()
+        app.call_service.assert_not_called()
+
+    def test_no_second_repair_this_outage(self):
+        app = self._app()
+        app._evaluate_auto_repair(self._DOWN)
+
+        # Long past any dwell: still no new power cycle.
+        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(hours=3)
+        for _ in range(3):
+            app._evaluate_auto_repair(self._DOWN)
+
+        assert app._repair_status == REPAIR_FAILED
+        app.create_task.assert_not_called()
+
+    def test_the_reported_state_releases_the_bridge_hold(self):
+        from shared.alertmanager_bridge import _REPAIR_HOLD_STATES
+
+        app = self._app()
+        app._refresh_auto_repair_config = AsyncMock()
+        app._run_checks_only = AsyncMock(return_value=self._DOWN)
+
+        _run(app._run_checks())
+
+        state = _report_payloads(app)[-1]["repair_state"]
+        assert state["status"] == REPAIR_FAILED
+        assert state["status"] not in _REPAIR_HOLD_STATES
+
+    def test_success_then_healthy_still_goes_idle(self):
+        app = self._app()
+
+        app._evaluate_auto_repair(self._UP)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._repair_detail == ""
+
+    def test_relapse_then_healthy_goes_idle(self):
+        app = self._app()
+        app._evaluate_auto_repair(self._DOWN)
+
+        app._evaluate_auto_repair(self._UP)
+
+        assert app._repair_status == REPAIR_IDLE
+        assert app._repair_detail == ""
+
+
 class TestRepairExecution:
     def test_successful_repair(self):
         app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
         _init_only(app)
         app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(return_value=[
             {"name": "Ping", "status": "ok", "detail": "3ms"},
@@ -255,6 +394,7 @@ class TestRepairExecution:
         app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
         _init_only(app)
         app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(return_value=[
             {"name": "Ping", "status": "critical", "detail": "timeout"},
@@ -271,6 +411,182 @@ class TestRepairExecution:
 
         _run(app._execute_repair())
         assert app._repair_status == REPAIR_FAILED
+
+
+_ALL_OK = [
+    {"name": "Ping", "status": "ok", "detail": "3ms"},
+    {"name": "Status", "status": "ok", "detail": "idle"},
+]
+
+_CONFIRM_POLLS = (
+    switch_power_cycle.SWITCH_CONFIRM_TIMEOUT_S
+    // switch_power_cycle.SWITCH_CONFIRM_POLL_S
+)
+
+
+def _report_payloads(app) -> list[dict]:
+    return [
+        json.loads(c[1]["payload"])
+        for c in app.fire_event.call_args_list
+        if c[1].get("command") == "report_status"
+    ]
+
+
+def _logged(app, level: str, fragment: str) -> bool:
+    return any(
+        c[1].get("level") == level and fragment in str(c[0][0])
+        for c in app.log.call_args_list
+    )
+
+
+class TestTurnOnConfirmation:
+    """A repair must never leave the device unpowered: after ``turn_on`` the
+    switch has to report ``on`` before the recovery wait starts, with one
+    retry, and a switch that never comes back fails the repair at once.
+
+    ``get_state`` is an ``AsyncMock`` throughout — the ``_make_app`` default
+    is a sync ``MagicMock``, which the awaited read would turn into an
+    exception, and every "not on" assertion would then pass for that reason.
+    """
+
+    def _app(self):
+        app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        return app
+
+    def test_confirmed_on_first_try(self):
+        app = self._app()
+        _switch_reports(app)
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_SUCCESS
+        assert _turn_ons(app) == 1
+        # Read with the full state, so last_changed is available.
+        assert app.get_state.await_args.kwargs.get("attribute") == "all"
+        assert _logged(app, "INFO", f"{SWITCH} confirmed on")
+
+    def test_confirmed_only_after_the_retry(self):
+        app = self._app()
+        _switch_reports(app, on_after_turn_ons=2)
+        turn_ons_when_recovery_polled: list[int] = []
+
+        async def _checks():
+            turn_ons_when_recovery_polled.append(_turn_ons(app))
+            return _ALL_OK
+
+        app._run_checks_only = AsyncMock(side_effect=_checks)
+
+        _run(app._execute_repair())
+
+        assert _turn_ons(app) == 2
+        assert _logged(app, "WARNING", "turning it on again")
+        assert app._repair_status == REPAIR_SUCCESS
+        # The recovery clock starts only once the switch is confirmed on: no
+        # recovery poll before the retry, and the duration counts from there.
+        assert turn_ons_when_recovery_polled == [2]
+        assert _report_payloads(app)[-1]["repair_events"] == [
+            {"result": "success", "duration_s": 5},
+        ]
+
+    def test_never_on_fails_without_the_recovery_wait(self):
+        app = self._app()
+        _switch_reports(app, on_after_turn_ons=None)
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            f"{SWITCH} did not turn back on — check the outlet"
+        )
+        assert _turn_ons(app) == 2
+        app._run_checks_only.assert_not_awaited()
+        assert _logged(app, "ERROR", "still not on after a second turn_on")
+        # Two full confirmation windows, and not one read more.
+        assert app.get_state.await_count == 2 * _CONFIRM_POLLS
+        final = _report_payloads(app)[-1]
+        assert final["repair_state"]["status"] == REPAIR_FAILED
+        assert final["repair_events"] == [{"result": "failed"}]
+        assert app._pending_repair_events == []
+
+    def test_missing_entity_fails(self):
+        """The unifi integration can drop the PDU's outlet entities entirely."""
+        app = self._app()
+        app.get_state = AsyncMock(return_value=None)
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == (
+            f"{SWITCH} did not turn back on — check the outlet"
+        )
+        assert _turn_ons(app) == 2
+        app._run_checks_only.assert_not_awaited()
+        assert _logged(app, "ERROR", "the entity is missing")
+
+    def test_a_stale_on_is_not_a_confirmation(self):
+        """HA reports late: the first reads after turn_on can still be the
+        ``on`` from before the cycle. Taking it would confirm a lost turn_on."""
+        app = self._app()
+        reads = {"n": 0}
+
+        def _state(entity_id=None, attribute=None, **kwargs):
+            reads["n"] += 1
+            if _turn_ons(app) >= 2:
+                return _fresh("on")
+            if reads["n"] <= 3:
+                return _stale("on")  # HA has not reported the off yet
+            return _fresh("off")  # ...and the first turn_on was lost
+
+        app.get_state = AsyncMock(side_effect=_state)
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert _turn_ons(app) == 2
+        assert app._repair_status == REPAIR_SUCCESS
+
+    def test_an_on_that_never_changed_is_accepted_at_the_window_end(self):
+        """The switch never went off (turn_off lost or coalesced): it is
+        powered, so the repair goes on to its recovery wait — with a warning,
+        and without a needless second turn_on."""
+        app = self._app()
+        app.get_state = AsyncMock(return_value=_stale("on"))
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert _turn_ons(app) == 1
+        assert app.get_state.await_count == _CONFIRM_POLLS
+        assert _logged(app, "WARNING", "never saw it go off")
+        assert app._repair_status == REPAIR_SUCCESS
+
+    def test_confirm_window_constants_are_overridable(self):
+        app = self._app()
+        _switch_reports(app, on_after_turn_ons=None)
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        with patch.object(switch_power_cycle, "SWITCH_CONFIRM_TIMEOUT_S", 10), \
+                patch.object(switch_power_cycle, "SWITCH_CONFIRM_POLL_S", 5):
+            _run(app._execute_repair())
+
+        # 10 s / 5 s = two reads a window, two windows.
+        assert app.get_state.await_count == 4
+        assert app._repair_status == REPAIR_FAILED
+
+    def test_unreadable_switch_counts_as_not_on(self):
+        app = self._app()
+        app.get_state = AsyncMock(side_effect=RuntimeError("plugin down"))
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_FAILED
+        app._run_checks_only.assert_not_awaited()
 
 
 class TestRepairEvents:
@@ -290,6 +606,7 @@ class TestRepairEvents:
         app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
         _init_only(app)
         app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(return_value=[
             {"name": "Ping", "status": "ok", "detail": "3ms"},
@@ -312,6 +629,7 @@ class TestRepairEvents:
         app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
         _init_only(app)
         app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(return_value=[
             {"name": "Ping", "status": "critical", "detail": "timeout"},
@@ -346,6 +664,7 @@ class TestRepairEvents:
         app = _make_app({"repair_recovery_wait_s": 10, "repair_off_duration_s": 0})
         _init_only(app)
         app._repair_status = REPAIR_IN_PROGRESS
+        _switch_reports(app)
 
         app._run_checks_only = AsyncMock(return_value=[
             {"name": "Ping", "status": "ok", "detail": "3ms"},
@@ -395,4 +714,65 @@ class TestRepairCommand:
             {"action": "start_repair"},
             {},
         )
+        assert app._repair_status == REPAIR_IN_PROGRESS
+
+
+def _prod_entry(key: str) -> Dict[str, Any]:
+    """One app entry from apps-prod.yaml, with ``!secret`` values stubbed."""
+    import yaml
+
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    _Loader.add_constructor("!secret", lambda loader, node: f"secret:{node.value}")
+    path = _repo_root / "apps" / "apps-prod.yaml"
+    with open(path, encoding="utf-8") as fh:
+        return yaml.load(fh, Loader=_Loader)[key]
+
+
+class TestMovieRoomSonosProdConfig:
+    """The real ``movie_room_sonos_health_checker`` entry: ping is its only
+    signal (no ``entities:``, so a Music Assistant restart can never
+    power-cycle the Port), and a sustained ping failure alone arms the PDU
+    outlet power cycle."""
+
+    MOD_BASE = "health_checks.checker_apps.device_checker.device_checker"
+
+    def _app(self):
+        app = _make_app()
+        app.args = _prod_entry("movie_room_sonos_health_checker")
+        _init_only(app)
+        return app
+
+    def test_ping_is_the_only_check(self):
+        app = self._app()
+
+        assert app._entities == []
+        assert app._build_check_names() == ["Ping"]
+        assert app._repair_switch == "switch.power_distribution_hi_density_outlet_21"
+        assert app._cached_auto_repair_enabled is True
+        assert app._cached_auto_repair_delay_min == 10
+
+    def test_pings_the_hostname_with_retries(self):
+        app = self._app()
+        ping = AsyncMock(return_value={"status": "ok", "detail": "4ms"})
+
+        with patch(f"{self.MOD_BASE}.ping_check", new=ping):
+            results = _run(app._run_checks_only())
+
+        ping.assert_awaited_once_with("movieroomsonos.haynesnetwork", attempts=3)
+        assert results == [{"name": "Ping", "status": "ok", "detail": "4ms"}]
+        # Nothing but the ping is read — no entity state at all.
+        app.get_state.assert_not_called()
+
+    def test_a_sustained_ping_failure_arms_then_fires_the_power_cycle(self):
+        app = self._app()
+        down = [{"name": "Ping", "status": "critical", "detail": "timeout (3 attempts)"}]
+
+        app._evaluate_auto_repair(down)
+        assert app._repair_status == REPAIR_PENDING
+
+        app._unhealthy_since = datetime.datetime.now() - datetime.timedelta(minutes=11)
+        app._auto_repair_deadline = app._unhealthy_since + datetime.timedelta(minutes=10)
+        app._evaluate_auto_repair(down)
         assert app._repair_status == REPAIR_IN_PROGRESS

@@ -4,6 +4,9 @@ Adds a per-device repair state machine and auto-repair via power-cycling smart
 switches. Each device can have its own repair switch or share a top-level switch.
 
 Repair logic:
+- A repair turns the switch off, waits, turns it back on and confirms it
+  reports on (``shared/switch_power_cycle.py``) before the recovery wait; a
+  switch that will not come back on fails the device's repair at once.
 - Each device gets one auto-repair attempt before being marked failed.
 - Repairs execute sequentially — one device at a time.
 - Manual repair resets all failed states and repairs all failing devices.
@@ -36,6 +39,7 @@ from health_checks.checker_apps.device_group_checker.device_group_checker import
 )
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check_per_device
+from shared.switch_power_cycle import power_cycle_switch, switch_not_on_detail
 
 logger = logging.getLogger(__name__)
 
@@ -514,14 +518,24 @@ class RepairableDeviceGroupChecker(AutoRepairConfigMixin, DeviceGroupChecker):
         self._report_repair_status_only()
 
         try:
-            self.log(f"Turning off {repair_switch} for {dev_name}", level="INFO")
-            self.call_service("switch/turn_off", entity_id=repair_switch)
+            switch_on = await power_cycle_switch(
+                self, repair_switch, self._repair_off_duration_s, target=dev_name
+            )
+            if not switch_on:
+                # The helper has logged the ERROR. Waiting for recovery would
+                # only burn the recovery window on an unpowered device.
+                dr["status"] = REPAIR_FAILED
+                dr["detail"] = switch_not_on_detail(repair_switch)
+                self._repair_status = self._aggregate_repair_status()
+                # No duration_s: the recovery wait never started.
+                self._pending_repair_events.append({
+                    "result": "failed",
+                    "device": dev_name,
+                })
+                self._report_repair_status_only()
+                return
 
-            await asyncio.sleep(self._repair_off_duration_s)
-
-            self.log(f"Turning on {repair_switch} for {dev_name}", level="INFO")
-            self.call_service("switch/turn_on", entity_id=repair_switch)
-
+            # The recovery clock starts only now, with the switch confirmed on.
             dr["detail"] = "Waiting for recovery..."
             self._report_repair_status_only()
 

@@ -1,6 +1,6 @@
 # Health Checks
 
-System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave — with rate-limited ESPHome software-restart repair for the Z-Wave TCP serial bridge), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, printers) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
+System health monitoring for the Home Assistant dashboard. Provides visibility into AppDaemon backend status, network protocol stack health (Zigbee, Z-Wave — with rate-limited ESPHome software-restart repair for the Z-Wave TCP serial bridge), MQTT broker and device health, environmental sensor monitoring, device health (Spa, fans, the printer, the Movie Room Sonos Port) with optional auto-repair capability, PowerView shade gateway RF-disconnect detection (with auto power-cycle repair), the UniFi Protect camera event stream (with config-entry-reload auto-heal), and the ComfyUI image-generation service. Critical checker failures can page the phone via the cluster's Alertmanager (see [Alertmanager Bridge](#alertmanager-bridge)).
 
 ## Architecture
 
@@ -92,6 +92,8 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 ### Basic Device Checker
 
 `BasicDeviceChecker` is a generic, config-driven checker for any device needing entity state monitoring and an optional IP ping. No repair support. See `device_checker/README.md` for details.
+
+`RepairableDeviceChecker` extends it with a smart-switch power-cycle repair, used by the `printer` and `movie_room_sonos` instances. `movie_room_sonos` watches the Movie Room Sonos Port by ping alone — deliberately no entity checks, so a Music Assistant restart (which takes `media_player.movie_room` unavailable) can never power-cycle it — and repairs it by power-cycling UniFi PDU Hi-Density outlet 21, auto-repair on by default after a 10-minute dwell. Every power cycle goes through `shared/switch_power_cycle.py`: after `turn_on` the switch must report `on` before the recovery wait starts, with one retry, and a switch that never comes back fails the repair immediately (`"<switch> did not turn back on — check the outlet"`) instead of leaving the device unpowered. `RepairableDeviceGroupChecker` uses the same helper.
 
 ### Device Group Checker
 
@@ -239,6 +241,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
+- `shared/switch_power_cycle` — `power_cycle_switch()`: turn a repair switch off, wait, turn it back on and confirm it reports `on` (one retry), shared by `RepairableDeviceChecker` and `RepairableDeviceGroupChecker`
 - `aiohttp` — HTTP health checks (in `shared/check_utils.py`); the Wyoming probe uses plain `asyncio` streams
 - `prometheus-client` — metrics exposition (controller)
 
@@ -252,6 +255,8 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 | `input_text.health_check_mute_<checker_id>` | Helper | Per-checker mute state as JSON (lazily provisioned on first mute) |
 | `input_boolean.spa_health_auto_repair` | Helper | Auto-repair toggle (provisioned by SpaHealthChecker) |
 | `input_number.spa_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by SpaHealthChecker) |
+| `input_boolean.movie_room_sonos_health_auto_repair` | Helper | Auto-repair toggle (provisioned by RepairableDeviceChecker per `checker_id`, default ON) |
+| `input_number.movie_room_sonos_health_auto_repair_delay` | Helper | Auto-repair dwell in minutes (provisioned by RepairableDeviceChecker per `checker_id`, 1-60, default 10) |
 | `input_boolean.protect_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ProtectHealthChecker) |
 | `input_number.protect_health_auto_repair_delay` | Helper | Auto-repair delay in minutes (provisioned by ProtectHealthChecker) |
 | `input_boolean.shade_gateway_health_auto_repair` | Helper | Auto-repair toggle (provisioned by ShadeGatewayChecker, default ON) |
@@ -488,9 +493,11 @@ health_checks/
 │   ├── __init__.py                  # "no shared code under apps/"
 │   ├── check_utils.py               # ping/HTTP/Wyoming checks + the cross-check downgrade
 │   ├── alertmanager_bridge.py       # pure alert decision logic (no HTTP)
-│   └── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
-│                                    # toggle/delay helpers, shared by all seven
-│                                    # repair-capable checkers
+│   ├── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
+│   │                                # toggle/delay helpers, shared by all seven
+│   │                                # repair-capable checkers
+│   └── switch_power_cycle.py        # power-cycle a repair switch and confirm it
+│                                    # came back on (device + device group checkers)
 ├── cards/
 │   ├── health-check-card.js
 │   └── health-check-detail-card.js

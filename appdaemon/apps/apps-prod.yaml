@@ -816,6 +816,34 @@ printer_health_checker:
     - entity_id: sensor.brother_mfc_l3780cdw_series
       name: Status
 
+# Movie Room Sonos Port. On 2026-09-22 a network-switch blip wedged it: the
+# cable link stayed up but it answered nothing (no ARP, ping or TCP 1400), so
+# Music Assistant dropped it and media_player.movie_room sat unavailable for
+# six days until a 12 s power cycle of its PDU outlet fixed it.
+# Ping is the only signal, deliberately: no `entities:`, because the MA player
+# goes unavailable on every Music Assistant restart, and that must never
+# power-cycle the Port. Repair = power-cycle UniFi PDU Hi-Density outlet 21
+# (labelled "Sonos Port"); its power sensor reads 0 W at idle, so draw is no
+# health signal either. One repair per outage: after a failed repair it stays
+# failed until a fully healthy cycle, which caps the PDU churn.
+movie_room_sonos_health_checker:
+  module: health_checks.checker_apps.device_checker.repairable_device_checker
+  class: RepairableDeviceChecker
+  disable: true
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: movie_room_sonos
+  checker_name: Movie Room Sonos
+  ping_host: movieroomsonos.haynesnetwork
+  ping_check_name: Ping
+  ping_attempts: 3
+  check_interval_s: 180
+  repair_switch: switch.power_distribution_hi_density_outlet_21
+  repair_recovery_wait_s: 300
+  repair_off_duration_s: 10
+  auto_repair_enabled_default: true
+  auto_repair_delay_min_default: 10
+
 fan_health_checker:
   module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker

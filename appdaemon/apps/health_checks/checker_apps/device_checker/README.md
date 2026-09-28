@@ -61,8 +61,54 @@ printer_health_checker:
 
 Self-provisions `input_boolean.{checker_id}_health_auto_repair` and `input_number.{checker_id}_health_auto_repair_delay`.
 
+`entities:` is optional here too. A checker with only `ping_host` has a single check, `Ping`, and a sustained ping failure alone arms the repair — the cross-check downgrade needs at least two checks to act on.
+
+### The repair
+
+1. Turn `repair_switch` off, wait `repair_off_duration_s`.
+2. Turn it on and **confirm it reports `on`** — read every 5 s for up to 60 s (`SWITCH_CONFIRM_POLL_S` / `SWITCH_CONFIRM_TIMEOUT_S` in `shared/switch_power_cycle.py`).
+3. Not on → log a WARNING, `turn_on` once more, confirm again for up to 60 s.
+4. Still not on (the entity missing included) → the repair ends `failed` straight away with detail `"<switch> did not turn back on — check the outlet"`, an ERROR log and a failed `repair_event` (no `duration_s`). There is no recovery wait: it would only burn five minutes on an unpowered device.
+5. Confirmed on → poll the checks every 5 s for up to `repair_recovery_wait_s`; the recovery clock starts here, not at `turn_on`.
+
+Why confirm: on a UniFi USP PDU a toggle re-provisions the whole PDU for ~40 s, Home Assistant took more than 10 s to report the outlet back on, and once the unifi integration dropped every outlet entity of the PDU until it was reloaded — a fire-and-forget `turn_on` could leave the device off. Because HA reports late, an `on` read shortly after `turn_on` can still be the state from *before* the cycle, so an `on` confirms early only if its `last_changed` is after the cycle started. An `on` that never changed is accepted at the end of the 60 s window, with a WARNING: the switch never went off, so the device is powered but may not have been cycled.
+
+One repair per outage: after `failed` the checker stays failed until a fully healthy cycle, so a device that does not come back is power-cycled once, not in a loop.
+
+A relapse after `success` — the device bad again before a fully healthy cycle — moves the repair to `failed` with detail `"Relapsed after a successful repair — recovery did not stick"` (a WARNING in the log). `success` is judged moments after the power cycle, and left standing it is one of the Alertmanager bridge's repair-hold states, so it would keep withholding the page for a device that is down again; `failed` releases it. It is `failed` rather than `idle` so the outage does not earn a second auto-repair, and it clears on the next all-ok cycle. (`RepairableDeviceGroupChecker` does the same per device.) With auto-repair switched off, a stale `success` goes to `idle` instead (`_stand_down_pending_repair`).
+
+```
+idle → pending → in_progress → success → idle     (checks stay healthy)
+                             │         → failed   (relapse before a healthy cycle)
+                             → failed  → idle     (checks recover)
+```
+
+### Second example — the Movie Room Sonos Port
+
+```yaml
+movie_room_sonos_health_checker:
+  module: health_checks.checker_apps.device_checker.repairable_device_checker
+  class: RepairableDeviceChecker
+  ha_url: !secret ha_url
+  ha_token_env: TOKEN
+  checker_id: movie_room_sonos
+  checker_name: Movie Room Sonos
+  ping_host: movieroomsonos.haynesnetwork                  # DHCP-reserved 192.168.0.70; the FQDN, by Tom's choice
+  ping_check_name: Ping
+  ping_attempts: 3
+  check_interval_s: 180
+  repair_switch: switch.power_distribution_hi_density_outlet_21   # UniFi PDU outlet 21, labelled "Sonos Port"
+  repair_recovery_wait_s: 300
+  repair_off_duration_s: 10
+  auto_repair_enabled_default: true
+  auto_repair_delay_min_default: 10
+```
+
+Ping is its only signal on purpose. The Port wedged on 2026-09-22 after a network-switch blip (link up, no ARP, ping or TCP 1400) and `media_player.movie_room` stayed unavailable for six days until a 12 s power cycle of its outlet fixed it. The Music Assistant player cannot be a check, because it also goes unavailable on every MA restart and that must never power-cycle the Port; the outlet's power sensor reads 0 W at idle, so power draw is no signal either. Triage: `agent-docs/shepherd-runbooks/movie_room_sonos.md`.
+
 ## Dependencies
 
 - `shared/check_utils` — `ping_check()` for IP pings
 - `providers/ha_provisioner` — creates HA helpers (RepairableDeviceChecker only)
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: the auto-repair toggle/delay helpers (RepairableDeviceChecker only)
+- `shared/switch_power_cycle` — `power_cycle_switch()`: the off / wait / on + confirm sequence (RepairableDeviceChecker only)
