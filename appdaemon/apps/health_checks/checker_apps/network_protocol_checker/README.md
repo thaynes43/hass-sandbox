@@ -118,6 +118,6 @@ Set `module` to `...network_protocol_checker.repairable_network_protocol_checker
 | `repair_min_interval_s` | No | `900` | Minimum gap between restarts |
 | `repair_max_per_24h` | No | `3` | Rolling 24h restart cap; once spent, stop repairing and force `critical` |
 | `repair_quiet_period_s` | No | `180` | Settle time after an action before re-evaluating |
-| `repair_recovery_wait_s` | No | `300` | How long to poll for recovery after a press |
+| `repair_recovery_wait_s` | No | `300` | How long to poll for recovery after a press (wall-clock seconds) |
 | `auto_repair_enabled_default` | No | `false` | Seeds the toggle at creation **and** is the fallback while it is still unreadable (see `shared/auto_repair_config.py`) |
 | `auto_repair_delay_min_default` | No | `5` | Initial dwell in minutes before the first restart. Seeds the helper and is its fallback the same way; clamped to 1-60 |

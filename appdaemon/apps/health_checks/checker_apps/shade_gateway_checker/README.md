@@ -152,7 +152,7 @@ gateway and `"<name> API"` for gateways with `api: true`:
 2. Waits `repair_settle_s` (default 180s) for the gateway to reboot and
    shades to re-associate.
 3. Polls every 5s, up to a total of `repair_recovery_wait_s` (default 900s)
-   elapsed since the button press, for **provisional recovery**: every
+   of wall-clock time elapsed since the button press, for **provisional recovery**: every
    *affected* shade (same `_affected_shades_healthy()` check used for
    ambient recovery — unrelated unavailable shades never block this) is
    currently healthy AND flap-free (no new implausible drop) for at least

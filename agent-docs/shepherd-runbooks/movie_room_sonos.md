@@ -62,7 +62,10 @@ only `…_outlet_21`.
    another 60 s. Still not on → `failed`, detail
    `switch.power_distribution_hi_density_outlet_21 did not turn back on — check the outlet`
    (or `… — the entity is missing from Home Assistant — reload the integration that owns it`
-   when the unifi integration has dropped the PDU's outlet entities), and no recovery wait.
+   when the unifi integration has dropped the PDU's outlet entities, `… — the entity is
+   unavailable in Home Assistant — reload the integration that owns it` when it kept them
+   but lost the PDU, or `… — the switch could not be read — see the AppDaemon log` when
+   AppDaemon's Home Assistant connection dropped), and no recovery wait.
 4. Outlet confirmed on → up to 300 s of recovery polling, by the wall clock
    (the Port takes a while to boot and rejoin). Ping back → `success`; otherwise `failed`,
    `Did not recover after 300s`. Ping lost again (critical) after a

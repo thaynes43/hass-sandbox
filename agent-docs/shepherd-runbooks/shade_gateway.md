@@ -30,8 +30,8 @@ grace/auto-restart path is running or has already failed once.
 
 1. Read `checkers.shade_gateway.repair_state.status`:
    - `pending` → auto-restart is counting down inside its grace; **wait**.
-   - `in_progress` → the PoE cycle is running (settle 180s, budget 900s);
-     **wait**, do not stack another.
+   - `in_progress` → the PoE cycle is running (settle 180s, then polls, 900s
+     of wall clock in all from the press); **wait**, do not stack another.
    - `failed` → the one auto-restart for this episode already ran and the
      shades did **not** come back → this is the human-escalation page.
    - `idle`/`success` while still critical → auto-repair may be disabled or
@@ -58,9 +58,10 @@ grace/auto-restart path is running or has already failed once.
 
 ## Verify
 
-- After a `start_repair`, budget = `repair_settle_s` (180s) +
-  `repair_recovery_wait_s` (900s) ≈ **~15 min** for provisional recovery
-  (every affected shade healthy and flap-free for ≥180s).
+- After a `start_repair`, budget = `repair_recovery_wait_s` (900s of wall
+  clock, counted from the button press, so it includes the 180s
+  `repair_settle_s`) ≈ **15 min** for provisional recovery (every affected
+  shade healthy and flap-free for ≥180s).
 - Recovery clears the episode; `Gateway Link` returns to `ok` (`"<n> shade
   batteries reporting normally"`) and the page resolves automatically.
 

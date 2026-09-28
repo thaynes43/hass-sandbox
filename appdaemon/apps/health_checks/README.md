@@ -109,6 +109,8 @@ Adding a new protocol (e.g. Thread) requires only a new `apps.yaml` entry — no
 
 `MqttDeviceChecker` monitors devices via both HA entity state and MQTT message timestamps. Discovers entities using configurable regex patterns and creates two checks per device: a State check and an MQTT check. Cross-check logic is symmetric: if only one check fails it is downgraded to **warning**; both must fail for **critical**. MQTT checks can declare a dependency on a protocol checker (e.g. Zigbee) so they show as **unknown** when the protocol itself is down. See `mqtt_device_checker/README.md` for details.
 
+**After an AppDaemon restart it starts `unknown`, and the overall status with it, by design.** A device's MQTT check is `unknown` ("no MQTT data yet") until the checker hears a message from it after startup. Retained messages delivered in the first 5 s of the subscribe are skipped, so a restart can't mask a device that stopped reporting. The overall `sensor.health_check_status` is `unknown` while any checker is `unknown` and none is bad, so it reads `unknown` for about 30–35 min after every restart (observed 2026-09-26/27/28) until the `*_lights` instances have heard from every device. `unknown` never pages. The one exception in that window: the downgrade needs the *other* check healthy, so a device whose HA state read fails is **critical**, not warning, until its MQTT check leaves `unknown`. Agents verifying a deploy read the checker they changed instead (`.agents/rules/git-workflow.md` step 6).
+
 ### Temp/Humidity Checker
 
 `TempHumidityChecker` monitors environmental sensors with configurable warning and critical thresholds. Supports temperature, humidity, or both sensor types. Each sensor can have per-sensor threshold overrides and can declare a dependency on another checker. See `temp_humidity_checker/README.md` for details.
@@ -351,7 +353,7 @@ zwave_health_checker:
   repair_min_interval_s: 900                        # Minimum gap between restarts (default 900)
   repair_max_per_24h: 3                             # Rolling 24h cap, then escalate to critical (default 3)
   repair_quiet_period_s: 180                        # Settle time after an action (default 180)
-  repair_recovery_wait_s: 300                       # How long to watch for recovery after a press (default 300)
+  repair_recovery_wait_s: 300                       # Wall-clock seconds to watch for recovery after a press (default 300)
   auto_repair_enabled_default: true                 # Seeds the toggle at creation AND is the fallback while it is unreadable (default false)
   auto_repair_delay_min_default: 5                  # Dwell before the first restart, minutes (default 5)
 ```

@@ -1002,6 +1002,66 @@ class TestRepairExecution:
         # Baseline was pushed to reload-time + settle window (the future)
         assert app._event_baseline > datetime.datetime.now(UTC)
 
+    def _reloading_app(self):
+        app = _make_app()
+        _init_only(app)
+        app._repair_recovery_wait_s = 600
+        app._repair_status = REPAIR_IN_PROGRESS
+        app._frozen = True
+        admin = _make_mock_admin()
+        admin.list_config_entries = AsyncMock(
+            return_value=[IGNORED_ENTRY, LOADED_ENTRY]
+        )
+        app._admin = admin
+        return app
+
+    def test_recovery_wait_ends_by_wall_clock(self):
+        """The wait must end after repair_recovery_wait_s of *wall-clock*
+        time, not after that many seconds of sleeps (#210). Here every check
+        takes 60 s, so a 600 s wait is 11 checks (starting at 0, 60, …,
+        600 s), not 20."""
+        app = self._reloading_app()
+        clock = {"now": 1000.0}
+
+        async def _slow_check(baseline):
+            clock["now"] += 60
+            return None
+
+        app._any_event_after = AsyncMock(side_effect=_slow_check)
+
+        with patch("time.monotonic", new=lambda: clock["now"]), patch(
+            "asyncio.sleep", new=AsyncMock(return_value=None)
+        ):
+            _run(app._execute_repair())
+
+        assert app._any_event_after.await_count == 11
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == "No events within 600s of reload"
+
+    def test_recovery_duration_is_wall_clock_on_success(self):
+        app = self._reloading_app()
+        clock = {"now": 1000.0}
+        calls = {"n": 0}
+
+        async def _check(baseline):
+            calls["n"] += 1
+            clock["now"] += 60
+            return "binary_sensor.driveway_motion" if calls["n"] == 3 else None
+
+        app._any_event_after = AsyncMock(side_effect=_check)
+
+        with patch("time.monotonic", new=lambda: clock["now"]), patch(
+            "asyncio.sleep", new=AsyncMock(return_value=None)
+        ):
+            _run(app._execute_repair())
+
+        assert app._repair_status == REPAIR_SUCCESS
+        # Each check takes 60 s, so the third starts 120 s after the reload;
+        # counting sleeps alone would say 90 s.
+        assert app._repair_detail == (
+            "Events resumed 120s after reload (binary_sensor.driveway_motion)"
+        )
+
     def test_execute_repair_error_fails(self):
         app = _make_app()
         _init_only(app)
