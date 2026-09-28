@@ -98,14 +98,14 @@ sequence:
       entity_id: media_player.str_az5000es
     data:
       volume_level: '{{ target_step / 100 }}'
-  - alias: Let the new level land before the next queued run reads it (dashboard taps queue up)
-    wait_for_trigger:
-    - trigger: state
-      entity_id: media_player.str_az5000es
-      attribute: volume_level
+  - alias: 'Let the new level land before the next queued run reads it (dashboard taps queue up). A wait_template,
+      not wait_for_trigger: songpal writes the level from a websocket push that can arrive before volume_set
+      returns, and a trigger registered afterwards would miss it and sit out the timeout'
     timeout:
       seconds: 3
     continue_on_timeout: true
+    wait_template: '{{ ((state_attr(''media_player.str_az5000es'', ''volume_level'') | float(-1)) * 100)
+      | round(0) | int == target_step }}'
 - variables:
     fmt_cur: '{{ (''%.1f'' | format(cur_db)) | replace(''.0'', '''') }}'
     fmt_target: '{{ (''%.1f'' | format((target_step - zero_step) / 2)) | replace(''.0'', '''') }}'
