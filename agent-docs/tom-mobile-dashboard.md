@@ -172,7 +172,10 @@ Every button reuses a script the voice agents or the wall switches already use, 
   - **Volume ceiling -3.5 dB** (Tom: "I usually won't go louder than -3.5dB"). The slider has
     `min_value: 29` (-20 dB) and `max_value: 62` (-3.5 dB). Bubble Card v3.4.0 clamps the value to
     [min, max] and then sends `volume_level` = value / 100 (read from the installed `bubble-card.js`), so a
-    full-right drag sends 0.62. songpal truncates (), and steps 29, 57 and 58 do not survive  →  in float64, so the slider can land 0.5 dB below those three (only ever lower, never past the cap); the script nudges its level by 1e-6 to hit them exactly. − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and
+    full-right drag sends 0.62. songpal truncates (`int(volume_level × 100)`), and steps 29, 57 and 58
+    do not survive `/100` → `×100` in float64, so the slider can land 0.5 dB below those three (only
+    ever lower, never past the cap); the script nudges its level by 1e-6 to hit them exactly.
+    − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and
     1 dB, and that script enforces the same ceiling (`max_db`). **No card opens more-info on the
     receiver**: HA's own media player dialog has an unbounded volume slider. On the "on" card the icon
     does nothing; on the "off" card, tapping turns the receiver on. Nothing here can stop the physical
