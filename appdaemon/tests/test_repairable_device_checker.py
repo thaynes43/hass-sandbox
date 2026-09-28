@@ -522,6 +522,15 @@ def _report_payloads(app) -> list[dict]:
     ]
 
 
+def _read_failures(app, level: str) -> list:
+    """The ``Could not read <switch>`` log calls made at *level*."""
+    return [
+        c for c in app.log.call_args_list
+        if c[1].get("level") == level
+        and str(c[0][0]).startswith(f"Could not read {SWITCH}")
+    ]
+
+
 def _logged(app, level: str, fragment: str) -> bool:
     return any(
         c[1].get("level") == level and fragment in str(c[0][0])
@@ -657,6 +666,40 @@ class TestTurnOnConfirmation:
         assert "reload the integration" not in app._repair_detail
         assert _logged(app, "WARNING", "plugin disconnected")
         app._run_checks_only.assert_not_awaited()
+
+    def test_failed_reads_warn_once_per_window(self):
+        """A plugin outage fails every read the same way: the first failure
+        of each confirmation window is a WARNING, the rest are DEBUG, so a
+        repair logs 2 warnings rather than one per read."""
+        app = self._app()
+        app.get_state = AsyncMock(side_effect=RuntimeError("plugin disconnected"))
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        assert app.get_state.await_count == 2 * _CONFIRM_POLLS
+        assert len(_read_failures(app, "WARNING")) == 2
+        assert len(_read_failures(app, "DEBUG")) == 2 * _CONFIRM_POLLS - 2
+
+    def test_a_failed_read_after_a_good_one_still_warns(self):
+        """The WARNING is for the first *failed* read of a window, not its
+        first read: a plugin that drops mid-window is still reported."""
+        app = self._app()
+        reads = {"n": 0}
+
+        async def _state(entity_id=None, attribute=None, **kwargs):
+            reads["n"] += 1
+            if reads["n"] == 1:
+                return _fresh("off")
+            raise RuntimeError("plugin disconnected")
+
+        app.get_state = AsyncMock(side_effect=_state)
+        app._run_checks_only = AsyncMock(return_value=_ALL_OK)
+
+        _run(app._execute_repair())
+
+        # One per window: the second window's first read fails too.
+        assert len(_read_failures(app, "WARNING")) == 2
 
     def test_a_stale_on_is_not_a_confirmation(self):
         """HA reports late: the first reads after turn_on can still be the

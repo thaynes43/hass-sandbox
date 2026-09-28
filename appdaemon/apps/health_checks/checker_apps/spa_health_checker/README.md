@@ -27,7 +27,7 @@ Supports auto-repair via power cycling a smart switch. The repair action:
    to 60 s, then one more `turn_on` and another 60 s
    (`shared/switch_power_cycle.py`, shared with the device checkers; see
    `device_checker/README.md` for why). If it still is not on, the attempt
-   fails at once with `"<switch> did not turn back on — check the outlet"` (or `"… — the entity is missing from Home Assistant — reload the integration that owns it"`, or `"… — the switch could not be read — see the AppDaemon log"`),
+   fails at once with `"<switch> did not turn back on — check the outlet"` (or `"… — the entity is missing from Home Assistant — reload the integration that owns it"`, `"… — the entity is unavailable in Home Assistant — reload the integration that owns it"`, or `"… — the switch could not be read — see the AppDaemon log"`),
    skips the recovery wait, and counts on the backoff ladder like any other
    failed attempt. If the switch reads `on` but never reported `off`, the
    attempt goes ahead; should it then fail, its detail ends

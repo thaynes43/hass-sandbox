@@ -683,6 +683,33 @@ class TestRepairOutcome:
         final = _report_payloads(app)[-1]
         assert final["repair_events"] == [{"result": "failed", "duration_s": 30}]
 
+    def test_recovery_wait_ends_by_wall_clock(self):
+        """The wait must end after repair_recovery_wait_s of *wall-clock*
+        time, not after that many seconds of sleeps (#210). Here every check
+        takes 60 s, so a 300 s wait is 6 checks (starting at 0, 60, …, 300 s),
+        not 30."""
+        app = _make_app({"repair_recovery_wait_s": 300})
+        _init_only(app)
+        app._repair_status = REPAIR_IN_PROGRESS
+        clock = {"now": 1000.0}
+
+        async def _slow_check():
+            clock["now"] += 60
+            return {
+                "name": ENTITY_CHECK,
+                "status": "critical",
+                "detail": "Expected 'ready', got 'driver_failed'",
+            }
+
+        app._check_entity_state = AsyncMock(side_effect=_slow_check)
+
+        with patch("time.monotonic", new=lambda: clock["now"]):
+            _drive(app, app._execute_repair())
+
+        assert app._check_entity_state.await_count == 6
+        assert app._repair_status == REPAIR_FAILED
+        assert app._repair_detail == "Did not recover after 300s"
+
     def test_attempt_is_recorded_before_the_press(self):
         """A crash in the press path must not buy an extra restart."""
         app = _make_app()

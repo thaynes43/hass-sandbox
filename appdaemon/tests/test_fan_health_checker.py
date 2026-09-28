@@ -1201,6 +1201,59 @@ class TestRepairExecution:
         services = [c[0][0] for c in app.call_service.call_args_list]
         assert "script/turn_on" not in services
 
+    def test_script_busy_wait_ends_by_wall_clock(self):
+        """The busy-script wait is SCRIPT_BUSY_WAIT_S of *wall-clock* time,
+        not that many seconds of sleeps (#210). Here each poll comes round
+        60 s apart (the event loop was busy), so a 660 s wait is 12 reads
+        (at 0, 60, …, 660 s), not 133."""
+        app = _make_app()
+        _init_only(app)
+        clock = {"now": 1000.0}
+
+        async def _slow_busy_read(*args, **kwargs):
+            clock["now"] += 60
+            return "on"
+
+        app.get_state = AsyncMock(side_effect=_slow_busy_read)
+
+        with patch("time.monotonic", new=lambda: clock["now"]), patch(
+            "asyncio.sleep", new=AsyncMock(return_value=None)
+        ):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        assert app.get_state.await_count == 12
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert "busy" in fr["detail"].lower()
+        services = [c[0][0] for c in app.call_service.call_args_list]
+        assert "script/turn_on" not in services
+
+    def test_recovery_wait_ends_by_wall_clock(self):
+        """The recovery wait has run on the wall clock since 2026-08-25: every
+        poll pings all six fans, a dead one with retries, so counting only the
+        sleeps would stretch it. Here each check takes 60 s, so a 300 s wait
+        is 6 checks (starting at 0, 60, …, 300 s), not 60."""
+        app = _make_app({"repair_recovery_wait_s": 300})
+        _init_only(app)
+        app.get_state = AsyncMock(return_value="off")  # repair script free
+        clock = {"now": 1000.0}
+
+        async def _slow_checks():
+            clock["now"] += 60
+            return _pink_down_results()
+
+        app._run_health_checks_only = AsyncMock(side_effect=_slow_checks)
+
+        with patch("time.monotonic", new=lambda: clock["now"]), patch(
+            "asyncio.sleep", new=AsyncMock(return_value=None)
+        ):
+            _run(app._execute_fan_repair(SAMPLE_FANS[0]))
+
+        assert app._run_health_checks_only.await_count == 6
+        fr = app._fan_repair_states["Pink Room"]
+        assert fr["status"] == REPAIR_FAILED
+        assert fr["detail"].startswith("Did not recover after 300s")
+
     def test_repair_waits_then_proceeds_when_script_frees(self):
         """A busy script that frees within the wait window → repair proceeds."""
         app = _make_app()

@@ -49,14 +49,19 @@ with every tracked entity dark Staleness is critical at once —
 2. `force_recheck` (payload `{}`) — re-run all checks now; a one-poll network
    blip that already cleared shows green on the next report. Wait ~120s, re-read.
 3. If still critical and `repair_state.status == idle`: `start_repair`
-   `{"checker_id":"spa"}` — power-cycles `switch.spa_intouch3_switch` (off,
-   `repair_power_off_s` = 60s, on — then confirms the switch reports `on`,
-   with one retry; a switch that never comes back fails the attempt at once and
-   skips the wait, with `did not turn back on — check the outlet`, `… — the entity
-   is missing from Home Assistant — reload the integration that owns it`, or
-   `… — the switch could not be read — see the AppDaemon log`) and polls
-   health for up to `repair_recovery_wait_s` (420s of wall clock since v1.24.0 — the old sleep-counted 300 ran about that long). Do
-   **not** toggle the switch directly — `start_repair` carries the recovery
+   `{"checker_id":"spa"}`. It power-cycles `switch.spa_intouch3_switch` (off,
+   `repair_power_off_s` = 60s, on) and confirms the switch reports `on`, with
+   one retry. Once the switch is confirmed on, it polls health for up to
+   `repair_recovery_wait_s` (420s of wall clock since v1.24.0; the old
+   sleep-counted 300 ran about that long). A switch that never comes back
+   fails the attempt at once, with no recovery wait. Its detail is
+   `switch.spa_intouch3_switch did not turn back on — ` followed by one of:
+   - `check the outlet`
+   - `the entity is missing from Home Assistant — reload the integration that owns it`
+   - `the entity is unavailable in Home Assistant — reload the integration that owns it`
+   - `the switch could not be read — see the AppDaemon log`
+
+   Do **not** toggle the switch directly — `start_repair` carries the recovery
    verification.
 4. If `repair_state.status` is already `pending`/`in_progress`, wait — do not
    stack a second repair. Max 2 `start_repair` attempts / 6h.

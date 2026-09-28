@@ -96,7 +96,8 @@ Each fan independently tracks its own repair state. When auto-repair triggers:
 1. Find the entity-down fan whose repair is due soonest (first attempts are
    due at their grace deadline; failed fans at their scheduled backoff retry)
 2. Call the repair script with that fan's zen32 entities
-3. Poll for recovery every ~5s for up to `repair_recovery_wait_s`
+3. Poll for recovery every ~5s for up to `repair_recovery_wait_s` of wall-clock
+   time (the checks' own duration counts, not just the sleeps)
 4. On success, move to the next failing fan on the next check cycle
 5. On timeout, mark that fan `failed` and schedule its next retry
 6. **CrashLoopBackOff retries** — a failed repair never ends the episode:

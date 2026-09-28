@@ -1,6 +1,6 @@
 ---
 name: health-checks-test-idioms
-description: Test helpers and mocking traps for the health_checks controller and Alertmanager bridge — async call_service, create_task coroutines that never run, and how to capture the bridge snapshot
+description: Test helpers and mocking traps for the health_checks controller and Alertmanager bridge — async call_service, create_task coroutines that never run, capturing the bridge snapshot, and testing wall-clock repair waits
 metadata:
   type: reference
 ---
@@ -32,5 +32,21 @@ only withholds CRITICAL promotions while `repair_state.status` is
 - Bridge sync/persist run via `self.create_task(...)`, which is a `MagicMock` → the coroutine never runs. Drive it with `_run(_last_created_coro(app))`, and always `_close_created_coros(app)` at test end to avoid "never awaited" warnings.
 - To capture the snapshot handed to the bridge without running a real sync: replace `app._alert_bridge.sync = MagicMock()` and assert on `sync.call_args[0][0]`.
 - Muted checkers publish snapshot alerting `{"enabled": False}`; attrs carry `muted`/`muted_until`. Mutes persist in `input_text.health_check_mute_<id>` and rebuild on register (`_load_persisted_mute` drops expired ones).
+
+## Wall-clock repair waits (#208, #210)
+
+Every repair/recovery wait in `health_checks` counts
+`elapsed = max(elapsed + poll, int(time.monotonic() - started))`. To test one,
+patch `time.monotonic` globally to a dict-backed clock and advance it inside
+the mocked check (#208 shape: `asyncio.sleep` a no-op `AsyncMock`, each check
++60 s → a 300 s wait is 6 checks). Where the wait starts with one long sleep
+(shade gateway's settle), a fake sleep that adds its argument (plus a late
+wake-up) is the only way to exercise the start of the clock.
+
+Sizing a wall-clock switch: `get_state` in AppDaemon reads its local state
+cache (no request), so a loop that only reads entities never drifted from its
+sleeps; only pings/HTTP in the loop stretched the old sleep-counted windows.
+Loki keeps 30 days (a query over 30d1h is rejected); repair lines are under
+`{namespace="home-automation", app="appdaemon"}`.
 
 Related: [[appdaemon-testing-discipline]]

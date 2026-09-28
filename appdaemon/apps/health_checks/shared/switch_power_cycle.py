@@ -156,21 +156,23 @@ def _parse_changed(value: Any) -> Optional[datetime.datetime]:
 
 
 async def _read_switch(
-    app: Any, switch: str
+    app: Any, switch: str, fail_level: str = "WARNING"
 ) -> Tuple[Optional[str], Optional[datetime.datetime], bool]:
     """Return ``(state, last_changed, read_ok)``.
 
     ``state`` is None both when the entity is missing (``read_ok`` True) and
     when the read raised (``read_ok`` False) — only the first means "reload
-    the integration that owns it".
+    the integration that owns it".  A read that raises is logged at
+    *fail_level*.
     """
     try:
         full = await app.get_state(switch, attribute="all")
     except Exception as exc:
-        # WARNING, not DEBUG: most likely the HASS plugin is disconnected (the
-        # un-awaited turn_off/turn_on were dropped too), and this is the only
-        # record of it.
-        app.log(f"Could not read {switch}: {exc!r}", level="WARNING")
+        # The first failure in a window is a WARNING, not DEBUG: most likely
+        # the HASS plugin is disconnected (the un-awaited turn_off/turn_on
+        # were dropped too), and this is the only record of it. _confirm_on
+        # logs the rest at DEBUG — an outage fails every read the same way.
+        app.log(f"Could not read {switch}: {exc!r}", level=fail_level)
         return None, None, False
     if full is None:
         return None, None, True
@@ -206,10 +208,17 @@ async def _confirm_on(
     waited = 0
     state: Optional[str] = None
     read_ok = True
+    # A plugin outage fails every read of a window alike: one WARNING per
+    # window says so, the rest go to DEBUG.
+    failed_reads = 0
     while waited < timeout_s:
         await asyncio.sleep(poll_s)
         waited += poll_s
-        state, changed, read_ok = await _read_switch(app, switch)
+        state, changed, read_ok = await _read_switch(
+            app, switch, "DEBUG" if failed_reads else "WARNING"
+        )
+        if not read_ok:
+            failed_reads += 1
         if state == "off":
             saw_off = True
         fresh = changed is not None and changed >= cycle_started
