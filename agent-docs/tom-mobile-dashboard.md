@@ -19,7 +19,7 @@ iterating on it.
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 | First Floor | "First Floor Lights" toggle (`light.first_floor_chaos_lights`) |
-| Movie Room | "Receiver" (volume slider + Power, Input, −/dB/+, Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
+| Movie Room | "Receiver" (volume slider + Power, Input, −/dB/+, Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Bedroom | Primary Bedroom scene card (ported from Kellie Mobile) → `#tom-primary-bedroom` |
 | Climate | Climate Control card w/ 68°/72° presets (ported) → `#tom-climate-control` |
 | Doors & Locks | Locks card → `#tom-locks`, Garage Doors card → `#tom-garage-doors` |
@@ -207,14 +207,16 @@ Every button reuses a script the voice agents or the wall switches already use, 
   do (`agent-docs/voice-control-map.md`).
 - **Ambient** (2026-09-28; Tom asked for the ambient lights on the dashboard) = a name card on
   `light.basement_movie_room_ambient_lighting`: tapping the card opens `#tom-movie-ambient`
-  (`button_action`), the film-reel icon toggles the lights (`tap_action`), and two icon-only
+  (`button_action`), the power icon toggles the lights (`tap_action`; tinted with the accent colour while they
+  are on, like the receiver's power button), and two icon-only
   sub-buttons step the scene: ◀ (`script.voice_movie_room_ambient_scene` with `scene: previous`) and
   ▶ (next, = ZEN37 button 4). Tom, the same evening: "If we want a lot of scenes on the dashboard a
   popup would be better than sub buttons", then asked for the card itself to open the pop-up with the
-  dimmer at its top, and the icon to be the on/off toggle. (It started as a slider card with a "Scene"
+  dimmer at its top, and a power icon as the on/off toggle. (It started as a slider card with a "Scene"
   button and a small grid button; he could not tell what they did.)
-  - `#tom-movie-ambient` pop-up: the dimmer first (a slider card on the same light, icon toggles, ◀ ▶), an Effects card (the
-    12 effects, 3 per row, plus Red), then Warm (29) / Cool (12) / Multicolour (34) scene cards. Warm =
+  - `#tom-movie-ambient` pop-up: the dimmer first (a slider card on the same light, power icon toggles, no
+    scene buttons: Tom called ◀ ▶ there redundant), an Effects card (the 12 effects, 3 per row; a solid-red button
+    sat in its header until Tom asked what it was, and red is voice-only now), then Warm (29) / Cool (12) / Multicolour (34) scene cards. Warm =
     4+ warm palette colours (hue < 75° or ≥ 290°), Cool = at most 1, Multicolour = the rest. Each scene
     button's background is its palette as a left-to-right gradient, and the current scene (state of
     `select.basement_movie_hue_gradient_65_gradient_scene`) gets a white outline. Rows hold 3 buttons,

@@ -574,7 +574,7 @@ views:
       button_type: name
       entity: light.basement_movie_room_ambient_lighting
       name: Ambient
-      icon: mdi:led-strip-variant
+      icon: mdi:power
       show_state: true
       tap_action:
         action: toggle
@@ -606,6 +606,9 @@ views:
         tap_action:
           action: navigate
           navigation_path: '#tom-movie-ambient'
+      styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
+        \ ${(() => {\n    return (hass.states['light.basement_movie_room_ambient_lighting']?.state ===\
+        \ 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
     - type: custom:bubble-card
       card_type: button
       button_type: name
@@ -1713,33 +1716,14 @@ views:
         button_type: slider
         entity: light.basement_movie_room_ambient_lighting
         name: Ambient
-        icon: mdi:led-strip-variant
+        icon: mdi:power
         show_state: true
         tap_action:
           action: toggle
         card_layout: large-sub-buttons-grid
         rows: 1
         sub_button:
-          main:
-          - name: Previous scene
-            icon: mdi:chevron-left
-            show_name: false
-            show_icon: true
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_ambient_scene
-              target: {}
-              data:
-                scene: previous
-          - name: Next scene
-            icon: mdi:chevron-right
-            show_name: false
-            show_icon: true
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_ambient_scene
-              target: {}
-              data: {}
+          main: []
           bottom: []
       - type: custom:bubble-card
         card_type: button
@@ -1752,17 +1736,7 @@ views:
         card_layout: large-sub-buttons-grid
         rows: 3.95
         sub_button:
-          main:
-          - name: Red
-            icon: mdi:circle
-            show_name: true
-            show_icon: true
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_ambient_scene
-              target: {}
-              data:
-                scene: red
+          main: []
           bottom:
           - name: Effects 1
             buttons_layout: inline
@@ -1897,8 +1871,6 @@ views:
                 data:
                   scene: colorloop
           bottom_layout: rows
-        styles: ".bubble-sub-button-1 {\n  --bubble-sub-button-background-color: rgba(220,0,0,0.55);\n\
-          \  background-color: rgba(220,0,0,0.55) !important;\n}\n"
       - type: custom:bubble-card
         card_type: button
         button_type: name
