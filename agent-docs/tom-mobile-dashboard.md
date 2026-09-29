@@ -338,16 +338,20 @@ under Server Room.
   badge on Haynes Home and Basement Tablet). It reads `OK`, or `Check: <names>` built from the `out_of_range` attribute of
   `binary_sensor.cigar_humidity_all_ok` (`/config/packages/binary_sensors.yaml`, band 60–70 % for all nine). The card
   spells `OK` as "All OK" with CSS only (`.bubble-state` font-size 0 + `::after` content), so Bubble's own state updates
-  never fight it; anything else is shown as-is with an amber icon. The names in `Check: …` are the devices' names, which
-  differ for two jars: sensor 03 is "Jar 01" there and "NW Jar" on the dashboards, sensor 04 is "Jar 02" / "CC Jar".
+  never fight it; `Check: …` is shown as-is with an amber icon, and no data (`unavailable`/`unknown`) gets a red icon,
+  so a dead template never passes for "All OK". The summary has `availability: has_value(binary_sensor.cigar_humidity_all_ok)`
+  (added 2026-09-29; before that a dead binary sensor made it read `OK`). The names in `Check: …` are the device names:
+  sensors 03/04 were renamed from "Jar 01"/"Jar 02" to "NW Jar"/"CC Jar" on 2026-09-29 to match the dashboards.
 - The binary sensor's own state was always `on` until 2026-09-29 (a `{% set %}` inside a `for` loop does not escape it
-  in Jinja); it now uses a `namespace`. Backup of the old file: `binary_sensors.yaml.bak-scoping-20260929`.
+  in Jinja); it now uses a `namespace`. Backups of the old files: `binary_sensors.yaml.bak-scoping-20260929`,
+  `sensors.yaml.bak-cigar-availability-20260929`.
 - **`#tom-cigars`**: one Bubble `sub-buttons` card, one row per humidor, in the Basement Tablet's order and names: name ·
-  humidity · temperature (tap = more-info). A humidity chip turns amber when the binary sensor's `per_sensor` attribute
-  says it is out of band or unavailable, so the chips and the "Check" line always agree and the band lives only in the
-  YAML. Chips have `state_background: false` (Bubble otherwise paints a numeric sensor's chip as "on"). Numbering: row
-  *i* (0-based) = sub-buttons 3i+1 / 3i+2 / 3i+3. `rows: 6.45` fits nine rows exactly; adding a humidor = a row, a
-  `.bubble-sub-button-<3i+2>` block in `styles`, about +0.7 rows, and the sensor in both YAML templates.
+  humidity · temperature (tap = more-info). A humidity chip turns amber when the binary sensor's `per_sensor` entry for
+  it is not `in_range: true` (out of band or unavailable), so the chips and the "Check" line always agree and the band
+  lives only in the YAML. One IIFE in `styles` does this from a `[sub-button, entity]` map. Chips have
+  `state_background: false` (Bubble otherwise paints a numeric sensor's chip as "on"). Numbering: row *i* (0-based) =
+  sub-buttons 3i+1 / 3i+2 / 3i+3. `rows: 6.45` fits nine rows exactly; adding a humidor = a row, a `[3i+2, entity]`
+  entry in that map, about +0.7 rows, and the sensor in both YAML templates.
 
   | Name | Humidity | Temperature |
   |---|---|---|

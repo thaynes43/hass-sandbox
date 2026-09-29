@@ -2236,12 +2236,13 @@ views:
       sub_button:
         main: []
         bottom: []
-      styles: "${(() => {\n  const s = hass.states['sensor.cigar_humidity_summary']?.state;\n  if (s ===\
+      styles: "${(() => {\n  const s = hass.states['sensor.cigar_humidity_summary']?.state;\n  const tint\
+        \ = (c) => '.bubble-icon-container { background-color: ' + c + ' !important; }';\n  if (s ===\
         \ 'OK') return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after {\
         \ content: \"All OK\"; font-size: 12px; }';\n  if (typeof s === 'string' && s.startsWith('Check'))\
-        \ return '.bubble-icon-container {'\n    + ' background-color: rgba(255, 193, 7, 0.6) !important;'\n\
-        \    + ' background-color: color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent) !important;\
-        \ }';\n  return '';\n})()}\n"
+        \ return tint('rgba(255, 193, 7, 0.6)')\n    + tint('color-mix(in srgb, var(--amber-color, #ffc107)\
+        \ 60%, transparent)');\n  return tint('rgba(244, 67, 54, 0.6)')\n    + tint('color-mix(in srgb,\
+        \ var(--red-color, #f44336) 60%, transparent)');\n})()}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-basement-climate'
@@ -4273,79 +4274,16 @@ views:
                 action: more-info
           bottom_layout: rows
         rows: 6.45
-        styles: ".bubble-sub-button-2 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.basement_aqara_w100_01_humidity'];\n    return r && r.in_range === false ?\
-          \ 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n    let\
-          \ p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n    try {\
-          \ if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r = p?.['sensor.basement_aqara_w100_01_humidity'];\n\
-          \    return r && r.in_range === false ? 'color-mix(in srgb, var(--amber-color, #ffc107) 60%,\
-          \ transparent)' : '';\n  })()} !important;\n}\n.bubble-sub-button-5 {\n  background-color: ${(()\
-          \ => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.basement_aqara_w100_02_humidity'];\n    return r && r.in_range === false ?\
-          \ 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n    let\
-          \ p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n    try {\
-          \ if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r = p?.['sensor.basement_aqara_w100_02_humidity'];\n\
-          \    return r && r.in_range === false ? 'color-mix(in srgb, var(--amber-color, #ffc107) 60%,\
-          \ transparent)' : '';\n  })()} !important;\n}\n.bubble-sub-button-8 {\n  background-color: ${(()\
-          \ => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_04_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_04_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n.bubble-sub-button-11 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_03_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_03_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n.bubble-sub-button-14 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_01_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_01_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n.bubble-sub-button-17 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_02_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_02_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n.bubble-sub-button-20 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_06_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_06_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n.bubble-sub-button-23 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_07_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_07_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n.bubble-sub-button-26 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
-          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
-          \ r = p?.['sensor.cigar_humidity_sensor_05_humidity'];\n    return r && r.in_range === false\
-          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
-          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
-          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
-          \ = p?.['sensor.cigar_humidity_sensor_05_humidity'];\n    return r && r.in_range === false ?\
-          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
-          }\n"
+        styles: "${(() => {\n  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \  try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n  const chips\
+          \ = [[2, \"sensor.basement_aqara_w100_01_humidity\"], [5, \"sensor.basement_aqara_w100_02_humidity\"\
+          ], [8, \"sensor.cigar_humidity_sensor_04_humidity\"], [11, \"sensor.cigar_humidity_sensor_03_humidity\"\
+          ], [14, \"sensor.cigar_humidity_sensor_01_humidity\"], [17, \"sensor.cigar_humidity_sensor_02_humidity\"\
+          ], [20, \"sensor.cigar_humidity_sensor_06_humidity\"], [23, \"sensor.cigar_humidity_sensor_07_humidity\"\
+          ], [26, \"sensor.cigar_humidity_sensor_05_humidity\"]];\n  return chips.filter(([, e]) => p?.[e]\
+          \ && p[e].in_range !== true)\n    .map(([n]) => '.bubble-sub-button-' + n + ' {'\n      + '\
+          \ background-color: rgba(255, 193, 7, 0.6) !important;'\n      + ' background-color: color-mix(in\
+          \ srgb, var(--amber-color, #ffc107) 60%, transparent) !important; }')\n    .join('\\n');\n})()}\n"
 - type: sections
   max_columns: 1
   title: First floor
