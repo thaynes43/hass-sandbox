@@ -2145,10 +2145,16 @@ views:
         bottom_layout: rows
       styles: ".bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color 200ms ease;\n\
         }\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n\
-        \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
+        \    if (load >= 85) return 'rgba(244, 67, 54, 0.6)';\n    if (load >= 70) return 'rgba(255, 193,\
+        \ 7, 0.6)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  background-color: ${(() =>\
+        \ {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n \
+        \   if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
         \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
         \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color:\
         \ ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
+        \    if (load >= 85) return 'rgba(244, 67, 54, 0.6)';\n    if (load >= 70) return 'rgba(255, 193,\
+        \ 7, 0.6)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  background-color: ${(() =>\
+        \ {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
         \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
         \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
         \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"

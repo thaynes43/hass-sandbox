@@ -298,10 +298,12 @@ headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UP
 - **Card**: a name card; tapping the card or either chip opens the pop-up. Chip colours come from the card's
   `styles` JS, the same technique as Climate Control: `Math.round(load)` ≥ 85 = `--red-color`, ≥ 70 = `--amber-color`
   (each `color-mix`ed 60 % with transparent; the theme has no `--rgb-red/amber-color`), otherwise the idle
-  `rgba(0,0,0,0.22)`; unavailable stays idle. `sensor.apc_2700w_load` has display precision 0 (entity setting,
-  2026-09-29): NUT sends "58.90" or "55", and the chip showed "58.90%". The chip shows a whole number, and the
-  threshold compares that same rounded number, so a chip that reads "70%" is always yellow.
-  Sub-button numbering: 1 = APC 2700W, 2 = APC 900W.
+  `rgba(0,0,0,0.22)`; unavailable stays idle. Each chip has two `background-color` declarations: a plain rgba of
+  the same colour first, then the `color-mix` one. An engine without `color-mix` drops only the second and still
+  shows the warning. Sub-button numbering: 1 = APC 2700W, 2 = APC 900W.
+- Both load sensors have display precision 0 (entity setting, 2026-09-29): NUT sends "58.90" or "55", and the
+  chip showed "58.90%". The chip therefore always shows a whole number, and the threshold compares that same
+  rounded number, so a chip that reads "70%" is always yellow.
 - **`#tom-server-room-ups`**: one `custom:mini-graph-card` per UPS (HACS v0.13.0): `hours_to_show: 6`,
   `height: 140` (about 95 px at 390 px width), min/max labels, fill fade. A `card_mod` grid puts the name and the
   live W on one row. mini-graph-card normally stacks them. Re-check it at 390 px after a HA, mini-graph-card
