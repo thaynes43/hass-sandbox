@@ -9,13 +9,15 @@
 # strips showed the gradient briefly and then snapped to one colour. Read back from the lights' own state
 # (Zigbee2MQTT philips_raw: 4b03.. = gradient, 0b0x.. = one colour, ab0x.. = effect): a stop turns 4b03 into
 # 0b02, and a gradient scene over a running candle effect turns ab02 into 4b03, so no stop is needed. A scene
-# sent to an off light is stored but leaves it off, so gradient lights that are off get a plain turn on (no
-# colour) first; a press with the ambient lights off still turns them all on with the next scene (from #215).
+# sent to an off light is stored but leaves it off, so the lights that are off (and only those; gradient lights
+# and play bars, so a palette miss cannot leave the bars dark) get a plain turn on (no colour) first; a press with
+# the ambient lights off still turns them all on with the next scene (from #215).
 # The same "next scene" also lives in script.voice_movie_room_ambient_scene (no `scene`): change both together.
 alias: Cycle Gradient Scene Using Same Light Color
 description: 'Cycle to the next gradient scene on the given gradient-scene selects and give the plain
-  lights (no gradient) one colour from that scene''s palette. Gradient lights that are off get a plain
-  turn on first (a scene sent to an off light is stored but does not turn it on). Never sends stop_hue_effect:
+  lights (no gradient) one colour from that scene''s palette. Lights that are off (gradient and plain,
+  and only those) get a plain turn on first: a scene sent to an off light is stored but does not turn
+  it on, and the plain lights would stay dark if their palette colour misses. Never sends stop_hue_effect:
   on a Hue gradient light it flattens the gradient to one colour, and a gradient scene replaces a running
   effect by itself (both read back from the lights'' own state, 2026-09-28). The plain-light colour comes
   from script.movie_room_play_bars_match_gradient_scene''s palette table: the gradient colour-list sensor
@@ -48,19 +50,20 @@ sequence:
         gradient_lights: '{{ select_list | map(''regex_replace'', ''^select[.](.*)_gradient_scene$'',
           ''light.\\1'') | list }}'
     - variables:
-        gradient_lights_off: '{{ gradient_lights | select(''is_state'', ''off'') | list }}'
-    - alias: 'Gradient lights that are off come on with a plain turn on (no colour, no effect), which
-        keeps the stored gradient. Do not add stop_hue_effect here: it flattens a Hue gradient to one
+        lights_off: '{{ (gradient_lights + lights_list) | select(''is_state'', ''off'') | list }}'
+    - alias: 'Lights that are off (and only those) come on with a plain turn on (no colour, no effect),
+        which keeps a gradient light''s stored gradient; the plain lights would otherwise stay dark if
+        their palette colour misses. Do not add stop_hue_effect here: it flattens a Hue gradient to one
         colour, and racing the scene select (both go out within milliseconds) it landed after the scene,
         so the strips showed the gradient briefly and then one colour (2026-09-28). The scene replaces
         a running effect on its own'
       if:
       - condition: template
-        value_template: '{{ gradient_lights_off | count > 0 }}'
+        value_template: '{{ lights_off | count > 0 }}'
       then:
       - action: light.turn_on
         target:
-          entity_id: '{{ gradient_lights_off }}'
+          entity_id: '{{ lights_off }}'
         data: {}
     - data:
         entity_id: '{{ select_entities }}'

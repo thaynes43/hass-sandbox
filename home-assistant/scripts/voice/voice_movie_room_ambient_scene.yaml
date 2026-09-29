@@ -11,7 +11,8 @@
 # - A gradient scene replaces a running Hue effect, and so does a plain colour on the play bars, so a scene
 #   change sends NO stop_hue_effect. #215 sent one to the group just before the scene: on a gradient light a
 #   stop flattens the gradient to one colour, and it landed after the scene, so the strips showed the gradient
-#   briefly and then snapped to one colour (fixed the same evening). Red still stops effects (harmless there).
+#   briefly and then snapped to one colour (fixed the same evening). Red still stops effects, to keep
+#   Zigbee2MQTT's effect attribute honest; the red colour replaces the effect anyway.
 # - Zigbee2MQTT keeps the last effect it sent, so after an effect and then a scene the `effect` attribute (in HA
 #   too) still names the old effect while the lights run the gradient. Cosmetic.
 # - A Hue effect resets brightness to full when it starts (jumped to 254 mid-game), so the effect branch puts
@@ -22,8 +23,9 @@
 # mode queued (dashboard taps queue up). Refusals come back as a `response` sentence with a plain stop.
 # Two implementations of "next scene" exist: this tool with no `scene` (hardcoded selects) and
 # script.cycle_gradient_scene_using_same_light_color (button 4; selects passed in). They agree; change both
-# together. Gradient lights that are off get a plain turn on (no colour) before the scene, because a scene sent
-# to an off light is stored but leaves it off; the play bars come on with their colour.
+# together. The ambient lights that are off (and only those, all six) get a plain turn on (no colour) before the
+# scene, because a scene sent to an off light is stored but leaves it off, and a palette miss would otherwise
+# leave the play bars dark.
 alias: Movie Room Ambient Scene
 description: 'Voice tool for the Movie Room ambient lights (the gradient strips, floor lamps and play
   bars together). Changes their colour scene or look and turns them on if they are off. Leave scene empty
@@ -141,10 +143,10 @@ sequence:
     - condition: template
       value_template: '{{ kind == ''red'' }}'
     sequence:
-    - alias: Red is one plain colour on all six, so a stop_hue_effect is harmless here (it only flattens
-        a gradient, and red has none) and keeps Zigbee2MQTT's effect attribute honest; the colour would
-        replace a running effect anyway. On first if needed (the stop is not relied on to turn the lights
-        on)
+    - alias: The stop_hue_effect is kept here so Zigbee2MQTT's effect attribute stays honest (it only
+        learns about effects from its own commands); the red colour replaces a running effect anyway,
+        and a stop landing after the red leaves the lights red. On first if needed (the stop is not relied
+        on to turn the lights on)
       if:
       - condition: template
         value_template: '{{ not is_state(group, ''on'') }}'
@@ -167,28 +169,27 @@ sequence:
         - 0
         - 0
   default:
-  - alias: 'Gradient lights that are off come on with a plain turn on (no colour, no effect), which keeps
-      the stored gradient: a scene sent to an off light is stored but does not turn it on. The play bars
-      come on with their colour. Do not add stop_hue_effect here: racing the scene select it landed after
-      the scene and the strips showed the gradient briefly, then one colour (2026-09-28)'
+  - variables:
+      ambient_lights:
+      - light.basement_movie_hue_gradient_65
+      - light.basement_movie_hue_gradient_75
+      - light.basement_movie_hue_left_floor_lamp
+      - light.basement_movie_hue_right_floor_lamp
+      - light.basement_movie_hue_play_01
+      - light.basement_movie_hue_play_02
+      ambient_off: '{{ ambient_lights | select(''is_state'', ''off'') | list }}'
+  - alias: 'Ambient lights that are off (and only those) come on with a plain turn on (no colour, no effect),
+      which keeps a gradient light''s stored gradient: a scene sent to an off light is stored but does
+      not turn it on, and the play bars stay dark if their palette colour misses. Do not add stop_hue_effect
+      here: racing the scene select it landed after the scene and the strips showed the gradient briefly,
+      then one colour (2026-09-28)'
     if:
-    - condition: not
-      conditions:
-      - condition: state
-        entity_id:
-        - light.basement_movie_hue_gradient_65
-        - light.basement_movie_hue_gradient_75
-        - light.basement_movie_hue_left_floor_lamp
-        - light.basement_movie_hue_right_floor_lamp
-        state: 'on'
+    - condition: template
+      value_template: '{{ ambient_off | count > 0 }}'
     then:
     - action: light.turn_on
       target:
-        entity_id:
-        - light.basement_movie_hue_gradient_65
-        - light.basement_movie_hue_gradient_75
-        - light.basement_movie_hue_left_floor_lamp
-        - light.basement_movie_hue_right_floor_lamp
+        entity_id: '{{ ambient_off }}'
       data: {}
   - action: select.select_option
     target:
