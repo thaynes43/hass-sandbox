@@ -122,9 +122,12 @@ which does not exist; they now step `climate.movie_room_breeze` down/up 1° in h
 synthetic Central Scene events: 74 → 73 → 74). Also fixed 2026-09-28: button 4 ×1
 (`script.cycle_gradient_scene_using_same_light_color`) waited up to 30 s on
 `sensor.basement_movie_hue_gradient_65_gradient`, which does not update on a scene select, so the play
-bars got the previous scene's colour and presses during the wait were dropped; it now stops effects
-first and uses the palette table (mirrored in `home-assistant/scripts/hue-gradient/` with the match
-script). Defects found (open):
+bars got the previous scene's colour and presses during the wait were dropped; it now uses the palette
+table (mirrored in `home-assistant/scripts/hue-gradient/` with the match script). It does **not** send
+`stop_hue_effect`: on a Hue gradient light that stop flattens the gradient to one colour, and a gradient
+scene replaces a running effect on its own (both read back from the lights' `philips_raw` state). #215 sent
+the stop 2 ms before the scene, it landed after it, and the strips snapped to one colour; removed the same
+evening, in both this script and `script.voice_movie_room_ambient_scene`. Defects found (open):
 `light.basement_hall_night_light` in the repo's night-light watchdog does not exist live; six
 live ZEN37 hold-dim helper automations and three scripts the buttons call
 (`toggle_hue_colors`, `toggle_hue_colors_for_multiple_targets`, `zen32_hard_reset`) have no repo

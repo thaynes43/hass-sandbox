@@ -6,19 +6,24 @@
 # select.basement_movie_hue_gradient_65_gradient_scene, matched ignoring case/spaces/punctuation, with aliases for
 # Zigbee2MQTT's spellings artic_aurora / runy_glow / colour_burst), a Hue effect (fireplace, candle, underwater,
 # cosmos, sparkle, enchant, glisten, opal, sunbeam, sunrise, sunset, colorloop) or red.
-# Findings behind it (2026-09-28, live tests in the Movie Room):
-# - Zigbee2MQTT never reports a running effect (HA shows effect none), and a gradient scene does not replace an
-#   effect, so every scene/colour change sends effect stop_hue_effect first.
+# Findings behind it (2026-09-28, live in the Movie Room; the lights' own state read back through Zigbee2MQTT's
+# philips_raw: 4b03.. = gradient, 0b0x.. = one colour, ab0x.. = effect):
+# - A gradient scene replaces a running Hue effect, and so does a plain colour on the play bars, so a scene
+#   change sends NO stop_hue_effect. #215 sent one to the group just before the scene: on a gradient light a
+#   stop flattens the gradient to one colour, and it landed after the scene, so the strips showed the gradient
+#   briefly and then snapped to one colour (fixed the same evening). Red still stops effects (harmless there).
+# - Zigbee2MQTT keeps the last effect it sent, so after an effect and then a scene the `effect` attribute (in HA
+#   too) still names the old effect while the lights run the gradient. Cosmetic.
 # - A Hue effect resets brightness to full when it starts (jumped to 254 mid-game), so the effect branch puts
 #   the previous level back 0.7 s later (40 % if the lights were off). zigbee-herdsman-converters' philips.js
 #   documents the same reset.
 # - The play bars are plain colour lights: script.movie_room_play_bars_match_gradient_scene gives them a colour
 #   from the scene's palette (home-assistant/scripts/hue-gradient/).
 # mode queued (dashboard taps queue up). Refusals come back as a `response` sentence with a plain stop.
-# Two implementations of "next scene" exist: this tool with no `scene` (hardcoded selects, effect stop on the group)
-# and script.cycle_gradient_scene_using_same_light_color (button 4; selects passed in, stop on the member lights).
-# They agree; change both together. An ambient group that was switched off is turned on first and then
-# always gets stop_hue_effect (it can still hold an effect), before any scene or colour (#215 review).
+# Two implementations of "next scene" exist: this tool with no `scene` (hardcoded selects) and
+# script.cycle_gradient_scene_using_same_light_color (button 4; selects passed in). They agree; change both
+# together. Gradient lights that are off get a plain turn on (no colour) before the scene, because a scene sent
+# to an off light is stored but leaves it off; the play bars come on with their colour.
 alias: Movie Room Ambient Scene
 description: 'Voice tool for the Movie Room ambient lights (the gradient strips, floor lamps and play
   bars together). Changes their colour scene or look and turns them on if they are off. Leave scene empty
@@ -41,11 +46,13 @@ fields:
     selector:
       text: {}
 sequence:
-- alias: The four gradient lights (Hue Play gradient strips 65/75, left/right Gradient Signe floor lamps)
+- alias: 'The four gradient lights (Hue Play gradient strips 65/75, left/right Gradient Signe floor lamps)
     each have a select with the same 75 Hue gradient scenes. The play bars are plain colour lights; script.movie_room_play_bars_match_gradient_scene
-    gives them a colour from the new scene's palette (decoded from Zigbee2MQTT's scene table). Effects
-    go to the Zigbee2MQTT group, which forwards them to all six. Zigbee2MQTT never reports a running effect,
-    so every scene or colour change stops effects first
+    gives them a colour from the new scene''s palette (decoded from Zigbee2MQTT''s scene table). Effects
+    go to the Zigbee2MQTT group, which forwards them to all six. A scene change never sends stop_hue_effect:
+    on a Hue gradient light it flattens the gradient to one colour, and a gradient scene (or the play
+    bars'' colour) replaces a running effect by itself (read back from the lights'' own state, 2026-09-28).
+    Only red, a plain colour, still stops effects first'
   variables:
     group: light.basement_movie_room_ambient_lighting
     first_select: select.basement_movie_hue_gradient_65_gradient_scene
@@ -134,9 +141,10 @@ sequence:
     - condition: template
       value_template: '{{ kind == ''red'' }}'
     sequence:
-    - alias: 'A light that was switched off can still hold a Hue effect, and a gradient scene or colour
-        does not replace a running effect, so: on first if needed, then always stop effects (the stop
-        is not relied on to turn the lights on)'
+    - alias: Red is one plain colour on all six, so a stop_hue_effect is harmless here (it only flattens
+        a gradient, and red has none) and keeps Zigbee2MQTT's effect attribute honest; the colour would
+        replace a running effect anyway. On first if needed (the stop is not relied on to turn the lights
+        on)
       if:
       - condition: template
         value_template: '{{ not is_state(group, ''on'') }}'
@@ -159,22 +167,29 @@ sequence:
         - 0
         - 0
   default:
-  - alias: 'A light that was switched off can still hold a Hue effect, and a gradient scene or colour
-      does not replace a running effect, so: on first if needed, then always stop effects (the stop is
-      not relied on to turn the lights on)'
+  - alias: 'Gradient lights that are off come on with a plain turn on (no colour, no effect), which keeps
+      the stored gradient: a scene sent to an off light is stored but does not turn it on. The play bars
+      come on with their colour. Do not add stop_hue_effect here: racing the scene select it landed after
+      the scene and the strips showed the gradient briefly, then one colour (2026-09-28)'
     if:
-    - condition: template
-      value_template: '{{ not is_state(group, ''on'') }}'
+    - condition: not
+      conditions:
+      - condition: state
+        entity_id:
+        - light.basement_movie_hue_gradient_65
+        - light.basement_movie_hue_gradient_75
+        - light.basement_movie_hue_left_floor_lamp
+        - light.basement_movie_hue_right_floor_lamp
+        state: 'on'
     then:
     - action: light.turn_on
       target:
-        entity_id: light.basement_movie_room_ambient_lighting
+        entity_id:
+        - light.basement_movie_hue_gradient_65
+        - light.basement_movie_hue_gradient_75
+        - light.basement_movie_hue_left_floor_lamp
+        - light.basement_movie_hue_right_floor_lamp
       data: {}
-  - action: light.turn_on
-    target:
-      entity_id: light.basement_movie_room_ambient_lighting
-    data:
-      effect: stop_hue_effect
   - action: select.select_option
     target:
       entity_id:
