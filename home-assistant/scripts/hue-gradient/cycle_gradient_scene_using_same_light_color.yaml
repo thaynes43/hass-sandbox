@@ -7,6 +7,9 @@
 # colour from the previous scene and presses during the wait were dropped (mode single). Verified live: a run
 # finishes in about 50 ms and the play bars took #ff8d52 from starlight's palette.
 # The same "next scene" also lives in script.voice_movie_room_ambient_scene (no `scene`): change both together.
+# Intended since 2026-09-28: with the ambient lights off, a press turns them all on with the next scene (the effect
+# stop is a light.turn_on on the six members), the same as "change the scene" by voice. Before, only the play bars
+# came on (the colour step) while the strips and floor lamps stayed off; button 3 x1 is still the on/off toggle.
 alias: Cycle Gradient Scene Using Same Light Color
 description: 'Cycle to the next gradient scene on the given gradient-scene selects and give the plain
   lights (no gradient) one colour from that scene''s palette. Stops any running Hue effect first (Zigbee2MQTT

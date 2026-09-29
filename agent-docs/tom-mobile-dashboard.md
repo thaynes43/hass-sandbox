@@ -165,17 +165,19 @@ Tom asked for one card each for the receiver (volume, inputs, power), the lights
 Every button reuses a script the voice agents or the wall switches already use, so all three stay in step.
 - **Receiver** = `media_player.str_az5000es` (songpal; the Sony STR-AZ5000ES, named "Movie Room
   Receiver" and put in the Movie Room area that day). There are **two cards**, swapped by section
-  `visibility` on the receiver being `on`. With the receiver on, the card body is a volume slider, the
-  icon is a power button (`tap_action: toggle`, tinted with the accent colour while on, icon forced to the
-  text colour so it stays visible on the slider fill), the top-right button shows the current input and
-  opens pop-up `#tom-movie-receiver` (so does the dB readout), and the bottom row is −, the dB readout and +.
+  `visibility` on the receiver being `on`. With the receiver on it is a name card like Ambient: tapping
+  the card opens pop-up `#tom-movie-receiver` (`button_action`; so do the current-input button top right
+  and the dB readout), the icon is a power button (`tap_action: toggle`, tinted with the accent colour
+  while on), and the bottom row is −, the dB readout and +. It was a slider card for the first few minutes
+  of the makeover: Tom tapped the card to open the pop-up, hit the power icon and switched the receiver
+  off, so the volume slider now lives only in the pop-up.
   With it off, a one-row card with a power icon: tapping anywhere turns it on. One card with hidden
   sub-buttons left a blank row, because the card's height (`rows`) is fixed. Makeover 2026-09-28 (Tom:
   "The Receiver card with all the presets could use the same makeover. We can have input select and
   presets on the popup and volume + power on the card"): the Input select and the presets row moved to
   the pop-up.
-  - **`#tom-movie-receiver` pop-up**: the volume card again (power icon, slider, −/dB/+; shown only while
-    the receiver is on), an Input card (one button per source, 3 per row: PS5, Xbox, Shield, HTPC, Sonos,
+  - **`#tom-movie-receiver` pop-up**: the volume slider card (power icon, slider, −/dB/+; shown only
+    while the receiver is on), an Input card (one button per source, 3 per row: PS5, Xbox, Shield, HTPC, Sonos,
     Bluetooth, Source, TV; tap = `media_player.select_source`; the current source is tinted) and the
     Presets card below.
   - **Presets** (2026-09-28, the pop-up's Presets card, groups mode): one button per

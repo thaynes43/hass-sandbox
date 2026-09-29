@@ -335,13 +335,11 @@ views:
         bottom: []
     - type: custom:bubble-card
       card_type: button
-      button_type: slider
+      button_type: name
       entity: media_player.str_az5000es
       name: Receiver
       icon: mdi:power
       show_state: false
-      min_value: 15
-      max_value: 62
       tap_action:
         action: toggle
       card_layout: large-sub-buttons-grid
@@ -402,6 +400,10 @@ views:
         \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on') ? 'rgba(var(--rgb-accent-color),\
         \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-icon {\n  color: var(--primary-text-color)\
         \ !important;\n}\n"
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-movie-receiver'
     - type: custom:bubble-card
       card_type: button
       button_type: name
