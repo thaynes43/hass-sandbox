@@ -6,11 +6,6 @@ views:
   title: Main
   path: main
   icon: mdi:home-assistant
-  header:
-    card:
-      type: markdown
-      text_only: true
-      content: '# Welcome Tom! 🛠️'
   sections:
   - type: grid
     cards:

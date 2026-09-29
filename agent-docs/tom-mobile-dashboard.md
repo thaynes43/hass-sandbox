@@ -16,7 +16,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 
 | Tab | `path` | Icon | Holds |
 |---|---|---|---|
-| Main (default) | `main` | `mdi:home-assistant` | the "Welcome Tom!" header, high-priority and general cards |
+| Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
 | Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
