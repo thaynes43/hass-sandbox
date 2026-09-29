@@ -2109,6 +2109,60 @@ views:
     - type: custom:bubble-card
       card_type: button
       button_type: name
+      name: Lights
+      icon: mdi:ceiling-light
+      entity: light.basement_server_room_lights
+      show_state: true
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - entity: light.basement_server_room_lights
+          name: Lights
+          icon: mdi:lightbulb-group
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        - entity: automation.light_fp2_server_room_motion_detected_lights_on
+          name: Hold
+          icon: mdi:hand-back-left
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_server_inovelli_presence
+              normal_mode_input_select: input_select.basement_server_room_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_server_led_color
+              automation_entity_ids:
+              - automation.light_fp2_server_room_motion_detected_lights_on
+              - automation.light_fp2_server_room_motion_cleared_lights_off
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color 200ms ease;\n\
+        }\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    return hass.states['light.basement_server_room_lights']?.state\
+        \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n${(() => {\n  const held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_server_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_server_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_server_room_mmwave_normal_mode']?.state;\n    const\
+        \ autos = [\"automation.light_fp2_server_room_motion_detected_lights_on\", \"automation.light_fp2_server_room_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[1]?.setAttribute('icon',\
+        \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-2 { background-color:\
+        \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
       name: UPS Load
       icon: mdi:power-plug-battery-outline
       show_state: false
@@ -2158,6 +2212,36 @@ views:
         \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
         \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
         \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
+    - type: custom:bubble-card
+      card_type: separator
+      name: Cigars
+      icon: mdi:cigar
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: sensor.cigar_humidity_summary
+      name: Humidors
+      icon: mdi:cigar
+      show_state: true
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-cigars'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-cigars'
+      sub_button:
+        main: []
+        bottom: []
+      styles: "${(() => {\n  const s = hass.states['sensor.cigar_humidity_summary']?.state;\n  if (s ===\
+        \ 'OK') return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after {\
+        \ content: \"All OK\"; font-size: 12px; }';\n  if (typeof s === 'string' && s.startsWith('Check'))\
+        \ return '.bubble-icon-container {'\n    + ' background-color: rgba(255, 193, 7, 0.6) !important;'\n\
+        \    + ' background-color: color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent) !important;\
+        \ }';\n  return '';\n})()}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-basement-climate'
@@ -3855,6 +3939,413 @@ views:
             \ center;\n}\nha-card > .header { grid-column: 1; grid-row: 1; }\nha-card > .states { grid-column:\
             \ 2; grid-row: 1; padding-top: 0; }\nha-card > .graph, ha-card > .info { grid-column: 1 /\
             \ -1; }\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-cigars'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Humidors
+
+          Target 60–70 % humidity
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        sub_button:
+          main: []
+          bottom:
+          - name: MON1800
+            buttons_layout: inline
+            group:
+            - entity: sensor.basement_aqara_w100_01_humidity
+              name: MON1800
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_aqara_w100_01_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_aqara_w100_01_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: MA50
+            buttons_layout: inline
+            group:
+            - entity: sensor.basement_aqara_w100_02_humidity
+              name: MA50
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_aqara_w100_02_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_aqara_w100_02_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: CC Jar
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_04_humidity
+              name: CC Jar
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_04_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_04_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: NW Jar
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_03_humidity
+              name: NW Jar
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_03_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_03_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Tupperdor 01
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_01_humidity
+              name: Tupperdor 01
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_01_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_01_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Tupperdor 02
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_02_humidity
+              name: Tupperdor 02
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_02_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_02_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Tupperdor 03
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_06_humidity
+              name: Tupperdor 03
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_06_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_06_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Tupperdor 04
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_07_humidity
+              name: Tupperdor 04
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_07_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_07_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Cooler
+            buttons_layout: inline
+            group:
+            - entity: sensor.cigar_humidity_sensor_05_humidity
+              name: Cooler
+              icon: mdi:cigar
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_05_humidity
+              name: Humidity
+              state_background: false
+              icon: mdi:water-percent
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.cigar_humidity_sensor_05_air_temperature
+              name: Temperature
+              state_background: false
+              icon: mdi:thermometer
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          bottom_layout: rows
+        rows: 6.45
+        styles: ".bubble-sub-button-2 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.basement_aqara_w100_01_humidity'];\n    return r && r.in_range === false ?\
+          \ 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n    let\
+          \ p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n    try {\
+          \ if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r = p?.['sensor.basement_aqara_w100_01_humidity'];\n\
+          \    return r && r.in_range === false ? 'color-mix(in srgb, var(--amber-color, #ffc107) 60%,\
+          \ transparent)' : '';\n  })()} !important;\n}\n.bubble-sub-button-5 {\n  background-color: ${(()\
+          \ => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.basement_aqara_w100_02_humidity'];\n    return r && r.in_range === false ?\
+          \ 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n    let\
+          \ p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n    try {\
+          \ if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r = p?.['sensor.basement_aqara_w100_02_humidity'];\n\
+          \    return r && r.in_range === false ? 'color-mix(in srgb, var(--amber-color, #ffc107) 60%,\
+          \ transparent)' : '';\n  })()} !important;\n}\n.bubble-sub-button-8 {\n  background-color: ${(()\
+          \ => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_04_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_04_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n.bubble-sub-button-11 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_03_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_03_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n.bubble-sub-button-14 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_01_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_01_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n.bubble-sub-button-17 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_02_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_02_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n.bubble-sub-button-20 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_06_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_06_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n.bubble-sub-button-23 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_07_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_07_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n.bubble-sub-button-26 {\n  background-color: ${(() => {\n    let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
+          \    try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const\
+          \ r = p?.['sensor.cigar_humidity_sensor_05_humidity'];\n    return r && r.in_range === false\
+          \ ? 'rgba(255, 193, 7, 0.6)' : '';\n  })()} !important;\n  background-color: ${(() => {\n  \
+          \  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n   \
+          \ try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n    const r\
+          \ = p?.['sensor.cigar_humidity_sensor_05_humidity'];\n    return r && r.in_range === false ?\
+          \ 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)' : '';\n  })()} !important;\n\
+          }\n"
 - type: sections
   max_columns: 1
   title: First floor

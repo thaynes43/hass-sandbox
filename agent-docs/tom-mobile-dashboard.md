@@ -18,7 +18,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 |---|---|---|---|
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
-| Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards, then Server Room (UPS load) |
+| Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards, then Server Room (lights, UPS load), then Cigars (humidors) |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
 | Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
 
@@ -26,7 +26,7 @@ A bubble-card pop-up only opens from cards in its own view, so each pop-up lives
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
 `#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
-`#tom-movie-receiver` and `#tom-server-room-ups`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
+`#tom-movie-receiver`, `#tom-server-room-ups` and `#tom-cigars`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
 cards, replace its "No cards yet." markdown card.
 
@@ -58,7 +58,8 @@ Room cards off it.
 | Section (bubble separator) | Cards |
 |---|---|
 | Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
-| Server Room | "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below |
+| Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons; "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below |
+| Cigars | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity + temperature per humidor) — see *Cigars* below |
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).
@@ -281,6 +282,21 @@ Every button reuses a script the voice agents or the wall switches already use, 
 - Four sub-buttons per bottom row is the most that fit at iPhone width; five get truncated (Outdoor Lights).
 
 ### Server Room (added 2026-09-29)
+- **Lights** (Tom: "Sometimes I am behind the server rack and the mmwave sensors can't see me"): a name card on
+  `light.basement_server_room_lights` (Z2M group: the two Hue bulbs + the Inovelli). The body does nothing; the icon
+  opens more-info. Sub-button 1 **Lights** toggles the group (accent while on). Sub-button 2 **Hold** calls
+  `script.inovelli_toggle_mmwave_hold_led_indicator` with exactly the payload of the switch's double-tap mapping
+  (`automation.switch_inovelli_blue_basement_server_press_or_hold_switch_mappings`): `switch_name:
+  basement_server_inovelli_presence`, `normal_mode_input_select: input_select.basement_server_room_mmwave_normal_mode`,
+  `hold_color: input_text.inovelli_manual_hold`, `prev_led_color_helper: input_text.basement_server_led_color`, and
+  both `automation.light_fp2_server_room_motion_{detected_lights_on,cleared_lights_off}`. Holding sets MmwaveControlWiredDevice
+  to `Disabled` (the zone's normal mode is `Wasteful Occupancy`, so the switch itself would otherwise turn the load off),
+  turns both FP2 automations off and paints LEDs 1–7 the manual-hold colour; clearing restores all three. Hold is lit
+  (amber, `mdi:lock`) on the script's own `is_on_hold` test: LED 1 in a hold colour, or mmWave control `Disabled` while
+  the normal mode is not, or either automation off. So a lit button always means "a tap clears it", auto holds included.
+  Checked live 2026-09-29 by tapping the card at 390 px: on → both automations off, select `Disabled`, LEDs 90; off →
+  all restored (`Wasteful Occupancy`, LEDs 255, automations on).
+
 Tom: "a bubble card that shows what % each UPS is at … 70% goes yellow and 85% goes red. GPUs need
 headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UPS **load**, not battery.
 - **UPSes** (NUT, one config entry each): APC 2700W = Smart-UPS X 3000 (`nut2700.haynesnetwork`), APC 900W =
@@ -313,6 +329,34 @@ headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UP
   row at 390 px. Before adding a third, screenshot at 390 px and shorten the names if it truncates.
 - Checked 2026-09-29 at 390 px with Playwright: tapping the card body and a chip both open the pop-up. The
   threshold logic was rendered on a throwaway preview dashboard at 69 / 69.4 / 69.5 / 70 / 84 / 84.6 / 85 / unavailable.
+
+### Cigars (added 2026-09-29)
+Tom: a pop-up with his cigar sensors, named as on the Basement Tablet dashboard, and a main button that shows only the
+aggregate status. The sensors are all in the **Concessions** area, so the card has its own section rather than sitting
+under Server Room.
+- **Aggregate**: `sensor.cigar_humidity_summary`, a YAML template in the HA pod's `/config/packages/sensors.yaml` (also a
+  badge on Haynes Home and Basement Tablet). It reads `OK`, or `Check: <names>` built from the `out_of_range` attribute of
+  `binary_sensor.cigar_humidity_all_ok` (`/config/packages/binary_sensors.yaml`, band 60–70 % for all nine). The card
+  spells `OK` as "All OK" with CSS only (`.bubble-state` font-size 0 + `::after` content), so Bubble's own state updates
+  never fight it; anything else is shown as-is with an amber icon. The names in `Check: …` are the devices' names, which
+  differ for two jars: sensor 03 is "Jar 01" there and "NW Jar" on the dashboards, sensor 04 is "Jar 02" / "CC Jar".
+- The binary sensor's own state was always `on` until 2026-09-29 (a `{% set %}` inside a `for` loop does not escape it
+  in Jinja); it now uses a `namespace`. Backup of the old file: `binary_sensors.yaml.bak-scoping-20260929`.
+- **`#tom-cigars`**: one Bubble `sub-buttons` card, one row per humidor, in the Basement Tablet's order and names: name ·
+  humidity · temperature (tap = more-info). A humidity chip turns amber when the binary sensor's `per_sensor` attribute
+  says it is out of band or unavailable, so the chips and the "Check" line always agree and the band lives only in the
+  YAML. Chips have `state_background: false` (Bubble otherwise paints a numeric sensor's chip as "on"). Numbering: row
+  *i* (0-based) = sub-buttons 3i+1 / 3i+2 / 3i+3. `rows: 6.45` fits nine rows exactly; adding a humidor = a row, a
+  `.bubble-sub-button-<3i+2>` block in `styles`, about +0.7 rows, and the sensor in both YAML templates.
+
+  | Name | Humidity | Temperature |
+  |---|---|---|
+  | MON1800 | `sensor.basement_aqara_w100_01_humidity` | `…_01_temperature` |
+  | MA50 | `sensor.basement_aqara_w100_02_humidity` | `…_02_temperature` |
+  | CC Jar | `sensor.cigar_humidity_sensor_04_humidity` | `…_04_air_temperature` |
+  | NW Jar | `sensor.cigar_humidity_sensor_03_humidity` | `…_03_air_temperature` |
+  | Tupperdor 01–04 | `sensor.cigar_humidity_sensor_{01,02,06,07}_humidity` | `…_air_temperature` |
+  | Cooler | `sensor.cigar_humidity_sensor_05_humidity` | `…_05_air_temperature` |
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
