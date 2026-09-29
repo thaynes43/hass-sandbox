@@ -10,20 +10,54 @@ iterating on it.
 - **Repo backup**: `home-assistant/dashboards/tom-mobile.yaml` — keep it in sync after any live edit
   (same convention as `wall-display.yaml`).
 
-## Layout (single sections view, `max_columns: 1`, flow = outdoors → in)
+## Layout (five tabs, each a sections view with `max_columns: 1`)
+
+Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
+
+| Tab | `path` | Icon | Holds |
+|---|---|---|---|
+| Main (default) | `main` | `mdi:home-assistant` | the "Welcome Tom!" header, high-priority and general cards |
+| Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
+| Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards |
+| First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
+| Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
+
+A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
+as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
+`#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
+`#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient` and
+`#tom-movie-receiver`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
+view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
+cards, replace its "No cards yet." markdown card.
+
+**Main**
 
 | Section (bubble separator) | Cards |
 |---|---|
 | (none, first card) | "Phone Assist" bubble button: status badge from the **Voice** health checker, state line `sensor.phone_assist_status`, sub-buttons **Chat** / **Voice** (see *Assist on Tom's iPhone* below) |
-| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
-| Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
-| Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 | First Floor | "First Floor Lights" toggle (`light.first_floor_chaos_lights`) |
-| Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Bedroom | Primary Bedroom scene card (ported from Kellie Mobile) → `#tom-primary-bedroom` |
 | Climate | Climate Control card w/ 68°/72° presets (ported) → `#tom-climate-control` |
 | Doors & Locks | Locks card → `#tom-locks`, Garage Doors card → `#tom-garage-doors` |
 | Health Checks | `custom:health-check-card` → `#health-check-popup` (`custom:health-check-detail-card`, relay `health_check_relay`) — same as wall-display/unifi-connect (`home-assistant/cards/wall-display/health-check-{card,popup}.yaml`) |
+
+First Floor Lights, Primary Bedroom and Climate Control (both floors' ecobees; its pop-up also has
+the basement mini splits) are on Main because the 2026-09-29 split moved only the outdoor and Movie
+Room cards off it.
+
+**Outdoor**
+
+| Section (bubble separator) | Cards |
+|---|---|
+| Outdoors | "Outdoor Lights" bubble button: Calla / Lily / Floodlight / Motion toggles + Flood Hold |
+| Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
+| Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
+
+**Basement**
+
+| Section (bubble separator) | Cards |
+|---|---|
+| Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).
@@ -261,7 +295,10 @@ Every button reuses a script the voice agents or the wall switches already use, 
 - Small edits: `ha_config_get_dashboard(url_path="tom-mobile", entity_id=...)` →
   `ha_config_set_dashboard(python_transform=..., config_hash=<FULL hash>)`. Never truncate the hash.
 - `find_card` cannot see inside bubble pop-up `cards:` lists — for popup edits, index by card
-  position (popups are the last 8 cards of section 0) or do a full-config get.
+  position (each tab's pop-ups are the last cards of its section 0) or fetch one tab with
+  `ha_config_get_dashboard(url_path="tom-mobile", view_path="<tab path>")`.
+- The `python_transform` sandbox cannot see local variables from inside a `lambda` or a
+  comprehension (`NameError`), so write card lists out as `[c[0], c[7], ...]`.
 - The original seed was generated by a Python builder script (session scratchpad,
   `build_tom_mobile.py`) that emitted both the live JSON and `tom-mobile.yaml`. For large
   restructures, that pattern (build dict in Python → dump JSON + YAML → one full-config
