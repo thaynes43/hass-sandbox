@@ -19,7 +19,7 @@ iterating on it.
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 | First Floor | "First Floor Lights" toggle (`light.first_floor_chaos_lights`) |
-| Movie Room | "Receiver" (volume slider + Power, Input, −/dB/+, Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
+| Movie Room | "Receiver" (power icon, volume slider, −/dB/+, current input → `#tom-movie-receiver`: volume, input buttons, Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Bedroom | Primary Bedroom scene card (ported from Kellie Mobile) → `#tom-primary-bedroom` |
 | Climate | Climate Control card w/ 68°/72° presets (ported) → `#tom-climate-control` |
 | Doors & Locks | Locks card → `#tom-locks`, Garage Doors card → `#tom-garage-doors` |
@@ -165,11 +165,20 @@ Tom asked for one card each for the receiver (volume, inputs, power), the lights
 Every button reuses a script the voice agents or the wall switches already use, so all three stay in step.
 - **Receiver** = `media_player.str_az5000es` (songpal; the Sony STR-AZ5000ES, named "Movie Room
   Receiver" and put in the Movie Room area that day). There are **two cards**, swapped by section
-  `visibility` on the receiver being `on`. With the receiver on, the card body is a volume slider and
-  the bottom row is Input (a Bubble `select` sub-button on `source_list`), −, the dB readout and +. With
-  it off, a one-row card has just Power. One card with hidden sub-buttons left a blank row, because the
-  card's height (`rows`) is fixed.
-  - **Presets row** (2026-09-28, `rows: 2.438`, groups mode): one button per
+  `visibility` on the receiver being `on`. With the receiver on, the card body is a volume slider, the
+  icon is a power button (`tap_action: toggle`, tinted with the accent colour while on, icon forced to the
+  text colour so it stays visible on the slider fill), the top-right button shows the current input and
+  opens pop-up `#tom-movie-receiver` (so does the dB readout), and the bottom row is −, the dB readout and +.
+  With it off, a one-row card with a power icon: tapping anywhere turns it on. One card with hidden
+  sub-buttons left a blank row, because the card's height (`rows`) is fixed. Makeover 2026-09-28 (Tom:
+  "The Receiver card with all the presets could use the same makeover. We can have input select and
+  presets on the popup and volume + power on the card"): the Input select and the presets row moved to
+  the pop-up.
+  - **`#tom-movie-receiver` pop-up**: the volume card again (power icon, slider, −/dB/+; shown only while
+    the receiver is on), an Input card (one button per source, 3 per row: PS5, Xbox, Shield, HTPC, Sonos,
+    Bluetooth, Source, TV; tap = `media_player.select_source`; the current source is tinted) and the
+    Presets card below.
+  - **Presets** (2026-09-28, the pop-up's Presets card, groups mode): one button per
     `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube, Xbox; -35 to -3.5 dB, the same range as the slider above, so a preset can never pin the slider below its floor; below -19 dB the receiver moves in whole dB, so a half-dB preset there lands on a neighbouring step), showing its icon and saved level. The names are hidden (`show_name: false`, since the Xbox preset
     on 2026-09-28): with three presets each button is 114 px at 390 px, and "YouTube · -29.0 dB" overflowed
     and scrolled. The brand icons already identify each app. A fourth preset would shrink each to about 84 px (the
@@ -177,9 +186,9 @@ Every button reuses a script the voice agents or the wall switches already use, 
     Tap = `script.voice_movie_room_receiver_volume` `preset`; hold = `save_preset` with a
     confirmation ("Save the current volume as the Plex level?"), so Tom dials a level in by ear
     and holds the button. A preset lights up (accent) while the receiver sits at its level.
-    Sub-button numbering: 1 = Power, 2–5 = the volume row, 6+ = presets. Adding a preset = a new
+    Sub-button numbering on the Presets card: 1, 2, 3 = Plex, YouTube, Xbox. Adding a preset = a new
     helper with that prefix (live, via `ha_config_set_helper`) + a button in the Presets group
-    **+ a `.bubble-sub-button-<6+n>` block in the card's `styles`** naming that helper (the
+    **+ a `.bubble-sub-button-<n>` block in the Presets card's `styles`** naming that helper (the
     highlight is per index; without it the button works but never lights); voice picks the
     preset up by itself. Hold + `confirmation` works on these sub-buttons: Bubble dispatches the
     hold as HA's `hass-action`, and HA shows "Are you sure?" with Cancel/OK (checked 2026-09-28:
@@ -193,8 +202,8 @@ Every button reuses a script the voice agents or the wall switches already use, 
     ever lower, never past the cap); the script nudges its level by 1e-6 to hit them exactly.
     − and + call `script.voice_movie_room_receiver_volume` with `down`/`up` and
     1 dB, and that script enforces the same ceiling (`max_db`). **No card opens more-info on the
-    receiver**: HA's own media player dialog has an unbounded volume slider. On the "on" card the icon
-    does nothing; on the "off" card, tapping turns the receiver on. Nothing here can stop the physical
+    receiver**: HA's own media player dialog has an unbounded volume slider. The icon is the power
+    button on both cards; on the "off" card, tapping anywhere turns the receiver on. Nothing here can stop the physical
     remote.
   - **dB readout** = `sensor.movie_room_receiver_volume`, a Template helper (entry
     `01M3MJNHG41WNX9H2QM6SZM5BV`, live only). It is unknown while the receiver is off. State:

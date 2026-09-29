@@ -338,38 +338,35 @@ views:
       button_type: slider
       entity: media_player.str_az5000es
       name: Receiver
-      icon: mdi:audio-video
+      icon: mdi:power
       show_state: false
       min_value: 15
       max_value: 62
       tap_action:
-        action: none
+        action: toggle
       card_layout: large-sub-buttons-grid
-      rows: 2.438
+      rows: 1.719
+      visibility:
+      - condition: state
+        entity: media_player.str_az5000es
+        state: 'on'
       sub_button:
         main:
         - entity: media_player.str_az5000es
-          name: Power
-          icon: mdi:power
+          name: Input
+          icon: mdi:video-input-hdmi
           show_name: false
           show_icon: true
           show_state: false
+          show_attribute: true
+          attribute: source
           tap_action:
-            action: toggle
+            action: navigate
+            navigation_path: '#tom-movie-receiver'
         bottom:
         - name: Volume
           buttons_layout: inline
           group:
-          - sub_button_type: select
-            entity: media_player.str_az5000es
-            name: Input
-            icon: mdi:import
-            select_attribute: source_list
-            show_attribute: true
-            attribute: source
-            show_name: false
-            show_icon: true
-            show_arrow: true
           - name: Down
             icon: mdi:volume-minus
             show_name: false
@@ -387,7 +384,8 @@ views:
             show_icon: false
             show_state: true
             tap_action:
-              action: none
+              action: navigate
+              navigation_path: '#tom-movie-receiver'
           - name: Up
             icon: mdi:volume-plus
             show_name: false
@@ -399,100 +397,17 @@ views:
               data:
                 action: up
                 db: 1
-        - name: Presets
-          buttons_layout: inline
-          group:
-          - entity: input_number.movie_room_receiver_preset_plex
-            name: Plex
-            icon: mdi:plex
-            show_name: false
-            show_icon: true
-            show_state: true
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_receiver_volume
-              target: {}
-              data:
-                action: preset
-                preset: Plex
-            hold_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_receiver_volume
-              target: {}
-              data:
-                action: save_preset
-                preset: Plex
-              confirmation:
-                text: Save the current volume as the Plex level?
-          - entity: input_number.movie_room_receiver_preset_youtube
-            name: YouTube
-            icon: mdi:youtube
-            show_name: false
-            show_icon: true
-            show_state: true
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_receiver_volume
-              target: {}
-              data:
-                action: preset
-                preset: YouTube
-            hold_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_receiver_volume
-              target: {}
-              data:
-                action: save_preset
-                preset: YouTube
-              confirmation:
-                text: Save the current volume as the YouTube level?
-          - entity: input_number.movie_room_receiver_preset_xbox
-            name: Xbox
-            icon: mdi:microsoft-xbox
-            show_name: false
-            show_icon: true
-            show_state: true
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_receiver_volume
-              target: {}
-              data:
-                action: preset
-                preset: Xbox
-            hold_action:
-              action: perform-action
-              perform_action: script.voice_movie_room_receiver_volume
-              target: {}
-              data:
-                action: save_preset
-                preset: Xbox
-              confirmation:
-                text: Save the current volume as the Xbox level?
         bottom_layout: rows
-      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
-        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
-        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
+      styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
         \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on') ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state)\
-        \ === Number(hass.states['input_number.movie_room_receiver_preset_plex']?.state)) ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state)\
-        \ === Number(hass.states['input_number.movie_room_receiver_preset_youtube']?.state)) ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-8 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state)\
-        \ === Number(hass.states['input_number.movie_room_receiver_preset_xbox']?.state)) ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
-      visibility:
-      - condition: state
-        entity: media_player.str_az5000es
-        state: 'on'
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-icon {\n  color: var(--primary-text-color)\
+        \ !important;\n}\n"
     - type: custom:bubble-card
       card_type: button
       button_type: name
       entity: media_player.str_az5000es
       name: Receiver
-      icon: mdi:audio-video
+      icon: mdi:power
       show_state: true
       tap_action:
         action: toggle
@@ -500,20 +415,8 @@ views:
         tap_action:
           action: toggle
       sub_button:
-        main:
-        - entity: media_player.str_az5000es
-          name: Power
-          icon: mdi:power
-          show_name: false
-          show_icon: true
-          show_state: false
-          tap_action:
-            action: toggle
+        main: []
         bottom: []
-      styles: ".bubble-sub-button-1 {\n  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1\
-        \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
-        \ === 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n"
       visibility:
       - condition: state
         entity: media_player.str_az5000es
@@ -2918,6 +2821,319 @@ views:
           \ #e77aff, #ff829d, #ff8161) !important;\n  outline: ${hass.states['select.basement_movie_hue_gradient_65_gradient_scene']?.state\
           \ === \"crystalline\" ? '3px solid var(--primary-text-color)' : 'none'};\n  outline-offset:\
           \ -3px;\n}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      hash: '#tom-movie-receiver'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Movie Room Receiver
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: media_player.str_az5000es
+        name: Receiver
+        icon: mdi:power
+        show_state: false
+        min_value: 15
+        max_value: 62
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 1.719
+        visibility:
+        - condition: state
+          entity: media_player.str_az5000es
+          state: 'on'
+        sub_button:
+          main: []
+          bottom:
+          - name: Volume
+            buttons_layout: inline
+            group:
+            - name: Down
+              icon: mdi:volume-minus
+              show_name: false
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: down
+                  db: 1
+            - entity: sensor.movie_room_receiver_volume
+              name: Volume
+              show_name: false
+              show_icon: false
+              show_state: true
+              tap_action:
+                action: none
+            - name: Up
+              icon: mdi:volume-plus
+              show_name: false
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: up
+                  db: 1
+          bottom_layout: rows
+        styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
+          \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on') ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-icon {\n  color: var(--primary-text-color)\
+          \ !important;\n}\n"
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        name: Input
+        icon: mdi:video-input-hdmi
+        show_state: false
+        tap_action:
+          action: none
+        card_layout: large-sub-buttons-grid
+        rows: 3.117
+        sub_button:
+          main: []
+          bottom:
+          - name: Inputs 1
+            buttons_layout: inline
+            group:
+            - name: PS5
+              icon: mdi:sony-playstation
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: PS5
+            - name: Xbox
+              icon: mdi:microsoft-xbox
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: XBOX
+            - name: Shield
+              icon: mdi:play-box-outline
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: Shield
+          - name: Inputs 2
+            buttons_layout: inline
+            group:
+            - name: HTPC
+              icon: mdi:desktop-tower
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: HTPC
+            - name: Sonos
+              icon: mdi:speaker
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: Sonos
+            - name: Bluetooth
+              icon: mdi:bluetooth
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: Bluetooth Audio
+          - name: Inputs 3
+            buttons_layout: inline
+            group:
+            - name: Source
+              icon: mdi:video-input-hdmi
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: SOURCE
+            - name: TV
+              icon: mdi:television
+              show_name: true
+              show_icon: true
+              tap_action:
+                action: perform-action
+                perform_action: media_player.select_source
+                target:
+                  entity_id: media_player.str_az5000es
+                data:
+                  source: TV
+          bottom_layout: rows
+        styles: ".bubble-sub-button-1 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"PS5\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n}\n\
+          .bubble-sub-button-2 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"XBOX\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n}\n\
+          .bubble-sub-button-3 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"Shield\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n\
+          }\n.bubble-sub-button-4 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"HTPC\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n}\n\
+          .bubble-sub-button-5 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"Sonos\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n\
+          }\n.bubble-sub-button-6 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"Bluetooth Audio\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n\
+          }\n.bubble-sub-button-7 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"SOURCE\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n\
+          }\n.bubble-sub-button-8 {\n  background-color: ${hass.states['media_player.str_az5000es']?.attributes?.source\
+          \ === \"TV\" ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)'} !important;\n}\n"
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        name: Presets
+        icon: mdi:tune-vertical
+        show_state: false
+        tap_action:
+          action: none
+        card_layout: large-sub-buttons-grid
+        rows: 1.719
+        sub_button:
+          main: []
+          bottom:
+          - name: Presets
+            buttons_layout: inline
+            group:
+            - entity: input_number.movie_room_receiver_preset_plex
+              name: Plex
+              icon: mdi:plex
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: preset
+                  preset: Plex
+              hold_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: save_preset
+                  preset: Plex
+                confirmation:
+                  text: Save the current volume as the Plex level?
+            - entity: input_number.movie_room_receiver_preset_youtube
+              name: YouTube
+              icon: mdi:youtube
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: preset
+                  preset: YouTube
+              hold_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: save_preset
+                  preset: YouTube
+                confirmation:
+                  text: Save the current volume as the YouTube level?
+            - entity: input_number.movie_room_receiver_preset_xbox
+              name: Xbox
+              icon: mdi:microsoft-xbox
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: preset
+                  preset: Xbox
+              hold_action:
+                action: perform-action
+                perform_action: script.voice_movie_room_receiver_volume
+                target: {}
+                data:
+                  action: save_preset
+                  preset: Xbox
+                confirmation:
+                  text: Save the current volume as the Xbox level?
+          bottom_layout: rows
+        styles: ".bubble-sub-button-1 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+          \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_plex']?.state))\
+          \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2\
+          \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+          \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_youtube']?.state))\
+          \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-3\
+          \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
+          \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_xbox']?.state))\
+          \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-locks'
