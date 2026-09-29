@@ -170,7 +170,10 @@ Every button reuses a script the voice agents or the wall switches already use, 
   it off, a one-row card has just Power. One card with hidden sub-buttons left a blank row, because the
   card's height (`rows`) is fixed.
   - **Presets row** (2026-09-28, `rows: 2.438`, groups mode): one button per
-    `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube; -35 to -3.5 dB, the same range as the slider above, so a preset can never pin the slider below its floor; below -19 dB the receiver moves in whole dB, so a half-dB preset there lands on a neighbouring step), showing its saved level.
+    `input_number.movie_room_receiver_preset_<name>` (Plex, YouTube, Xbox; -35 to -3.5 dB, the same range as the slider above, so a preset can never pin the slider below its floor; below -19 dB the receiver moves in whole dB, so a half-dB preset there lands on a neighbouring step), showing its icon and saved level. The names are hidden (`show_name: false`, since the Xbox preset
+    on 2026-09-28): with three presets each button is 114 px at 390 px, and "YouTube · -29.0 dB" overflowed
+    and scrolled. The brand icons already identify each app. A fourth preset would shrink each to about 84 px (the
+    volume row's width), untested with icon + level: screenshot at 390 px before adding one.
     Tap = `script.voice_movie_room_receiver_volume` `preset`; hold = `save_preset` with a
     confirmation ("Save the current volume as the Plex level?"), so Tom dials a level in by ear
     and holds the button. A preset lights up (accent) while the receiver sits at its level.
