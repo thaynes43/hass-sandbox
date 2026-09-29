@@ -1,0 +1,508 @@
+# script.movie_room_play_bars_match_gradient_scene ("Movie Room Play Bars Match Gradient Scene") — helper, not a
+# voice tool. Created 2026-09-28. Sets the Movie Room play bars (plain colour Hue Play lightbars) to one colour,
+# picked at random, from a Hue gradient scene's palette so they match the gradient strips and Signe floor lamps.
+# Called by script.voice_movie_room_ambient_scene and script.cycle_gradient_scene_using_same_light_color.
+# The palettes are Zigbee2MQTT's own scene table (zigbee-herdsman-converters 26.105.0, lib/philips.js
+# gradientScenes) decoded with its decodeGradientColors, read-only inside the zigbee2mqtt pod:
+#   node -e 'const p=require("./dist/lib/philips.js"); ... p.decodeGradientColors("4b0101fe00000000"+hex.slice(8), {reverse:true}).colors'
+# (the scene payload is the gradient state without its 4b01/on/brightness/unknown header). blue_lagoon decodes
+# to exactly the colours sensor.basement_movie_hue_gradient_65_gradient reported for it. Why not read that
+# sensor: it does not update when a scene is selected, only when the strip happens to report (seconds later or
+# never; a z2m /get {"gradient": ""} and a same-level brightness command did not make it report), so the play
+# bars used to get a colour from the previous scene. A newer Zigbee2MQTT with new scenes: re-run the decode.
+alias: Movie Room Play Bars Match Gradient Scene
+description: 'Sets the Movie Room play bars (plain colour lights, no gradient) to one colour, picked at
+  random, from a Hue gradient scene''s palette, so they match the gradient strips and floor lamps. Called
+  by script.voice_movie_room_ambient_scene and by script.cycle_gradient_scene_using_same_light_color (scene
+  controller button 4). The palettes were decoded from Zigbee2MQTT''s own scene table (zigbee-herdsman-converters
+  26.105.0, lib/philips.js gradientScenes, decoded with its decodeGradientColors) on 2026-09-28. The gradient
+  colour-list sensor cannot be used instead: it does not update when a scene is selected, only when the
+  strip happens to report (seconds later or not at all), so the play bars used to get a colour from the
+  previous scene. A scene missing from the table (a newer Zigbee2MQTT) leaves the play bars as they are.'
+icon: mdi:led-strip
+mode: queued
+max: 10
+fields:
+  scene:
+    description: The gradient scene option, as the select shows it (for example blue_lagoon or 'blood
+      moon')
+    example: blue_lagoon
+    required: true
+    selector:
+      text: {}
+  light_entities:
+    description: 'The plain colour lights to set (default: the two Movie Room play bars)'
+    example: light.basement_movie_hue_play_01, light.basement_movie_hue_play_02
+    required: false
+    selector:
+      text: {}
+sequence:
+- variables:
+    palettes:
+      blossom:
+      - '#ff7b12'
+      - '#ffab3a'
+      - '#ffd065'
+      - '#89c0ff'
+      - '#5f9fff'
+      crocus:
+      - '#3b21ff'
+      - '#977cff'
+      - '#ffa25c'
+      - '#ffc647'
+      - '#d1ff34'
+      precious:
+      - '#e13eff'
+      - '#e766ff'
+      - '#ffad7f'
+      - '#ffa046'
+      - '#fff758'
+      narcissa:
+      - '#ff3e06'
+      - '#ff6209'
+      - '#ffa111'
+      - '#ffa418'
+      - '#ffc624'
+      beginnings:
+      - '#0d31ff'
+      - '#1135ff'
+      - '#2536ff'
+      - '#784dff'
+      - '#ff72fb'
+      first_light:
+      - '#114dff'
+      - '#3948ff'
+      - '#b86aff'
+      - '#ff6490'
+      - '#ff5f12'
+      horizon:
+      - '#175aff'
+      - '#1e59ff'
+      - '#815aff'
+      - '#ff5e1c'
+      - '#ff7114'
+      valley_dawn:
+      - '#2267ff'
+      - '#4163ff'
+      - '#ff8d98'
+      - '#ff7521'
+      - '#ff801f'
+      sunflare:
+      - '#3376ff'
+      - '#6e83ff'
+      - '#ff9148'
+      - '#ff8925'
+      - '#ff7e1d'
+      emerald_flutter:
+      - '#baff9a'
+      - '#43feff'
+      - '#13ceff'
+      - '#0b8aff'
+      - '#0a56ff'
+      memento:
+      - '#ff980c'
+      - '#1734ff'
+      - '#0b1bff'
+      - '#1310ff'
+      - '#1d0aff'
+      resplendent:
+      - '#4b16ff'
+      - '#b234ff'
+      - '#ff29bb'
+      - '#ff4065'
+      - '#ff542c'
+      scarlet_dream:
+      - '#ff49ae'
+      - '#ff3177'
+      - '#ff1c4e'
+      - '#ff1e2b'
+      - '#ff2919'
+      lovebirds:
+      - '#ff4806'
+      - '#ff4c14'
+      - '#ff7216'
+      - '#ff7c1b'
+      - '#ff7e0a'
+      smitten:
+      - '#ff3d5e'
+      - '#ff3336'
+      - '#ff3a2d'
+      - '#ff4326'
+      - '#ff4818'
+      glitz_and_glam:
+      - '#ff3c0b'
+      - '#ff510e'
+      - '#ff3d7d'
+      - '#ff36c2'
+      - '#ff079d'
+      promise:
+      - '#a4ff7e'
+      - '#2873ff'
+      - '#803bff'
+      - '#ff6340'
+      - '#ff3b3e'
+      ruby_romance:
+      - '#ff0313'
+      - '#ff0f22'
+      - '#ff2c18'
+      - '#ff4321'
+      - '#ff433b'
+      city_of_love:
+      - '#ff6f0b'
+      - '#ff3a0a'
+      - '#0a57ff'
+      - '#0a17ff'
+      - '#0a00ff'
+      honolulu:
+      - '#ff9721'
+      - '#ff4d0c'
+      - '#ff3914'
+      - '#ff281e'
+      - '#ff0914'
+      savanna_sunset:
+      - '#ffd543'
+      - '#ff951e'
+      - '#ff5d1c'
+      - '#ff3410'
+      - '#ff1806'
+      golden_pond:
+      - '#ff4f07'
+      - '#ff5907'
+      - '#ff8d0b'
+      - '#ff9111'
+      - '#ffa015'
+      runy_glow:
+      - '#ff8dab'
+      - '#ff6687'
+      - '#ff486b'
+      - '#ff3058'
+      - '#ff1b44'
+      tropical_twilight:
+      - '#ff3810'
+      - '#ff733c'
+      - '#ff7ae0'
+      - '#982fff'
+      - '#4c11ff'
+      miami:
+      - '#0a10ff'
+      - '#0a41ff'
+      - '#f11fff'
+      - '#ff2484'
+      - '#ff2c27'
+      cancun:
+      - '#ff830d'
+      - '#ff2e04'
+      - '#ff0d02'
+      - '#ff071f'
+      - '#ff1c40'
+      rio:
+      - '#ffae19'
+      - '#ff4b18'
+      - '#ff223c'
+      - '#ff113c'
+      - '#5d12ff'
+      chinatown:
+      - '#ff5007'
+      - '#ff2c22'
+      - '#ff0b13'
+      - '#ff050f'
+      - '#ff0308'
+      ibiza:
+      - '#ffd028'
+      - '#ffa316'
+      - '#ff6713'
+      - '#ff450d'
+      - '#ff310c'
+      osaka:
+      - '#ff7a12'
+      - '#ff2904'
+      - '#ff191e'
+      - '#ff0a41'
+      - '#ff377b'
+      tokyo:
+      - '#ff5607'
+      - '#ff0330'
+      - '#6200ff'
+      - '#0a43ff'
+      - '#1800ff'
+      motown:
+      - '#0ac3ff'
+      - '#0a60ff'
+      - '#0a40ff'
+      - '#0b0bff'
+      - '#0a00ff'
+      fairfax:
+      - '#ff0307'
+      - '#ff1616'
+      - '#ff4b4d'
+      - '#2978ff'
+      - '#0a87ff'
+      galaxy:
+      - '#db2fff'
+      - '#ff457f'
+      - '#ff305d'
+      - '#ff2466'
+      - '#ff372e'
+      starlight:
+      - '#3d21ff'
+      - '#ab45ff'
+      - '#ff72c3'
+      - '#ff7c73'
+      - '#ff8d52'
+      blood moon:
+      - '#0e08ff'
+      - '#1c28ff'
+      - '#a968ff'
+      - '#ff76a9'
+      - '#ff664d'
+      artic_aurora:
+      - '#0a12ff'
+      - '#0c3aff'
+      - '#26eaff'
+      - '#55ffc1'
+      - '#29ff84'
+      moonlight:
+      - '#ffc6c2'
+      - '#385aff'
+      - '#1639ff'
+      - '#0a1fff'
+      - '#0a00ff'
+      nebula:
+      - '#2300ff'
+      - '#7031ff'
+      - '#4d56ff'
+      - '#b85eff'
+      - '#ff70cd'
+      sundown:
+      - '#2640ff'
+      - '#6596ff'
+      - '#ff762e'
+      - '#ff411a'
+      - '#ff2a12'
+      blue_lagoon:
+      - '#ff7146'
+      - '#ffef53'
+      - '#b4ffbb'
+      - '#6afff7'
+      - '#0cdfff'
+      palm_beach:
+      - '#ff3618'
+      - '#ff5248'
+      - '#ff7caa'
+      - '#80d9ff'
+      - '#37f9ff'
+      lake_placid:
+      - '#2852ff'
+      - '#6083ff'
+      - '#ff7d74'
+      - '#ff674c'
+      - '#ff4c31'
+      mountain_breeze:
+      - '#ffb349'
+      - '#ffa898'
+      - '#6a6cff'
+      - '#525eff'
+      - '#4455ff'
+      lake_mist:
+      - '#475bff'
+      - '#6587ff'
+      - '#ff9aa1'
+      - '#ff836d'
+      - '#ffa36f'
+      ocean_dawn:
+      - '#9174ff'
+      - '#ff9bbe'
+      - '#ff9470'
+      - '#ff8b4f'
+      - '#ffa64d'
+      frosty_dawn:
+      - '#ff7a3d'
+      - '#ff9150'
+      - '#ffa658'
+      - '#ffd958'
+      - '#fffb5c'
+      sunday_morning:
+      - '#d3ff53'
+      - '#ffc438'
+      - '#ffb648'
+      - '#ffb76b'
+      - '#ffc496'
+      emerald_isle:
+      - '#ff9e28'
+      - '#ffe063'
+      - '#a9ff8c'
+      - '#60ff98'
+      - '#96e2ff'
+      spring_blossom:
+      - '#ff4436'
+      - '#ff3189'
+      - '#ff6dd0'
+      - '#ff94d9'
+      - '#ffb6d6'
+      midsummer_sun:
+      - '#ff7010'
+      - '#ff941a'
+      - '#ffaf2a'
+      - '#ffc234'
+      - '#ffd944'
+      autumn_gold:
+      - '#ffaf25'
+      - '#ffb234'
+      - '#ff9f41'
+      - '#ff9231'
+      - '#ff8432'
+      spring_lake:
+      - '#beff79'
+      - '#d4ff8e'
+      - '#e7ffa4'
+      - '#ddffb1'
+      - '#f8ffcd'
+      winter_mountain:
+      - '#bce4ff'
+      - '#97d9ff'
+      - '#76cdff'
+      - '#70cbff'
+      - '#61c4ff'
+      midwinter:
+      - '#354dff'
+      - '#4465ff'
+      - '#777fff'
+      - '#5986ff'
+      - '#7d9cff'
+      amber_bloom:
+      - '#ff6333'
+      - '#ff5f14'
+      - '#ff4e07'
+      - '#ff3c05'
+      - '#ff220b'
+      lily:
+      - '#ff0e33'
+      - '#ff2c49'
+      - '#ff6548'
+      - '#ff5d10'
+      - '#ff4706'
+      painted_sky:
+      - '#ff2a04'
+      - '#ff6547'
+      - '#ff4ec3'
+      - '#a131ff'
+      - '#3c19ff'
+      winter_beauty:
+      - '#ff6410'
+      - '#ffd73a'
+      - '#90ff43'
+      - '#29ff66'
+      - '#1dccff'
+      orange_fields:
+      - '#8dff12'
+      - '#ffb80e'
+      - '#ff930b'
+      - '#ff4f07'
+      - '#ff371c'
+      forest_adventure:
+      - '#0a23ff'
+      - '#0b6cff'
+      - '#16ff2d'
+      - '#60ff14'
+      - '#ecff13'
+      blue_planet:
+      - '#0a4fff'
+      - '#29ffe5'
+      - '#07ffb8'
+      - '#02ff3a'
+      - '#81ff26'
+      soho:
+      - '#23ffbe'
+      - '#3a01ff'
+      - '#ff2655'
+      - '#ff562c'
+      - '#ff0331'
+      vapor_wave:
+      - '#ff9f1e'
+      - '#ff6909'
+      - '#ff14d3'
+      - '#4001ff'
+      - '#1b23ff'
+      magneto:
+      - '#ff820a'
+      - '#fffe20'
+      - '#15f2ff'
+      - '#0a69ff'
+      - '#0d2fff'
+      tyrell:
+      - '#0a92ff'
+      - '#6237ff'
+      - '#ff4dec'
+      - '#ff10df'
+      - '#3e00ff'
+      disturbia:
+      - '#ff030e'
+      - '#ff134a'
+      - '#ff18ee'
+      - '#43cdff'
+      - '#08ffdb'
+      hal:
+      - '#ff9b16'
+      - '#ff2f20'
+      - '#ff191d'
+      - '#3e85ff'
+      - '#0a9eff'
+      golden_star:
+      - '#ff0305'
+      - '#ff1810'
+      - '#ff4d07'
+      - '#ff8511'
+      - '#ff9e17'
+      under_the_tree:
+      - '#ff0605'
+      - '#ff4d28'
+      - '#ff880e'
+      - '#02ff1a'
+      - '#15ff63'
+      silent_night:
+      - '#ff4c22'
+      - '#ff5d2b'
+      - '#ff7833'
+      - '#ff7443'
+      - '#ff795c'
+      rosy_sparkle:
+      - '#f031ff'
+      - '#ff3387'
+      - '#ff414c'
+      - '#ff5b37'
+      - '#ff7565'
+      festive_fun:
+      - '#ff1811'
+      - '#ff2812'
+      - '#2600ff'
+      - '#1a00ff'
+      - '#0a11ff'
+      colour_burst:
+      - '#ffce17'
+      - '#ff0312'
+      - '#ff2c1f'
+      - '#9a01ff'
+      - '#1d17ff'
+      crystalline:
+      - '#1147ff'
+      - '#245bff'
+      - '#e77aff'
+      - '#ff829d'
+      - '#ff8161'
+    colors: '{{ palettes.get(scene | default('''') | string, []) }}'
+    chosen: '{{ colors | random if colors else '''' }}'
+    targets: '{% set l = light_entities | default(''light.basement_movie_hue_play_01, light.basement_movie_hue_play_02'',
+      true) %}{{ (l if l is string else l | join('','')).split('','') | map(''trim'') | reject(''eq'',
+      '''') | list }}'
+- if:
+  - condition: template
+    value_template: '{{ chosen | length == 7 and targets | length > 0 }}'
+  then:
+  - action: light.turn_on
+    target:
+      entity_id: '{{ targets }}'
+    data:
+      rgb_color:
+      - '{{ chosen[1:3] | int(base=16) }}'
+      - '{{ chosen[3:5] | int(base=16) }}'
+      - '{{ chosen[5:7] | int(base=16) }}'

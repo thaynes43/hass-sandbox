@@ -1,16 +1,177 @@
-# script.voice_movie_room_ambient_scene — voice tool exposed to Assist (created live via MCP, 2026-09-18).
-# Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+# script.voice_movie_room_ambient_scene ("Movie Room Ambient Scene") — voice tool exposed to Assist AND the
+# Tom Mobile Ambient card's scene buttons + #tom-movie-ambient pop-up. Created 2026-09-18 as a copy of scene
+# controller button 4 (next gradient scene); extended 2026-09-28 after Tom asked for "change the ambient lights"
+# / "change the scene" by voice and "more customized scenes": `scene` empty = next (the button 4 behaviour),
+# 'previous', any of the 75 Hue gradient scenes by name (Zigbee2MQTT's option list on
+# select.basement_movie_hue_gradient_65_gradient_scene, matched ignoring case/spaces/punctuation, with aliases for
+# Zigbee2MQTT's spellings artic_aurora / runy_glow / colour_burst), a Hue effect (fireplace, candle, underwater,
+# cosmos, sparkle, enchant, glisten, opal, sunbeam, sunrise, sunset, colorloop) or red.
+# Findings behind it (2026-09-28, live tests in the Movie Room):
+# - Zigbee2MQTT never reports a running effect (HA shows effect none), and a gradient scene does not replace an
+#   effect, so every scene/colour change sends effect stop_hue_effect first.
+# - A Hue effect resets brightness to full when it starts (jumped to 254 mid-game), so the effect branch puts
+#   the previous level back 0.7 s later (40 % if the lights were off). zigbee-herdsman-converters' philips.js
+#   documents the same reset.
+# - The play bars are plain colour lights: script.movie_room_play_bars_match_gradient_scene gives them a colour
+#   from the scene's palette (home-assistant/scripts/hue-gradient/).
+# mode queued (dashboard taps queue up). Refusals come back as a `response` sentence with a plain stop.
 alias: Movie Room Ambient Scene
-description: Voice tool. Cycles the Movie Room ambient lights (gradient strips, floor lamps and play bars)
-  to the next colour scene, keeping the play bars matched to the gradients. Same as pressing button 4
-  on the Movie Room scene controller. Use for 'change the ambient colours', 'next ambient scene' or 'change
-  the mood lighting' in the movie room. To simply turn the ambient lights on or off, control the Movie
-  Room ambient lights instead.
+description: 'Voice tool for the Movie Room ambient lights (the gradient strips, floor lamps and play
+  bars together). Changes their colour scene or look and turns them on if they are off. Leave scene empty
+  for the next scene, the same as button 4 on the Movie Room scene controller: use that for ''change the
+  ambient lights'', ''change the scene'', ''next scene'' or ''change the mood lighting'' in the movie
+  room. scene can also be ''previous'', a Hue gradient scene by name (for example sundown, nebula, blue
+  lagoon, blood moon, galaxy, starlight, tokyo, vapor wave, honolulu, emerald isle), a moving effect (fireplace,
+  candle, underwater, cosmos, sparkle, enchant, glisten, opal, sunbeam, sunrise, sunset, colorloop), or
+  red. For brighter or dimmer use Movie Room Ambient Brightness; to turn them off, turn off the Movie
+  Room ambient lights. The tool answers with what it did, or why nothing changed: tell the user that.'
 icon: mdi:palette
-mode: single
+mode: queued
+max: 5
+fields:
+  scene:
+    name: Scene
+    description: Empty for the next scene. Or 'previous', a gradient scene name such as sundown or blood
+      moon, an effect such as fireplace or underwater, or red.
+    required: false
+    selector:
+      text: {}
 sequence:
-- action: script.cycle_gradient_scene_using_same_light_color
-  data:
-    select_entities: select.basement_movie_hue_gradient_65_gradient_scene, select.basement_movie_hue_gradient_75_gradient_scene,
-      select.basement_movie_hue_left_floor_lamp_gradient_scene, select.basement_movie_hue_right_floor_lamp_gradient_scene
-    light_entities: light.basement_movie_hue_play_01, light.basement_movie_hue_play_02
+- alias: The four gradient lights (Hue Play gradient strips 65/75, left/right Gradient Signe floor lamps)
+    each have a select with the same 75 Hue gradient scenes. The play bars are plain colour lights; script.movie_room_play_bars_match_gradient_scene
+    gives them a colour from the new scene's palette (decoded from Zigbee2MQTT's scene table). Effects
+    go to the Zigbee2MQTT group, which forwards them to all six. Zigbee2MQTT never reports a running effect,
+    so every scene or colour change stops effects first
+  variables:
+    group: light.basement_movie_room_ambient_lighting
+    first_select: select.basement_movie_hue_gradient_65_gradient_scene
+    options: '{{ state_attr(''select.basement_movie_hue_gradient_65_gradient_scene'', ''options'') or
+      [] }}'
+    current: '{{ states(''select.basement_movie_hue_gradient_65_gradient_scene'') }}'
+    effects:
+    - fireplace
+    - candle
+    - underwater
+    - cosmos
+    - sparkle
+    - enchant
+    - glisten
+    - opal
+    - sunbeam
+    - sunrise
+    - sunset
+    - colorloop
+    aliases:
+      fire: fireplace
+      candles: candle
+      candlelight: candle
+      colourloop: colorloop
+      rainbow: colorloop
+      arcticaurora: articaurora
+      rubyglow: runyglow
+      colorburst: colourburst
+      bloodmoon: bloodmoon
+    raw: '{{ scene | default('''', true) | string | lower | trim }}'
+    want: '{% set w = raw | regex_replace(''[^a-z0-9]'', '''') | regex_replace(''(scene|effect|mode)$'',
+      '''') %}{{ aliases.get(w, w) }}'
+    matched: '{% set ns = namespace(exact='''', part='''') %}{% for o in options %}{% set k = o | lower
+      | regex_replace(''[^a-z0-9]'', '''') %}{% if want and k == want %}{% set ns.exact = o %}{% elif
+      want | length >= 4 and want in k and not ns.part %}{% set ns.part = o %}{% endif %}{% endfor %}{{
+      ns.exact or ns.part }}'
+    kind: '{% if want in ['''', ''next'', ''nextone'', ''change'', ''another'', ''different'', ''new'']
+      %}next{% elif want in [''previous'', ''prev'', ''back'', ''last'', ''goback'', ''lastone'', ''previousone'']
+      %}previous{% elif want in effects %}effect{% elif want in [''red'', ''rednight'', ''rednightmode'',
+      ''redlight'', ''redlights''] %}red{% elif matched %}scene{% else %}unknown{% endif %}'
+    idx: '{{ options.index(current) if current in options else -1 }}'
+    target_option: '{% if kind == ''next'' and options %}{{ options[(idx + 1) % (options | length)] }}{%
+      elif kind == ''previous'' and options %}{{ options[(idx - 1) % (options | length)] if idx >= 0 else
+      options[-1] }}{% elif kind == ''scene'' %}{{ matched }}{% endif %}'
+    pretty: '{% if kind == ''effect'' %}the {{ want }} effect{% elif kind == ''red'' %}red{% else %}the
+      {{ target_option | replace(''_'', '' '') | title }} scene{% endif %}'
+    problem: '{% if states(group) in [''unavailable'', ''unknown''] %}The Movie Room ambient lights are
+      not responding right now.{% elif kind == ''unknown'' %}Nothing was changed: there is no ambient
+      scene or effect called {{ raw }}. Some to try: sundown, nebula, blue lagoon, blood moon, galaxy,
+      tokyo, fireplace, candle, underwater or cosmos.{% elif kind in [''next'', ''previous'', ''scene'']
+      and not target_option %}Nothing was changed: the gradient scene list is not available right now.{%
+      endif %}'
+- if:
+  - condition: template
+    value_template: '{{ problem | length > 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ problem }}'
+  - stop: Nothing was changed
+    response_variable: result
+- choose:
+  - conditions:
+    - condition: template
+      value_template: '{{ kind == ''effect'' }}'
+    sequence:
+    - variables:
+        keep_brightness: '{{ state_attr(group, ''brightness'') | int(0) if is_state(group, ''on'') else
+          102 }}'
+    - action: light.turn_on
+      target:
+        entity_id: light.basement_movie_room_ambient_lighting
+      data:
+        effect: '{{ want }}'
+    - alias: 'A Hue effect resets brightness to full when it starts (zigbee-herdsman-converters philips.js
+        says so, and it jumped to 254 in the 2026-09-28 test), so put the level back once it is running:
+        the current level, or 40 percent if the lights were off'
+      delay:
+        milliseconds: 700
+    - action: light.turn_on
+      target:
+        entity_id: light.basement_movie_room_ambient_lighting
+      data:
+        brightness: '{{ keep_brightness }}'
+  - conditions:
+    - condition: template
+      value_template: '{{ kind == ''red'' }}'
+    sequence:
+    - action: light.turn_on
+      target:
+        entity_id: light.basement_movie_room_ambient_lighting
+      data:
+        effect: stop_hue_effect
+    - action: light.turn_on
+      target:
+        entity_id: light.basement_movie_room_ambient_lighting
+      data:
+        rgb_color:
+        - 255
+        - 0
+        - 0
+  default:
+  - if:
+    - condition: template
+      value_template: '{{ not is_state(group, ''on'') }}'
+    then:
+    - action: light.turn_on
+      target:
+        entity_id: light.basement_movie_room_ambient_lighting
+      data: {}
+    else:
+    - action: light.turn_on
+      target:
+        entity_id: light.basement_movie_room_ambient_lighting
+      data:
+        effect: stop_hue_effect
+  - action: select.select_option
+    target:
+      entity_id:
+      - select.basement_movie_hue_gradient_65_gradient_scene
+      - select.basement_movie_hue_gradient_75_gradient_scene
+      - select.basement_movie_hue_left_floor_lamp_gradient_scene
+      - select.basement_movie_hue_right_floor_lamp_gradient_scene
+    data:
+      option: '{{ target_option }}'
+  - action: script.movie_room_play_bars_match_gradient_scene
+    data:
+      scene: '{{ target_option }}'
+- variables:
+    result:
+      response: The Movie Room ambient lights are on {{ pretty }} now.
+- stop: Done
+  response_variable: result

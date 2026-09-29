@@ -1,9 +1,12 @@
 # script.voice_movie_room_color_toggle — voice tool exposed to Assist (created live via MCP, 2026-09-18).
 # Mirrors a physical button; see .agents/plans/voice-assist-rollout.md (Phase 2).
+# 2026-09-28: description corrected; script.toggle_hue_colors steps the hue +20 degrees (same saturation), it
+# never toggled between colour and white.
 alias: Movie Room Color Toggle
-description: Voice tool. Toggles the Movie Room recessed lights between colour and white at their current
-  brightness. Same as pressing button 2 on the Movie Room scene controller. Use for 'change the light
-  colours' or 'toggle colours' in the movie room.
+description: Voice tool. Steps the Movie Room recessed lights to the next colour round the colour wheel
+  (hue +20 degrees each time, same saturation) at their current brightness. Same as pressing button 2
+  on the Movie Room scene controller. Use for 'change the light colour', 'next colour' or 'toggle colours'
+  for the recessed lights in the movie room. For the ambient lights use Movie Room Ambient Scene instead.
 icon: mdi:palette-swatch
 mode: single
 sequence:

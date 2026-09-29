@@ -19,7 +19,7 @@ iterating on it.
 | Pool | "Pool" bubble button: Lights toggle, Color → `#tom-pool-lights`, Water temp + Set point chips → `#tom-pool-heat` |
 | Bike Chargers | 2-col grid: E-Bike / Mom Bike switch cards with dynamic charging icon + live W draw |
 | First Floor | "First Floor Lights" toggle (`light.first_floor_chaos_lights`) |
-| Movie Room | "Receiver" (volume slider + Power, Input, −/dB/+, Plex/YouTube presets), "Lights" (brightness slider + Ambient, Scene, Bright, Dim, Red, Colors), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
+| Movie Room | "Receiver" (volume slider + Power, Input, −/dB/+, Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (brightness slider + ◀, Scene, grid → `#tom-movie-ambient`: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Bedroom | Primary Bedroom scene card (ported from Kellie Mobile) → `#tom-primary-bedroom` |
 | Climate | Climate Control card w/ 68°/72° presets (ported) → `#tom-climate-control` |
 | Doors & Locks | Locks card → `#tom-locks`, Garage Doors card → `#tom-garage-doors` |
@@ -201,11 +201,22 @@ Every button reuses a script the voice agents or the wall switches already use, 
     `{% set v = state_attr('media_player.str_az5000es', 'volume_level') %}{% if is_state('media_player.str_az5000es', 'on') and v is number %}{% set s = (v * 100) | round(0) %}{{ ((s - 69) / 2) if s >= 31 else (s - 50) }}{% else %}{{ none }}{% endif %}`.
     Scale: 0–100 steps, 0.5 dB per step from step 31 (-19 dB) up with step 69 = 0.0 dB, and 1 dB per
     step below step 31, fitted to two of Tom's display readings (see the script mirror's header). The sensor, the script and the slider bounds must change together.
-- **Lights** = `light.basement_movie_room_lights` (recessed; the card body is the brightness slider,
-  and the icon toggles them). The top-right buttons are Ambient (toggles
-  `light.basement_movie_room_ambient_lighting`, accent when on) and Scene. The bottom row is Bright,
-  Dim, Red and Colors. Scene, Bright, Dim, Red and Colors are the `script.voice_movie_room_*` tools,
-  which do exactly what the scene controller and wall switch buttons do (`agent-docs/voice-control-map.md`).
+- **Recessed** (was "Lights" until 2026-09-28) = `light.basement_movie_room_lights` (the card body is
+  the brightness slider, and the icon toggles them). The bottom row is Bright, Dim, Red and Colors, the
+  `script.voice_movie_room_*` tools, which do exactly what the scene controller and wall switch buttons
+  do (`agent-docs/voice-control-map.md`).
+- **Ambient** (2026-09-28; Tom asked for the ambient lights on the dashboard) = slider on
+  `light.basement_movie_room_ambient_lighting` brightness, icon tap toggles. Sub-buttons: ◀
+  (`script.voice_movie_room_ambient_scene` with `scene: previous`), Scene (next, = ZEN37 button 4) and a
+  grid icon that navigates to `#tom-movie-ambient`. Tom: "If we want a lot of scenes on the dashboard a
+  popup would be better than sub buttons."
+  - `#tom-movie-ambient` pop-up: the same Ambient card without the grid button, an Effects card (the
+    12 effects, 3 per row, plus Red), then Warm (29) / Cool (12) / Multicolour (34) scene cards. Warm =
+    4+ warm palette colours (hue < 75° or ≥ 290°), Cool = at most 1, Multicolour = the rest. Each scene
+    button's background is its palette as a left-to-right gradient, and the current scene (state of
+    `select.basement_movie_hue_gradient_65_gradient_scene`) gets a white outline. Rows hold 3 buttons,
+    or 2 when a label is longer than 11 characters (bold labels over 11 characters overflow at 114 px).
+    Checked at 390 px with Playwright: nothing overflows, and tapping a scene changes the selects.
 - **Basement Climate**: one row per mini split (`climate.movie_room_breeze`, `climate.rumpus_room_breeze`;
   Tom sets them individually): a "Movie · Heat" chip (`fill_width: false`, `width: 34`; tap = that
   unit's own thermostat dialog), then Dry, 72° and Off. Those three call `script.voice_thermostat`

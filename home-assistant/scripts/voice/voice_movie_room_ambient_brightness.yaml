@@ -1,0 +1,107 @@
+# script.voice_movie_room_ambient_brightness ("Movie Room Ambient Brightness") — voice tool exposed to Assist
+# (area Movie Room; aliases "Movie room ambient brightness", "Ambient brightness", "Mood lighting brightness").
+# Created 2026-09-28 when Tom asked for "brighten the ambient lights" by voice, mirroring the scene controller's
+# button 3 / 4 holds (automation.movie_room_brighten_ambient_lights / movie_room_dim_ambient_lights step the
+# ambient group 35 of 255 per 0.7 s; 15 percent is one such step). One call = one step, not a hold loop (the
+# 2026-09-19 "no voice hold tools" ruling was about loops; Tom asked for this). Floor 2 percent (the hold's 5 of
+# 255); dimmer never turns the lights on, brighter from off starts at the step. The Tom Mobile Ambient card uses
+# the light's own slider, not this script.
+alias: Movie Room Ambient Brightness
+description: 'Voice tool for the Movie Room ambient lights (the gradient strips, floor lamps and play
+  bars together). Makes them brighter or dimmer, like holding button 3 or 4 on the Movie Room scene controller,
+  sets a level, or reads it. Use for ''brighten the ambient lights'', ''dim the ambient lights'', ''turn
+  the mood lighting up a bit'' or ''set the ambient lights to 30 percent'' in the movie room. action brighter
+  or dimmer changes the level by percent (15 when no amount is given, 5 for ''a little''); set goes to
+  percent; check reads the level. It never turns them off (the lowest level is 2 percent) and dimmer does
+  not turn them on. For colours, scenes or effects use Movie Room Ambient Scene; to turn them on or off,
+  control the Movie Room ambient lights. The tool answers with what it did, or why nothing changed: tell
+  the user that.'
+icon: mdi:brightness-6
+mode: queued
+max: 10
+fields:
+  action:
+    name: Action
+    description: brighter or dimmer change the level by percent; set goes to percent; check reads the
+      level.
+    required: true
+    selector:
+      select:
+        options:
+        - brighter
+        - dimmer
+        - set
+        - check
+  percent:
+    name: Percent
+    description: 'For brighter and dimmer: how much to change by, default 15 (5 for ''a little''). For
+      set: the level, 2 to 100.'
+    required: false
+    selector:
+      number:
+        min: 1
+        max: 100
+        step: 1
+        mode: box
+        unit_of_measurement: '%'
+sequence:
+- alias: The ambient group is Zigbee2MQTT group 18 (gradient 65/75, left/right Signe floor lamp, play
+    01/02). A step of 15 percent matches the scene controller's hold (35 of 255 per step); 2 percent is
+    its dim floor (5 of 255)
+  variables:
+    group: light.basement_movie_room_ambient_lighting
+    floor_pct: 2
+    wanted: '{{ action | default('''', true) | string | lower | trim }}'
+    raw_pct: '{{ percent | default('''') }}'
+    has_pct: '{{ raw_pct | is_number }}'
+    pct: '{{ raw_pct | float(0) }}'
+    was_on: '{{ is_state(group, ''on'') }}'
+    cur_pct: '{{ ((state_attr(group, ''brightness'') | int(0)) * 100 / 255) | round(0) | int if is_state(group,
+      ''on'') else 0 }}'
+    amount: '{{ pct if has_pct and pct > 0 else 15 }}'
+    target_pct: '{% if wanted == ''brighter'' %}{{ [cur_pct + amount, 100] | min | round(0) | int }}{%
+      elif wanted == ''dimmer'' %}{{ [cur_pct - amount, floor_pct] | max | round(0) | int }}{% elif wanted
+      == ''set'' %}{{ [[pct, floor_pct] | max, 100] | min | round(0) | int }}{% else %}{{ cur_pct }}{%
+      endif %}'
+    problem: '{% if wanted not in [''brighter'', ''dimmer'', ''set'', ''check''] %}Nothing was changed:
+      the action must be brighter, dimmer, set or check.{% elif states(group) in [''unavailable'', ''unknown'']
+      %}The Movie Room ambient lights are not responding right now.{% elif wanted == ''set'' and not has_pct
+      %}Nothing was changed: say the level as a percent, like 30 percent.{% elif wanted == ''dimmer''
+      and not was_on %}The Movie Room ambient lights are off, so there is nothing to dim.{% endif %}'
+- if:
+  - condition: template
+    value_template: '{{ problem | length > 0 }}'
+  then:
+  - variables:
+      result:
+        response: '{{ problem }}'
+  - stop: Nothing was changed
+    response_variable: result
+- if:
+  - condition: template
+    value_template: '{{ wanted != ''check'' and (target_pct != cur_pct or not was_on) }}'
+  then:
+  - action: light.turn_on
+    target:
+      entity_id: light.basement_movie_room_ambient_lighting
+    data:
+      brightness_pct: '{{ target_pct }}'
+      transition: 0.5
+  - alias: Let the new level land before the next queued run reads it (dashboard taps queue up)
+    wait_template: '{{ is_state(''light.basement_movie_room_ambient_lighting'', ''on'') and ((state_attr(''light.basement_movie_room_ambient_lighting'',
+      ''brightness'') | int(0)) * 100 / 255) | round(0) | int == target_pct }}'
+    timeout:
+      seconds: 3
+    continue_on_timeout: true
+- variables:
+    result:
+      response: '{% if wanted == ''check'' %}{{ ''The Movie Room ambient lights are at '' ~ cur_pct ~
+        '' percent.'' if was_on else ''The Movie Room ambient lights are off.'' }}{% elif target_pct ==
+        cur_pct and was_on and wanted == ''brighter'' %}The Movie Room ambient lights are already at full
+        brightness.{% elif target_pct == cur_pct and was_on and wanted == ''dimmer'' %}The Movie Room
+        ambient lights are already as dim as they go, 2 percent.{% elif target_pct == cur_pct and was_on
+        %}The Movie Room ambient lights are already at {{ cur_pct }} percent.{% else %}The Movie Room
+        ambient lights are now at {{ target_pct }} percent{{ '' (they were off)'' if not was_on else ''
+        (they were at '' ~ cur_pct ~ '' percent)'' }}.{% endif %}'
+- stop: Done
+  response_variable: result
