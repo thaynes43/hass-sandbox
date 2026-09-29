@@ -405,7 +405,7 @@ views:
           - entity: input_number.movie_room_receiver_preset_plex
             name: Plex
             icon: mdi:plex
-            show_name: true
+            show_name: false
             show_icon: true
             show_state: true
             tap_action:
@@ -427,7 +427,7 @@ views:
           - entity: input_number.movie_room_receiver_preset_youtube
             name: YouTube
             icon: mdi:youtube
-            show_name: true
+            show_name: false
             show_icon: true
             show_state: true
             tap_action:
@@ -446,17 +446,43 @@ views:
                 preset: YouTube
               confirmation:
                 text: Save the current volume as the YouTube level?
+          - entity: input_number.movie_room_receiver_preset_xbox
+            name: Xbox
+            icon: mdi:microsoft-xbox
+            show_name: false
+            show_icon: true
+            show_state: true
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: preset
+                preset: Xbox
+            hold_action:
+              action: perform-action
+              perform_action: script.voice_movie_room_receiver_volume
+              target: {}
+              data:
+                action: save_preset
+                preset: Xbox
+              confirmation:
+                text: Save the current volume as the Xbox level?
         bottom_layout: rows
       styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
-        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7 {\n  transition: background-color\
-        \ 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
-        \ === 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-6 {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
-        \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_plex']?.state))\
-        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7\
-        \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
-        \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_youtube']?.state))\
-        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
+        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
+        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on') ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state)\
+        \ === Number(hass.states['input_number.movie_room_receiver_preset_plex']?.state)) ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state)\
+        \ === Number(hass.states['input_number.movie_room_receiver_preset_youtube']?.state)) ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-8 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state)\
+        \ === Number(hass.states['input_number.movie_room_receiver_preset_xbox']?.state)) ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
       visibility:
       - condition: state
         entity: media_player.str_az5000es
