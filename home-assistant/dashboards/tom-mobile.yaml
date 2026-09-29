@@ -571,7 +571,7 @@ views:
         bottom_layout: rows
     - type: custom:bubble-card
       card_type: button
-      button_type: slider
+      button_type: name
       entity: light.basement_movie_room_ambient_lighting
       name: Ambient
       icon: mdi:led-strip-variant
@@ -592,23 +592,20 @@ views:
             target: {}
             data:
               scene: previous
-        - name: Scene
-          icon: mdi:palette
-          show_name: true
+        - name: Next scene
+          icon: mdi:chevron-right
+          show_name: false
           show_icon: true
           tap_action:
             action: perform-action
             perform_action: script.voice_movie_room_ambient_scene
             target: {}
             data: {}
-        - name: All scenes
-          icon: mdi:dots-grid
-          show_name: false
-          show_icon: true
-          tap_action:
-            action: navigate
-            navigation_path: '#tom-movie-ambient'
         bottom: []
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-movie-ambient'
     - type: custom:bubble-card
       card_type: button
       button_type: name
@@ -1734,9 +1731,9 @@ views:
               target: {}
               data:
                 scene: previous
-          - name: Scene
-            icon: mdi:palette
-            show_name: true
+          - name: Next scene
+            icon: mdi:chevron-right
+            show_name: false
             show_icon: true
             tap_action:
               action: perform-action
