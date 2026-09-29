@@ -2100,6 +2100,59 @@ views:
         \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
         }\n"
     - type: custom:bubble-card
+      card_type: separator
+      name: Server Room
+      icon: mdi:server
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: UPS Load
+      icon: mdi:power-plug-battery-outline
+      show_state: false
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-server-room-ups'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-server-room-ups'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - entity: sensor.apc_2700w_load
+          name: APC 2700W
+          icon: mdi:gauge
+          show_name: true
+          show_icon: true
+          show_state: true
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-server-room-ups'
+        - entity: sensor.apc_900w_01_load
+          name: APC 900W
+          icon: mdi:gauge
+          show_name: true
+          show_icon: true
+          show_state: true
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-server-room-ups'
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color 200ms ease;\n\
+        }\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n\
+        \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
+        \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
+        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color:\
+        \ ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
+        \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
+        \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
+        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
+    - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-basement-climate'
       button_type: name
@@ -3707,6 +3760,95 @@ views:
           \ {\n  background-color: ${(() => {\n    return (hass.states['media_player.str_az5000es']?.state\
           \ === 'on' && Number(hass.states['sensor.movie_room_receiver_volume']?.state) === Number(hass.states['input_number.movie_room_receiver_preset_xbox']?.state))\
           \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-server-room-ups'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## UPS Power
+
+          '
+      - type: custom:mini-graph-card
+        entities:
+        - entity: sensor.apc_2700w_current_real_power
+        name: APC 2700W
+        hours_to_show: 6
+        points_per_hour: 12
+        height: 140
+        line_width: 2
+        decimals: 0
+        font_size: 70
+        font_size_header: 14
+        hour24: true
+        show:
+          name: true
+          icon: false
+          state: true
+          legend: false
+          fill: fade
+          labels: true
+          extrema: false
+          average: false
+        card_mod:
+          style: "ha-card {\n  display: grid !important;\n  grid-template-columns: 1fr auto;\n  align-items:\
+            \ center;\n}\nha-card > .header { grid-column: 1; grid-row: 1; }\nha-card > .states { grid-column:\
+            \ 2; grid-row: 1; padding-top: 0; }\nha-card > .graph, ha-card > .info { grid-column: 1 /\
+            \ -1; }\n"
+      - type: custom:mini-graph-card
+        entities:
+        - entity: sensor.apc_900w_01_watt_load
+        name: APC 900W
+        hours_to_show: 6
+        points_per_hour: 12
+        height: 140
+        line_width: 2
+        decimals: 0
+        font_size: 70
+        font_size_header: 14
+        hour24: true
+        show:
+          name: true
+          icon: false
+          state: true
+          legend: false
+          fill: fade
+          labels: true
+          extrema: false
+          average: false
+        card_mod:
+          style: "ha-card {\n  display: grid !important;\n  grid-template-columns: 1fr auto;\n  align-items:\
+            \ center;\n}\nha-card > .header { grid-column: 1; grid-row: 1; }\nha-card > .states { grid-column:\
+            \ 2; grid-row: 1; padding-top: 0; }\nha-card > .graph, ha-card > .info { grid-column: 1 /\
+            \ -1; }\n"
 - type: sections
   max_columns: 1
   title: First floor

@@ -18,15 +18,15 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 |---|---|---|---|
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
-| Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards |
+| Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards, then Server Room (UPS load) |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
 | Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
 
 A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
-`#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient` and
-`#tom-movie-receiver`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
+`#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
+`#tom-movie-receiver` and `#tom-server-room-ups`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
 cards, replace its "No cards yet." markdown card.
 
@@ -58,6 +58,7 @@ Room cards off it.
 | Section (bubble separator) | Cards |
 |---|---|
 | Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
+| Server Room | "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below |
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).
@@ -278,6 +279,38 @@ Every button reuses a script the voice agents or the wall switches already use, 
   buttons_layout: inline}`, and `bottom_layout: rows` puts each group on its own row. The `.bubble-sub-button-N`
   numbering runs across all the groups, main buttons first.
 - Four sub-buttons per bottom row is the most that fit at iPhone width; five get truncated (Outdoor Lights).
+
+### Server Room (added 2026-09-29)
+Tom: "a bubble card that shows what % each UPS is at … 70% goes yellow and 85% goes red. GPUs need
+headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UPS **load**, not battery.
+- **UPSes** (NUT, one config entry each): APC 2700W = Smart-UPS X 3000 (`nut2700.haynesnetwork`), APC 900W =
+  Back-UPS RS 1500MS2 (`nut01.haynesnetwork`, `nominal_real_power` 900 W).
+
+  | UPS | Load % | Watts |
+  |---|---|---|
+  | APC 2700W | `sensor.apc_2700w_load` | `sensor.apc_2700w_current_real_power` (NUT `ups.realpower`, measured) |
+  | APC 900W | `sensor.apc_900w_01_load` | `sensor.apc_900w_01_watt_load` (derived, see below) |
+
+  The 900W reports no real power. `sensor.apc_900w_01_watt_load` is an older YAML template sensor in the HA pod's
+  `/config/packages/sensors.yaml` (not a UI helper): load % × `nominal_real_power` × 0.97. Its load is a whole
+  number, so the watts move in steps of about 9 W and its graph looks jumpier than the 2700W's.
+  `sensor.apc_2700w_watt_load` and `sensor.ups_watt_load` are orphaned templates (always unavailable); don't use them.
+- **Card**: a name card; tapping the card or either chip opens the pop-up. Chip colours come from the card's
+  `styles` JS, the same technique as Climate Control: `Math.round(load)` ≥ 85 = `--red-color`, ≥ 70 = `--amber-color`
+  (each `color-mix`ed 60 % with transparent; the theme has no `--rgb-red/amber-color`), otherwise the idle
+  `rgba(0,0,0,0.22)`; unavailable stays idle. `sensor.apc_2700w_load` has display precision 0 (entity setting,
+  2026-09-29): NUT sends "58.90" or "55", and the chip showed "58.90%". The chip shows a whole number, and the
+  threshold compares that same rounded number, so a chip that reads "70%" is always yellow.
+  Sub-button numbering: 1 = APC 2700W, 2 = APC 900W.
+- **`#tom-server-room-ups`**: one `custom:mini-graph-card` per UPS (HACS v0.13.0): `hours_to_show: 6`,
+  `height: 140` (about 95 px at 390 px width), min/max labels, fill fade. A `card_mod` grid puts the name and the
+  live W on one row. mini-graph-card normally stacks them. Re-check it at 390 px after a HA, mini-graph-card
+  or card-mod upgrade.
+- **Adding a UPS**: a chip in `sub_button.bottom`, a `.bubble-sub-button-<n>` block in `styles` for its load
+  sensor, and a mini-graph card in the pop-up. Two chips with these long labels ("APC 2700W · 55%") fill the
+  row at 390 px. Before adding a third, screenshot at 390 px and shorten the names if it truncates.
+- Checked 2026-09-29 at 390 px with Playwright: tapping the card body and a chip both open the pop-up. The
+  threshold logic was rendered on a throwaway preview dashboard at 69 / 69.4 / 69.5 / 70 / 84 / 84.6 / 85 / unavailable.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
