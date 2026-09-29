@@ -1,0 +1,59 @@
+# script.cycle_gradient_scene_using_same_light_color ("Cycle Gradient Scene Using Same Light Color") — called by
+# the Movie Room scene controller, button 4 x1 (automation.basement_movie_room_zen37_scene_controller), with the
+# four gradient-scene selects and the two play bars. First mirrored 2026-09-28 (it had no repo copy), when it
+# was fixed: it now stops any running Hue effect first (voice/dashboard effects would otherwise survive a press)
+# and gets the play-bar colour from script.movie_room_play_bars_match_gradient_scene instead of waiting up to
+# 30 s on the gradient colour-list sensor, which does not update on a scene select, so the play bars got a
+# colour from the previous scene and presses during the wait were dropped (mode single). Verified live: a run
+# finishes in about 50 ms and the play bars took #ff8d52 from starlight's palette.
+# The same "next scene" also lives in script.voice_movie_room_ambient_scene (no `scene`): change both together.
+# Intended since 2026-09-28: with the ambient lights off, a press turns them all on with the next scene (the effect
+# stop is a light.turn_on on the six members), the same as "change the scene" by voice. Before, only the play bars
+# came on (the colour step) while the strips and floor lamps stayed off; button 3 x1 is still the on/off toggle.
+alias: Cycle Gradient Scene Using Same Light Color
+description: 'Cycle to the next gradient scene on the given gradient-scene selects and give the plain
+  lights (no gradient) one colour from that scene''s palette. Stops any running Hue effect first (Zigbee2MQTT
+  never reports one, and a scene does not replace it). The plain-light colour comes from script.movie_room_play_bars_match_gradient_scene''s
+  palette table: the gradient colour-list sensor this used to wait on does not update when a scene is
+  selected, so the lights got a colour from the previous scene (fixed 2026-09-28).
+
+  '
+fields:
+  select_entities:
+    description: A comma-separated list of select entities to update
+    example: select.basement_movie_hue_gradient_65_gradient_scene, select.basement_movie_hue_gradient_75_gradient_scene
+  light_entities:
+    description: A comma-separated list of standard lights (no gradient support) to update
+    example: light.basement_movie_hue_play_01, light.basement_movie_hue_play_02
+sequence:
+- variables:
+    select_list: '{{ select_entities.split('','') | map(''trim'') | list }}'
+    first_select: '{{ select_list[0] }}'
+    themes: '{{ state_attr(first_select, ''options'') or [] }}'
+    current_theme: "{% set current = states(first_select) %} {% if current in themes %}\n  {{ current\
+      \ }}\n{% else %}\n  {{ themes[0] if themes else '' }}\n{% endif %}"
+    next_theme: "{% if themes %}\n  {{ themes[(themes.index(current_theme) + 1) % themes|length] }}\n\
+      {% else %}\n  NoThemesFound\n{% endif %}"
+- choose:
+  - conditions:
+    - condition: template
+      value_template: '{{ next_theme != ''NoThemesFound'' }}'
+    sequence:
+    - variables:
+        lights_list: '{{ light_entities.split('','') | map(''trim'') | reject(''eq'', '''') | list }}'
+        gradient_lights: '{{ select_list | map(''regex_replace'', ''^select[.](.*)_gradient_scene$'',
+          ''light.\\1'') | list }}'
+    - action: light.turn_on
+      target:
+        entity_id: '{{ gradient_lights + lights_list }}'
+      data:
+        effect: stop_hue_effect
+    - data:
+        entity_id: '{{ select_entities }}'
+        option: '{{ next_theme }}'
+      action: select.select_option
+    - action: script.movie_room_play_bars_match_gradient_scene
+      data:
+        scene: '{{ next_theme }}'
+        light_entities: '{{ light_entities }}'
+mode: single

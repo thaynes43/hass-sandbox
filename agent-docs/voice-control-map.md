@@ -49,7 +49,7 @@ used by nothing), `light.basement_rumpus_room_lights` (8 recessed + switch),
 `light.basement_rumpus_room_lamp` (ceiling + desk bulb), `light.basement_concessions_lights`,
 `light.basement_hall_lights`.
 
-Button → voice script (all `script.voice_*`, zero-argument, mirrored in
+Button → voice script (all `script.voice_*`, zero-argument unless noted, mirrored in
 `home-assistant/scripts/voice/`):
 
 | Button | Does | Voice script |
@@ -58,12 +58,24 @@ Button → voice script (all `script.voice_*`, zero-argument, mirrored in
 | Movie Inovelli down ×2 | recessed 2750 K 33 % | `voice_movie_room_dim` |
 | Movie ZEN37 2 ×2 | recessed red 15 % | `voice_movie_room_red_night_mode` |
 | Movie ZEN37 2 ×1 | `script.toggle_hue_colors` on recessed | `voice_movie_room_color_toggle` |
-| Movie ZEN37 4 ×1 | `script.cycle_gradient_scene_using_same_light_color` (4 gradient selects + 2 play bars) | `voice_movie_room_ambient_scene` |
+| Movie ZEN37 4 ×1 | `script.cycle_gradient_scene_using_same_light_color` (4 gradient selects + 2 play bars) | `voice_movie_room_ambient_scene` (no `scene` = next; since 2026-09-28 also `previous`, any of the 75 gradient scenes by name, 12 Hue effects, or red) |
+| Movie ZEN37 3 / 4 hold | ambient group ±35/255 per ~0.7 s step | `voice_movie_room_ambient_brightness` (2026-09-28: brighter / dimmer 15 % = one step, set, check; floor 2 %; dimmer never turns them on) |
 | Rumpus ZEN37 1 ×2 | lights + lamp 2750 K 100 % | `voice_rumpus_room_bright` |
 | Rumpus ZEN37 2 ×2 | lights + lamp 2750 K 50 % | `voice_rumpus_room_dim` |
 | Rumpus ZEN37 2 ×3 | `script.toggle_hue_colors_for_multiple_targets` over 10 bulbs | `voice_rumpus_room_color_toggle` |
 
-No voice hold tools: Tom ruled them out on 2026-09-19 (holds are not used day to day).
+No voice hold tools: Tom ruled them out on 2026-09-19 (holds are not used day to day). A hold as a
+loop is still not a voice tool, but on 2026-09-28 Tom asked for "brighten the ambient lights", so
+`voice_movie_room_ambient_brightness` does one hold step per call. The same day
+`voice_movie_room_ambient_scene` learned previous / by name / effects / red: it stops any Hue effect
+first (Zigbee2MQTT never reports a running one) and puts the brightness back after starting an effect
+(a Hue effect resets it to full). The play bars get a colour from the scene's palette via
+`script.movie_room_play_bars_match_gradient_scene` (palette table decoded from Zigbee2MQTT's own scene
+table). Text-tested as the Movie Room satellite: "Brighten the ambient lights" → brighter (29 → 44 %),
+"Dim the ambient lights" → dimmer, "Change the scene" / "Change the ambient lights" → next, "Set the
+ambient lights to blood moon" → `blood moon`, "Go back to the previous scene" → `previous`.
+`voice_movie_room_color_toggle`'s description was also corrected: `script.toggle_hue_colors` steps
+the hue +20° at the same saturation; it never toggled colour/white.
 
 Media: TV auto-off `automation.media_basement_movie_room_no_occupancy_tv_off` (20 min, spoken
 warnings on the satellite). No HA automation turns the TV/AVR on, but the AVR (Sony STR-AZ5000ES,
@@ -107,11 +119,16 @@ temperature.
 
 Fixed 2026-09-28: Movie ZEN37 buttons 3 ×2 / 4 ×2 called `number.movie_room_breeze_target_temperature`,
 which does not exist; they now step `climate.movie_room_breeze` down/up 1° in heat or cool (checked with
-synthetic Central Scene events: 74 → 73 → 74). Defects found (open):
+synthetic Central Scene events: 74 → 73 → 74). Also fixed 2026-09-28: button 4 ×1
+(`script.cycle_gradient_scene_using_same_light_color`) waited up to 30 s on
+`sensor.basement_movie_hue_gradient_65_gradient`, which does not update on a scene select, so the play
+bars got the previous scene's colour and presses during the wait were dropped; it now stops effects
+first and uses the palette table (mirrored in `home-assistant/scripts/hue-gradient/` with the match
+script). Defects found (open):
 `light.basement_hall_night_light` in the repo's night-light watchdog does not exist live; six
-live ZEN37 hold-dim helper automations and four scripts the buttons call
-(`toggle_hue_colors`, `toggle_hue_colors_for_multiple_targets`,
-`cycle_gradient_scene_using_same_light_color`, `zen32_hard_reset`) have no repo mirror.
+live ZEN37 hold-dim helper automations and three scripts the buttons call
+(`toggle_hue_colors`, `toggle_hue_colors_for_multiple_targets`, `zen32_hard_reset`) have no repo
+mirror.
 
 ## Exterior
 
