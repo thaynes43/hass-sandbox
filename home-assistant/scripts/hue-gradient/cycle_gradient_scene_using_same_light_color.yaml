@@ -6,6 +6,7 @@
 # 30 s on the gradient colour-list sensor, which does not update on a scene select, so the play bars got a
 # colour from the previous scene and presses during the wait were dropped (mode single). Verified live: a run
 # finishes in about 50 ms and the play bars took #ff8d52 from starlight's palette.
+# The same "next scene" also lives in script.voice_movie_room_ambient_scene (no `scene`): change both together.
 alias: Cycle Gradient Scene Using Same Light Color
 description: 'Cycle to the next gradient scene on the given gradient-scene selects and give the plain
   lights (no gradient) one colour from that scene''s palette. Stops any running Hue effect first (Zigbee2MQTT

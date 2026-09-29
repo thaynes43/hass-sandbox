@@ -10,6 +10,8 @@
 # sensor: it does not update when a scene is selected, only when the strip happens to report (seconds later or
 # never; a z2m /get {"gradient": ""} and a same-level brightness command did not make it report), so the play
 # bars used to get a colour from the previous scene. A newer Zigbee2MQTT with new scenes: re-run the decode.
+# A miss (scene not in the table, or no target lights) writes a WARNING to the system log (logger
+# script.movie_room_play_bars_match_gradient_scene): both callers fire and forget, so it would look like success.
 alias: Movie Room Play Bars Match Gradient Scene
 description: 'Sets the Movie Room play bars (plain colour lights, no gradient) to one colour, picked at
   random, from a Hue gradient scene''s palette, so they match the gradient strips and floor lamps. Called
@@ -506,3 +508,14 @@ sequence:
       - '{{ chosen[1:3] | int(base=16) }}'
       - '{{ chosen[3:5] | int(base=16) }}'
       - '{{ chosen[5:7] | int(base=16) }}'
+  else:
+  - alias: 'Make a miss visible: both callers start this fire-and-forget, so without this an unknown scene
+      (a newer Zigbee2MQTT, a caller that re-spells an option) or no target lights would look exactly
+      like success'
+    action: system_log.write
+    data:
+      level: warning
+      logger: script.movie_room_play_bars_match_gradient_scene
+      message: 'Play bars not changed: {{ ''no palette for scene '' ~ (scene | default('''') | string)
+        ~ '' (re-run the decode in the repo header if Zigbee2MQTT added or renamed scenes)'' if not colors
+        else ''no target lights'' }}'

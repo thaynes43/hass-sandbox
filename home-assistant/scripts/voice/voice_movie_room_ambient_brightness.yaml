@@ -87,7 +87,8 @@ sequence:
     data:
       brightness_pct: '{{ target_pct }}'
       transition: 0.5
-  - alias: Let the new level land before the next queued run reads it (dashboard taps queue up)
+  - alias: Let the new level land before the next queued run reads it (back-to-back voice calls queue
+      up; mode queued)
     wait_template: '{{ is_state(''light.basement_movie_room_ambient_lighting'', ''on'') and ((state_attr(''light.basement_movie_room_ambient_lighting'',
       ''brightness'') | int(0)) * 100 / 255) | round(0) | int == target_pct }}'
     timeout:
