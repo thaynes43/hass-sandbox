@@ -67,7 +67,10 @@ sequence:
       the action must be brighter, dimmer, set or check.{% elif states(group) in [''unavailable'', ''unknown'']
       %}The Movie Room ambient lights are not responding right now.{% elif wanted == ''set'' and not has_pct
       %}Nothing was changed: say the level as a percent, like 30 percent.{% elif wanted == ''dimmer''
-      and not was_on %}The Movie Room ambient lights are off, so there is nothing to dim.{% endif %}'
+      and not was_on %}The Movie Room ambient lights are off, so there is nothing to dim.{% elif wanted
+      in [''brighter'', ''dimmer'', ''check''] and was_on and state_attr(group, ''brightness'') is none
+      %}I can''t read the Movie Room ambient lights'' level right now, so nothing was changed. Say a level
+      instead, like 30 percent.{% endif %}'
 - if:
   - condition: template
     value_template: '{{ problem | length > 0 }}'
