@@ -19,7 +19,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
 | Basement | `basement` | `mdi:home-floor-b` | Climate (Basement Climate), then Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Other Rooms (Server Room Lights, Storage Room Lights) |
-| First floor | `first-floor` | `mdi:home-floor-1` | Main Rooms (Living Room, Study, Kitchen, Dining Room, Chaos) |
+| First floor | `first-floor` | `mdi:home-floor-1` | Main Rooms (Living Room, Study, Kitchen), then Fancy Rooms (Dining Room, Chaos) |
 | Second floor | `second-floor` | `mdi:home-floor-2` | Primary Bedroom (Bedroom, Cloffice), then Other Bedrooms (Blue Room · Jackson, Pink Room · Penelope, White Room), then Other Rooms (Foyer) |
 
 A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
@@ -68,7 +68,8 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Main Rooms | "Living Room", "Study": icon toggles the recessed lights, **Bright** / **Dim** / **Fan**; "Kitchen" (recessed), "Dining Room" (table): **Bright** / **Dim**; tap → that room's pop-up. "Chaos" (foyer chandelier): **Bright** / **Dim**, no pop-up — see *First floor* below |
+| Main Rooms | "Living Room", "Study": icon toggles the recessed lights, **Bright** / **Dim** / **Fan**; "Kitchen" (recessed): **Bright** / **Dim**; tap → that room's pop-up — see *First floor* below |
+| Fancy Rooms (`mdi:chandelier`, Tom 2026-09-30) | "Dining Room" (table): **Bright** / **Dim**, tap → `#tom-dining-room`. "Chaos" (foyer chandelier): **Bright** / **Dim**, no pop-up |
 
 **Second floor**
 

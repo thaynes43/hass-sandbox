@@ -5473,6 +5473,13 @@ views:
         \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
         \ }\\n';\n  return css;\n})()}\n"
     - type: custom:bubble-card
+      card_type: separator
+      name: Fancy Rooms
+      icon: mdi:chandelier
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
       card_type: button
       button_type: name
       entity: light.downstairs_dining_room_table_light
