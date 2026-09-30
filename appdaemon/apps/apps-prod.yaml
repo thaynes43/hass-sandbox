@@ -1221,6 +1221,27 @@ airthings_battery_checker:
   critical_threshold: 5
   entity_patterns:
     - include: "sensor\\.(livingroom_view_plus|basement_view_radon|primary_bedroom_wave_plus|primary_bathroom|basement_wave_mini|laundry_room_wave_mini)_battery$"
+  # Wave Mini (3x AAA) reports a knee, not a line: it drifts ~1-2 points a
+  # month down to ~65%, then falls to 0 in ~5 weeks and goes dark (Primary
+  # Bathroom unit, Nov-Dec 2025: 64 -> 39 -> 28 -> 11 -> 0). A flat 20% warns
+  # about two weeks before it dies. Warn at 70 (the knee is near; Tom saw
+  # the basement unit as nearly dead at 69% on 2026-09-29) and page at 25
+  # (free fall, ~2-3 weeks left, what 5% means on the Wave Plus's
+  # straight-line curve).
+  # sensor.primary_bathroom_battery is a Wave Mini too.
+  threshold_overrides:
+    - include: "sensor\\.(basement_wave_mini|laundry_room_wave_mini|primary_bathroom)_battery$"
+      warning_threshold: 70
+      critical_threshold: 25
+  # Airthings is cloud-polled: a unit that drops off keeps serving its LAST
+  # sample, battery included. The Primary Bathroom Wave Mini has read 96% and
+  # 42% RH unchanged since 2026-07 while offline, and this checker said ok.
+  # Each device's own climate sensors are the freshness signal: nothing new
+  # from either for 24 h turns an ok reading into a warning.
+  stale_after_h: 24
+  freshness_sibling_suffixes:
+    - _temperature
+    - _humidity
 
 protect_battery_checker:
   module: health_checks.checker_apps.battery_checker.battery_checker

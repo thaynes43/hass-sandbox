@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 # Add health_checks package root so we can import shared utilities if needed
 _health_checks_root = str(Path(__file__).resolve().parents[2])
@@ -22,6 +23,34 @@ _BATTERY_SUFFIXES = [
     " battery level",
     " battery",
 ]
+
+# Strips the battery suffix off an entity_id to find the device's sibling
+# sensors: sensor.basement_wave_mini_battery -> sensor.basement_wave_mini.
+_BATTERY_ENTITY_SUFFIX_RE = re.compile(r"_battery(_level)?$")
+
+
+def _parse_iso_utc(value: Any) -> Optional[datetime.datetime]:
+    """Parse an ISO timestamp (str or datetime) into an aware UTC datetime."""
+    if isinstance(value, datetime.datetime):
+        parsed = value
+    elif value:
+        try:
+            parsed = datetime.datetime.fromisoformat(str(value))
+        except (ValueError, TypeError):
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=datetime.timezone.utc)
+    return parsed.astimezone(datetime.timezone.utc)
+
+
+def _fmt_age(seconds: float) -> str:
+    """Human age for a stale-reading detail: hours under two days, else days."""
+    hours = max(0.0, seconds) / 3600
+    if hours < 48:
+        return f"{hours:.0f}h"
+    return f"{hours / 24:.0f}d"
 
 
 class BatteryChecker(hass.Hass):
@@ -45,6 +74,39 @@ class BatteryChecker(hass.Hass):
         # Default thresholds (percentage)
         self._warning_threshold: float = float(args.get("warning_threshold", 20))
         self._critical_threshold: float = float(args.get("critical_threshold", 10))
+
+        # Per-entity threshold overrides for models whose reported percentage
+        # is not linear. The Airthings Wave Mini drifts slowly to ~65%, then
+        # falls to 0 within weeks, so a flat 20% warning comes far too late
+        # for it. First matching override wins; an override may set either
+        # threshold and inherits the other from the checker default.
+        self._threshold_overrides: List[Tuple[re.Pattern, float, float]] = []
+        for override in args.get("threshold_overrides", []) or []:
+            if not isinstance(override, dict) or "include" not in override:
+                self.log(
+                    f"Ignoring threshold override without 'include': {override!r}",
+                    level="WARNING",
+                )
+                continue
+            self._threshold_overrides.append((
+                re.compile(override["include"]),
+                float(override.get("warning_threshold", self._warning_threshold)),
+                float(override.get("critical_threshold", self._critical_threshold)),
+            ))
+
+        # Stale-reading detection (opt-in). A cloud-polled integration keeps
+        # serving a device's last sample after the device drops off, battery
+        # included, so a dead unit can read "96%" for months. The battery value
+        # alone can't show that (it legitimately sits flat for weeks), so the
+        # device's own sibling sensors (same entity_id stem + these suffixes,
+        # e.g. _temperature/_humidity) are the freshness signal: when none has
+        # changed within stale_after_h, the reading is reported as stale.
+        self._stale_after_s: float = float(args.get("stale_after_h", 0) or 0) * 3600
+        self._freshness_suffixes: List[str] = [
+            str(s) for s in (args.get("freshness_sibling_suffixes") or [])
+        ]
+        # entity_id -> sibling entity_ids that exist in HA (filled at discovery)
+        self._freshness_entities: Dict[str, List[str]] = {}
 
         # Disconnect-aware guard (opt-in): distinguishes a gateway/RF disconnect
         # (implausible drop from a healthy baseline straight to ~0%) from a
@@ -108,7 +170,10 @@ class BatteryChecker(hass.Hass):
             f"BatteryChecker initializing: id={self._checker_id}, "
             f"includes={len(self._include_patterns)}, "
             f"excludes={len(self._exclude_patterns)}, "
-            f"interval={self._check_interval_s}s",
+            f"interval={self._check_interval_s}s, "
+            f"thresholds={self._warning_threshold:.0f}/{self._critical_threshold:.0f}%, "
+            f"overrides={len(self._threshold_overrides)}, "
+            f"stale_after={self._stale_after_s / 3600:.0f}h",
             level="INFO",
         )
 
@@ -223,10 +288,22 @@ class BatteryChecker(hass.Hass):
                     current_value = float(state_obj.get("state"))
                 except (TypeError, ValueError):
                     current_value = None
-                if current_value is not None and current_value > self._critical_threshold:
+                _, critical = self._thresholds_for(entity_id)
+                if current_value is not None and current_value > critical:
                     self._last_good_value[entity_id] = current_value
 
         self._entities = matched
+
+        freshness: Dict[str, List[str]] = {}
+        if self._stale_after_s > 0 and self._freshness_suffixes:
+            for entity_id in matched:
+                stem = _BATTERY_ENTITY_SUFFIX_RE.sub("", entity_id)
+                freshness[entity_id] = [
+                    stem + suffix
+                    for suffix in self._freshness_suffixes
+                    if stem + suffix in all_states
+                ]
+        self._freshness_entities = freshness
 
         # Log discovered entities for validation
         self.log(
@@ -235,7 +312,23 @@ class BatteryChecker(hass.Hass):
             level="INFO",
         )
         for entity_id, display_name in sorted(self._entities.items()):
-            self.log(f"  - {entity_id} ({display_name})", level="INFO")
+            warning, critical = self._thresholds_for(entity_id)
+            notes = ""
+            if (warning, critical) != (self._warning_threshold, self._critical_threshold):
+                notes += f", thresholds {warning:.0f}/{critical:.0f}%"
+            if entity_id in freshness:
+                siblings = freshness[entity_id]
+                notes += (
+                    f", freshness via {', '.join(siblings)}"
+                    if siblings else ", no freshness siblings found"
+                )
+            self.log(f"  - {entity_id} ({display_name}{notes})", level="INFO")
+            if entity_id in freshness and not freshness[entity_id]:
+                self.log(
+                    f"Stale-reading check disabled for {entity_id}: none of "
+                    f"{self._freshness_suffixes} exist next to it",
+                    level="WARNING",
+                )
 
         if self._disconnect_aware:
             self.log(
@@ -406,6 +499,43 @@ class BatteryChecker(hass.Hass):
             else "WARNING",
         )
 
+    def _thresholds_for(self, entity_id: str) -> Tuple[float, float]:
+        """Return (warning, critical) for an entity: first matching override, else defaults."""
+        for pattern, warning, critical in self._threshold_overrides:
+            if pattern.search(entity_id):
+                return warning, critical
+        return self._warning_threshold, self._critical_threshold
+
+    def _stale_age_s(self, entity_id: str) -> Optional[float]:
+        """Seconds since the device last produced a new reading, if past stale_after_h.
+
+        Freshness is the newest ``last_changed`` across the entity's sibling
+        sensors. Returns None when stale detection is off, no sibling exists,
+        no sibling timestamp is readable (never guess stale from missing
+        data), or the device reported within the window.
+        """
+        siblings = self._freshness_entities.get(entity_id)
+        if self._stale_after_s <= 0 or not siblings:
+            return None
+        newest: Optional[datetime.datetime] = None
+        for sibling in siblings:
+            try:
+                changed = _parse_iso_utc(
+                    self.get_state(sibling, attribute="last_changed")
+                )
+            except Exception as exc:
+                self.log(
+                    f"Could not read last_changed of {sibling}: {exc}",
+                    level="DEBUG",
+                )
+                continue
+            if changed is not None and (newest is None or changed > newest):
+                newest = changed
+        if newest is None:
+            return None
+        age_s = (datetime.datetime.now(datetime.timezone.utc) - newest).total_seconds()
+        return age_s if age_s > self._stale_after_s else None
+
     def _evaluate_entity(self, entity_id: str, display_name: str) -> Dict[str, Any]:
         """Evaluate a single battery entity. Returns a result dict.
 
@@ -435,7 +565,9 @@ class BatteryChecker(hass.Hass):
         except (ValueError, TypeError):
             return {"name": display_name, "status": "unknown", "detail": f"non-numeric state: {state}"}
 
-        if value <= self._critical_threshold:
+        warning_threshold, critical_threshold = self._thresholds_for(entity_id)
+
+        if value <= critical_threshold:
             prev_good = self._last_good_value.get(entity_id)
             if self._disconnect_aware and is_implausible_battery_drop(
                 prev_good,
@@ -455,21 +587,43 @@ class BatteryChecker(hass.Hass):
                 result = {
                     "name": display_name,
                     "status": "critical",
-                    "detail": f"{value:.0f}% (critical ≤{self._critical_threshold:.0f}%)",
+                    "detail": f"{value:.0f}% (critical ≤{critical_threshold:.0f}%)",
                 }
-        elif value <= self._warning_threshold:
+        elif value <= warning_threshold:
             result = {
                 "name": display_name,
                 "status": "warning",
-                "detail": f"{value:.0f}% (warning ≤{self._warning_threshold:.0f}%)",
+                "detail": f"{value:.0f}% (warning ≤{warning_threshold:.0f}%)",
             }
         else:
             result = {"name": display_name, "status": "ok", "detail": f"{value:.0f}%"}
 
+        # A frozen device's battery is its last sample, not a measurement:
+        # an otherwise-ok reading becomes a warning (UI only, never pages); a
+        # low one keeps its status and just says the device has gone quiet.
+        stale_age_s = self._stale_age_s(entity_id)
+        if stale_age_s is not None:
+            stem = _BATTERY_ENTITY_SUFFIX_RE.sub("", entity_id)
+            siblings = "/".join(
+                sibling[len(stem):].lstrip("_")
+                for sibling in self._freshness_entities[entity_id]
+            )
+            quiet = f"no new reading for {_fmt_age(stale_age_s)} ({siblings} unchanged)"
+            if result["status"] == "ok":
+                result = {
+                    "name": display_name,
+                    "status": "warning",
+                    "detail": (
+                        f"offline? {quiet}; {value:.0f}% is its last sample"
+                    ),
+                }
+            else:
+                result["detail"] = f"{result['detail']}; {quiet}"
+
         # Update the healthy baseline whenever we see a reading above the
         # critical threshold, so the next implausible-drop check (in this
         # cycle or a future one) has a fresh comparison point.
-        if self._disconnect_aware and value > self._critical_threshold:
+        if self._disconnect_aware and value > critical_threshold:
             self._last_good_value[entity_id] = value
 
         # Stash the raw numeric reading for the metrics payload (popped by
