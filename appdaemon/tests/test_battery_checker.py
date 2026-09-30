@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import sys
 from pathlib import Path
@@ -1002,3 +1003,366 @@ class TestDisconnectLowThreshold:
         })
         _init_only(app)
         assert app._disconnect_low_threshold == 5.0
+
+
+# ------------------------------------------------------------------
+# Per-entity threshold overrides (non-linear models, e.g. Wave Mini)
+# ------------------------------------------------------------------
+
+
+class TestThresholdOverrides:
+    """A Wave Mini drifts to ~65% and then falls to 0 within weeks, so it
+    needs a far higher warning threshold than the rest of its group."""
+
+    OVERRIDE_ARGS = {
+        "warning_threshold": 20,
+        "critical_threshold": 5,
+        "threshold_overrides": [
+            {
+                "include": "sensor\\.test_wave_mini_battery$",
+                "warning_threshold": 70,
+                "critical_threshold": 25,
+            },
+        ],
+    }
+
+    def _eval(self, app, entity_id, state_value):
+        app.get_state = MagicMock(return_value=state_value)
+        return app._evaluate_entity(entity_id, "Device")
+
+    def test_override_warns_where_group_default_is_ok(self):
+        # 2026-09-29: the basement Wave Mini read 69% and the checker said ok.
+        app = _make_app(dict(self.OVERRIDE_ARGS))
+        _init_only(app)
+        result = self._eval(app, "sensor.test_wave_mini_battery", "69")
+        assert result["status"] == "warning"
+        assert "≤70%" in result["detail"]
+
+    def test_override_ok_above_its_warning(self):
+        app = _make_app(dict(self.OVERRIDE_ARGS))
+        _init_only(app)
+        result = self._eval(app, "sensor.test_wave_mini_battery", "71")
+        assert result["status"] == "ok"
+
+    def test_override_critical_threshold(self):
+        app = _make_app(dict(self.OVERRIDE_ARGS))
+        _init_only(app)
+        result = self._eval(app, "sensor.test_wave_mini_battery", "25")
+        assert result["status"] == "critical"
+        assert "≤25%" in result["detail"]
+
+    def test_non_matching_entity_keeps_group_defaults(self):
+        app = _make_app(dict(self.OVERRIDE_ARGS))
+        _init_only(app)
+        assert self._eval(app, "sensor.test_wave_plus_battery", "69")["status"] == "ok"
+        result = self._eval(app, "sensor.test_wave_plus_battery", "15")
+        assert result["status"] == "warning"
+        assert "≤20%" in result["detail"]
+
+    def test_override_inherits_unset_threshold(self):
+        app = _make_app({
+            "warning_threshold": 20,
+            "critical_threshold": 5,
+            "threshold_overrides": [
+                {"include": "wave_mini", "warning_threshold": 70},
+            ],
+        })
+        _init_only(app)
+        assert app._thresholds_for("sensor.test_wave_mini_battery") == (70.0, 5.0)
+
+    def test_first_matching_override_wins(self):
+        app = _make_app({
+            "threshold_overrides": [
+                {"include": "wave_mini", "warning_threshold": 70},
+                {"include": "test_", "warning_threshold": 40},
+            ],
+        })
+        _init_only(app)
+        assert app._thresholds_for("sensor.test_wave_mini_battery")[0] == 70.0
+        assert app._thresholds_for("sensor.test_other_battery")[0] == 40.0
+
+    def test_override_without_include_is_ignored_and_logged(self):
+        app = _make_app({"threshold_overrides": [{"warning_threshold": 70}]})
+        _init_only(app)
+        assert app._threshold_overrides == []
+        assert any(
+            c[1].get("level") == "WARNING" and "threshold override" in c[0][0]
+            for c in app.log.call_args_list
+        )
+
+    def test_transposed_override_is_ignored_not_paging(self):
+        # critical above warning would page every healthy reading below it.
+        app = _make_app({
+            "warning_threshold": 20,
+            "critical_threshold": 5,
+            "threshold_overrides": [
+                {"include": "wave_mini", "warning_threshold": 25, "critical_threshold": 70},
+            ],
+        })
+        _init_only(app)
+        assert app._threshold_overrides == []
+        assert any(
+            c[1].get("level") == "WARNING" and "above warning" in c[0][0]
+            for c in app.log.call_args_list
+        )
+        assert self._eval(app, "sensor.test_wave_mini_battery", "69")["status"] == "ok"
+
+    def test_disconnect_seed_uses_override_critical(self):
+        # A 20% reading is below the override's critical (25), so it is not
+        # a healthy baseline for this entity even though it clears the
+        # group default (5).
+        states = {
+            "sensor.test_wave_mini_battery": {
+                "state": "20",
+                "attributes": {"device_class": "battery", "unit_of_measurement": "%"},
+            },
+        }
+        args = dict(self.OVERRIDE_ARGS)
+        args["disconnect_aware"] = True
+        app = _make_app(args)
+        app.get_state = AsyncMock(return_value=states)
+        _init_and_discover(app)
+        assert "sensor.test_wave_mini_battery" not in app._last_good_value
+
+
+# ------------------------------------------------------------------
+# Stale-reading detection (cloud-polled devices that went dark)
+# ------------------------------------------------------------------
+
+
+def _ago(**delta) -> str:
+    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(**delta)).isoformat()
+
+
+def _battery(value: str) -> Dict[str, Any]:
+    return {
+        "state": value,
+        "attributes": {"device_class": "battery", "unit_of_measurement": "%"},
+    }
+
+
+def _sibling(last_changed: str | None) -> Dict[str, Any]:
+    return {"state": "42", "attributes": {}, "last_changed": last_changed}
+
+
+def _states_get_state(states: Dict[str, Dict[str, Any]]):
+    """Sync get_state stand-in that serves values and last_changed."""
+
+    def _get_state(entity_id=None, attribute=None, **kwargs):
+        if entity_id is None:
+            return states
+        entity = states.get(entity_id)
+        if entity is None:
+            return None
+        if attribute == "all":
+            return entity
+        return entity["state"]
+
+    return _get_state
+
+
+class TestStaleReadings:
+    STALE_ARGS = {
+        "stale_after_h": 24,
+        "freshness_sibling_suffixes": ["_temperature", "_humidity"],
+    }
+
+    def _app(self, states, extra=None):
+        args = dict(self.STALE_ARGS)
+        args.update(extra or {})
+        app = _make_app(args)
+        # Discovery awaits get_state(); evaluation calls it synchronously.
+        app.get_state = AsyncMock(side_effect=_states_get_state(states))
+        _init_and_discover(app)
+        app.get_state = MagicMock(side_effect=_states_get_state(states))
+        return app
+
+    def test_frozen_device_ok_reading_becomes_warning(self):
+        # The Primary Bathroom Wave Mini: offline since 2026-07, still 96%.
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(_ago(days=8)),
+            "sensor.test_bath_humidity": _sibling(_ago(days=8, hours=1)),
+        }
+        app = self._app(states)
+        result = app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        assert result["status"] == "warning"
+        assert "offline?" in result["detail"]
+        assert "no new reading for 8d" in result["detail"]
+        assert "temperature/humidity unchanged" in result["detail"]
+        assert "96%" in result["detail"]
+
+    def test_one_fresh_sibling_keeps_ok(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(_ago(hours=1)),
+            "sensor.test_bath_humidity": _sibling(_ago(days=8)),
+        }
+        app = self._app(states)
+        result = app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        assert result["status"] == "ok"
+        assert result["detail"] == "96%"
+
+    def test_just_inside_window_is_not_stale(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(_ago(hours=23)),
+        }
+        app = self._app(states)
+        assert app._evaluate_entity("sensor.test_bath_battery", "Bath")["status"] == "ok"
+
+    def test_low_reading_keeps_status_and_notes_staleness(self):
+        # A unit that died at 3% and froze must still page, not soften.
+        states = {
+            "sensor.test_bath_battery": _battery("3"),
+            "sensor.test_bath_temperature": _sibling(_ago(days=3)),
+        }
+        app = self._app(states)
+        result = app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        assert result["status"] == "critical"
+        assert "no new reading for 3d" in result["detail"]
+
+    def test_unreadable_timestamps_never_flag_stale(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(None),
+            "sensor.test_bath_humidity": _sibling("not-a-timestamp"),
+        }
+        app = self._app(states)
+        assert app._evaluate_entity("sensor.test_bath_battery", "Bath")["status"] == "ok"
+        # ...but an inert check says so, once per entity rather than per cycle.
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        inert = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" and "check inert" in c[0][0]
+        ]
+        assert len(inert) == 1
+        assert "sensor.test_bath_temperature" in inert[0][0][0]
+
+    def test_inert_warning_rearms_after_timestamps_return(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(None),
+        }
+        app = self._app(states)
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        states["sensor.test_bath_temperature"]["last_changed"] = _ago(hours=1)
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        states["sensor.test_bath_temperature"]["last_changed"] = None
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        inert = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" and "check inert" in c[0][0]
+        ]
+        assert len(inert) == 2
+
+    def test_disabled_by_default_reads_no_siblings(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(_ago(days=8)),
+        }
+        app = _make_app()
+        app.get_state = AsyncMock(side_effect=_states_get_state(states))
+        _init_and_discover(app)
+        app.get_state = MagicMock(side_effect=_states_get_state(states))
+        result = app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        assert result["status"] == "ok"
+        assert app._freshness_entities == {}
+        assert not any(
+            c[0][:1] == ("sensor.test_bath_temperature",)
+            for c in app.get_state.call_args_list
+        )
+
+    def test_discovery_maps_only_existing_siblings(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_humidity": _sibling(_ago(hours=1)),
+            "sensor.test_lock_battery_level": _battery("80"),
+            "sensor.test_lock_temperature": _sibling(_ago(hours=1)),
+        }
+        app = self._app(states, {"entity_patterns": [{"include": "sensor\\.test_"}]})
+        assert app._freshness_entities == {
+            "sensor.test_bath_battery": ["sensor.test_bath_humidity"],
+            "sensor.test_lock_battery_level": ["sensor.test_lock_temperature"],
+        }
+
+    def test_no_siblings_disables_check_with_warning(self):
+        states = {"sensor.test_bath_battery": _battery("96")}
+        app = self._app(states)
+        assert app._freshness_entities == {"sensor.test_bath_battery": []}
+        assert any(
+            c[1].get("level") == "WARNING" and "Stale-reading check disabled" in c[0][0]
+            for c in app.log.call_args_list
+        )
+        assert app._evaluate_entity("sensor.test_bath_battery", "Bath")["status"] == "ok"
+
+
+# ------------------------------------------------------------------
+# Regression: the production Airthings config against the 2026-09-29 house
+# ------------------------------------------------------------------
+
+
+def _load_prod_checker_args(app_key: str) -> Dict[str, Any]:
+    import yaml
+
+    class _Loader(yaml.SafeLoader):
+        pass
+
+    # apps-prod.yaml uses !secret style tags elsewhere in the file.
+    _Loader.add_multi_constructor("!", lambda loader, suffix, node: None)
+    path = Path(__file__).resolve().parents[1] / "apps" / "apps-prod.yaml"
+    with path.open(encoding="utf-8") as handle:
+        return yaml.load(handle, Loader=_Loader)[app_key]
+
+
+class TestAirthingsProdConfig:
+    """Live readings on 2026-09-29, when every Airthings check said ok."""
+
+    def test_wave_minis_and_frozen_unit_flagged(self):
+        fresh, frozen = _ago(hours=1), _ago(days=8)
+        states: Dict[str, Dict[str, Any]] = {}
+        for stem, level, changed, name in [
+            ("basement_wave_mini", "69", fresh, "Basement Wave Mini"),
+            ("laundry_room_wave_mini", "69", fresh, "Laundry Room Wave Mini"),
+            ("primary_bathroom", "96", frozen, "Primary Bathroom"),
+            ("primary_bedroom_wave_plus", "93", fresh, "Primary Bedroom Wave Plus"),
+            ("livingroom_view_plus", "100", fresh, "First Floor View Plus"),
+            ("basement_view_radon", "100", fresh, "Basement View Radon"),
+        ]:
+            states[f"sensor.{stem}_battery"] = {
+                "state": level,
+                "attributes": {
+                    "device_class": "battery",
+                    "unit_of_measurement": "%",
+                    "friendly_name": f"{name} Battery",
+                },
+            }
+            states[f"sensor.{stem}_temperature"] = _sibling(changed)
+            states[f"sensor.{stem}_humidity"] = _sibling(changed)
+
+        app = BatteryChecker(MagicMock(), MagicMock())
+        app.args = _load_prod_checker_args("airthings_battery_checker")
+        for attr in ("set_state", "call_service", "listen_event", "fire_event",
+                     "run_in", "run_every", "run_daily", "log", "create_task"):
+            setattr(app, attr, MagicMock())
+        app.get_state = AsyncMock(side_effect=_states_get_state(states))
+        _startup(app)
+        app.get_state = MagicMock(side_effect=_states_get_state(states))
+        app.fire_event.reset_mock()
+
+        app._run_checks()
+
+        report = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "report_status"
+        ][0]
+        by_name = {
+            r["name"]: r for r in json.loads(report[1]["payload"])["results"]
+        }
+        assert by_name["Basement Wave Mini"]["status"] == "warning"
+        assert by_name["Laundry Room Wave Mini"]["status"] == "warning"
+        assert by_name["Primary Bathroom"]["status"] == "warning"
+        assert "offline?" in by_name["Primary Bathroom"]["detail"]
+        for name in ("Primary Bedroom Wave Plus", "First Floor View Plus",
+                     "Basement View Radon"):
+            assert by_name[name]["status"] == "ok", by_name[name]

@@ -65,6 +65,53 @@ Status logic:
   unavailable is a connectivity failure owned by that integration's own
   health checker.
 
+#### Per-entity threshold overrides (opt-in)
+
+Some models report a percentage that is not linear in remaining life. The
+Airthings Wave Mini is the motivating case: it drifts 1-2 points a month down
+to about 65%, then falls to 0 within about five weeks and goes dark (Primary
+Bathroom unit, Nov-Dec 2025: `64 → 39 → 28 → 11 → 0`). A group-wide 20%
+warning fires about two weeks before such a unit dies. Airthings publishes no
+low-battery percentage for its consumer Wave devices; its Business devices flag
+low battery below 15%, far too late for the Wave Mini's drop-off.
+`threshold_overrides` gives matching entities their own thresholds inside the
+same checker:
+
+```yaml
+  threshold_overrides:
+    - include: "sensor\\.(basement_wave_mini|laundry_room_wave_mini|primary_bathroom)_battery$"
+      warning_threshold: 70
+      critical_threshold: 25
+```
+
+`include` is a regex (`re.search`) on the entity ID. The first matching
+override wins. An override that leaves out one threshold inherits the
+checker's default for it. An override whose `critical_threshold` is above its
+`warning_threshold` is ignored with a WARNING, because a transposed pair would
+page for every healthy reading. The disconnect-aware baseline uses the
+entity's own `critical_threshold`.
+
+#### Stale-reading detection (opt-in)
+
+A cloud-polled integration (Airthings) keeps serving a device's last sample
+after the device drops off, battery included. The Primary Bathroom Wave Mini
+read 96% and 42% RH unchanged from 2026-07 while offline, and the checker
+said ok. The battery value cannot show this on its own because it
+legitimately sits flat for weeks, so the device's own sibling sensors are the
+freshness signal. The sibling IDs are the battery entity ID with `_battery`
+or `_battery_level` removed, plus each suffix. When none of them has changed
+within `stale_after_h`, an ok reading becomes **warning** ("offline? no new
+reading for 8d (temperature/humidity unchanged); 96% is its last sample"). A
+warning or critical reading keeps its status and gets the same note added.
+A missing or unreadable timestamp never counts as stale; the checker logs a
+WARNING once per entity that the check is inert. An HA restart resets
+`last_changed`, so a stale device is re-flagged `stale_after_h` after a restart.
+
+| Option | Default | Meaning |
+|--------|---------|---------|
+| `stale_after_h` | `0` (off) | Hours without a change in any sibling before the reading is stale. |
+| `freshness_sibling_suffixes` | `[]` | Suffixes appended to the device's entity-ID stem, e.g. `[_temperature, _humidity]`. Siblings that don't exist are skipped; a device with none logs a WARNING at discovery and is not stale-checked. |
+
 #### Disconnect-aware guard (opt-in)
 
 Some battery sensors report a physically-impossible reading when the device
@@ -188,7 +235,8 @@ ups_checker_dev:
 - **Class**: BatteryChecker
 - **Entities**: 6 Airthings battery sensors
 - **Dependency**: None
-- **Thresholds**: Warning 20%, Critical 5%
+- **Thresholds**: Warning 20%, Critical 5%; the three Wave Minis (Basement, Laundry Room, Primary Bathroom) use Warning 70%, Critical 25% via `threshold_overrides`
+- **Stale readings**: `stale_after_h: 24` with `_temperature`/`_humidity` siblings, so a unit that went offline shows as a warning instead of its last battery sample
 
 ### 5. `protect_battery_checker`
 - **Class**: BatteryChecker

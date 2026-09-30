@@ -31,7 +31,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
 | Voice assistant | Speech-to-text and text-to-speech servers (Wyoming handshake) and the assistant's language model — what the phone's Assist card shows | `VoiceHealthChecker` |
-| Batteries | Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with an opt-in guard that tells a real low battery from a gateway-disconnect 0% | `BatteryChecker` |
+| Batteries | Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with per-model thresholds for batteries that fall off a cliff (Airthings Wave Mini), a stale-reading check for cloud devices that went quiet, and an opt-in guard that tells a real low battery from a gateway-disconnect 0% | `BatteryChecker` |
 | Motorized shades | PowerView G3 gateway RF-disconnect detection, with PoE port power-cycle repair | `ShadeGatewayChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
 
