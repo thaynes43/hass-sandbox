@@ -1952,11 +1952,11 @@ views:
         \      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n\
         .bubble-sub-button-1,\n.bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n\
         }\n${(() => {\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
-        \ return 'off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'on' : Math.round(b\
-        \ / 2.55) + '%';\n  };\n  const t = pct('light.basement_concessions_lights');\n  const txt = t\
-        \ === 'off' ? 'Off' : t;\n  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
-        \ { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n${(() => {\n  const held = (() => {\n\
-        \    const s = hass.states;\n    const led = parseInt(s['number.basement_concessions_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const txt = pct('light.basement_concessions_lights');\n  return '.bubble-state\
+        \ { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size:\
+        \ 12px; }';\n})()}\n${(() => {\n  const held = (() => {\n    const s = hass.states;\n    const\
+        \ led = parseInt(s['number.basement_concessions_inovelli_presence_defaultled1colorwhenon']?.state);\n\
         \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
         \    const mode = s['select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
         \    const normal = s['input_select.basement_concessions_mmwave_normal_mode']?.state;\n    const\
@@ -2040,9 +2040,9 @@ views:
         \ hass.states['light.basement_rumpus_room_lamp']?.state === 'on')\n      ? 'rgba(var(--rgb-accent-color),\
         \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2\
         \ {\n  background-color: rgba(0,0,0,0.22) !important;\n}\n${(() => {\n  const pct = (e) => {\n\
-        \    const st = hass.states[e];\n    if (st?.state !== 'on') return 'off';\n    const b = st.attributes?.brightness;\n\
-        \    return b == null ? 'on' : Math.round(b / 2.55) + '%';\n  };\n  const txt = (pct('light.basement_rumpus_room_lights')\
-        \ === 'off' && pct('light.basement_rumpus_room_lamp') === 'off') ? 'Off' : 'Recessed ' + pct('light.basement_rumpus_room_lights')\
+        \    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const b = st.attributes?.brightness;\n\
+        \    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n  };\n  const txt = (pct('light.basement_rumpus_room_lights')\
+        \ === 'Off' && pct('light.basement_rumpus_room_lamp') === 'Off') ? 'Off' : 'Recessed ' + pct('light.basement_rumpus_room_lights')\
         \ + ' · ' + 'Lamp ' + pct('light.basement_rumpus_room_lamp');\n  return '.bubble-state { font-size:\
         \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
         \ }';\n})()}\n${(() => {\n  const held = (() => {\n    const s = hass.states;\n    const led =\
@@ -2124,13 +2124,13 @@ views:
         \ ${(() => {\n    return (hass.states['light.basement_hall_lights']?.state === 'on')\n      ?\
         \ 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-1,\n\
         .bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n}\n${(() => {\n  const\
-        \ pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'off';\n\
-        \    const b = st.attributes?.brightness;\n    return b == null ? 'on' : Math.round(b / 2.55)\
-        \ + '%';\n  };\n  const t = pct('light.basement_hall_lights');\n  const txt = t === 'off' ? 'Off'\
-        \ : t;\n  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
-        \ { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n${(() => {\n  const held = (() => {\n\
-        \    const s = hass.states;\n    const led = parseInt(s['number.basement_hallway_inovelli_presence_defaultled1colorwhenon']?.state);\n\
-        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \ pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n\
+        \    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55)\
+        \ + '%';\n  };\n  const txt = pct('light.basement_hall_lights');\n  return '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }';\n})()}\n${(() => {\n  const held = (() => {\n    const s = hass.states;\n    const led =\
+        \ parseInt(s['number.basement_hallway_inovelli_presence_defaultled1colorwhenon']?.state);\n  \
+        \  const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
         \    const mode = s['select.basement_hallway_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
         \    const normal = s['input_select.basement_hallway_mmwave_normal_mode']?.state;\n    const autos\
         \ = [\"automation.light_zse11_basement_hallway_motion_detected_lights_on\", \"automation.light_zse11_basement_hallway_motion_cleared_lights_off\"\
