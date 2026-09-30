@@ -1865,15 +1865,16 @@ views:
       sub_button:
         main: []
         bottom: []
-      styles: "${(() => {\n  const s = hass.states['binary_sensor.basement_leak_sensors']?.state;\n  const\
-        \ tint = (c) => '.bubble-icon-container { background-color: ' + c + ' !important; }';\n  const\
-        \ card = (c) => '.bubble-button-card-container { background-color: ' + c + ' !important; }';\n\
-        \  if (s === 'off') return '';\n  if (s === 'on') return tint('rgba(244, 67, 54, 0.9)') + tint('color-mix(in\
-        \ srgb, var(--red-color, #f44336) 90%, transparent)')\n    + card('rgba(244, 67, 54, 0.35)') +\
-        \ card('color-mix(in srgb, var(--red-color, #f44336) 35%, transparent)')\n    + '.bubble-state\
-        \ { font-size: 14px !important; font-weight: 700 !important; opacity: 1 !important;'\n    + '\
-        \ text-transform: uppercase; }';\n  return tint('rgba(255, 193, 7, 0.6)') + tint('color-mix(in\
-        \ srgb, var(--amber-color, #ffc107) 60%, transparent)');\n})()}\n"
+      styles: "${(() => {\n  const g = hass.states['binary_sensor.basement_leak_sensors'];\n  const s\
+        \ = g?.state;\n  const members = g?.attributes?.entity_id ?? [];\n  const tint = (c) => '.bubble-icon-container\
+        \ { background-color: ' + c + ' !important; }';\n  const card = (c) => '.bubble-button-card-container\
+        \ { background-color: ' + c + ' !important; }';\n  if (s === 'on') return tint('rgba(244, 67,\
+        \ 54, 0.9)') + tint('color-mix(in srgb, var(--red-color, #f44336) 90%, transparent)')\n    + card('rgba(244,\
+        \ 67, 54, 0.35)') + card('color-mix(in srgb, var(--red-color, #f44336) 35%, transparent)')\n \
+        \   + '.bubble-state { font-size: 14px !important; font-weight: 700 !important; opacity: 1 !important;'\n\
+        \    + ' text-transform: uppercase; }';\n  if (s === 'off' && members.every((e) => ['on', 'off'].includes(hass.states[e]?.state)))\
+        \ return '';\n  return tint('rgba(255, 193, 7, 0.6)') + tint('color-mix(in srgb, var(--amber-color,\
+        \ #ffc107) 60%, transparent)');\n})()}\n"
     - type: custom:bubble-card
       card_type: separator
       name: Movie Room

@@ -363,7 +363,8 @@ under Server Room. Since 2026-09-30 it sits in the Status section at the top of 
   for the Aqaras, `sensor.cigar_humidity_sensor_0N_battery_level` for the ZSE44s). Four chips only fit at 390 px with
   the name chip at `width: 27` and the battery chip at `fill_width: false, width: 21`, with humidity and temperature
   filling the rest. That is the narrowest setting where no chip text scrolls ("Tupperdor 04", "64.8 °F", "100%").
-  At 26/18 the names and "100%" start to marquee. Re-check at 390 px before changing any of them. The ZSE44 battery
+  At 26/18 the names and "100%" start to marquee. The `4i+2` amber map was checked on 2026-09-30 by overriding
+  `per_sensor` in the browser for MON1800 and Cooler: only sub-buttons 2 and 34 (their humidity chips) turned amber. Re-check at 390 px before changing any of them. The ZSE44 battery
   sensors have display precision 0 (entity setting, 2026-09-30), so they read "43%", not "43.0%".
 
   | Name | Humidity | Temperature |
@@ -388,8 +389,11 @@ Z-Wave leak sensor with its state and battery. It is the third card in the Statu
   when every sensor is unavailable. The group has explicit members, the same five as the pop-up, so the card and the
   pop-up always agree.
 - **Card**: a name card, tap → `#tom-leak-detection`. Dry is a plain card. Wet gets a red card background, a red icon
-  and a bold upper-case "WET". Any other state (unavailable/unknown) gets an amber icon, so a dead group never passes
-  for Dry. The colours use the Humidors technique: a plain rgba rule, then a `color-mix` one.
+  and a bold upper-case "WET". Anything else gets an amber icon: the group unavailable/unknown, **or** the group
+  `off` while any member (read from the group's own `entity_id` attribute) is not `on`/`off`. An "any"-mode group
+  stays `off` when one probe dies, so without the member check a dead battery would read as a plain Dry on the card
+  while the pop-up paints that row amber (review finding on #222). The colours use the Humidors technique: a plain rgba
+  rule, then a `color-mix` one.
 - **`#tom-leak-detection`**: one Bubble `sub-buttons` card with one row per sensor: name · leak state · battery (tap =
   more-info). A state chip turns red on Wet and amber when unavailable/unknown. One IIFE in `styles` does this from a
   `[sub-button, entity]` map. Row *i* = sub-buttons 3i+1 / 3i+2 / 3i+3, and the state chip is 3i+2. `rows: 3.7` fits
@@ -411,7 +415,7 @@ Z-Wave leak sensor with its state and battery. It is the third card in the Statu
   humidity alarms, not leak probes. The house has no non-Z-Wave leak sensors (checked 2026-09-30).
 - Checked 2026-09-30 at 390 px with Playwright on the live dashboard: the card reads Dry, and tapping it opens the
   pop-up with five Dry rows and a battery % on each. The Wet and unavailable styling was rendered by overriding states
-  in the browser only. Never set these sensors on the server to test: the `flood_watch_zse42_*` automations act on them.
+  in the browser only, including one probe unavailable while the group stays `off` (the card icon turns amber). Never set these sensors on the server to test: the `flood_watch_zse42_*` automations act on them.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
