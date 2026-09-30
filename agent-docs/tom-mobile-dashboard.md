@@ -18,7 +18,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 |---|---|---|---|
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
-| Basement | `basement` | `mdi:home-floor-b` | Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Server Room (lights) |
+| Basement | `basement` | `mdi:home-floor-b` | Climate (Basement Climate), then Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Server Room (lights) |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
 | Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
 
@@ -58,13 +58,15 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
+| Climate | "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Status | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity, temperature and battery per humidor) — see *Cigars* below. "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below. "Leak Detection": Dry / Wet across the five Z-Wave leak sensors; tap → `#tom-leak-detection` (state + battery per sensor) — see *Leak Detection* below |
 | Main Lights | "Concessions", "Rumpus", "Great Hall": power icon toggles the room, state line = brightness (+ ` · Hold` while held), **Bright** / **Dim**; tap → that room's pop-up (hold is set there) — see *Main Lights* below |
-| Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
+| Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes) — see *Movie Room* below |
 | Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below |
 
 Tom asked on 2026-09-30 for a Status section at the top of the tab. It holds Humidors, UPS Load and Leak Detection.
 Humidors and UPS Load moved there from the Cigars and Server Room sections, and the Cigars section is gone.
+Later that day Tom moved Basement Climate out of Movie Room into its own Climate section above Status (high priority).
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).

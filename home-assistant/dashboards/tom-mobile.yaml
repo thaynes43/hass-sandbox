@@ -1768,6 +1768,158 @@ views:
     cards:
     - type: custom:bubble-card
       card_type: separator
+      name: Climate
+      icon: mdi:home-thermometer
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Basement Climate
+      icon: mdi:thermostat
+      show_state: false
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-basement-climate'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-basement-climate'
+      card_layout: large-sub-buttons-grid
+      rows: 2.438
+      sub_button:
+        main: []
+        bottom:
+        - name: Movie
+          group:
+          - entity: climate.movie_room_breeze
+            name: Movie
+            icon: mdi:movie-open
+            show_name: true
+            show_icon: false
+            show_state: true
+            fill_width: false
+            width: 34
+            tap_action:
+              action: more-info
+          - entity: climate.movie_room_breeze
+            name: Dry
+            icon: mdi:water-percent
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: dry
+          - entity: climate.movie_room_breeze
+            name: 72°
+            icon: mdi:fire
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: heat
+                temperature: 72
+          - entity: climate.movie_room_breeze
+            name: 'Off'
+            icon: mdi:power
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: 'off'
+          buttons_layout: inline
+        - name: Rumpus
+          group:
+          - entity: climate.rumpus_room_breeze
+            name: Rumpus
+            icon: mdi:sofa
+            show_name: true
+            show_icon: false
+            show_state: true
+            fill_width: false
+            width: 34
+            tap_action:
+              action: more-info
+          - entity: climate.rumpus_room_breeze
+            name: Dry
+            icon: mdi:water-percent
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: dry
+          - entity: climate.rumpus_room_breeze
+            name: 72°
+            icon: mdi:fire
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: heat
+                temperature: 72
+          - entity: climate.rumpus_room_breeze
+            name: 'Off'
+            icon: mdi:power
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: 'off'
+          buttons_layout: inline
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
+        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
+        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n\
+        \  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'dry') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'heat' && Math.round(hass.states['climate.movie_room_breeze']?.attributes?.temperature ??\
+        \ -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-4 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-5 {\n  background-color: ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'dry') ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'heat' && Math.round(hass.states['climate.rumpus_room_breeze']?.attributes?.temperature\
+        \ ?? -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-8 {\n  background-color: ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state\
+        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n"
+    - type: custom:bubble-card
+      card_type: separator
       name: Status
       icon: mdi:list-status
       sub_button:
@@ -2254,151 +2406,6 @@ views:
       styles: ".bubble-icon-container {\n  transition: background-color 200ms ease;\n  background-color:\
         \ ${(() => {\n    return (hass.states['light.basement_movie_room_ambient_lighting']?.state ===\
         \ 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
-    - type: custom:bubble-card
-      card_type: button
-      button_type: name
-      name: Basement Climate
-      icon: mdi:thermostat
-      show_state: false
-      tap_action:
-        action: navigate
-        navigation_path: '#tom-basement-climate'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#tom-basement-climate'
-      card_layout: large-sub-buttons-grid
-      rows: 2.438
-      sub_button:
-        main: []
-        bottom:
-        - name: Movie
-          group:
-          - entity: climate.movie_room_breeze
-            name: Movie
-            icon: mdi:movie-open
-            show_name: true
-            show_icon: false
-            show_state: true
-            fill_width: false
-            width: 34
-            tap_action:
-              action: more-info
-          - entity: climate.movie_room_breeze
-            name: Dry
-            icon: mdi:water-percent
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: movie_room
-                mode: dry
-          - entity: climate.movie_room_breeze
-            name: 72°
-            icon: mdi:fire
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: movie_room
-                mode: heat
-                temperature: 72
-          - entity: climate.movie_room_breeze
-            name: 'Off'
-            icon: mdi:power
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: movie_room
-                mode: 'off'
-          buttons_layout: inline
-        - name: Rumpus
-          group:
-          - entity: climate.rumpus_room_breeze
-            name: Rumpus
-            icon: mdi:sofa
-            show_name: true
-            show_icon: false
-            show_state: true
-            fill_width: false
-            width: 34
-            tap_action:
-              action: more-info
-          - entity: climate.rumpus_room_breeze
-            name: Dry
-            icon: mdi:water-percent
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: rumpus_room
-                mode: dry
-          - entity: climate.rumpus_room_breeze
-            name: 72°
-            icon: mdi:fire
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: rumpus_room
-                mode: heat
-                temperature: 72
-          - entity: climate.rumpus_room_breeze
-            name: 'Off'
-            icon: mdi:power
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: rumpus_room
-                mode: 'off'
-          buttons_layout: inline
-        bottom_layout: rows
-      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
-        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
-        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
-        \ ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n\
-        \  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
-        \ === 'dry') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
-        \ === 'heat' && Math.round(hass.states['climate.movie_room_breeze']?.attributes?.temperature ??\
-        \ -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-4 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
-        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-5 {\n  background-color: ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'dry') ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'heat' && Math.round(hass.states['climate.rumpus_room_breeze']?.attributes?.temperature\
-        \ ?? -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-8 {\n  background-color: ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state\
-        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n"
     - type: custom:bubble-card
       card_type: separator
       name: Server Room
