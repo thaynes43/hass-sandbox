@@ -490,6 +490,12 @@ or closet) and an Other Bedrooms section with one card per kid/guest room. Built
   its last speed), state `Speed n of 6`, and six chips `1`–`6` = `fan.turn_on` with percentage 16/33/50/66/83/100.
   HA sends `ceil(6 × p / 100)` to the fan, so 17 would give speed 2; those six values are what the fans report back.
   Chip numbering on the Bedroom card: 1 Bright, 2 Dim, 3 Fan; kids 1 Bright, 2 Dim, 3 Lamp, 4 Fan (White: 3 Fan).
+- **Summer / Winter** (Tom, 2026-09-30): a second chip row on every pop-up Fan card, `fan.set_direction` `forward` =
+  **Summer** (`mdi:weather-sunny`, downdraft) and `reverse` = **Winter** (`mdi:snowflake`, updraft); the active one is
+  accent-tinted from the `direction` attribute (chips 7 and 8, card `rows: 2.438`). The integration passes the device's
+  own `forward`/`reverse` through unchanged, and Modern Forms' app calls the downdraft mode Summer and the reversed one
+  Winter. Setting it on an off fan leaves the fan off. The tab cards show no direction hint. Checked on the White Room
+  fan while off: Winter → `direction: reverse`, Summer → `forward` again, still off.
 - **No holds**: none of these rooms has a manual hold (no Inovelli hold mapping, no motion automations on these
   lights; the rooms are ZEN32 scene controllers), so there is no hold control.
 - **Main's `#tom-primary-bedroom`** (unchanged, on the Main tab) is the Kellie Mobile port: a fan slider card, shades,

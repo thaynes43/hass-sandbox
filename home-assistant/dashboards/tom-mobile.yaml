@@ -5851,7 +5851,7 @@ views:
           tap_action:
             action: none
         card_layout: large-sub-buttons-grid
-        rows: 1.719
+        rows: 2.438
         sub_button:
           main: []
           bottom:
@@ -5930,18 +5930,52 @@ views:
                   entity_id: fan.primary_bedroom_fan_fan
                 data:
                   percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  direction: reverse
           bottom_layout: rows
         styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
-          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6 {\n  transition: background-color\
-          \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const speed\
-          \ = (e) => {\n    const st = hass.states[e];\n    if (!st || st.state === 'unavailable' || st.state\
-          \ === 'unknown') return 0;\n    if (st.state !== 'on') return -1;\n    const p = st.attributes?.percentage;\n\
-          \    return p == null ? 7 : Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.primary_bedroom_fan_fan');\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.primary_bedroom_fan_fan');\n\
           \  css += '.bubble-icon-container { background-color: ' + (on('fan.primary_bedroom_fan_fan')\
           \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for\
           \ (let i = 1; i <= 6; i++) {\n    css += '.bubble-sub-button-' + i + ' { background-color: '\
           \ + (v === i ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\\
-          n';\n  }\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          n';\n  }\n  const dir = hass.states['fan.primary_bedroom_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
           \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
           \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
     - type: custom:bubble-card
@@ -6164,7 +6198,7 @@ views:
           tap_action:
             action: none
         card_layout: large-sub-buttons-grid
-        rows: 1.719
+        rows: 2.438
         sub_button:
           main: []
           bottom:
@@ -6243,20 +6277,53 @@ views:
                   entity_id: fan.blue_room_fan_fan
                 data:
                   percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  direction: reverse
           bottom_layout: rows
         styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
-          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6 {\n  transition: background-color\
-          \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const speed\
-          \ = (e) => {\n    const st = hass.states[e];\n    if (!st || st.state === 'unavailable' || st.state\
-          \ === 'unknown') return 0;\n    if (st.state !== 'on') return -1;\n    const p = st.attributes?.percentage;\n\
-          \    return p == null ? 7 : Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.blue_room_fan_fan');\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.blue_room_fan_fan');\n\
           \  css += '.bubble-icon-container { background-color: ' + (on('fan.blue_room_fan_fan') ? 'rgba(var(--rgb-accent-color),\
           \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
           \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
-          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const txt = v === -1 ? 'Off' :\
-          \ v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed ' + v + ' of 6';\n  css += '.bubble-state\
-          \ { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\";\
-          \ font-size: 12px; }\\n';\n  return css;\n})()}\n"
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.blue_room_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-pink-room'
@@ -6362,7 +6429,7 @@ views:
           tap_action:
             action: none
         card_layout: large-sub-buttons-grid
-        rows: 1.719
+        rows: 2.438
         sub_button:
           main: []
           bottom:
@@ -6441,20 +6508,53 @@ views:
                   entity_id: fan.pink_room_fan_fan
                 data:
                   percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  direction: reverse
           bottom_layout: rows
         styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
-          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6 {\n  transition: background-color\
-          \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const speed\
-          \ = (e) => {\n    const st = hass.states[e];\n    if (!st || st.state === 'unavailable' || st.state\
-          \ === 'unknown') return 0;\n    if (st.state !== 'on') return -1;\n    const p = st.attributes?.percentage;\n\
-          \    return p == null ? 7 : Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.pink_room_fan_fan');\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.pink_room_fan_fan');\n\
           \  css += '.bubble-icon-container { background-color: ' + (on('fan.pink_room_fan_fan') ? 'rgba(var(--rgb-accent-color),\
           \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
           \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
-          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const txt = v === -1 ? 'Off' :\
-          \ v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed ' + v + ' of 6';\n  css += '.bubble-state\
-          \ { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\";\
-          \ font-size: 12px; }\\n';\n  return css;\n})()}\n"
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.pink_room_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-white-room'
@@ -6521,7 +6621,7 @@ views:
           tap_action:
             action: none
         card_layout: large-sub-buttons-grid
-        rows: 1.719
+        rows: 2.438
         sub_button:
           main: []
           bottom:
@@ -6600,17 +6700,50 @@ views:
                   entity_id: fan.white_room_fan_fan
                 data:
                   percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  direction: reverse
           bottom_layout: rows
         styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
-          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6 {\n  transition: background-color\
-          \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const speed\
-          \ = (e) => {\n    const st = hass.states[e];\n    if (!st || st.state === 'unavailable' || st.state\
-          \ === 'unknown') return 0;\n    if (st.state !== 'on') return -1;\n    const p = st.attributes?.percentage;\n\
-          \    return p == null ? 7 : Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.white_room_fan_fan');\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.white_room_fan_fan');\n\
           \  css += '.bubble-icon-container { background-color: ' + (on('fan.white_room_fan_fan') ? 'rgba(var(--rgb-accent-color),\
           \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
           \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
-          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const txt = v === -1 ? 'Off' :\
-          \ v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed ' + v + ' of 6';\n  css += '.bubble-state\
-          \ { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\";\
-          \ font-size: 12px; }\\n';\n  return css;\n})()}\n"
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.white_room_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
