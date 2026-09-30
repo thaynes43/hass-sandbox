@@ -18,7 +18,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 |---|---|---|---|
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
-| Basement | `basement` | `mdi:home-floor-b` | the Movie Room cards, then Server Room (lights, UPS load), then Cigars (humidors) |
+| Basement | `basement` | `mdi:home-floor-b` | Status (humidors, UPS load, leak detection), then the Movie Room cards, then Server Room (lights) |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
 | Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
 
@@ -26,7 +26,7 @@ A bubble-card pop-up only opens from cards in its own view, so each pop-up lives
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
 `#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
-`#tom-movie-receiver`, `#tom-server-room-ups` and `#tom-cigars`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
+`#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars` and `#tom-leak-detection`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
 cards, replace its "No cards yet." markdown card.
 
@@ -57,9 +57,12 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Red, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
-| Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons; "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below |
-| Cigars | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity + temperature per humidor) — see *Cigars* below |
+| Status | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity, temperature and battery per humidor) — see *Cigars* below. "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below. "Leak Detection": Dry / Wet across the five Z-Wave leak sensors; tap → `#tom-leak-detection` (state + battery per sensor) — see *Leak Detection* below |
+| Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
+| Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below |
+
+Tom asked on 2026-09-30 for a Status section at the top of the tab. It holds Humidors, UPS Load and Leak Detection.
+Humidors and UPS Load moved there from the Cigars and Server Room sections, and the Cigars section is gone.
 
 Pop-up hashes are all `#tom-*`. Ported Kellie cards are verbatim copies except the hash renames —
 if Kellie Mobile's versions get improved, consider porting the improvements here (and vice versa).
@@ -249,8 +252,9 @@ Every button reuses a script the voice agents or the wall switches already use, 
     Scale: 0–100 steps, 0.5 dB per step from step 31 (-19 dB) up with step 69 = 0.0 dB, and 1 dB per
     step below step 31, fitted to two of Tom's display readings (see the script mirror's header). The sensor, the script and the slider bounds must change together.
 - **Recessed** (was "Lights" until 2026-09-28) = `light.basement_movie_room_lights` (the card body is
-  the brightness slider, and the icon toggles them). The bottom row is Bright, Dim, Red and Colors, the
-  `script.voice_movie_room_*` tools, which do exactly what the scene controller and wall switch buttons
+  the brightness slider, and the icon toggles them). The bottom row is Bright, Dim and Colors, the
+  `script.voice_movie_room_*` tools (Tom dropped Red from the card on 2026-09-30;
+  `script.voice_movie_room_red_night_mode` is unchanged), which do exactly what the scene controller and wall switch buttons
   do (`agent-docs/voice-control-map.md`).
 - **Ambient** (2026-09-28; Tom asked for the ambient lights on the dashboard) = a name card on
   `light.basement_movie_room_ambient_lighting`: tapping the card opens `#tom-movie-ambient`
@@ -297,6 +301,9 @@ Every button reuses a script the voice agents or the wall switches already use, 
   Checked live 2026-09-29 by tapping the card at 390 px: on → both automations off, select `Disabled`, LEDs 90; off →
   all restored (`Wasteful Occupancy`, LEDs 255, automations on).
 
+The **UPS Load** card below has been in the Status section at the top of the tab since 2026-09-30. Its styles
+and pop-up did not change when it moved.
+
 Tom: "a bubble card that shows what % each UPS is at … 70% goes yellow and 85% goes red. GPUs need
 headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UPS **load**, not battery.
 - **UPSes** (NUT, one config entry each): APC 2700W = Smart-UPS X 3000 (`nut2700.haynesnetwork`), APC 900W =
@@ -332,8 +339,8 @@ headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UP
 
 ### Cigars (added 2026-09-29)
 Tom: a pop-up with his cigar sensors, named as on the Basement Tablet dashboard, and a main button that shows only the
-aggregate status. The sensors are all in the **Concessions** area, so the card has its own section rather than sitting
-under Server Room.
+aggregate status. The sensors are all in the **Concessions** area, so the card had its own section rather than sitting
+under Server Room. Since 2026-09-30 it sits in the Status section at the top of the tab.
 - **Aggregate**: `sensor.cigar_humidity_summary`, a YAML template in the HA pod's `/config/packages/sensors.yaml` (also a
   badge on Haynes Home and Basement Tablet). It reads `OK`, or `Check: <names>` built from the `out_of_range` attribute of
   `binary_sensor.cigar_humidity_all_ok` (`/config/packages/binary_sensors.yaml`, band 60–70 % for all nine). The card
@@ -346,12 +353,18 @@ under Server Room.
   in Jinja); it now uses a `namespace`. Backups of the old files: `binary_sensors.yaml.bak-scoping-20260929`,
   `sensors.yaml.bak-cigar-availability-20260929`.
 - **`#tom-cigars`**: one Bubble `sub-buttons` card, one row per humidor, in the Basement Tablet's order and names: name ·
-  humidity · temperature (tap = more-info). A humidity chip turns amber when the binary sensor's `per_sensor` entry for
+  humidity · temperature · battery (tap = more-info). A humidity chip turns amber when the binary sensor's `per_sensor` entry for
   it is not `in_range: true` (out of band or unavailable), so the chips and the "Check" line always agree and the band
   lives only in the YAML. One IIFE in `styles` does this from a `[sub-button, entity]` map. Chips have
   `state_background: false` (Bubble otherwise paints a numeric sensor's chip as "on"). Numbering: row *i* (0-based) =
-  sub-buttons 3i+1 / 3i+2 / 3i+3. `rows: 6.45` fits nine rows exactly; adding a humidor = a row, a `[3i+2, entity]`
-  entry in that map, about +0.7 rows, and the sensor in both YAML templates.
+  sub-buttons 4i+1 / 4i+2 / 4i+3 / 4i+4 (name, humidity, temperature, battery). `rows: 6.45` fits nine rows exactly;
+  adding a humidor = a row, a `[4i+2, entity]` entry in that map, about +0.7 rows, and the sensor in both YAML templates.
+- **Battery chip** (Tom, 2026-09-30): the humidor sensor's own battery sensor (`sensor.basement_aqara_w100_0N_battery`
+  for the Aqaras, `sensor.cigar_humidity_sensor_0N_battery_level` for the ZSE44s). Four chips only fit at 390 px with
+  the name chip at `width: 27` and the battery chip at `fill_width: false, width: 21`, with humidity and temperature
+  filling the rest. That is the narrowest setting where no chip text scrolls ("Tupperdor 04", "64.8 °F", "100%").
+  At 26/18 the names and "100%" start to marquee. Re-check at 390 px before changing any of them. The ZSE44 battery
+  sensors have display precision 0 (entity setting, 2026-09-30), so they read "43%", not "43.0%".
 
   | Name | Humidity | Temperature |
   |---|---|---|
@@ -361,6 +374,44 @@ under Server Room.
   | NW Jar | `sensor.cigar_humidity_sensor_03_humidity` | `…_03_air_temperature` |
   | Tupperdor 01–04 | `sensor.cigar_humidity_sensor_{01,02,06,07}_humidity` | `…_air_temperature` |
   | Cooler | `sensor.cigar_humidity_sensor_05_humidity` | `…_05_air_temperature` |
+
+### Leak Detection (added 2026-09-30)
+Tom: a Leak Detection card built like the Cigars one. The card shows the aggregate status, and its pop-up lists each
+Z-Wave leak sensor with its state and battery. It is the third card in the Status section.
+- **Aggregate**: `binary_sensor.basement_leak_sensors` ("Basement Leak Sensors"), a binary sensor **Group helper**
+  (config entry `01M3S8HRHWY3B1GDVXB1BWPTAE`, created 2026-09-30 via `ha_config_set_helper`, live only). Its members
+  are the five sensors below, in "any" mode: it is `on` when any member is on, it ignores unavailable members while at
+  least one still reports, and it is unavailable when all are. A group helper has no device class of its own, so its
+  "Show as" is set to Moisture in the entity registry. That setting makes the state read Dry / Wet.
+- It is deliberately not `binary_sensor.water_leak_sensor`. That older Template helper (a badge on Haynes Home and
+  Basement Tablet) matches any `binary_sensor` whose id contains `water_leak_detected`, and it reads `off` (Dry) even
+  when every sensor is unavailable. The group has explicit members, the same five as the pop-up, so the card and the
+  pop-up always agree.
+- **Card**: a name card, tap → `#tom-leak-detection`. Dry is a plain card. Wet gets a red card background, a red icon
+  and a bold upper-case "WET". Any other state (unavailable/unknown) gets an amber icon, so a dead group never passes
+  for Dry. The colours use the Humidors technique: a plain rgba rule, then a `color-mix` one.
+- **`#tom-leak-detection`**: one Bubble `sub-buttons` card with one row per sensor: name · leak state · battery (tap =
+  more-info). A state chip turns red on Wet and amber when unavailable/unknown. One IIFE in `styles` does this from a
+  `[sub-button, entity]` map. Row *i* = sub-buttons 3i+1 / 3i+2 / 3i+3, and the state chip is 3i+2. `rows: 3.7` fits
+  five rows. Adding a sensor means adding it to the group helper (`ha_config_set_helper` update with the entry id),
+  adding a row and a `[3i+2, entity]` entry, and adding about 0.7 to `rows`. The five battery sensors have display
+  precision 0 (2026-09-30).
+
+  | Name | Leak sensor | Battery | Area |
+  |---|---|---|---|
+  | Sump Pump | `binary_sensor.basement_storage_sump_pump_leak_sensor_water_leak_detected` | `sensor.basement_storage_sump_pump_leak_sensor_battery_level` | Storage Room |
+  | Ejector | `binary_sensor.basement_storage_trap_leak_sensor_water_leak_detected` | `sensor.basement_storage_trap_leak_sensor_battery_level` | Storage Room |
+  | Water Main | `binary_sensor.basement_server_room_water_main_leak_sensor_water_leak_detected` | `sensor.basement_server_room_water_main_leak_sensor_battery_level` | Server Room |
+  | Server AC | `binary_sensor.basement_server_room_ac_leak_sensor_water_leak_detected` | `sensor.basement_server_room_ac_leak_sensor_battery_level` | Server Room |
+  | Water Meter | `binary_sensor.basement_movie_room_water_meter_leak_sensor_water_leak_detected` | `sensor.basement_movie_room_water_meter_leak_sensor_battery_level` | Movie Room |
+
+  All five are Zooz ZSE42s. The names spell out the Haynes Home badges (Sump, Ejector, Main, Server AC, Movie).
+- Not included: the `…_moisture_alarm` entities of the ZSE44 temperature/humidity sensors (the seven cigar sensors,
+  `server_room_temperature_sensor_01`, `shed_temperature_sensor`, `upstairs_cloffice_temperature_sensor_01`). They are
+  humidity alarms, not leak probes. The house has no non-Z-Wave leak sensors (checked 2026-09-30).
+- Checked 2026-09-30 at 390 px with Playwright on the live dashboard: the card reads Dry, and tapping it opens the
+  pop-up with five Dry rows and a battery % on each. The Wet and unavailable styling was rendered by overriding states
+  in the browser only. Never set these sensors on the server to test: the `flood_watch_zse42_*` automations act on them.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).

@@ -1768,6 +1768,114 @@ views:
     cards:
     - type: custom:bubble-card
       card_type: separator
+      name: Status
+      icon: mdi:list-status
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: sensor.cigar_humidity_summary
+      name: Humidors
+      icon: mdi:cigar
+      show_state: true
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-cigars'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-cigars'
+      sub_button:
+        main: []
+        bottom: []
+      styles: "${(() => {\n  const s = hass.states['sensor.cigar_humidity_summary']?.state;\n  const tint\
+        \ = (c) => '.bubble-icon-container { background-color: ' + c + ' !important; }';\n  if (s ===\
+        \ 'OK') return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after {\
+        \ content: \"All OK\"; font-size: 12px; }';\n  if (typeof s === 'string' && s.startsWith('Check'))\
+        \ return tint('rgba(255, 193, 7, 0.6)')\n    + tint('color-mix(in srgb, var(--amber-color, #ffc107)\
+        \ 60%, transparent)');\n  return tint('rgba(244, 67, 54, 0.6)')\n    + tint('color-mix(in srgb,\
+        \ var(--red-color, #f44336) 60%, transparent)');\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: UPS Load
+      icon: mdi:power-plug-battery-outline
+      show_state: false
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-server-room-ups'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-server-room-ups'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - entity: sensor.apc_2700w_load
+          name: APC 2700W
+          icon: mdi:gauge
+          show_name: true
+          show_icon: true
+          show_state: true
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-server-room-ups'
+        - entity: sensor.apc_900w_01_load
+          name: APC 900W
+          icon: mdi:gauge
+          show_name: true
+          show_icon: true
+          show_state: true
+          tap_action:
+            action: navigate
+            navigation_path: '#tom-server-room-ups'
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color 200ms ease;\n\
+        }\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n\
+        \    if (load >= 85) return 'rgba(244, 67, 54, 0.6)';\n    if (load >= 70) return 'rgba(255, 193,\
+        \ 7, 0.6)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  background-color: ${(() =>\
+        \ {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n \
+        \   if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
+        \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
+        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color:\
+        \ ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
+        \    if (load >= 85) return 'rgba(244, 67, 54, 0.6)';\n    if (load >= 70) return 'rgba(255, 193,\
+        \ 7, 0.6)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  background-color: ${(() =>\
+        \ {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
+        \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
+        \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
+        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: binary_sensor.basement_leak_sensors
+      name: Leak Detection
+      show_state: true
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-leak-detection'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-leak-detection'
+      sub_button:
+        main: []
+        bottom: []
+      styles: "${(() => {\n  const s = hass.states['binary_sensor.basement_leak_sensors']?.state;\n  const\
+        \ tint = (c) => '.bubble-icon-container { background-color: ' + c + ' !important; }';\n  const\
+        \ card = (c) => '.bubble-button-card-container { background-color: ' + c + ' !important; }';\n\
+        \  if (s === 'off') return '';\n  if (s === 'on') return tint('rgba(244, 67, 54, 0.9)') + tint('color-mix(in\
+        \ srgb, var(--red-color, #f44336) 90%, transparent)')\n    + card('rgba(244, 67, 54, 0.35)') +\
+        \ card('color-mix(in srgb, var(--red-color, #f44336) 35%, transparent)')\n    + '.bubble-state\
+        \ { font-size: 14px !important; font-weight: 700 !important; opacity: 1 !important;'\n    + '\
+        \ text-transform: uppercase; }';\n  return tint('rgba(255, 193, 7, 0.6)') + tint('color-mix(in\
+        \ srgb, var(--amber-color, #ffc107) 60%, transparent)');\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
       name: Movie Room
       icon: mdi:theater
       sub_button:
@@ -1893,15 +2001,6 @@ views:
           tap_action:
             action: perform-action
             perform_action: script.voice_movie_room_dim
-            target: {}
-            data: {}
-        - name: Red
-          icon: mdi:weather-night
-          show_name: true
-          show_icon: true
-          tap_action:
-            action: perform-action
-            perform_action: script.voice_movie_room_red_night_mode
             target: {}
             data: {}
         - name: Colors
@@ -2160,89 +2259,6 @@ views:
         \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[1]?.setAttribute('icon',\
         \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-2 { background-color:\
         \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
-    - type: custom:bubble-card
-      card_type: button
-      button_type: name
-      name: UPS Load
-      icon: mdi:power-plug-battery-outline
-      show_state: false
-      tap_action:
-        action: navigate
-        navigation_path: '#tom-server-room-ups'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#tom-server-room-ups'
-      card_layout: large-sub-buttons-grid
-      rows: 1.719
-      sub_button:
-        main: []
-        bottom:
-        - entity: sensor.apc_2700w_load
-          name: APC 2700W
-          icon: mdi:gauge
-          show_name: true
-          show_icon: true
-          show_state: true
-          tap_action:
-            action: navigate
-            navigation_path: '#tom-server-room-ups'
-        - entity: sensor.apc_900w_01_load
-          name: APC 900W
-          icon: mdi:gauge
-          show_name: true
-          show_icon: true
-          show_state: true
-          tap_action:
-            action: navigate
-            navigation_path: '#tom-server-room-ups'
-        bottom_layout: rows
-      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color 200ms ease;\n\
-        }\n\n.bubble-sub-button-1 {\n  background-color: ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n\
-        \    if (load >= 85) return 'rgba(244, 67, 54, 0.6)';\n    if (load >= 70) return 'rgba(255, 193,\
-        \ 7, 0.6)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  background-color: ${(() =>\
-        \ {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_2700w_load']?.state));\n \
-        \   if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
-        \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
-        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color:\
-        \ ${(() => {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
-        \    if (load >= 85) return 'rgba(244, 67, 54, 0.6)';\n    if (load >= 70) return 'rgba(255, 193,\
-        \ 7, 0.6)';\n    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n  background-color: ${(() =>\
-        \ {\n    const load = Math.round(parseFloat(hass.states['sensor.apc_900w_01_load']?.state));\n\
-        \    if (load >= 85) return 'color-mix(in srgb, var(--red-color, #f44336) 60%, transparent)';\n\
-        \    if (load >= 70) return 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)';\n\
-        \    return 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
-    - type: custom:bubble-card
-      card_type: separator
-      name: Cigars
-      icon: mdi:cigar
-      sub_button:
-        main: []
-        bottom: []
-    - type: custom:bubble-card
-      card_type: button
-      button_type: name
-      entity: sensor.cigar_humidity_summary
-      name: Humidors
-      icon: mdi:cigar
-      show_state: true
-      tap_action:
-        action: navigate
-        navigation_path: '#tom-cigars'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#tom-cigars'
-      sub_button:
-        main: []
-        bottom: []
-      styles: "${(() => {\n  const s = hass.states['sensor.cigar_humidity_summary']?.state;\n  const tint\
-        \ = (c) => '.bubble-icon-container { background-color: ' + c + ' !important; }';\n  if (s ===\
-        \ 'OK') return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after {\
-        \ content: \"All OK\"; font-size: 12px; }';\n  if (typeof s === 'string' && s.startsWith('Check'))\
-        \ return tint('rgba(255, 193, 7, 0.6)')\n    + tint('color-mix(in srgb, var(--amber-color, #ffc107)\
-        \ 60%, transparent)');\n  return tint('rgba(244, 67, 54, 0.6)')\n    + tint('color-mix(in srgb,\
-        \ var(--red-color, #f44336) 60%, transparent)');\n})()}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-basement-climate'
@@ -3995,7 +4011,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.basement_aqara_w100_01_humidity
@@ -4016,6 +4032,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.basement_aqara_w100_01_battery
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: MA50
             buttons_layout: inline
             group:
@@ -4027,7 +4053,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.basement_aqara_w100_02_humidity
@@ -4048,6 +4074,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.basement_aqara_w100_02_battery
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: CC Jar
             buttons_layout: inline
             group:
@@ -4059,7 +4095,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_04_humidity
@@ -4080,6 +4116,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_04_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: NW Jar
             buttons_layout: inline
             group:
@@ -4091,7 +4137,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_03_humidity
@@ -4112,6 +4158,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_03_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: Tupperdor 01
             buttons_layout: inline
             group:
@@ -4123,7 +4179,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_01_humidity
@@ -4144,6 +4200,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_01_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: Tupperdor 02
             buttons_layout: inline
             group:
@@ -4155,7 +4221,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_02_humidity
@@ -4176,6 +4242,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_02_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: Tupperdor 03
             buttons_layout: inline
             group:
@@ -4187,7 +4263,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_06_humidity
@@ -4208,6 +4284,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_06_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: Tupperdor 04
             buttons_layout: inline
             group:
@@ -4219,7 +4305,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_07_humidity
@@ -4240,6 +4326,16 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_07_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           - name: Cooler
             buttons_layout: inline
             group:
@@ -4251,7 +4347,7 @@ views:
               show_state: false
               state_background: false
               fill_width: false
-              width: 36
+              width: 27
               tap_action:
                 action: more-info
             - entity: sensor.cigar_humidity_sensor_05_humidity
@@ -4272,18 +4368,234 @@ views:
               show_state: true
               tap_action:
                 action: more-info
+            - entity: sensor.cigar_humidity_sensor_05_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+              fill_width: false
+              width: 21
           bottom_layout: rows
         rows: 6.45
         styles: "${(() => {\n  let p = hass.states['binary_sensor.cigar_humidity_all_ok']?.attributes?.per_sensor;\n\
           \  try { if (typeof p === 'string') p = JSON.parse(p); } catch (e) { p = null; }\n  const chips\
-          \ = [[2, \"sensor.basement_aqara_w100_01_humidity\"], [5, \"sensor.basement_aqara_w100_02_humidity\"\
-          ], [8, \"sensor.cigar_humidity_sensor_04_humidity\"], [11, \"sensor.cigar_humidity_sensor_03_humidity\"\
-          ], [14, \"sensor.cigar_humidity_sensor_01_humidity\"], [17, \"sensor.cigar_humidity_sensor_02_humidity\"\
-          ], [20, \"sensor.cigar_humidity_sensor_06_humidity\"], [23, \"sensor.cigar_humidity_sensor_07_humidity\"\
-          ], [26, \"sensor.cigar_humidity_sensor_05_humidity\"]];\n  return chips.filter(([, e]) => p?.[e]\
+          \ = [[2, \"sensor.basement_aqara_w100_01_humidity\"], [6, \"sensor.basement_aqara_w100_02_humidity\"\
+          ], [10, \"sensor.cigar_humidity_sensor_04_humidity\"], [14, \"sensor.cigar_humidity_sensor_03_humidity\"\
+          ], [18, \"sensor.cigar_humidity_sensor_01_humidity\"], [22, \"sensor.cigar_humidity_sensor_02_humidity\"\
+          ], [26, \"sensor.cigar_humidity_sensor_06_humidity\"], [30, \"sensor.cigar_humidity_sensor_07_humidity\"\
+          ], [34, \"sensor.cigar_humidity_sensor_05_humidity\"]];\n  return chips.filter(([, e]) => p?.[e]\
           \ && p[e].in_range !== true)\n    .map(([n]) => '.bubble-sub-button-' + n + ' {'\n      + '\
           \ background-color: rgba(255, 193, 7, 0.6) !important;'\n      + ' background-color: color-mix(in\
           \ srgb, var(--amber-color, #ffc107) 60%, transparent) !important; }')\n    .join('\\n');\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-leak-detection'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Leak Sensors
+
+          Z-Wave, basement floor
+
+          '
+      - type: custom:bubble-card
+        card_type: sub-buttons
+        sub_button:
+          main: []
+          bottom:
+          - name: Sump Pump
+            buttons_layout: inline
+            group:
+            - entity: binary_sensor.basement_storage_sump_pump_leak_sensor_water_leak_detected
+              name: Sump Pump
+              icon: mdi:water-alert
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: binary_sensor.basement_storage_sump_pump_leak_sensor_water_leak_detected
+              name: Leak
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_storage_sump_pump_leak_sensor_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Ejector
+            buttons_layout: inline
+            group:
+            - entity: binary_sensor.basement_storage_trap_leak_sensor_water_leak_detected
+              name: Ejector
+              icon: mdi:water-alert
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: binary_sensor.basement_storage_trap_leak_sensor_water_leak_detected
+              name: Leak
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_storage_trap_leak_sensor_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Water Main
+            buttons_layout: inline
+            group:
+            - entity: binary_sensor.basement_server_room_water_main_leak_sensor_water_leak_detected
+              name: Water Main
+              icon: mdi:water-alert
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: binary_sensor.basement_server_room_water_main_leak_sensor_water_leak_detected
+              name: Leak
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_server_room_water_main_leak_sensor_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Server AC
+            buttons_layout: inline
+            group:
+            - entity: binary_sensor.basement_server_room_ac_leak_sensor_water_leak_detected
+              name: Server AC
+              icon: mdi:water-alert
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: binary_sensor.basement_server_room_ac_leak_sensor_water_leak_detected
+              name: Leak
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_server_room_ac_leak_sensor_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          - name: Water Meter
+            buttons_layout: inline
+            group:
+            - entity: binary_sensor.basement_movie_room_water_meter_leak_sensor_water_leak_detected
+              name: Water Meter
+              icon: mdi:water-alert
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              fill_width: false
+              width: 36
+              tap_action:
+                action: more-info
+            - entity: binary_sensor.basement_movie_room_water_meter_leak_sensor_water_leak_detected
+              name: Leak
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+            - entity: sensor.basement_movie_room_water_meter_leak_sensor_battery_level
+              name: Battery
+              state_background: false
+              show_name: false
+              show_icon: true
+              show_state: true
+              tap_action:
+                action: more-info
+          bottom_layout: rows
+        rows: 3.7
+        styles: "${(() => {\n  const chips = [[2, \"binary_sensor.basement_storage_sump_pump_leak_sensor_water_leak_detected\"\
+          ], [5, \"binary_sensor.basement_storage_trap_leak_sensor_water_leak_detected\"], [8, \"binary_sensor.basement_server_room_water_main_leak_sensor_water_leak_detected\"\
+          ], [11, \"binary_sensor.basement_server_room_ac_leak_sensor_water_leak_detected\"], [14, \"\
+          binary_sensor.basement_movie_room_water_meter_leak_sensor_water_leak_detected\"]];\n  const\
+          \ paint = (n, a, b) => '.bubble-sub-button-' + n + ' { background-color: ' + a + ' !important;'\n\
+          \    + ' background-color: ' + b + ' !important; }';\n  return chips.map(([n, e]) => {\n   \
+          \ const s = hass.states[e]?.state;\n    if (s === 'on') return paint(n, 'rgba(244, 67, 54, 0.9)',\
+          \ 'color-mix(in srgb, var(--red-color, #f44336) 90%, transparent)');\n    if (s !== 'off') return\
+          \ paint(n, 'rgba(255, 193, 7, 0.6)', 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)');\n\
+          \    return '';\n  }).join('\\n');\n})()}\n"
 - type: sections
   max_columns: 1
   title: First floor
