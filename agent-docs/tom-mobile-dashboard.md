@@ -19,15 +19,15 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
 | Basement | `basement` | `mdi:home-floor-b` | Climate (Basement Climate), then Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Other Rooms (Server Room Lights, Storage Room Lights) |
-| First floor | `first-floor` | `mdi:home-floor-1` | Main Rooms (Living Room, Study) |
-| Second floor | `second-floor` | `mdi:home-floor-2` | Primary Bedroom (Bedroom, Cloffice), then Other Bedrooms (Blue Room · Jackson, Pink Room · Penelope, White Room) |
+| First floor | `first-floor` | `mdi:home-floor-1` | Main Rooms (Living Room, Study, Kitchen, Dining Room, Chaos) |
+| Second floor | `second-floor` | `mdi:home-floor-2` | Primary Bedroom (Bedroom, Cloffice), then Other Bedrooms (Blue Room · Jackson, Pink Room · Penelope, White Room), then Other Rooms (Foyer) |
 
 A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
 `#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
 `#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars`, `#tom-leak-detection`,
-`#tom-concessions-lights`, `#tom-rumpus-lights` and `#tom-great-hall-lights`; First floor has `#tom-living-room` and `#tom-study`;
+`#tom-concessions-lights`, `#tom-rumpus-lights` and `#tom-great-hall-lights`; First floor has `#tom-living-room`, `#tom-study`, `#tom-kitchen` and `#tom-dining-room`;
 Second floor has `#tom-primary-room`, `#tom-cloffice-lights`, `#tom-blue-room`, `#tom-pink-room` and `#tom-white-room`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main.
 
@@ -68,7 +68,7 @@ Room cards off it.
 
 | Section (bubble separator) | Cards |
 |---|---|
-| Main Rooms | "Living Room", "Study": icon toggles the recessed lights, **Bright** / **Dim** / **Fan**; tap → that room's pop-up — see *First floor* below |
+| Main Rooms | "Living Room", "Study": icon toggles the recessed lights, **Bright** / **Dim** / **Fan**; "Kitchen" (recessed), "Dining Room" (table): **Bright** / **Dim**; tap → that room's pop-up. "Chaos" (foyer chandelier): **Bright** / **Dim**, no pop-up — see *First floor* below |
 
 **Second floor**
 
@@ -76,6 +76,7 @@ Room cards off it.
 |---|---|
 | Primary Bedroom | "Bedroom" (lights, **Bright** / **Dim** / **Fan** → `#tom-primary-room`), "Cloffice" (lights, **Bright** / **Dim** → `#tom-cloffice-lights`) — see *Second floor* below |
 | Other Bedrooms | "Blue Room · Jackson", "Pink Room · Penelope" (fan light, **Bright** / **Dim** / **Lamp** / **Fan**), "White Room" (**Bright** / **Dim** / **Fan**); tap → that room's pop-up |
+| Other Rooms | "Foyer": `light.upstairs_foyer_lights` (the 4 Hue recessed; the foyer Inovellis are in Smart Bulb Mode), icon toggles, **Bright** (100 % @ 2750 K) / **Dim** (30 %), no pop-up (one group) |
 
 Tom asked on 2026-09-30 for a Status section at the top of the tab. It holds Humidors, UPS Load and Leak Detection.
 Humidors and UPS Load moved there from the Cigars and Server Room sections, and the Cigars section is gone.
@@ -520,17 +521,31 @@ Built exactly like the Second floor rooms (same builder helpers).
 |---|---|---|---|
 | Living Room | `light.downstairs_livingroom_lights` (Hue recessed group) | `fan.livingroom_fan_fan` | `#tom-living-room`: Recessed, Lamp (`light.downstairs_livingroom_lamp`, Hue group), Sconce (`light.downstairs_livingroom_sconce_inovelli_dimmer`, brightness only), Fan Light (`light.livingroom_fan_light`), Fan |
 | Study | `light.downstairs_study_lights` (Hue recessed group) | `fan.study_fan_fan` | `#tom-study`: Recessed, Bookshelf (`light.downstairs_study_bookshelf_inovelli_dimmer`, brightness only), Fan Light (`light.study_fan_light`), Fan |
+| Kitchen | `light.downstairs_kitchen_lights` (10 Hue recessed) | none | `#tom-kitchen`: Recessed, Island (`…_kitchen_island_inovelli_dimmer`), Under Cabinet (`…_kitches_under_cabinet_inovelli_dimmer`, sic), Sink (`…_kitchen_sink_inovelli_presence`), all three brightness only |
+| Dining Room | `light.downstairs_dining_room_table_light` (Z2M group of the two table Inovellis; brightness only, so Bright = 100 % without a colour temperature) | none | `#tom-dining-room`: Table, Cove (`light.downstairs_dining_room_cove_inovelli_dimmer`) |
+| Chaos | `light.foyer_chaos_light_switches` (the foyer chandelier: Z2M group of the three "chaos" Inovellis in the Foyer area, downstairs foyer / kitchen / upstairs foyer) | none | none (one light; body tap does nothing, like Basement *Other Rooms*) |
 
+- Chaos is in the Foyer area, not the Kitchen or Dining Room, so it has its own card. Main's "First Floor Lights"
+  (`light.first_floor_chaos_lights`) is a different thing: the kitchen lights the upstairs chaos switch's Config button
+  turns off. The dining room's ZEN20 strip outlets 4/5 (sunset on, 23:00 off) have no known light load and are left out;
+  the kitchen night light, fridge interior light and Assist LED ring are not room lighting.
+- Inovelli dimmers ramp: Dim/Bright on the Dining Room and Chaos cards take ~5 s to settle, so a quick read-back shows a
+  mid-ramp level.
 - The recessed Inovelli switches in both rooms are in Smart Bulb Mode (they drive the Hue groups), so they are not
   separate controls. The ZEN32s in both rooms map only the fan light and fan on/off (plus the Study shades).
 - State line: the lit groups with their brightness (`Lamp 20% · Sconce 84% · Fan Light 100%`); over 40 characters it
   drops the percentages, then falls back to `<n> lights on`. The icon tint follows the recessed group only.
-- **No holds**: no motion automations or hold helpers exist for either room. The Living Room lamp has sunset-on / timed-off
+- **No holds**: no motion automations or hold helpers exist for any of these rooms (Living Room, Study, Kitchen, Dining
+  Room, the Chaos chandelier, the upstairs Foyer); no `*_mmwave_normal_mode` helper and no hold-script mapping exists for them. The Living Room lamp has sunset-on / timed-off
   automations (`automation.lamp_todo`, `automation.lamp_downstairs_livingroom_sun_rises_turn_off`), which are not a hold.
 - Checked 2026-09-30 at 390 px on the live dashboard: icon, Bright, Dim, the Fan chip (off and straight back on) and every
   pop-up power icon, with HA state read after each tap. Both fans were running (Living Room speed 1 Summer, Study
   speed 1 Winter), so the speed and Summer/Winter chips were checked by read-back only: the highlighted chips matched.
   Remembered levels were put back afterwards.
+- Kitchen, Dining Room, Chaos and the upstairs Foyer checked the same way the same day. The kitchen recessed lights were on
+  (93 %) and in use, so the Kitchen icon, Bright and Dim were checked by read-back only (state line, tint, pop-up level);
+  Island, Under Cabinet and Sink were flipped on and off from the pop-up. Dining Room, Chaos and Foyer: icon, Dim, Bright,
+  icon off, plus the Dining pop-up Table and Cove power icons; their remembered levels were restored afterwards.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).

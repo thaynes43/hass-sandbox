@@ -5413,6 +5413,178 @@ views:
         \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
         \ }\\n';\n  return css;\n})()}\n"
     - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.downstairs_kitchen_lights
+      name: Kitchen
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-kitchen'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_kitchen_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_kitchen_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.downstairs_kitchen_lights')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const parts = [['Recessed', 'light.downstairs_kitchen_lights'], ['Island', 'light.downstairs_kitchen_island_inovelli_dimmer'],\
+        \ ['Under Cabinet', 'light.downstairs_kitches_under_cabinet_inovelli_dimmer'], ['Sink', 'light.downstairs_kitchen_sink_inovelli_presence']];\n\
+        \  const lit = parts.filter(([, e]) => on(e));\n  let txt = lit.length === 0 ? 'Off' : lit.map(([n,\
+        \ e]) => n + ' ' + pct(e)).join(' · ');\n  if (txt.length > 40) txt = lit.map(([n]) => n).join('\
+        \ · ');\n  if (txt.length > 40) txt = lit.length + ' lights on';\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.downstairs_dining_room_table_light
+      name: Dining Room
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-dining-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_dining_room_table_light
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_dining_room_table_light
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.downstairs_dining_room_table_light')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const parts = [['Table', 'light.downstairs_dining_room_table_light'], ['Cove', 'light.downstairs_dining_room_cove_inovelli_dimmer']];\n\
+        \  const lit = parts.filter(([, e]) => on(e));\n  let txt = lit.length === 0 ? 'Off' : lit.map(([n,\
+        \ e]) => n + ' ' + pct(e)).join(' · ');\n  if (txt.length > 40) txt = lit.map(([n]) => n).join('\
+        \ · ');\n  if (txt.length > 40) txt = lit.length + ' lights on';\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.foyer_chaos_light_switches
+      name: Chaos
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.foyer_chaos_light_switches
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.foyer_chaos_light_switches
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.foyer_chaos_light_switches')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const txt = pct('light.foyer_chaos_light_switches');\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-living-room'
       button_type: name
@@ -5945,6 +6117,199 @@ views:
           \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
           \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
           \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-kitchen'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Kitchen
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitchen_lights'];\n  const b =\
+          \ st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_island_inovelli_dimmer
+        name: Island
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitchen_island_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitches_under_cabinet_inovelli_dimmer
+        name: Under Cabinet
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitches_under_cabinet_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_sink_inovelli_presence
+        name: Sink
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitchen_sink_inovelli_presence'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-dining-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Dining Room
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_dining_room_table_light
+        name: Table
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_dining_room_table_light'];\n \
+          \ const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_dining_room_cove_inovelli_dimmer
+        name: Cove
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_dining_room_cove_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
 - type: sections
   max_columns: 1
   title: Second floor
@@ -6353,6 +6718,68 @@ views:
         \ { content: \"' + t + '\"; margin-left: 4px; }\\n'; }\n  const txt = 'Light ' + pct('light.white_room_fan_light');\n\
         \  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
         \ \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
+      name: Other Rooms
+      icon: mdi:floor-plan
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.upstairs_foyer_lights
+      name: Foyer
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.upstairs_foyer_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.upstairs_foyer_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.upstairs_foyer_lights')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const txt = pct('light.upstairs_foyer_lights');\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-primary-room'
