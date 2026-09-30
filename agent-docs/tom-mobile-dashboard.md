@@ -59,7 +59,7 @@ Room cards off it.
 | Section (bubble separator) | Cards |
 |---|---|
 | Status | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity, temperature and battery per humidor) — see *Cigars* below. "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below. "Leak Detection": Dry / Wet across the five Z-Wave leak sensors; tap → `#tom-leak-detection` (state + battery per sensor) — see *Leak Detection* below |
-| Main Lights | "Concessions", "Rumpus", "Great Hall": power icon toggles the room, state line = brightness, **Bright** / **Dim** / **Hold**; tap → that room's pop-up — see *Main Lights* below |
+| Main Lights | "Concessions", "Rumpus", "Great Hall": power icon toggles the room, state line = brightness (+ ` · Hold` while held), **Bright** / **Dim**; tap → that room's pop-up (hold is set there) — see *Main Lights* below |
 | Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below |
 
@@ -431,17 +431,19 @@ Tom: one quick-control card per basement room, directly under Status, with finer
 - **Card**: a name card (body tap → pop-up, no slider body). The `mdi:power` icon toggles the room and is tinted
   while any group is on. Rumpus has two groups, so its icon runs `script.rumpus_room_lights_toggle` (both off when
   either is on, else both on; repo copy `home-assistant/scripts/dashboard/`). The state line is a `.bubble-state::after`
-  override: `30%` / `Off`, and for Rumpus `Recessed 30% · Lamp 100%`. Bubble's CSS processing drops the space after a
-  comma inside `content`, so use ` · ` as the separator.
+  override: `30%` / `Off`, and for Rumpus `Recessed 30% · Lamp 100%`, with ` · Hold` appended while the room's switch
+  is on hold. Bubble's CSS processing drops the space after a comma inside `content`, so use ` · ` as the separator.
 - **Bright** = `light.turn_on` 100 % at 2750 K (Rumpus: both groups). **Dim** = brightness 30 % only, the switches'
   double-tap-down level (76/255); on Rumpus it dims only the Recessed and leaves the Lamp alone (Tom's habit).
-  **Hold** is the Server Room card's Hold: `script.inovelli_toggle_mmwave_hold_led_indicator` with the room's
-  payload, amber and `mdi:lock` while held (sub-button 3).
+  No Hold button on the card (Tom, 2026-09-30: too easy to press by accident); hold is set only from the pop-up. The
+  state line's ` · Hold` is passive and uses the Server Room card's held test (LED1 = a hold colour, mmWave Disabled
+  while the helper is not, or a motion automation off).
 - **Pop-ups**: per group one slider card (body = brightness, icon = on/off, state = brightness %) with two
   full-width sub-button sliders on their own rows, `light_slider_type: white_temp` and `hue` (Bubble 3.4.1). Then a
-  "Manual hold" card (tap = the same hold script; amber, "On · motion paused" while held).
+  "Manual hold" card: tap = `script.inovelli_toggle_mmwave_hold_led_indicator` with the room's payload; amber,
+  `mdi:lock` and "On · motion paused" while held.
 - Checked 2026-09-30 at 390 px on the live dashboard: every sub-button, the Rumpus icon from mixed/off/on, the pop-up
-  Lamp power icon, all three Holds and the pop-up hold card, with state read back from HA after each tap.
+  Lamp power icon, all three holds and the pop-up hold card (the card Hold buttons before they were removed), with state read back from HA after each tap.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
