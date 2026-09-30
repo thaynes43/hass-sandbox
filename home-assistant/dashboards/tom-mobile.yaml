@@ -1877,6 +1877,269 @@ views:
         \ #ffc107) 60%, transparent)');\n})()}\n"
     - type: custom:bubble-card
       card_type: separator
+      name: Main Lights
+      icon: mdi:ceiling-light-multiple
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.basement_concessions_lights
+      name: Concessions
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-concessions-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_concessions_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_concessions_lights
+            data:
+              brightness_pct: 30
+        - entity: automation.light_zse11_concessions_motion_detected_lights_on
+          name: Hold
+          icon: mdi:hand-back-left
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_concessions_inovelli_presence
+              normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_concessions_led_color
+              automation_entity_ids:
+              - automation.light_zse11_concessions_motion_detected_lights_on
+              - automation.light_zse11_concessions_motion_cleared_lights_off
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-icon-container {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['light.basement_concessions_lights']?.state === 'on')\n\
+        \      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n\
+        .bubble-sub-button-1,\n.bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n\
+        }\n${(() => {\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'on' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const t = pct('light.basement_concessions_lights');\n  const txt = t\
+        \ === 'off' ? 'Off' : t;\n  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+        \ { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n${(() => {\n  const held = (() => {\n\
+        \    const s = hass.states;\n    const led = parseInt(s['number.basement_concessions_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_concessions_mmwave_normal_mode']?.state;\n    const\
+        \ autos = [\"automation.light_zse11_concessions_motion_detected_lights_on\", \"automation.light_zse11_concessions_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[2]?.setAttribute('icon',\
+        \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-3 { background-color:\
+        \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.basement_rumpus_room_lights
+      name: Rumpus
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: perform-action
+        perform_action: script.rumpus_room_lights_toggle
+        target: {}
+        data: {}
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-rumpus-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id:
+              - light.basement_rumpus_room_lights
+              - light.basement_rumpus_room_lamp
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_rumpus_room_lights
+            data:
+              brightness_pct: 30
+        - entity: automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+          name: Hold
+          icon: mdi:hand-back-left
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_rumpus_room_inovelli_presence
+              normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_rumpus_room_led_color
+              automation_entity_ids:
+              - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+              - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-icon-container {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['light.basement_rumpus_room_lights']?.state === 'on' ||\
+        \ hass.states['light.basement_rumpus_room_lamp']?.state === 'on')\n      ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2\
+        \ {\n  background-color: rgba(0,0,0,0.22) !important;\n}\n${(() => {\n  const pct = (e) => {\n\
+        \    const st = hass.states[e];\n    if (st?.state !== 'on') return 'off';\n    const b = st.attributes?.brightness;\n\
+        \    return b == null ? 'on' : Math.round(b / 2.55) + '%';\n  };\n  const txt = (pct('light.basement_rumpus_room_lights')\
+        \ === 'off' && pct('light.basement_rumpus_room_lamp') === 'off') ? 'Off' : 'Recessed ' + pct('light.basement_rumpus_room_lights')\
+        \ + ' · ' + 'Lamp ' + pct('light.basement_rumpus_room_lamp');\n  return '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }';\n})()}\n${(() => {\n  const held = (() => {\n    const s = hass.states;\n    const led =\
+        \ parseInt(s['number.basement_rumpus_room_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_rumpus_room_mmwave_normal_mode']?.state;\n    const\
+        \ autos = [\"automation.light_snzb_06p_rumpus_room_motion_detected_lights_on\", \"automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[2]?.setAttribute('icon',\
+        \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-3 { background-color:\
+        \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.basement_hall_lights
+      name: Great Hall
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-great-hall-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_hall_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_hall_lights
+            data:
+              brightness_pct: 30
+        - entity: automation.light_zse11_basement_hallway_motion_detected_lights_on
+          name: Hold
+          icon: mdi:hand-back-left
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_hallway_inovelli_presence
+              normal_mode_input_select: input_select.basement_hallway_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_hallway_led_color
+              automation_entity_ids:
+              - automation.light_zse11_basement_hallway_motion_detected_lights_on
+              - automation.light_zse11_basement_hallway_motion_cleared_lights_off
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n.bubble-icon-container {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['light.basement_hall_lights']?.state === 'on')\n      ?\
+        \ 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-1,\n\
+        .bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n}\n${(() => {\n  const\
+        \ pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'off';\n\
+        \    const b = st.attributes?.brightness;\n    return b == null ? 'on' : Math.round(b / 2.55)\
+        \ + '%';\n  };\n  const t = pct('light.basement_hall_lights');\n  const txt = t === 'off' ? 'Off'\
+        \ : t;\n  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+        \ { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n${(() => {\n  const held = (() => {\n\
+        \    const s = hass.states;\n    const led = parseInt(s['number.basement_hallway_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_hallway_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_hallway_mmwave_normal_mode']?.state;\n    const autos\
+        \ = [\"automation.light_zse11_basement_hallway_motion_detected_lights_on\", \"automation.light_zse11_basement_hallway_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[2]?.setAttribute('icon',\
+        \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-3 { background-color:\
+        \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
       name: Movie Room
       icon: mdi:theater
       sub_button:
@@ -4597,6 +4860,414 @@ views:
           \ 'color-mix(in srgb, var(--red-color, #f44336) 90%, transparent)');\n    if (s !== 'off') return\
           \ paint(n, 'rgba(255, 193, 7, 0.6)', 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)');\n\
           \    return '';\n  }).join('\\n');\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-concessions-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Concessions Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_concessions_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_concessions_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.light_zse11_concessions_motion_detected_lights_on
+        name: Manual hold
+        icon: mdi:hand-back-left
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: basement_concessions_inovelli_presence
+            normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_concessions_led_color
+            automation_entity_ids:
+            - automation.light_zse11_concessions_motion_detected_lights_on
+            - automation.light_zse11_concessions_motion_cleared_lights_off
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_concessions_inovelli_presence
+              normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_concessions_led_color
+              automation_entity_ids:
+              - automation.light_zse11_concessions_motion_detected_lights_on
+              - automation.light_zse11_concessions_motion_cleared_lights_off
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_concessions_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+          \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto =\
+          \ parseInt(s['input_text.inovelli_auto_hold']?.state);\n    const mode = s['select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+          \    const normal = s['input_select.basement_concessions_mmwave_normal_mode']?.state;\n    const\
+          \ autos = [\"automation.light_zse11_concessions_motion_detected_lights_on\", \"automation.light_zse11_concessions_motion_cleared_lights_off\"\
+          ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+          \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
+          \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-icon-container { background-color:\
+          \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
+          \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-rumpus-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Rumpus Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_rumpus_room_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_rumpus_room_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_rumpus_room_lamp
+        name: Lamp
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_rumpus_room_lamp'];\n  const b =\
+          \ st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+        name: Manual hold
+        icon: mdi:hand-back-left
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: basement_rumpus_room_inovelli_presence
+            normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_rumpus_room_led_color
+            automation_entity_ids:
+            - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+            - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_rumpus_room_inovelli_presence
+              normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_rumpus_room_led_color
+              automation_entity_ids:
+              - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+              - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_rumpus_room_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+          \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto =\
+          \ parseInt(s['input_text.inovelli_auto_hold']?.state);\n    const mode = s['select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+          \    const normal = s['input_select.basement_rumpus_room_mmwave_normal_mode']?.state;\n    const\
+          \ autos = [\"automation.light_snzb_06p_rumpus_room_motion_detected_lights_on\", \"automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off\"\
+          ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+          \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
+          \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-icon-container { background-color:\
+          \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
+          \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-great-hall-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Great Hall Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_hall_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_hall_lights'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.light_zse11_basement_hallway_motion_detected_lights_on
+        name: Manual hold
+        icon: mdi:hand-back-left
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: basement_hallway_inovelli_presence
+            normal_mode_input_select: input_select.basement_hallway_mmwave_normal_mode
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_hallway_led_color
+            automation_entity_ids:
+            - automation.light_zse11_basement_hallway_motion_detected_lights_on
+            - automation.light_zse11_basement_hallway_motion_cleared_lights_off
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_hallway_inovelli_presence
+              normal_mode_input_select: input_select.basement_hallway_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_hallway_led_color
+              automation_entity_ids:
+              - automation.light_zse11_basement_hallway_motion_detected_lights_on
+              - automation.light_zse11_basement_hallway_motion_cleared_lights_off
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_hallway_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+          \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto =\
+          \ parseInt(s['input_text.inovelli_auto_hold']?.state);\n    const mode = s['select.basement_hallway_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+          \    const normal = s['input_select.basement_hallway_mmwave_normal_mode']?.state;\n    const\
+          \ autos = [\"automation.light_zse11_basement_hallway_motion_detected_lights_on\", \"automation.light_zse11_basement_hallway_motion_cleared_lights_off\"\
+          ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+          \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
+          \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-icon-container { background-color:\
+          \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
+          \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
 - type: sections
   max_columns: 1
   title: First floor

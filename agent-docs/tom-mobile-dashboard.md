@@ -18,7 +18,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 |---|---|---|---|
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
-| Basement | `basement` | `mdi:home-floor-b` | Status (humidors, UPS load, leak detection), then the Movie Room cards, then Server Room (lights) |
+| Basement | `basement` | `mdi:home-floor-b` | Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Server Room (lights) |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
 | Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
 
@@ -26,7 +26,8 @@ A bubble-card pop-up only opens from cards in its own view, so each pop-up lives
 as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom`,
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
 `#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
-`#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars` and `#tom-leak-detection`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
+`#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars`, `#tom-leak-detection`,
+`#tom-concessions-lights`, `#tom-rumpus-lights` and `#tom-great-hall-lights`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
 view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
 cards, replace its "No cards yet." markdown card.
 
@@ -58,6 +59,7 @@ Room cards off it.
 | Section (bubble separator) | Cards |
 |---|---|
 | Status | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity, temperature and battery per humidor) — see *Cigars* below. "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below. "Leak Detection": Dry / Wet across the five Z-Wave leak sensors; tap → `#tom-leak-detection` (state + battery per sensor) — see *Leak Detection* below |
+| Main Lights | "Concessions", "Rumpus", "Great Hall": power icon toggles the room, state line = brightness, **Bright** / **Dim** / **Hold**; tap → that room's pop-up — see *Main Lights* below |
 | Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes), "Basement Climate" (Dry / 72° / Off per mini split) → `#tom-basement-climate` — see *Movie Room* below |
 | Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below |
 
@@ -416,6 +418,30 @@ Z-Wave leak sensor with its state and battery. It is the third card in the Statu
 - Checked 2026-09-30 at 390 px with Playwright on the live dashboard: the card reads Dry, and tapping it opens the
   pop-up with five Dry rows and a battery % on each. The Wet and unavailable styling was rendered by overriding states
   in the browser only, including one probe unavailable while the group stays `off` (the card icon turns amber). Never set these sensors on the server to test: the `flood_watch_zse42_*` automations act on them.
+
+### Main Lights (added 2026-09-30)
+Tom: one quick-control card per basement room, directly under Status, with finer controls in a pop-up.
+
+| Card | Light group(s) | Switch (hold) | Pop-up |
+|---|---|---|---|
+| Concessions | `light.basement_concessions_lights` | `basement_concessions_inovelli_presence` | `#tom-concessions-lights` |
+| Rumpus | `light.basement_rumpus_room_lights` (Recessed) + `light.basement_rumpus_room_lamp` (Lamp) | `basement_rumpus_room_inovelli_presence` | `#tom-rumpus-lights` |
+| Great Hall (Tom's name for the Basement Hallway; nothing renamed in HA) | `light.basement_hall_lights` | `basement_hallway_inovelli_presence` | `#tom-great-hall-lights` |
+
+- **Card**: a name card (body tap → pop-up, no slider body). The `mdi:power` icon toggles the room and is tinted
+  while any group is on. Rumpus has two groups, so its icon runs `script.rumpus_room_lights_toggle` (both off when
+  either is on, else both on; repo copy `home-assistant/scripts/dashboard/`). The state line is a `.bubble-state::after`
+  override: `30%` / `Off`, and for Rumpus `Recessed 30% · Lamp 100%`. Bubble's CSS processing drops the space after a
+  comma inside `content`, so use ` · ` as the separator.
+- **Bright** = `light.turn_on` 100 % at 2750 K (Rumpus: both groups). **Dim** = brightness 30 % only, the switches'
+  double-tap-down level (76/255); on Rumpus it dims only the Recessed and leaves the Lamp alone (Tom's habit).
+  **Hold** is the Server Room card's Hold: `script.inovelli_toggle_mmwave_hold_led_indicator` with the room's
+  payload, amber and `mdi:lock` while held (sub-button 3).
+- **Pop-ups**: per group one slider card (body = brightness, icon = on/off, state = brightness %) with two
+  full-width sub-button sliders on their own rows, `light_slider_type: white_temp` and `hue` (Bubble 3.4.1). Then a
+  "Manual hold" card (tap = the same hold script; amber, "On · motion paused" while held).
+- Checked 2026-09-30 at 390 px on the live dashboard: every sub-button, the Rumpus icon from mixed/off/on, the pop-up
+  Lamp power icon, all three Holds and the pop-up hold card, with state read back from HA after each tap.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
