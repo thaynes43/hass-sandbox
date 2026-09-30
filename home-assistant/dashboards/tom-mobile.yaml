@@ -1205,7 +1205,7 @@ views:
             action: toggle
         - entity: automation.switch_back_yard_slider_opens_turn_on_spotlight
           name: Flood Hold
-          icon: mdi:hand-back-left
+          icon: mdi:lock-open-variant
           show_name: true
           show_icon: true
           show_state: false
@@ -1239,7 +1239,7 @@ views:
         }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return hass.states['light.downstairs_kitchen_back_yard_spotlight']?.state\
         \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
         }\n${subButtonIcon[3].setAttribute(\"icon\", hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
-        \ === 'off' ? 'mdi:lock' : 'mdi:hand-back-left')}\n.bubble-sub-button-4 {\n  background-color:\
+        \ === 'off' ? 'mdi:lock' : 'mdi:lock-open-variant')}\n.bubble-sub-button-4 {\n  background-color:\
         \ ${(() => {\n    return hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
         \ === 'off'\n      ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n\
         .bubble-sub-button-5 {\n  background-color: ${(() => {\n    return hass.states['switch.back_yard_backyard_motion_light_relay']?.state\
@@ -1768,6 +1768,158 @@ views:
     cards:
     - type: custom:bubble-card
       card_type: separator
+      name: Climate
+      icon: mdi:home-thermometer
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Basement Climate
+      icon: mdi:thermostat
+      show_state: false
+      tap_action:
+        action: navigate
+        navigation_path: '#tom-basement-climate'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-basement-climate'
+      card_layout: large-sub-buttons-grid
+      rows: 2.438
+      sub_button:
+        main: []
+        bottom:
+        - name: Movie
+          group:
+          - entity: climate.movie_room_breeze
+            name: Movie
+            icon: mdi:movie-open
+            show_name: true
+            show_icon: false
+            show_state: true
+            fill_width: false
+            width: 34
+            tap_action:
+              action: more-info
+          - entity: climate.movie_room_breeze
+            name: Dry
+            icon: mdi:water-percent
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: dry
+          - entity: climate.movie_room_breeze
+            name: 72°
+            icon: mdi:fire
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: heat
+                temperature: 72
+          - entity: climate.movie_room_breeze
+            name: 'Off'
+            icon: mdi:power
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: movie_room
+                mode: 'off'
+          buttons_layout: inline
+        - name: Rumpus
+          group:
+          - entity: climate.rumpus_room_breeze
+            name: Rumpus
+            icon: mdi:sofa
+            show_name: true
+            show_icon: false
+            show_state: true
+            fill_width: false
+            width: 34
+            tap_action:
+              action: more-info
+          - entity: climate.rumpus_room_breeze
+            name: Dry
+            icon: mdi:water-percent
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: dry
+          - entity: climate.rumpus_room_breeze
+            name: 72°
+            icon: mdi:fire
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: heat
+                temperature: 72
+          - entity: climate.rumpus_room_breeze
+            name: 'Off'
+            icon: mdi:power
+            show_name: true
+            show_icon: true
+            show_state: false
+            tap_action:
+              action: perform-action
+              perform_action: script.voice_thermostat
+              target: {}
+              data:
+                thermostat: rumpus_room
+                mode: 'off'
+          buttons_layout: inline
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
+        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
+        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
+        \ ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n\
+        \  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'dry') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'heat' && Math.round(hass.states['climate.movie_room_breeze']?.attributes?.temperature ??\
+        \ -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-4 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
+        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-5 {\n  background-color: ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'dry') ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
+        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'heat' && Math.round(hass.states['climate.rumpus_room_breeze']?.attributes?.temperature\
+        \ ?? -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-8 {\n  background-color: ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state\
+        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n"
+    - type: custom:bubble-card
+      card_type: separator
       name: Status
       icon: mdi:list-status
       sub_button:
@@ -1875,6 +2027,206 @@ views:
         \    + ' text-transform: uppercase; }';\n  if (s === 'off' && members.every((e) => ['on', 'off'].includes(hass.states[e]?.state)))\
         \ return '';\n  return tint('rgba(255, 193, 7, 0.6)') + tint('color-mix(in srgb, var(--amber-color,\
         \ #ffc107) 60%, transparent)');\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
+      name: Main Lights
+      icon: mdi:ceiling-light-multiple
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.basement_concessions_lights
+      name: Concessions
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-concessions-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_concessions_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_concessions_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n.bubble-icon-container {\n  background-color: ${(() => {\n    return (hass.states['light.basement_concessions_lights']?.state\
+        \ === 'on')\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n\
+        }\n${(() => {\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const txt = pct('light.basement_concessions_lights');\n  const held\
+        \ = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_concessions_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_concessions_mmwave_normal_mode']?.state;\n    const\
+        \ autos = [\"automation.light_zse11_concessions_motion_detected_lights_on\", \"automation.light_zse11_concessions_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  return '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + (held ? ' · Hold' :\
+        \ '') + '\"; font-size: 12px; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.basement_rumpus_room_lights
+      name: Rumpus
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: perform-action
+        perform_action: script.rumpus_room_lights_toggle
+        target: {}
+        data: {}
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-rumpus-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id:
+              - light.basement_rumpus_room_lights
+              - light.basement_rumpus_room_lamp
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_rumpus_room_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n.bubble-icon-container {\n  background-color: ${(() => {\n    return (hass.states['light.basement_rumpus_room_lights']?.state\
+        \ === 'on' || hass.states['light.basement_rumpus_room_lamp']?.state === 'on')\n      ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-1,\n.bubble-sub-button-2\
+        \ {\n  background-color: rgba(0,0,0,0.22) !important;\n}\n${(() => {\n  const pct = (e) => {\n\
+        \    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const b = st.attributes?.brightness;\n\
+        \    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n  };\n  const txt = (pct('light.basement_rumpus_room_lights')\
+        \ === 'Off' && pct('light.basement_rumpus_room_lamp') === 'Off') ? 'Off' : 'Recessed ' + pct('light.basement_rumpus_room_lights')\
+        \ + ' · ' + 'Lamp ' + pct('light.basement_rumpus_room_lamp');\n  const held = (() => {\n    const\
+        \ s = hass.states;\n    const led = parseInt(s['number.basement_rumpus_room_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_rumpus_room_mmwave_normal_mode']?.state;\n    const\
+        \ autos = [\"automation.light_snzb_06p_rumpus_room_motion_detected_lights_on\", \"automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  return '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + (held ? ' · Hold' :\
+        \ '') + '\"; font-size: 12px; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.basement_hall_lights
+      name: Great Hall
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-great-hall-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_hall_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.basement_hall_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n.bubble-icon-container {\n  background-color: ${(() => {\n    return (hass.states['light.basement_hall_lights']?.state\
+        \ === 'on')\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
+        }\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  background-color: rgba(0,0,0,0.22) !important;\n\
+        }\n${(() => {\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const txt = pct('light.basement_hall_lights');\n  const held = (() =>\
+        \ {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_hallway_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+        \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto = parseInt(s['input_text.inovelli_auto_hold']?.state);\n\
+        \    const mode = s['select.basement_hallway_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+        \    const normal = s['input_select.basement_hallway_mmwave_normal_mode']?.state;\n    const autos\
+        \ = [\"automation.light_zse11_basement_hallway_motion_detected_lights_on\", \"automation.light_zse11_basement_hallway_motion_cleared_lights_off\"\
+        ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+        \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  return '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + (held ? ' · Hold' :\
+        \ '') + '\"; font-size: 12px; }';\n})()}\n"
     - type: custom:bubble-card
       card_type: separator
       name: Movie Room
@@ -2055,161 +2407,16 @@ views:
         \ ${(() => {\n    return (hass.states['light.basement_movie_room_ambient_lighting']?.state ===\
         \ 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
     - type: custom:bubble-card
-      card_type: button
-      button_type: name
-      name: Basement Climate
-      icon: mdi:thermostat
-      show_state: false
-      tap_action:
-        action: navigate
-        navigation_path: '#tom-basement-climate'
-      button_action:
-        tap_action:
-          action: navigate
-          navigation_path: '#tom-basement-climate'
-      card_layout: large-sub-buttons-grid
-      rows: 2.438
-      sub_button:
-        main: []
-        bottom:
-        - name: Movie
-          group:
-          - entity: climate.movie_room_breeze
-            name: Movie
-            icon: mdi:movie-open
-            show_name: true
-            show_icon: false
-            show_state: true
-            fill_width: false
-            width: 34
-            tap_action:
-              action: more-info
-          - entity: climate.movie_room_breeze
-            name: Dry
-            icon: mdi:water-percent
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: movie_room
-                mode: dry
-          - entity: climate.movie_room_breeze
-            name: 72°
-            icon: mdi:fire
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: movie_room
-                mode: heat
-                temperature: 72
-          - entity: climate.movie_room_breeze
-            name: 'Off'
-            icon: mdi:power
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: movie_room
-                mode: 'off'
-          buttons_layout: inline
-        - name: Rumpus
-          group:
-          - entity: climate.rumpus_room_breeze
-            name: Rumpus
-            icon: mdi:sofa
-            show_name: true
-            show_icon: false
-            show_state: true
-            fill_width: false
-            width: 34
-            tap_action:
-              action: more-info
-          - entity: climate.rumpus_room_breeze
-            name: Dry
-            icon: mdi:water-percent
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: rumpus_room
-                mode: dry
-          - entity: climate.rumpus_room_breeze
-            name: 72°
-            icon: mdi:fire
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: rumpus_room
-                mode: heat
-                temperature: 72
-          - entity: climate.rumpus_room_breeze
-            name: 'Off'
-            icon: mdi:power
-            show_name: true
-            show_icon: true
-            show_state: false
-            tap_action:
-              action: perform-action
-              perform_action: script.voice_thermostat
-              target: {}
-              data:
-                thermostat: rumpus_room
-                mode: 'off'
-          buttons_layout: inline
-        bottom_layout: rows
-      styles: ".bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n.bubble-sub-button-4,\n\
-        .bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n.bubble-sub-button-8 {\n\
-        \  transition: background-color 200ms ease;\n}\n\n.bubble-sub-button-1 {\n  background-color:\
-        \ ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n\
-        \  })()} !important;\n}\n.bubble-sub-button-2 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
-        \ === 'dry') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
-        \ === 'heat' && Math.round(hass.states['climate.movie_room_breeze']?.attributes?.temperature ??\
-        \ -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-4 {\n  background-color: ${(() => {\n    return (hass.states['climate.movie_room_breeze']?.state\
-        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-5 {\n  background-color: ${(() => {\n    return (false) ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-6 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'dry') ? 'rgba(var(--rgb-accent-color),\
-        \ 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n.bubble-sub-button-7 {\n  background-color:\
-        \ ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state === 'heat' && Math.round(hass.states['climate.rumpus_room_breeze']?.attributes?.temperature\
-        \ ?? -999) === 72) ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n.bubble-sub-button-8 {\n  background-color: ${(() => {\n    return (hass.states['climate.rumpus_room_breeze']?.state\
-        \ === 'off') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
-        }\n"
-    - type: custom:bubble-card
       card_type: separator
-      name: Server Room
-      icon: mdi:server
+      name: Other Rooms
+      icon: mdi:floor-plan
       sub_button:
         main: []
         bottom: []
     - type: custom:bubble-card
       card_type: button
       button_type: name
-      name: Lights
+      name: Server Room Lights
       icon: mdi:ceiling-light
       entity: light.basement_server_room_lights
       show_state: true
@@ -2231,7 +2438,7 @@ views:
             action: toggle
         - entity: automation.light_fp2_server_room_motion_detected_lights_on
           name: Hold
-          icon: mdi:hand-back-left
+          icon: mdi:lock-open-variant
           show_name: true
           show_icon: true
           show_state: false
@@ -2258,8 +2465,35 @@ views:
         \ autos = [\"automation.light_fp2_server_room_motion_detected_lights_on\", \"automation.light_fp2_server_room_motion_cleared_lights_off\"\
         ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
         \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[1]?.setAttribute('icon',\
-        \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-2 { background-color:\
+        \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-sub-button-2 { background-color:\
         \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Storage Room Lights
+      icon: mdi:ceiling-light
+      entity: light.basement_storage_inovelli_dimmer
+      show_state: true
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - entity: light.basement_storage_inovelli_dimmer
+          name: Lights
+          icon: mdi:lightbulb
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1 {\n  transition: background-color 200ms ease;\n  background-color:\
+        \ ${(() => {\n    return hass.states['light.basement_storage_inovelli_dimmer']?.state === 'on'\n\
+        \      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-basement-climate'
@@ -4597,6 +4831,414 @@ views:
           \ 'color-mix(in srgb, var(--red-color, #f44336) 90%, transparent)');\n    if (s !== 'off') return\
           \ paint(n, 'rgba(255, 193, 7, 0.6)', 'color-mix(in srgb, var(--amber-color, #ffc107) 60%, transparent)');\n\
           \    return '';\n  }).join('\\n');\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-concessions-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Concessions Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_concessions_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_concessions_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.light_zse11_concessions_motion_detected_lights_on
+        name: Manual hold
+        icon: mdi:lock-open-variant
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: basement_concessions_inovelli_presence
+            normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_concessions_led_color
+            automation_entity_ids:
+            - automation.light_zse11_concessions_motion_detected_lights_on
+            - automation.light_zse11_concessions_motion_cleared_lights_off
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_concessions_inovelli_presence
+              normal_mode_input_select: input_select.basement_concessions_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_concessions_led_color
+              automation_entity_ids:
+              - automation.light_zse11_concessions_motion_detected_lights_on
+              - automation.light_zse11_concessions_motion_cleared_lights_off
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_concessions_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+          \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto =\
+          \ parseInt(s['input_text.inovelli_auto_hold']?.state);\n    const mode = s['select.basement_concessions_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+          \    const normal = s['input_select.basement_concessions_mmwave_normal_mode']?.state;\n    const\
+          \ autos = [\"automation.light_zse11_concessions_motion_detected_lights_on\", \"automation.light_zse11_concessions_motion_cleared_lights_off\"\
+          ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+          \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
+          \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-icon-container { background-color:\
+          \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
+          \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-rumpus-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Rumpus Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_rumpus_room_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_rumpus_room_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_rumpus_room_lamp
+        name: Lamp
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_rumpus_room_lamp'];\n  const b =\
+          \ st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+        name: Manual hold
+        icon: mdi:lock-open-variant
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: basement_rumpus_room_inovelli_presence
+            normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_rumpus_room_led_color
+            automation_entity_ids:
+            - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+            - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_rumpus_room_inovelli_presence
+              normal_mode_input_select: input_select.basement_rumpus_room_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_rumpus_room_led_color
+              automation_entity_ids:
+              - automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
+              - automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_rumpus_room_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+          \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto =\
+          \ parseInt(s['input_text.inovelli_auto_hold']?.state);\n    const mode = s['select.basement_rumpus_room_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+          \    const normal = s['input_select.basement_rumpus_room_mmwave_normal_mode']?.state;\n    const\
+          \ autos = [\"automation.light_snzb_06p_rumpus_room_motion_detected_lights_on\", \"automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off\"\
+          ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+          \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
+          \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-icon-container { background-color:\
+          \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
+          \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-great-hall-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Great Hall Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.basement_hall_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.basement_hall_lights'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: automation.light_zse11_basement_hallway_motion_detected_lights_on
+        name: Manual hold
+        icon: mdi:lock-open-variant
+        show_state: true
+        tap_action:
+          action: perform-action
+          perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+          target: {}
+          data:
+            switch_name: basement_hallway_inovelli_presence
+            normal_mode_input_select: input_select.basement_hallway_mmwave_normal_mode
+            hold_color: input_text.inovelli_manual_hold
+            prev_led_color_helper: input_text.basement_hallway_led_color
+            automation_entity_ids:
+            - automation.light_zse11_basement_hallway_motion_detected_lights_on
+            - automation.light_zse11_basement_hallway_motion_cleared_lights_off
+        button_action:
+          tap_action:
+            action: perform-action
+            perform_action: script.inovelli_toggle_mmwave_hold_led_indicator
+            target: {}
+            data:
+              switch_name: basement_hallway_inovelli_presence
+              normal_mode_input_select: input_select.basement_hallway_mmwave_normal_mode
+              hold_color: input_text.inovelli_manual_hold
+              prev_led_color_helper: input_text.basement_hallway_led_color
+              automation_entity_ids:
+              - automation.light_zse11_basement_hallway_motion_detected_lights_on
+              - automation.light_zse11_basement_hallway_motion_cleared_lights_off
+        sub_button:
+          main: []
+          bottom: []
+        styles: ".bubble-icon-container { transition: background-color 200ms ease; }\n${(() => {\n  const\
+          \ held = (() => {\n    const s = hass.states;\n    const led = parseInt(s['number.basement_hallway_inovelli_presence_defaultled1colorwhenon']?.state);\n\
+          \    const manual = parseInt(s['input_text.inovelli_manual_hold']?.state);\n    const auto =\
+          \ parseInt(s['input_text.inovelli_auto_hold']?.state);\n    const mode = s['select.basement_hallway_inovelli_presence_mmwavecontrolwireddevice']?.state;\n\
+          \    const normal = s['input_select.basement_hallway_mmwave_normal_mode']?.state;\n    const\
+          \ autos = [\"automation.light_zse11_basement_hallway_motion_detected_lights_on\", \"automation.light_zse11_basement_hallway_motion_cleared_lights_off\"\
+          ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
+          \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
+          \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-icon-container { background-color:\
+          \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
+          \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
 - type: sections
   max_columns: 1
   title: First floor
@@ -4605,9 +5247,1076 @@ views:
   sections:
   - type: grid
     cards:
-    - type: markdown
-      text_only: true
-      content: No cards yet.
+    - type: custom:bubble-card
+      card_type: separator
+      name: Main Rooms
+      icon: mdi:sofa-outline
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.downstairs_livingroom_lights
+      name: Living Room
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-living-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_livingroom_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_livingroom_lights
+            data:
+              brightness_pct: 30
+        - name: Fan
+          icon: mdi:fan
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: fan.toggle
+            target:
+              entity_id: fan.livingroom_fan_fan
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state\
+        \ === 'on';\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const speed = (e) => {\n    const st = hass.states[e];\n    if (!st\
+        \ || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state !== 'on')\
+        \ return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 : Math.round(p\
+        \ * 6 / 100);\n  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' +\
+        \ (on('light.downstairs_livingroom_lights') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  css += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color:\
+        \ rgba(0,0,0,0.22) !important; }\\n';\n  css += '.bubble-sub-button-3 { background-color: ' +\
+        \ (on('fan.livingroom_fan_fan') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  { const v = speed('fan.livingroom_fan_fan');\n    const t = v ===\
+        \ -1 ? 'Off' : v === 0 ? '–' : v === 7 ? 'On' : String(v);\n    css += '.bubble-sub-button-3 .bubble-sub-button-name-container::after\
+        \ { content: \"' + t + '\"; margin-left: 4px; }\\n'; }\n  const parts = [['Recessed', 'light.downstairs_livingroom_lights'],\
+        \ ['Lamp', 'light.downstairs_livingroom_lamp'], ['Sconce', 'light.downstairs_livingroom_sconce_inovelli_dimmer'],\
+        \ ['Fan Light', 'light.livingroom_fan_light']];\n  const lit = parts.filter(([, e]) => on(e));\n\
+        \  let txt = lit.length === 0 ? 'Off' : lit.map(([n, e]) => n + ' ' + pct(e)).join(' · ');\n \
+        \ if (txt.length > 40) txt = lit.map(([n]) => n).join(' · ');\n  if (txt.length > 40) txt = lit.length\
+        \ + ' lights on';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+        \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.downstairs_study_lights
+      name: Study
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-study'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_study_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_study_lights
+            data:
+              brightness_pct: 30
+        - name: Fan
+          icon: mdi:fan
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: fan.toggle
+            target:
+              entity_id: fan.study_fan_fan
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state\
+        \ === 'on';\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const speed = (e) => {\n    const st = hass.states[e];\n    if (!st\
+        \ || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state !== 'on')\
+        \ return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 : Math.round(p\
+        \ * 6 / 100);\n  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' +\
+        \ (on('light.downstairs_study_lights') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  css += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color:\
+        \ rgba(0,0,0,0.22) !important; }\\n';\n  css += '.bubble-sub-button-3 { background-color: ' +\
+        \ (on('fan.study_fan_fan') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+        \ }\\n';\n  { const v = speed('fan.study_fan_fan');\n    const t = v === -1 ? 'Off' : v === 0\
+        \ ? '–' : v === 7 ? 'On' : String(v);\n    css += '.bubble-sub-button-3 .bubble-sub-button-name-container::after\
+        \ { content: \"' + t + '\"; margin-left: 4px; }\\n'; }\n  const parts = [['Recessed', 'light.downstairs_study_lights'],\
+        \ ['Bookshelf', 'light.downstairs_study_bookshelf_inovelli_dimmer'], ['Fan Light', 'light.study_fan_light']];\n\
+        \  const lit = parts.filter(([, e]) => on(e));\n  let txt = lit.length === 0 ? 'Off' : lit.map(([n,\
+        \ e]) => n + ' ' + pct(e)).join(' · ');\n  if (txt.length > 40) txt = lit.map(([n]) => n).join('\
+        \ · ');\n  if (txt.length > 40) txt = lit.length + ' lights on';\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.downstairs_kitchen_lights
+      name: Kitchen
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-kitchen'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_kitchen_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_kitchen_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.downstairs_kitchen_lights')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const parts = [['Recessed', 'light.downstairs_kitchen_lights'], ['Island', 'light.downstairs_kitchen_island_inovelli_dimmer'],\
+        \ ['Under Cabinet', 'light.downstairs_kitches_under_cabinet_inovelli_dimmer'], ['Sink', 'light.downstairs_kitchen_sink_inovelli_presence']];\n\
+        \  const lit = parts.filter(([, e]) => on(e));\n  let txt = lit.length === 0 ? 'Off' : lit.map(([n,\
+        \ e]) => n + ' ' + pct(e)).join(' · ');\n  if (txt.length > 40) txt = lit.map(([n]) => n).join('\
+        \ · ');\n  if (txt.length > 40) txt = lit.length + ' lights on';\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
+      name: Fancy Rooms
+      icon: mdi:chandelier
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.downstairs_dining_room_table_light
+      name: Dining Room
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-dining-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_dining_room_table_light
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.downstairs_dining_room_table_light
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.downstairs_dining_room_table_light')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const parts = [['Table', 'light.downstairs_dining_room_table_light'], ['Cove', 'light.downstairs_dining_room_cove_inovelli_dimmer']];\n\
+        \  const lit = parts.filter(([, e]) => on(e));\n  let txt = lit.length === 0 ? 'Off' : lit.map(([n,\
+        \ e]) => n + ' ' + pct(e)).join(' · ');\n  if (txt.length > 40) txt = lit.map(([n]) => n).join('\
+        \ · ');\n  if (txt.length > 40) txt = lit.length + ' lights on';\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.foyer_chaos_light_switches
+      name: Chaos
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.foyer_chaos_light_switches
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.foyer_chaos_light_switches
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.foyer_chaos_light_switches')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const txt = pct('light.foyer_chaos_light_switches');\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-living-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Living Room
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_livingroom_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_livingroom_lights'];\n  const\
+          \ b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_livingroom_lamp
+        name: Lamp
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_livingroom_lamp'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_livingroom_sconce_inovelli_dimmer
+        name: Sconce
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_livingroom_sconce_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.livingroom_fan_light
+        name: Fan Light
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.livingroom_fan_light'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: fan.livingroom_fan_fan
+        name: Fan
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: none
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        sub_button:
+          main: []
+          bottom:
+          - name: Speed
+            buttons_layout: inline
+            group:
+            - name: '1'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  percentage: 16
+            - name: '2'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  percentage: 33
+            - name: '3'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  percentage: 50
+            - name: '4'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  percentage: 66
+            - name: '5'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  percentage: 83
+            - name: '6'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.livingroom_fan_fan
+                data:
+                  direction: reverse
+          bottom_layout: rows
+        styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.livingroom_fan_fan');\n\
+          \  css += '.bubble-icon-container { background-color: ' + (on('fan.livingroom_fan_fan') ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
+          \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.livingroom_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-study'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Study
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_study_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_study_lights'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_study_bookshelf_inovelli_dimmer
+        name: Bookshelf
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_study_bookshelf_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.study_fan_light
+        name: Fan Light
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.study_fan_light'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: fan.study_fan_fan
+        name: Fan
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: none
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        sub_button:
+          main: []
+          bottom:
+          - name: Speed
+            buttons_layout: inline
+            group:
+            - name: '1'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  percentage: 16
+            - name: '2'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  percentage: 33
+            - name: '3'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  percentage: 50
+            - name: '4'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  percentage: 66
+            - name: '5'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  percentage: 83
+            - name: '6'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.study_fan_fan
+                data:
+                  direction: reverse
+          bottom_layout: rows
+        styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.study_fan_fan');\n\
+          \  css += '.bubble-icon-container { background-color: ' + (on('fan.study_fan_fan') ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
+          \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.study_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-kitchen'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Kitchen
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitchen_lights'];\n  const b =\
+          \ st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_island_inovelli_dimmer
+        name: Island
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitchen_island_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitches_under_cabinet_inovelli_dimmer
+        name: Under Cabinet
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitches_under_cabinet_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_kitchen_sink_inovelli_presence
+        name: Sink
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_kitchen_sink_inovelli_presence'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-dining-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Dining Room
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_dining_room_table_light
+        name: Table
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_dining_room_table_light'];\n \
+          \ const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.downstairs_dining_room_cove_inovelli_dimmer
+        name: Cove
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.downstairs_dining_room_cove_inovelli_dimmer'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
 - type: sections
   max_columns: 1
   title: Second floor
@@ -4616,6 +6325,1554 @@ views:
   sections:
   - type: grid
     cards:
-    - type: markdown
-      text_only: true
-      content: No cards yet.
+    - type: custom:bubble-card
+      card_type: separator
+      name: Primary Bedroom
+      icon: mdi:bed-king-outline
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.primary_bedroom_lights
+      name: Bedroom
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-primary-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.primary_bedroom_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.primary_bedroom_lights
+            data:
+              brightness_pct: 30
+        - name: Fan
+          icon: mdi:fan
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: fan.toggle
+            target:
+              entity_id: fan.primary_bedroom_fan_fan
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state\
+        \ === 'on';\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const speed = (e) => {\n    const st = hass.states[e];\n    if (!st\
+        \ || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state !== 'on')\
+        \ return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 : Math.round(p\
+        \ * 6 / 100);\n  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' +\
+        \ (on('light.primary_bedroom_lights') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  css += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color:\
+        \ rgba(0,0,0,0.22) !important; }\\n';\n  css += '.bubble-sub-button-3 { background-color: ' +\
+        \ (on('fan.primary_bedroom_fan_fan') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  { const v = speed('fan.primary_bedroom_fan_fan');\n    const t = v\
+        \ === -1 ? 'Off' : v === 0 ? '–' : v === 7 ? 'On' : String(v);\n    css += '.bubble-sub-button-3\
+        \ .bubble-sub-button-name-container::after { content: \"' + t + '\"; margin-left: 4px; }\\n';\
+        \ }\n  const parts = [['Recessed', 'light.upstairs_primary_bed_lights'], ['Nook', 'light.upstairs_primary_nook_lights'],\
+        \ ['Nightstands', 'light.upstairs_primary_nightstand_lights']];\n  const lit = parts.filter(([,\
+        \ e]) => on(e));\n  const vals = lit.map(([, e]) => pct(e));\n  const txt = lit.length === 0 ?\
+        \ 'Off'\n    : lit.length === 3 ? 'All ' + (vals.every((x) => x === vals[0]) ? vals[0] : 'on')\n\
+        \    : lit.map(([n, e]) => n + ' ' + pct(e)).join(' · ');\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.upstairs_primary_cloffice_lights
+      name: Cloffice
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-cloffice-lights'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: script.voice_cloffice_bright
+            target: {}
+            data: {}
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.upstairs_primary_cloffice_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.upstairs_primary_cloffice_lights')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const txt = pct('light.upstairs_primary_cloffice_lights') + (on('light.den_hue_iris_light')\
+        \ ? ' · Iris ' + pct('light.den_hue_iris_light') : '');\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
+      name: Other Bedrooms
+      icon: mdi:bed-outline
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.blue_room_fan_light
+      name: Blue Room · Jackson
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-blue-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.blue_room_fan_light
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.blue_room_fan_light
+            data:
+              brightness_pct: 30
+        - name: Lamp
+          icon: mdi:lamp-outline
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.toggle
+            target:
+              entity_id: light.upstairs_blue_room_nightstand_hue_bulb_jackson
+            data: {}
+        - name: Fan
+          icon: mdi:fan
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: fan.toggle
+            target:
+              entity_id: fan.blue_room_fan_fan
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+        .bubble-sub-button-4 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+        \ = (e) => hass.states[e]?.state === 'on';\n  const pct = (e) => {\n    const st = hass.states[e];\n\
+        \    if (st?.state !== 'on') return 'Off';\n    const b = st.attributes?.brightness;\n    return\
+        \ b == null ? 'On' : Math.round(b / 2.55) + '%';\n  };\n  const speed = (e) => {\n    const st\
+        \ = hass.states[e];\n    if (!st || st.state === 'unavailable' || st.state === 'unknown') return\
+        \ 0;\n    if (st.state !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return\
+        \ p == null ? 7 : Math.round(p * 6 / 100);\n  };\n  let css = '';\n  css += '.bubble-icon-container\
+        \ { background-color: ' + (on('light.blue_room_fan_light') ? 'rgba(var(--rgb-accent-color), 0.45)'\
+        \ : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-1,\\n.bubble-sub-button-2\
+        \ { background-color: rgba(0,0,0,0.22) !important; }\\n';\n  css += '.bubble-sub-button-3 { background-color:\
+        \ ' + (on('light.upstairs_blue_room_nightstand_hue_bulb_jackson') ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-4 { background-color:\
+        \ ' + (on('fan.blue_room_fan_fan') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  { const v = speed('fan.blue_room_fan_fan');\n    const t = v === -1\
+        \ ? 'Off' : v === 0 ? '–' : v === 7 ? 'On' : String(v);\n    css += '.bubble-sub-button-4 .bubble-sub-button-name-container::after\
+        \ { content: \"' + t + '\"; margin-left: 4px; }\\n'; }\n  const txt = 'Light ' + pct('light.blue_room_fan_light')\
+        \ + ' · Lamp ' + pct('light.upstairs_blue_room_nightstand_hue_bulb_jackson');\n  css += '.bubble-state\
+        \ { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size:\
+        \ 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.pink_room_fan_light
+      name: Pink Room · Penelope
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-pink-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.pink_room_fan_light
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.pink_room_fan_light
+            data:
+              brightness_pct: 30
+        - name: Lamp
+          icon: mdi:lamp-outline
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.toggle
+            target:
+              entity_id: light.upstairs_pink_room_nightstand_hue_bulb_penelope
+            data: {}
+        - name: Fan
+          icon: mdi:fan
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: fan.toggle
+            target:
+              entity_id: fan.pink_room_fan_fan
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+        .bubble-sub-button-4 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+        \ = (e) => hass.states[e]?.state === 'on';\n  const pct = (e) => {\n    const st = hass.states[e];\n\
+        \    if (st?.state !== 'on') return 'Off';\n    const b = st.attributes?.brightness;\n    return\
+        \ b == null ? 'On' : Math.round(b / 2.55) + '%';\n  };\n  const speed = (e) => {\n    const st\
+        \ = hass.states[e];\n    if (!st || st.state === 'unavailable' || st.state === 'unknown') return\
+        \ 0;\n    if (st.state !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return\
+        \ p == null ? 7 : Math.round(p * 6 / 100);\n  };\n  let css = '';\n  css += '.bubble-icon-container\
+        \ { background-color: ' + (on('light.pink_room_fan_light') ? 'rgba(var(--rgb-accent-color), 0.45)'\
+        \ : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-1,\\n.bubble-sub-button-2\
+        \ { background-color: rgba(0,0,0,0.22) !important; }\\n';\n  css += '.bubble-sub-button-3 { background-color:\
+        \ ' + (on('light.upstairs_pink_room_nightstand_hue_bulb_penelope') ? 'rgba(var(--rgb-accent-color),\
+        \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-4 { background-color:\
+        \ ' + (on('fan.pink_room_fan_fan') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  { const v = speed('fan.pink_room_fan_fan');\n    const t = v === -1\
+        \ ? 'Off' : v === 0 ? '–' : v === 7 ? 'On' : String(v);\n    css += '.bubble-sub-button-4 .bubble-sub-button-name-container::after\
+        \ { content: \"' + t + '\"; margin-left: 4px; }\\n'; }\n  const txt = 'Light ' + pct('light.pink_room_fan_light')\
+        \ + ' · Lamp ' + pct('light.upstairs_pink_room_nightstand_hue_bulb_penelope');\n  css += '.bubble-state\
+        \ { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size:\
+        \ 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.white_room_fan_light
+      name: White Room
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#tom-white-room'
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.white_room_fan_light
+            data:
+              brightness_pct: 100
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.white_room_fan_light
+            data:
+              brightness_pct: 30
+        - name: Fan
+          icon: mdi:fan
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: fan.toggle
+            target:
+              entity_id: fan.white_room_fan_fan
+            data: {}
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3\
+        \ {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state\
+        \ === 'on';\n  const pct = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on')\
+        \ return 'Off';\n    const b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b\
+        \ / 2.55) + '%';\n  };\n  const speed = (e) => {\n    const st = hass.states[e];\n    if (!st\
+        \ || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state !== 'on')\
+        \ return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 : Math.round(p\
+        \ * 6 / 100);\n  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' +\
+        \ (on('light.white_room_fan_light') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  css += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color:\
+        \ rgba(0,0,0,0.22) !important; }\\n';\n  css += '.bubble-sub-button-3 { background-color: ' +\
+        \ (on('fan.white_room_fan_fan') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)')\
+        \ + ' !important; }\\n';\n  { const v = speed('fan.white_room_fan_fan');\n    const t = v ===\
+        \ -1 ? 'Off' : v === 0 ? '–' : v === 7 ? 'On' : String(v);\n    css += '.bubble-sub-button-3 .bubble-sub-button-name-container::after\
+        \ { content: \"' + t + '\"; margin-left: 4px; }\\n'; }\n  const txt = 'Light ' + pct('light.white_room_fan_light');\n\
+        \  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+        \ \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: separator
+      name: Other Rooms
+      icon: mdi:floor-plan
+      sub_button:
+        main: []
+        bottom: []
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      entity: light.upstairs_foyer_lights
+      name: Foyer
+      icon: mdi:power
+      show_state: true
+      tap_action:
+        action: toggle
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - name: Bright
+          icon: mdi:brightness-7
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.upstairs_foyer_lights
+            data:
+              brightness_pct: 100
+              color_temp_kelvin: 2750
+        - name: Dim
+          icon: mdi:brightness-4
+          show_name: true
+          show_icon: true
+          show_state: false
+          state_background: false
+          tap_action:
+            action: perform-action
+            perform_action: light.turn_on
+            target:
+              entity_id: light.upstairs_foyer_lights
+            data:
+              brightness_pct: 30
+        bottom_layout: rows
+      styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2 {\n  transition: background-color\
+        \ 200ms ease;\n}\n${(() => {\n  const on = (e) => hass.states[e]?.state === 'on';\n  const pct\
+        \ = (e) => {\n    const st = hass.states[e];\n    if (st?.state !== 'on') return 'Off';\n    const\
+        \ b = st.attributes?.brightness;\n    return b == null ? 'On' : Math.round(b / 2.55) + '%';\n\
+        \  };\n  let css = '';\n  css += '.bubble-icon-container { background-color: ' + (on('light.upstairs_foyer_lights')\
+        \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css\
+        \ += '.bubble-sub-button-1,\\n.bubble-sub-button-2 { background-color: rgba(0,0,0,0.22) !important;\
+        \ }\\n';\n  const txt = pct('light.upstairs_foyer_lights');\n  css += '.bubble-state { font-size:\
+        \ 0 !important; }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px;\
+        \ }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-primary-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Primary Bedroom
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_bed_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.upstairs_primary_bed_lights'];\n  const b\
+          \ = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_nook_lights
+        name: Nook
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.upstairs_primary_nook_lights'];\n  const\
+          \ b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_nightstand_lights
+        name: Nightstands
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 3.157
+        styles: "${(() => {\n  const st = hass.states['light.upstairs_primary_nightstand_lights'];\n \
+          \ const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n'\n  \
+          \  + '.bubble-sub-button-3 { background-color: ' + (hass.states['light.upstairs_primary_bed_nightstand_hue_bulb_tom']?.state\
+          \ === 'on' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\\
+          n'\n    + '.bubble-sub-button-4 { background-color: ' + (hass.states['light.upstairs_primary_bed_nightstand_hue_bulb_kellie']?.state\
+          \ === 'on' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\\
+          n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Lamps
+            buttons_layout: inline
+            group:
+            - entity: light.upstairs_primary_bed_nightstand_hue_bulb_tom
+              name: Tom
+              icon: mdi:lamp-outline
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: toggle
+            - entity: light.upstairs_primary_bed_nightstand_hue_bulb_kellie
+              name: Kellie
+              icon: mdi:lamp-outline
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: toggle
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: fan.primary_bedroom_fan_fan
+        name: Fan
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: none
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        sub_button:
+          main: []
+          bottom:
+          - name: Speed
+            buttons_layout: inline
+            group:
+            - name: '1'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  percentage: 16
+            - name: '2'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  percentage: 33
+            - name: '3'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  percentage: 50
+            - name: '4'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  percentage: 66
+            - name: '5'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  percentage: 83
+            - name: '6'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.primary_bedroom_fan_fan
+                data:
+                  direction: reverse
+          bottom_layout: rows
+        styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.primary_bedroom_fan_fan');\n\
+          \  css += '.bubble-icon-container { background-color: ' + (on('fan.primary_bedroom_fan_fan')\
+          \ ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for\
+          \ (let i = 1; i <= 6; i++) {\n    css += '.bubble-sub-button-' + i + ' { background-color: '\
+          \ + (v === i ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\\
+          n';\n  }\n  const dir = hass.states['fan.primary_bedroom_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-cloffice-lights'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Cloffice Lights
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_primary_cloffice_lights
+        name: Recessed
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.upstairs_primary_cloffice_lights'];\n  const\
+          \ b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On'\
+          \ : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important; }\\n'\n\
+          \    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.den_hue_iris_light
+        name: Iris Lamp
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.den_hue_iris_light'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-blue-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Blue Room · Jackson
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.blue_room_fan_light
+        name: Fan Light
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.blue_room_fan_light'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_blue_room_nightstand_hue_bulb_jackson
+        name: Nightstand
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.upstairs_blue_room_nightstand_hue_bulb_jackson'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: fan.blue_room_fan_fan
+        name: Fan
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: none
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        sub_button:
+          main: []
+          bottom:
+          - name: Speed
+            buttons_layout: inline
+            group:
+            - name: '1'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  percentage: 16
+            - name: '2'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  percentage: 33
+            - name: '3'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  percentage: 50
+            - name: '4'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  percentage: 66
+            - name: '5'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  percentage: 83
+            - name: '6'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.blue_room_fan_fan
+                data:
+                  direction: reverse
+          bottom_layout: rows
+        styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.blue_room_fan_fan');\n\
+          \  css += '.bubble-icon-container { background-color: ' + (on('fan.blue_room_fan_fan') ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
+          \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.blue_room_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-pink-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## Pink Room · Penelope
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.pink_room_fan_light
+        name: Fan Light
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.pink_room_fan_light'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.upstairs_pink_room_nightstand_hue_bulb_penelope
+        name: Nightstand
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        styles: "${(() => {\n  const st = hass.states['light.upstairs_pink_room_nightstand_hue_bulb_penelope'];\n\
+          \  const b = st?.attributes?.brightness;\n  const txt = st?.state !== 'on' ? 'Off' : (b == null\
+          \ ? 'On' : Math.round(b / 2.55) + '%');\n  return '.bubble-state { font-size: 0 !important;\
+          \ }\\n'\n    + '.bubble-state::after { content: \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom:
+          - name: Temperature
+            buttons_layout: inline
+            group:
+            - name: Temperature
+              sub_button_type: slider
+              light_slider_type: white_temp
+              icon: mdi:thermometer
+              always_visible: true
+              show_background: false
+              state_background: false
+          - name: Color
+            buttons_layout: inline
+            group:
+            - name: Color
+              sub_button_type: slider
+              light_slider_type: hue
+              icon: mdi:palette
+              always_visible: true
+              show_background: false
+              state_background: false
+          bottom_layout: rows
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: fan.pink_room_fan_fan
+        name: Fan
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: none
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        sub_button:
+          main: []
+          bottom:
+          - name: Speed
+            buttons_layout: inline
+            group:
+            - name: '1'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  percentage: 16
+            - name: '2'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  percentage: 33
+            - name: '3'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  percentage: 50
+            - name: '4'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  percentage: 66
+            - name: '5'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  percentage: 83
+            - name: '6'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.pink_room_fan_fan
+                data:
+                  direction: reverse
+          bottom_layout: rows
+        styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.pink_room_fan_fan');\n\
+          \  css += '.bubble-icon-container { background-color: ' + (on('fan.pink_room_fan_fan') ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
+          \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.pink_room_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"
+    - type: custom:bubble-card
+      card_type: pop-up
+      hash: '#tom-white-room'
+      button_type: name
+      width_desktop: 75vw
+      show_header: true
+      name: Return to Dashboard
+      show_icon: true
+      icon: mdi:arrow-left
+      show_name: true
+      margin: 7px
+      scrolling_effect: false
+      sub_button:
+        main: []
+        bottom:
+        - name: Back
+          icon: mdi:arrow-left
+          show_name: true
+          show_icon: true
+          tap_action:
+            action: navigate
+            navigation_path: '#'
+      tap_action:
+        action: navigate
+        navigation_path: '#'
+      button_action:
+        tap_action:
+          action: navigate
+          navigation_path: '#'
+      cards:
+      - type: markdown
+        text_only: true
+        card_mod:
+          style: "ha-card {\n  background: none;\n  box-shadow: none;\n  border: none;\n}\n"
+        content: '## White Room
+
+          '
+      - type: custom:bubble-card
+        card_type: button
+        button_type: slider
+        entity: light.white_room_fan_light
+        name: Fan Light
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        styles: "${(() => {\n  const st = hass.states['light.white_room_fan_light'];\n  const b = st?.attributes?.brightness;\n\
+          \  const txt = st?.state !== 'on' ? 'Off' : (b == null ? 'On' : Math.round(b / 2.55) + '%');\n\
+          \  return '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
+          \ \"' + txt + '\"; font-size: 12px; }\\n';\n})()}\n"
+        sub_button:
+          main: []
+          bottom: []
+      - type: custom:bubble-card
+        card_type: button
+        button_type: name
+        entity: fan.white_room_fan_fan
+        name: Fan
+        icon: mdi:power
+        show_state: true
+        tap_action:
+          action: toggle
+        button_action:
+          tap_action:
+            action: none
+        card_layout: large-sub-buttons-grid
+        rows: 2.438
+        sub_button:
+          main: []
+          bottom:
+          - name: Speed
+            buttons_layout: inline
+            group:
+            - name: '1'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  percentage: 16
+            - name: '2'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  percentage: 33
+            - name: '3'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  percentage: 50
+            - name: '4'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  percentage: 66
+            - name: '5'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  percentage: 83
+            - name: '6'
+              show_name: true
+              show_icon: false
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.turn_on
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  percentage: 100
+          - name: Direction
+            buttons_layout: inline
+            group:
+            - name: Summer
+              icon: mdi:weather-sunny
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  direction: forward
+            - name: Winter
+              icon: mdi:snowflake
+              show_name: true
+              show_icon: true
+              show_state: false
+              state_background: false
+              tap_action:
+                action: perform-action
+                perform_action: fan.set_direction
+                target:
+                  entity_id: fan.white_room_fan_fan
+                data:
+                  direction: reverse
+          bottom_layout: rows
+        styles: ".bubble-icon-container,\n.bubble-sub-button-1,\n.bubble-sub-button-2,\n.bubble-sub-button-3,\n\
+          .bubble-sub-button-4,\n.bubble-sub-button-5,\n.bubble-sub-button-6,\n.bubble-sub-button-7,\n\
+          .bubble-sub-button-8 {\n  transition: background-color 200ms ease;\n}\n${(() => {\n  const on\
+          \ = (e) => hass.states[e]?.state === 'on';\n  const speed = (e) => {\n    const st = hass.states[e];\n\
+          \    if (!st || st.state === 'unavailable' || st.state === 'unknown') return 0;\n    if (st.state\
+          \ !== 'on') return -1;\n    const p = st.attributes?.percentage;\n    return p == null ? 7 :\
+          \ Math.round(p * 6 / 100);\n  };\n  let css = '';\n  const v = speed('fan.white_room_fan_fan');\n\
+          \  css += '.bubble-icon-container { background-color: ' + (on('fan.white_room_fan_fan') ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  for (let i = 1; i <= 6; i++) {\n  \
+          \  css += '.bubble-sub-button-' + i + ' { background-color: ' + (v === i ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  }\n  const dir = hass.states['fan.white_room_fan_fan']?.attributes?.direction;\n\
+          \  css += '.bubble-sub-button-7 { background-color: ' + (dir === 'forward' ? 'rgba(var(--rgb-accent-color),\
+          \ 0.45)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n';\n  css += '.bubble-sub-button-8 { background-color:\
+          \ ' + (dir === 'reverse' ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)') + ' !important;\
+          \ }\\n';\n  const txt = v === -1 ? 'Off' : v === 0 ? 'Unavailable' : v === 7 ? 'On' : 'Speed\
+          \ ' + v + ' of 6';\n  css += '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after\
+          \ { content: \"' + txt + '\"; font-size: 12px; }\\n';\n  return css;\n})()}\n"

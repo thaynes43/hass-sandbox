@@ -1,0 +1,27 @@
+# script.rumpus_room_lights_toggle — Tom Mobile Basement "Rumpus" card power icon (created live via MCP, 2026-09-30).
+# A plain light.toggle on both groups flips each one separately when only one is on, so the room toggle needs this.
+alias: Rumpus Room Lights Toggle
+description: Tom Mobile Rumpus card power icon. Turns the recessed lights and the lamp off when either is on,
+  otherwise turns both on.
+icon: mdi:power
+mode: single
+sequence:
+- if:
+  - condition: state
+    entity_id:
+    - light.basement_rumpus_room_lights
+    - light.basement_rumpus_room_lamp
+    match: any
+    state: 'on'
+  then:
+  - action: light.turn_off
+    target:
+      entity_id:
+      - light.basement_rumpus_room_lights
+      - light.basement_rumpus_room_lamp
+  else:
+  - action: light.turn_on
+    target:
+      entity_id:
+      - light.basement_rumpus_room_lights
+      - light.basement_rumpus_room_lamp

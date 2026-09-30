@@ -151,8 +151,8 @@ The following smart switches are currently configured for AUX companions (so you
 
 | Button | 1x | 2x | 3x | Notes |
 |---|---|---|---|---|
-| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
-| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Up paddle | Local on (load) | Firmware: 100% (`brightnesslevelfordoubletapup` = 254) |  | 2x is firmware (P55) |
+| Down paddle | Local off (load) | Firmware: ~30% (`brightnesslevelfordoubletapdown` = 76) |  | 2x is firmware (P56) |
 | Config |  | **Toggle hold** |  |  |
 
 **AUX companion switches (requirements)**
@@ -169,8 +169,8 @@ The following smart switches are currently configured for AUX companions (so you
 
 | Button | 1x | 2x | 3x | Notes |
 |---|---|---|---|---|
-| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
-| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Up paddle | Local on (load) | Firmware: 100% (`brightnesslevelfordoubletapup` = 254) |  | 2x is firmware (P55) |
+| Down paddle | Local off (load) | Firmware: ~30% (`brightnesslevelfordoubletapdown` = 76) |  | 2x is firmware (P56) |
 | Config |  | **Toggle hold** |  |  |
 
 **AUX companion switches (requirements)**
@@ -187,8 +187,8 @@ The following smart switches are currently configured for AUX companions (so you
 
 | Button | 1x | 2x | 3x | Notes |
 |---|---|---|---|---|
-| Up paddle | Local on (load) |  |  | Multi-clicks unassigned |
-| Down paddle | Local off (load) |  |  | Multi-clicks unassigned |
+| Up paddle | Local on (load) | Firmware: 100% (`brightnesslevelfordoubletapup` = 254) |  | 2x is firmware (P55) |
+| Down paddle | Local off (load) | Firmware: ~30% (`brightnesslevelfordoubletapdown` = 76) |  | 2x is firmware (P56) |
 | Config |  | **Toggle hold** |  |  |
 
 **AUX companion switches (requirements)**
