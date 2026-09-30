@@ -18,7 +18,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 |---|---|---|---|
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
-| Basement | `basement` | `mdi:home-floor-b` | Climate (Basement Climate), then Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Server Room (lights) |
+| Basement | `basement` | `mdi:home-floor-b` | Climate (Basement Climate), then Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Other Rooms (Server Room Lights, Storage Room Lights) |
 | First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
 | Second floor | `second-floor` | `mdi:home-floor-2` | placeholder ("No cards yet.") |
 
@@ -62,7 +62,7 @@ Room cards off it.
 | Status | "Humidors": the aggregate humidity status only ("All OK" / "Check: …"); tap → `#tom-cigars` (humidity, temperature and battery per humidor) — see *Cigars* below. "UPS Load": one chip per UPS with its load %, tinted yellow at 70 % and red at 85 %; tap → `#tom-server-room-ups` (live W + 6 h graph per UPS) — see *Server Room* below. "Leak Detection": Dry / Wet across the five Z-Wave leak sensors; tap → `#tom-leak-detection` (state + battery per sensor) — see *Leak Detection* below |
 | Main Lights | "Concessions", "Rumpus", "Great Hall": power icon toggles the room, state line = brightness (+ ` · Hold` while held), **Bright** / **Dim**; tap → that room's pop-up (hold is set there) — see *Main Lights* below |
 | Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes) — see *Movie Room* below |
-| Server Room | "Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below |
+| Other Rooms | "Server Room Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below. "Storage Room Lights": **Lights** toggle only — see *Storage Room* below |
 
 Tom asked on 2026-09-30 for a Status section at the top of the tab. It holds Humidors, UPS Load and Leak Detection.
 Humidors and UPS Load moved there from the Cigars and Server Room sections, and the Cigars section is gone.
@@ -290,7 +290,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
 - Four sub-buttons per bottom row is the most that fit at iPhone width; five get truncated (Outdoor Lights).
 
 ### Server Room (added 2026-09-29)
-- **Lights** (Tom: "Sometimes I am behind the server rack and the mmwave sensors can't see me"): a name card on
+- **Server Room Lights** (named "Lights" until 2026-09-30, when the section became *Other Rooms*; Tom: "Sometimes I am behind the server rack and the mmwave sensors can't see me"): a name card on
   `light.basement_server_room_lights` (Z2M group: the two Hue bulbs + the Inovelli). The body does nothing; the icon
   opens more-info. Sub-button 1 **Lights** toggles the group (accent while on). Sub-button 2 **Hold** calls
   `script.inovelli_toggle_mmwave_hold_led_indicator` with exactly the payload of the switch's double-tap mapping
@@ -340,6 +340,17 @@ headroom", and a pop-up with each UPS's live W and a 6-hour W graph. The % is UP
   row at 390 px. Before adding a third, screenshot at 390 px and shorten the names if it truncates.
 - Checked 2026-09-29 at 390 px with Playwright: tapping the card body and a chip both open the pop-up. The
   threshold logic was rendered on a throwaway preview dashboard at 69 / 69.4 / 69.5 / 70 / 84 / 84.6 / 85 / unavailable.
+
+### Storage Room (added 2026-09-30)
+- **Storage Room Lights**: laid out like Server Room Lights, in the *Other Rooms* section (`mdi:floor-plan`; it was
+  "Server Room" until 2026-09-30). The card is on `light.basement_storage_inovelli_dimmer` (an Inovelli Blue dimmer
+  without mmWave; smart bulb mode off, output mode On/Off). Sub-button 1 **Lights** toggles it, accent while on.
+- The ZSE41 door contact drives it: `automation.light_zse41_storage_door_{open_turn_on_lights,closed_turn_off_light}`
+  trigger on `binary_sensor.basement_storage_open_closed_sensor_window_door_is_open` and have no conditions.
+- **No Hold**: no hold exists for this room (no helpers, no condition on either automation, nothing else pauses
+  them; checked 2026-09-30), and Tom said not to build one. A light turned on from the card stays on until the door
+  closes or it is toggled off.
+- Checked 2026-09-30 at 390 px: the sub-button turned the light on (accent tint) and off again.
 
 ### Cigars (added 2026-09-29)
 Tom: a pop-up with his cigar sensors, named as on the Basement Tablet dashboard, and a main button that shows only the

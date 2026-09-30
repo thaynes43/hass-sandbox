@@ -2408,15 +2408,15 @@ views:
         \ 'on') ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
     - type: custom:bubble-card
       card_type: separator
-      name: Server Room
-      icon: mdi:server
+      name: Other Rooms
+      icon: mdi:floor-plan
       sub_button:
         main: []
         bottom: []
     - type: custom:bubble-card
       card_type: button
       button_type: name
-      name: Lights
+      name: Server Room Lights
       icon: mdi:ceiling-light
       entity: light.basement_server_room_lights
       show_state: true
@@ -2467,6 +2467,33 @@ views:
         \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[1]?.setAttribute('icon',\
         \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-2 { background-color:\
         \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
+    - type: custom:bubble-card
+      card_type: button
+      button_type: name
+      name: Storage Room Lights
+      icon: mdi:ceiling-light
+      entity: light.basement_storage_inovelli_dimmer
+      show_state: true
+      button_action:
+        tap_action:
+          action: none
+      card_layout: large-sub-buttons-grid
+      rows: 1.719
+      sub_button:
+        main: []
+        bottom:
+        - entity: light.basement_storage_inovelli_dimmer
+          name: Lights
+          icon: mdi:lightbulb
+          show_name: true
+          show_icon: true
+          show_state: false
+          tap_action:
+            action: toggle
+        bottom_layout: rows
+      styles: ".bubble-sub-button-1 {\n  transition: background-color 200ms ease;\n  background-color:\
+        \ ${(() => {\n    return hass.states['light.basement_storage_inovelli_dimmer']?.state === 'on'\n\
+        \      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n"
     - type: custom:bubble-card
       card_type: pop-up
       hash: '#tom-basement-climate'
