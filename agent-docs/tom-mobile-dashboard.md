@@ -159,7 +159,7 @@ pickers after native Assist is opened again, or after the refresh button in an i
   `home-assistant/cards/outdoors/backyard/outdoors-backyard-history.yaml`). **Always go through the
   script** — toggling the automations directly desyncs the switch LED indicator. Hold state is read
   from `automation.switch_back_yard_slider_opens_turn_on_spotlight` (`off` = hold active; card shows
-  amber + `mdi:lock`).
+  amber + `mdi:lock`, otherwise `mdi:lock-open-variant`).
 
 ### Pool (Pentair IntelliCenter, "Haynes Res.")
 - Lights: `light.haynes_res_pool_lights` — on/off only; colors/shows are the light's `effect` list:
@@ -300,7 +300,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
   both `automation.light_fp2_server_room_motion_{detected_lights_on,cleared_lights_off}`. Holding sets MmwaveControlWiredDevice
   to `Disabled` (the zone's normal mode is `Wasteful Occupancy`, so the switch itself would otherwise turn the load off),
   turns both FP2 automations off and paints LEDs 1–7 the manual-hold colour; clearing restores all three. Hold is lit
-  (amber, `mdi:lock`) on the script's own `is_on_hold` test: LED 1 in a hold colour, or mmWave control `Disabled` while
+  (amber, `mdi:lock`; `mdi:lock-open-variant` when not held) on the script's own `is_on_hold` test: LED 1 in a hold colour, or mmWave control `Disabled` while
   the normal mode is not, or either automation off. So a lit button always means "a tap clears it", auto holds included.
   Checked live 2026-09-29 by tapping the card at 390 px: on → both automations off, select `Disabled`, LEDs 90; off →
   all restored (`Wasteful Occupancy`, LEDs 255, automations on).
@@ -454,7 +454,7 @@ Tom: one quick-control card per basement room, directly under Status, with finer
 - **Pop-ups**: per group one slider card (body = brightness, icon = on/off, state = brightness %) with two
   full-width sub-button sliders on their own rows, `light_slider_type: white_temp` and `hue` (Bubble 3.4.1). Then a
   "Manual hold" card: tap = `script.inovelli_toggle_mmwave_hold_led_indicator` with the room's payload; amber,
-  `mdi:lock` and "On · motion paused" while held.
+  `mdi:lock` and "On · motion paused" while held, `mdi:lock-open-variant` and "Off" otherwise.
 - Checked 2026-09-30 at 390 px on the live dashboard: every sub-button, the Rumpus icon from mixed/off/on, the pop-up
   Lamp power icon, all three holds and the pop-up hold card (the card Hold buttons before they were removed), with state read back from HA after each tap.
 
@@ -490,6 +490,10 @@ Tom: one quick-control card per basement room, directly under Status, with finer
   (accent = active, `rgba(0,0,0,0.22)` = idle); dynamic icons via `subButtonIcon[i].setAttribute("icon", ...)`
   (0-indexed, main buttons then bottom). Numbering spans all groups in a `sub-buttons` card.
 - Separators (`card_type: separator`) give the section headers, same look as Kellie Mobile.
+- **Manual-hold icon** (Tom, 2026-09-30): every hold control uses `mdi:lock-open-variant` when not held and
+  `mdi:lock` + amber when held, picked by that control's own hold test. Not a stop hand: Tom read `mdi:hand-back-left`
+  as "on hold" even when it was off. Five controls today: Outdoor Flood Hold, Basement Server Room Lights Hold and the
+  three Main Lights pop-up Manual hold cards. The door-lock buttons on Main also use the lock pair; they are not holds.
 - Sub-button `tap_action: {action: toggle}` toggles that sub-button's own entity.
 - `perform-action` and `call-service` are interchangeable; newer cards here use `perform-action`.
 

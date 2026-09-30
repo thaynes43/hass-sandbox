@@ -1205,7 +1205,7 @@ views:
             action: toggle
         - entity: automation.switch_back_yard_slider_opens_turn_on_spotlight
           name: Flood Hold
-          icon: mdi:hand-back-left
+          icon: mdi:lock-open-variant
           show_name: true
           show_icon: true
           show_state: false
@@ -1239,7 +1239,7 @@ views:
         }\n.bubble-sub-button-3 {\n  background-color: ${(() => {\n    return hass.states['light.downstairs_kitchen_back_yard_spotlight']?.state\
         \ === 'on'\n      ? 'rgba(var(--rgb-accent-color), 0.45)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n\
         }\n${subButtonIcon[3].setAttribute(\"icon\", hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
-        \ === 'off' ? 'mdi:lock' : 'mdi:hand-back-left')}\n.bubble-sub-button-4 {\n  background-color:\
+        \ === 'off' ? 'mdi:lock' : 'mdi:lock-open-variant')}\n.bubble-sub-button-4 {\n  background-color:\
         \ ${(() => {\n    return hass.states['automation.switch_back_yard_slider_opens_turn_on_spotlight']?.state\
         \ === 'off'\n      ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)';\n  })()} !important;\n}\n\
         .bubble-sub-button-5 {\n  background-color: ${(() => {\n    return hass.states['switch.back_yard_backyard_motion_light_relay']?.state\
@@ -2438,7 +2438,7 @@ views:
             action: toggle
         - entity: automation.light_fp2_server_room_motion_detected_lights_on
           name: Hold
-          icon: mdi:hand-back-left
+          icon: mdi:lock-open-variant
           show_name: true
           show_icon: true
           show_state: false
@@ -2465,7 +2465,7 @@ views:
         \ autos = [\"automation.light_fp2_server_room_motion_detected_lights_on\", \"automation.light_fp2_server_room_motion_cleared_lights_off\"\
         ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
         \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  subButtonIcon[1]?.setAttribute('icon',\
-        \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-sub-button-2 { background-color:\
+        \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-sub-button-2 { background-color:\
         \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }';\n})()}\n"
     - type: custom:bubble-card
       card_type: button
@@ -4912,7 +4912,7 @@ views:
         button_type: name
         entity: automation.light_zse11_concessions_motion_detected_lights_on
         name: Manual hold
-        icon: mdi:hand-back-left
+        icon: mdi:lock-open-variant
         show_state: true
         tap_action:
           action: perform-action
@@ -4950,7 +4950,7 @@ views:
           \ autos = [\"automation.light_zse11_concessions_motion_detected_lights_on\", \"automation.light_zse11_concessions_motion_cleared_lights_off\"\
           ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
           \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
-          \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-icon-container { background-color:\
+          \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-icon-container { background-color:\
           \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
           \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
           \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
@@ -5074,7 +5074,7 @@ views:
         button_type: name
         entity: automation.light_snzb_06p_rumpus_room_motion_detected_lights_on
         name: Manual hold
-        icon: mdi:hand-back-left
+        icon: mdi:lock-open-variant
         show_state: true
         tap_action:
           action: perform-action
@@ -5112,7 +5112,7 @@ views:
           \ autos = [\"automation.light_snzb_06p_rumpus_room_motion_detected_lights_on\", \"automation.light_snzb_06p_rumpus_room_motion_cleared_lights_off\"\
           ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
           \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
-          \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-icon-container { background-color:\
+          \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-icon-container { background-color:\
           \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
           \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
           \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
@@ -5197,7 +5197,7 @@ views:
         button_type: name
         entity: automation.light_zse11_basement_hallway_motion_detected_lights_on
         name: Manual hold
-        icon: mdi:hand-back-left
+        icon: mdi:lock-open-variant
         show_state: true
         tap_action:
           action: perform-action
@@ -5235,7 +5235,7 @@ views:
           \ autos = [\"automation.light_zse11_basement_hallway_motion_detected_lights_on\", \"automation.light_zse11_basement_hallway_motion_cleared_lights_off\"\
           ];\n    return led === manual || led === auto\n      || (mode === 'Disabled' && normal !== 'Disabled')\n\
           \      || autos.some((a) => s[a]?.state === 'off');\n  })();\n  icon?.setAttribute?.('icon',\
-          \ held ? 'mdi:lock' : 'mdi:hand-back-left');\n  return '.bubble-icon-container { background-color:\
+          \ held ? 'mdi:lock' : 'mdi:lock-open-variant');\n  return '.bubble-icon-container { background-color:\
           \ '\n    + (held ? 'rgba(255, 179, 0, 0.35)' : 'rgba(0,0,0,0.22)') + ' !important; }\\n'\n \
           \   + '.bubble-state { font-size: 0 !important; }\\n'\n    + '.bubble-state::after { content:\
           \ \"' + (held ? 'On · motion paused' : 'Off') + '\"; font-size: 12px; }';\n})()}\n"
