@@ -19,7 +19,7 @@ Tom split the single view into tabs on 2026-09-29. Tab order, `path` and icon:
 | Main (default) | `main` | `mdi:home-assistant` | high-priority and general cards (no view header: Tom dropped the "Welcome Tom!" one on 2026-09-29) |
 | Outdoor | `outdoor` | `mdi:tree` | outdoor lights, pool, bike chargers |
 | Basement | `basement` | `mdi:home-floor-b` | Climate (Basement Climate), then Status (humidors, UPS load, leak detection), then Main Lights (Concessions, Rumpus, Great Hall), then the Movie Room cards, then Other Rooms (Server Room Lights, Storage Room Lights) |
-| First floor | `first-floor` | `mdi:home-floor-1` | placeholder ("No cards yet.") |
+| First floor | `first-floor` | `mdi:home-floor-1` | Main Rooms (Living Room, Study) |
 | Second floor | `second-floor` | `mdi:home-floor-2` | Primary Bedroom (Bedroom, Cloffice), then Other Bedrooms (Blue Room · Jackson, Pink Room · Penelope, White Room) |
 
 A bubble-card pop-up only opens from cards in its own view, so each pop-up lives in the same tab
@@ -27,10 +27,9 @@ as the cards that open it: Main has `#health-check-popup`, `#tom-primary-bedroom
 `#tom-climate-control`, `#tom-locks` and `#tom-garage-doors`; Outdoor has `#tom-pool-lights` and
 `#tom-pool-heat`; Basement has `#tom-basement-climate`, `#tom-movie-ambient`,
 `#tom-movie-receiver`, `#tom-server-room-ups`, `#tom-cigars`, `#tom-leak-detection`,
-`#tom-concessions-lights`, `#tom-rumpus-lights` and `#tom-great-hall-lights`; Second floor has `#tom-primary-room`,
-`#tom-cloffice-lights`, `#tom-blue-room`, `#tom-pink-room` and `#tom-white-room`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
-view by path or index: `/tom-mobile` (Tom's default panel) opens Main. When a floor tab gets
-cards, replace its "No cards yet." markdown card.
+`#tom-concessions-lights`, `#tom-rumpus-lights` and `#tom-great-hall-lights`; First floor has `#tom-living-room` and `#tom-study`;
+Second floor has `#tom-primary-room`, `#tom-cloffice-lights`, `#tom-blue-room`, `#tom-pink-room` and `#tom-white-room`. Each tab's pop-ups sit at the end of its card list. Nothing links into a
+view by path or index: `/tom-mobile` (Tom's default panel) opens Main.
 
 **Main**
 
@@ -64,6 +63,12 @@ Room cards off it.
 | Main Lights | "Concessions", "Rumpus", "Great Hall": power icon toggles the room, state line = brightness (+ ` · Hold` while held), **Bright** / **Dim**; tap → that room's pop-up (hold is set there) — see *Main Lights* below |
 | Movie Room | "Receiver" (tap → `#tom-movie-receiver`, power icon, −/dB/+, current input; the pop-up has the volume slider, input buttons and Plex/YouTube/Xbox presets), "Recessed" (brightness slider + Bright, Dim, Colors), "Ambient" (tap → `#tom-movie-ambient`, power icon toggles, ◀ ▶ previous/next scene; the pop-up has the dimmer: effects + all 75 gradient scenes) — see *Movie Room* below |
 | Other Rooms | "Server Room Lights": **Lights** (group on/off) and **Hold** (the switch's manual hold) sub-buttons — see *Server Room* below. "Storage Room Lights": **Lights** toggle only — see *Storage Room* below |
+
+**First floor**
+
+| Section (bubble separator) | Cards |
+|---|---|
+| Main Rooms | "Living Room", "Study": icon toggles the recessed lights, **Bright** / **Dim** / **Fan**; tap → that room's pop-up — see *First floor* below |
 
 **Second floor**
 
@@ -505,6 +510,27 @@ or closet) and an Other Bedrooms section with one card per kid/guest room. Built
   and the Nightstands Tom/Kellie chips, plus one Recessed brightness drag, reading HA state after each tap. The
   cloffice lights were off, so they were exercised too. Hue/fan remembered levels were put back afterwards (Z2M
   `state.json` and the fans' `/mf` shadow data were read before the test).
+
+### First floor (added 2026-09-30)
+Tom: every ceiling fan and its room's lights on the dashboard. The Living Room and Study fans are here, and the other
+four are on Second floor, so all six `fan.*` ceiling fans are covered (the spa pumps and waterfall are not ceiling fans).
+Built exactly like the Second floor rooms (same builder helpers).
+
+| Card | Icon / Bright (100 % @ 2750 K) / Dim (30 %) | Fan chip | Pop-up (cards) |
+|---|---|---|---|
+| Living Room | `light.downstairs_livingroom_lights` (Hue recessed group) | `fan.livingroom_fan_fan` | `#tom-living-room`: Recessed, Lamp (`light.downstairs_livingroom_lamp`, Hue group), Sconce (`light.downstairs_livingroom_sconce_inovelli_dimmer`, brightness only), Fan Light (`light.livingroom_fan_light`), Fan |
+| Study | `light.downstairs_study_lights` (Hue recessed group) | `fan.study_fan_fan` | `#tom-study`: Recessed, Bookshelf (`light.downstairs_study_bookshelf_inovelli_dimmer`, brightness only), Fan Light (`light.study_fan_light`), Fan |
+
+- The recessed Inovelli switches in both rooms are in Smart Bulb Mode (they drive the Hue groups), so they are not
+  separate controls. The ZEN32s in both rooms map only the fan light and fan on/off (plus the Study shades).
+- State line: the lit groups with their brightness (`Lamp 20% · Sconce 84% · Fan Light 100%`); over 40 characters it
+  drops the percentages, then falls back to `<n> lights on`. The icon tint follows the recessed group only.
+- **No holds**: no motion automations or hold helpers exist for either room. The Living Room lamp has sunset-on / timed-off
+  automations (`automation.lamp_todo`, `automation.lamp_downstairs_livingroom_sun_rises_turn_off`), which are not a hold.
+- Checked 2026-09-30 at 390 px on the live dashboard: icon, Bright, Dim, the Fan chip (off and straight back on) and every
+  pop-up power icon, with HA state read after each tap. Both fans were running (Living Room speed 1 Summer, Study
+  speed 1 Winter), so the speed and Summer/Winter chips were checked by read-back only: the highlighted chips matched.
+  Remembered levels were put back afterwards.
 
 ### Ported from Kellie Mobile (shared entities — do not fork without reason)
 - Bedroom scenes: `script.kellie_mobile_primary_bedroom_{sleep,bedtime,relaxed,focused}` (shared).
