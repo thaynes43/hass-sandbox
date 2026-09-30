@@ -88,11 +88,20 @@ class BatteryChecker(hass.Hass):
                     level="WARNING",
                 )
                 continue
-            self._threshold_overrides.append((
-                re.compile(override["include"]),
-                float(override.get("warning_threshold", self._warning_threshold)),
-                float(override.get("critical_threshold", self._critical_threshold)),
-            ))
+            warning = float(override.get("warning_threshold", self._warning_threshold))
+            critical = float(override.get("critical_threshold", self._critical_threshold))
+            # critical is checked first and is the one status that pages, so a
+            # transposed pair would page for every healthy reading below it.
+            if critical > warning:
+                self.log(
+                    f"Ignoring threshold override {override['include']!r}: "
+                    f"critical ({critical:.0f}%) is above warning ({warning:.0f}%)",
+                    level="WARNING",
+                )
+                continue
+            self._threshold_overrides.append(
+                (re.compile(override["include"]), warning, critical)
+            )
 
         # Stale-reading detection (opt-in). A cloud-polled integration keeps
         # serving a device's last sample after the device drops off, battery
@@ -107,6 +116,9 @@ class BatteryChecker(hass.Hass):
         ]
         # entity_id -> sibling entity_ids that exist in HA (filled at discovery)
         self._freshness_entities: Dict[str, List[str]] = {}
+        # Entities already warned about having no readable sibling timestamp,
+        # so an inert stale check is logged once, not every cycle.
+        self._freshness_inert_logged: set = set()
 
         # Disconnect-aware guard (opt-in): distinguishes a gateway/RF disconnect
         # (implausible drop from a healthy baseline straight to ~0%) from a
@@ -520,19 +532,32 @@ class BatteryChecker(hass.Hass):
         newest: Optional[datetime.datetime] = None
         for sibling in siblings:
             try:
-                changed = _parse_iso_utc(
-                    self.get_state(sibling, attribute="last_changed")
-                )
+                # Top-level key of the full state object, the read
+                # protect_health_checker already relies on in production.
+                state_obj = self.get_state(sibling, attribute="all")
             except Exception as exc:
                 self.log(
-                    f"Could not read last_changed of {sibling}: {exc}",
+                    f"Could not read state of {sibling}: {exc}",
                     level="DEBUG",
                 )
                 continue
+            changed = _parse_iso_utc(
+                state_obj.get("last_changed") if isinstance(state_obj, dict) else None
+            )
             if changed is not None and (newest is None or changed > newest):
                 newest = changed
         if newest is None:
+            # Never guess stale from missing data, but say so: a silently
+            # inert check would hide a frozen device behind its last sample.
+            if entity_id not in self._freshness_inert_logged:
+                self._freshness_inert_logged.add(entity_id)
+                self.log(
+                    f"Stale-reading check inert for {entity_id}: no readable "
+                    f"last_changed on {', '.join(siblings)}",
+                    level="WARNING",
+                )
             return None
+        self._freshness_inert_logged.discard(entity_id)
         age_s = (datetime.datetime.now(datetime.timezone.utc) - newest).total_seconds()
         return age_s if age_s > self._stale_after_s else None
 

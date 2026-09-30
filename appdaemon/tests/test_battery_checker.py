@@ -1090,6 +1090,23 @@ class TestThresholdOverrides:
             for c in app.log.call_args_list
         )
 
+    def test_transposed_override_is_ignored_not_paging(self):
+        # critical above warning would page every healthy reading below it.
+        app = _make_app({
+            "warning_threshold": 20,
+            "critical_threshold": 5,
+            "threshold_overrides": [
+                {"include": "wave_mini", "warning_threshold": 25, "critical_threshold": 70},
+            ],
+        })
+        _init_only(app)
+        assert app._threshold_overrides == []
+        assert any(
+            c[1].get("level") == "WARNING" and "above warning" in c[0][0]
+            for c in app.log.call_args_list
+        )
+        assert self._eval(app, "sensor.test_wave_mini_battery", "69")["status"] == "ok"
+
     def test_disconnect_seed_uses_override_critical(self):
         # A 20% reading is below the override's critical (25), so it is not
         # a healthy baseline for this entity even though it clears the
@@ -1137,8 +1154,8 @@ def _states_get_state(states: Dict[str, Dict[str, Any]]):
         entity = states.get(entity_id)
         if entity is None:
             return None
-        if attribute == "last_changed":
-            return entity.get("last_changed")
+        if attribute == "all":
+            return entity
         return entity["state"]
 
     return _get_state
@@ -1213,6 +1230,31 @@ class TestStaleReadings:
         }
         app = self._app(states)
         assert app._evaluate_entity("sensor.test_bath_battery", "Bath")["status"] == "ok"
+        # ...but an inert check says so, once per entity rather than per cycle.
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        inert = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" and "check inert" in c[0][0]
+        ]
+        assert len(inert) == 1
+        assert "sensor.test_bath_temperature" in inert[0][0][0]
+
+    def test_inert_warning_rearms_after_timestamps_return(self):
+        states = {
+            "sensor.test_bath_battery": _battery("96"),
+            "sensor.test_bath_temperature": _sibling(None),
+        }
+        app = self._app(states)
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        states["sensor.test_bath_temperature"]["last_changed"] = _ago(hours=1)
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        states["sensor.test_bath_temperature"]["last_changed"] = None
+        app._evaluate_entity("sensor.test_bath_battery", "Bath")
+        inert = [
+            c for c in app.log.call_args_list
+            if c[1].get("level") == "WARNING" and "check inert" in c[0][0]
+        ]
+        assert len(inert) == 2
 
     def test_disabled_by_default_reads_no_siblings(self):
         states = {
@@ -1227,7 +1269,7 @@ class TestStaleReadings:
         assert result["status"] == "ok"
         assert app._freshness_entities == {}
         assert not any(
-            c[1].get("attribute") == "last_changed"
+            c[0][:1] == ("sensor.test_bath_temperature",)
             for c in app.get_state.call_args_list
         )
 

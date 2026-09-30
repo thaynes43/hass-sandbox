@@ -71,8 +71,11 @@ Some models report a percentage that is not linear in remaining life. The
 Airthings Wave Mini is the motivating case: it drifts 1-2 points a month down
 to about 65%, then falls to 0 within about five weeks and goes dark (Primary
 Bathroom unit, Nov-Dec 2025: `64 → 39 → 28 → 11 → 0`). A group-wide 20%
-warning fires about two weeks before such a unit dies. `threshold_overrides`
-gives matching entities their own thresholds inside the same checker:
+warning fires about two weeks before such a unit dies. Airthings publishes no
+low-battery percentage for its consumer Wave devices; its Business devices flag
+low battery below 15%, far too late for the Wave Mini's drop-off.
+`threshold_overrides` gives matching entities their own thresholds inside the
+same checker:
 
 ```yaml
   threshold_overrides:
@@ -83,8 +86,10 @@ gives matching entities their own thresholds inside the same checker:
 
 `include` is a regex (`re.search`) on the entity ID. The first matching
 override wins. An override that leaves out one threshold inherits the
-checker's default for it. The disconnect-aware baseline uses the entity's own
-`critical_threshold`.
+checker's default for it. An override whose `critical_threshold` is above its
+`warning_threshold` is ignored with a WARNING, because a transposed pair would
+page for every healthy reading. The disconnect-aware baseline uses the
+entity's own `critical_threshold`.
 
 #### Stale-reading detection (opt-in)
 
@@ -98,7 +103,8 @@ or `_battery_level` removed, plus each suffix. When none of them has changed
 within `stale_after_h`, an ok reading becomes **warning** ("offline? no new
 reading for 8d (temperature/humidity unchanged); 96% is its last sample"). A
 warning or critical reading keeps its status and gets the same note added.
-A missing or unreadable timestamp never counts as stale. An HA restart resets
+A missing or unreadable timestamp never counts as stale; the checker logs a
+WARNING once per entity that the check is inert. An HA restart resets
 `last_changed`, so a stale device is re-flagged `stale_after_h` after a restart.
 
 | Option | Default | Meaning |
