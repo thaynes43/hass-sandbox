@@ -6,7 +6,7 @@ use_blueprint:
     motion_sensors:
       - binary_sensor.upstairs_primary_hall_night_light_occupancy
       - binary_sensor.upstairs_primary_bath_night_light_occupancy
-      - binary_sensor.downstairs_foyer_night_light_occupancy
+      - binary_sensor.upstairs_foyer_night_light_occupancy
     illuminance_sensor: sensor.upstairs_primary_hall_night_light_illuminance
     light_target:
       entity_id: light.upstairs_primary_hall_night_light
