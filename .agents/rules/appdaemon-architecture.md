@@ -262,6 +262,21 @@ async def _async_startup(self) -> None:
     self.listen_event(self._on_command, "my_app_command")
 ```
 
+**Schedule the startup last, and never from a base class's `initialize()`
+that a subclass extends.** AppDaemon can fire the `run_in(..., 0)` callback,
+and so start `_async_startup`, while `initialize()` is still running. A base
+class that schedules at the end of its own `initialize()` therefore races
+every subclass that sets state after `super().initialize()`. On 2026-10-03
+the Z-Wave checker lost that race after an AppDaemon re-initialisation: its
+startup ran before `_repair_attempts` existed, died on an `AttributeError`,
+never registered, and every checker depending on `zwave` read `unknown`
+until the app was restarted. The checker base classes (`BasicDeviceChecker`,
+`DeviceGroupChecker`, `NetworkProtocolChecker`) now split the work:
+`initialize()` calls `self._configure()` and only then schedules the
+startup. Subclasses override `_configure()`, call `super()._configure()`
+first, and never override `initialize()`. Follow the same shape for any new
+base class meant to be subclassed.
+
 ## 6) File serving: `/media/` storage → `/config/www/` via shell commands
 
 AppDaemon apps that generate or manage files (images, JS assets) must follow a two-directory pattern dictated by HA's architecture:

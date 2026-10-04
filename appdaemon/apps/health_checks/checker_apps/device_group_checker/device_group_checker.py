@@ -35,6 +35,21 @@ class DeviceGroupChecker(hass.Hass):
     # ------------------------------------------------------------------
 
     def initialize(self) -> None:
+        self._configure()
+        # Schedule startup only once the WHOLE _configure() chain has run.
+        # AppDaemon can fire this run_in(0) callback, and so start
+        # _async_startup, while initialize() is still executing. When the
+        # schedule sat at the end of the base initialize(), a subclass that
+        # set its own state after super().initialize() raced it: on
+        # 2026-10-03 the Z-Wave checker's startup ran ~200 ms before
+        # RepairableNetworkProtocolChecker had set _repair_attempts, died on
+        # an AttributeError, never registered, and every checker depending
+        # on "zwave" read unknown until the app was restarted. Subclasses
+        # override _configure(), never initialize().
+        self.run_in(self._on_startup, 0)
+
+    def _configure(self) -> None:
+        """Read args and build state. Must not schedule anything."""
         args = self.args or {}
 
         # Identity
@@ -82,8 +97,6 @@ class DeviceGroupChecker(hass.Hass):
             f"devices={[d['name'] for d in self._devices]}",
             level="INFO",
         )
-
-        self.run_in(self._on_startup, 0)
 
     def _on_startup(self, kwargs: Any) -> None:
         self.create_task(self._async_startup())

@@ -45,7 +45,11 @@ Any check can be disabled by omitting its config key. YAML bool coercion is hand
 
 ## RepairableDeviceChecker
 
-`RepairableDeviceChecker` extends `BasicDeviceChecker` with smart-switch power-cycle repair. Same check config, plus:
+`RepairableDeviceChecker` extends `BasicDeviceChecker` with smart-switch power-cycle repair.
+
+**Subclassing:** the base class's `initialize()` calls `_configure()` and only then schedules `_async_startup`. A subclass extends `_configure()` (calling `super()._configure()` first), never `initialize()`: AppDaemon can start the startup while `initialize()` is still running, so state set after `super().initialize()` raced it. On 2026-10-03 that race left the `zwave` checker unregistered and every checker depending on it `unknown` (see `.agents/rules/appdaemon-architecture.md` section 5).
+
+Same check config, plus:
 
 ```yaml
 printer_health_checker:

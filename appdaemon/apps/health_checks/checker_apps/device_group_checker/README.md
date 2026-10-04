@@ -7,6 +7,8 @@ Two classes are provided:
 - **`DeviceGroupChecker`** — monitors multiple devices with entity state checks and optional IP pings. No repair support.
 - **`RepairableDeviceGroupChecker`** — extends `DeviceGroupChecker` with per-device repair via smart switch power cycling.
 
+**Subclassing:** the base class's `initialize()` calls `_configure()` and only then schedules `_async_startup`. A subclass extends `_configure()` (calling `super()._configure()` first), never `initialize()`: AppDaemon can start the startup while `initialize()` is still running, so state set after `super().initialize()` raced it. On 2026-10-03 that race left the `zwave` checker unregistered and every checker depending on it `unknown` (see `.agents/rules/appdaemon-architecture.md` section 5).
+
 ## Check Naming
 
 For each device, checks are named as `"{device_name} {entity_check_name}"` and (if `ip` is provided) `"{device_name} Ping"`.

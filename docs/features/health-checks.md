@@ -81,7 +81,7 @@ Each individual check reports one of five statuses. The controller rolls these u
 
 ### Dependency System
 
-Checkers can declare dependencies on other checkers. When a dependency is unhealthy, the controller automatically marks affected checks as `unknown` instead of reporting misleading failures.
+Checkers can declare dependencies on other checkers. When a dependency is unhealthy, or has not registered at all, the controller automatically marks affected checks as `unknown` instead of reporting misleading failures.
 
 For example, MQTT device checks depend on the MQTT broker checker. If the broker itself is down, individual device checks show as `unknown` rather than `critical` — because the real problem is the broker, not the devices.
 
