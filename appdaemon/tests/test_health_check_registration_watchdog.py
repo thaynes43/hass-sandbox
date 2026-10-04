@@ -670,6 +670,19 @@ class TestFailedRegistration:
         assert "lab_dev" in app._checkers
         assert "lab_dev" in _sensor(app)[1]
 
+    def test_id_whose_local_app_left_can_register_from_another_appdaemon(self):
+        """After this instance's app for an id is removed, the same id
+        registering from a laptop must not be dropped (review round 13)."""
+        app, clock = self._incident()
+        _register(app, "zwave")
+        del app.ad.app_config["zwave_health_checker"]
+        _advance_to(app, clock, 60)
+        assert "zwave" not in app._checkers
+        _register(app, "zwave")  # now from a dev AppDaemon
+        _advance_to(app, clock, 600)
+        assert "zwave" in app._checkers
+        assert app._metrics is not None
+
     def test_empty_read_never_drops_registrations(self):
         app, clock = self._incident()
         _register(app, "zwave")

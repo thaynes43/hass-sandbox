@@ -1329,6 +1329,9 @@ class HealthCheckController(hass.Hass):
         """
         checker = self._checkers.pop(checker_id)
         self._reg_saved_history[checker_id] = checker.get("alert_history") or []
+        # This instance no longer has its app: a later registration of the
+        # same id from another AppDaemon is foreign again, not ours to drop.
+        self._reg_local_ids.discard(checker_id)
         reason = "its app is no longer configured"
         self.log(
             f"Registration watchdog: checker '{checker_id}' was registered but "

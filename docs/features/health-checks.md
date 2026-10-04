@@ -42,19 +42,21 @@ This architecture means adding a new health check is often just a YAML config ch
 
 ### Event-Driven Architecture
 
-Checker apps and the controller communicate exclusively through Home Assistant events — never through direct Python references. This means:
+Checker apps and the controller exchange all status and commands through Home Assistant events — never through direct Python references. This means:
 
 - The controller can run in production Kubernetes while a new checker is being developed on a laptop
 - Checkers can restart independently without affecting others
 - Adding a new checker type requires no changes to the controller
+
+The one exception is the controller's watchdog for checkers that never register. It reads AppDaemon's own list of apps to know which checkers should be present, and asks AppDaemon to restart one that is missing (see [the health checks themselves](#auto-heal-first-page-if-that-fails)). That only covers checker apps running in the same AppDaemon as the controller; a checker on a laptop is never restarted.
 
 ```
 Checker Apps (Zigbee, Z-Wave, MQTT, Spa, Fans, ...)
   │
   │  register_checker / report_status events
   ▼
-HealthCheckController
-  │
+HealthCheckController ──▶ AppDaemon admin namespace (app list, app/restart)
+  │                          — only for checkers that never register
   │  set_state()
   ▼
 sensor.health_check_status
