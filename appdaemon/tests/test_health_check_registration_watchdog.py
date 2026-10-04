@@ -422,7 +422,7 @@ class TestFailedRegistration:
         assert "dependents masked: Z-Wave Batteries" in reg["detail"]
         assert "1 automatic restart(s) of app 'zwave_health_checker'" in reg["detail"]
         assert any(
-            "checker 'zwave' (Z-Wave) is still not registered" in line
+            "checker 'zwave' (Z-Wave) has been missing 300s" in line
             for line in _log_lines(app, "WARNING")
         )
 
@@ -1191,6 +1191,32 @@ class TestAppDaemonLifecycle:
         self._others_registered(app)
         _register(app, "zwave")
         assert app._reg_recent == {}
+
+    def test_declarer_dying_keeps_its_declared_only_dependency_tracked(self):
+        """A dependency only one checker declares must not drop out of
+        "expected" (resolving its page, wiping its episode) because that
+        checker's app died for a moment (review round 12)."""
+        app, clock = _make_app()
+        for checker_id in ("zwave", "mqtt_broker", "basement_lights"):
+            _register(app, checker_id)
+        _command(app, "register_checker", {
+            **REGISTRATIONS["zwave_batteries"],
+            "dependencies": [{"checker_id": "zwave"}, {"checker_id": "ghost"}],
+        })
+        _advance_to(app, clock, 660)
+        assert "ghost" in app._alert_bridge.active_alerts
+        since = app._unregistered["ghost"]["since"]
+
+        app.ad.app_states["zwave_battery_checker"] = "terminated"
+        _advance_to(app, clock, 720)
+        assert "zwave_batteries" not in app._checkers  # voided
+        assert app._unregistered["ghost"]["since"] == since
+        assert app._unregistered["ghost"]["surfaced"] is True
+        assert "ghost" in app._alert_bridge.active_alerts
+        assert not any(
+            "ghost" in l and "no longer configured or depended on" in l
+            for l in _log_lines(app)
+        )
 
     def test_disabled_then_reenabled_app_starts_a_fresh_budget(self):
         """Forgetting a departed checker forgets its episode too (round 10)."""

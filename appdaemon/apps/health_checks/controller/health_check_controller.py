@@ -243,6 +243,11 @@ class HealthCheckController(hass.Hass):
         # checker_ids whose registration was voided this tick because their
         # app died: the absence that follows is a death, not start-up.
         self._reg_died: Set[str] = set()
+        # Dependencies declared by a checker whose registration was voided
+        # (its app died): checker_id → {"name", "dependencies"}.  They stay
+        # declared while it is tracked, so a dependency that only it declares
+        # does not drop out of "expected" and lose its episode and page.
+        self._reg_voided_deps: Dict[str, Dict[str, Any]] = {}
         self._reg_can_restart: bool = True
         self._reg_armed_logged: bool = False
         self._reg_first_tick_at: Optional[float] = None
@@ -1072,9 +1077,15 @@ class HealthCheckController(hass.Hass):
         self.log(message, level="WARNING")
 
     def _declared_dependencies(self) -> Dict[str, List[str]]:
-        """checker_id → names of the registered checkers that depend on it."""
+        """checker_id → names of the checkers that depend on it: registered
+        ones, plus ones whose registration was voided because their app died
+        (they are expected back, and so are their dependencies)."""
+        declarers = list(self._checkers.values()) + [
+            voided for cid, voided in self._reg_voided_deps.items()
+            if cid not in self._checkers
+        ]
         declared: Dict[str, List[str]] = {}
-        for checker in self._checkers.values():
+        for checker in declarers:
             for dep in checker.get("dependencies") or []:
                 dep_id = (dep or {}).get("checker_id", "")
                 if dep_id:
@@ -1211,10 +1222,16 @@ class HealthCheckController(hass.Hass):
                     timespec="seconds"
                 )
                 self._restore_mute_for_unregistered(checker_id)
+                missing = now - entry["missing_since"]
+                episode = (
+                    f" (crash-loop episode {age:.0f}s)"
+                    if entry.get("resumed_after_s") is not None
+                    else ""
+                )
                 self.log(
                     f"Registration watchdog: checker '{checker_id}' "
-                    f"({entry['name']}) is still not registered {age:.0f}s "
-                    f"after it became expected — reporting it as critical. "
+                    f"({entry['name']}) has been missing {missing:.0f}s"
+                    f"{episode} — reporting it as critical. "
                     f"{self._unregistered_detail(checker_id, entry)}",
                     level="WARNING",
                 )
@@ -1234,6 +1251,9 @@ class HealthCheckController(hass.Hass):
             )
 
         self._reg_died.clear()
+        for checker_id in list(self._reg_voided_deps):
+            if checker_id not in self._unregistered:
+                del self._reg_voided_deps[checker_id]
         for checker_id in list(self._reg_recent):
             if now - self._reg_recent[checker_id]["registered_at"] >= REGISTRATION_STABLE_S:
                 del self._reg_recent[checker_id]
@@ -1288,6 +1308,10 @@ class HealthCheckController(hass.Hass):
         checker = self._checkers.pop(checker_id)
         self._reg_saved_history[checker_id] = checker.get("alert_history") or []
         self._reg_died.add(checker_id)
+        self._reg_voided_deps[checker_id] = {
+            "name": checker.get("name", checker_id),
+            "dependencies": list(checker.get("dependencies") or []),
+        }
         self.log(
             f"Registration watchdog: checker '{checker_id}' registered earlier "
             f"but its app '{cfg['app']}' is now {cfg.get('app_state')} — "
@@ -1388,7 +1412,7 @@ class HealthCheckController(hass.Hass):
             restarts = entry["attempts"]
             self.log(
                 f"Registration watchdog: checker '{checker_id}' {reason} after "
-                f"{self._monotonic() - entry['since']:.0f}s "
+                f"{self._monotonic() - entry.get('missing_since', entry['since']):.0f}s "
                 f"({restarts} restart{'s' if restarts != 1 else ''}"
                 f"{', had been reported critical' if entry['surfaced'] else ''})",
                 level="INFO",
@@ -1408,6 +1432,7 @@ class HealthCheckController(hass.Hass):
         # A departed checker carries no episode forward either: re-enabled
         # later, it starts with a fresh restart budget.
         self._reg_recent.pop(checker_id, None)
+        self._reg_voided_deps.pop(checker_id, None)
         if self._alert_bridge is not None:
             self.create_task(self._alert_bridge.forget(checker_id, reason))
         if self._metrics_enabled:
