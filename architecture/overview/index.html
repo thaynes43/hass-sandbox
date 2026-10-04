@@ -1093,15 +1093,16 @@
 <a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>                                     │  ├─ photo_providers│
 <a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>                                     │  ├─ media_providers│
 <a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>                                     │  ├─ school_menu    │
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>                                     │  └─ alertmanager   │
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>                                     └───────────────────-┘
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>                                              │
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                                     External APIs
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                                     (OpenAI, Gemini, Ollama,
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>                                      ComfyUI, Immich,
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>                                      School Nutrition and Fitness,
-<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>                                      Tautulli, TMDb, SerpApi,
-<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>                                      Alertmanager)
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>                                     │  ├─ alertmanager   │
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>                                     │  └─ metrics        │
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>                                     └───────────────────-┘
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>                                              │
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>                                     External APIs
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>                                     (OpenAI, Gemini, Ollama,
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>                                      ComfyUI, Immich,
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>                                      School Nutrition and Fitness,
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>                                      Tautulli, TMDb, SerpApi,
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>                                      Alertmanager)
 </code></pre></div>
 <h2 id="data-flow-paths">Data flow paths</h2>
 <table>
@@ -1139,6 +1140,16 @@
 <td>Unauthenticated <code>HEAD /local/...</code> to confirm HA is really serving a file an app asked it to stage</td>
 </tr>
 <tr>
+<td><strong>Checker self-heal</strong></td>
+<td>AppDaemon → AppDaemon (admin namespace)</td>
+<td>The health-check controller reads the <code>app.&lt;name&gt;</code> entities to learn which checker apps should exist and what state they are in, and calls <code>app/restart</code> on one that never registered</td>
+</tr>
+<tr>
+<td><strong>Metrics exposition</strong></td>
+<td>Prometheus → AppDaemon</td>
+<td>The cluster's Prometheus scrapes <code>:9100/metrics</code>, served by the <code>metrics</code> provider for the health-check controller. Apart from AppDaemon's own admin UI and API on port 5050, it is the only inbound HTTP path</td>
+</tr>
+<tr>
 <td><strong>Entity classification</strong></td>
 <td>AppDaemon → HA</td>
 <td><code>render_template()</code> over the device registry — <code>zigbee_ota</code> asks each tick which <code>update.*</code> entities are really Zigbee2MQTT devices, which is what makes a fleet-wide glob safe</td>
@@ -1157,7 +1168,7 @@
 </ol>
 <p>This pattern works for non-admin users (unlike <code>fire_event</code> which requires admin).</p>
 <h3 id="health-monitoring">Health monitoring</h3>
-<p>The <a href="../../features/health-checks/">health check system</a> uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes commands. The controller also mirrors checker status into the cluster's Alertmanager via the <code>alertmanager</code> provider — critical findings page the phone, and recovery resolves the alert once it holds, so a flapping condition pages <a href="../../features/health-checks/#one-page-per-incident">once per incident</a> rather than once per swing.</p>
+<p>The <a href="../../features/health-checks/">health check system</a> uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes those commands. The one recovery the controller does itself is for checkers that never announce themselves. It reads AppDaemon's own list of apps to know which checkers should be present, restarts one that is missing (a few times, with growing waits), and reports it as a critical checker if it stays missing, so a dead checker can't silently hide the checks that depend on it (<a href="../../features/health-checks/#auto-heal-first-page-if-that-fails">details</a>). The controller exports every checker's status, repair outcomes and checker-supplied values as Prometheus metrics through the <code>metrics</code> provider, which the cluster scrapes for Grafana history (<a href="../../features/health-checks/#metrics-and-history">details</a>). It also mirrors checker status into the cluster's Alertmanager via the <code>alertmanager</code> provider — critical findings page the phone, and recovery resolves the alert once it holds, so a flapping condition pages <a href="../../features/health-checks/#one-page-per-incident">once per incident</a> rather than once per swing.</p>
 <h3 id="container-separation">Container separation</h3>
 <p>HA and AppDaemon run in separate Kubernetes pods. They share a <code>/media</code> NFS mount for file exchange. AppDaemon cannot access <code>/config/www/</code> directly — it uses HA <code>shell_command</code> services for file operations in that directory. Because a shell command's result says little about whether the files actually landed, apps confirm the outcome by requesting the same <code>/local/...</code> URL the dashboard card will load, and only publish it once Home Assistant answers.</p>
 

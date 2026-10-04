@@ -1048,6 +1048,14 @@
 <td>LLM and image generation adapters (OpenAI, Gemini, Ollama, ComfyUI)</td>
 </tr>
 <tr>
+<td><strong>alertmanager</strong></td>
+<td>Minimal Prometheus Alertmanager client the health-check controller pages through</td>
+</tr>
+<tr>
+<td><strong>metrics</strong></td>
+<td>Prometheus exporter for the health-check controller: checker status, repairs and checker-supplied values</td>
+</tr>
+<tr>
 <td><strong>ha_provisioner</strong></td>
 <td>Idempotent HA entity provisioning (scripts, helpers), reading and writing the voice-assistant exposure list, plus a check that Home Assistant is really serving a staged <code>/local/...</code> file</td>
 </tr>
@@ -1100,21 +1108,24 @@
 <a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a>  └─ checker apps fire health_check_command events
 <a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>       └─ health_check_controller (aggregates → sensor.health_check_status)
 <a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>            └─ health-check-card / health-check-detail-card (reads sensor)
-<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>
-<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi)
-<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>  └─ publishes sensor.media_dashboard_status + sensor.media_dashboard_detail
-<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>       └─ media-dashboard-card / media-dashboard-detail-card (reads sensors)
-<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>
-<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>countdown_app (standalone — generates images via ai_providers)
-<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>  └─ publishes sensor.countdown_status
-<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>       └─ countdown-card / countdown-config-card (reads sensor)
-<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>
-<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin;
-<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>            asks Home Assistant which update entities are Zigbee2MQTT devices)
-<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>  └─ publishes sensor.zigbee_ota_orchestrator
-<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>
-<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)
-<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>  └─ publishes sensor.assist_exposure_guard + a persistent notification
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a>            └─ pages through Alertmanager (alertmanager provider), exports metrics (metrics provider)
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a>            └─ reads AppDaemon's app list → restarts a checker app that never registered,
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>               then reports it as a critical checker if it stays missing
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi)
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a>  └─ publishes sensor.media_dashboard_status + sensor.media_dashboard_detail
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a>       └─ media-dashboard-card / media-dashboard-detail-card (reads sensors)
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a>
+<a id="__codelineno-0-35" name="__codelineno-0-35" href="#__codelineno-0-35"></a>countdown_app (standalone — generates images via ai_providers)
+<a id="__codelineno-0-36" name="__codelineno-0-36" href="#__codelineno-0-36"></a>  └─ publishes sensor.countdown_status
+<a id="__codelineno-0-37" name="__codelineno-0-37" href="#__codelineno-0-37"></a>       └─ countdown-card / countdown-config-card (reads sensor)
+<a id="__codelineno-0-38" name="__codelineno-0-38" href="#__codelineno-0-38"></a>
+<a id="__codelineno-0-39" name="__codelineno-0-39" href="#__codelineno-0-39"></a>zigbee_ota (standalone — drives Zigbee2MQTT OTA via the MQTT plugin;
+<a id="__codelineno-0-40" name="__codelineno-0-40" href="#__codelineno-0-40"></a>            asks Home Assistant which update entities are Zigbee2MQTT devices)
+<a id="__codelineno-0-41" name="__codelineno-0-41" href="#__codelineno-0-41"></a>  └─ publishes sensor.zigbee_ota_orchestrator
+<a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>
+<a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>assist_exposure_guard (standalone — guards the Assist exposure list via ha_provisioner)
+<a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>  └─ publishes sensor.assist_exposure_guard + a persistent notification
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Per-app documentation</p>
