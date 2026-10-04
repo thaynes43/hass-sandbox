@@ -33,7 +33,10 @@ This architecture means adding a new health check is often just a YAML config ch
 | Voice assistant | Speech-to-text and text-to-speech servers (Wyoming handshake) and the assistant's language model — what the phone's Assist card shows | `VoiceHealthChecker` |
 | Batteries | Z-Wave, shade, lock, Airthings, Protect, Zigbee levels — with per-model thresholds for batteries that fall off a cliff (Airthings Wave Mini), a stale-reading check for cloud devices that went quiet, and an opt-in guard that tells a real low battery from a gateway-disconnect 0% | `BatteryChecker` |
 | Motorized shades | PowerView G3 gateway RF-disconnect detection, with PoE port power-cycle repair | `ShadeGatewayChecker` |
+| Internet | HTTPS reachability of Google, Cloudflare and Apple, which the cloud integrations depend on | `CloudChecker` |
+| Power | Battery charge and load of each UPS | `UpsChecker` |
 | AppDaemon itself | Heartbeat timestamp — the card detects staleness client-side | Controller heartbeat |
+| The checkers themselves | Every configured checker has registered; a missing one is restarted, then reported as a red tile | Controller registration watchdog |
 
 ## How It Works
 
@@ -323,6 +326,14 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Voice | `VoiceHealthChecker` | Wyoming `describe` handshake to the speech-to-text and text-to-speech servers; the phone's conversation agent loaded and its local LLM server healthy | No — page only |
 | Shade Batteries | `BatteryChecker` | PowerView shade battery levels; downgrades implausible drops to warning (disconnect-aware) so a gateway blip isn't a low-battery page | No |
 | Shade Gateway | `ShadeGatewayChecker` | Gateway RF-disconnect detection across all PowerView shades (implausible 0% flaps), gateway-wide episode tracking | Yes — PoE port 32 power-cycle |
+| Cloud | `CloudChecker` | HTTPS reachability of Google, Cloudflare and Apple — the internet connection the cloud integrations need | No |
+| UPS | `UpsChecker` | Battery charge and load of each UPS; pages straight away, never debounced | No |
+| Z-Wave Batteries | `BatteryChecker` | Z-Wave device battery levels, leak sensors included; shown grey while Z-Wave itself is down | No |
+| Zigbee Batteries | `BatteryChecker` | Zigbee sensor battery levels; shown grey while Zigbee is down | No |
+| Schlage | `BatteryChecker` | Door-lock battery levels; shown grey while the Cloud check is failing | No |
+| Airthings | `BatteryChecker` | Air-quality monitor batteries, with a lower threshold for the Wave Minis (they fall off a cliff) and a check for readings that stopped | No |
+| UniFi Batteries | `BatteryChecker` | UniFi Protect entry-sensor batteries; shown grey while UniFi Protect is down | No |
+| Downstairs, Upstairs and Exterior Lights | `MqttDeviceChecker` | Same as Basement Lights, for the rest of the house | No |
 
 ## Related
 

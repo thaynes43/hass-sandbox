@@ -26,6 +26,8 @@
 | Provider | Description |
 |----------|-------------|
 | **ai_providers** | LLM and image generation adapters (OpenAI, Gemini, Ollama, ComfyUI) |
+| **alertmanager** | Minimal Prometheus Alertmanager client the health-check controller pages through |
+| **metrics** | Prometheus exporter for the health-check controller: checker status, repairs and checker-supplied values |
 | **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers), reading and writing the voice-assistant exposure list, plus a check that Home Assistant is really serving a staged `/local/...` file |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
 | **school_menu** | Async client for the School Nutrition and Fitness API |
@@ -62,6 +64,9 @@ health_checks (controller + checker_apps)
   └─ checker apps fire health_check_command events
        └─ health_check_controller (aggregates → sensor.health_check_status)
             └─ health-check-card / health-check-detail-card (reads sensor)
+            └─ pages through Alertmanager (alertmanager provider), exports metrics (metrics provider)
+            └─ reads AppDaemon's app list → restarts a checker app that never registered,
+               then reports it as a critical checker if it stays missing
 
 media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi)
   └─ publishes sensor.media_dashboard_status + sensor.media_dashboard_detail
