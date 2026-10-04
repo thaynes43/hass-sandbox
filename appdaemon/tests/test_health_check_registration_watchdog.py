@@ -1154,6 +1154,34 @@ class TestAppDaemonLifecycle:
         assert app.restart_app.call_count == 3
         assert _sensor(app)[1]["zwave"]["status"] == "critical"
         assert any(a["labels"]["checker"] == "zwave" for a in _posted_alerts(app))
+        # The detail names the loop and times this absence (since the budget
+        # ran out it has stayed down), not the whole episode.
+        entry = app._unregistered["zwave"]
+        assert entry["missing_since"] > entry["since"]
+        detail = _sensor(app)[1]["zwave"]["checks"][0]["detail"]
+        minutes = round((clock.t - entry["missing_since"]) / 60)
+        assert f"not registered with the controller after {minutes} min" in detail
+        assert "(crash loop)" in detail
+        assert "brought it back but it did not stay registered" in detail
+
+    def test_disabled_then_reenabled_app_starts_a_fresh_budget(self):
+        """Forgetting a departed checker forgets its episode too (round 10)."""
+        app, clock = _make_app()
+        self._others_registered(app)
+        _advance_to(app, clock, 120)  # restart 1
+        _register(app, "zwave")
+        assert "zwave" in app._reg_recent
+        zwave_app = app.ad.app_config.pop("zwave_health_checker")
+        batteries = app.ad.app_config.pop("zwave_battery_checker")
+        app._checkers.pop("zwave_batteries")  # nothing depends on zwave now
+        _advance_to(app, clock, 180)
+        assert "zwave" not in app._checkers
+        assert "zwave" not in app._reg_recent
+        app.ad.app_config["zwave_health_checker"] = zwave_app  # re-enabled
+        app.ad.app_config["zwave_battery_checker"] = batteries
+        _advance_to(app, clock, 240)
+        assert app._unregistered["zwave"]["attempts"] == 0
+        assert app._unregistered["zwave"]["surfaced"] is False
 
     def test_registration_that_holds_starts_a_fresh_budget(self):
         app, clock = _make_app()

@@ -1145,7 +1145,11 @@ class HealthCheckController(hass.Hass):
             entry = self._unregistered.get(checker_id)
             if entry is None:
                 entry = {
+                    # Episode start (surfacing counts from here; a resumed
+                    # crash-loop episode keeps the original) vs this absence.
                     "since": now,
+                    "missing_since": now,
+                    "resumed_after_s": None,
                     "started_at": None,
                     "attempts": 0,
                     "next_restart_at": None,
@@ -1158,6 +1162,7 @@ class HealthCheckController(hass.Hass):
                 if recent is not None:
                     entry["attempts"] = recent["attempts"]
                     entry["since"] = recent["since"]
+                    entry["resumed_after_s"] = now - recent["registered_at"]
                     self.log(
                         f"Registration watchdog: checker '{checker_id}' is "
                         f"missing again {now - recent['registered_at']:.0f}s "
@@ -1389,6 +1394,9 @@ class HealthCheckController(hass.Hass):
         so without this the page would be re-posted for ever with no tile to
         mute it from.
         """
+        # A departed checker carries no episode forward either: re-enabled
+        # later, it starts with a fresh restart budget.
+        self._reg_recent.pop(checker_id, None)
         if self._alert_bridge is not None:
             self.create_task(self._alert_bridge.forget(checker_id, reason))
         if self._metrics_enabled:
@@ -1411,11 +1419,17 @@ class HealthCheckController(hass.Hass):
 
     def _unregistered_detail(self, checker_id: str, entry: Dict[str, Any]) -> str:
         """Human-readable detail for an expected checker that never registered."""
-        missing_s = self._monotonic() - entry["since"]
+        missing_s = self._monotonic() - entry.get("missing_since", entry["since"])
         duration = (
             f"{missing_s:.0f}s" if missing_s < 120 else f"{round(missing_s / 60)} min"
         )
         parts = [f"not registered with the controller after {duration}"]
+        resumed = entry.get("resumed_after_s") is not None
+        if resumed:
+            parts.append(
+                f"missing again {entry['resumed_after_s']:.0f}s after it last "
+                "registered (crash loop)"
+            )
         declared_by = entry.get("declared_by") or []
         if declared_by:
             parts.append("dependents masked: " + ", ".join(declared_by))
@@ -1445,13 +1459,18 @@ class HealthCheckController(hass.Hass):
         elif attempts == 0:
             parts.append(f"restart of app '{app}' pending")
         elif attempts < self._reg_restart_attempts:
+            outcome = "brought it back but it did not stay" if resumed else "did not help"
             parts.append(
-                f"{attempts} automatic restart(s) of app '{app}' did not help; "
+                f"{attempts} automatic restart(s) of app '{app}' {outcome}; "
                 "retrying"
             )
         else:
+            outcome = (
+                "brought it back but it did not stay registered" if resumed
+                else "did not help"
+            )
             parts.append(
-                f"{attempts} automatic restart(s) of app '{app}' did not help — "
+                f"{attempts} automatic restart(s) of app '{app}' {outcome} — "
                 "check the AppDaemon error log"
             )
         return "; ".join(parts)

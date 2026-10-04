@@ -150,17 +150,26 @@ Run these gates first, in order — several send you straight to skip/escalate:
    restarts the watchdog has made (up to 3, at 120 s, then +240 s, then
    +480 s, each counted from when AppDaemon last finished starting the app).
    Do **not** work the checker's own runbook. Instead:
-   - While the detail says `retrying` or `restart of app … pending`, the
-     watchdog is still self-healing. `record_note` the wake and skip.
+   - While the detail says `retrying`, `restart of app … pending` or
+     `AppDaemon has not finished starting app …`, the watchdog is still
+     self-healing (in the last case it waits for AppDaemon to finish a start
+     or restart before its next try). `record_note` the wake and skip.
    - Otherwise, pull the start-up traceback for the app named in the detail:
      `{namespace="home-automation", app="appdaemon"} |~ "<app name>|Unhandled exception|failed to start"`.
      Then **Escalate** with that traceback. The fix is code or config, which
      is not a Shepherd lever.
+   - `missing again …s after it last registered (crash loop)` together with
+     `brought it back but it did not stay registered` means the app starts
+     but dies again soon after: restarts are spent and will not hold. Pull
+     the traceback as above and **Escalate** as a crash loop. The leading
+     duration is how long it has been down *this* time, not the whole episode.
    - `no checker app with checker_id '<id>' is configured` means another
      checker still declares `<id>` as a dependency but no app provides it
      (a typo, or an app that was removed). That is a config error: **Escalate**.
-   - `automatic restarts are off` (`registration_restart_attempts: 0`) or
-     `AppDaemon's app list could not be read` means no restart is coming.
+   - `automatic restarts are off` (`registration_restart_attempts: 0`, or an
+     AppDaemon with no `restart_app()`; the controller logs "AppDaemon offers
+     no restart_app()" at start-up in that case) or `AppDaemon's app list
+     could not be read` means no restart is coming. Say which in the escalation.
      Pull the traceback as above and **Escalate**.
    - The alert resolves by itself once the checker registers, after the
      controller's usual improvement hold.

@@ -214,6 +214,8 @@ The power strip taught a second lesson. Switching one of its outlets makes the w
 
 ## Metrics and History
 
+<!-- TODO: screenshot of a Grafana panel showing checker status history (appdaemon_health_checker_status) -->
+
 The controller publishes the same health data as Prometheus metrics, which the cluster's Prometheus collects for Grafana: every checker's and check's status, how long each has been in that state, repair outcomes and recovery times, and values some checkers report themselves, such as humidity, battery level and the image-generation queue. That gives history and graphs behind the alerts. See `appdaemon/providers/metrics/README.md` for the interface and the *Prometheus Metrics* section of `appdaemon/apps/health_checks/README.md` for every metric.
 
 ## Dashboard Experience
@@ -237,7 +239,8 @@ The detail card provides a full breakdown:
 - **Clear History** button to dismiss resolved alerts
 - **Repair controls** for repair-capable checkers (manual trigger, cancel pending repair, auto-repair toggle, delay setting)
 - **Mute controls** on every checker's Alerting row — silence its paging for a day, a week, or indefinitely (a MUTED badge and one-tap Unmute show while active)
-- **Missing checkers** appear as their own red section with a single **Registration** check and no last-check time. It explains what is wrong; mute and notes still work on it (see [the health checks themselves](#auto-heal-first-page-if-that-fails))
+- **Triage notes** that automations leave through the relay script appear inline in the alert history
+- **Missing checkers** appear as their own red section with a single **Registration** check and no last-check time. It explains what is wrong; mute still works on it and triage notes are kept with it (see [the health checks themselves](#auto-heal-first-page-if-that-fails))
 
 ## Extending the System
 
