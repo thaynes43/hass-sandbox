@@ -551,6 +551,53 @@ class TestFailedRegistration:
         _register(app, "zwave")
         assert app._checkers["zwave"]["alert_history"] == history
 
+    def test_voided_registration_dropped_from_config_resolves_its_own_page(self):
+        """A registered checker is firing its own alert, its app dies (the
+        registration is voided), and the app is disabled inside the grace
+        window: its alert must resolve, not be re-posted for ever (review
+        finding, round 3)."""
+        config = {
+            **APP_CONFIG,
+            "spa_health_checker": {
+                "module": "health_checks.checker_apps.spa_health_checker."
+                          "spa_health_checker",
+                "class": "SpaHealthChecker",
+                "checker_id": "spa",
+                "checker_name": "Spa",
+            },
+        }
+        app, clock = _make_app(app_config=config)
+        app._metrics_enabled = True
+        app._metrics = MagicMock()
+        for checker_id in ("zwave", "zwave_batteries", "mqtt_broker",
+                           "basement_lights"):
+            _register(app, checker_id)
+        _command(app, "register_checker", {
+            "checker_id": "spa", "checker_name": "Spa", "check_names": ["Gateway Ping"],
+        })
+        _report(app, "spa", [{"name": "Gateway Ping", "status": "critical"}])
+        _advance_to(app, clock, 360)
+        _report(app, "spa", [{"name": "Gateway Ping", "status": "critical"}])
+        assert app._alert_bridge.active_alerts["spa"]["labels"]["alertname"] == "SpaUnhealthy"
+
+        app.ad.app_states["spa_health_checker"] = "initialize_error"
+        _advance_to(app, clock, 420)
+        assert "spa" not in app._checkers
+        assert app._unregistered["spa"]["surfaced"] is False
+
+        app.ad.app_config["spa_health_checker"] = {
+            **config["spa_health_checker"], "disable": True,
+        }
+        _advance_to(app, clock, 480)
+        resolved = _posted_alerts(app)[-1]
+        assert resolved["labels"]["alertname"] == "SpaUnhealthy"
+        assert "endsAt" in resolved
+        assert app._alert_bridge.active_alerts == {}
+        app._metrics.remove_checker.assert_called_with("spa")
+        before = len(_posted_alerts(app))
+        _run(app._alert_bridge.repost_active())
+        assert len(_posted_alerts(app)) == before
+
     def test_late_registration_after_surfacing_clears_the_critical(self):
         app, clock = self._incident()
         _advance_to(app, clock, 300)

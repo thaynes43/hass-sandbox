@@ -1088,9 +1088,12 @@ class HealthCheckController(hass.Hass):
             for checker_id in list(self._unregistered):
                 if checker_id not in expected:
                     reason = "is no longer configured or depended on"
-                    if self._clear_unregistered(checker_id, reason=reason):
-                        self._forget_surfaced(checker_id, reason)
-                        changed = True
+                    changed |= self._clear_unregistered(checker_id, reason=reason)
+                    # Unconditionally: besides a surfaced synthetic alert, a
+                    # voided registration can leave the checker's own alert
+                    # firing before it was ever surfaced.  forget() on a
+                    # checker the bridge does not know is a no-op.
+                    self._forget_checker(checker_id, reason)
 
         for checker_id in sorted(expected - set(self._checkers)):
             entry = self._unregistered.get(checker_id)
@@ -1268,13 +1271,15 @@ class HealthCheckController(hass.Hass):
             )
         return bool(entry["surfaced"])
 
-    def _forget_surfaced(self, checker_id: str, reason: str) -> None:
-        """Resolve the alert and drop the metrics of a surfaced checker that
-        is no longer expected (its app was disabled or removed).
+    def _forget_checker(self, checker_id: str, reason: str) -> None:
+        """Resolve any alert and drop the metrics of an unregistered checker
+        that is no longer expected (its app was disabled or removed).
 
         Nothing will publish it again, and the bridge deliberately keeps a
-        vanished checker's alert firing, so without this the page would be
-        re-posted for ever with no tile to mute it from.
+        vanished checker's alert firing — the synthetic not-registered alert,
+        or the checker's own alert from before its registration was voided —
+        so without this the page would be re-posted for ever with no tile to
+        mute it from.
         """
         if self._alert_bridge is not None:
             self.create_task(self._alert_bridge.forget(checker_id, reason))
