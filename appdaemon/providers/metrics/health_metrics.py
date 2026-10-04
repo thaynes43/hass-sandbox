@@ -288,6 +288,33 @@ class HealthMetrics:
         except Exception as exc:  # never let metrics break the controller
             logger.error("update_snapshot failed: %r", exc)
 
+    def remove_checker(self, checker_id: str) -> None:
+        """Drop every per-checker series for a checker that no longer exists."""
+        if not self.enabled:
+            return
+        for check in self._seen_checks.pop(checker_id, set()):
+            for gauge in (self.check_status, self.check_state_entered_ts):
+                try:
+                    gauge.remove(checker_id, check)
+                except KeyError:
+                    pass
+        for kind in ("total", "ok", "non_ok"):
+            try:
+                self.checks.remove(checker_id, kind)
+            except KeyError:
+                pass
+        for gauge in (
+            self.checker_status,
+            self.checker_last_report_ts,
+            self.checker_supports_repair,
+            self.checker_auto_repair_enabled,
+            self.checker_muted,
+        ):
+            try:
+                gauge.remove(checker_id)
+            except KeyError:
+                pass
+
     @staticmethod
     def _set_severity_gauge(gauge: Any, by_sev: Optional[Dict[str, int]]) -> None:
         for sev in ("critical", "degraded", "warning"):

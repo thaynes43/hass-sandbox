@@ -7,9 +7,12 @@ and nothing alerted.  The watchdog restarts an expected checker that has not
 registered (bounded, doubling backoff) and, after a grace period, publishes
 it as a critical checker so it reaches Alertmanager.
 
-The clock is the controller's ``_monotonic`` hook, driven by the tests, and
-AppDaemon's app config is built with AppDaemon's own pydantic model so a
-shape change in an AppDaemon upgrade fails here rather than in production.
+The clock is the controller's ``_monotonic`` hook, driven by the tests.
+AppDaemon's admin namespace (``app.<name>`` entities: lifecycle state plus
+the app's config in ``args``) is built the way AppDaemon 4.5 builds it,
+from AppDaemon's own pydantic model, so a shape change in an upgrade fails
+here rather than in production.  Disabled apps get no entity, and a running
+app's state is ``idle`` (both observed in a real AppDaemon 4.5.13 run).
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from appdaemon.models.config.app import AllAppConfig
+from appdaemon.models.config.app import AllAppConfig, AppConfig
 
 # ---------------------------------------------------------------------------
 # Mock hassapi before importing the app
@@ -163,23 +166,57 @@ def _run(coro):
         loop.close()
 
 
+def _admin_states(app_config: Dict[str, Any], app_states: Dict[str, str]) -> Dict[str, Any]:
+    """AppDaemon's admin namespace for ``app_config``, as AppDaemon builds it."""
+    states: Dict[str, Any] = {
+        "thread.thread-0": {"state": "idle", "attributes": {}},
+        "sensor.active_apps": {"state": len(app_config), "attributes": {}},
+    }
+    for name, cfg in AllAppConfig.model_validate(app_config).root.items():
+        if not isinstance(cfg, AppConfig) or cfg.disable:
+            continue  # AppDaemon keeps no app.<name> entity for a disabled app
+        states[f"app.{name}"] = {
+            "state": app_states.get(name, "idle"),
+            "attributes": {
+                "totalcallbacks": 0,
+                "instancecallbacks": 0,
+                "args": cfg.args,
+                "config_path": "/conf/apps/apps.yaml",
+            },
+        }
+    return states
+
+
 def _make_app(
     extra_args: Optional[dict] = None,
     app_config: Optional[Dict[str, Any]] = APP_CONFIG,
+    app_states: Optional[Dict[str, str]] = None,
 ) -> tuple:
-    """Start a controller with AppDaemon's real app-config model and a clock."""
+    """Start a controller against a simulated AppDaemon, with a test clock.
+
+    ``app.ad`` holds the simulated AppDaemon: ``app_config`` (None = the
+    admin-namespace read fails), ``app_states`` (app name → lifecycle state,
+    default ``idle``) and ``fail_read`` (a callable; True = that read fails).
+    """
     app = HealthCheckController(MagicMock(), MagicMock())
     args = dict(BASE_ARGS)
     args.update(extra_args or {})
     app.args = args
     app.name = "health_check_controller"
-    if app_config is not None:
-        app.AD = SimpleNamespace(
-            app_management=SimpleNamespace(
-                app_config=AllAppConfig.model_validate(app_config)
-            )
-        )
-    app.get_state = MagicMock(return_value=None)
+    app.ad = SimpleNamespace(
+        app_config=None if app_config is None else dict(app_config),
+        app_states=dict(app_states or {}),
+        fail_read=lambda: False,
+    )
+
+    def _get_state(entity_id=None, namespace=None, **kwargs):
+        if namespace == "admin":
+            if app.ad.app_config is None or app.ad.fail_read():
+                raise TimeoutError("admin namespace read timed out")
+            return _admin_states(app.ad.app_config, app.ad.app_states)
+        return None  # HA helpers (mute state): nothing persisted
+
+    app.get_state = MagicMock(side_effect=_get_state)
     app.set_state = MagicMock()
     app.call_service = MagicMock()
     app.listen_event = MagicMock()
@@ -187,7 +224,7 @@ def _make_app(
     app.run_in = MagicMock()
     app.run_every = MagicMock()
     app.log = MagicMock()
-    app.restart_app = MagicMock()
+    app.restart_app = MagicMock(return_value=None)
     # Coroutines handed to create_task (bridge syncs, mute persistence) are
     # queued and drained in order after each step, so the Alertmanager
     # bridge sees every published snapshot as it does live.
@@ -201,6 +238,12 @@ def _make_app(
     if app._alert_bridge is not None:
         app._alert_bridge._now_fn = clock.wall
         app._alert_bridge._client = AsyncMock()
+    _start(app)
+    return app, clock
+
+
+def _start(app: HealthCheckController) -> None:
+    """Run the controller's async start-up and its first heartbeat tick."""
     prov = MagicMock()
     prov.ensure_helper = AsyncMock(return_value=False)
     prov.ensure_script = AsyncMock(return_value=False)
@@ -213,7 +256,6 @@ def _make_app(
     # run_every(..., "now", ...) — the first heartbeat tick fires at start-up.
     app._heartbeat_tick({})
     _drain(app)
-    return app, clock
 
 
 def _drain(app: HealthCheckController) -> None:
@@ -275,8 +317,8 @@ def _log_lines(app: HealthCheckController, level: Optional[str] = None) -> List[
 
 
 class TestDiscovery:
-    def test_real_appdaemon_model_maps_checker_apps_only(self):
-        cfg = AllAppConfig.model_validate({
+    def test_admin_namespace_maps_enabled_checker_apps_only(self):
+        config = {
             **APP_CONFIG,
             "disabled_checker": {
                 "module": BATTERY_MODULE, "class": "BatteryChecker",
@@ -291,25 +333,35 @@ class TestDiscovery:
                 "checker_id": "quiet", "alerting": {"enabled": False},
             },
             "a_global": {"module": "globals_mod", "global": True},
-        })
+        }
+        admin = _admin_states(config, {"zwave_health_checker": "initialize_error"})
         mapping, problems = discover_configured_checkers(
-            cfg.root, exclude_app="health_check_controller"
+            admin, exclude_app="health_check_controller"
         )
         assert set(mapping) == {
             "zwave", "zwave_batteries", "mqtt_broker", "basement_lights", "quiet",
         }
         assert mapping["zwave"] == {
-            "app": "zwave_health_checker", "name": "Z-Wave", "alerting_enabled": True,
+            "app": "zwave_health_checker",
+            "name": "Z-Wave",
+            "alerting_enabled": True,
+            "app_state": "initialize_error",
         }
         assert mapping["quiet"]["alerting_enabled"] is False
         assert any("no_id_checker" in p for p in problems)
         assert any("share checker_id 'zwave'" in p for p in problems)
 
-    def test_plain_dicts_are_accepted(self):
-        mapping, problems = discover_configured_checkers(APP_CONFIG)
-        assert set(mapping) == {
-            "zwave", "zwave_batteries", "mqtt_broker", "basement_lights",
+    def test_ignores_non_app_entities_and_malformed_entries(self):
+        admin = {
+            "thread.thread-1": {"state": "idle", "attributes": {}},
+            "app.weird": "not-a-mapping",
+            "app.no_args": {"state": "idle", "attributes": {}},
+            "app.zwave_health_checker": _admin_states(APP_CONFIG, {})[
+                "app.zwave_health_checker"
+            ],
         }
+        mapping, problems = discover_configured_checkers(admin)
+        assert set(mapping) == {"zwave"}
         assert problems == []
 
 
@@ -339,7 +391,8 @@ class TestFailedRegistration:
         _advance_to(app, clock, 120)
         app.restart_app.assert_called_once_with("zwave_health_checker")
         assert any(
-            "restarting app 'zwave_health_checker' (attempt 1/3)" in line
+            "restarted app 'zwave_health_checker' (attempt 1/3)" in line
+            and "120s after AppDaemon started it" in line
             for line in _log_lines(app, "WARNING")
         )
 
@@ -494,26 +547,86 @@ class TestFailedRegistration:
         # Only the declared check is masked.
         assert "dependency" not in orphan["Own State"]["detail"]
 
-    def test_unreadable_app_config_falls_back_to_declared_dependencies(self):
-        app, clock = _make_app(app_config=None)  # no self.AD at all
+    def test_unreadable_app_states_fall_back_to_declared_dependencies(self):
+        app, clock = _make_app(app_config=None)  # every admin read fails
         _register(app, "zwave_batteries")
         _advance_to(app, clock, 360)
         assert _sensor(app)[1]["zwave"]["status"] == "critical"
-        app.restart_app.assert_not_called()
+        app.restart_app.assert_not_called()  # no app known to restart
         warnings = [
             line for line in _log_lines(app, "WARNING")
-            if "cannot read AppDaemon's app config" in line
+            if "cannot read AppDaemon's app states" in line
         ]
         assert len(warnings) == 1  # said once, not every tick
+
+    def test_flapping_app_state_read_does_not_reset_the_clocks(self):
+        """A read that fails every other tick must not restart the 120s/300s
+        clocks or the attempt counter (review finding on #227)."""
+        app, clock = self._incident()
+        reads = {"n": 0}
+
+        def _fail_every_other() -> bool:
+            reads["n"] += 1
+            return reads["n"] % 2 == 0
+
+        app.ad.fail_read = _fail_every_other
+        _advance_to(app, clock, 120)
+        app.restart_app.assert_called_once_with("zwave_health_checker")
+        _advance_to(app, clock, 300)
+        assert _sensor(app)[1]["zwave"]["status"] == "critical"
+        _advance_to(app, clock, 360)
+        assert app.restart_app.call_count == 2
+
+    def test_surfaced_checker_dropped_from_config_resolves_its_page(self):
+        """Disabling the broken app is the natural response to the page: the
+        alert must resolve, not be re-posted for ever (review finding)."""
+        config = {
+            **APP_CONFIG,
+            "imagegen_health_checker": {
+                "module": "health_checks.checker_apps.imagegen_health_checker."
+                          "imagegen_health_checker",
+                "class": "ImageGenHealthChecker",
+                "checker_id": "imagegen",
+                "checker_name": "Image Gen",
+            },
+        }
+        app, clock = _make_app(app_config=config)
+        app._metrics_enabled = True
+        app._metrics = MagicMock()
+        for checker_id in ("zwave", "zwave_batteries", "mqtt_broker",
+                           "basement_lights"):
+            _register(app, checker_id)
+        _advance_to(app, clock, 600)
+        firing = _posted_alerts(app)
+        assert [a["labels"]["checker"] for a in firing] == ["imagegen"]
+        assert "imagegen" in app._alert_bridge.active_alerts
+
+        app.ad.app_config["imagegen_health_checker"] = {
+            **config["imagegen_health_checker"], "disable": True,
+        }
+        _advance_to(app, clock, 660)
+        resolved = _posted_alerts(app)[-1]
+        assert resolved["labels"]["checker"] == "imagegen"
+        assert resolved["labels"]["alertname"] == NOT_REGISTERED_ALERTNAME
+        assert "endsAt" in resolved
+        assert app._alert_bridge.active_alerts == {}
+        assert "imagegen" not in _sensor(app)[1]
+        app._metrics.remove_checker.assert_called_once_with("imagegen")
+        # The re-post loop has nothing left to keep alive.
+        before = len(_posted_alerts(app))
+        _run(app._alert_bridge.repost_active())
+        assert len(_posted_alerts(app)) == before
 
     def test_failed_restart_call_is_logged_and_counted(self):
         app, clock = self._incident()
         app.restart_app.side_effect = RuntimeError("admin namespace down")
         _advance_to(app, clock, 120)
         assert any(
-            "restart of app 'zwave_health_checker' failed" in line
+            "restart of app 'zwave_health_checker' for checker 'zwave' failed "
+            "(attempt 1/3)" in line
             for line in _log_lines(app, "ERROR")
         )
+        assert not any("restarted app" in l for l in _log_lines(app))
         assert app._unregistered["zwave"]["attempts"] == 1
 
     def test_surfaced_missing_checker_can_be_muted(self):
@@ -570,6 +683,135 @@ class TestFailedRegistration:
         app.call_service.assert_called()  # heartbeat still written
         assert any(
             "Registration watchdog failed" in line for line in _log_lines(app, "ERROR")
+        )
+
+
+# ---------------------------------------------------------------------------
+# AppDaemon lifecycle and API guards
+# ---------------------------------------------------------------------------
+
+
+class TestAppDaemonLifecycle:
+    def _others_registered(self, app: HealthCheckController) -> None:
+        for checker_id in ("zwave_batteries", "mqtt_broker", "basement_lights"):
+            _register(app, checker_id)
+
+    def test_restarts_wait_until_appdaemon_has_started_the_app(self):
+        """A slow AppDaemon-wide re-initialisation: the app is still queued or
+        in initialize() — never restart it mid-start (review finding)."""
+        app, clock = _make_app(app_states={"zwave_health_checker": "loaded"})
+        self._others_registered(app)
+        _advance_to(app, clock, 120)
+        app.ad.app_states["zwave_health_checker"] = "initializing"
+        _advance_to(app, clock, 180)
+        app.restart_app.assert_not_called()
+
+        app.ad.app_states["zwave_health_checker"] = "idle"  # started, no register
+        _advance_to(app, clock, 300)
+        app.restart_app.assert_not_called()  # clock started at the 240s tick
+        # Surfacing still counts from when it became expected.
+        assert _sensor(app)[1]["zwave"]["status"] == "critical"
+        _advance_to(app, clock, 360)
+        app.restart_app.assert_called_once_with("zwave_health_checker")
+
+    def test_app_appdaemon_never_finishes_starting_is_still_reported(self):
+        app, clock = _make_app(
+            app_states={"zwave_health_checker": "initializing"}  # hung
+        )
+        self._others_registered(app)
+        _advance_to(app, clock, 1800)
+        app.restart_app.assert_not_called()
+        reg = _sensor(app)[1]["zwave"]["checks"][0]
+        assert reg["status"] == "critical"
+        assert (
+            "AppDaemon has not finished starting app 'zwave_health_checker' "
+            "(state: initializing)" in reg["detail"]
+        )
+
+    def test_failed_initialize_is_restarted(self):
+        app, clock = _make_app()
+        app.ad.app_states["zwave_health_checker"] = "initialize_error"
+        self._others_registered(app)
+        _advance_to(app, clock, 120)
+        app.restart_app.assert_called_once_with("zwave_health_checker")
+
+    def test_app_busy_in_a_callback_counts_as_started(self):
+        app, clock = _make_app()
+        app.ad.app_states["zwave_health_checker"] = (
+            "RepairableNetworkProtocolChecker._on_startup for zwave_health_checker"
+        )
+        self._others_registered(app)
+        _advance_to(app, clock, 120)
+        app.restart_app.assert_called_once_with("zwave_health_checker")
+
+    def test_restart_app_returning_a_coroutine_is_not_claimed_as_a_restart(self):
+        app, clock = _make_app()
+        self._others_registered(app)
+
+        async def _never_awaited():
+            return None
+
+        coro = _never_awaited()
+        app.restart_app.return_value = coro
+        _advance_to(app, clock, 120)
+        assert coro.cr_frame is None  # closed, so no "never awaited" warning
+        assert any(
+            "returned an un-awaited coroutine — app NOT restarted" in line
+            for line in _log_lines(app, "ERROR")
+        )
+        assert not any("restarted app" in l for l in _log_lines(app))
+
+    def test_no_restart_app_is_warned_at_start_and_still_surfaces(self):
+        # Build the normal harness, then take restart_app away and restart.
+        app, clock = _make_app()
+        app.restart_app = None
+        app.log.reset_mock()
+        _start(app)
+        assert any(
+            "AppDaemon offers no restart_app()" in line
+            for line in _log_lines(app, "WARNING")
+        )
+        self._others_registered(app)
+        _advance_to(app, clock, 300)
+        assert _sensor(app)[1]["zwave"]["status"] == "critical"
+
+    def test_app_states_are_never_read_on_the_event_loop(self):
+        """On AppDaemon's event loop get_state() returns a Task, not states —
+        found running the controller in a real AppDaemon 4.5.13. Start-up
+        must leave the read to the heartbeat tick (a worker thread)."""
+        app, clock = _make_app()
+        app.get_state.reset_mock()
+        prov = MagicMock()
+        prov.ensure_helper = AsyncMock(return_value=False)
+        prov.ensure_script = AsyncMock(return_value=False)
+        with patch(
+            "health_checks.controller.health_check_controller.HAProvisioner",
+            return_value=prov,
+        ):
+            _run(app._async_startup())
+            _drain(app)
+        assert not any(
+            c.kwargs.get("namespace") == "admin" for c in app.get_state.call_args_list
+        )
+        armed = [l for l in _log_lines(app, "INFO") if "Registration watchdog armed" in l]
+        assert armed == [
+            "Registration watchdog armed: 4 configured checker app(s) tracked, "
+            "grace 300s, first restart 120s after AppDaemon has started the app, "
+            "at most 3 restart(s) per checker"
+        ]
+
+    def test_reading_app_states_that_hold_no_checker_app_is_warned_once(self):
+        config = {"garage_door_notify": APP_CONFIG["garage_door_notify"]}
+        app, clock = _make_app(app_config=config)
+        _advance_to(app, clock, 600)
+        warnings = [
+            l for l in _log_lines(app, "WARNING")
+            if "found no enabled app under 'health_checks.checker_apps.'" in l
+        ]
+        assert len(warnings) == 1
+        assert any(
+            "Registration watchdog armed: 0 configured checker app(s)" in l
+            for l in _log_lines(app, "INFO")
         )
 
 

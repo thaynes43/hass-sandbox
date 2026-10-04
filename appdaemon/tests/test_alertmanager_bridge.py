@@ -446,6 +446,40 @@ class TestRepostActive:
         client.post_alerts.assert_not_awaited()
 
 
+class TestForget:
+    """forget(): a checker that left the controller for good (hass-sandbox#226)."""
+
+    def test_resolves_a_firing_alert_now_despite_the_improvement_hold(self):
+        bridge, client, _log, _advance = _make_gated_bridge({}, improve_hold_s=900)
+        _run(bridge.sync({"spa": _checker("critical")}))
+        client.post_alerts.reset_mock()
+
+        _run(bridge.forget("spa", "app disabled"))
+
+        (batch,) = _batches(client)
+        assert batch[0]["labels"]["checker"] == "spa"
+        assert "endsAt" in batch[0]
+        assert bridge.active_alerts == {}
+        client.post_alerts.reset_mock()
+        _run(bridge.repost_active())
+        client.post_alerts.assert_not_awaited()
+
+    def test_drops_a_pending_alert_without_posting(self):
+        bridge, client, _log, _advance = _make_gated_bridge({"critical": 300})
+        _run(bridge.sync({"spa": _checker("critical")}))
+        assert "spa" in bridge.pending_alerts
+
+        _run(bridge.forget("spa"))
+
+        assert bridge.pending_alerts == {}
+        client.post_alerts.assert_not_awaited()
+
+    def test_unknown_checker_is_a_no_op(self):
+        bridge, client, _log = _make_bridge()
+        _run(bridge.forget("nobody"))
+        client.post_alerts.assert_not_awaited()
+
+
 # ---------------------------------------------------------------------------
 # Tests — Client failure tolerance
 # ---------------------------------------------------------------------------

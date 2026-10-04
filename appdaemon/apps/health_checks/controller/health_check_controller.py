@@ -25,12 +25,12 @@ allowing the controller to run in production Kubernetes while new checkers
 are developed on a laptop.
 
 A **registration watchdog** rides the heartbeat tick: a checker that is
-expected (an enabled checker app in this AppDaemon instance's app config,
-or a ``checker_id`` another registered checker declares as a dependency)
-but has not registered is first restarted (bounded backoff, configured
-apps only), and if it is still missing after ``registration_grace_s`` it
-is published as a synthetic ``critical`` checker so it reaches
-Alertmanager like any other failure.  Without this, a checker that died
+expected (an enabled checker app in this AppDaemon instance, read from the
+admin namespace, or a ``checker_id`` another registered checker declares
+as a dependency) but has not registered is first restarted (bounded
+backoff, once AppDaemon has finished starting the app), and if it is still
+missing after ``registration_grace_s`` it is published as a synthetic
+``critical`` checker so it reaches Alertmanager like any other failure.  Without this, a checker that died
 before registering vanished silently and masked its dependents as
 ``unknown`` (incident 2026-10-03, hass-sandbox#226).
 """
@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import copy
 import datetime
+import inspect
 import json
 import logging
 import sys
@@ -70,41 +71,43 @@ _DEFAULT_RETENTION = timedelta(days=1, hours=12)  # 1 day 12 hours = 129600 s
 CHECKER_MODULE_PREFIX = "health_checks.checker_apps."
 REGISTRATION_CHECK_NAME = "Registration"
 NOT_REGISTERED_ALERTNAME = "HealthCheckerNotRegistered"
+# AppDaemon's per-app lifecycle state (``app.<name>`` in the admin
+# namespace) while it has not finished starting the app.  After start-up the
+# state is ``idle``, ``initialize_error``, ``compile_error``, ``terminated``
+# or, while a callback runs, ``"<callback> for <app>"``.
+APP_STARTING_STATES = frozenset({"loaded", "created", "initializing"})
 
 
 def discover_configured_checkers(
-    app_configs: Mapping[str, Any], exclude_app: Optional[str] = None
+    admin_states: Mapping[str, Any], exclude_app: Optional[str] = None
 ) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
-    """Map ``checker_id`` → ``{"app", "name", "alerting_enabled"}`` for
-    enabled checker apps.
+    """Map ``checker_id`` → ``{"app", "name", "alerting_enabled", "app_state"}``
+    for the enabled checker apps in this AppDaemon instance.
 
-    ``app_configs`` is AppDaemon's app-config mapping (app name → pydantic
-    ``AppConfig``; plain dicts are accepted too).  A checker app is any
-    enabled app whose module lives under ``health_checks.checker_apps``.
-    Global modules, sequences and disabled apps are skipped.
+    ``admin_states`` is AppDaemon's admin namespace (``get_state(
+    namespace="admin")``): one ``app.<name>`` entity per enabled app, whose
+    state is the app's lifecycle state and whose ``args`` attribute is the
+    app's config.  A checker app is one whose module lives under
+    ``health_checks.checker_apps``.
 
     Returns ``(mapping, problems)``; ``problems`` are human-readable reasons
     an app could not be tracked (no ``checker_id``, duplicate id).
     """
     mapping: Dict[str, Dict[str, Any]] = {}
     problems: List[str] = []
-    for app_name, cfg in app_configs.items():
+    for entity_id, entity in admin_states.items():
+        if not str(entity_id).startswith("app.") or not isinstance(entity, Mapping):
+            continue
+        app_name = str(entity_id)[len("app."):]
         if app_name == exclude_app:
             continue
-        if isinstance(cfg, Mapping):
-            args: Mapping[str, Any] = cfg
-            module = str(cfg.get("module") or "")
-            disabled = bool(cfg.get("disable", False))
-            has_class = "class" in cfg
-        else:
-            raw_args = getattr(cfg, "args", None)
-            if not isinstance(raw_args, Mapping):
-                continue  # global module / sequence — not an app
-            args = raw_args
-            module = str(getattr(cfg, "module_name", "") or "")
-            disabled = bool(getattr(cfg, "disable", False))
-            has_class = bool(getattr(cfg, "class_name", None))
-        if disabled or not has_class or not module.startswith(CHECKER_MODULE_PREFIX):
+        args = (entity.get("attributes") or {}).get("args")
+        if not isinstance(args, Mapping):
+            continue
+        module = str(args.get("module") or "")
+        if args.get("disable") or "class" not in args or not module.startswith(
+            CHECKER_MODULE_PREFIX
+        ):
             continue
         checker_id = str(args.get("checker_id") or "")
         if not checker_id:
@@ -121,11 +124,12 @@ def discover_configured_checkers(
             continue
         alerting = args.get("alerting")
         mapping[checker_id] = {
-            "app": str(app_name),
+            "app": app_name,
             "name": str(args.get("checker_name") or checker_id),
             "alerting_enabled": not (
                 isinstance(alerting, Mapping) and alerting.get("enabled") is False
             ),
+            "app_state": entity.get("state"),
         }
     return mapping, problems
 
@@ -220,6 +224,11 @@ class HealthCheckController(hass.Hass):
         self._unregistered: Dict[str, Dict[str, Any]] = {}
         self._reg_logged_problems: Set[str] = set()
         self._reg_all_registered_logged: bool = False
+        # Last successful read of the configured checker apps: a failed read
+        # keeps tracking on this rather than resetting the watchdog's clocks.
+        self._reg_last_configured: Dict[str, Dict[str, Any]] = {}
+        self._reg_can_restart: bool = True
+        self._reg_armed_logged: bool = False
 
         # Prometheus metrics exposition (generic across all checkers).
         self._metrics_enabled: bool = bool(
@@ -303,14 +312,16 @@ class HealthCheckController(hass.Hass):
         self.log("HealthCheckController started — ready event fired", level="INFO")
 
         if self._reg_watchdog_enabled:
-            configured = self._configured_checkers()
-            self.log(
-                f"Registration watchdog armed: {len(configured)} configured "
-                f"checker app(s) tracked, grace {self._reg_grace_s}s, first "
-                f"restart after {self._reg_restart_after_s}s, at most "
-                f"{self._reg_restart_attempts} restart(s) per checker",
-                level="INFO",
-            )
+            self._reg_can_restart = callable(getattr(self, "restart_app", None))
+            if not self._reg_can_restart:
+                self.log(
+                    "Registration watchdog: AppDaemon offers no restart_app() — "
+                    "missing checkers will be reported but not restarted",
+                    level="WARNING",
+                )
+            # The app list is read on the first heartbeat tick, not here:
+            # this coroutine runs on AppDaemon's event loop, where get_state()
+            # returns a Task instead of the states.
 
     async def _provision_entities(self) -> None:
         """Create the heartbeat helper and relay script if they don't exist."""
@@ -978,31 +989,41 @@ class HealthCheckController(hass.Hass):
         """Clock for the watchdog's timers (patched in tests)."""
         return time.monotonic()
 
-    def _configured_checkers(self) -> Dict[str, Dict[str, Any]]:
-        """Checker apps configured (and enabled) in this AppDaemon instance.
+    def _configured_checkers(self) -> Optional[Dict[str, Dict[str, Any]]]:
+        """Checker apps enabled in this AppDaemon instance, or None on a failed read.
 
-        Read from AppDaemon's app config, which ADAPI does not expose
-        publicly in 4.5.  If that internal shape changes the watchdog keeps
-        working on declared dependencies alone (surfacing, no restarts), and
-        says so once in the log.
+        Read from AppDaemon's admin namespace (``app.<name>`` entities carry
+        each app's config and lifecycle state).  A failed read returns None
+        so the caller keeps its last good list instead of forgetting
+        checkers; a read that succeeds but finds no checker app is warned
+        about, since it means the watchdog can restart nothing.
         """
         try:
-            app_configs = self.AD.app_management.app_config.root
-            if not isinstance(app_configs, Mapping):
-                raise TypeError(f"unexpected app config type {type(app_configs)!r}")
+            admin_states = self.get_state(namespace="admin")
+            if not isinstance(admin_states, Mapping):
+                raise TypeError(
+                    f"expected a mapping, got {type(admin_states).__name__}"
+                )
         except Exception as exc:
             self._log_registration_problem(
-                "app-config",
-                f"Registration watchdog cannot read AppDaemon's app config "
-                f"({exc!r}) — tracking declared dependencies only, and it "
-                "cannot restart a missing checker",
+                "admin-read",
+                f"Registration watchdog cannot read AppDaemon's app states "
+                f"({exc!r}) — keeping the last list it read "
+                f"({len(self._reg_last_configured)} checker apps)",
             )
-            return {}
+            return None
         mapping, problems = discover_configured_checkers(
-            app_configs, exclude_app=getattr(self, "name", None)
+            admin_states, exclude_app=getattr(self, "name", None)
         )
         for problem in problems:
             self._log_registration_problem(problem, f"Registration watchdog: {problem}")
+        if not mapping:
+            self._log_registration_problem(
+                "no-checker-apps",
+                "Registration watchdog found no enabled app under "
+                f"'{CHECKER_MODULE_PREFIX}' in AppDaemon's app states — it "
+                "can only report missing dependencies, and cannot restart them",
+            )
         return mapping
 
     def _log_registration_problem(self, key: str, message: str) -> None:
@@ -1028,31 +1049,52 @@ class HealthCheckController(hass.Hass):
         Runs on the heartbeat tick.  A checker is *expected* when it is an
         enabled checker app in this AppDaemon instance or a registered
         checker declares it as a dependency.  Normal start-up registers
-        every checker within seconds, so nothing here acts before
-        ``registration_restart_after_s``; the MQTT lights' 30-minute
-        warm-up is a *status* (``unknown``), not a missing registration,
-        and is never touched.
+        every checker within seconds; the MQTT lights' 30-minute warm-up is
+        a *status* (``unknown``) after registration, so it is never touched.
+
+        Restarts wait until AppDaemon has finished starting the app (its
+        admin state has left loading/initializing), so a slow AppDaemon-wide
+        re-initialisation is never interrupted.  Surfacing counts from when
+        the checker became expected, so an app AppDaemon never manages to
+        start still gets reported.
         """
         now = self._monotonic()
-        configured = self._configured_checkers()
+        read = self._configured_checkers()
+        if read is not None:
+            self._reg_last_configured = read
+        configured = self._reg_last_configured
+        if not self._reg_armed_logged:
+            self._reg_armed_logged = True
+            self.log(
+                f"Registration watchdog armed: {len(configured)} configured "
+                f"checker app(s) tracked, grace {self._reg_grace_s}s, first "
+                f"restart {self._reg_restart_after_s}s after AppDaemon has "
+                f"started the app, at most {self._reg_restart_attempts} "
+                "restart(s) per checker",
+                level="INFO",
+            )
         declared = self._declared_dependencies()
         expected = set(configured) | set(declared)
 
         changed = False
-        # Stop tracking anything that registered or is no longer expected.
-        for checker_id in list(self._unregistered):
-            if checker_id not in expected:
-                changed |= self._clear_unregistered(
-                    checker_id, reason="no longer expected"
-                )
+        # Stop tracking a checker that is genuinely no longer expected — only
+        # on a successful read, so a failed read never resets the clocks.
+        if read is not None:
+            for checker_id in list(self._unregistered):
+                if checker_id not in expected:
+                    reason = "is no longer configured or depended on"
+                    if self._clear_unregistered(checker_id, reason=reason):
+                        self._forget_surfaced(checker_id, reason)
+                        changed = True
 
         for checker_id in sorted(expected - set(self._checkers)):
             entry = self._unregistered.get(checker_id)
             if entry is None:
                 entry = {
                     "since": now,
+                    "started_at": None,
                     "attempts": 0,
-                    "next_restart_at": now + self._reg_restart_after_s,
+                    "next_restart_at": None,
                     "surfaced": False,
                     "surfaced_at": None,
                 }
@@ -1061,16 +1103,25 @@ class HealthCheckController(hass.Hass):
             entry["app"] = cfg["app"] if cfg else None
             entry["name"] = cfg["name"] if cfg else checker_id
             entry["alerting_enabled"] = cfg["alerting_enabled"] if cfg else True
+            entry["app_state"] = cfg.get("app_state") if cfg else None
             entry["declared_by"] = sorted(set(declared.get(checker_id, [])))
             age = now - entry["since"]
 
-            # 1. Self-heal: restart the app with a doubling backoff.
+            # 1. Self-heal: restart the app, with a doubling backoff, once
+            #    AppDaemon has finished its own attempt to start it.
+            starting = bool(cfg) and cfg.get("app_state") in APP_STARTING_STATES
+            if entry["app"] and not starting and entry["started_at"] is None:
+                entry["started_at"] = now
+                entry["next_restart_at"] = now + self._reg_restart_after_s
             if (
                 entry["app"]
+                and self._reg_can_restart
+                and not starting
                 and entry["attempts"] < self._reg_restart_attempts
+                and entry["next_restart_at"] is not None
                 and now >= entry["next_restart_at"]
             ):
-                self._restart_unregistered(checker_id, entry, age, now)
+                self._restart_unregistered(checker_id, entry, now)
 
             # 2. Surface: past the grace period it is a critical checker.
             if not entry["surfaced"] and age >= self._reg_grace_s:
@@ -1106,32 +1157,56 @@ class HealthCheckController(hass.Hass):
             self._publish_status()
 
     def _restart_unregistered(
-        self, checker_id: str, entry: Dict[str, Any], age: float, now: float
+        self, checker_id: str, entry: Dict[str, Any], now: float
     ) -> None:
-        """Ask AppDaemon to restart a checker app that has not registered."""
+        """Ask AppDaemon to restart a checker app that has not registered.
+
+        ``restart_app`` goes through AppDaemon's ``app/restart`` admin
+        service, which stops and starts the app in a task AppDaemon owns,
+        so the restart is not tied to this callback.  Called from this sync
+        callback it returns None once the restart is scheduled (verified
+        against AppDaemon 4.5.13).
+        """
         entry["attempts"] += 1
         # Doubling backoff: restart_after, then 2x, 4x, ... between attempts.
         entry["next_restart_at"] = now + self._reg_restart_after_s * (
             2 ** entry["attempts"]
         )
-        self.log(
-            f"Registration watchdog: checker '{checker_id}' has not registered "
-            f"{age:.0f}s after it became expected — restarting app "
-            f"'{entry['app']}' (attempt {entry['attempts']}/"
-            f"{self._reg_restart_attempts})",
-            level="WARNING",
-        )
+        app = entry["app"]
+        attempt = f"attempt {entry['attempts']}/{self._reg_restart_attempts}"
         try:
-            self.restart_app(entry["app"])
+            result = self.restart_app(app)
         except Exception as exc:
             self.log(
-                f"Registration watchdog: restart of app '{entry['app']}' "
-                f"failed: {exc!r}",
+                f"Registration watchdog: restart of app '{app}' for checker "
+                f"'{checker_id}' failed ({attempt}): {exc!r}",
                 level="ERROR",
             )
+            return
+        if inspect.iscoroutine(result):
+            # Only if a future AppDaemon made restart_app a bare coroutine:
+            # it would never run, so say so rather than claim a restart.
+            result.close()
+            self.log(
+                f"Registration watchdog: restart_app('{app}') returned an "
+                f"un-awaited coroutine — app NOT restarted ({attempt})",
+                level="ERROR",
+            )
+            return
+        self.log(
+            f"Registration watchdog: restarted app '{app}' ({attempt}) — "
+            f"checker '{checker_id}' had not registered "
+            f"{now - entry['started_at']:.0f}s after AppDaemon started it",
+            level="WARNING",
+        )
 
     def _clear_unregistered(self, checker_id: str, reason: str) -> bool:
-        """Stop tracking a checker; returns True if it had been surfaced."""
+        """Stop tracking a checker; returns True if it had been surfaced.
+
+        On registration the real checker replaces the synthetic one in the
+        snapshot and the bridge resolves the alert through its normal path
+        (improvement hold included).
+        """
         entry = self._unregistered.pop(checker_id, None)
         if entry is None:
             return False
@@ -1145,6 +1220,19 @@ class HealthCheckController(hass.Hass):
                 level="INFO",
             )
         return bool(entry["surfaced"])
+
+    def _forget_surfaced(self, checker_id: str, reason: str) -> None:
+        """Resolve the alert and drop the metrics of a surfaced checker that
+        is no longer expected (its app was disabled or removed).
+
+        Nothing will publish it again, and the bridge deliberately keeps a
+        vanished checker's alert firing, so without this the page would be
+        re-posted for ever with no tile to mute it from.
+        """
+        if self._alert_bridge is not None:
+            self.create_task(self._alert_bridge.forget(checker_id, reason))
+        if self._metrics_enabled:
+            self._metrics.remove_checker(checker_id)
 
     def _restore_mute_for_unregistered(self, checker_id: str) -> None:
         """Honour a mute persisted before the checker went missing."""
@@ -1163,8 +1251,11 @@ class HealthCheckController(hass.Hass):
 
     def _unregistered_detail(self, checker_id: str, entry: Dict[str, Any]) -> str:
         """Human-readable detail for an expected checker that never registered."""
-        minutes = max(1, round((self._monotonic() - entry["since"]) / 60))
-        parts = [f"not registered with the controller after {minutes} min"]
+        missing_s = self._monotonic() - entry["since"]
+        duration = (
+            f"{missing_s:.0f}s" if missing_s < 120 else f"{round(missing_s / 60)} min"
+        )
+        parts = [f"not registered with the controller after {duration}"]
         declared_by = entry.get("declared_by") or []
         if declared_by:
             parts.append("dependents masked: " + ", ".join(declared_by))
@@ -1174,6 +1265,11 @@ class HealthCheckController(hass.Hass):
             parts.append(
                 f"no checker app with checker_id '{checker_id}' is configured "
                 "in this AppDaemon instance, so it cannot be restarted"
+            )
+        elif entry.get("app_state") in APP_STARTING_STATES:
+            parts.append(
+                f"AppDaemon has not finished starting app '{app}' "
+                f"(state: {entry['app_state']})"
             )
         elif attempts == 0:
             parts.append(f"restart of app '{app}' pending")

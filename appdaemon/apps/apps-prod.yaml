@@ -699,11 +699,12 @@ health_check_controller:
       critical: 600
   # Registration watchdog (hass-sandbox#226): a checker app in this config,
   # or a checker_id another checker depends on, that has not registered is
-  # restarted (first at 120s, then doubling, at most 3 times) and, once it
-  # has been missing for 300s, published as a critical checker
-  # (HealthCheckerNotRegistered) — through the for-gate above, so a restart
-  # that heals it in time never pages. Normal start-up registers all 26
-  # checkers within seconds; the lights' warm-up is a status, not missing.
+  # restarted (120s after AppDaemon finished starting the app, then
+  # doubling, at most 3 times) and, once it has been missing for 300s,
+  # published as a critical checker (HealthCheckerNotRegistered) — through
+  # the for-gate above, so a restart that heals it in time never pages.
+  # Normal start-up registers all 26 checkers within seconds; the lights'
+  # warm-up is a status after registration, not a missing registration.
   registration_watchdog_enabled: true
   registration_restart_after_s: 120
   registration_restart_attempts: 3

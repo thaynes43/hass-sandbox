@@ -42,6 +42,21 @@ def _snapshot(status="critical", check_status="critical"):
     }
 
 
+class TestRemoveChecker:
+    def test_drops_every_series_for_the_checker(self):
+        m = HealthMetrics()
+        m.update_snapshot(_snapshot(), muted_ids={"fans"})
+        m.update_snapshot({"other": {"name": "Other", "status": "ok", "checks": []}})
+
+        m.remove_checker("fans")
+
+        rendered = m.render()
+        assert 'checker_id="fans"' not in rendered
+        assert _val(m, "appdaemon_health_checker_status", {"checker_id": "other"}) == 0
+        m.remove_checker("fans")  # idempotent
+        m.remove_checker("never-seen")
+
+
 class TestSnapshot:
     def test_checker_and_check_status_severity(self):
         m = HealthMetrics()

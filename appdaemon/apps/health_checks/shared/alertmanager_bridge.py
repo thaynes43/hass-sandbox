@@ -403,6 +403,27 @@ class AlertmanagerBridge:
 
         await self._post(to_post)
 
+    async def forget(self, checker_id: str, reason: str = "checker removed") -> None:
+        """Resolve a checker's alert now and drop all state kept for it.
+
+        For a checker that has left the controller for good (e.g. a missing
+        checker whose app was disabled).  ``sync`` deliberately keeps a
+        vanished checker's alert firing, and the improvement hold exists for
+        flapping checkers, not departed ones, so neither applies here.
+        """
+        async with self._post_lock:
+            self._pending.pop(checker_id, None)
+            self._improving.pop(checker_id, None)
+            active = self._active.pop(checker_id, None)
+            if active is None:
+                return
+            self._log(
+                f"Alert resolved for checker '{checker_id}' "
+                f"({active['labels'].get('alertname')}) — {reason}",
+                level="INFO",
+            )
+            await self._post([self._resolved_copy(active)])
+
     async def repost_active(self) -> None:
         """Re-post all firing alerts so they outlive resolve_timeout."""
         async with self._post_lock:
