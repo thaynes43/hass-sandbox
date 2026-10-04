@@ -137,7 +137,9 @@ No cross-check: any piece down breaks voice and is critical. In production the A
 
 ### Dependency System
 
-Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker is unhealthy (`critical`/`degraded`) or missing entirely, the affected checks are overridden to `unknown` with detail `"dependency unavailable"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down. A dependency that is merely `unknown` (registered but not reporting) does **not** mask its dependents: an unknown dependency raises no Alertmanager alert of its own, so masking would let a genuine dependent failure go completely silent.
+Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker is unhealthy (`critical`/`degraded`) or missing entirely, the affected checks are overridden to `unknown` with detail `"dependency unavailable: <name>"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down. A dependency that is merely `unknown` (registered but not reporting) does **not** mask its dependents: an unknown dependency raises no Alertmanager alert of its own, so masking would let a genuine dependent failure go completely silent.
+
+A dependency that has **never registered** is named as such — `dependency unavailable: Z-Wave (not registered)` — and the [registration watchdog](#registration-watchdog) restarts it and, after its grace period, reports it as a `critical` checker of its own. The masking is therefore never silent: either the dependency comes back, or it pages like any other critical dependency.
 
 Dependencies are declared per-check via `affects_checks`, or if omitted, all checks in the registering checker are affected:
 
@@ -153,6 +155,16 @@ Dependencies are declared per-check via `affects_checks`, or if omitted, all che
 ```
 
 The checker-level status is recomputed from the modified checks in the published view using the standard severity precedence: critical > degraded > warning > unknown > ok.
+
+### Registration Watchdog
+
+A checker that dies before it registers (a start-up exception, a bad config, a typo in a `checker_id`) used to vanish without a trace: no tile, no alert, and every check that depends on it masked as `unknown`. On 2026-10-03 the Z-Wave checker died that way during an AppDaemon re-initialisation and its 36 dependent checks (Z-Wave Batteries, Cigars) read `unknown` for three hours with nothing paging ([#226](https://github.com/thaynes43/hass-sandbox/issues/226)). The controller now watches for it on every heartbeat tick.
+
+- **Expected checkers.** A checker is expected when it is an enabled app in this AppDaemon instance whose module lives under `health_checks.checker_apps` (read from AppDaemon's app config, keyed by its `checker_id`), or when a registered checker declares it as a dependency. If the app config cannot be read, the watchdog says so once in the log and works from declared dependencies alone.
+- **Self-heal first.** An expected checker still unregistered `registration_restart_after_s` (120 s) after it became expected is restarted through AppDaemon (`restart_app`). Further restarts back off by doubling — the second comes 240 s after the first, the third 480 s after that — up to `registration_restart_attempts` (3). A checker known only as a declared dependency has no app to restart and is surfaced without one.
+- **Then surface.** Still missing `registration_grace_s` (300 s) after it became expected, it is published as a `critical` checker with one check, `Registration`, whose detail says how long it has been missing, which dependents it masks and how many restarts failed. It reaches Alertmanager as `HealthCheckerNotRegistered` (`checker=<id>`) through the normal for-duration gate (`alert_for_seconds.critical`, 300 s in production), so a restart that heals it before the gate elapses never pages. It can be muted from its tile like any other checker; an `alerting: {enabled: false}` in the app's config is honoured.
+- **No false alarms.** Every checker registers within seconds of start-up (all 26 inside 8 s, measured 2026-10-04). The MQTT lights checkers' ~30-minute warm-up is a *status* (`unknown`) after registration, not a missing registration, so the watchdog never touches it.
+- **Log lines.** `Registration watchdog armed: N configured checker app(s) tracked …` at start-up and `Registration watchdog: all N expected checkers registered …` once they have; restarts and surfacing log at `WARNING`, recoveries at `INFO`.
 
 ### Repair Feature
 
@@ -315,6 +327,12 @@ health_check_controller:
   # Repair hold — a scheduled/running auto-repair withholds a due critical page
   # (up to this many total pending seconds) so it can fix the problem first.
   alert_repair_hold_cap_s: 1800  # default 1800s (30 min); 0 disables the hold
+  # Registration watchdog — restart, then report as critical, any expected
+  # checker that never registers (see "Registration Watchdog").
+  registration_watchdog_enabled: true  # default true
+  registration_restart_after_s: 120    # first restart; later ones double the wait
+  registration_restart_attempts: 3     # restarts per missing checker; 0 = surface only
+  registration_grace_s: 300            # report as critical after this long missing
 ```
 
 ### NetworkProtocolChecker
@@ -366,7 +384,7 @@ zwave_health_checker:
 | `start_repair` | `{"checker_id": "spa"}` | Trigger manual repair for a specific checker |
 | `update_repair_config` | `{"checker_id": "spa", "auto_repair_enabled": true, "auto_repair_delay_min": 5}` | Update auto-repair settings |
 | `clear_alert_history` | `{"checker_id": "optional"}` | Clear alert history for one or all checkers |
-| `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely |
+| `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely. Also accepted for a checker the registration watchdog reports as not registered |
 | `unmute_checker` | `{"checker_id": "spa"}` | Re-enable a checker's paging |
 | `record_note` | `{"checker_id": "spa", "note": "power-cycled gateway", "source": "shepherd"}` | Insert a triage note into the checker's alert history (audit trail for automation; `source` defaults to `agent`) |
 
@@ -418,6 +436,8 @@ zwave_health_checker:
 ```
 
 **Note:** For checkers with more than 20 checks, only non-ok checks are included in the `checks` array to stay within HA's WebSocket attribute size limit. The `checks_summary` object always contains the full counts.
+
+**Note:** A checker the [registration watchdog](#registration-watchdog) reports as not registered appears under its `checker_id` with `status: critical`, `last_check: null` and a single `Registration` check.
 
 ## Manual Setup Required
 
