@@ -985,3 +985,40 @@ class TestRepairEvents:
         ]
         assert app._pending_repair_events == []
         assert app._drain_repair_events() == []
+
+
+# ---------------------------------------------------------------------------
+# Startup ordering — 2026-10-03 Z-Wave checker that never registered
+# ---------------------------------------------------------------------------
+
+
+class TestStartupOrdering:
+    def test_startup_is_scheduled_after_all_subclass_state(self):
+        """AppDaemon can run the run_in(0) startup while initialize() is still
+        executing. On 2026-10-03 that race killed the Z-Wave checker's startup
+        on an AttributeError before it registered (the network-protocol twin
+        of this class). Fire the startup the instant it is scheduled: every
+        piece of subclass state must already exist and registration happen.
+        """
+        app = _make_app()
+        errors = []
+
+        def _run_in(callback, delay, **kwargs):
+            if callback == app._on_startup:
+                with patch("health_checks.checker_apps.device_group_checker.repairable_device_group_checker.HAProvisioner", return_value=_make_mock_provisioner()):
+                    try:
+                        _run(app._async_startup())
+                    except Exception as exc:  # noqa: BLE001
+                        errors.append(exc)
+
+        app.run_in = MagicMock(side_effect=_run_in)
+
+        app.initialize()
+
+        assert errors == []
+        registered = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "register_checker"
+        ]
+        assert len(registered) == 1
+        assert json.loads(registered[0][1]["payload"])["checker_id"] == "cielo"

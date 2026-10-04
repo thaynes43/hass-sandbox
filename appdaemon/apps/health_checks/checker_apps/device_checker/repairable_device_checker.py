@@ -65,8 +65,10 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
     # Lifecycle (extends parent)
     # ------------------------------------------------------------------
 
-    def initialize(self) -> None:
-        super().initialize()
+    def _configure(self) -> None:
+        # Not initialize(): the base schedules _async_startup only after
+        # this whole chain has run (see NetworkProtocolChecker.initialize).
+        super()._configure()
 
         args = self.args or {}
 

@@ -1309,3 +1309,67 @@ class TestSupportsRepairReflectsConfig:
         logged = " ".join(str(c) for c in app.log.call_args_list)
         assert "repair support DISABLED" in logged
         assert "repair support enabled" not in logged
+
+
+# ---------------------------------------------------------------------------
+# Startup ordering — 2026-10-03 Z-Wave checker that never registered
+# ---------------------------------------------------------------------------
+
+
+def _fire_startup_when_scheduled(app, mock_prov=None):
+    """Make run_in start _async_startup the instant it is scheduled.
+
+    AppDaemon can run the run_in(0) startup while initialize() is still
+    executing. On 2026-10-03 (AppDaemon re-initialising every app after a
+    Home Assistant pod move) the Z-Wave checker's startup ran ~200 ms before
+    _repair_attempts existed, died on an AttributeError, never registered,
+    and every checker depending on "zwave" read unknown. Firing the startup
+    at schedule time is the worst case of that race.
+    """
+    if mock_prov is None:
+        mock_prov = _make_mock_provisioner()
+    errors: List[BaseException] = []
+
+    def _run_in(callback, delay, **kwargs):
+        if callback == app._on_startup:
+            with patch(f"{MODULE}.HAProvisioner", return_value=mock_prov):
+                try:
+                    _run(app._async_startup())
+                except Exception as exc:  # noqa: BLE001 — the assertion target
+                    errors.append(exc)
+
+    app.run_in = MagicMock(side_effect=_run_in)
+    return errors
+
+
+class TestStartupOrdering:
+    HELPER = "input_text.zwave_health_repair_attempts"
+
+    def test_startup_is_scheduled_after_all_subclass_state(self):
+        app = _make_app()
+        errors = _fire_startup_when_scheduled(app)
+
+        app.initialize()
+
+        assert errors == []
+        registered = [
+            c for c in app.fire_event.call_args_list
+            if c[1].get("command") == "register_checker"
+        ]
+        assert len(registered) == 1
+        assert json.loads(registered[0][1]["payload"])["checker_id"] == "zwave"
+
+    def test_seeded_attempts_survive_initialize(self):
+        """The seed runs in startup; configuration must not overwrite it."""
+        app = _make_app(
+            states={self.HELPER: json.dumps([
+                _ago(hours=2).isoformat(timespec="seconds"),
+                _ago(hours=1).isoformat(timespec="seconds"),
+            ])}
+        )
+        errors = _fire_startup_when_scheduled(app)
+
+        app.initialize()
+
+        assert errors == []
+        assert len(app._repair_attempts) == 2
