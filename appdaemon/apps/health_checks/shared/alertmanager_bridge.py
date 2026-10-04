@@ -82,6 +82,12 @@ registration payload::
     alerting:
       enabled: true                       # default true
       alertname: ProtectEventStreamFrozen # default <CheckerName>Unhealthy
+      ignore_for_overrides: false         # true = default for-gate only
+
+``ignore_for_overrides`` is set by the controller's registration watchdog on
+its synthetic "not registered" checker: per-checker ``for_overrides`` were
+chosen for what a running checker reports (``ups: critical: 0``), not for
+an app that never started, so that alert always uses the global default.
 """
 
 from __future__ import annotations
@@ -182,13 +188,16 @@ class AlertmanagerBridge:
         # concurrent sync's resolve post, resurrecting a resolved alert.
         self._post_lock = asyncio.Lock()
 
-    def _for_seconds(self, checker_id: str, severity: str) -> int:
+    def _for_seconds(
+        self, checker_id: str, severity: str, ignore_overrides: bool = False
+    ) -> int:
         """Resolve the for-duration (seconds) for a checker_id + severity.
 
-        Per-checker override wins over the global default; an unconfigured
-        severity falls back to 0 (raise immediately).
+        Per-checker override wins over the global default unless
+        ``ignore_overrides``; an unconfigured severity falls back to 0
+        (raise immediately).
         """
-        override = self._for_overrides.get(checker_id)
+        override = None if ignore_overrides else self._for_overrides.get(checker_id)
         if override is not None and severity in override:
             try:
                 return max(0, int(override[severity]))
@@ -265,7 +274,13 @@ class AlertmanagerBridge:
 
             # desired is non-None — the checker is unhealthy.
             severity = desired["labels"].get("severity", "")
-            for_s = self._for_seconds(checker_id, severity)
+            for_s = self._for_seconds(
+                checker_id,
+                severity,
+                ignore_overrides=bool(
+                    (checker.get("alerting") or {}).get("ignore_for_overrides")
+                ),
+            )
 
             if active is not None:
                 if active["labels"] == desired["labels"]:

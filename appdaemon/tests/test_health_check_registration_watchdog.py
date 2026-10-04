@@ -392,7 +392,7 @@ class TestFailedRegistration:
         app.restart_app.assert_called_once_with("zwave_health_checker")
         assert any(
             "restarted app 'zwave_health_checker' (attempt 1/3)" in line
-            and "120s after AppDaemon started it" in line
+            and "120s after AppDaemon last started it" in line
             for line in _log_lines(app, "WARNING")
         )
 
@@ -446,6 +446,11 @@ class TestFailedRegistration:
             "checker": "zwave",
         }
         assert "Registration: not registered" in alerts[0]["annotations"]["description"]
+
+        assert any(
+            "(attempt 2/3)" in line and "240s after AppDaemon last started it" in line
+            for line in _log_lines(app, "WARNING")
+        )
 
         # Bounded: third and last restart at 360 + 480 = 840s, then no more.
         _advance_to(app, clock, 840)
@@ -833,6 +838,47 @@ class TestAppDaemonLifecycle:
         self._others_registered(app)
         _advance_to(app, clock, 120)
         app.restart_app.assert_called_once_with("zwave_health_checker")
+
+    def test_slow_restart_rearms_the_backoff_from_when_it_finished(self):
+        """A restart that takes longer than the backoff must still be followed
+        by a full window to register (review finding, round 4)."""
+        app, clock = _make_app()
+        self._others_registered(app)
+        _advance_to(app, clock, 120)
+        app.restart_app.assert_called_once()
+
+        # AppDaemon takes ~7 minutes to get through the restart.
+        app.ad.app_states["zwave_health_checker"] = "initializing"
+        _advance_to(app, clock, 600)
+        app.restart_app.assert_called_once()
+        app.ad.app_states["zwave_health_checker"] = "idle"
+        _advance_to(app, clock, 660)  # finished: window re-armed from here
+        _advance_to(app, clock, 840)
+        app.restart_app.assert_called_once()  # 660 + 240 = 900 not reached
+        _advance_to(app, clock, 900)
+        assert app.restart_app.call_count == 2
+        assert any(
+            "(attempt 2/3)" in line and "240s after AppDaemon last started it" in line
+            for line in _log_lines(app, "WARNING")
+        )
+
+    def test_not_registered_page_ignores_per_checker_for_overrides(self):
+        """ups/shade_gateway page at 0s for what they report; an app that
+        never started gets the default gate like every other (review)."""
+        app, clock = _make_app({
+            "alert_for_overrides": {
+                "zwave": {"critical": 0},
+                "mqtt_broker": {"critical": 1800},
+            },
+        })
+        self._others_registered(app)
+        _advance_to(app, clock, 300)
+        assert _sensor(app)[1]["zwave"]["status"] == "critical"
+        assert _posted_alerts(app) == []  # not paged at surfacing
+        _advance_to(app, clock, 540)
+        assert _posted_alerts(app) == []
+        _advance_to(app, clock, 600)  # default critical gate: 300s
+        assert [a["labels"]["checker"] for a in _posted_alerts(app)] == ["zwave"]
 
     def test_restart_app_returning_a_coroutine_is_not_claimed_as_a_restart(self):
         app, clock = _make_app()

@@ -446,6 +446,30 @@ class TestRepostActive:
         client.post_alerts.assert_not_awaited()
 
 
+class TestIgnoreForOverrides:
+    def test_alerting_flag_uses_the_default_gate_not_the_override(self):
+        bridge, client, _log, advance = _make_gated_bridge(
+            {"critical": 300}, for_overrides={"ups": {"critical": 0}},
+        )
+        _run(bridge.sync({"ups": _checker(
+            "critical", name="UPS", alerting={"ignore_for_overrides": True},
+        )}))
+        client.post_alerts.assert_not_awaited()
+        assert "ups" in bridge.pending_alerts
+        advance(300)
+        _run(bridge.sync({"ups": _checker(
+            "critical", name="UPS", alerting={"ignore_for_overrides": True},
+        )}))
+        client.post_alerts.assert_awaited_once()
+
+    def test_without_the_flag_the_override_still_wins(self):
+        bridge, client, _log, _advance = _make_gated_bridge(
+            {"critical": 300}, for_overrides={"ups": {"critical": 0}},
+        )
+        _run(bridge.sync({"ups": _checker("critical", name="UPS")}))
+        client.post_alerts.assert_awaited_once()
+
+
 class TestForget:
     """forget(): a checker that left the controller for good (hass-sandbox#226)."""
 

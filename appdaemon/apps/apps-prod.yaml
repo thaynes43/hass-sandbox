@@ -702,7 +702,8 @@ health_check_controller:
   # restarted (120s after AppDaemon finished starting the app, then
   # doubling, at most 3 times) and, once it has been missing for 300s,
   # published as a critical checker (HealthCheckerNotRegistered) — through
-  # the for-gate above, so a restart that heals it in time never pages.
+  # the default critical for-gate above (alert_for_overrides do not apply),
+  # so a restart that heals it in time never pages.
   # Normal start-up registers all 26 checkers within seconds; the lights'
   # warm-up is a status after registration, not a missing registration.
   registration_watchdog_enabled: true

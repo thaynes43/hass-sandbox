@@ -1116,11 +1116,16 @@ class HealthCheckController(hass.Hass):
             age = now - entry["since"]
 
             # 1. Self-heal: restart the app, with a doubling backoff, once
-            #    AppDaemon has finished its own attempt to start it.
+            #    AppDaemon has finished starting it.  Seeing the app (re)start
+            #    re-arms the window, so every restart — including a slow
+            #    one of ours — is followed by a full backoff period.
             starting = bool(cfg) and cfg.get("app_state") in APP_STARTING_STATES
-            if entry["app"] and not starting and entry["started_at"] is None:
+            if starting:
+                entry["started_at"] = None
+                entry["next_restart_at"] = None
+            elif entry["app"] and entry["started_at"] is None:
                 entry["started_at"] = now
-                entry["next_restart_at"] = now + self._reg_restart_after_s
+                entry["next_restart_at"] = now + self._restart_backoff_s(entry)
             if (
                 entry["app"]
                 and self._reg_can_restart
@@ -1206,6 +1211,11 @@ class HealthCheckController(hass.Hass):
             level="WARNING",
         )
 
+    def _restart_backoff_s(self, entry: Dict[str, Any]) -> float:
+        """Wait after a (re)start before the next restart: restart_after,
+        then doubling with each attempt made (120s, 240s, 480s, ...)."""
+        return self._reg_restart_after_s * (2 ** entry["attempts"])
+
     def _restart_unregistered(
         self, checker_id: str, entry: Dict[str, Any], now: float
     ) -> None:
@@ -1217,11 +1227,12 @@ class HealthCheckController(hass.Hass):
         callback it returns None once the restart is scheduled (verified
         against AppDaemon 4.5.13).
         """
+        since_start = now - entry["started_at"]
         entry["attempts"] += 1
-        # Doubling backoff: restart_after, then 2x, 4x, ... between attempts.
-        entry["next_restart_at"] = now + self._reg_restart_after_s * (
-            2 ** entry["attempts"]
-        )
+        # The app is restarted from now; a tick that catches it still
+        # starting re-arms this from when it has finished instead.
+        entry["started_at"] = now
+        entry["next_restart_at"] = now + self._restart_backoff_s(entry)
         app = entry["app"]
         attempt = f"attempt {entry['attempts']}/{self._reg_restart_attempts}"
         try:
@@ -1245,8 +1256,8 @@ class HealthCheckController(hass.Hass):
             return
         self.log(
             f"Registration watchdog: restarted app '{app}' ({attempt}) — "
-            f"checker '{checker_id}' had not registered "
-            f"{now - entry['started_at']:.0f}s after AppDaemon started it",
+            f"checker '{checker_id}' had not registered {since_start:.0f}s "
+            "after AppDaemon last started it",
             level="WARNING",
         )
 
@@ -1360,6 +1371,9 @@ class HealthCheckController(hass.Hass):
                 "alerting": {
                     "alertname": NOT_REGISTERED_ALERTNAME,
                     "enabled": entry.get("alerting_enabled", True),
+                    # The default for-gate, not the checker's own override
+                    # (ups/shade_gateway page at 0s for what they *report*).
+                    "ignore_for_overrides": True,
                 },
             }
         return views
