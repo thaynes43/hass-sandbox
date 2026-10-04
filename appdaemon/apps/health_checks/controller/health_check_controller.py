@@ -79,6 +79,10 @@ APP_STARTING_STATES = frozenset({"loaded", "created", "initializing"})
 # Lifecycle states in which an app that registered earlier is no longer
 # running (a single-app reload whose initialize() raised, a stopped app).
 APP_DEAD_STATES = frozenset({"initialize_error", "compile_error", "terminated"})
+# A registration that came after restarts must hold this long before the
+# watchdog forgets the episode; a checker that dies again sooner resumes its
+# restart count and missing-since time (the fans' CrashLoopBackOff rule).
+REGISTRATION_STABLE_S = 1800
 
 
 def discover_configured_checkers(
@@ -230,8 +234,12 @@ class HealthCheckController(hass.Hass):
         # Last successful read of the configured checker apps: a failed read
         # keeps tracking on this rather than resetting the watchdog's clocks.
         self._reg_last_configured: Dict[str, Dict[str, Any]] = {}
-        # Whether the most recent read of AppDaemon's app states succeeded.
+        # Whether any read of AppDaemon's app states has succeeded.
         self._reg_read_ok: bool = False
+        # checker_id → {"attempts", "since", "registered_at"} for a checker
+        # that registered after the watchdog had acted, kept for
+        # REGISTRATION_STABLE_S so a crash loop cannot reset its budget.
+        self._reg_recent: Dict[str, Dict[str, Any]] = {}
         self._reg_can_restart: bool = True
         self._reg_armed_logged: bool = False
         self._reg_first_tick_at: Optional[float] = None
@@ -1087,7 +1095,7 @@ class HealthCheckController(hass.Hass):
         """
         now = self._monotonic()
         read = self._configured_checkers()
-        self._reg_read_ok = read is not None
+        self._reg_read_ok = self._reg_read_ok or read is not None
         if read is not None:
             self._reg_last_configured = read
         configured = self._reg_last_configured
@@ -1144,6 +1152,19 @@ class HealthCheckController(hass.Hass):
                     "surfaced": False,
                     "surfaced_at": None,
                 }
+                # Missing again soon after the watchdog last brought it back:
+                # one episode, so keep counting restarts and missing time.
+                recent = self._reg_recent.pop(checker_id, None)
+                if recent is not None:
+                    entry["attempts"] = recent["attempts"]
+                    entry["since"] = recent["since"]
+                    self.log(
+                        f"Registration watchdog: checker '{checker_id}' is "
+                        f"missing again {now - recent['registered_at']:.0f}s "
+                        f"after it registered — resuming its episode "
+                        f"({recent['attempts']} restart(s) so far)",
+                        level="WARNING",
+                    )
                 self._unregistered[checker_id] = entry
             cfg = configured.get(checker_id)
             entry["app"] = cfg["app"] if cfg else None
@@ -1202,6 +1223,10 @@ class HealthCheckController(hass.Hass):
                 f"registered ({len(configured)} configured apps)",
                 level="INFO",
             )
+
+        for checker_id in list(self._reg_recent):
+            if now - self._reg_recent[checker_id]["registered_at"] >= REGISTRATION_STABLE_S:
+                del self._reg_recent[checker_id]
 
         # History is only kept for a checker still being tracked; one that
         # registered took it, and one that left for good drops it here.
@@ -1337,6 +1362,12 @@ class HealthCheckController(hass.Hass):
         entry = self._unregistered.pop(checker_id, None)
         if entry is None:
             return False
+        if reason == "registered" and (entry["attempts"] or entry["surfaced"]):
+            self._reg_recent[checker_id] = {
+                "attempts": entry["attempts"],
+                "since": entry["since"],
+                "registered_at": self._monotonic(),
+            }
         if entry["attempts"] or entry["surfaced"]:
             restarts = entry["attempts"]
             self.log(

@@ -1109,6 +1109,63 @@ class TestAppDaemonLifecycle:
         assert "app list could not be read" in detail
         assert "is configured" not in detail
 
+    def test_one_failed_read_does_not_turn_a_config_error_into_a_read_error(self):
+        """The detail branches the Shepherd keys on must not flip on a single
+        transient read failure (review round 9)."""
+        app, clock = _make_app()
+        self._others_registered(app)
+        _register(app, "zwave")
+        _command(app, "register_checker", {
+            "checker_id": "orphan", "checker_name": "Orphan",
+            "check_names": ["Ping"], "dependencies": [{"checker_id": "zigbee_typo"}],
+        })
+        _advance_to(app, clock, 360)
+        key = "no checker app with checker_id 'zigbee_typo' is configured"
+        assert key in _sensor(app)[1]["zigbee_typo"]["checks"][0]["detail"]
+        app.ad.fail_read = lambda: True
+        _advance_to(app, clock, 420)
+        assert key in _sensor(app)[1]["zigbee_typo"]["checks"][0]["detail"]
+
+    def test_crash_loop_cannot_reset_its_restart_budget(self):
+        """Registers, dies, is restarted, registers, dies again: one episode,
+        so restarts stay bounded and it pages (review round 9)."""
+        app, clock = _make_app()
+        self._others_registered(app)
+        _register(app, "zwave")
+
+        def _die() -> None:
+            app.ad.app_states["zwave_health_checker"] = "initialize_error"
+
+        def _comes_back(name: str) -> None:
+            app.ad.app_states["zwave_health_checker"] = "idle"
+            _register(app, "zwave")  # ...and dies again shortly after
+
+        app.restart_app.side_effect = _comes_back
+        for cycle in range(6):
+            _die()
+            _advance_to(app, clock, clock.t - 1000.0 + 600)
+        assert app.restart_app.call_count == 3  # bounded across the cycles
+        assert any(
+            "missing again" in l and "resuming its episode" in l
+            for l in _log_lines(app, "WARNING")
+        )
+        _die()
+        _advance_to(app, clock, clock.t - 1000.0 + 600)
+        assert app.restart_app.call_count == 3
+        assert _sensor(app)[1]["zwave"]["status"] == "critical"
+        assert any(a["labels"]["checker"] == "zwave" for a in _posted_alerts(app))
+
+    def test_registration_that_holds_starts_a_fresh_budget(self):
+        app, clock = _make_app()
+        self._others_registered(app)
+        _advance_to(app, clock, 120)  # restart 1
+        _register(app, "zwave")
+        _advance_to(app, clock, 120 + 1860)  # held for 31 minutes
+        assert "zwave" not in app._reg_recent
+        app.ad.app_states["zwave_health_checker"] = "initialize_error"
+        _advance_to(app, clock, 120 + 1860 + 60)
+        assert app._unregistered["zwave"]["attempts"] == 0
+
     def test_all_registered_line_waits_for_a_settled_app_list(self):
         app, clock = _make_app(
             app_config={"garage_door_notify": APP_CONFIG["garage_door_notify"]}
