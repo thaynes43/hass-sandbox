@@ -603,6 +603,80 @@ class TestFailedRegistration:
         _run(app._alert_bridge.repost_active())
         assert len(_posted_alerts(app)) == before
 
+    def test_registered_checker_whose_app_is_removed_is_forgotten(self):
+        """The realistic ordering: the app's admin entity simply vanishes
+        (disabled or removed), with no dead state seen first (review, round 5)."""
+        config = {
+            **APP_CONFIG,
+            "spa_health_checker": {
+                "module": "health_checks.checker_apps.spa_health_checker."
+                          "spa_health_checker",
+                "class": "SpaHealthChecker",
+                "checker_id": "spa",
+                "checker_name": "Spa",
+            },
+        }
+        app, clock = _make_app(app_config=config)
+        app._metrics_enabled = True
+        app._metrics = MagicMock()
+        for checker_id in ("zwave", "zwave_batteries", "mqtt_broker",
+                           "basement_lights"):
+            _register(app, checker_id)
+        _command(app, "register_checker", {
+            "checker_id": "spa", "checker_name": "Spa", "check_names": ["Gateway Ping"],
+        })
+        _report(app, "spa", [{"name": "Gateway Ping", "status": "critical"}])
+        _advance_to(app, clock, 360)
+        _report(app, "spa", [{"name": "Gateway Ping", "status": "critical"}])
+        assert "spa" in app._alert_bridge.active_alerts
+
+        del app.ad.app_config["spa_health_checker"]
+        _advance_to(app, clock, 420)
+        assert "spa" not in app._checkers
+        assert "spa" not in _sensor(app)[1]
+        resolved = _posted_alerts(app)[-1]
+        assert resolved["labels"]["alertname"] == "SpaUnhealthy"
+        assert "endsAt" in resolved
+        assert app._alert_bridge.active_alerts == {}
+        app._metrics.remove_checker.assert_called_with("spa")
+        assert any(
+            "checker 'spa' was registered but its app is no longer configured" in l
+            for l in _log_lines(app, "WARNING")
+        )
+
+    def test_removed_app_still_depended_on_is_reported_missing(self):
+        """Removing an app that others still depend on is a config error that
+        masks the dependents: it must surface, not vanish."""
+        app, clock = self._incident()
+        _register(app, "zwave")
+        del app.ad.app_config["zwave_health_checker"]
+        _advance_to(app, clock, 60)
+        assert "zwave" not in app._checkers
+        _advance_to(app, clock, 360)
+        app.restart_app.assert_not_called()
+        reg = _sensor(app)[1]["zwave"]["checks"][0]
+        assert reg["status"] == "critical"
+        assert "no checker app with checker_id 'zwave' is configured" in reg["detail"]
+
+    def test_checker_registered_from_another_appdaemon_is_never_dropped(self):
+        """The controller is event-only so a laptop can register checkers
+        against production: an id this instance never had is left alone."""
+        app, clock = self._incident()
+        _command(app, "register_checker", {
+            "checker_id": "lab_dev", "checker_name": "Lab (dev)",
+            "check_names": ["Ping"],
+        })
+        _advance_to(app, clock, 3600)
+        assert "lab_dev" in app._checkers
+        assert "lab_dev" in _sensor(app)[1]
+
+    def test_empty_read_never_drops_registrations(self):
+        app, clock = self._incident()
+        _register(app, "zwave")
+        app.ad.app_config = {}  # e.g. AppDaemon mid-reload, no entities yet
+        _advance_to(app, clock, 120)
+        assert set(app._checkers) >= {"zwave", "zwave_batteries", "mqtt_broker"}
+
     def test_late_registration_after_surfacing_clears_the_critical(self):
         app, clock = self._incident()
         _advance_to(app, clock, 300)

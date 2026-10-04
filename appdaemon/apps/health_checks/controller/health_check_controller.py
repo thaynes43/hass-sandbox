@@ -236,6 +236,10 @@ class HealthCheckController(hass.Hass):
         # Alert history of a registration voided because its app died, kept
         # for when the checker registers again.
         self._reg_saved_history: Dict[str, List[Dict[str, Any]]] = {}
+        # checker_ids whose app this AppDaemon instance has had.  Only these
+        # can lose their app; a checker registering from another instance
+        # (a laptop during development) is never touched.
+        self._reg_local_ids: Set[str] = set()
 
         # Prometheus metrics exposition (generic across all checkers).
         self._metrics_enabled: bool = bool(
@@ -1079,6 +1083,17 @@ class HealthCheckController(hass.Hass):
                 ):
                     self._void_registration(checker_id, cfg)
                     changed = True
+            # A registered checker whose app this instance had and no longer
+            # has (disabled or removed — AppDaemon drops its admin entity)
+            # is gone: forget it, or its tile freezes and any alert it had
+            # firing is re-posted for ever.  Not on an empty read, which
+            # can be AppDaemon still creating its apps.
+            if configured:
+                self._reg_local_ids |= set(configured)
+                for checker_id in list(self._checkers):
+                    if checker_id in self._reg_local_ids and checker_id not in configured:
+                        self._drop_registration(checker_id)
+                        changed = True
         declared = self._declared_dependencies()
         expected = set(configured) | set(declared)
 
@@ -1210,6 +1225,18 @@ class HealthCheckController(hass.Hass):
             "treating it as not registered",
             level="WARNING",
         )
+
+    def _drop_registration(self, checker_id: str) -> None:
+        """Forget a registered checker whose app has left this instance."""
+        checker = self._checkers.pop(checker_id)
+        self._reg_saved_history[checker_id] = checker.get("alert_history") or []
+        reason = "its app is no longer configured"
+        self.log(
+            f"Registration watchdog: checker '{checker_id}' was registered but "
+            f"{reason} — removing it",
+            level="WARNING",
+        )
+        self._forget_checker(checker_id, reason)
 
     def _restart_backoff_s(self, entry: Dict[str, Any]) -> float:
         """Wait after a (re)start before the next restart: restart_after,
