@@ -76,6 +76,9 @@ NOT_REGISTERED_ALERTNAME = "HealthCheckerNotRegistered"
 # state is ``idle``, ``initialize_error``, ``compile_error``, ``terminated``
 # or, while a callback runs, ``"<callback> for <app>"``.
 APP_STARTING_STATES = frozenset({"loaded", "created", "initializing"})
+# Lifecycle states in which an app that registered earlier is no longer
+# running (a single-app reload whose initialize() raised, a stopped app).
+APP_DEAD_STATES = frozenset({"initialize_error", "compile_error", "terminated"})
 
 
 def discover_configured_checkers(
@@ -229,6 +232,10 @@ class HealthCheckController(hass.Hass):
         self._reg_last_configured: Dict[str, Dict[str, Any]] = {}
         self._reg_can_restart: bool = True
         self._reg_armed_logged: bool = False
+        self._reg_first_tick_at: Optional[float] = None
+        # Alert history of a registration voided because its app died, kept
+        # for when the checker registers again.
+        self._reg_saved_history: Dict[str, List[Dict[str, Any]]] = {}
 
         # Prometheus metrics exposition (generic across all checkers).
         self._metrics_enabled: bool = bool(
@@ -493,8 +500,9 @@ class HealthCheckController(hass.Hass):
                 for n in check_names
             ],
             "alert_history": self._checkers.get(checker_id, {}).get(
-                "alert_history", []
-            ),
+                "alert_history"
+            )
+            or self._reg_saved_history.pop(checker_id, []),
             "supports_repair": bool(payload.get("supports_repair", False)),
             "repair_state": payload.get("repair_state"),
             "dependencies": payload.get("dependencies", []),
@@ -1017,13 +1025,6 @@ class HealthCheckController(hass.Hass):
         )
         for problem in problems:
             self._log_registration_problem(problem, f"Registration watchdog: {problem}")
-        if not mapping:
-            self._log_registration_problem(
-                "no-checker-apps",
-                "Registration watchdog found no enabled app under "
-                f"'{CHECKER_MODULE_PREFIX}' in AppDaemon's app states — it "
-                "can only report missing dependencies, and cannot restart them",
-            )
         return mapping
 
     def _log_registration_problem(self, key: str, message: str) -> None:
@@ -1063,20 +1064,24 @@ class HealthCheckController(hass.Hass):
         if read is not None:
             self._reg_last_configured = read
         configured = self._reg_last_configured
-        if not self._reg_armed_logged:
-            self._reg_armed_logged = True
-            self.log(
-                f"Registration watchdog armed: {len(configured)} configured "
-                f"checker app(s) tracked, grace {self._reg_grace_s}s, first "
-                f"restart {self._reg_restart_after_s}s after AppDaemon has "
-                f"started the app, at most {self._reg_restart_attempts} "
-                "restart(s) per checker",
-                level="INFO",
-            )
+        self._log_armed_once(configured, now)
+
+        changed = False
+        # A checker that registered earlier but whose app has since died (a
+        # single-app reload whose initialize() raised, a stopped app) is no
+        # longer registered: void the stale registration so the path below
+        # restarts and, if need be, surfaces it.  Fresh reads only.
+        if read is not None:
+            for checker_id, cfg in configured.items():
+                if (
+                    checker_id in self._checkers
+                    and cfg.get("app_state") in APP_DEAD_STATES
+                ):
+                    self._void_registration(checker_id, cfg)
+                    changed = True
         declared = self._declared_dependencies()
         expected = set(configured) | set(declared)
 
-        changed = False
         # Stop tracking a checker that is genuinely no longer expected — only
         # on a successful read, so a failed read never resets the clocks.
         if read is not None:
@@ -1155,6 +1160,48 @@ class HealthCheckController(hass.Hass):
         # sees the condition persist (its for-gate promotes on a later sync).
         if changed or any(e["surfaced"] for e in self._unregistered.values()):
             self._publish_status()
+
+    def _log_armed_once(self, configured: Dict[str, Any], now: float) -> None:
+        """Log the armed line once AppDaemon's app list has settled.
+
+        The first heartbeat tick fires while AppDaemon may still be creating
+        apps (an app has no admin entity until then), so the line waits for
+        a read that found checker apps, or for ``registration_grace_s`` to
+        pass, after which an empty list really is empty and is warned about.
+        """
+        if self._reg_armed_logged:
+            return
+        if self._reg_first_tick_at is None:
+            self._reg_first_tick_at = now
+        if not configured and now - self._reg_first_tick_at < self._reg_grace_s:
+            return
+        self._reg_armed_logged = True
+        self.log(
+            f"Registration watchdog armed: {len(configured)} configured "
+            f"checker app(s) tracked, grace {self._reg_grace_s}s, first "
+            f"restart {self._reg_restart_after_s}s after AppDaemon has "
+            f"started the app, at most {self._reg_restart_attempts} "
+            "restart(s) per checker",
+            level="INFO",
+        )
+        if not configured:
+            self.log(
+                "Registration watchdog found no enabled app under "
+                f"'{CHECKER_MODULE_PREFIX}' in AppDaemon's app states — it "
+                "can only report missing dependencies, and cannot restart them",
+                level="WARNING",
+            )
+
+    def _void_registration(self, checker_id: str, cfg: Dict[str, Any]) -> None:
+        """Forget a registration whose app is no longer running."""
+        checker = self._checkers.pop(checker_id)
+        self._reg_saved_history[checker_id] = checker.get("alert_history") or []
+        self.log(
+            f"Registration watchdog: checker '{checker_id}' registered earlier "
+            f"but its app '{cfg['app']}' is now {cfg.get('app_state')} — "
+            "treating it as not registered",
+            level="WARNING",
+        )
 
     def _restart_unregistered(
         self, checker_id: str, entry: Dict[str, Any], now: float

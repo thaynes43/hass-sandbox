@@ -508,6 +508,49 @@ class TestFailedRegistration:
         assert app._unregistered == {}
         assert _posted_alerts(app) == []
 
+    def test_registered_checker_whose_app_died_is_restarted_then_surfaced(self):
+        """Registered once, then a single-app reload whose initialize() raised
+        (the #225 failure, one app only): the stale registration must not
+        freeze its tile at ok with nothing paging (review finding)."""
+        app, clock = self._incident()
+        _register(app, "zwave")
+        _report(app, "zwave", [
+            {"name": "Integration Status", "status": "critical", "detail": "down"},
+            {"name": "Radio Ping", "status": "ok"},
+        ])
+        _report(app, "zwave", [
+            {"name": "Integration Status", "status": "ok"},
+            {"name": "Radio Ping", "status": "ok"},
+        ])
+        history = list(app._checkers["zwave"]["alert_history"])
+        assert history
+
+        _advance_to(app, clock, 600)  # healthy for ten minutes
+        app.restart_app.assert_not_called()
+
+        app.ad.app_states["zwave_health_checker"] = "initialize_error"
+        _advance_to(app, clock, 660)
+        assert "zwave" not in app._checkers
+        assert any(
+            "checker 'zwave' registered earlier but its app "
+            "'zwave_health_checker' is now initialize_error" in l
+            for l in _log_lines(app, "WARNING")
+        )
+        batteries = {c["name"]: c for c in _sensor(app)[1]["zwave_batteries"]["checks"]}
+        assert batteries["Leak Sensor"]["detail"] == (
+            "dependency unavailable: Z-Wave (not registered)"
+        )
+
+        _advance_to(app, clock, 780)  # 120s after the registration was voided
+        app.restart_app.assert_called_once_with("zwave_health_checker")
+        _advance_to(app, clock, 960)  # 300s after
+        assert _sensor(app)[1]["zwave"]["status"] == "critical"
+
+        # The restarted app comes back and keeps its alert history.
+        app.ad.app_states["zwave_health_checker"] = "idle"
+        _register(app, "zwave")
+        assert app._checkers["zwave"]["alert_history"] == history
+
     def test_late_registration_after_surfacing_clears_the_critical(self):
         app, clock = self._incident()
         _advance_to(app, clock, 300)
@@ -799,6 +842,23 @@ class TestAppDaemonLifecycle:
             "grace 300s, first restart 120s after AppDaemon has started the app, "
             "at most 3 restart(s) per checker"
         ]
+
+    def test_first_tick_during_appdaemon_start_up_is_not_reported_as_armed(self):
+        """The first tick can run before AppDaemon has created the other apps
+        (no app.<name> entity yet): neither "armed: 0" nor "found no checker
+        app" may latch on it (review finding)."""
+        app, clock = _make_app(
+            app_config={"garage_door_notify": APP_CONFIG["garage_door_notify"]}
+        )
+        assert not any("Registration watchdog armed" in l for l in _log_lines(app))
+        assert not any("found no enabled app" in l for l in _log_lines(app))
+
+        app.ad.app_config = dict(APP_CONFIG)  # AppDaemon has created the apps
+        _advance_to(app, clock, 60)
+        armed = [l for l in _log_lines(app, "INFO") if "Registration watchdog armed" in l]
+        assert len(armed) == 1 and "armed: 4 configured checker app(s)" in armed[0]
+        _advance_to(app, clock, 900)
+        assert not any("found no enabled app" in l for l in _log_lines(app))
 
     def test_reading_app_states_that_hold_no_checker_app_is_warned_once(self):
         config = {"garage_door_notify": APP_CONFIG["garage_door_notify"]}

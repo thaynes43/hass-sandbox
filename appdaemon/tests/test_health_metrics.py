@@ -56,6 +56,17 @@ class TestRemoveChecker:
         m.remove_checker("fans")  # idempotent
         m.remove_checker("never-seen")
 
+    def test_unexpected_error_never_escapes(self, monkeypatch):
+        """Its caller sits mid-loop in the registration watchdog tick."""
+        m = HealthMetrics()
+        m.update_snapshot(_snapshot())
+
+        def _boom(*labels):
+            raise ValueError("Incorrect label count")
+
+        monkeypatch.setattr(m.checker_status, "remove", _boom)
+        m.remove_checker("fans")  # must not raise
+
 
 class TestSnapshot:
     def test_checker_and_check_status_severity(self):
