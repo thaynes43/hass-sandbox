@@ -230,6 +230,8 @@ class HealthCheckController(hass.Hass):
         # Last successful read of the configured checker apps: a failed read
         # keeps tracking on this rather than resetting the watchdog's clocks.
         self._reg_last_configured: Dict[str, Dict[str, Any]] = {}
+        # Whether the most recent read of AppDaemon's app states succeeded.
+        self._reg_read_ok: bool = False
         self._reg_can_restart: bool = True
         self._reg_armed_logged: bool = False
         self._reg_first_tick_at: Optional[float] = None
@@ -1085,6 +1087,7 @@ class HealthCheckController(hass.Hass):
         """
         now = self._monotonic()
         read = self._configured_checkers()
+        self._reg_read_ok = read is not None
         if read is not None:
             self._reg_last_configured = read
         configured = self._reg_last_configured
@@ -1190,6 +1193,7 @@ class HealthCheckController(hass.Hass):
         if (
             not self._unregistered
             and configured
+            and self._reg_armed_logged  # only once the app list has settled
             and not self._reg_all_registered_logged
         ):
             self._reg_all_registered_logged = True
@@ -1213,10 +1217,13 @@ class HealthCheckController(hass.Hass):
     def _log_armed_once(self, configured: Dict[str, Any], now: float) -> None:
         """Log the armed line once AppDaemon's app list has settled.
 
-        The first heartbeat tick fires while AppDaemon may still be creating
-        apps (an app has no admin entity until then), so the line waits for
-        a read that found checker apps, or for ``registration_grace_s`` to
-        pass, after which an empty list really is empty and is warned about.
+        AppDaemon 4.5.13 creates every app's admin entity before it
+        initialises any app (observed: at the first app's first callback
+        the later apps already read ``created``/``initializing``), so a read
+        that finds checker apps is complete.  The line still waits for one,
+        or for ``registration_grace_s``, after which an empty list really is
+        empty and is warned about, in case a future AppDaemon fills the
+        namespace lazily.
         """
         if self._reg_armed_logged:
             return
@@ -1253,7 +1260,13 @@ class HealthCheckController(hass.Hass):
         )
 
     def _drop_registration(self, checker_id: str) -> None:
-        """Forget a registered checker whose app has left this instance."""
+        """Forget a registered checker whose app has left this instance.
+
+        Its history is kept only while it stays tracked, i.e. while another
+        registered checker still depends on it (then it is reported missing
+        and the history shows on its tile); otherwise the end-of-tick prune
+        drops it with the checker.
+        """
         checker = self._checkers.pop(checker_id)
         self._reg_saved_history[checker_id] = checker.get("alert_history") or []
         reason = "its app is no longer configured"
@@ -1377,10 +1390,21 @@ class HealthCheckController(hass.Hass):
             parts.append("dependents masked: " + ", ".join(declared_by))
         app = entry.get("app")
         attempts = entry["attempts"]
-        if not app:
+        restarts_on = self._reg_can_restart and self._reg_restart_attempts > 0
+        if not app and not self._reg_read_ok:
+            parts.append(
+                "AppDaemon's app list could not be read, so its app is unknown "
+                "and it cannot be restarted — check the AppDaemon error log"
+            )
+        elif not app:
             parts.append(
                 f"no checker app with checker_id '{checker_id}' is configured "
                 "in this AppDaemon instance, so it cannot be restarted"
+            )
+        elif not restarts_on:
+            parts.append(
+                f"automatic restarts are off — check the AppDaemon error log "
+                f"for app '{app}'"
             )
         elif entry.get("app_state") in APP_STARTING_STATES:
             parts.append(

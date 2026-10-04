@@ -1088,6 +1088,43 @@ class TestAppDaemonLifecycle:
         _advance_to(app, clock, 900)
         assert not any("found no enabled app" in l for l in _log_lines(app))
 
+    def test_detail_with_restarts_off_never_reads_as_pending(self):
+        """registration_restart_attempts: 0 must not leave the detail at
+        "restart … pending", which the Shepherd treats as "skip" (round 8)."""
+        app, clock = _make_app({"registration_restart_attempts": 0})
+        self._others_registered(app)
+        _advance_to(app, clock, 300)
+        detail = _sensor(app)[1]["zwave"]["checks"][0]["detail"]
+        assert "pending" not in detail and "retrying" not in detail
+        assert "automatic restarts are off" in detail
+        app.restart_app.assert_not_called()
+
+    def test_detail_after_failed_reads_does_not_claim_a_config_error(self):
+        """No successful read yet: say the app list is unreadable, not that
+        no app is configured (which the Shepherd escalates as a config error)."""
+        app, clock = _make_app(app_config=None)
+        _register(app, "zwave_batteries")
+        _advance_to(app, clock, 360)
+        detail = _sensor(app)[1]["zwave"]["checks"][0]["detail"]
+        assert "app list could not be read" in detail
+        assert "is configured" not in detail
+
+    def test_all_registered_line_waits_for_a_settled_app_list(self):
+        app, clock = _make_app(
+            app_config={"garage_door_notify": APP_CONFIG["garage_door_notify"]}
+        )
+        assert not any("expected checkers registered" in l for l in _log_lines(app))
+        app.ad.app_config = dict(APP_CONFIG)
+        for checker_id in ("zwave", "zwave_batteries", "mqtt_broker",
+                           "basement_lights"):
+            _register(app, checker_id)
+        _advance_to(app, clock, 60)
+        done = [l for l in _log_lines(app, "INFO") if "expected checkers registered" in l]
+        assert done == [
+            "Registration watchdog: all 4 expected checkers registered "
+            "(4 configured apps)"
+        ]
+
     def test_reading_app_states_that_hold_no_checker_app_is_warned_once(self):
         config = {"garage_door_notify": APP_CONFIG["garage_door_notify"]}
         app, clock = _make_app(app_config=config)

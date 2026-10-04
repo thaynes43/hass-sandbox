@@ -159,6 +159,9 @@ Run these gates first, in order — several send you straight to skip/escalate:
    - `no checker app with checker_id '<id>' is configured` means another
      checker still declares `<id>` as a dependency but no app provides it
      (a typo, or an app that was removed). That is a config error: **Escalate**.
+   - `automatic restarts are off` (`registration_restart_attempts: 0`) or
+     `AppDaemon's app list could not be read` means no restart is coming.
+     Pull the traceback as above and **Escalate**.
    - The alert resolves by itself once the checker registers, after the
      controller's usual improvement hold.
 1. **Muted → SKIP entirely.** If `checkers.<id>.muted == true`, do nothing:
