@@ -240,6 +240,9 @@ class HealthCheckController(hass.Hass):
         # that registered after the watchdog had acted, kept for
         # REGISTRATION_STABLE_S so a crash loop cannot reset its budget.
         self._reg_recent: Dict[str, Dict[str, Any]] = {}
+        # checker_ids whose registration was voided this tick because their
+        # app died: the absence that follows is a death, not start-up.
+        self._reg_died: Set[str] = set()
         self._reg_can_restart: bool = True
         self._reg_armed_logged: bool = False
         self._reg_first_tick_at: Optional[float] = None
@@ -1155,6 +1158,7 @@ class HealthCheckController(hass.Hass):
                     "next_restart_at": None,
                     "surfaced": False,
                     "surfaced_at": None,
+                    "after_death": checker_id in self._reg_died,
                 }
                 # Missing again soon after the watchdog last brought it back:
                 # one episode, so keep counting restarts and missing time.
@@ -1229,6 +1233,7 @@ class HealthCheckController(hass.Hass):
                 level="INFO",
             )
 
+        self._reg_died.clear()
         for checker_id in list(self._reg_recent):
             if now - self._reg_recent[checker_id]["registered_at"] >= REGISTRATION_STABLE_S:
                 del self._reg_recent[checker_id]
@@ -1282,6 +1287,7 @@ class HealthCheckController(hass.Hass):
         """Forget a registration whose app is no longer running."""
         checker = self._checkers.pop(checker_id)
         self._reg_saved_history[checker_id] = checker.get("alert_history") or []
+        self._reg_died.add(checker_id)
         self.log(
             f"Registration watchdog: checker '{checker_id}' registered earlier "
             f"but its app '{cfg['app']}' is now {cfg.get('app_state')} — "
@@ -1367,7 +1373,12 @@ class HealthCheckController(hass.Hass):
         entry = self._unregistered.pop(checker_id, None)
         if entry is None:
             return False
-        if reason == "registered" and (entry["attempts"] or entry["surfaced"]):
+        # Remember the episode when the absence was more than start-up: the
+        # watchdog restarted or surfaced it, or its app had died after
+        # registering (a crash loop faster than the restart window).
+        if reason == "registered" and (
+            entry["attempts"] or entry["surfaced"] or entry.get("after_death")
+        ):
             self._reg_recent[checker_id] = {
                 "attempts": entry["attempts"],
                 "since": entry["since"],

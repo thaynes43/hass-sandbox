@@ -1164,6 +1164,34 @@ class TestAppDaemonLifecycle:
         assert "(crash loop)" in detail
         assert "brought it back but it did not stay registered" in detail
 
+    def test_crash_loop_faster_than_the_restart_window_is_surfaced(self):
+        """Something outside the watchdog resurrects the app inside 120s each
+        time: no restart is ever due, but the deaths are one episode and it
+        surfaces once the episode passes the grace period (round 11)."""
+        app, clock = _make_app()
+        self._others_registered(app)
+        _register(app, "zwave")
+        for _ in range(4):
+            app.ad.app_states["zwave_health_checker"] = "initialize_error"
+            _advance_to(app, clock, clock.t - 1000.0 + 60)   # observed dead
+            app.ad.app_states["zwave_health_checker"] = "idle"
+            _register(app, "zwave")                           # resurrected
+            _advance_to(app, clock, clock.t - 1000.0 + 60)
+        app.ad.app_states["zwave_health_checker"] = "initialize_error"
+        _advance_to(app, clock, clock.t - 1000.0 + 60)
+        reg = _sensor(app)[1]["zwave"]["checks"][0]
+        assert reg["status"] == "critical"
+        assert "(crash loop)" in reg["detail"]
+        app.restart_app.assert_not_called()
+
+    def test_start_up_absence_is_not_remembered_as_an_episode(self):
+        """Every checker is briefly missing at start-up; that must not make a
+        later death resume an "episode" from start-up time."""
+        app, clock = _make_app()
+        self._others_registered(app)
+        _register(app, "zwave")
+        assert app._reg_recent == {}
+
     def test_disabled_then_reenabled_app_starts_a_fresh_budget(self):
         """Forgetting a departed checker forgets its episode too (round 10)."""
         app, clock = _make_app()

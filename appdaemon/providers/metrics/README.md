@@ -47,3 +47,11 @@ Set on the health-check controller in `apps.yaml`:
 metrics_enabled: true   # default true; false = no server, no-op metrics
 metrics_port: 9100      # exposition port scraped by the ServiceMonitor
 ```
+
+## Dependencies
+
+- `prometheus-client` (optional, in `docker/requirements-prod.txt`). Without it every method is a no-op.
+
+## Used by
+
+- `apps/health_checks/controller/health_check_controller.py` is the only consumer. It calls `update_snapshot` on every status publish, forwards checker `repair_events` and `metrics` payloads, and calls `remove_checker` from the registration watchdog.

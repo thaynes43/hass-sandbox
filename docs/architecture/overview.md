@@ -57,7 +57,7 @@
 | **External APIs** | AppDaemon → Internet | Provider adapters in `providers/` make HTTP calls |
 | **Provisioning** | AppDaemon → HA REST API | `ha_provisioner` creates helpers/scripts on startup |
 | **Static asset check** | AppDaemon → HA HTTP | Unauthenticated `HEAD /local/...` to confirm HA is really serving a file an app asked it to stage |
-| **Metrics exposition** | Prometheus → AppDaemon | The cluster's Prometheus scrapes `:9100/metrics`, served by the `metrics` provider for the health-check controller. It is the only inbound HTTP path |
+| **Metrics exposition** | Prometheus → AppDaemon | The cluster's Prometheus scrapes `:9100/metrics`, served by the `metrics` provider for the health-check controller. Apart from AppDaemon's own admin UI and API on port 5050, it is the only inbound HTTP path |
 | **Entity classification** | AppDaemon → HA | `render_template()` over the device registry — `zigbee_ota` asks each tick which `update.*` entities are really Zigbee2MQTT devices, which is what makes a fleet-wide glob safe |
 
 ## Key concepts
