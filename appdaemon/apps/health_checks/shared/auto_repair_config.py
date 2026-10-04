@@ -34,7 +34,7 @@ subclass that provides:
 
 Wiring, per checker::
 
-    def initialize(self):
+    def initialize(self):   # _configure(self) for the Repairable* checkers
         ...
         self._init_auto_repair_config(self.args or {})
 
@@ -47,6 +47,12 @@ Wiring, per checker::
         ...
         elif action == "update_repair_config":
             self._handle_repair_config_command(data)
+
+The three ``Repairable*`` checkers (device, device group, network protocol)
+make that call from ``_configure()``, not ``initialize()``: their base class's
+``initialize()`` runs the whole ``_configure()`` chain and only then schedules
+``_async_startup``, so the startup never sees this state half-built (see
+``.agents/rules/appdaemon-architecture.md`` section 5).
 
 Why the helper can be unreadable at all
 ---------------------------------------
