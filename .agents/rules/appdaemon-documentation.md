@@ -92,6 +92,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image): named workflow registry (`workflow_registry.yaml` + `workflow_registry.py`), selected by name in AppDaemon config (bundle default or per-app `image_workflow`), validated at startup |
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `AssistExposureClient` (voice-assistant exposure list read/write + entity-registry platforms) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
+| `metrics` | `appdaemon/providers/metrics/README.md` | Prometheus exporter for the health-check controller (`HealthMetrics`: snapshot gauges, repair events, checker-supplied metrics, per-checker series removal) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
 | `school_menu` | `appdaemon/providers/school_menu/README.md` | Async client for the School Nutrition and Fitness API |
 | `school_schedule` | `appdaemon/providers/school_schedule/README.md` | Finalsite calendar (ICS) + PowerSchool guardian portal scrapers |
@@ -174,6 +175,14 @@ media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publis
 
 health_check_controller (listens for health_check_command events from all checkers)
   │    — mirrors checker health → Alertmanager (providers/alertmanager) when alertmanager_url set
+  │    — exposes Prometheus metrics (providers/metrics) on metrics_port
+  │    — registration watchdog: besides the event bus, reads AppDaemon's admin namespace
+  │      (get_state(namespace="admin")) for the checker apps configured in THIS instance and
+  │      their lifecycle state; restart_app()s one that has not registered (bounded doubling
+  │      backoff) and publishes it as a synthetic critical checker (HealthCheckerNotRegistered,
+  │      one "Registration" check) if it stays missing; voids/drops a registration whose app
+  │      died or left this instance. Checkers registering from another AppDaemon are only
+  │      watched as declared dependencies, never restarted or dropped
   │    — every repair-capable checker (printer, movie_room_sonos, fans, spa, shade_gateway, protect,
   │      zwave) mixes in shared/auto_repair_config.AutoRepairConfigMixin: provisions the two auto-repair
   │      helpers via ha_provisioner, reads them with the first-run guard, clamps the delay, applies card

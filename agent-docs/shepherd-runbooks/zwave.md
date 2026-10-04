@@ -37,6 +37,11 @@ up** or was never applicable. Do not expect to fix it with another restart.
 
 ## Symptoms
 
+> If the alert is `alertname=HealthCheckerNotRegistered`, stop here. The
+> Z-Wave *checker app* never started (this is the 2026-10-03 failure, a
+> start-up exception), and nothing on this page applies. Follow precondition 0
+> in [README.md](README.md#universal-preconditions-check-before-any-remediation).
+
 - Alert `checker=zwave`, severity critical.
 - Every Z-Wave entity in HA reads `unavailable` — locks, Z-Wave motion
   sensors, and the door/motion automations that depend on them do nothing.
