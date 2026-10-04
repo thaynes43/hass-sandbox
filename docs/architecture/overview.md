@@ -36,7 +36,8 @@
                                      │  ├─ photo_providers│
                                      │  ├─ media_providers│
                                      │  ├─ school_menu    │
-                                     │  └─ alertmanager   │
+                                     │  ├─ alertmanager   │
+                                     │  └─ metrics        │
                                      └───────────────────-┘
                                               │
                                      External APIs
@@ -56,6 +57,8 @@
 | **External APIs** | AppDaemon → Internet | Provider adapters in `providers/` make HTTP calls |
 | **Provisioning** | AppDaemon → HA REST API | `ha_provisioner` creates helpers/scripts on startup |
 | **Static asset check** | AppDaemon → HA HTTP | Unauthenticated `HEAD /local/...` to confirm HA is really serving a file an app asked it to stage |
+| **Checker self-heal** | AppDaemon → AppDaemon (admin namespace) | The health-check controller reads the `app.<name>` entities to learn which checker apps should exist and what state they are in, and calls `app/restart` on one that never registered |
+| **Metrics exposition** | Prometheus → AppDaemon | The cluster's Prometheus scrapes `:9100/metrics`, served by the `metrics` provider for the health-check controller. Apart from AppDaemon's own admin UI and API on port 5050, it is the only inbound HTTP path |
 | **Entity classification** | AppDaemon → HA | `render_template()` over the device registry — `zigbee_ota` asks each tick which `update.*` entities are really Zigbee2MQTT devices, which is what makes a fleet-wide glob safe |
 
 ## Key concepts
@@ -76,7 +79,7 @@ This pattern works for non-admin users (unlike `fire_event` which requires admin
 
 ### Health monitoring
 
-The [health check system](../features/health-checks.md) uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes commands. The controller also mirrors checker status into the cluster's Alertmanager via the `alertmanager` provider — critical findings page the phone, and recovery resolves the alert once it holds, so a flapping condition pages [once per incident](../features/health-checks.md#one-page-per-incident) rather than once per swing.
+The [health check system](../features/health-checks.md) uses the event bus as a decoupling layer between checker apps and a central controller. Checker apps register themselves and report status via HA events; the controller aggregates everything into a single sensor that custom Lovelace cards read. This pattern allows new checkers to be added — often config-only — without modifying the controller. Repair-capable checkers handle their own recovery logic (e.g., smart switch power cycling, config-entry reloads) while the controller only routes those commands. The one recovery the controller does itself is for checkers that never announce themselves. It reads AppDaemon's own list of apps to know which checkers should be present, restarts one that is missing (a few times, with growing waits), and reports it as a critical checker if it stays missing, so a dead checker can't silently hide the checks that depend on it ([details](../features/health-checks.md#auto-heal-first-page-if-that-fails)). The controller exports every checker's status, repair outcomes and checker-supplied values as Prometheus metrics through the `metrics` provider, which the cluster scrapes for Grafana history ([details](../features/health-checks.md#metrics-and-history)). It also mirrors checker status into the cluster's Alertmanager via the `alertmanager` provider — critical findings page the phone, and recovery resolves the alert once it holds, so a flapping condition pages [once per incident](../features/health-checks.md#one-page-per-incident) rather than once per swing.
 
 ### Container separation
 

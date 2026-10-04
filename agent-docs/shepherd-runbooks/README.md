@@ -19,6 +19,14 @@ runbook (`<checker_id>.md`). `alertname` is secondary (default
 `ShadeGatewayUnhealthy`, `CeilingFansUnhealthy`; overridden for protect →
 `ProtectEventStreamFrozen`).
 
+**`HealthCheckerNotRegistered` is the exception: check `alertname` first.**
+The controller's registration watchdog raises it, under the missing checker's
+own `checker=<id>`, when a checker *app* never registered (a start-up
+exception, a bad config, an app that is disabled while others still depend on
+it). It can arrive for **any** `checker_id`, including one with no runbook.
+The checker's runbook does not apply, because the device was never checked:
+the app is the fault. Precondition 0 below covers it.
+
 Because of the controller's **for-gate**, a *firing* critical means the
 checker stayed **non-ok** for ≥300s before promotion, ending on a critical
 cycle — the clock starts at the first non-ok cycle of any severity, so
@@ -134,6 +142,37 @@ reach for a whitelisted switch if a runbook explicitly tells you to.
 
 Run these gates first, in order — several send you straight to skip/escalate:
 
+0. **`alertname=HealthCheckerNotRegistered` → the app is broken, not the
+   device.** The snapshot entry for that checker has exactly one check,
+   `Registration`, with `last_check: null`, `supports_repair: false` (so
+   `start_repair` is rejected) and no `repair_state`. Its detail says how long
+   it has been missing, which dependents it masks, and how many automatic
+   restarts the watchdog has made (up to 3, at 120 s, then +240 s, then
+   +480 s, each counted from when AppDaemon last finished starting the app).
+   Do **not** work the checker's own runbook. Instead:
+   - While the detail says `retrying`, `restart of app … pending` or
+     `AppDaemon has not finished starting app …`, the watchdog is still
+     self-healing (in the last case it waits for AppDaemon to finish a start
+     or restart before its next try). `record_note` the wake and skip.
+   - Otherwise, pull the start-up traceback for the app named in the detail:
+     `{namespace="home-automation", app="appdaemon"} |~ "<app name>|Unhandled exception|failed to start"`.
+     Then **Escalate** with that traceback. The fix is code or config, which
+     is not a Shepherd lever.
+   - `missing again …s after it last registered (crash loop)` together with
+     `brought it back but it did not stay registered` means the app starts
+     but dies again soon after: restarts are spent and will not hold. Pull
+     the traceback as above and **Escalate** as a crash loop. The leading
+     duration is how long it has been down *this* time, not the whole episode.
+   - `no checker app with checker_id '<id>' is configured` means another
+     checker still declares `<id>` as a dependency but no app provides it
+     (a typo, or an app that was removed). That is a config error: **Escalate**.
+   - `automatic restarts are off` (`registration_restart_attempts: 0`, or an
+     AppDaemon with no `restart_app()`; the controller logs "AppDaemon offers
+     no restart_app()" at start-up in that case) or `AppDaemon's app list
+     could not be read` means no restart is coming. Say which in the escalation.
+     Pull the traceback as above and **Escalate**.
+   - The alert resolves by itself once the checker registers, after the
+     controller's usual improvement hold.
 1. **Muted → SKIP entirely.** If `checkers.<id>.muted == true`, do nothing:
    no remediation, no page. A human silenced it deliberately (the spa, for
    example, is muted indefinitely because the hardware is physically broken).
@@ -192,6 +231,7 @@ Run these gates first, in order — several send you straight to skip/escalate:
 | [shade_batteries.md](shade_batteries.md) | `shade_batteries` | **no** | none — disconnects owned by `shade_gateway`; real decline = replace |
 | [fans.md](fans.md) | `fans` | yes | per-fan `script.zen32_hard_reset` scene-controller cycle |
 | [movie_room_sonos.md](movie_room_sonos.md) | `movie_room_sonos` | yes | power-cycle UniFi PDU outlet 21 (`switch.power_distribution_hi_density_outlet_21`, labelled "Sonos Port"), confirming it came back on (auto; 10m dwell, one/outage) |
+| *(any)* | any, with `alertname=HealthCheckerNotRegistered` | n/a | the controller restarts the app itself (max 3); then precondition 0 → **Escalate** with the start-up traceback |
 | [`zwave.md`](zwave.md) | `zwave` | yes | ESPHome **software** restart of the TubesZB TCP bridge (auto; 5m dwell, 15m apart, max 3/24h, then it forces `critical` itself) — **never** power-cycle or PoE-cycle that board |
 
 The runbooked checkers caused ~43 critical episodes/week before the v1.4.0

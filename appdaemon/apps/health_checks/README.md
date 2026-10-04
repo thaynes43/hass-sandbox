@@ -137,7 +137,9 @@ No cross-check: any piece down breaks voice and is critical. In production the A
 
 ### Dependency System
 
-Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker is unhealthy (`critical`/`degraded`) or missing entirely, the affected checks are overridden to `unknown` with detail `"dependency unavailable"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down. A dependency that is merely `unknown` (registered but not reporting) does **not** mask its dependents: an unknown dependency raises no Alertmanager alert of its own, so masking would let a genuine dependent failure go completely silent.
+Checkers can declare `dependencies` during registration to express that some of their checks depend on another checker being healthy. At publish time, the controller resolves these dependencies: if a dependency checker is unhealthy (`critical`/`degraded`) or missing entirely, the affected checks are overridden to `unknown` with detail `"dependency unavailable: <name>"` in the **published view only** -- the internal state is never modified. This prevents misleading alerts when a shared dependency (e.g., the Zigbee protocol stack) is down. A dependency that is merely `unknown` (registered but not reporting) does **not** mask its dependents: an unknown dependency raises no Alertmanager alert of its own, so masking would let a genuine dependent failure go completely silent.
+
+A dependency that has **never registered** is named as such — `dependency unavailable: Z-Wave (not registered)` — and the [registration watchdog](#registration-watchdog) restarts it and, after its grace period, reports it as a `critical` checker of its own. The masking is therefore never silent: either the dependency comes back, or it pages like any other critical dependency.
 
 Dependencies are declared per-check via `affects_checks`, or if omitted, all checks in the registering checker are affected:
 
@@ -153,6 +155,17 @@ Dependencies are declared per-check via `affects_checks`, or if omitted, all che
 ```
 
 The checker-level status is recomputed from the modified checks in the published view using the standard severity precedence: critical > degraded > warning > unknown > ok.
+
+### Registration Watchdog
+
+A checker that dies before it registers (a start-up exception, a bad config, a typo in a `checker_id`) used to vanish without a trace: no tile, no alert, and every check that depends on it masked as `unknown`. On 2026-10-03 the Z-Wave checker died that way during an AppDaemon re-initialisation and its 36 dependent checks (Z-Wave Batteries, Cigars) read `unknown` for three hours with nothing paging ([#226](https://github.com/thaynes43/hass-sandbox/issues/226)). The controller now watches for it on every heartbeat tick.
+
+- **Expected checkers.** A checker is expected when it is an enabled app in this AppDaemon instance whose module lives under `health_checks.checker_apps` (keyed by its `checker_id`), or when a registered checker declares it as a dependency. The apps come from AppDaemon's admin namespace, `get_state(namespace="admin")`: each enabled app has an `app.<name>` entity whose state is its lifecycle state and whose `args` attribute is its config (disabled apps have no entity). The read happens on the heartbeat tick, a worker thread; on AppDaemon's event loop `get_state` returns a Task instead. A failed read keeps the last list it read, so it never resets the clocks below. A read that finds no checker app at all is logged once as a warning, because the watchdog can then restart nothing.
+- **Self-heal first.** An expected checker still unregistered `registration_restart_after_s` (120 s) after AppDaemon *finished starting its app* is restarted through AppDaemon's `restart_app`. The clock waits while the app's state is `loaded`, `created` or `initializing`, so a slow AppDaemon-wide re-initialisation is never interrupted mid-start. Further restarts back off by doubling — the second comes 240 s after the first, the third 480 s after that — up to `registration_restart_attempts` (3). Each wait counts from when the app last *finished* starting: a tick that catches the app still starting re-arms it, so even a slow restart is followed by a full window to register. A checker known only as a declared dependency has no app to restart and is surfaced without one. `restart_app` goes through AppDaemon's `app/restart` admin service, which stops and starts the app in a task AppDaemon owns. From a sync callback it returns `None` once the restart is scheduled, and the restart log line is written only after that call returns. This was verified against AppDaemon 4.5.13: a checker whose first start-up raised was restarted from the heartbeat tick and then registered.
+- **Then surface.** Still missing `registration_grace_s` (300 s) after it became expected (whether or not AppDaemon ever finished starting it), it is published as a `critical` checker with one check, `Registration`, whose detail says how long it has been missing, which dependents it masks and how many restarts failed. It reaches Alertmanager as `HealthCheckerNotRegistered` (`checker=<id>`) through the default for-duration gate (`alert_for_seconds.critical`, 300 s in production), so a restart that heals it before the gate elapses never pages. Per-checker `alert_for_overrides` do not apply (the alert sets `ignore_for_overrides`): `ups: critical: 0` was chosen for a power loss the running checker reports, not for an app that never started. It can be muted from its tile like any other checker; an `alerting: {enabled: false}` in the app's config is honoured. If its app is then disabled or removed, the alert is resolved at once (`AlertmanagerBridge.forget`) and its metrics series are dropped. Otherwise the bridge would keep re-posting the alert of a checker that had vanished from the snapshot.
+- **Registered, then died.** If a checker registered earlier but its app is now `initialize_error`, `compile_error` or `terminated` (for example a single-app reload whose `initialize()` raised), the stale registration is voided and the checker goes through the same restart-then-surface path. Its alert history is kept for when it registers again. Without this, its tile would stay frozen at its last status with nothing paging. A registration that follows the watchdog's restarts, or follows the checker's app dying after it had registered, has to hold for 30 minutes before the episode is forgotten: a checker that dies again sooner resumes its restart count and its missing-since time, so a crash loop still runs out of restarts and pages, the same reset rule the ceiling fans' repair ladder uses. If its app disappears from this instance altogether (disabled or removed, so AppDaemon drops its entity), the registration is removed and any alert it had firing is resolved; if other checkers still depend on it, it is then reported as missing like any other. Only checkers whose app this instance has had are affected, so a checker registering from another AppDaemon (a laptop during development) is never dropped.
+- **No false alarms.** Every checker registers within seconds of start-up (all 26 inside 8 s, measured 2026-10-04). The MQTT lights checkers' ~30-minute warm-up is a *status* (`unknown`) after registration, not a missing registration, so the watchdog never touches it.
+- **Log lines.** `Registration watchdog armed: N configured checker app(s) tracked …` once AppDaemon's app list has settled: on the first tick that finds checker apps, or after `registration_grace_s`, when an empty list is also warned about. The first tick can run before AppDaemon has created the other apps. `Registration watchdog: all N expected checkers registered …` is logged once they have all registered. Restarts and surfacing log at `WARNING`, recoveries at `INFO`.
 
 ### Repair Feature
 
@@ -198,7 +211,10 @@ Checkers opt in/out and name their alert via an `alerting` block in the registra
 alerting:
   enabled: true                        # default true
   alertname: ProtectEventStreamFrozen  # default <CheckerName>Unhealthy (e.g. ImageGenUnhealthy)
+  ignore_for_overrides: false          # true = use alert_for_seconds, never alert_for_overrides
 ```
+
+`ignore_for_overrides` exists for the [registration watchdog](#registration-watchdog)'s synthetic not-registered checker; a real checker has no reason to set it.
 
 ### Per-Checker Mute
 
@@ -207,7 +223,7 @@ Any checker's paging can be silenced on demand from the detail card — useful d
 A muted checker still runs its checks and reports status to the sensor — the card renders it normally, just with the MUTED chip — but its Alertmanager alert is suppressed: `_publish_status` passes the checker to the bridge with `alerting.enabled=false`, so the bridge resolves any firing alert and drops any pending one. Nothing pages while muted. Unmuting restores alerting; if the checker is still unhealthy the alert re-raises (back through the for-duration gate) on the next report.
 
 - **Timed vs indefinite** — `mute_checker` takes an optional `duration_s`; absent means mute indefinitely. Timed mutes are lifted automatically by the heartbeat tick once their expiry passes.
-- **Persistence** — mute state is stored per checker in a lazily-provisioned `input_text.health_check_mute_<checker_id>` helper (JSON `{"muted", "until"}`), so it survives an AppDaemon restart and is restored when the checker re-registers. An expired mute found on restart is treated as unmuted.
+- **Persistence** — mute state is stored per checker in a lazily-provisioned `input_text.health_check_mute_<checker_id>` helper (JSON `{"muted", "until"}`), so it survives an AppDaemon restart and is restored when the checker re-registers, or when the registration watchdog reports it as not registered (a deliberately muted checker that goes missing does not page). An expired mute found on restart is treated as unmuted.
 - **Audit trail** — mute and unmute are recorded in the checker's `alert_history` as `Alerting` events, and each checker's sensor attributes expose `muted` (bool) and `muted_until` (ISO timestamp or `null`).
 
 ### Prometheus Metrics
@@ -315,6 +331,12 @@ health_check_controller:
   # Repair hold — a scheduled/running auto-repair withholds a due critical page
   # (up to this many total pending seconds) so it can fix the problem first.
   alert_repair_hold_cap_s: 1800  # default 1800s (30 min); 0 disables the hold
+  # Registration watchdog — restart, then report as critical, any expected
+  # checker that never registers (see "Registration Watchdog").
+  registration_watchdog_enabled: true  # default true
+  registration_restart_after_s: 120    # first restart; later ones double the wait
+  registration_restart_attempts: 3     # restarts per missing checker; 0 = surface only
+  registration_grace_s: 300            # report as critical after this long missing
 ```
 
 ### NetworkProtocolChecker
@@ -366,9 +388,9 @@ zwave_health_checker:
 | `start_repair` | `{"checker_id": "spa"}` | Trigger manual repair for a specific checker |
 | `update_repair_config` | `{"checker_id": "spa", "auto_repair_enabled": true, "auto_repair_delay_min": 5}` | Update auto-repair settings |
 | `clear_alert_history` | `{"checker_id": "optional"}` | Clear alert history for one or all checkers |
-| `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely |
+| `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely. Also accepted for a checker the registration watchdog reports as not registered |
 | `unmute_checker` | `{"checker_id": "spa"}` | Re-enable a checker's paging |
-| `record_note` | `{"checker_id": "spa", "note": "power-cycled gateway", "source": "shepherd"}` | Insert a triage note into the checker's alert history (audit trail for automation; `source` defaults to `agent`) |
+| `record_note` | `{"checker_id": "spa", "note": "power-cycled gateway", "source": "shepherd"}` | Insert a triage note into the checker's alert history (audit trail for automation; `source` defaults to `agent`). Also accepted for a checker the registration watchdog reports as not registered; its notes are kept and carried over when it registers |
 
 ## Sensor Attributes Schema
 
@@ -419,6 +441,8 @@ zwave_health_checker:
 
 **Note:** For checkers with more than 20 checks, only non-ok checks are included in the `checks` array to stay within HA's WebSocket attribute size limit. The `checks_summary` object always contains the full counts.
 
+**Note:** A checker the [registration watchdog](#registration-watchdog) reports as not registered appears under its `checker_id` with `status: critical`, `last_check: null` and a single `Registration` check.
+
 ## Manual Setup Required
 
 1. **Lovelace resources** — register the JS card files:
@@ -426,7 +450,8 @@ zwave_health_checker:
    - `/local/health-checks/health-check-detail-card.js`
 2. **Copy card JS** to `/config/www/health-checks/` on the HA instance
 3. **Add cards** to the Wall-Display dashboard (see `home-assistant/cards/wall-display/`)
-4. **`movie_room_sonos` network prerequisites** (UniFi, not provisionable from HA) — the Sonos Port's DHCP reservation for `192.168.0.70` (its `ping_fallback_host`) with the local DNS record `movieroomsonos.haynesnetwork` (its `ping_host`), both created 2026-09-28
+4. **Prometheus scrape** (haynes-ops, not provisionable from HA): the AppDaemon HelmRelease (`kubernetes/main/apps/home-automation/appdaemon/app/helmrelease.yaml`) exposes the controller's `metrics_port` (9100) as the Service port `metrics` and scrapes `/metrics` every minute through its `serviceMonitor` block. Change `metrics_port` in both places together.
+5. **`movie_room_sonos` network prerequisites** (UniFi, not provisionable from HA) — the Sonos Port's DHCP reservation for `192.168.0.70` (its `ping_fallback_host`) with the local DNS record `movieroomsonos.haynesnetwork` (its `ping_host`), both created 2026-09-28
 
 ## Folder Structure
 

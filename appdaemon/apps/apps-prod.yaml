@@ -697,6 +697,19 @@ health_check_controller:
       # which dependency-masks these batteries before they can page.
       # Real battery drain is gradual — 10 min of latency is free.
       critical: 600
+  # Registration watchdog (hass-sandbox#226): a checker app in this config,
+  # or a checker_id another checker depends on, that has not registered is
+  # restarted (120s after AppDaemon finished starting the app, then
+  # doubling, at most 3 times) and, once it has been missing for 300s,
+  # published as a critical checker (HealthCheckerNotRegistered) — through
+  # the default critical for-gate above (alert_for_overrides do not apply),
+  # so a restart that heals it in time never pages.
+  # Normal start-up registers all 26 checkers within seconds; the lights'
+  # warm-up is a status after registration, not a missing registration.
+  registration_watchdog_enabled: true
+  registration_restart_after_s: 120
+  registration_restart_attempts: 3
+  registration_grace_s: 300
 
 zigbee_health_checker:
   module: health_checks.checker_apps.network_protocol_checker.network_protocol_checker
