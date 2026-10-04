@@ -807,11 +807,13 @@ class HealthCheckController(hass.Hass):
 
         Lets automation (e.g. a triage agent) leave an audit trail visible
         in the detail card: ``{checker_id, note, source?}``.  Notes ride the
-        normal alert-history retention/cap.
+        normal alert-history retention/cap.  A checker the registration
+        watchdog reports as not registered takes notes too; they are kept
+        with its history and carried over when it registers.
         """
         checker_id = payload.get("checker_id", "")
-        checker = self._checkers.get(checker_id)
-        if not checker:
+        history = self._alert_history_for(checker_id)
+        if history is None:
             self.log(
                 f"record_note for unknown checker: {checker_id!r}",
                 level="WARNING",
@@ -826,7 +828,7 @@ class HealthCheckController(hass.Hass):
             note = note[:279] + "…"
         source = str(payload.get("source", "") or "agent").strip() or "agent"
 
-        checker["alert_history"].insert(0, {
+        history.insert(0, {
             "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
             "check": source,
             "from_status": source,
@@ -834,7 +836,7 @@ class HealthCheckController(hass.Hass):
             "detail": note,
             "is_note_event": True,
         })
-        checker["alert_history"] = checker["alert_history"][: self._alert_history_max]
+        del history[self._alert_history_max:]
         self.log(
             f"Note recorded for checker '{checker_id}' from '{source}': {note}",
             level="INFO",
@@ -877,14 +879,29 @@ class HealthCheckController(hass.Hass):
                 until = None
         return {"until": until}
 
+    def _alert_history_for(self, checker_id: str) -> Optional[List[Dict[str, Any]]]:
+        """The alert-history list to write to, or None for an unknown checker.
+
+        A registered checker's own list; for a checker the registration
+        watchdog reports as not registered, the history kept for it (from a
+        voided registration, plus notes and mute events since), which
+        ``_handle_register`` carries over when it registers again.
+        """
+        checker = self._checkers.get(checker_id)
+        if checker is not None:
+            return checker["alert_history"]
+        if self._is_mutable_checker(checker_id):
+            return self._reg_saved_history.setdefault(checker_id, [])
+        return None
+
     def _record_mute_event(
         self, checker_id: str, to_status: str, detail: str
     ) -> None:
         """Insert a mute/unmute transition into the checker's alert history."""
-        checker = self._checkers.get(checker_id)
-        if not checker:
+        history = self._alert_history_for(checker_id)
+        if history is None:
             return
-        checker["alert_history"].insert(0, {
+        history.insert(0, {
             "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
             "check": "Alerting",
             "from_status": "unmuted" if to_status == "muted" else "muted",
@@ -1391,7 +1408,9 @@ class HealthCheckController(hass.Hass):
                     "detail": self._unregistered_detail(checker_id, entry),
                     "last_changed": entry.get("surfaced_at"),
                 }],
-                "alert_history": [],
+                # History kept from a voided registration, plus notes and
+                # mute events recorded while missing.
+                "alert_history": self._reg_saved_history.get(checker_id, []),
                 "supports_repair": False,
                 "repair_state": None,
                 "dependencies": [],

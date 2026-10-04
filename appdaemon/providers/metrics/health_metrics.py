@@ -143,6 +143,9 @@ class HealthMetrics:
         # Track which (checker_id, check) series we have set so a check that
         # disappears from a report can be cleared rather than lingering stale.
         self._seen_checks: Dict[str, set] = {}
+        # checker_id → {(custom metric key, label values)} set by
+        # record_custom, so remove_checker can drop those series too.
+        self._custom_seen: Dict[str, set] = {}
         if not self.enabled:
             self.registry = None
             return
@@ -315,6 +318,15 @@ class HealthMetrics:
                     gauge.remove(checker_id)
                 except KeyError:
                     pass
+            # Checker-supplied series (appdaemon_health_custom_*).
+            for key, values in self._custom_seen.pop(checker_id, set()):
+                metric = self._custom.get(key)
+                if metric is None:
+                    continue
+                try:
+                    metric.remove(*values)
+                except KeyError:
+                    pass
         except Exception as exc:  # never let metrics break the controller
             logger.error("remove_checker failed: %r", exc)
 
@@ -383,6 +395,9 @@ class HealthMetrics:
         try:
             label_values = {"checker_id": checker_id, **extra}
             bound = metric.labels(**label_values)
+            self._custom_seen.setdefault(checker_id, set()).add(
+                ((name, label_keys), tuple(str(label_values[k]) for k in label_keys))
+            )
             if metric_type == "counter":
                 bound.inc(fval)
             elif metric_type == "histogram":

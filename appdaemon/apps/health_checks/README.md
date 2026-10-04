@@ -390,7 +390,7 @@ zwave_health_checker:
 | `clear_alert_history` | `{"checker_id": "optional"}` | Clear alert history for one or all checkers |
 | `mute_checker` | `{"checker_id": "spa", "duration_s": 86400}` | Suppress a checker's Alertmanager paging; omit `duration_s` to mute indefinitely. Also accepted for a checker the registration watchdog reports as not registered |
 | `unmute_checker` | `{"checker_id": "spa"}` | Re-enable a checker's paging |
-| `record_note` | `{"checker_id": "spa", "note": "power-cycled gateway", "source": "shepherd"}` | Insert a triage note into the checker's alert history (audit trail for automation; `source` defaults to `agent`) |
+| `record_note` | `{"checker_id": "spa", "note": "power-cycled gateway", "source": "shepherd"}` | Insert a triage note into the checker's alert history (audit trail for automation; `source` defaults to `agent`). Also accepted for a checker the registration watchdog reports as not registered; its notes are kept and carried over when it registers |
 
 ## Sensor Attributes Schema
 

@@ -36,7 +36,8 @@
                                      │  ├─ photo_providers│
                                      │  ├─ media_providers│
                                      │  ├─ school_menu    │
-                                     │  └─ alertmanager   │
+                                     │  ├─ alertmanager   │
+                                     │  └─ metrics        │
                                      └───────────────────-┘
                                               │
                                      External APIs

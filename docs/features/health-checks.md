@@ -150,6 +150,8 @@ Each alert carries the failing check details in its description, so the notifica
 
 Checkers can customize their alert name in config (e.g. `ProtectEventStreamFrozen`, `ImageGenQueueStuck`) or opt out of alerting entirely.
 
+The controller also publishes the same health data as Prometheus metrics, which the cluster's Prometheus collects for Grafana: every checker's and check's status, how long each has been in that state, repair outcomes and recovery times, and values some checkers report themselves, such as humidity, battery level and the image-generation queue. That gives history and graphs behind the alerts. See `appdaemon/providers/metrics/README.md` for the interface and the *Prometheus Metrics* section of `appdaemon/apps/health_checks/README.md` for every metric.
+
 ### Smarter Than a Tripwire
 
 A page that fires on every momentary blip trains you to ignore it, so the paging path is deliberately patient:

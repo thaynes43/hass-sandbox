@@ -835,6 +835,43 @@ class TestFailedRegistration:
             value=json.dumps({"muted": True, "until": None}),
         )
 
+    def test_surfaced_missing_checker_takes_notes_that_survive_registration(self):
+        """The Shepherd runbook's precondition 0 has it record_note a wake on
+        a not-registered alert (review round 6)."""
+        app, clock = self._incident()
+        _command(app, "record_note", {"checker_id": "zwave", "note": "too early"})
+        assert any(
+            "record_note for unknown checker: 'zwave'" in l
+            for l in _log_lines(app, "WARNING")
+        )  # not surfaced yet: no tile to annotate
+
+        _advance_to(app, clock, 300)
+        _command(app, "record_note", {
+            "checker_id": "zwave", "note": "watchdog retrying; skipped",
+            "source": "shepherd",
+        })
+        history = _sensor(app)[1]["zwave"]["alert_history"]
+        assert history[0]["detail"] == "watchdog retrying; skipped"
+        assert history[0]["is_note_event"] is True
+
+        _register(app, "zwave")
+        assert app._checkers["zwave"]["alert_history"][0]["detail"] == (
+            "watchdog retrying; skipped"
+        )
+
+    def test_voided_checker_tile_keeps_its_history(self):
+        app, clock = self._incident()
+        _register(app, "zwave")
+        _report(app, "zwave", [
+            {"name": "Integration Status", "status": "critical", "detail": "down"},
+            {"name": "Radio Ping", "status": "ok"},
+        ])
+        app.ad.app_states["zwave_health_checker"] = "initialize_error"
+        _advance_to(app, clock, 60)
+        _advance_to(app, clock, 360)  # surfaced 300s after the void
+        history = _sensor(app)[1]["zwave"]["alert_history"]
+        assert history and history[0]["check"] == "Integration Status"
+
     def test_configured_alerting_opt_out_is_honoured(self):
         config = dict(APP_CONFIG)
         config["zwave_health_checker"] = {

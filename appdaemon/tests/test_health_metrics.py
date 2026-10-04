@@ -56,6 +56,17 @@ class TestRemoveChecker:
         m.remove_checker("fans")  # idempotent
         m.remove_checker("never-seen")
 
+    def test_drops_checker_supplied_custom_series(self):
+        m = HealthMetrics()
+        m.record_custom("cigars", name="humidity_percent", value=64.0,
+                        labels={"sensor": "jar1"})
+        m.record_custom("ups", name="battery_percent", value=99.0)
+        m.remove_checker("cigars")
+        rendered = m.render()
+        assert 'checker_id="cigars"' not in rendered
+        assert _val(m, "appdaemon_health_custom_battery_percent",
+                    {"checker_id": "ups"}) == 99.0
+
     def test_unexpected_error_never_escapes(self, monkeypatch):
         """Its caller sits mid-loop in the registration watchdog tick."""
         m = HealthMetrics()
