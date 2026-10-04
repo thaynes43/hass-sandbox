@@ -1656,7 +1656,7 @@
 </tbody>
 </table>
 <h3 id="dependency-system">Dependency System</h3>
-<p>Checkers can declare dependencies on other checkers. When a dependency is unhealthy, the controller automatically marks affected checks as <code>unknown</code> instead of reporting misleading failures.</p>
+<p>Checkers can declare dependencies on other checkers. When a dependency is unhealthy, or has not registered at all, the controller automatically marks affected checks as <code>unknown</code> instead of reporting misleading failures.</p>
 <p>For example, MQTT device checks depend on the MQTT broker checker. If the broker itself is down, individual device checks show as <code>unknown</code> rather than <code>critical</code> — because the real problem is the broker, not the devices.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># MQTT device checker declares broker dependency</span>
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">broker_dependency_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mqtt_broker</span>
