@@ -319,8 +319,11 @@ class HealthMetrics:
                 except KeyError:
                     pass
             # Checker-supplied series (appdaemon_health_custom_*).
-            for key, values in self._custom_seen.pop(checker_id, set()):
-                metric = self._custom.get(key)
+            with self._custom_lock:
+                custom_series = self._custom_seen.pop(checker_id, set())
+                custom_metrics = dict(self._custom)
+            for key, values in custom_series:
+                metric = custom_metrics.get(key)
                 if metric is None:
                     continue
                 try:
@@ -395,9 +398,10 @@ class HealthMetrics:
         try:
             label_values = {"checker_id": checker_id, **extra}
             bound = metric.labels(**label_values)
-            self._custom_seen.setdefault(checker_id, set()).add(
-                ((name, label_keys), tuple(str(label_values[k]) for k in label_keys))
-            )
+            with self._custom_lock:
+                self._custom_seen.setdefault(checker_id, set()).add(
+                    ((name, label_keys), tuple(str(label_values[k]) for k in label_keys))
+                )
             if metric_type == "counter":
                 bound.inc(fval)
             elif metric_type == "histogram":

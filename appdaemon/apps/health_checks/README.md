@@ -450,7 +450,8 @@ zwave_health_checker:
    - `/local/health-checks/health-check-detail-card.js`
 2. **Copy card JS** to `/config/www/health-checks/` on the HA instance
 3. **Add cards** to the Wall-Display dashboard (see `home-assistant/cards/wall-display/`)
-4. **`movie_room_sonos` network prerequisites** (UniFi, not provisionable from HA) — the Sonos Port's DHCP reservation for `192.168.0.70` (its `ping_fallback_host`) with the local DNS record `movieroomsonos.haynesnetwork` (its `ping_host`), both created 2026-09-28
+4. **Prometheus scrape** (haynes-ops, not provisionable from HA): the AppDaemon HelmRelease (`kubernetes/main/apps/home-automation/appdaemon/app/helmrelease.yaml`) exposes the controller's `metrics_port` (9100) as the Service port `metrics` and scrapes `/metrics` every minute through its `serviceMonitor` block. Change `metrics_port` in both places together.
+5. **`movie_room_sonos` network prerequisites** (UniFi, not provisionable from HA) — the Sonos Port's DHCP reservation for `192.168.0.70` (its `ping_fallback_host`) with the local DNS record `movieroomsonos.haynesnetwork` (its `ping_host`), both created 2026-09-28
 
 ## Folder Structure
 

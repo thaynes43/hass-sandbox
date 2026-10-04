@@ -859,6 +859,30 @@ class TestFailedRegistration:
             "watchdog retrying; skipped"
         )
 
+    def test_clear_history_reaches_a_missing_checker(self):
+        """The detail card's Clear History (empty payload) and the per-checker
+        form must clear a not-registered tile too (review round 7)."""
+        app, clock = self._incident()
+        _advance_to(app, clock, 300)
+        _command(app, "record_note", {"checker_id": "zwave", "note": "one"})
+        _command(app, "clear_alert_history", {"checker_id": "zwave"})
+        assert _sensor(app)[1]["zwave"]["alert_history"] == []
+        _command(app, "record_note", {"checker_id": "zwave", "note": "two"})
+        _command(app, "clear_alert_history", {})
+        assert _sensor(app)[1]["zwave"]["alert_history"] == []
+
+    def test_kept_history_is_dropped_once_the_checker_is_gone(self):
+        app, clock = self._incident()
+        _advance_to(app, clock, 300)
+        _command(app, "record_note", {"checker_id": "zwave", "note": "n"})
+        assert "zwave" in app._reg_saved_history
+        del app.ad.app_config["zwave_health_checker"]
+        del app.ad.app_config["zwave_battery_checker"]  # nothing depends on it now
+        app._checkers.pop("zwave_batteries")
+        _advance_to(app, clock, 360)
+        assert "zwave" not in app._unregistered
+        assert "zwave" not in app._reg_saved_history
+
     def test_voided_checker_tile_keeps_its_history(self):
         app, clock = self._incident()
         _register(app, "zwave")

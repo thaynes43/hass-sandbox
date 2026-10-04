@@ -785,8 +785,9 @@ class HealthCheckController(hass.Hass):
         """Clear alert history for all checkers or a specific checker."""
         checker_id = payload.get("checker_id")
         if checker_id:
-            if checker_id in self._checkers:
-                self._checkers[checker_id]["alert_history"] = []
+            history = self._alert_history_for(checker_id)
+            if history is not None:
+                history.clear()
                 self.log(
                     f"Cleared alert history for checker '{checker_id}'",
                     level="INFO",
@@ -799,6 +800,8 @@ class HealthCheckController(hass.Hass):
         else:
             for c in self._checkers.values():
                 c["alert_history"] = []
+            # Including what is kept for checkers reported as not registered.
+            self._reg_saved_history.clear()
             self.log("Cleared all alert history", level="INFO")
         self._publish_status()
 
@@ -1195,6 +1198,12 @@ class HealthCheckController(hass.Hass):
                 f"registered ({len(configured)} configured apps)",
                 level="INFO",
             )
+
+        # History is only kept for a checker still being tracked; one that
+        # registered took it, and one that left for good drops it here.
+        for checker_id in list(self._reg_saved_history):
+            if checker_id not in self._unregistered:
+                del self._reg_saved_history[checker_id]
 
         # Re-publish while anything is surfaced so the Alertmanager bridge
         # sees the condition persist (its for-gate promotes on a later sync).

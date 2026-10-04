@@ -89,8 +89,10 @@ Checkers can declare dependencies on other checkers. When a dependency is unheal
 For example, MQTT device checks depend on the MQTT broker checker. If the broker itself is down, individual device checks show as `unknown` rather than `critical` — because the real problem is the broker, not the devices.
 
 ```yaml
-# MQTT device checker declares broker dependency
-broker_dependency_id: mqtt_broker
+# basement_lights_checker (MqttDeviceChecker)
+protocol_dependency_id: zigbee   # the "<device> MQTT" checks depend on Zigbee
+health_dependencies:
+  - checker_id: mqtt_broker      # every check depends on the broker
 ```
 
 The controller resolves these dependencies at publish time without modifying the underlying check data, so when the broker recovers, device checks immediately resume reporting their true status.
@@ -150,8 +152,6 @@ Each alert carries the failing check details in its description, so the notifica
 
 Checkers can customize their alert name in config (e.g. `ProtectEventStreamFrozen`, `ImageGenQueueStuck`) or opt out of alerting entirely.
 
-The controller also publishes the same health data as Prometheus metrics, which the cluster's Prometheus collects for Grafana: every checker's and check's status, how long each has been in that state, repair outcomes and recovery times, and values some checkers report themselves, such as humidity, battery level and the image-generation queue. That gives history and graphs behind the alerts. See `appdaemon/providers/metrics/README.md` for the interface and the *Prometheus Metrics* section of `appdaemon/apps/health_checks/README.md` for every metric.
-
 ### Smarter Than a Tripwire
 
 A page that fires on every momentary blip trains you to ignore it, so the paging path is deliberately patient:
@@ -204,13 +204,17 @@ Two things had to change. The checker now presses that ESPHome restart button on
 
 The budget is the point. This board is fragile — its predecessor was killed by repeated power cycling — so the repair is a *software* restart, never a power cut, and it is fenced in on every side: five minutes of sustained failure before the first attempt, fifteen minutes between attempts, and at most three in any rolling day, after which it stops trying and pages a human instead. It only acts on the exact fingerprint above — controller down *while the radio still answers* — because if the board has genuinely dropped off the network, a software restart is not a thing that can help. That case now pages instead, which it previously didn't: a dead board still leaves the web UI answering, so the same "two of three checks are fine" arithmetic was quietly hiding it too. And the counter that enforces the daily cap is written to its own Home Assistant helper, so an AppDaemon deploy landing in the middle of an outage resumes the ladder where it left off instead of starting over with a fresh three restarts.
 
-**The health checks themselves** can fail too, and for a while that was the quietest failure of all. Each checker announces itself to the controller when it starts. On 3 October, Home Assistant moved to another node, AppDaemon restarted every app, and the Z-Wave checker hit a start-up bug and died before it announced itself. Nothing paged. Its tile simply disappeared, and because the Z-Wave battery and cigar humidor checks depend on it, 36 of them turned grey with "dependency unavailable: zwave". That rule exists so one Z-Wave outage doesn't page once per battery, but it also meant a leak sensor's battery could have gone flat that night without anyone hearing about it. It stayed that way for a little over three hours, until Tom noticed the grey tiles himself.
+**The health checks themselves** can fail too, and for a while that was the quietest failure of all. Each checker announces itself to the controller when it starts. On 3 October 2026, Home Assistant moved to another node, AppDaemon restarted every app, and the Z-Wave checker hit a start-up bug and died before it announced itself. Nothing paged. Its tile simply disappeared, and because the Z-Wave battery and cigar humidor checks depend on it, 36 of them turned grey with "dependency unavailable: zwave". That rule exists so one Z-Wave outage doesn't page once per battery, but it also meant a leak sensor's battery could have gone flat that night without anyone hearing about it. It stayed that way for a little over three hours, until Tom noticed the grey tiles himself.
 
 Now the controller knows which checkers should be there: every checker app in the AppDaemon config, plus any checker that another one depends on. A checker that hasn't announced itself two minutes after AppDaemon started it is restarted, then restarted again four minutes later and once more eight minutes after that; three tries at most. The clock doesn't start until AppDaemon has finished starting that app, so a slow restart of everything is never interrupted halfway. Once it has been missing for five minutes it appears as a red tile with a single **Registration** check that says what is wrong, and its alert waits the same five minutes as any other critical alert, so a restart that works inside that window never pages. The grey dependent checks now name the problem, for example "dependency unavailable: Z-Wave (not registered)". If the broken checker is switched off in the config instead, its page resolves straight away. Normal start-ups don't trip any of this, because every checker announces itself within seconds, and the lights' half-hour warm-up happens after they have announced themselves.
 
 **The Movie Room Sonos Port** is the simplest case, and a good example of choosing the signal carefully. After a network switch hiccup one day the Port kept its cable link but stopped answering anything at all, and the Movie Room silently dropped out of the music system for six days — until a twelve-second power cycle of its outlet on the UniFi power strip brought it straight back. Now a checker pings it every three minutes; after ten minutes of silence it power-cycles that outlet and waits up to five minutes for the Port to return, paging only if it doesn't. What it deliberately does *not* watch is the Movie Room player itself: that disappears every time the music server restarts, and a routine restart must never cut power to the Port.
 
 The power strip taught a second lesson. Switching one of its outlets makes the whole strip reconfigure itself for about forty seconds, Home Assistant can take well over ten seconds to notice, and once the integration lost track of every outlet on it until it was reloaded. A power cycle that simply says "on" and moves on could leave the Port switched off while it waits for it to recover. So every repair that switches an outlet now waits to see it actually report on — not trusting an "on" left over from before the cycle unless nothing else ever comes back, in which case it goes ahead but says so in the repair detail if the device then doesn't recover — tries once more if it doesn't, and fails loudly with "check the outlet" if it still won't come back. (The ceiling fans' repair works through a scene-controller relay and the shade gateway's through a PoE port, so they have no outlet to watch.)
+
+## Metrics and History
+
+The controller publishes the same health data as Prometheus metrics, which the cluster's Prometheus collects for Grafana: every checker's and check's status, how long each has been in that state, repair outcomes and recovery times, and values some checkers report themselves, such as humidity, battery level and the image-generation queue. That gives history and graphs behind the alerts. See `appdaemon/providers/metrics/README.md` for the interface and the *Prometheus Metrics* section of `appdaemon/apps/health_checks/README.md` for every metric.
 
 ## Dashboard Experience
 
@@ -233,6 +237,7 @@ The detail card provides a full breakdown:
 - **Clear History** button to dismiss resolved alerts
 - **Repair controls** for repair-capable checkers (manual trigger, cancel pending repair, auto-repair toggle, delay setting)
 - **Mute controls** on every checker's Alerting row — silence its paging for a day, a week, or indefinitely (a MUTED badge and one-tap Unmute show while active)
+- **Missing checkers** appear as their own red section with a single **Registration** check and no last-check time. It explains what is wrong; mute and notes still work on it (see [the health checks themselves](#auto-heal-first-page-if-that-fails))
 
 ## Extending the System
 
@@ -333,7 +338,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Z-Wave Batteries | `BatteryChecker` | Z-Wave device battery levels, leak sensors included; shown grey while Z-Wave itself is down | No |
 | Zigbee Batteries | `BatteryChecker` | Zigbee sensor battery levels; shown grey while Zigbee is down | No |
 | Schlage | `BatteryChecker` | Door-lock battery levels; shown grey while the Cloud check is failing | No |
-| Airthings | `BatteryChecker` | Air-quality monitor batteries, with a lower threshold for the Wave Minis (they fall off a cliff) and a check for readings that stopped | No |
+| Airthings | `BatteryChecker` | Air-quality monitor batteries, with a higher threshold for the Wave Minis so they warn earlier (their batteries fall off a cliff), and a check for readings that stopped | No |
 | UniFi Batteries | `BatteryChecker` | UniFi Protect entry-sensor batteries; shown grey while UniFi Protect is down | No |
 | Downstairs, Upstairs and Exterior Lights | `MqttDeviceChecker` | Same as Basement Lights, for the rest of the house | No |
 
