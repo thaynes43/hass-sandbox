@@ -3,8 +3,9 @@
 Why this exists (haynes-ops#3450, Tom's ruling 2026-10-06): the house Ollama
 endpoint (``ollama-assist02``) is also Home Assistant's voice model. Voice
 talks to Ollama directly, never through AppDaemon. Ollama runs ``qwen3.5`` one
-request at a time (it ignores ``OLLAMA_NUM_PARALLEL`` for that architecture)
-and queues the rest in arrival order, so a voice turn that lands behind a burst
+request at a time and queues the rest in arrival order. It ignores
+``OLLAMA_NUM_PARALLEL`` for that architecture, so a second slot is not an
+option (haynes-ops#3452). So so a voice turn that lands behind a burst
 of camera-scoring requests waits for the whole burst. On 2026-10-06 bursts of
 AppDaemon ``/api/chat`` calls took 27 s to over 2 min each, and a voice answer
 took 37 s behind a burst of 5 versus 6-8 s behind serialized calls.
@@ -13,8 +14,8 @@ Every AppDaemon request to Ollama is camera-pipeline work
 (``detection_summary_app``: per-frame vision scoring and the run narrative).
 Both Ollama providers take this gate's slot before they send, so the whole
 AppDaemon process has at most one request at Ollama per endpoint. A voice turn
-then waits for at most the one camera request already running, not a burst;
-on an endpoint with more than one slot, voice gets a free one.
+then waits for at most the one camera request already running (about 10 s),
+not a burst.
 
 Behaviour:
 
@@ -25,9 +26,13 @@ Behaviour:
 - The HTTP timeout starts only once a caller holds the slot, so each request
   keeps its full timeout.
 
-The registry is module level. ``providers/`` sits outside AppDaemon's app
-directory, so AppDaemon never reloads this module and every app thread shares
-the same gates.
+The registry is module level, so every app and thread in the AppDaemon process
+shares the same gates. In the container ``providers/`` is copied to
+``/conf/apps/providers`` (``docker/entrypoint.sh``), inside AppDaemon's watched
+app directory. The image is immutable, so nothing triggers a reload. The
+registry is still kept across an ``importlib.reload`` (``globals().get`` below)
+so that a reload cannot reset the gates and let a second request through. A
+file edited inside a running pod is still a reason to restart AppDaemon.
 """
 
 from __future__ import annotations
@@ -45,7 +50,13 @@ logger = logging.getLogger(__name__)
 
 # Longest a request waits for the endpoint's slot before it is skipped. It
 # matches the per-request HTTP timeout: before this gate the queue lived inside
-# Ollama, where that same timeout was the only bound on the wait.
+# Ollama, where that same timeout was the only bound on the wait. Sizing: a
+# 1920x1080 vision call takes about 9-10.6 s on assist02, and a camera run is up
+# to 10 scoring calls plus one narrative, so about 110 s. 300 s is roughly 30
+# calls, or about three cameras' full runs, ahead. Voice does not depend on this
+# bound, because AppDaemon never has more than one request at Ollama. The bound
+# only decides when a pile-up (many cameras at once, or a slow or hung Ollama)
+# starts dropping frames instead of delivering them late.
 OLLAMA_DEFAULT_QUEUE_WAIT_S = 300.0
 
 
@@ -124,6 +135,9 @@ class EndpointGate:
                 raise
             self._queue.popleft()
             self._in_flight += 1
+            if self._queue and self._in_flight < self._limit:
+                # With limit > 1 the new head may be able to go now as well.
+                self._cond.notify_all()
         return time.monotonic() - started
 
     def _release(self) -> None:
@@ -132,8 +146,10 @@ class EndpointGate:
             self._cond.notify_all()
 
 
-_GATES: Dict[str, EndpointGate] = {}
-_GATES_LOCK = threading.Lock()
+# globals().get keeps the existing registry if this module is re-executed by
+# importlib.reload (see the module docstring).
+_GATES: Dict[str, EndpointGate] = globals().get("_GATES", {})
+_GATES_LOCK = globals().get("_GATES_LOCK") or threading.Lock()
 
 
 def _endpoint_key(base_url: str) -> str:

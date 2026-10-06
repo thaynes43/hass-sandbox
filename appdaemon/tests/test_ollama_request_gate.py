@@ -222,6 +222,64 @@ def test_gate_releases_the_slot_when_the_request_raises() -> None:
         assert gate.in_flight == 1
 
 
+def test_gate_with_limit_two_wakes_a_second_blocked_waiter() -> None:
+    """With limit > 1, taking the slot must also wake the next blocked waiter.
+
+    Two holders leave at once and two blocked waiters must then run together
+    (each waits for the other at a barrier). If only a release woke waiters,
+    the second one could sleep through both releases. That depends on which
+    waiter re-checks first, so the scenario repeats to make the race likely.
+    """
+    for attempt in range(100):
+        gate = EndpointGate(f"http://gate-limit2-{attempt}:11434", limit=2)
+        release_holders = threading.Event()
+        holding = threading.Barrier(3)
+        both_in = threading.Barrier(2, timeout=2.0)
+        broken: list[int] = []
+
+        def holder() -> None:
+            with gate.slot(max_wait_s=1.0):
+                holding.wait(timeout=5)
+                release_holders.wait(timeout=5)
+
+        def waiter() -> None:
+            with gate.slot(max_wait_s=5.0):
+                try:
+                    both_in.wait()
+                except threading.BrokenBarrierError:
+                    broken.append(attempt)
+
+        holders = [threading.Thread(target=holder) for _ in range(2)]
+        for t in holders:
+            t.start()
+        holding.wait(timeout=5)  # both slots taken
+        waiters = [threading.Thread(target=waiter) for _ in range(2)]
+        for t in waiters:
+            t.start()
+        _wait_until(lambda: gate.queued == 2)  # both waiters are blocked in wait()
+        release_holders.set()
+        for t in holders + waiters:
+            t.join(timeout=10)
+        assert not broken, f"attempt {attempt}: the second waiter was not woken while a slot was free"
+        assert gate.in_flight == 0
+
+
+def test_gate_registry_survives_a_module_reload() -> None:
+    import importlib
+
+    from providers.ai_providers.ollama import _request_gate
+
+    url = _unique_url()
+    before = _request_gate.gate_for(url)
+    saved = dict(vars(_request_gate))
+    try:
+        reloaded = importlib.reload(_request_gate)
+        assert reloaded.gate_for(url) is before
+    finally:
+        # Put the original classes back so the other tests' imports still match.
+        vars(_request_gate).update(saved)
+
+
 def test_gate_rejects_a_zero_limit() -> None:
     with pytest.raises(ValueError):
         EndpointGate("http://gate-limit:11434", limit=0)

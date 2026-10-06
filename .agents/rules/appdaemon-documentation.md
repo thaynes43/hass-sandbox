@@ -140,8 +140,10 @@ detection_summary_app
      unregistered name stops the app instead of failing at render time
   └─ Ollama only: scoring and narrative calls go one at a time per endpoint across
      every camera (providers/ai_providers/ollama/_request_gate.py), so
-     external_data_parallelism threads queue; a call queued past 300 s is skipped
-     and that frame scores empty (haynes-ops#3450: voice shares the endpoint)
+     external_data_parallelism threads queue; a call queued past 300 s is skipped:
+     a scoring call's frame scores empty, a narrative call logs `run narrative
+     failed` and the bundle publishes without one (haynes-ops#3450: voice shares
+     the endpoint)
   └─ fires detection_summary/run_published event
   └─ writes bundles to shared filesystem
        └─ detection_summary_viewer (listens for events, reads filesystem)

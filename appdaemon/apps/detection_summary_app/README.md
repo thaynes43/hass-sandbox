@@ -129,8 +129,11 @@ then waits for at most the one camera request already running, not a whole
 burst (haynes-ops#3450: 37 s behind a burst of 5, 6-8 s behind serialized calls).
 
 - Scoring threads and other cameras queue in arrival order instead of failing.
-- A request that waits more than 300 s for the slot is skipped. The frame is
-  logged as `data gen failed ... queue wait exceeded` and scores as empty.
+- A request that waits more than 300 s for the slot is skipped. A scoring call
+  is logged as `data gen failed ... queue wait exceeded` and that frame scores
+  as empty. A narrative call is logged as `run narrative failed ... queue wait
+  exceeded`, and the bundle publishes without a narrative. At about 10 s per
+  vision call, 300 s is about three cameras' full runs queued ahead.
 - The HTTP timeout starts once the request holds the slot, so the wait does
   not eat into it. The time spent queued is recorded as `_meta.queue_wait_s`.
 - Each camera already ignores new triggers while a run is in flight, so a
