@@ -47,22 +47,28 @@ import threading
 import time
 from collections import deque
 from contextlib import contextmanager
-from typing import Dict, Iterator
+from typing import Dict, Iterator, Optional
 
 from ..multimodal_text_provider import ExternalDataGenError
 
 logger = logging.getLogger(__name__)
 
-# Longest a request waits for the endpoint's slot before it is skipped. It
-# matches the per-request HTTP timeout: before this gate the queue lived inside
-# Ollama, where that same timeout was the only bound on the wait. Sizing: a
+# How long a request may wait for the endpoint's slot before it is skipped.
+# The providers default it to the request's own HTTP ``timeout_s`` (300 s for
+# Ollama unless a bundle sets ``multimodal_timeout_s`` / ``simple_text_timeout_s``):
+# before this gate the queue lived inside Ollama, where that same timeout was
+# the only bound on the wait. Sizing at the 300 s default: a
 # 1920x1080 vision call takes about 9-10.6 s on assist02, and a camera run is up
 # to 10 scoring calls plus one narrative, so about 110 s. 300 s is roughly 30
 # calls, or about three cameras' full runs, ahead. Other clients do not depend on
 # this bound, because AppDaemon never has more than one request at Ollama. The bound
 # only decides when a pile-up (many cameras at once, or a slow or hung Ollama)
 # starts dropping frames instead of delivering them late.
-OLLAMA_DEFAULT_QUEUE_WAIT_S = 300.0
+
+
+def effective_queue_wait_s(queue_wait_s: Optional[float], timeout_s: float) -> float:
+    """The bound on the queue wait: ``queue_wait_s`` if set, else the request's HTTP timeout."""
+    return float(timeout_s if queue_wait_s is None else queue_wait_s)
 
 
 class OllamaQueueTimeout(ExternalDataGenError):

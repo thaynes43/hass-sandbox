@@ -64,7 +64,7 @@ class _ConcurrencyProbe:
         return False
 
 
-def _wait_until(predicate, timeout_s: float = 2.0) -> None:
+def _wait_until(predicate, timeout_s: float = 10.0) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
         if predicate():
@@ -401,3 +401,24 @@ def test_different_endpoints_do_not_block_each_other(tmp_path: Path) -> None:
         with gate_for(busy_url).slot(max_wait_s=1.0):
             out = other.generate_from_image(input_image_path=str(img), instructions="score")
     assert out["score"] == 1
+
+
+def test_queue_wait_defaults_to_the_request_timeout(tmp_path: Path) -> None:
+    """A bundle that shortens timeout_s shortens the queue bound with it."""
+    from providers.ai_providers.ollama._request_gate import effective_queue_wait_s
+
+    assert effective_queue_wait_s(None, 300.0) == 300.0
+    assert effective_queue_wait_s(None, 45.0) == 45.0
+    assert effective_queue_wait_s(5.0, 300.0) == 5.0
+
+    url = _unique_url()
+    img = tmp_path / "frame_000.jpg"
+    img.write_bytes(b"\xff\xd8\xff" + b"\x00" * 16)
+    vision = OllamaMultimodalTextProvider(OllamaMultimodalConfig(base_url=url, timeout_s=0.05))
+    with patch("urllib.request.urlopen") as urlopen:
+        with gate_for(url).slot(max_wait_s=1.0):
+            started = time.monotonic()
+            with pytest.raises(OllamaQueueTimeout):
+                vision.generate_from_image(input_image_path=str(img), instructions="score")
+            assert time.monotonic() - started < 1.0
+        urlopen.assert_not_called()

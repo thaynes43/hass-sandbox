@@ -131,7 +131,8 @@ whole burst (haynes-ops#3450: an Assist-sized probe took 37 s behind a burst of
 5 and 6-8 s behind serialized calls).
 
 - Scoring threads and other cameras queue in arrival order instead of failing.
-- A request that waits more than 300 s for the slot is skipped. A scoring call
+- A request that waits longer than its own HTTP timeout (300 s by default) for
+  the slot is skipped. A scoring call
   is logged as `data gen failed ... queue wait exceeded` and that frame scores
   as empty. A narrative call is logged as `run narrative failed ... queue wait
   exceeded`, and the bundle publishes without a narrative. At about 10 s per

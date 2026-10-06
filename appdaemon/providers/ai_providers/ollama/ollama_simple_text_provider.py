@@ -15,7 +15,7 @@ from ..provider_settings import validate_simple_text_model
 from ..simple_text_provider import SimpleTextProvider, SimpleTextProviderName
 
 from ._ollama_helpers import _safe_json, parse_json_from_response
-from ._request_gate import OLLAMA_DEFAULT_QUEUE_WAIT_S, gate_for
+from ._request_gate import effective_queue_wait_s, gate_for
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,8 @@ class OllamaSimpleTextConfig:
     timeout_s: float = OLLAMA_DEFAULT_TIMEOUT_S
     max_output_tokens: int = 1024
     # Bound on the wait for the endpoint's single AppDaemon slot (see _request_gate).
-    queue_wait_s: float = OLLAMA_DEFAULT_QUEUE_WAIT_S
+    # None = the same as timeout_s, so a shorter bundle timeout shortens the wait too.
+    queue_wait_s: Optional[float] = None
 
 
 class OllamaSimpleTextProvider(SimpleTextProvider):
@@ -97,7 +98,7 @@ class OllamaSimpleTextProvider(SimpleTextProvider):
         # client of the same Ollama waits for at most one camera request, never a burst.
         gate = gate_for(self._config.base_url)
         with gate.slot(
-            max_wait_s=float(self._config.queue_wait_s),
+            max_wait_s=effective_queue_wait_s(self._config.queue_wait_s, self._config.timeout_s),
             label=f"simple_text model={self._config.model}",
         ) as queue_wait_s:
             started = time.time()

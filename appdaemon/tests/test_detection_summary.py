@@ -541,3 +541,38 @@ class TestDetectionSummary:
         assert len(warnings) == 1
         assert "queue wait exceeded" in str(warnings[0].args[0])
         sel.assert_called_once()
+
+    def test_build_bundle_publishes_without_narrative_when_its_ollama_queue_wait_timed_out(self, tmp_path):
+        """The gated narrative call: a queue timeout logs 'run narrative failed' and the run still publishes."""
+        from providers.ai_providers.ollama._request_gate import OllamaQueueTimeout
+
+        app, run, fake_select = self._ollama_scoring_app_and_run(tmp_path, n_frames=1)
+        app.run_narrative_enabled = True
+        app.external_image_gen_enabled = False
+        fake_vision = MagicMock()
+        fake_vision.generate_from_image.return_value = {
+            "male_count": 1, "person_score": 8, "face_score": 5, "frame_score": 6, "summary": "person at the door",
+        }
+        fake_text = MagicMock()
+        fake_text.generate_from_text.side_effect = OllamaQueueTimeout(
+            "ollama queue wait exceeded 300s for http://ollama (simple_text model=qwen3.5:9b); skipped."
+        )
+        app._multimodal_provider = fake_vision
+        app._simple_text_provider = fake_text
+
+        with patch("detection_summary_app.manager.adaptive_select_and_score", side_effect=fake_select):
+            with patch("detection_summary_app.manager.should_publish_bundle", return_value=True):
+                result = app._build_bundle(run)
+
+        fake_text.generate_from_text.assert_called_once()
+        failed = [
+            c for c in app.log.call_args_list
+            if c.kwargs.get("level") == "WARNING" and "run narrative failed" in str(c.args[0])
+        ]
+        assert len(failed) == 1
+        assert "queue wait exceeded" in str(failed[0].args[0])
+        assert isinstance(result, dict)  # the run still publishes
+        narrative = result["run_narrative"]
+        assert narrative["run_summary"] is None
+        assert "OllamaQueueTimeout" in narrative["error"]
+        assert narrative["_narrative_meta"]["failed"] is True

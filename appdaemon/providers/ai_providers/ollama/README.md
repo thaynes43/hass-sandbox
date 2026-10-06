@@ -36,13 +36,19 @@ one already running (haynes-ops#3450). HA's Assist pipelines ran on
 llama-server, not here, when this was written (2026-10-06).
 
 - Waiters queue in arrival order.
-- `queue_wait_s` on `OllamaMultimodalConfig` / `OllamaSimpleTextConfig` bounds the
-  wait: a code default of 300 s, not settable from bundle YAML or an app's
-  `ai_provider_conf` today.
-  Past it the request raises `OllamaQueueTimeout`, an `ExternalDataGenError`,
-  without being sent; callers log a warning and skip it.
+- The wait is bounded by `queue_wait_s` on `OllamaMultimodalConfig` /
+  `OllamaSimpleTextConfig`. It defaults to the request's own `timeout_s`, which
+  is 300 s unless a bundle sets `multimodal_timeout_s` /
+  `simple_text_timeout_s`. A separate `queue_wait_s` cannot be set from bundle
+  YAML or an app's `ai_provider_conf` today.
+  Past the bound the request raises `OllamaQueueTimeout`, an
+  `ExternalDataGenError`, without being sent; callers log a warning and skip it.
 - The HTTP `timeout_s` starts only once the slot is held. The time spent
   queued is returned as `_meta.queue_wait_s`.
+- The gate registry is module level, one per AppDaemon process. Restart
+  AppDaemon rather than editing files under `/conf/apps/providers` in a running
+  pod: a fresh import of `_request_gate` starts an empty registry, and two
+  requests could be in flight with no log line.
 
 ## Limitations
 
