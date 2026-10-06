@@ -1,7 +1,6 @@
 alias: Clear hold on all Inovelli Presence Controlled Switches
-description: >
-  Clears hold on all configured Inovelli presence-controlled switches and
-  restores LED indicators.
+description: |
+  Clears hold on all configured Inovelli presence-controlled switches and restores LED indicators. Then reconciles: any listed zone whose LED1 shows no hold colour (manual or auto) and whose mmWave is not held gets its automations turned back on, logged to the logbook as 'Inovelli hold reconcile'. Automations shared with a zone that is still held are left alone.
 sequence:
   - variables:
       hold_color: input_text.inovelli_auto_hold
@@ -96,16 +95,14 @@ sequence:
             - automation.light_inovelli_upstairs_primary_hall_motion_cleared_lights_off
         - switch_name: upstairs_primary_bath_vanity_inovelli_presence
           helper: input_text.upstairs_primary_vanity_led_color
-          automation_entity_ids:
-            - >-
-              automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
           normal_mode_input_select: input_select.upstairs_primary_bathroom_vanity_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
         - switch_name: upstairs_primary_bath_shower_inovelli_presence
           helper: input_text.upstairs_primary_shower_led_color
-          automation_entity_ids:
-            - >-
-              automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
           normal_mode_input_select: input_select.upstairs_primary_bathroom_shower_mmwave_normal_mode
+          automation_entity_ids:
+            - automation.light_inovelli_primary_bathroom_motion_cleared_lights_off
         - switch_name: upstairs_primary_water_closet_inovelli_presence
           helper: input_text.upstairs_primary_water_closet_led_color
           normal_mode_input_select: input_select.upstairs_primary_water_closet_mmwave_normal_mode
@@ -121,4 +118,41 @@ sequence:
             automation_entity_ids: "{{ repeat.item.automation_entity_ids | default([]) }}"
         - delay:
             seconds: 2
+  - variables:
+      reconcile: |-
+        {% set manual = [[states('input_text.inovelli_manual_hold') | int(85), 0] | max, 255] | min %}
+        {% set auto = [[states('input_text.inovelli_auto_hold') | int(0), 0] | max, 255] | min %}
+        {% set ns = namespace(held=[], held_autos=[], out=[]) %}
+        {% for s in switches %}
+          {% set led = states('number.' ~ s.switch_name ~ '_defaultled1colorwhenon') %}
+          {% set mm = states('select.' ~ s.switch_name ~ '_mmwavecontrolwireddevice') %}
+          {% set normal = states(s.normal_mode_input_select) if s.normal_mode_input_select is defined else '' %}
+          {% if (not is_number(led)) or ((led | int) in [manual, auto]) or (mm == 'Disabled' and normal != 'Disabled') %}
+            {% set ns.held = ns.held + [s.switch_name] %}
+            {% set ns.held_autos = ns.held_autos + (s.automation_entity_ids | default([])) %}
+          {% endif %}
+        {% endfor %}
+        {% for s in switches if s.switch_name not in ns.held %}
+          {% set off = namespace(ids=[]) %}
+          {% for a in s.automation_entity_ids | default([]) %}
+            {% if a not in ns.held_autos and states(a) == 'off' %}
+              {% set off.ids = off.ids + [a] %}
+            {% endif %}
+          {% endfor %}
+          {% if off.ids | length > 0 %}
+            {% set ns.out = ns.out + [{'switch_name': s.switch_name, 'automations': off.ids}] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.out }}
+  - repeat:
+      for_each: "{{ reconcile }}"
+      sequence:
+        - action: automation.turn_on
+          target:
+            entity_id: "{{ repeat.item.automations }}"
+        - action: logbook.log
+          data:
+            name: Inovelli hold reconcile
+            message: "re-enabled {{ repeat.item.automations | join(', ') }} after clear-all ({{ repeat.item.switch_name }} shows no hold)"
+            entity_id: "{{ repeat.item.automations[0] }}"
 mode: single
