@@ -20,7 +20,7 @@ fields:
     description: Optional list of Home Assistant `automation.*` entity ids to re-enable when hold clears.
     example: '["automation.light_fp2_server_room_motion_detected_lights_on", "automation.light_fp2_server_room_motion_cleared_lights_off"]'
   prev_led_color_helper:
-    description: Optional input_text helper that stores previous LED color (0-255)
+    description: Optional input_text or input_number helper that stores previous LED color (0-255)
     example: input_text.upstairs_primary_water_closet_default_led_color
 sequence:
   - variables:

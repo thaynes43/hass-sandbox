@@ -1,6 +1,6 @@
 alias: Inovelli Toggle mmWave Hold + LED Indicator
 description: |
-  Toggles MmwaveControlWiredDevice between Disabled (hold) and normal mode. When enabling hold, refreshes the cached current LED color (LED1 WhenOn) in an input_text (optional), then sets LED 1-7 (on+off) to hold_color. When disabling hold, restores cached LED color (fallback 255) and sets mmWave back to normal_mode.
+  Toggles MmwaveControlWiredDevice between Disabled (hold) and normal mode. When enabling hold, refreshes the cached current LED color (LED1 WhenOn) in an input_text or input_number helper (optional; skipped if LED1 is unavailable or already shows a hold colour), then sets LED 1-7 (on+off) to hold_color. When disabling hold, restores cached LED color (fallback 255) and sets mmWave back to normal_mode.
 fields:
   switch_name:
     description: |
@@ -138,22 +138,22 @@ sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ helper_provided and helper_domain == 'input_text' }}"
+                    value_template: "{{ helper_provided and helper_domain == 'input_text' and is_number(states(led1_on)) and (states(led1_on) | int) not in [manual_hold_color_value, auto_hold_color_value] }}"
                 sequence:
                   - action: input_text.set_value
                     target:
                       entity_id: "{{ helper_entity_id }}"
                     data:
-                      value: "{{ states(led1_on) }}"
+                      value: "{{ states(led1_on) | int }}"
               - conditions:
                   - condition: template
-                    value_template: "{{ helper_provided and helper_domain == 'input_number' }}"
+                    value_template: "{{ helper_provided and helper_domain == 'input_number' and is_number(states(led1_on)) and (states(led1_on) | int) not in [manual_hold_color_value, auto_hold_color_value] }}"
                 sequence:
                   - action: input_number.set_value
                     target:
                       entity_id: "{{ helper_entity_id }}"
                     data:
-                      value: "{{ states(led1_on) | float(255) }}"
+                      value: "{{ states(led1_on) | int }}"
           - choose:
               - conditions:
                   - condition: template
