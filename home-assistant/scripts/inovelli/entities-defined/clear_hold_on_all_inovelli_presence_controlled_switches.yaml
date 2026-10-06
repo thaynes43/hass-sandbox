@@ -125,8 +125,7 @@ sequence:
   # listed zone whose LED1 shows neither hold colour and whose mmWave is not held. A zone
   # still on hold (for example a manual hold set at the wall) is skipped, and so are
   # automations it shares with another zone; each automation is queued once. Each re-enable
-  # is written to the logbook; a zone still on the auto colour with automations off is logged
-  # as a warning instead.
+  # is written to the logbook.
   - variables:
       reconcile: |-
         {% set manual = [[states('input_text.inovelli_manual_hold') | int(85), 0] | max, 255] | min %}
@@ -154,26 +153,6 @@ sequence:
           {% endif %}
         {% endfor %}
         {{ ns.out }}
-      still_auto_held: |-
-        {% set auto = [[states('input_text.inovelli_auto_hold') | int(0), 0] | max, 255] | min %}
-        {% set ns = namespace(out=[]) %}
-        {% for s in switches %}
-          {% set led = states('number.' ~ s.switch_name ~ '_defaultled1colorwhenon') %}
-          {% set autos = s.automation_entity_ids | default([]) %}
-          {% if is_number(led) and (led | int) == auto and (autos | select('is_state', 'off') | list | length) > 0 %}
-            {% set ns.out = ns.out + [s.switch_name] %}
-          {% endif %}
-        {% endfor %}
-        {{ ns.out }}
-  - if:
-      - condition: template
-        value_template: "{{ still_auto_held | length > 0 }}"
-    then:
-      - action: system_log.write
-        data:
-          level: warning
-          logger: script.clear_hold_on_all_inovelli_presence_controlled_switches
-          message: "clear-all finished but {{ still_auto_held | join(', ') }} still show the auto hold colour with automations off; the reconcile leaves held zones alone, so check those switches."
   - repeat:
       for_each: "{{ reconcile }}"
       sequence:
@@ -185,4 +164,34 @@ sequence:
             name: Inovelli hold reconcile
             message: "re-enabled {{ repeat.item.automations | join(', ') }} after clear-all ({{ repeat.item.switch_name }} shows no hold)"
             entity_id: "{{ repeat.item.automations[0] }}"
+  # After the reconcile: any zone (other than a manual hold) that still has automations off
+  # was skipped as held (hold colour, unavailable LED1 or mmWave Disabled); log it as a warning.
+  - variables:
+      stuck_zones: |-
+        {% set manual = [[states('input_text.inovelli_manual_hold') | int(85), 0] | max, 255] | min %}
+        {% set ns = namespace(manual_held=[], manual_autos=[], out=[]) %}
+        {% for s in switches %}
+          {% set led = states('number.' ~ s.switch_name ~ '_defaultled1colorwhenon') %}
+          {% if is_number(led) and (led | int) == manual %}
+            {% set ns.manual_held = ns.manual_held + [s.switch_name] %}
+            {% set ns.manual_autos = ns.manual_autos + (s.automation_entity_ids | default([])) %}
+          {% endif %}
+        {% endfor %}
+        {% for s in switches if s.switch_name not in ns.manual_held %}
+          {% set led = states('number.' ~ s.switch_name ~ '_defaultled1colorwhenon') %}
+          {% set off = (s.automation_entity_ids | default([])) | reject('in', ns.manual_autos) | select('is_state', 'off') | list %}
+          {% if off | length > 0 %}
+            {% set ns.out = ns.out + [s.switch_name ~ ' (LED1=' ~ led ~ ')'] %}
+          {% endif %}
+        {% endfor %}
+        {{ ns.out }}
+  - if:
+      - condition: template
+        value_template: "{{ stuck_zones | length > 0 }}"
+    then:
+      - action: system_log.write
+        data:
+          level: warning
+          logger: script.clear_hold_on_all_inovelli_presence_controlled_switches
+          message: "clear-all finished but {{ stuck_zones | join(', ') }} still have automations off without a manual hold; the reconcile skipped them as held (hold colour, unavailable LED1 or mmWave Disabled), so check those switches."
 mode: single

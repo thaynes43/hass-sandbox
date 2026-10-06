@@ -298,7 +298,8 @@ since v1.19.2). The **mode** of
 - **Cleaners Mode** (odd ISO weeks, Monday 09:00–17:00) holds Entrance/Mudroom/Bath, brightens
   Entrance + Mudroom + Kitchen + Livingroom, stops fans, and restores the 09:00 snapshot at 17:00.
   The 17:00 clear-all ends with a reconcile (#229): any zone whose LED1 shows no hold colour gets
-  its motion automations turned back on, with a logbook entry "Inovelli hold reconcile".
+  its motion automations turned back on, with a logbook entry "Inovelli hold reconcile". A zone
+  still left off (other than a manual hold) is logged as a system-log warning instead.
 - **Media:** the Sonos players are `music_assistant` only (native `sonos` entry ignored) — no
   turn_on/turn_off. The Frame TV has two entities (`…_the_frame_75_2` dlna, `…_the_frame_75` MA).
   The Play Music script already reaches every first-floor Sonos by area.
