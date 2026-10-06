@@ -36,6 +36,7 @@ Each image provider carries an `ImageProviderCapabilities`, read off the **insta
 ## Major Limitations
 
 - Ollama does not provide image generation in this package.
+- AppDaemon sends Ollama one request at a time per endpoint, across all apps and threads, so parallel callers queue rather than run concurrently. See [./ollama/README.md](./ollama/README.md).
 - ComfyUI does not provide text-only or image-to-text structured output in this package.
 - Capability switching is static per configured provider. ComfyUI workflows are chosen by name in config (bundle default or per-app `image_workflow`), never picked at runtime from the number of input images or from whether a request is text-to-image versus image-to-image.
 

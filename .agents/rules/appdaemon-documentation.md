@@ -88,7 +88,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers` (interface) | `appdaemon/providers/ai_providers/README.md` | LLM + image generation provider layer |
 | `ai_providers/openai` | `appdaemon/providers/ai_providers/openai/README.md` | OpenAI adapter (text, multimodal, image) |
 | `ai_providers/gemini` | `appdaemon/providers/ai_providers/gemini/README.md` | Google Gemini adapter (text, multimodal, image) |
-| `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal) |
+| `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal); `_request_gate.py` keeps one AppDaemon request in flight per endpoint, process-wide, with a bounded queue wait |
 | `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image): named workflow registry (`workflow_registry.yaml` + `workflow_registry.py`), selected by name in AppDaemon config (bundle default or per-app `image_workflow`), validated at startup |
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `AssistExposureClient` (voice-assistant exposure list read/write + entity-registry platforms) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
@@ -138,6 +138,10 @@ detection_summary_app
      or the app's `ai_provider_conf.image_workflow`) and resolved against
      providers/ai_providers/comfyui/workflow_registry at initialize(), so an
      unregistered name stops the app instead of failing at render time
+  └─ Ollama only: scoring and narrative calls go one at a time per endpoint across
+     every camera (providers/ai_providers/ollama/_request_gate.py), so
+     external_data_parallelism threads queue; a call queued past 300 s is skipped
+     and that frame scores empty (haynes-ops#3450: voice shares the endpoint)
   └─ fires detection_summary/run_published event
   └─ writes bundles to shared filesystem
        └─ detection_summary_viewer (listens for events, reads filesystem)

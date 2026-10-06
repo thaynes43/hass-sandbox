@@ -33,7 +33,9 @@ keeps the camera pipeline to one of its slots so voice always has the other
 (haynes-ops#3450).
 
 - Waiters queue in arrival order.
-- `queue_wait_s` on each provider config (default 300 s) bounds the wait.
+- `queue_wait_s` on `OllamaMultimodalConfig` / `OllamaSimpleTextConfig` bounds the
+  wait: a code default of 300 s, not settable from bundle YAML or an app's
+  `ai_provider_conf` today.
   Past it the request raises `OllamaQueueTimeout`, an `ExternalDataGenError`,
   without being sent; callers log a warning and skip it.
 - The HTTP `timeout_s` starts only once the slot is held. The time spent
