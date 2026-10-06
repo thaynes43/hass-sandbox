@@ -1070,7 +1070,7 @@
 <ol>
 <li><strong>Trigger</strong> — a camera's motion sensor fires</li>
 <li><strong>Capture</strong> — HA takes a snapshot from the camera</li>
-<li><strong>Score</strong> — the snapshot is sent to a multimodal LLM (Gemini, OpenAI, or Ollama) which describes what it sees</li>
+<li><strong>Score</strong> — the snapshot is sent to a multimodal LLM (Gemini, OpenAI, or Ollama) which describes what it sees. The local Ollama model is shared with Home Assistant, so AppDaemon sends it one request at a time and Home Assistant's requests are never stuck behind a burst of camera frames</li>
 <li><strong>Publish</strong> — the summary bundle (image + AI description + metadata) is written to the shared filesystem and an HA event is fired</li>
 </ol>
 <p>The <code>detection_summary_viewer</code> provides a Lovelace dashboard card for browsing historical detection bundles — useful for reviewing what happened while you were away.</p>
