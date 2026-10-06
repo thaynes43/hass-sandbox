@@ -93,8 +93,8 @@ class OllamaSimpleTextProvider(SimpleTextProvider):
             self._config.timeout_s,
             prompt_preview[:80],
         )
-        # One AppDaemon request in flight per endpoint, process-wide, so the camera
-        # pipeline never takes more than one Ollama slot (voice keeps the other).
+        # One AppDaemon request in flight per endpoint, process-wide, so a voice turn
+        # on the same Ollama waits for at most one camera request, never a burst.
         gate = gate_for(self._config.base_url)
         with gate.slot(
             max_wait_s=float(self._config.queue_wait_s),

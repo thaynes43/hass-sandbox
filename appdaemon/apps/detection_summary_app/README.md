@@ -121,11 +121,12 @@ Trigger (motion on)
 ### Ollama: one request at a time
 
 The house Ollama endpoint (`ollama-assist02`) is also Home Assistant's voice
-model, and Ollama serves only a fixed number of requests at once. So every
-AppDaemon request to an Ollama endpoint (frame scoring and the run narrative,
-from every camera) takes the one AppDaemon slot for that endpoint first
-(`providers/ai_providers/ollama/_request_gate.py`). The camera pipeline holds
-at most one of Ollama's slots and voice keeps the other (haynes-ops#3450).
+model, and Ollama runs `qwen3.5` one request at a time, queueing the rest in
+arrival order. So every AppDaemon request to an Ollama endpoint (frame scoring
+and the run narrative, from every camera) takes the one AppDaemon slot for that
+endpoint first (`providers/ai_providers/ollama/_request_gate.py`). A voice turn
+then waits for at most the one camera request already running, not a whole
+burst (haynes-ops#3450: 37 s behind a burst of 5, 6-8 s behind serialized calls).
 
 - Scoring threads and other cameras queue in arrival order instead of failing.
 - A request that waits more than 300 s for the slot is skipped. The frame is

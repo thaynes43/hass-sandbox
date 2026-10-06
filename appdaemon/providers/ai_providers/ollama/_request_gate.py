@@ -2,17 +2,19 @@
 
 Why this exists (haynes-ops#3450, Tom's ruling 2026-10-06): the house Ollama
 endpoint (``ollama-assist02``) is also Home Assistant's voice model. Voice
-talks to Ollama directly, never through AppDaemon. Ollama serves a fixed
-number of requests at a time (``OLLAMA_NUM_PARALLEL``, 2 on assist02) and
-queues the rest, so a voice turn that lands behind a burst of camera-scoring
-requests waits for the whole burst. On 2026-10-06 bursts of AppDaemon
-``/api/chat`` calls took 27 s to over 2 min each.
+talks to Ollama directly, never through AppDaemon. Ollama runs ``qwen3.5`` one
+request at a time (it ignores ``OLLAMA_NUM_PARALLEL`` for that architecture)
+and queues the rest in arrival order, so a voice turn that lands behind a burst
+of camera-scoring requests waits for the whole burst. On 2026-10-06 bursts of
+AppDaemon ``/api/chat`` calls took 27 s to over 2 min each, and a voice answer
+took 37 s behind a burst of 5 versus 6-8 s behind serialized calls.
 
 Every AppDaemon request to Ollama is camera-pipeline work
 (``detection_summary_app``: per-frame vision scoring and the run narrative).
-Both Ollama providers take a slot from this gate before they send, so the
-whole AppDaemon process holds at most one Ollama slot per endpoint, and voice
-always has the other.
+Both Ollama providers take this gate's slot before they send, so the whole
+AppDaemon process has at most one request at Ollama per endpoint. A voice turn
+then waits for at most the one camera request already running, not a burst;
+on an endpoint with more than one slot, voice gets a free one.
 
 Behaviour:
 
@@ -109,7 +111,7 @@ class EndpointGate:
                         raise OllamaQueueTimeout(
                             f"ollama queue wait exceeded {max_wait_s:.0f}s for {self.endpoint} "
                             f"({label or 'request'}; {ahead_at_entry} ahead at entry); skipped. "
-                            "AppDaemon sends one request at a time to this endpoint so voice keeps a slot."
+                            "AppDaemon sends one request at a time to this endpoint so voice never queues behind a burst."
                         )
                     self._cond.wait(remaining)
             except BaseException:
