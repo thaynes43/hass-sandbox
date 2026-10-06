@@ -146,10 +146,10 @@ sequence:
             then:
               # Z2M confirms the LED write asynchronously, sometimes more than a second later. A fixed
               # 1 s delay followed by this check left the staircase and garage zones disabled after
-              # Cleaners Mode cleared on 2026-10-05. Wait (5 s) for the confirmed LED state instead, and
+              # Cleaners Mode cleared on 2026-10-05. Wait (5 s) for LED1 to confirm the restored colour instead, and
               # re-enable the automations even if it never arrives (warning in the HA log), so a zone
               # is never left off.
-              - wait_template: "{{ (states(led1_on) | int(0)) not in [manual_hold_color_value, auto_hold_color_value] }}"
+              - wait_template: "{{ (states(led1_on) | int(-1)) == restore_led_color }}"
                 timeout: 00:00:05
                 continue_on_timeout: true
               - if:
@@ -160,7 +160,7 @@ sequence:
                     data:
                       level: warning
                       logger: script.inovelli_clear_mmwave_hold_restore_led_indicator
-                      message: "{{ switch_name }}: LED1 still reads {{ states(led1_on) }} (a hold colour) 5 s after the restore; re-enabling {{ automation_ids | join(', ') }} anyway so the zone is not left off."
+                      message: "{{ switch_name }}: LED1 still reads {{ states(led1_on) }}, not the restored {{ restore_led_color }}, 5 s after the restore; re-enabling {{ automation_ids | join(', ') }} anyway so the zone is not left off."
               - action: automation.turn_on
                 target:
                   entity_id: "{{ automation_ids }}"
