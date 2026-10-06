@@ -107,7 +107,7 @@ Trigger (motion on)
        ├─ Ternary search for peak-quality frame
        ├─ Cutoff heuristic (stop scoring after subjects leave)
        └─ Fill budget around peak
-  └─ Multimodal LLM scoring (parallelized)
+  └─ Multimodal LLM scoring (parallelized; Ollama requests go one at a time, see below)
        └─ ScoreResult per frame (standard fields + extra_signals)
   └─ Publish gate (profile-driven)
        └─ None → skip (reset cooldown, no image gen)
@@ -117,6 +117,41 @@ Trigger (motion on)
   └─ Bundle assembly + publish
   └─ Cooldown / backoff
 ```
+
+### Ollama: one request at a time
+
+The house Ollama endpoint (`ollama-assist02`) is shared with Home Assistant
+(its Ollama integration's AI Task; haynes-ops#3450 measured it as a local voice
+model), and Ollama runs `qwen3.5` one request at a time, queueing the rest in
+arrival order. So every AppDaemon request to an Ollama endpoint (frame scoring
+and the run narrative, from every camera) takes the one AppDaemon slot for that
+endpoint first (`providers/ai_providers/ollama/_request_gate.py`). Any other
+client then waits for at most the one camera request already running, not a
+whole burst (haynes-ops#3450: an Assist-sized probe took 37 s behind a burst of
+5 and 6-8 s behind serialized calls).
+
+- Scoring threads and other cameras queue in arrival order instead of failing.
+- A request that waits longer than its own HTTP timeout (300 s by default) for
+  the slot is skipped. A scoring call
+  is logged as `data gen failed ... queue wait exceeded` and that frame scores
+  as empty. A narrative call is logged as `run narrative failed ... queue wait
+  exceeded`, and the bundle publishes without a narrative. At about 10 s per
+  vision call, 300 s is about three cameras' full runs queued ahead. A skipped
+  frame scores like a frame with nobody in it, so it can move the selection
+  cutoff or suppress the bundle (true of any failed scoring call;
+  `backlog/004-failed-frame-scores-read-as-no-subjects.md`). This drops fewer
+  frames than before the gate: a request used to have 300 s *in total* for
+  Ollama's queue plus inference, and now it gets up to 300 s queued and then
+  its own full HTTP timeout.
+- The HTTP timeout starts once the request holds the slot, so the wait does
+  not eat into it. The time spent queued is recorded as `_meta.queue_wait_s`.
+- Each camera already ignores new triggers while a run is in flight, so a
+  queued request is never made stale by a newer run from the same camera. The
+  flip side: a camera whose run is at the back of the queue stays deaf to new
+  motion until that run finishes. With several cameras at once, the last one
+  can wait several minutes. That is not new: Ollama serves `qwen3.5` one
+  request at a time, so the same work took the same time when the queue lived
+  inside Ollama.
 
 ## Events
 
@@ -350,7 +385,7 @@ ai_provider_conf:
 |-----|---------|-------------|
 | `analyze_max_snapshots` | `10` | Frame scoring budget |
 | `no_people_threshold` | `1.0` | person_score below this = "no subjects" for cutoff heuristic |
-| `external_data_parallelism` | `4` | Concurrent LLM scoring threads |
+| `external_data_parallelism` | `4` | Concurrent LLM scoring threads. With Ollama these threads queue for one shared slot (see *Ollama: one request at a time*) |
 | `best_min_person_score` | `2` | Minimum person_score to publish (legacy gate, alongside profile) |
 | `best_min_animal_count` | `1` | Minimum animal count to publish (legacy gate, alongside profile) |
 | `detection_profile` | `default` | Profile name or inline dict. See Detection profiles section. |

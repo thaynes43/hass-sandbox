@@ -19,6 +19,7 @@ from ._ollama_helpers import (
     image_file_to_base64,
     parse_json_from_response,
 )
+from ._request_gate import effective_queue_wait_s, gate_for
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ class OllamaMultimodalConfig:
     model: str = OLLAMA_DEFAULT_MODEL
     timeout_s: float = OLLAMA_DEFAULT_TIMEOUT_S
     max_output_tokens: int = 300
+    # Bound on the wait for the endpoint's single AppDaemon slot (see _request_gate).
+    # None = the same as timeout_s, so a shorter bundle timeout shortens the wait too.
+    queue_wait_s: Optional[float] = None
 
 
 class OllamaMultimodalTextProvider(MultimodalTextProvider):
@@ -111,37 +115,43 @@ class OllamaMultimodalTextProvider(MultimodalTextProvider):
             self._config.timeout_s,
             prompt_preview[:80],
         )
-        started = time.time()
-
-        try:
-            with urllib.request.urlopen(req, timeout=float(self._config.timeout_s)) as resp:
-                payload_bytes = resp.read()
-                payload = json.loads(payload_bytes.decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            detail = ""
+        # One AppDaemon request in flight per endpoint, process-wide, so another
+        # client of the same Ollama waits for at most one camera request, never a burst.
+        gate = gate_for(self._config.base_url)
+        with gate.slot(
+            max_wait_s=effective_queue_wait_s(self._config.queue_wait_s, self._config.timeout_s),
+            label=f"multimodal model={self._config.model}",
+        ) as queue_wait_s:
+            started = time.time()
             try:
-                detail = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                pass
-            logger.warning(
-                "ollama multimodal http error: code=%s reason=%s detail_preview=%s",
-                e.code,
-                e.reason,
-                (detail or "")[:200],
-            )
-            raise ExternalDataGenError(f"ollama http error: {e.code} {e.reason}; {detail}") from e
-        except urllib.error.URLError as e:
-            logger.warning(
-                "ollama multimodal request failed (timeout/connection): timeout_s=%s err=%s",
-                self._config.timeout_s,
-                str(e)[:200],
-            )
-            raise ExternalDataGenError(
-                f"ollama request failed (timeout or connection). "
-                f"First request may load/download model; timeout_s={self._config.timeout_s}. {e!r}"
-            ) from e
-        except Exception as e:
-            raise ExternalDataGenError(f"ollama request failed: {e!r}") from e
+                with urllib.request.urlopen(req, timeout=float(self._config.timeout_s)) as resp:
+                    payload_bytes = resp.read()
+                    payload = json.loads(payload_bytes.decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                detail = ""
+                try:
+                    detail = e.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                logger.warning(
+                    "ollama multimodal http error: code=%s reason=%s detail_preview=%s",
+                    e.code,
+                    e.reason,
+                    (detail or "")[:200],
+                )
+                raise ExternalDataGenError(f"ollama http error: {e.code} {e.reason}; {detail}") from e
+            except urllib.error.URLError as e:
+                logger.warning(
+                    "ollama multimodal request failed (timeout/connection): timeout_s=%s err=%s",
+                    self._config.timeout_s,
+                    str(e)[:200],
+                )
+                raise ExternalDataGenError(
+                    f"ollama request failed (timeout or connection). "
+                    f"First request may load/download model; timeout_s={self._config.timeout_s}. {e!r}"
+                ) from e
+            except Exception as e:
+                raise ExternalDataGenError(f"ollama request failed: {e!r}") from e
 
         elapsed_s = time.time() - started
         response_text = (
@@ -184,6 +194,7 @@ class OllamaMultimodalTextProvider(MultimodalTextProvider):
             "model": self._config.model,
             "created_at_epoch": time.time(),
             "elapsed_s": round(elapsed_s, 3),
+            "queue_wait_s": round(queue_wait_s, 3),
             "load_duration_ns": load_duration_ns,
             "input_path": str(in_path),
             "request": {

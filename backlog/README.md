@@ -26,9 +26,10 @@ incremental patching.
 |---|------|--------|------|
 | 001 | [Custom card deployment revamp / HACS integration](001-card-deployment-and-hacs-integration.md) | Proposed | Major |
 | 002 | [Sonos: SonosNet off, soundbars back on Ethernet](002-sonosnet-off-wired-soundbars.md) | Done for the soundbars 2026-09-19 (Movie Room Port still on Wi-Fi) | Small |
+| 004 | [A frame whose scoring call failed reads as "no subjects"](004-failed-frame-scores-read-as-no-subjects.md) | Proposed | Medium |
 
 Item 003 ("The image prompt's frame notes do not match the frames actually
 sent") was implemented in AppDaemon 1.21.1 and its file removed: image providers
 now report `capabilities.max_input_images`, the app trims to it before building
 the prompt, and the per-frame notes are labelled by send position. Numbers are
-not reused — the next item is 004.
+not reused — the next item is 005.
