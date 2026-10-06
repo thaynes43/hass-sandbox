@@ -142,7 +142,7 @@ detection_summary_app
      every camera (providers/ai_providers/ollama/_request_gate.py), so
      external_data_parallelism threads queue; a call queued past 300 s is skipped:
      a scoring call's frame scores empty, a narrative call logs `run narrative
-     failed` and the bundle publishes without one (haynes-ops#3450: voice shares
+     failed` and the bundle publishes without one (haynes-ops#3450: HA shares
      the endpoint)
   └─ fires detection_summary/run_published event
   └─ writes bundles to shared filesystem

@@ -1,21 +1,24 @@
 """Process-wide request gate: at most one AppDaemon request in flight per Ollama endpoint.
 
 Why this exists (haynes-ops#3450, Tom's ruling 2026-10-06): the house Ollama
-endpoint (``ollama-assist02``) is also Home Assistant's voice model. Voice
-talks to Ollama directly, never through AppDaemon. Ollama runs ``qwen3.5`` one
-request at a time and queues the rest in arrival order. It ignores
-``OLLAMA_NUM_PARALLEL`` for that architecture, so a second slot is not an
-option (haynes-ops#3452). So a voice turn that lands behind a burst
-of camera-scoring requests waits for the whole burst. On 2026-10-06 bursts of
-AppDaemon ``/api/chat`` calls took 27 s to over 2 min each, and a voice answer
-took 37 s behind a burst of 5 versus 6-8 s behind serialized calls.
+endpoint (``ollama-assist02``) is shared. Besides AppDaemon's camera pipeline
+it serves Home Assistant's Ollama integration (an AI Task entity), and #3450
+measured it as a local voice model. HA's Assist pipelines themselves ran on
+llama-server (``llama_cpp``), not on this endpoint, when this was written
+(2026-10-06). Ollama runs ``qwen3.5`` one request at a time and queues the rest
+in arrival order. It ignores ``OLLAMA_NUM_PARALLEL`` for that architecture, so
+a second slot is not an option (haynes-ops#3452). So any other client's request
+that lands behind a burst of camera-scoring requests waits for the whole burst.
+On 2026-10-06 bursts of AppDaemon ``/api/chat`` calls took 27 s to over 2 min
+each, and an Assist-sized probe took 37 s behind a burst of 5 versus 6-8 s
+behind serialized calls.
 
 Every AppDaemon request to Ollama is camera-pipeline work
 (``detection_summary_app``: per-frame vision scoring and the run narrative).
 Both Ollama providers take this gate's slot before they send, so the whole
-AppDaemon process has at most one request at Ollama per endpoint. A voice turn
-then waits for at most the one camera request already running (about 10 s),
-not a burst.
+AppDaemon process has at most one request at Ollama per endpoint. Any other
+client then waits for at most the one camera request already running (about
+10 s), not a burst.
 
 Behaviour:
 
@@ -30,9 +33,11 @@ The registry is module level, so every app and thread in the AppDaemon process
 shares the same gates. In the container ``providers/`` is copied to
 ``/conf/apps/providers`` (``docker/entrypoint.sh``), inside AppDaemon's watched
 app directory. The image is immutable, so nothing triggers a reload. The
-registry is still kept across an ``importlib.reload`` (``globals().get`` below)
-so that a reload cannot reset the gates and let a second request through. A
-file edited inside a running pod is still a reason to restart AppDaemon.
+registry also survives ``importlib.reload`` (``globals().get`` below), but not
+a fresh import after the module is dropped from ``sys.modules``. That would
+start an empty registry, and two requests could be in flight with no log line.
+So the invariant is: restart AppDaemon after editing any file inside a running
+pod.
 """
 
 from __future__ import annotations
@@ -53,8 +58,8 @@ logger = logging.getLogger(__name__)
 # Ollama, where that same timeout was the only bound on the wait. Sizing: a
 # 1920x1080 vision call takes about 9-10.6 s on assist02, and a camera run is up
 # to 10 scoring calls plus one narrative, so about 110 s. 300 s is roughly 30
-# calls, or about three cameras' full runs, ahead. Voice does not depend on this
-# bound, because AppDaemon never has more than one request at Ollama. The bound
+# calls, or about three cameras' full runs, ahead. Other clients do not depend on
+# this bound, because AppDaemon never has more than one request at Ollama. The bound
 # only decides when a pile-up (many cameras at once, or a slow or hung Ollama)
 # starts dropping frames instead of delivering them late.
 OLLAMA_DEFAULT_QUEUE_WAIT_S = 300.0
@@ -122,7 +127,7 @@ class EndpointGate:
                         raise OllamaQueueTimeout(
                             f"ollama queue wait exceeded {max_wait_s:.0f}s for {self.endpoint} "
                             f"({label or 'request'}; {ahead_at_entry} ahead at entry); skipped. "
-                            "AppDaemon sends one request at a time to this endpoint so voice never queues behind a burst."
+                            "AppDaemon sends one request at a time to this endpoint so other clients never queue behind a burst."
                         )
                     self._cond.wait(remaining)
             except BaseException:

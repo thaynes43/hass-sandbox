@@ -28,10 +28,12 @@ The allowed model set is enforced in [../provider_settings.py](../provider_setti
 Both providers take a process-wide slot from `_request_gate.gate_for(base_url)`
 before they send, so AppDaemon has at most one request in flight per Ollama
 endpoint, across every app and thread. The house endpoint
-(`ollama-assist02`) also serves Home Assistant's voice model and runs
-`qwen3.5` one request at a time, so the gate keeps a voice turn from queueing
-behind a burst of camera calls: it waits for at most the one already running
-(haynes-ops#3450).
+(`ollama-assist02`) is shared with Home Assistant's Ollama integration (an AI
+Task entity), and haynes-ops#3450 measured it as a local voice model. It runs
+`qwen3.5` one request at a time, so the gate keeps any other client from
+queueing behind a burst of camera calls: such a request waits for at most the
+one already running (haynes-ops#3450). HA's Assist pipelines ran on
+llama-server, not here, when this was written (2026-10-06).
 
 - Waiters queue in arrival order.
 - `queue_wait_s` on `OllamaMultimodalConfig` / `OllamaSimpleTextConfig` bounds the

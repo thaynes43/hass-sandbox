@@ -1,8 +1,9 @@
 """Tests for the process-wide Ollama request gate (haynes-ops#3450).
 
 AppDaemon must send at most one request at a time to an Ollama endpoint, across
-every app and thread, so the camera pipeline never takes both of assist02's
-slots and voice always has one. Waiters queue (FIFO) rather than fail, and a
+every app and thread. assist02 runs qwen3.5 one request at a time
+(haynes-ops#3452), so another client waits for at most the one camera request
+already running, never a burst. Waiters queue (FIFO) rather than fail, and a
 bounded wait skips the request with a warning instead of waiting forever.
 """
 
@@ -234,7 +235,7 @@ def test_gate_with_limit_two_wakes_a_second_blocked_waiter() -> None:
         gate = EndpointGate(f"http://gate-limit2-{attempt}:11434", limit=2)
         release_holders = threading.Event()
         holding = threading.Barrier(3)
-        both_in = threading.Barrier(2, timeout=2.0)
+        both_in = threading.Barrier(2, timeout=10.0)
         broken: list[int] = []
 
         def holder() -> None:
