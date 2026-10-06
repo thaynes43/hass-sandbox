@@ -16,7 +16,7 @@ The `detection_summary_app` is the backbone of the camera notification pipeline:
 
 1. **Trigger** — a camera's motion sensor fires
 2. **Capture** — HA takes a snapshot from the camera
-3. **Score** — the snapshot is sent to a multimodal LLM (Gemini, OpenAI, or Ollama) which describes what it sees
+3. **Score** — the snapshot is sent to a multimodal LLM (Gemini, OpenAI, or Ollama) which describes what it sees. The local Ollama model is also the voice assistant's, so AppDaemon sends it one request at a time and voice is never stuck behind a burst of camera frames
 4. **Publish** — the summary bundle (image + AI description + metadata) is written to the shared filesystem and an HA event is fired
 
 The `detection_summary_viewer` provides a Lovelace dashboard card for browsing historical detection bundles — useful for reviewing what happened while you were away.

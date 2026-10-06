@@ -107,7 +107,7 @@ Trigger (motion on)
        ├─ Ternary search for peak-quality frame
        ├─ Cutoff heuristic (stop scoring after subjects leave)
        └─ Fill budget around peak
-  └─ Multimodal LLM scoring (parallelized)
+  └─ Multimodal LLM scoring (parallelized; Ollama requests go one at a time, see below)
        └─ ScoreResult per frame (standard fields + extra_signals)
   └─ Publish gate (profile-driven)
        └─ None → skip (reset cooldown, no image gen)
@@ -117,6 +117,23 @@ Trigger (motion on)
   └─ Bundle assembly + publish
   └─ Cooldown / backoff
 ```
+
+### Ollama: one request at a time
+
+The house Ollama endpoint (`ollama-assist02`) is also Home Assistant's voice
+model, and Ollama serves only a fixed number of requests at once. So every
+AppDaemon request to an Ollama endpoint (frame scoring and the run narrative,
+from every camera) takes the one AppDaemon slot for that endpoint first
+(`providers/ai_providers/ollama/_request_gate.py`). The camera pipeline holds
+at most one of Ollama's slots and voice keeps the other (haynes-ops#3450).
+
+- Scoring threads and other cameras queue in arrival order instead of failing.
+- A request that waits more than 300 s for the slot is skipped. The frame is
+  logged as `data gen failed ... queue wait exceeded` and scores as empty.
+- The HTTP timeout starts once the request holds the slot, so the wait does
+  not eat into it. The time spent queued is recorded as `_meta.queue_wait_s`.
+- Each camera already ignores new triggers while a run is in flight, so a
+  queued request is never made stale by a newer run from the same camera.
 
 ## Events
 
@@ -350,7 +367,7 @@ ai_provider_conf:
 |-----|---------|-------------|
 | `analyze_max_snapshots` | `10` | Frame scoring budget |
 | `no_people_threshold` | `1.0` | person_score below this = "no subjects" for cutoff heuristic |
-| `external_data_parallelism` | `4` | Concurrent LLM scoring threads |
+| `external_data_parallelism` | `4` | Concurrent LLM scoring threads. With Ollama these threads queue for one shared slot (see *Ollama: one request at a time*) |
 | `best_min_person_score` | `2` | Minimum person_score to publish (legacy gate, alongside profile) |
 | `best_min_animal_count` | `1` | Minimum animal count to publish (legacy gate, alongside profile) |
 | `detection_profile` | `default` | Profile name or inline dict. See Detection profiles section. |

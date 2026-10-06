@@ -20,8 +20,24 @@ The allowed model set is enforced in [../provider_settings.py](../provider_setti
 
 ## Implemented Capabilities
 
-- Text to structured JSON via `/api/generate`
+- Text to structured JSON via `/api/chat`
 - Image plus text to structured JSON via `/api/chat`
+
+## One request at a time per endpoint
+
+Both providers take a process-wide slot from `_request_gate.gate_for(base_url)`
+before they send, so AppDaemon has at most one request in flight per Ollama
+endpoint, across every app and thread. The house endpoint
+(`ollama-assist02`) also serves Home Assistant's voice model, and the gate
+keeps the camera pipeline to one of its slots so voice always has the other
+(haynes-ops#3450).
+
+- Waiters queue in arrival order.
+- `queue_wait_s` on each provider config (default 300 s) bounds the wait.
+  Past it the request raises `OllamaQueueTimeout`, an `ExternalDataGenError`,
+  without being sent; callers log a warning and skip it.
+- The HTTP `timeout_s` starts only once the slot is held. The time spent
+  queued is returned as `_meta.queue_wait_s`.
 
 ## Limitations
 
@@ -41,3 +57,4 @@ The allowed model set is enforced in [../provider_settings.py](../provider_setti
 - [ollama_simple_text_provider.py](./ollama_simple_text_provider.py)
 - [ollama_multimodal_text_provider.py](./ollama_multimodal_text_provider.py)
 - [ollama_image_generation_provider.py](./ollama_image_generation_provider.py)
+- [_request_gate.py](./_request_gate.py)
