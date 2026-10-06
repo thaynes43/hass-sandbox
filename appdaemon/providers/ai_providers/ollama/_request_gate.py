@@ -5,7 +5,7 @@ endpoint (``ollama-assist02``) is also Home Assistant's voice model. Voice
 talks to Ollama directly, never through AppDaemon. Ollama runs ``qwen3.5`` one
 request at a time and queues the rest in arrival order. It ignores
 ``OLLAMA_NUM_PARALLEL`` for that architecture, so a second slot is not an
-option (haynes-ops#3452). So so a voice turn that lands behind a burst
+option (haynes-ops#3452). So a voice turn that lands behind a burst
 of camera-scoring requests waits for the whole burst. On 2026-10-06 bursts of
 AppDaemon ``/api/chat`` calls took 27 s to over 2 min each, and a voice answer
 took 37 s behind a burst of 5 versus 6-8 s behind serialized calls.

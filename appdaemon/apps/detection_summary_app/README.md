@@ -133,11 +133,22 @@ burst (haynes-ops#3450: 37 s behind a burst of 5, 6-8 s behind serialized calls)
   is logged as `data gen failed ... queue wait exceeded` and that frame scores
   as empty. A narrative call is logged as `run narrative failed ... queue wait
   exceeded`, and the bundle publishes without a narrative. At about 10 s per
-  vision call, 300 s is about three cameras' full runs queued ahead.
+  vision call, 300 s is about three cameras' full runs queued ahead. A skipped
+  frame scores like a frame with nobody in it, so it can move the selection
+  cutoff or suppress the bundle (true of any failed scoring call;
+  `backlog/004-failed-frame-scores-read-as-no-subjects.md`). This drops fewer
+  frames than before the gate: a request used to have 300 s *in total* for
+  Ollama's queue plus inference, and now it gets up to 300 s queued and then
+  its own full HTTP timeout.
 - The HTTP timeout starts once the request holds the slot, so the wait does
   not eat into it. The time spent queued is recorded as `_meta.queue_wait_s`.
 - Each camera already ignores new triggers while a run is in flight, so a
-  queued request is never made stale by a newer run from the same camera.
+  queued request is never made stale by a newer run from the same camera. The
+  flip side: a camera whose run is at the back of the queue stays deaf to new
+  motion until that run finishes. With several cameras at once, the last one
+  can wait several minutes. That is not new: Ollama serves `qwen3.5` one
+  request at a time, so the same work took the same time when the queue lived
+  inside Ollama.
 
 ## Events
 
