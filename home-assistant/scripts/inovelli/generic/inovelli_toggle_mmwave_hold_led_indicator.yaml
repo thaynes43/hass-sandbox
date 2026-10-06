@@ -1,37 +1,23 @@
 alias: Inovelli Toggle mmWave Hold + LED Indicator
-description: >
-  Toggles MmwaveControlWiredDevice between Disabled (hold) and normal mode. When
-  enabling hold, refreshes the cached current LED color (LED1 WhenOn) in an
-  input_* helper (optional), then sets LED 1-7 (on+off) to hold_color. When
-  disabling hold, restores cached LED color (fallback 255) and sets mmWave back
-  to normal_mode.
+description: |
+  Toggles MmwaveControlWiredDevice between Disabled (hold) and normal mode. When enabling hold, refreshes the cached current LED color (LED1 WhenOn) in an input_text or input_number helper (optional; skipped if LED1 is unavailable or already shows a hold colour), then sets LED 1-7 (on+off) to hold_color. When disabling hold, restores cached LED color (fallback 255) and sets mmWave back to normal_mode.
 fields:
   switch_name:
-    description: >
-      Entity name prefix used for BOTH the mmWave select entity and the LED
-      number entities
+    description: |
+      Entity name prefix used for BOTH the mmWave select entity and the LED number entities
     example: upstairs_primary_water_closet_inovelli_presence
   normal_mode:
     description: The mmWave dropdown option that represents NOT on hold
     example: Occupancy (default)
   normal_mode_input_select:
-    description: >-
-      Optional input_select helper whose state matches the switch's
-      MmwaveControlWiredDevice options. If provided, this will be used instead of
-      normal_mode (normal_mode becomes a fallback).
+    description: "Optional input_select helper whose state matches the switch's MmwaveControlWiredDevice options. If provided, this will be used instead of normal_mode (normal_mode becomes a fallback)."
     example: input_select.basement_rumpus_room_mmwave_normal_mode
   hold_color:
-    description: >-
-      0-255 color index OR an input_* helper entity (recommended) whose state is
-      0-255, used for the hold indicator color
+    description: 0-255 color index OR an input_* helper entity (recommended) whose state is 0-255, used for the hold indicator color
     example: input_text.inovelli_manual_hold
   automation_entity_ids:
-    description: >-
-      Optional list of Home Assistant `automation.*` entity ids to disable while
-      on hold and re-enable when hold clears.
-    example: >-
-      ["automation.light_fp2_server_room_motion_detected_lights_on",
-      "automation.light_fp2_server_room_motion_cleared_lights_off"]
+    description: Optional list of Home Assistant `automation.*` entity ids to disable while on hold and re-enable when hold clears.
+    example: '["automation.light_fp2_server_room_motion_detected_lights_on", "automation.light_fp2_server_room_motion_cleared_lights_off"]'
   prev_led_color_helper:
     description: Optional input_text or input_number helper to cache the previous LED color (0-255)
     example: input_text.upstairs_primary_water_closet_default_led_color
@@ -54,9 +40,8 @@ sequence:
         {% else %}
           {{ '' }}
         {% endif %}
-      effective_normal_mode: >-
-        {% set v = normal_mode_from_input_select | string %}
-        {% if (v | length) > 0 %}
+      effective_normal_mode: |-
+        {% set v = normal_mode_from_input_select | string %} {% if (v | length) > 0 %}
           {{ v }}
         {% else %}
           {{ normal_mode | default('') | string }}
@@ -66,14 +51,14 @@ sequence:
       manual_hold_color_value: |-
         {% set v = manual_hold_color_entity %}
         {% if v is string and v.startswith('input_') %}
-          {{ [ [ states(v) | float(85) | round(0) | int, 0 ] | max, 255 ] | min }}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
         {% else %}
           {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
         {% endif %}
       auto_hold_color_value: |-
         {% set v = auto_hold_color_entity %}
         {% if v is string and v.startswith('input_') %}
-          {{ [ [ states(v) | float(0) | round(0) | int, 0 ] | max, 255 ] | min }}
+          {{ [ [ states(v) | int(0), 0 ] | max, 255 ] | min }}
         {% else %}
           {{ [ [ v | int(0), 0 ] | max, 255 ] | min }}
         {% endif %}
@@ -112,7 +97,7 @@ sequence:
         {{ ns.any_off }}
       helper_provided: "{{ (prev_led_color_helper | default('') | string | length) > 0 }}"
       helper_entity_id: "{{ prev_led_color_helper | default('') | string }}"
-      helper_domain: >-
+      helper_domain: |-
         {% if helper_provided and '.' in helper_entity_id %}
           {{ helper_entity_id.split('.')[0] }}
         {% else %}
@@ -121,16 +106,22 @@ sequence:
       hold_color_value: |-
         {% set v = hold_color | default(85) %}
         {% if v is string and v.startswith('input_') %}
-          {{ [ [ states(v) | float(85) | round(0) | int, 0 ] | max, 255 ] | min }}
+          {{ [ [ states(v) | int(85), 0 ] | max, 255 ] | min }}
         {% else %}
           {{ [ [ v | int(85), 0 ] | max, 255 ] | min }}
         {% endif %}
-      is_on_hold: >-
-        {{ (current_led1_on in [manual_hold_color_value, auto_hold_color_value])
-        or (mmwave_available and mmwave_state == 'Disabled' and
-        (effective_normal_mode | default('') | string) != 'Disabled') or
-        (automation_ids_provided and
-        any_automation_off) }}
+      restore_led_color: |-
+        {% if helper_provided %}
+          {% set v = states(prev_led_color_helper) %}
+          {% if v in ['unknown','unavailable','none','None',''] %}
+            255
+          {% else %}
+            {{ [ [ v | int(255), 0 ] | max, 255 ] | min }}
+          {% endif %}
+        {% else %}
+          255
+        {% endif %}
+      is_on_hold: "{{ (current_led1_on in [manual_hold_color_value, auto_hold_color_value]) or (mmwave_available and mmwave_state == 'Disabled' and (effective_normal_mode | default('') | string) != 'Disabled') or (automation_ids_provided and any_automation_off) }}"
   - choose:
       - conditions:
           - condition: template
@@ -147,22 +138,22 @@ sequence:
           - choose:
               - conditions:
                   - condition: template
-                    value_template: "{{ helper_provided and helper_domain == 'input_text' }}"
+                    value_template: "{{ helper_provided and helper_domain == 'input_text' and is_number(states(led1_on)) and (states(led1_on) | int) not in [manual_hold_color_value, auto_hold_color_value] }}"
                 sequence:
                   - action: input_text.set_value
                     target:
                       entity_id: "{{ helper_entity_id }}"
                     data:
-                      value: "{{ states(led1_on) }}"
+                      value: "{{ states(led1_on) | int(current_led1_on) }}"
               - conditions:
                   - condition: template
-                    value_template: "{{ helper_provided and helper_domain == 'input_number' }}"
+                    value_template: "{{ helper_provided and helper_domain == 'input_number' and is_number(states(led1_on)) and (states(led1_on) | int) not in [manual_hold_color_value, auto_hold_color_value] }}"
                 sequence:
                   - action: input_number.set_value
                     target:
                       entity_id: "{{ helper_entity_id }}"
                     data:
-                      value: "{{ states(led1_on) | float(255) }}"
+                      value: "{{ states(led1_on) | int(current_led1_on) }}"
           - choose:
               - conditions:
                   - condition: template
@@ -193,50 +184,50 @@ sequence:
       - choose:
           - conditions:
               - condition: template
-                value_template: >-
-                  {{ mmwave_available and (effective_normal_mode |
-                  default('') | string | length) > 0 and (effective_normal_mode
-                  | string) != 'Disabled' }}
+                value_template: "{{ mmwave_available and (effective_normal_mode | default('') | string | length) > 0 and (effective_normal_mode | string) != 'Disabled' }}"
             sequence:
               - action: select.select_option
                 target:
                   entity_id: "{{ mmwave_select }}"
                 data:
                   option: "{{ effective_normal_mode }}"
-      - choose:
-          - conditions:
+      - repeat:
+          for_each: "{{ led_color_on }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ restore_led_color }}"
+      - repeat:
+          for_each: "{{ led_color_off }}"
+          sequence:
+            - action: number.set_value
+              target:
+                entity_id: "{{ repeat.item }}"
+              data:
+                value: "{{ restore_led_color }}"
+      - if:
+          - condition: template
+            value_template: "{{ automation_ids_provided }}"
+        then:
+          # Z2M confirms the LED write asynchronously, sometimes more than a second later. A fixed
+          # 1 s delay followed by this check left the staircase and garage zones disabled after
+          # Cleaners Mode cleared on 2026-10-05. Wait (5 s) for LED1 to confirm the restored colour instead, and
+          # re-enable the automations even if it never arrives (warning in the HA log), so a zone
+          # is never left off.
+          - wait_template: "{{ (states(led1_on) | int(-1)) == restore_led_color }}"
+            timeout: 00:00:05
+            continue_on_timeout: true
+          - if:
               - condition: template
-                value_template: "{{ helper_provided }}"
-            sequence:
-              - action: script.inovelli_set_led_1_7_color_from_input_text
+                value_template: "{{ not wait.completed }}"
+            then:
+              - action: system_log.write
                 data:
-                  switch_name: "{{ switch_name }}"
-                  color_helper: "{{ helper_entity_id }}"
-        default:
-          - repeat:
-              for_each: "{{ led_color_on }}"
-              sequence:
-                - action: number.set_value
-                  target:
-                    entity_id: "{{ repeat.item }}"
-                  data:
-                    value: 255
-          - repeat:
-              for_each: "{{ led_color_off }}"
-              sequence:
-                - action: number.set_value
-                  target:
-                    entity_id: "{{ repeat.item }}"
-                  data:
-                    value: 255
-      - delay: "00:00:01"
-      - choose:
-          - conditions:
-              - condition: template
-                value_template: >-
-                  {{ automation_ids_provided and (states(led1_on) | int(0)) not
-                  in [manual_hold_color_value, auto_hold_color_value] }}
-            sequence:
-              - action: automation.turn_on
-                target:
-                  entity_id: "{{ automation_ids }}"
+                  level: warning
+                  logger: script.inovelli_toggle_mmwave_hold_led_indicator
+                  message: "{{ switch_name }}: LED1 still reads {{ states(led1_on) }}, not the restored {{ restore_led_color }}, 5 s after the restore; re-enabling {{ automation_ids | join(', ') }} anyway so the zone is not left off."
+          - action: automation.turn_on
+            target:
+              entity_id: "{{ automation_ids }}"
