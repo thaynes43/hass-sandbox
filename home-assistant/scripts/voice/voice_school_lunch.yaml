@@ -36,6 +36,14 @@
 # read as a Unix timestamp (1970).
 # Problems come back as a `response` sentence with a plain stop (see voice_thermostat.yaml: an
 # `error: true` stop reaches the agent as an empty SUCCESS).
+# The result names the day the lunch is for `lunch_date` ("Thursday, October 8 (tomorrow)"; the tag is
+# (today), (tomorrow) or (yesterday), and absent for any other day) and gives the current local date
+# as `today`, so the agent never has to work out a weekday. Until 2026-10-07 the result had a bare
+# `date` key and nothing else about the date. The agents have no date in their prompts, and HA's
+# GetDateTime tool returns today's date under the same key `date`. Asked at 21:20 on a Wednesday for
+# Penelope's lunch tomorrow, the script returned Thursday's menu under `date: Thursday, October 8`,
+# and the Kitchen agent said "Tomorrow, Friday, October ninth" while reading Thursday's options out.
+# A rerun of the same question repeated the mistake 1 time in 3.
 # Allowed by the guard pattern script.voice_* (v1.19.2); exposed to Assist 2026-09-27.
 alias: School Lunch Menu
 description: 'Voice tool: the school lunch menu. Penelope goes to the elementary school and Jackson goes
@@ -43,10 +51,12 @@ description: 'Voice tool: the school lunch menu. Penelope goes to the elementary
   school menu. Use it for ''what''s for lunch tomorrow'', ''what is Penelope having for lunch on Friday'',
   ''what''s Jackson''s lunch today'', ''what''s for lunch at the high school on October 2nd''. With nobody
   named it answers for both kids. With no day it gives the next school lunch (today''s until noon, then
-  the next school day''s) and says which date that is. Each lunch lists that day''s options (the kid picks
-  one), or a notice instead (no school, early release, weekend, menu not published yet). Keep the spoken
-  answer short: the day, then for each kid the main dish of each option without the sides, unless the
-  user asks for the details.'
+  the next school day''s). lunch_date in the result is the day the lunch is for, marked (today) or (tomorrow)
+  when it is one of those, and today is the current date: say the day as lunch_date gives it and never
+  work out a weekday or date yourself. Each lunch lists that day''s options (the kid picks one), or a notice
+  instead (no school, early release, weekend, menu not published yet). Keep the spoken answer short: the
+  day, then for each kid the main dish of each option without the sides, unless the user asks for the
+  details.'
 icon: mdi:food-apple
 mode: parallel
 max: 10
@@ -182,10 +192,13 @@ sequence:
       month is not loaded right now.''))))) %}{% endif %}{% set rec = {''for'': t.child or t.school, ''school'': t.school,
       ''options'': o.mine if (tags and o.mine) else o.all} %}{% set out.lunches = out.lunches + [dict(rec,
       notice=notice) if notice else rec] %}{% endfor %}{{ out.lunches }}'
-- variables:
+- alias: The answer. lunch_date says which day the lunch is for, relative to today (see the header)
+  variables:
     result:
-      date: '{% set c = strptime(menu_date, ''%Y-%m-%d'').date() %}{{ c.strftime(''%A, %B '') ~ c.day
-        }}'
+      today: '{% set t = now().date() %}{{ t.strftime(''%A, %B '') ~ t.day }}'
+      lunch_date: '{% set c = strptime(menu_date, ''%Y-%m-%d'').date() %}{% set n = (c - now().date()).days
+        %}{{ c.strftime(''%A, %B '') ~ c.day ~ ('' (today)'' if n == 0 else ('' (tomorrow)'' if n == 1 else
+        ('' (yesterday)'' if n == -1 else ''''))) }}'
       lunches: '{{ lunches }}'
 - stop: Done
   response_variable: result
