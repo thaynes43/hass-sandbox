@@ -45,6 +45,7 @@ GRID_BOTTOM = 95.0
 GRID_LEFT = 5.0
 GRID_RIGHT = 82.0
 GRID_COLUMNS = 5
+GRID_COLUMN_WIDTH = (GRID_RIGHT - GRID_LEFT) / GRID_COLUMNS
 
 
 def _percent(value: Any) -> float:
@@ -242,9 +243,11 @@ class SchoolMenuClient:
         1. Parses content for notice keywords (NO SCHOOL, EARLY RELEASE, etc.)
         2. Builds the Mon-Fri calendar grid for the month.
         3. Finds weekdays that have no menu items (missing days).
-        4. Places each notice in the grid cell under it: the row from the
-           box's top edge, the column from its horizontal centre.  A notice
-           is kept only when that cell is a missing day of this month.
+        4. Places each notice in the grid cell where the box starts: the row
+           from its top edge, the column from the centre of its first
+           column's worth of width (so a banner spanning several days lands
+           on its first day).  A notice is kept only when that cell is a
+           missing day of this month; any other notice is logged and dropped.
 
         A notice never moves to another day.  Up to 1.25.1 the notices of a
         week were handed out left to right to that week's missing days, so in
@@ -272,8 +275,17 @@ class SchoolMenuClient:
                 top = _percent(c.get("top", "0"))
                 width = _percent(c.get("width") or "0")
             except (ValueError, TypeError):
+                logger.warning(
+                    "Notice dropped: unreadable box position "
+                    "(left=%r, top=%r, width=%r): %s",
+                    c.get("left"), c.get("top"), c.get("width"), text,
+                )
                 continue
-            notices.append({"text": text, "x": left + width / 2, "top": top})
+            # Anchor on the box's start: a box wider than a column is a
+            # banner over several days, and its own centre would sit in a
+            # later one.  (The row already comes from the top edge.)
+            x = left + min(width, GRID_COLUMN_WIDTH) / 2
+            notices.append({"text": text, "x": x, "top": top})
 
         if not notices:
             return
@@ -297,18 +309,19 @@ class SchoolMenuClient:
 
         # 4. Place each notice in the cell under it (see GRID_* above)
         row_height = (GRID_BOTTOM - GRID_TOP) / n_rows
-        col_width = (GRID_RIGHT - GRID_LEFT) / GRID_COLUMNS
         month_val = menu_month.month  # 0-indexed for MenuDay
         placed: Dict[int, str] = {}
         for notice in sorted(notices, key=lambda n: (n["top"], n["x"])):
             notice_text = notice["text"]
             row_idx = int((notice["top"] - GRID_TOP) // row_height)
-            col_idx = int((notice["x"] - GRID_LEFT) // col_width)
+            col_idx = int((notice["x"] - GRID_LEFT) // GRID_COLUMN_WIDTH)
             if not (0 <= row_idx < n_rows and 0 <= col_idx < GRID_COLUMNS):
-                # Header or sidebar text that happens to use a keyword
-                logger.debug(
-                    "Notice outside the calendar grid (x=%.1f%%, top=%.1f%%): %s",
-                    notice["x"], notice["top"], notice_text,
+                # Header or sidebar text that uses a keyword, or a layout
+                # the GRID_* constants do not fit
+                logger.warning(
+                    "%04d-%02d notice not placed: it sits outside the calendar "
+                    "grid (x=%.1f%%, top=%.1f%%): %s",
+                    year, display_month, notice["x"], notice["top"], notice_text,
                 )
                 continue
             day = grid[row_idx][col_idx]

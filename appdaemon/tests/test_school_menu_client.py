@@ -334,6 +334,33 @@ class TestMergeNotices:
         SchoolMenuClient._merge_notices(menu, [_box(EARLY, "22.1%", "48.2%", width=None)])
         assert _notices(menu) == {13: EARLY}
 
+    def test_wide_banner_lands_on_its_first_day(self):
+        # A box over Mon-Tue (28% wide) starts in the Monday column; its own
+        # centre (20.9%) would fall in Tuesday.
+        menu = MenuMonth(
+            menu_id="oct", menu_type_name="Elementary", month=9, year=2026,
+            days=_school_days(2026, 9, skip=(12, 13)),
+        )
+        SchoolMenuClient._merge_notices(
+            menu, [_box("NO SCHOOL COLUMBUS DAY", "6.9%", "48.2%", "28%")]
+        )
+        assert _notices(menu) == {12: "NO SCHOOL COLUMBUS DAY"}
+
+    def test_dropped_notices_are_logged_as_warnings(self, caplog):
+        menu = MenuMonth(
+            menu_id="oct", menu_type_name="Elementary", month=9, year=2026,
+            days=_school_days(2026, 9, skip=(13,)),
+        )
+        with caplog.at_level("WARNING", logger="providers.school_menu.client"):
+            SchoolMenuClient._merge_notices(menu, [
+                _box(EARLY, "auto", "48.2%"),
+                _box("Kitchen CLOSED on the weekend", "83.2%", "40.0%", "12.9%"),
+            ])
+        warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+        assert any("unreadable box position" in m and "auto" in m for m in warnings)
+        assert any("outside the calendar grid" in m and "Kitchen CLOSED" in m for m in warnings)
+        assert _notices(menu) == {}
+
     def test_unparseable_position_is_skipped(self):
         menu = MenuMonth(
             menu_id="oct", menu_type_name="Elementary", month=9, year=2026,
