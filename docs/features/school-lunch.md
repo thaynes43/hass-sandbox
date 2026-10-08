@@ -103,6 +103,9 @@ The tool is the Home Assistant script `script.voice_school_lunch`
   days, not just weekends.
 - A day that has no lunch comes back as a notice: no school, a holiday, the weekend, or "not
   published yet" for a month the district has not posted.
+- The answer gives the day the lunch is for, marked "today" or "tomorrow" when it is one of those,
+  and today's date. The assistant reads the day out as given and never works out a weekday itself.
+  Before this, one evening it read Thursday's menu as "tomorrow, Friday".
 - Some days the district lists different options for different buildings. The voice answer drops
   the options printed for another building and keeps everything else: options with no building
   label, and labels it doesn't recognise. If the filter would leave nothing, or a school has no

@@ -59,15 +59,17 @@ The GraphQL endpoint only returns days that have menu items. Days with no items 
 
 1. Fetches content overlays after the GraphQL response.
 2. Parses overlay HTML for notice keywords (`NO SCHOOL`, `EARLY RELEASE`, `HOLIDAY`, etc.).
-3. Maps noticed to the correct calendar weekday by grid position (row/column geometry).
-4. Appends `MenuDay` entries with `notice` set and, for `GRAB AND GO` days, a synthetic `MenuItem`.
+3. Places each notice in the calendar cell where its box starts: the week row from the box's top edge, the weekday column from the centre of its first column's worth of width, so a banner over several days lands on its first day (the `GRID_*` constants in `client.py`).
+4. Appends `MenuDay` entries with `notice` set and, for `GRAB AND GO` days, a synthetic `MenuItem`. A notice is kept only when its cell is a weekday of the month that has no menu items. It is never moved to another day. A notice over a day that has a menu is logged at INFO and dropped. A notice with an unreadable position, outside the calendar grid, over a cell outside the month, or over a day that already has a notice is logged at WARNING and dropped.
 
-Notice matching is heuristic (grid geometry is empirically derived) and may misalign on unusual calendar layouts.
+Before 1.25.2 the notices of a week went left to right onto that week's days without a menu. A holiday that has no notice box therefore took the next day's early-release notice: October 12, 2026 got the notice for October 13, and June 19, 2025 got the one for June 20.
+
+The grid geometry is empirical (calibrated on the district's 2025-2026 designs) and may not fit an unusual calendar layout.
 
 ## Limitations
 
 - No authentication — only works with publicly accessible school sites on the School Nutrition and Fitness platform.
-- Notice mapping is position-based; schools with non-standard calendar templates may get incorrect day assignments.
+- Notice mapping is position-based; on a non-standard calendar template a notice can be dropped (a WARNING in the log).
 - No rate limiting or retry logic — callers are responsible for back-off if needed.
 - `month` field in the API response is 0-indexed; always use `MenuMonth.display_month` for human-facing output.
 

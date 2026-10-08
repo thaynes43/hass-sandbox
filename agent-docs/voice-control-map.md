@@ -27,7 +27,11 @@ wall switches and scene controllers already give people, and must not fight the 
   git**: not in a mirror, a doc, a commit or a PR. Update it and the script's `kids` map when a kid
   changes school. Measured 2026-09-27: the OpenAI Kitchen agent answers in 3–5 s (it calls
   `GetDateTime` first for "last Friday"-style dates). The local Phone Assist takes ~25–45 s on the
-  current 15 tokens/s, mostly reasoning tokens.
+  current 15 tokens/s, mostly reasoning tokens. Since 2026-10-07 the result carries `today` and
+  `lunch_date` ("Thursday, October 8 (tomorrow)") instead of a bare `date`. With the bare key the
+  Kitchen agent said "tomorrow, Friday, October ninth" over Thursday's menu, 1 run in 3. The agents
+  have no date in their prompts, and the agent apparently took `date` for today's date, which is
+  what `GetDateTime` returns under that key.
 
 ## Basement
 

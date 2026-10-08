@@ -23,7 +23,7 @@ import calendar
 import logging
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import aiohttp
 
@@ -33,6 +33,24 @@ logger = logging.getLogger(__name__)
 
 GRAPHQL_URL = "https://api.schoolnutritionandfitness.com/graphql"
 SITE_BASE_URL = "https://www.schoolnutritionandfitness.com"
+
+# Where the Mon-Fri calendar grid sits on a menu design, in percent of the
+# page (content boxes are positioned in the same units).  Empirical, from the
+# district's 2026 designs: the rows fill 10%-95% top to bottom, the five
+# weekday columns fill 5%-82% left to right, and a sidebar of standing text
+# sits to the right of them.  A notice box starts about 2% inside its day's
+# column: Monday at 6.9%, Tuesday at 21.7%-22.1%, Thursday at 53.6%.
+GRID_TOP = 10.0
+GRID_BOTTOM = 95.0
+GRID_LEFT = 5.0
+GRID_RIGHT = 82.0
+GRID_COLUMNS = 5
+GRID_COLUMN_WIDTH = (GRID_RIGHT - GRID_LEFT) / GRID_COLUMNS
+
+
+def _percent(value: Any) -> float:
+    """Parse a content box coordinate such as ``"22.13%"`` (or a number)."""
+    return float(str(value).strip().rstrip("%"))
 
 # GraphQL query to fetch menu data for a given month
 MENU_QUERY = """\
@@ -225,8 +243,19 @@ class SchoolMenuClient:
         1. Parses content for notice keywords (NO SCHOOL, EARLY RELEASE, etc.)
         2. Builds the Mon-Fri calendar grid for the month.
         3. Finds weekdays that have no menu items (missing days).
-        4. Matches notices to missing days by calendar row (week),
-           sorted left-to-right within each row.
+        4. Places each notice in the grid cell where the box starts: the row
+           from its top edge, the column from the centre of its first
+           column's worth of width (so a banner spanning several days lands
+           on its first day).  A notice is kept only when that cell is a
+           missing day of this month; any other notice is logged and dropped.
+
+        A notice never moves to another day.  Up to 1.25.1 the notices of a
+        week were handed out left to right to that week's missing days, so in
+        a week with a holiday that has no notice box and an early release that
+        has one, the early release landed on the holiday.  October 2026:
+        Monday 12 (no menu and no notice box) got Tuesday 13's early-release
+        notice, and Tuesday read as no school.  June 2025 had the same shift
+        (Thursday 19 got Friday 20's notice).
         """
         # 1. Extract notices with their positions
         notice_kw = (
@@ -242,11 +271,21 @@ class SchoolMenuClient:
             if not any(kw in text.upper() for kw in notice_kw):
                 continue
             try:
-                left = float(str(c.get("left", "0")).rstrip("%"))
-                top = float(str(c.get("top", "0")).rstrip("%"))
+                left = _percent(c.get("left", "0"))
+                top = _percent(c.get("top", "0"))
+                width = _percent(c.get("width") or "0")
             except (ValueError, TypeError):
+                logger.warning(
+                    "Notice dropped: unreadable box position "
+                    "(left=%r, top=%r, width=%r): %s",
+                    c.get("left"), c.get("top"), c.get("width"), text,
+                )
                 continue
-            notices.append({"text": text, "left": left, "top": top})
+            # Anchor on the box's start: a box wider than a column is a
+            # banner over several days, and its own centre would sit in a
+            # later one.  (The row already comes from the top edge.)
+            x = left + min(width, GRID_COLUMN_WIDTH) / 2
+            notices.append({"text": text, "x": x, "top": top})
 
         if not notices:
             return
@@ -268,67 +307,63 @@ class SchoolMenuClient:
         # 3. Find days that already have menu items
         existing_days = {d.day for d in menu_month.days}
 
-        # 4. Grid geometry (empirical from observed calendars)
-        grid_top = 10.0
-        grid_bottom = 95.0
-        row_height = (grid_bottom - grid_top) / n_rows
-
-        # 5. Match notices to missing days per week row
+        # 4. Place each notice in the cell under it (see GRID_* above)
+        row_height = (GRID_BOTTOM - GRID_TOP) / n_rows
         month_val = menu_month.month  # 0-indexed for MenuDay
-        for row_idx, week in enumerate(grid):
-            row_top = grid_top + row_height * row_idx
-            row_bottom = row_top + row_height
-
-            # Missing weekdays in this row
-            missing: List[Tuple[int, int]] = []  # (col, day)
-            for col, day in enumerate(week):
-                if day is not None and day not in existing_days:
-                    missing.append((col, day))
-
-            if not missing:
+        placed: Dict[int, str] = {}
+        for notice in sorted(notices, key=lambda n: (n["top"], n["x"])):
+            notice_text = notice["text"]
+            row_idx = int((notice["top"] - GRID_TOP) // row_height)
+            col_idx = int((notice["x"] - GRID_LEFT) // GRID_COLUMN_WIDTH)
+            if not (0 <= row_idx < n_rows and 0 <= col_idx < GRID_COLUMNS):
+                # Header or sidebar text that uses a keyword, or a layout
+                # the GRID_* constants do not fit
+                logger.warning(
+                    "%04d-%02d notice not placed: it sits outside the calendar "
+                    "grid (x=%.1f%%, top=%.1f%%): %s",
+                    year, display_month, notice["x"], notice["top"], notice_text,
+                )
                 continue
+            day = grid[row_idx][col_idx]
+            if day is None or day in existing_days or day in placed:
+                # A day with a menu can carry an early-release box, so that
+                # one is expected; the other two point at a layout the GRID_*
+                # constants do not fit.
+                reason = (
+                    "a day that has menu items" if day in existing_days
+                    else "a cell outside this month" if day is None
+                    else "a day that already has a notice"
+                )
+                logger.log(
+                    logging.INFO if day in existing_days else logging.WARNING,
+                    "%04d-%02d notice not placed: it sits over %s "
+                    "(row %d, column %d, x=%.1f%%, top=%.1f%%): %s",
+                    year, display_month, reason, row_idx, col_idx,
+                    notice["x"], notice["top"], notice_text,
+                )
+                continue
+            placed[day] = notice_text
 
-            # Notices whose top falls in this row, sorted left-to-right
-            row_notices = sorted(
-                [n for n in notices if row_top <= n["top"] < row_bottom],
-                key=lambda n: n["left"],
+            # Build the notice MenuDay
+            notice_items: List[MenuItem] = []
+            if "GRAB AND GO" in notice_text.upper():
+                notice_items.append(
+                    MenuItem(
+                        name="Grab and Go Breakfast & Lunch",
+                        category="Entrees",
+                    )
+                )
+
+            menu_month.days.append(
+                MenuDay(
+                    day=day,
+                    month=month_val,
+                    year=year,
+                    items=notice_items,
+                    notice=notice_text,
+                )
             )
-
-            if not row_notices:
-                continue
-
-            # Assign notices to missing days (both sorted left-to-right)
-            missing.sort(key=lambda x: x[0])
-            for i, (col, day) in enumerate(missing):
-                notice_text = (
-                    row_notices[i]["text"] if i < len(row_notices) else ""
-                )
-                if not notice_text:
-                    continue
-
-                # Build the notice MenuDay
-                notice_items: List[MenuItem] = []
-                upper = notice_text.upper()
-                if "GRAB AND GO" in upper:
-                    notice_items.append(
-                        MenuItem(
-                            name="Grab and Go Breakfast & Lunch",
-                            category="Entrees",
-                        )
-                    )
-
-                menu_month.days.append(
-                    MenuDay(
-                        day=day,
-                        month=month_val,
-                        year=year,
-                        items=notice_items,
-                        notice=notice_text,
-                    )
-                )
-                logger.debug(
-                    "Added notice for day %d: %s", day, notice_text
-                )
+            logger.debug("Added notice for day %d: %s", day, notice_text)
 
         # Re-sort days by day number
         menu_month.days.sort(key=lambda d: d.day)
