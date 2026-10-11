@@ -6,7 +6,7 @@ Before deploying to production, run the pre-deploy security audit: `.agents/play
 
 ## How deployment works
 
-1. Developer squash-merges a reviewed PR to `main` after its checks pass (hotfixes follow the same branch and PR workflow)
+1. Developer squash-merges a reviewed PR to `main` after required tests, lint, builds, and security checks pass and substantive findings are addressed (hotfixes follow the same branch and PR workflow). Automated AI reviews and audits are optional and advisory; if unavailable, read existing findings and complete an independent native agent review without waiting for owner approval (`.agents/rules/git-workflow.md`)
 2. GitHub Actions workflow (`.github/workflows/build-appdaemon.yml`) builds a Docker image
 3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
 4. Verify the tag exists in GHCR (anon pull token + `GET /v2/thaynes43/appdaemon/manifests/<VERSION>` with an `Accept` header that includes `application/vnd.oci.image.manifest.v1+json` — the index types alone return a false 404)

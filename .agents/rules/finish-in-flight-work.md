@@ -36,8 +36,13 @@ Every one of them cost a second session to redo. This rule exists so that stops.
 2. **Review findings get fixed, not filed.** A finding you will not fix needs a
    concrete, stated reason on the PR why it is wrong or does not apply. "Polish",
    "not blocking", "deploy cost", "already had N rounds" are not reasons. A review
-   or audit job that failed on its own turn budget is not a finding — but it is
-   also not a reason to skip the findings it *did* post.
+   or audit job's service failure is not a finding. Automated AI reviews and
+   audits are optional and advisory; unavailable, failed, skipped, or pending
+   AI jobs do not block merging or deployment and need no owner approval.
+   Read findings from current and earlier runs, complete an independent native
+   agent review when AI review is unavailable, and record it in the PR.
+   Required tests, lint, builds, security checks, and substantive findings still
+   need to pass or be resolved. See `git-workflow.md` for the full policy.
 3. **Merged is not done.** If the repo has a deploy chain after merge — image tag
    bump in haynes-ops, Flux reconcile, card copy into the HA pod plus `?v=N`
    bump, helper re-provisioning — finish the chain and verify the running system,

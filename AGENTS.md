@@ -72,7 +72,7 @@ Merging to `main` triggers the Docker image build and push to GHCR automatically
 
 If an agent creates or updates an AppDaemon PR, it must bump `VERSION` on that branch before opening the PR unless the user explicitly says not to. Use semver: patch for fixes, minor for features, major for breaking changes. **Before bumping, compare against `main` (`git show main:VERSION`)** — if already bumped on this branch, do not bump again.
 
-Pull requests are opened **ready for review** (`gh pr create`, never `--draft`) and squash-merged by the agent once every check, including the Claude Code Review and docs-audit workflows, is green. The owner does not mark PRs ready or merge them; a green, unmerged PR is unfinished work.
+Pull requests are opened **ready for review** (`gh pr create`, never `--draft`) and squash-merged by the agent once required tests, lint, builds, and security checks pass. Claude Code Review, Agent Docs Audit, Docs Site Audit, and other automated AI reviews or audits are **optional and advisory**, never required merge checks. An unavailable, failed, skipped, or pending AI service does not block merging or deployment and needs no owner approval. Read available findings from current and earlier runs; fix each substantive finding or explain on the PR why it does not apply. When AI review is unavailable, complete an independent native agent review and record it with the required validation in the PR. The owner does not mark PRs ready or merge them. See `.agents/rules/git-workflow.md` for the full policy.
 
 ## Core repository facts
 

@@ -185,7 +185,7 @@ After any `appdaemon/` change, state what was changed:
 
 ### Pull requests: open ready for review and merge them yourself (required)
 
-Open PRs **ready for review** (`gh pr create`, never `--draft`) once the branch is complete and verified. Marking ready triggers Claude Code Review, Agent Docs Audit, and Docs Site Audit on top of the required checks (`test`, `docs-build`, `build-and-push`); that review spend is intended. Wait for **all** of them, address findings with follow-up commits, then squash-merge your own PR (`gh pr merge <n> --squash --delete-branch`) and confirm it shows `MERGED`. Never push to `main` directly. A green, unmerged PR is unfinished work, not a hand-off.
+Open PRs **ready for review** (`gh pr create`, never `--draft`) once the branch is complete and verified. Wait for required checks (`test`, `docs-build`, `build-and-push`) and complete applicable lint and security validation. Claude Code Review, Agent Docs Audit, Docs Site Audit, and other automated AI reviews or audits are **optional and advisory**. An unavailable, failed, skipped, or pending AI service does not block merging or deployment and needs no owner approval. Read available findings from current and earlier runs, fix each substantive finding or explain on the PR why it does not apply, and complete an independent native agent review when AI review is unavailable. Record that review and validation in the PR, then squash-merge your own PR (`gh pr merge <n> --squash --delete-branch`) and confirm it shows `MERGED`. Never push to `main` directly. Full policy: `.agents/rules/git-workflow.md`.
 
 ### Finish work in flight (required)
 
