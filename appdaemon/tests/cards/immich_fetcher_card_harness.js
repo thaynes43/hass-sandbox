@@ -73,6 +73,10 @@ async function change(el, value) {
   el.value = value; fire(el, "change", { composed: false }); await flush();
 }
 function click(el) { fire(el, "click", { composed: true }); }
+async function pointerClick(el) {
+  fire(el, "pointerdown", { composed: true }); el.focus(); await flush();
+  fire(el, "pointerup", { composed: true }); click(el); advance(0); await flush();
+}
 function dateField(q, endpoint, part, rangeIdx = 0) {
   return q(`[data-action="set-recurring-date"][data-endpoint="${endpoint}"][data-part="${part}"][data-range-idx="${rangeIdx}"]`);
 }
@@ -324,6 +328,34 @@ for (const [name, selector, value] of [
 scenario("focus_without_edit_does_not_freeze", async () => {
   const { update, q } = mount(); const field = q('[data-field="name"]'); field.focus(); update({ status: "fetching" });
   assert.ok(q('[data-field="name"]') !== field, "focus alone blocked rendering");
+});
+
+scenario("name_to_people_preserves_add", async () => {
+  const { card, calls, q } = mount(); click(q('[data-action="add-filter"]'));
+  input(q('[data-field="name"][data-filter-idx="1"]'), "Birthday");
+  const people = q('.people-input[data-filter-idx="1"]');
+  people.focus(); await flush();
+  assert.ok(q('.people-input[data-filter-idx="1"]') === people, "previous name blur replaced the newly focused people input");
+  assert.ok(card.shadowRoot.activeElement === people, "previous name blur lost people input focus");
+  people.value = "Ada"; fire(people, "input", { composed: true });
+  await pointerClick(q('[data-action="add-person"][data-filter-idx="1"]'));
+  assert.deepEqual(clone(card._filters[1].people), ["Ada"]);
+  await pointerClick(q('[data-action="save"]'));
+  assert.equal(calls.length, 1); assert.equal(calls[0].payload.filters[1].name, "Birthday");
+  assert.deepEqual(calls[0].payload.filters[1].people, ["Ada"]);
+});
+
+scenario("name_to_search_preserves_first_save", async () => {
+  const { card, calls, q } = mount([{ name: "Search", selection: "search", search_query: "Christmas" }]);
+  input(q('[data-field="name"]'), "Birthday");
+  const search = q('[data-field="search_query"]'); search.focus(); await flush();
+  assert.ok(q('[data-field="search_query"]') === search, "previous name blur replaced the newly focused search input");
+  assert.ok(card.shadowRoot.activeElement === search, "previous name blur lost search input focus");
+  search.value = "birthday cake"; fire(search, "input", { composed: true });
+  await pointerClick(q('[data-action="save"]'));
+  assert.equal(calls.length, 1); assert.equal(calls[0].payload.filters[0].name, "Birthday");
+  assert.equal(calls[0].payload.filters[0].search_query, "birthday cake");
+  assert.ok(card._pendingSave, "first save click did not reach the relay");
 });
 
 scenario("save_click_after_edit_dispatches", async () => {
