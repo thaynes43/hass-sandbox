@@ -44,6 +44,7 @@ jobs:
           fi
 
       - name: Audit docs site with Claude
+        id: claude
         if: steps.changes.outputs.should_run == 'true'
         uses: anthropics/claude-code-action@v1
         with:
@@ -52,7 +53,7 @@ jobs:
           # Agent mode: --allowedTools is the whole permission set and also gates
           # which MCP servers are installed, so the gh grants are mandatory.
           claude_args: |
-            --model claude-opus-5
+            --model claude-opus-5-5
             --max-turns 40
             --allowedTools "Read,Glob,Grep,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
           prompt: |
@@ -103,3 +104,17 @@ jobs:
             If the site is in sync, the body must be exactly `## Docs Site Audit` followed
             by `No findings.` and one sentence naming what you checked. Do not manufacture
             findings, and do not review code — that is the Claude Code Review workflow's job.
+
+      - name: Diagnose Claude failure safely
+        if: always() && steps.claude.outcome == 'failure'
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_DIAGNOSTICS_REF: ${{ github.event.pull_request.base.sha || format('origin/{0}', github.event.repository.default_branch) }}
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/claude-review-diagnostics.py"
+          if ! git show "${CLAUDE_DIAGNOSTICS_REF}:scripts/claude-review-diagnostics/diagnose.py" > "$helper" 2>/dev/null; then
+            echo "Claude failure diagnostic unavailable in trusted base."
+            exit 0
+          fi
+          nice -n 19 python3 "$helper"
