@@ -12,7 +12,9 @@ Two AppDaemon apps work together:
 
 ### Immich Fetcher
 
-The `immich_fetcher` app periodically queries the Immich API and downloads a batch of photos to the shared `/media/` NFS mount. It supports filtering by album, date range, and other criteria. Filters rotate automatically each fetch cycle, and individual filters can be paused from the dashboard card — paused filters stay configured but are skipped until resumed, making it easy to keep a library of filters and switch between them.
+The `immich_fetcher` app periodically queries the Immich API and downloads a batch of photos to the shared `/media/` NFS mount. It supports filtering by album, people, location, favorites, and dates. Filters rotate automatically each fetch cycle, and individual filters can be paused from the dashboard card — paused filters stay configured but are skipped until resumed, making it easy to keep a library of filters and switch between them.
+
+For birthday memories, choose **All Photos**, select the person, and add their birthday under **On these days · every year**. This finds photos taken on that date across all years without relying on a smart-search description. Add several ranges for holidays: December 24 through 25 includes both Christmas Eve and Christmas Day. Ranges include both endpoints and can cross New Year; the existing Taken After / Before limits can narrow the years. The card shows invalid settings before saving and keeps your edits if a save fails.
 
 ### Photo Frame Viewer
 

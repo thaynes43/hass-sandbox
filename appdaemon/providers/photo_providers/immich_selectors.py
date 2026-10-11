@@ -13,7 +13,8 @@ from abc import ABC, abstractmethod
 from typing import Dict, List, Optional
 
 from .immich_client import ImmichClient
-from .types import LocationAlias, PhotoFilter
+from .date_filters import build_date_scan_body, matches_capture_dates
+from .types import LocationAlias, PhotoFilter, PhotoProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -36,14 +37,11 @@ def _build_common_filters(
 
     # People -> personIds
     if pf.people:
-        if people_map is None:
-            people_map = {}
-        ids = [people_map[n] for n in pf.people if n in people_map]
-        if ids:
-            body["personIds"] = ids
-        for name in pf.people:
-            if name not in people_map:
-                logger.warning("Person '%s' not in people_map – skipped", name)
+        people_map = people_map or {}
+        unknown = [n for n in pf.people if n not in people_map]
+        if unknown:
+            raise PhotoProviderError(f"Unknown people: {', '.join(unknown)}")
+        body["personIds"] = [people_map[n] for n in pf.people]
 
     # Location (alias or raw city)
     if pf.location:
@@ -66,6 +64,35 @@ def _build_common_filters(
         body["rating"] = pf.rating
 
     return body
+
+
+async def _sample_matching_assets(
+    client: ImmichClient, pf: PhotoFilter, body: dict, count: int,
+    *, randomize: bool = True,
+) -> List[str]:
+    """Choose uniformly from all matches with a fixed-size reservoir."""
+    body = {**build_date_scan_body(pf, body), "size": 1000}
+    ids: List[str] = []
+    seen: set[str] = set()
+    async for asset in client.iter_search_assets(body):
+        if asset["id"] in seen or not matches_capture_dates(asset, pf):
+            continue
+        seen.add(asset["id"])
+        if len(ids) < count:
+            ids.append(asset["id"])
+        elif randomize:
+            position = random.randrange(len(seen))
+            if position < count:
+                ids[position] = asset["id"]
+        if not randomize and len(ids) == count:
+            break
+    if randomize:
+        random.shuffle(ids)
+    logger.info(
+        "Date-filtered metadata search: filter=%r matches=%d selected=%d",
+        pf.name, len(seen), len(ids),
+    )
+    return ids
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +138,9 @@ class AllPhotosSelector(AssetSelector):
 
     async def get_asset_ids(self, count: int) -> List[str]:
         body = self.build_request_body(count)
+        if any((self.photo_filter.recurring_date_ranges,
+                self.photo_filter.taken_after, self.photo_filter.taken_before)):
+            return await _sample_matching_assets(self.client, self.photo_filter, body, count)
         assets = await self.client.search_random(body)
         ids = [a["id"] for a in assets]
         logger.info("AllPhotosSelector returned %d assets", len(ids))
@@ -153,6 +183,23 @@ class SearchSelector(AssetSelector):
         return body
 
     async def get_asset_ids(self, count: int) -> List[str]:
+        if any((self.photo_filter.recurring_date_ranges,
+                self.photo_filter.taken_after, self.photo_filter.taken_before)):
+            limit = self.photo_filter.search_pool_size if self.photo_filter.randomize else count
+            body = build_date_scan_body(self.photo_filter, self.build_request_body(1000))
+            ids: List[str] = []
+            seen: set[str] = set()
+            async for asset in self.client.iter_search_assets(body, smart=True):
+                if asset["id"] in seen or not matches_capture_dates(asset, self.photo_filter):
+                    continue
+                seen.add(asset["id"])
+                ids.append(asset["id"])
+                if len(ids) >= limit:
+                    break
+            if self.photo_filter.randomize:
+                random.shuffle(ids)
+            logger.info("Date-filtered smart search: filter=%r selected=%d", self.photo_filter.name, len(ids))
+            return ids
         if self.photo_filter.randomize:
             pool_size = self.photo_filter.search_pool_size
             body = self.build_request_body(pool_size)
@@ -189,12 +236,27 @@ class AlbumSelector(AssetSelector):
         client: ImmichClient,
         photo_filter: PhotoFilter,
         album_id: str,
+        *,
+        people_map: Optional[Dict[str, str]] = None,
+        location_aliases: Optional[Dict[str, LocationAlias]] = None,
     ) -> None:
         self.client = client
         self.photo_filter = photo_filter
         self.album_id = album_id
+        self.people_map = people_map
+        self.location_aliases = location_aliases
 
     async def get_asset_ids(self, count: int) -> List[str]:
+        pf = self.photo_filter
+        if any((pf.people, pf.location, pf.taken_after, pf.taken_before,
+                pf.recurring_date_ranges, pf.favorites_only, pf.rating is not None)):
+            body = _build_common_filters(
+                pf, people_map=self.people_map, location_aliases=self.location_aliases,
+            )
+            body["albumIds"] = [self.album_id]
+            return await _sample_matching_assets(
+                self.client, pf, body, count, randomize=pf.randomize,
+            )
         assets = await self.client.get_album_assets(self.album_id)
         ids = [a["id"] for a in assets]
         if self.photo_filter.randomize:
@@ -245,5 +307,8 @@ def create_selector(
                 f"album_id must be provided for album selection "
                 f"(filter '{photo_filter.name}')"
             )
-        return AlbumSelector(client, photo_filter, album_id)
+        return AlbumSelector(
+            client, photo_filter, album_id,
+            people_map=people_map, location_aliases=location_aliases,
+        )
     raise ValueError(f"Unknown selection type: {sel}")

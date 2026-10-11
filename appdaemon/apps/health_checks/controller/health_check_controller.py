@@ -54,6 +54,7 @@ sys.path.append(str(Path(__file__).resolve().parents[3]))
 import hassapi as hass
 
 from providers.alertmanager import AlertmanagerClient
+from providers.secrets import resolve_arg_secret
 from providers.ha_provisioner import HAProvisioner
 from providers.metrics import get_metrics, prometheus_available, start_metrics_server
 
@@ -354,7 +355,7 @@ class HealthCheckController(hass.Hass):
 
     async def _provision_entities(self) -> None:
         """Create the heartbeat helper and relay script if they don't exist."""
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(
@@ -1003,7 +1004,7 @@ class HealthCheckController(hass.Hass):
         entity_id = self._mute_helper_entity(checker_id)
         value = json.dumps({"muted": muted, "until": until})
 
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if ha_url and ha_token_env:
             try:

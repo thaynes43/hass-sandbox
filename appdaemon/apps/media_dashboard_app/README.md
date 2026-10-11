@@ -148,7 +148,7 @@ This app is standalone — it fetches from external APIs and publishes sensors f
 media_dashboard_app:
   module: media_dashboard_app.media_dashboard_app
   class: MediaDashboardApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   tautulli_url_env: TAUTULLI_URL
   tautulli_api_key_env: TAUTULLI_API_KEY

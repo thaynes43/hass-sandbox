@@ -216,7 +216,7 @@ class TestHttpCheck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=mock_session):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=mock_session):
             result = _run(http_check("https://example.com"))
         assert result["status"] == "ok"
         assert "200" in result["detail"]
@@ -233,7 +233,7 @@ class TestHttpCheck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=mock_session):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=mock_session):
             result = _run(http_check("https://down.example.com"))
         assert result["status"] == "critical"
         assert "503" in result["detail"]
@@ -245,7 +245,7 @@ class TestHttpCheck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=mock_session):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=mock_session):
             result = _run(http_check("https://slow.example.com", timeout_s=1))
         assert result["status"] == "critical"
         assert "timeout" in result["detail"]
@@ -261,7 +261,7 @@ class TestHttpCheck:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=mock_session):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=mock_session):
             result = _run(http_check("https://refused.example.com"))
         assert result["status"] == "critical"
         assert "Connection error" in result["detail"]

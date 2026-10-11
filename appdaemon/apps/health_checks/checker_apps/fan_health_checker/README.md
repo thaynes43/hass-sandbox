@@ -177,7 +177,7 @@ Restore is on by default; set `restore_state_enabled: false` to disable it. If n
 fan_health_checker:
   module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: fans                                   # Unique ID
   checker_name: Ceiling Fans                          # Display name on cards

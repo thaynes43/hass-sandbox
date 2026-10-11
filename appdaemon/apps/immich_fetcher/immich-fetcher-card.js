@@ -13,6 +13,31 @@ const SELECTION_TYPES = [
   { value: "album", label: "Album" },
 ];
 
+const MONTHS = ["January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December"];
+
+function validMonthDay(value) {
+  if (!/^\d{2}-\d{2}$/.test(value || "")) return false;
+  const [month, day] = value.split("-").map(Number);
+  return month >= 1 && month <= 12 && day >= 1 &&
+    day <= new Date(Date.UTC(2000, month, 0)).getUTCDate();
+}
+
+function validDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value || "")) return false;
+  if (Number(value.slice(0, 4)) < 1) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function validDateLimit(value) {
+  if (validDate(value)) return true;
+  const parts = /^(\d{4}-\d{2}-\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?(?:Z|[+-](\d{2}):(\d{2}))?$/.exec(value || "");
+  return !!parts && validDate(parts[1]) && Number(parts[2]) < 24 &&
+    Number(parts[3]) < 60 && Number(parts[4] || 0) < 60 &&
+    Number(parts[5] || 0) < 24 && Number(parts[6] || 0) < 60;
+}
+
 function defaultFilter() {
   return {
     name: "New Filter",
@@ -26,6 +51,7 @@ function defaultFilter() {
     location: "",
     taken_after: "",
     taken_before: "",
+    recurring_date_ranges: [],
     favorites_only: false,
     rating: null,
   };
@@ -71,6 +97,15 @@ class ImmichFetcherCard extends HTMLElement {
     this._peopleCutoff = 5;
     this._showFavoritePeopleOnly = false;
     this._lastSensorSnapshot = null;
+    this._editing = false;
+    this._editingElement = null;
+    this._renderPending = false;
+    this._pointerAction = false;
+    this._editRevision = 0;
+    this._pendingSave = null;
+    this._saveTimer = null;
+    this._saveMessage = "";
+    this._saveError = false;
   }
 
   setConfig(config) {
@@ -80,6 +115,7 @@ class ImmichFetcherCard extends HTMLElement {
   set hass(hass) {
     const firstSet = !this._hass;
     this._hass = hass;
+    this._checkSaveResult();
     if (firstSet) {
       this._loadFromSensor();
       this._lastSensorSnapshot = this._sensorSnapshot();
@@ -99,7 +135,7 @@ class ImmichFetcherCard extends HTMLElement {
     const s = this._hass?.states?.[SENSOR_ENTITY];
     if (!s) return null;
     const a = s.attributes || {};
-    return `${s.last_updated || s.last_changed}|${a.active_filter_index}|${a.empty_filters}|${a.status}`;
+    return `${s.last_updated || s.last_changed}|${a.active_filter_index}|${a.empty_filters}|${a.status}|${a.config_save_request_id}|${a.config_save_status}`;
   }
 
   _sensorState() {
@@ -133,7 +169,7 @@ class ImmichFetcherCard extends HTMLElement {
       try {
         const parsed = typeof rawFilters === "string" ? JSON.parse(rawFilters) : rawFilters;
         if (Array.isArray(parsed)) {
-          this._filters = parsed.map((f) => ({ ...defaultFilter(), ...f }));
+          this._filters = parsed.map((f) => ({ ...defaultFilter(), ...JSON.parse(JSON.stringify(f)) }));
         }
       } catch (e) {
         console.warn("immich-fetcher-card: failed to parse filters", e);
@@ -186,19 +222,29 @@ class ImmichFetcherCard extends HTMLElement {
   }
 
   _callRelay(command, data) {
-    if (!this._hass) return;
-    this._hass
+    if (!this._hass) return Promise.reject(new Error("Home Assistant is unavailable."));
+    return this._hass
       .callService("script", "immich_fetcher_relay", {
         command,
         payload: JSON.stringify(data || {}),
       })
       .catch((err) => {
         console.warn("immich-fetcher-card: relay failed", command, err);
+        throw err;
       });
   }
 
   _saveConfig() {
+    if (this._pendingSave) return;
+    if (this._hasValidationErrors()) {
+      this._saveMessage = "Fix the highlighted filters before saving.";
+      this._saveError = true;
+      this._updateValidation();
+      return;
+    }
+    const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     const payload = {
+      request_id: requestId,
       filters: this._filters.map((f) => {
         const out = { ...f };
         if (out.people && out.people.length === 0) delete out.people;
@@ -206,6 +252,8 @@ class ImmichFetcherCard extends HTMLElement {
         if (!out.location) delete out.location;
         if (!out.taken_after) delete out.taken_after;
         if (!out.taken_before) delete out.taken_before;
+        if (!out.recurring_date_ranges?.length) delete out.recurring_date_ranges;
+        else out.recurring_date_ranges = out.recurring_date_ranges.map((r) => ({ start: r.start, end: r.end || r.start }));
         if (!out.favorites_only) delete out.favorites_only;
         if (out.rating === null || out.rating === undefined) delete out.rating;
         if (out.selection !== "search") {
@@ -225,38 +273,145 @@ class ImmichFetcherCard extends HTMLElement {
       people_cutoff: this._peopleCutoff,
       show_favorite_people_only: this._showFavoritePeopleOnly,
     };
-    this._callRelay("update_config", payload);
-    this._dirty = false;
+    this._pendingSave = { id: requestId, revision: this._editRevision };
+    this._saveMessage = "Saving configuration…";
+    this._saveError = false;
+    this._saveTimer = setTimeout(() => {
+      if (this._pendingSave?.id === requestId) {
+        this._saveFailed("Save has not been confirmed. Your edits are still here; retry when the fetcher is available.");
+      }
+    }, 30000);
+    this._callRelay("update_config", payload).catch(() => {
+      if (this._pendingSave?.id === requestId) this._saveFailed("Could not send the configuration. Your edits are still here.");
+    });
+    this._render();
+  }
+
+  _checkSaveResult() {
+    const pending = this._pendingSave;
+    if (!pending || this._sensorAttr("config_save_request_id", "") !== pending.id) return;
+    const status = this._sensorAttr("config_save_status", "");
+    if (status !== "saved" && status !== "error") return;
+    clearTimeout(this._saveTimer);
+    this._pendingSave = null;
+    if (status === "error") {
+      this._saveFailed(this._sensorAttr("config_save_error", "Configuration was rejected. Your edits are still here."));
+    } else {
+      this._saveError = false;
+      const unchanged = this._editRevision === pending.revision;
+      this._saveMessage = unchanged ? "Configuration saved." : "Configuration saved. You have newer unsaved changes.";
+      if (unchanged) this._loadFromSensor();
+    }
+  }
+
+  _saveFailed(message) {
+    clearTimeout(this._saveTimer);
+    this._pendingSave = null;
+    this._dirty = true;
+    this._saveError = true;
+    this._saveMessage = message;
     this._render();
   }
 
   _refreshNow() {
-    this._callRelay("refresh_now");
+    this._callRelay("refresh_now").catch(() => this._saveFailed("Could not request a refresh."));
   }
 
   _syncFilter(idx) {
     const name = this._filters[idx]?.name || "";
-    this._callRelay("sync_filter", { filter_index: idx, filter_name: name });
+    if (this._dirty || this._pendingSave) return;
+    this._callRelay("sync_filter", { filter_index: idx, filter_name: name })
+      .catch(() => this._saveFailed("Could not request photos for this filter."));
   }
 
   _markDirty() {
     this._dirty = true;
-    const active = this.shadowRoot.activeElement;
-    if (
-      active &&
-      active.tagName === "INPUT" &&
-      (active.type === "text" || active.type === "date")
-    ) {
-      const saveBtn = this.shadowRoot.querySelector('[data-action="save"]');
-      if (saveBtn) saveBtn.disabled = false;
-      return;
-    }
+    this._editRevision++;
+    if (!this._pendingSave) this._saveMessage = "";
+    this._updateValidation();
     this._render();
+  }
+
+  _filterErrors(filter) {
+    const errors = [];
+    if (!String(filter.name || "").trim()) errors.push("Enter a filter name.");
+    if (this._filters.filter((f) => f.name === filter.name).length > 1) errors.push("Each filter needs a different name.");
+    if (filter.selection === "search" && !String(filter.search_query || "").trim()) {
+      errors.push("Enter a search query, or choose All Photos to filter by people and dates.");
+    }
+    if (filter.selection === "album" && !String(filter.album_name || "").trim()) errors.push("Choose an album.");
+    for (const field of ["taken_after", "taken_before"]) {
+      if (filter[field] && !validDateLimit(filter[field])) errors.push("Enter a valid date limit.");
+    }
+    const limitTime = (value) => Date.parse(value.length === 10 ? `${value}T00:00:00Z` :
+      /Z$|[+-]\d{2}:\d{2}$/.test(value) ? value : `${value}Z`);
+    const invertedLimits = filter.taken_after && filter.taken_before &&
+      (filter.taken_after.length === 10 || filter.taken_before.length === 10 ?
+        filter.taken_after.slice(0, 10) > filter.taken_before.slice(0, 10) :
+        limitTime(filter.taken_after) > limitTime(filter.taken_before));
+    if (validDateLimit(filter.taken_after) && validDateLimit(filter.taken_before) && invertedLimits) {
+      errors.push("Taken After must be on or before Taken Before.");
+    }
+    (filter.recurring_date_ranges || []).forEach((range, i) => {
+      if (!validMonthDay(range.start) || (range.end && !validMonthDay(range.end))) {
+        errors.push(`Date range ${i + 1}: choose a valid month and day. Leave both end fields empty for a single day.`);
+      }
+    });
+    const people = this._parseJsonAttr("people_available", []);
+    if (this._sensorAttr("people_available", null) !== null) {
+      const names = new Set(people.map((p) => typeof p === "string" ? p : p.name));
+      for (const person of filter.people || []) if (!names.has(person)) errors.push(`Person "${person}" is not available in Immich.`);
+    }
+    const albums = this._parseJsonAttr("albums_available", []);
+    if (filter.selection === "album" && filter.album_name && this._sensorAttr("albums_available", null) !== null && !albums.some((a) => a.name === filter.album_name)) {
+      errors.push("Choose an album available in Immich.");
+    }
+    return errors;
+  }
+
+  _favoriteErrors() {
+    if (this._sensorAttr("people_available", null) === null) return "";
+    const names = new Set(this._parseJsonAttr("people_available", []).map((p) => typeof p === "string" ? p : p.name));
+    const missing = this._favoritePeople.filter((name) => !names.has(name));
+    return missing.length ? `Remove unavailable starred people under People: ${missing.join(", ")}.` : "";
+  }
+
+  _hasValidationErrors() {
+    return this._filters.some((f) => this._filterErrors(f).length) || !!this._favoriteErrors();
+  }
+
+  _updateValidation() {
+    this.shadowRoot.querySelectorAll("[data-filter-errors]").forEach((el) => {
+      const errors = this._filterErrors(this._filters[Number(el.dataset.filterErrors)]);
+      el.textContent = errors.join(" ");
+      el.hidden = !errors.length;
+    });
+    const invalid = this._hasValidationErrors();
+    const save = this.shadowRoot.querySelector('[data-action="save"]');
+    if (save) save.disabled = !this._dirty || !!this._pendingSave || invalid;
+    this.shadowRoot.querySelectorAll('[data-action="sync-filter"]').forEach((el) => {
+      el.disabled = this._dirty || !!this._pendingSave;
+      el.title = this._dirty ? "Save changes before fetching this filter" : "Fetch with this filter now";
+    });
+    const message = this.shadowRoot.querySelector("[data-save-message]");
+    if (message) {
+      message.textContent = this._saveMessage || this._favoriteErrors() || (invalid ? "Fix the highlighted filters before saving." : "");
+      message.classList.toggle("validation-error", this._saveError || invalid);
+      message.hidden = !message.textContent;
+    }
+  }
+
+  disconnectedCallback() {
+    this._editing = false;
+    this._editingElement = null;
+    this._pointerAction = false;
   }
 
   // ── Render ────────────────────────────────────────────────────────
 
   _render() {
+    if (this._editing || this._pointerAction) { this._renderPending = true; return; }
+    this._renderPending = false;
     const sensor = this._sensorState();
     const status = this._sensorAttr("status", "unknown");
     const lastFetch = this._sensorAttr("last_fetch", "");
@@ -303,6 +458,7 @@ class ImmichFetcherCard extends HTMLElement {
     `;
     this._ensureDelegatedListeners();
     this._attachFormListeners();
+    this._updateValidation();
   }
 
   // ── Status Bar ────────────────────────────────────────────────────
@@ -324,13 +480,13 @@ class ImmichFetcherCard extends HTMLElement {
       <div class="status-bar">
         <div class="status-row">
           <ha-icon icon="${statusIcon}" style="color:${statusColor};--mdc-icon-size:18px;" class="status-icon"></ha-icon>
-          <span class="status-label">${status.charAt(0).toUpperCase() + status.slice(1)}</span>
+          <span class="status-label">${this._escapeHtml(status.charAt(0).toUpperCase() + status.slice(1))}</span>
           <button class="btn-icon refresh-btn" data-action="refresh-now" title="Refresh Now">
             <ha-icon icon="mdi:refresh"></ha-icon>
           </button>
         </div>
         <div class="status-detail">
-          <span>Last: ${lastInfo}</span>
+          <span>Last: ${this._escapeHtml(lastInfo)}</span>
           ${nextFetch ? `<span>Next: ${relativeTime(nextFetch)}</span>` : ""}
         </div>
       </div>`;
@@ -383,6 +539,7 @@ class ImmichFetcherCard extends HTMLElement {
                 <ha-icon icon="${isExpanded ? "mdi:chevron-up" : "mdi:chevron-down"}" class="expand-chevron" data-action="toggle-filter" data-idx="${i}"></ha-icon>
               </div>
             </div>
+            <div class="validation-error filter-errors" role="alert" data-filter-errors="${i}" hidden></div>
             ${isExpanded ? this._renderFilterEditor(f, i, peopleAvailable, albumsAvailable) : ""}
           </div>`;
       })
@@ -499,13 +656,15 @@ class ImmichFetcherCard extends HTMLElement {
         <div class="field-row">
           <div class="field-group half">
             <label>Taken After</label>
-            <input type="date" class="input" value="${filter.taken_after || ""}" data-action="set-filter-field" data-filter-idx="${idx}" data-field="taken_after" />
+            ${this._renderDateLimit(filter.taken_after, idx, "taken_after")}
           </div>
           <div class="field-group half">
             <label>Taken Before</label>
-            <input type="date" class="input" value="${filter.taken_before || ""}" data-action="set-filter-field" data-filter-idx="${idx}" data-field="taken_before" />
+            ${this._renderDateLimit(filter.taken_before, idx, "taken_before")}
           </div>
         </div>
+
+        ${this._renderRecurringDates(filter, idx)}
 
         <div class="field-group">
           <label>
@@ -515,6 +674,65 @@ class ImmichFetcherCard extends HTMLElement {
         </div>
 
       </div>`;
+  }
+
+  _renderDateLimit(value, idx, field) {
+    const withTime = (value || "").length > 10;
+    return `<input type="${withTime ? "text" : "date"}" class="input" value="${this._escapeHtml(value || "")}" data-action="set-filter-field" data-filter-idx="${idx}" data-field="${field}" />
+      ${withTime ? '<div class="field-hint">This saved limit includes a time. Clear it to choose a date.</div>' : ""}`;
+  }
+
+  _renderRecurringDates(filter, idx) {
+    const ranges = filter.recurring_date_ranges || [];
+    return `
+      <div class="recurring-dates">
+        <div class="recurring-heading">
+          <label>On these days · every year</label>
+          <button class="btn-text btn-sm" data-action="add-date-range" data-filter-idx="${idx}">
+            <ha-icon icon="mdi:plus"></ha-icon> Add date range
+          </button>
+        </div>
+        <div class="field-hint">Choose a birthday or several holidays. Leave the end empty for one day; December 24 through 25 includes Christmas Eve and Christmas Day. All ranges include both endpoints.</div>
+        ${ranges.length ? ranges.map((range, ri) => `
+          <div class="recurring-range">
+            <div class="field-group">
+              <label>On / from <span class="required">*</span></label>
+              ${this._renderMonthDay(range.start, idx, ri, "start")}
+            </div>
+            <div class="field-group">
+              <label>Through (optional)</label>
+              ${this._renderMonthDay(range.end, idx, ri, "end")}
+            </div>
+            <button class="btn-icon btn-danger" data-action="remove-date-range" data-filter-idx="${idx}" data-range-idx="${ri}" title="Remove date range ${ri + 1}" aria-label="Remove date range ${ri + 1}">
+              <ha-icon icon="mdi:delete"></ha-icon>
+            </button>
+            ${validMonthDay(range.start) && validMonthDay(range.end) && range.start > range.end ? '<div class="field-hint wrap-hint">This range continues through New Year.</div>' : ""}
+          </div>`).join("") : '<div class="field-hint">No recurring dates selected: photos from any day can match.</div>'}
+        <div class="field-hint">These dates also respect People and the Taken After / Before limits above.</div>
+      </div>`;
+  }
+
+  _renderMonthDay(value, filterIdx, rangeIdx, endpoint) {
+    const [month = "", day = ""] = (value || "").split("-");
+    const days = Number(month) ? new Date(Date.UTC(2000, Number(month), 0)).getUTCDate() : 31;
+    const attrs = `data-action="set-recurring-date" data-filter-idx="${filterIdx}" data-range-idx="${rangeIdx}" data-endpoint="${endpoint}"`;
+    const label = `${endpoint === "start" ? "Start" : "End"} of date range ${rangeIdx + 1}`;
+    return `<div class="month-day">
+      <select class="input" ${attrs} data-part="month" aria-label="${label} month">
+        <option value="">Month</option>
+        ${MONTHS.map((name, i) => {
+          const val = String(i + 1).padStart(2, "0");
+          return `<option value="${val}" ${month === val ? "selected" : ""}>${name}</option>`;
+        }).join("")}
+      </select>
+      <select class="input" ${attrs} data-part="day" aria-label="${label} day" ${!month ? "disabled" : ""}>
+        <option value="">Day</option>
+        ${Array.from({ length: days }, (_, i) => {
+          const val = String(i + 1).padStart(2, "0");
+          return `<option value="${val}" ${day === val ? "selected" : ""}>${i + 1}</option>`;
+        }).join("")}
+      </select>
+    </div>`;
   }
 
   _renderQuickAddPeople(filterIdx, currentPeople, peopleAvailable) {
@@ -586,6 +804,9 @@ class ImmichFetcherCard extends HTMLElement {
     const allPeople = Array.isArray(peopleAvailable) ? peopleAvailable : [];
     const favSet = new Set(this._favoritePeople);
     const visiblePeople = allPeople.slice(0, this._peopleCutoff);
+    const availableNames = new Set(allPeople.map((p) => typeof p === "string" ? p : p.name));
+    const visibleNames = new Set(visiblePeople.map((p) => typeof p === "string" ? p : p.name));
+    const extraFavorites = this._favoritePeople.filter((name) => !visibleNames.has(name));
 
     const peopleRows = visiblePeople
       .map((p, idx) => {
@@ -600,6 +821,13 @@ class ImmichFetcherCard extends HTMLElement {
         </div>`;
       })
       .join("");
+    const favoriteRows = extraFavorites.map((name) => `<div class="people-row">
+      <button class="btn-icon people-star starred" data-action="toggle-favorite-person" data-person="${this._escapeHtml(name)}" title="Remove from favorites">
+        <ha-icon icon="mdi:star"></ha-icon>
+      </button>
+      <span class="people-name">${this._escapeHtml(name)}</span>
+      ${availableNames.has(name) ? "" : '<span class="validation-error">No longer available · remove star to save</span>'}
+    </div>`).join("");
 
     return `
       <div class="section">
@@ -624,9 +852,10 @@ class ImmichFetcherCard extends HTMLElement {
               </label>
             </div>
           </div>
-          ${visiblePeople.length ? `
+          ${visiblePeople.length || extraFavorites.length ? `
           <div class="people-list">
             ${peopleRows}
+            ${favoriteRows}
           </div>` : '<div class="empty-message">No people available from Immich. People appear here once the fetcher refreshes its cache from the Immich API.</div>'}
         </div>` : `
         <div class="people-summary">
@@ -682,11 +911,12 @@ class ImmichFetcherCard extends HTMLElement {
 
   _renderActions() {
     return `
+      <div class="save-message" role="status" aria-live="polite" data-save-message hidden></div>
       <div class="actions-row">
         <button class="btn-primary" data-action="save" ${!this._dirty ? "disabled" : ""}>
-          <ha-icon icon="mdi:content-save"></ha-icon> Save Configuration
+          <ha-icon icon="mdi:content-save"></ha-icon> ${this._pendingSave ? "Saving…" : "Save Configuration"}
         </button>
-        <button class="btn-secondary" data-action="reload" title="Reload from sensor">
+        <button class="btn-secondary" data-action="reload" title="Reload from sensor" ${this._pendingSave ? "disabled" : ""}>
           <ha-icon icon="mdi:reload"></ha-icon> Discard Changes
         </button>
       </div>`;
@@ -706,15 +936,57 @@ class ImmichFetcherCard extends HTMLElement {
     this._delegatedBound = true;
 
     const root = this.shadowRoot;
+    const textEntry = (el) => {
+      if (el?.tagName === "SELECT" || el?.tagName === "TEXTAREA") return true;
+      return el?.tagName === "INPUT" && !["checkbox", "radio", "button", "submit", "reset", "range"].includes(el.type);
+    };
+    const raise = (e) => {
+      if (textEntry(e.target)) { this._editing = true; this._editingElement = e.target; }
+    };
+    const commit = (e) => {
+      // A blur from the previous field must not close a picker just opened.
+      if (this._editingElement && this._editingElement !== e.target) return;
+      this._editing = false;
+      this._editingElement = null;
+      queueMicrotask(() => {
+        // Moving from a text field to an action must preserve that button until
+        // its click/keyboard action fires. Replacing it here loses the save.
+        const active = root.activeElement;
+        if (active?.tagName === "BUTTON" && active.dataset.action) return;
+        if (this._renderPending) this._render();
+      });
+    };
+    root.addEventListener("input", raise, true);
+    root.addEventListener("keydown", raise, true);
+    root.addEventListener("change", commit, true);
+    root.addEventListener("focusout", commit, true);
+    const releasePointer = () => {
+      this._pointerAction = false;
+      if (this._renderPending) this._render();
+    };
+    root.addEventListener("pointerdown", (e) => {
+      const el = this._findActionTarget(e);
+      if (el?.tagName === "SELECT" || (el?.tagName === "INPUT" && el.type === "date")) {
+        this._editing = true; this._editingElement = el;
+      }
+      this._pointerAction = !!el && !el.disabled && el.tagName === "BUTTON";
+    }, true);
+    root.addEventListener("pointerup", () => setTimeout(releasePointer, 0));
+    root.addEventListener("pointercancel", releasePointer);
+    root.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") releasePointer(); });
     let touchActive = false;
     let touchCancelled = false;
     let moveCount = 0;
 
-    ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
+      ["touchcancel", "touchmove", "scroll"].forEach((evt) => {
       root.addEventListener(evt, () => { touchCancelled = true; moveCount++; }, { passive: true });
     });
 
-    root.addEventListener("touchstart", () => {
+    root.addEventListener("touchstart", (e) => {
+      const el = this._findActionTarget(e);
+      if (el?.tagName === "SELECT" || (el?.tagName === "INPUT" && el.type === "date")) {
+        this._editing = true; this._editingElement = el;
+      }
       touchActive = true;
       touchCancelled = false;
       moveCount = 0;
@@ -823,6 +1095,20 @@ class ImmichFetcherCard extends HTMLElement {
         break;
       }
 
+      case "add-date-range": {
+        const filter = this._filters[filterIdx()];
+        if (!filter.recurring_date_ranges) filter.recurring_date_ranges = [];
+        filter.recurring_date_ranges.push({ start: "", end: "" });
+        this._markDirty();
+        break;
+      }
+
+      case "remove-date-range": {
+        this._filters[filterIdx()].recurring_date_ranges.splice(Number(el.dataset.rangeIdx), 1);
+        this._markDirty();
+        break;
+      }
+
       case "add-person": {
         const i = filterIdx();
         const input = root.querySelector(`.people-input[data-filter-idx="${i}"]`);
@@ -911,7 +1197,9 @@ class ImmichFetcherCard extends HTMLElement {
         break;
 
       case "reload":
+        if (this._pendingSave) break;
         this._loadFromSensor();
+        this._saveMessage = "";
         this._expandedFilterIdx = -1;
         this._render();
         break;
@@ -925,6 +1213,20 @@ class ImmichFetcherCard extends HTMLElement {
    */
   _attachFormListeners() {
     const root = this.shadowRoot;
+
+    root.querySelectorAll('[data-action="set-recurring-date"]').forEach((el) => {
+      el.addEventListener("change", () => {
+        const range = this._filters[Number(el.dataset.filterIdx)].recurring_date_ranges[Number(el.dataset.rangeIdx)];
+        const endpoint = el.dataset.endpoint;
+        let [month = "", day = ""] = (range[endpoint] || "").split("-");
+        if (el.dataset.part === "month") {
+          month = el.value;
+          if (!month || Number(day) > new Date(Date.UTC(2000, Number(month), 0)).getUTCDate()) day = "";
+        } else day = el.value;
+        range[endpoint] = month || day ? `${month}-${day}` : "";
+        this._markDirty();
+      });
+    });
 
     root.querySelectorAll('[data-action="set-filter-field"]').forEach((el) => {
       const idx = parseInt(el.dataset.filterIdx);
@@ -1019,6 +1321,7 @@ class ImmichFetcherCard extends HTMLElement {
   _styles() {
     return `
       :host {
+        touch-action: pan-y;
         --ifc-radius: 12px;
         --ifc-radius-sm: 8px;
         --ifc-spacing: 16px;
@@ -1681,6 +1984,25 @@ class ImmichFetcherCard extends HTMLElement {
         flex-wrap: wrap;
       }
 
+      .validation-error { color: var(--ifc-error); font-size: 13px; }
+      .filter-errors { padding: 8px var(--ifc-spacing); }
+      [hidden] { display: none !important; }
+      .save-message { font-size: 13px; }
+      .field-hint { color: var(--ifc-on-surface-secondary); font-size: 12px; line-height: 1.5; }
+      .recurring-dates { display: flex; flex-direction: column; gap: 10px; }
+      .recurring-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .recurring-heading label { font-size: 13px; }
+      .recurring-range { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 32px; gap: 8px; align-items: end; }
+      .recurring-range .field-group { margin: 0; min-width: 0; }
+      .month-day { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 6px; }
+      .month-day .input { min-width: 0; width: 100%; box-sizing: border-box; }
+      .wrap-hint { grid-column: 1 / -1; }
+      @media (max-width: 480px) {
+        .recurring-range { grid-template-columns: minmax(0, 1fr) 32px; }
+        .recurring-range .field-group { grid-column: 1; }
+        .recurring-range > button { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+      }
+
       .btn-primary, .btn-secondary {
         padding: 10px 20px;
         border: none;
@@ -1728,7 +2050,7 @@ class ImmichFetcherCard extends HTMLElement {
     if (!str) return "";
     const div = document.createElement("div");
     div.textContent = str;
-    return div.innerHTML;
+    return div.innerHTML.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   // ── HA Card Boilerplate ───────────────────────────────────────────

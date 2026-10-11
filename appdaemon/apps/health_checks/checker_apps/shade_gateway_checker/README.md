@@ -180,7 +180,7 @@ reporting the outage even if a human cancels the scheduled restart.
 shade_gateway_checker:
   module: health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker
   class: ShadeGatewayChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: shade_gateway
   checker_name: Shade Gateway

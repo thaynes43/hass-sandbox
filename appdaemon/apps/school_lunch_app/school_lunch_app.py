@@ -177,7 +177,7 @@ class SchoolLunchApp(hass.Hass):
 
     async def _provision_entities(self) -> None:
         """Create the input_text helper and relay script if they don't exist."""
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(

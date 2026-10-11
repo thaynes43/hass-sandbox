@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sys
+import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -71,6 +72,9 @@ class ImmichFetcherApp(hass.Hass):
         self._last_fetch_filter: Optional[str] = None
         self._status: str = "idle"
         self._fetch_handle: Optional[Any] = None
+        self._config_save_status: str = "idle"
+        self._config_save_error: str = ""
+        self._config_save_request_id: str = ""
 
         # Load config (persisted file takes precedence over apps.yaml defaults)
         self._config = self._load_config(args)
@@ -177,16 +181,31 @@ class ImmichFetcherApp(hass.Hass):
             download_quality=args.get("download_quality", "preview"),
         )
 
-    def _persist_config(self) -> None:
-        """Write current config to the JSON file."""
+    def _persist_config(self, config: Optional[FetcherConfig] = None) -> bool:
+        """Atomically persist a candidate, leaving the existing file on failure."""
+        temporary_path = None
         try:
-            Path(self._config_file).write_text(
-                json.dumps(self._config.to_dict(), indent=2),
-                encoding="utf-8",
-            )
-            self.log(f"Config persisted to {self._config_file}", level="DEBUG")
+            destination = Path(self._config_file)
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=destination.parent,
+                prefix=f".{destination.name}.", delete=False,
+            ) as output:
+                temporary_path = Path(output.name)
+                json.dump((config or self._config).to_dict(), output, indent=2)
+                output.flush()
+                os.fsync(output.fileno())
+            temporary_path.replace(destination)
+            self.log(f"Config persisted to {self._config_file}", level="INFO")
+            return True
         except Exception as exc:
             self.log(f"Failed to persist config: {exc}", level="ERROR")
+            return False
+        finally:
+            if temporary_path is not None:
+                try:
+                    temporary_path.unlink(missing_ok=True)
+                except OSError as exc:
+                    self.log(f"Failed to remove temporary config file: {exc}", level="WARNING")
 
     # ------------------------------------------------------------------
     # Startup
@@ -341,6 +360,9 @@ class ImmichFetcherApp(hass.Hass):
             "favorite_people": json.dumps(self._config.favorite_people),
             "people_cutoff": self._config.people_cutoff,
             "show_favorite_people_only": self._config.show_favorite_people_only,
+            "config_save_status": self._config_save_status,
+            "config_save_error": self._config_save_error,
+            "config_save_request_id": self._config_save_request_id,
             "friendly_name": "Immich Fetcher Status",
             "icon": "mdi:image-multiple",
         }
@@ -559,7 +581,14 @@ class ImmichFetcherApp(hass.Hass):
         try:
             payload = json.loads(raw) if isinstance(raw, str) else (raw or {})
         except (json.JSONDecodeError, TypeError):
-            self.log(f"Invalid command payload: {raw}", level="WARNING")
+            self.log("Invalid command payload: expected valid JSON", level="WARNING")
+            if cmd == "update_config":
+                self._reject_config_save("Configuration must be valid JSON", "")
+            return
+        if not isinstance(payload, dict):
+            self.log("Invalid command payload: expected an object", level="WARNING")
+            if cmd == "update_config":
+                self._reject_config_save("Configuration must be an object", "")
             return
 
         if cmd == "update_config":
@@ -574,12 +603,25 @@ class ImmichFetcherApp(hass.Hass):
 
     def _handle_update_config(self, data: dict) -> None:
         """Apply a config update from the dashboard card."""
-        self.log(f"Received config update: {list(data.keys())}", level="INFO")
+        request_id = data.get("request_id", "") if isinstance(data, dict) else ""
+        if not isinstance(request_id, str) or len(request_id) > 128:
+            self._reject_config_save("request_id must be text of at most 128 characters", "")
+            return
+        self.log(
+            f"Received config update: source=relay request_id={request_id!r} "
+            f"keys={list(data.keys()) if isinstance(data, dict) else []}", level="INFO",
+        )
         try:
             new_cfg = FetcherConfig.from_dict(data)
             new_cfg.validate()
-        except Exception as exc:
+            self._validate_metadata_references(new_cfg)
+        except (ValueError, TypeError) as exc:
             self.log(f"Invalid config update rejected: {exc}", level="ERROR")
+            self._reject_config_save(str(exc), request_id)
+            return
+
+        if not self._persist_config(new_cfg):
+            self._reject_config_save("Could not save configuration to storage. Try again.", request_id)
             return
 
         old_names = [f.name for f in self._config.filters]
@@ -623,25 +665,6 @@ class ImmichFetcherApp(hass.Hass):
         if removed_favs:
             self.log(f"Favorite people removed: {removed_favs}", level="INFO")
 
-        known_people = set(self._people_available)
-        if known_people:
-            for filt in new_cfg.filters:
-                if filt.people:
-                    unknown = [n for n in filt.people if n not in known_people]
-                    if unknown:
-                        self.log(
-                            f"Filter '{filt.name}' has unknown people: {unknown}",
-                            level="WARNING",
-                        )
-            unknown_favs = [
-                n for n in new_cfg.favorite_people if n not in known_people
-            ]
-            if unknown_favs:
-                self.log(
-                    f"Unknown favorite people: {unknown_favs}",
-                    level="WARNING",
-                )
-
         old_interval = self._config.update_interval_minutes
         self._config = new_cfg
         if self._config.filters:
@@ -655,7 +678,9 @@ class ImmichFetcherApp(hass.Hass):
         else:
             self._active_filter_index = 0
             self._displaying_filter_index = 0
-        self._persist_config()
+        self._config_save_status = "saved"
+        self._config_save_error = ""
+        self._config_save_request_id = request_id
 
         if new_cfg.update_interval_minutes != old_interval:
             self._reschedule_fetch()
@@ -682,6 +707,35 @@ class ImmichFetcherApp(hass.Hass):
                 level="INFO",
             )
             self.create_task(self._do_fetch())
+
+    def _reject_config_save(self, error: str, request_id: str) -> None:
+        self._config_save_status = "error"
+        self._config_save_error = error
+        self._config_save_request_id = request_id
+        self._publish_sensor()
+
+    def _validate_metadata_references(self, config: FetcherConfig) -> None:
+        """Reject unresolved people/albums once metadata has been refreshed."""
+        metadata_loaded = self._metadata_last_refresh is not None
+        if not metadata_loaded:
+            if not self._people_available and any(f.people for f in config.filters):
+                raise ValueError("People metadata is not ready. Try saving again after it refreshes.")
+            if not self._albums_available and any(f.selection == "album" for f in config.filters):
+                raise ValueError("Album metadata is not ready. Try saving again after it refreshes.")
+        if metadata_loaded or self._people_available:
+            known_people = set(self._people_available)
+            for filt in config.filters:
+                unknown = [n for n in (filt.people or []) if n not in known_people]
+                if unknown:
+                    raise ValueError(f"Filter '{filt.name}': unknown people: {', '.join(unknown)}")
+            unknown_favorites = [n for n in config.favorite_people if n not in known_people]
+            if unknown_favorites:
+                raise ValueError(f"Unknown favorite people: {', '.join(unknown_favorites)}")
+        if metadata_loaded or self._albums_available:
+            known_albums = {a["name"] for a in self._albums_available}
+            for filt in config.filters:
+                if filt.selection == "album" and filt.album_name not in known_albums:
+                    raise ValueError(f"Filter '{filt.name}': unknown album '{filt.album_name}'")
 
     def _handle_sync_filter(self, data: dict) -> None:
         """Sync a specific filter (fetch with it immediately)."""
@@ -712,9 +766,10 @@ class ImmichFetcherApp(hass.Hass):
             if not found:
                 self.log(
                     f"Filter '{requested_name}' not found in backend, "
-                    f"falling back to index {idx} ('{resolved_name}')",
+                    "sync rejected; save the filter first",
                     level="WARNING",
                 )
+                return
 
         self._active_filter_index = idx
         if self._config.filters[idx].paused:

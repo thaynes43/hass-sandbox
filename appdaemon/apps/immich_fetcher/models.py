@@ -35,21 +35,30 @@ class FetcherConfig:
     def validate(self) -> None:
         if not self.filters:
             raise ValueError("At least one filter must be configured")
-        if self.num_photos < 1:
+        if type(self.num_photos) is not int or self.num_photos < 1:
             raise ValueError("num_photos must be >= 1")
-        if self.update_interval_minutes < 1:
+        if type(self.update_interval_minutes) is not int or self.update_interval_minutes < 1:
             raise ValueError("update_interval_minutes must be >= 1")
         if self.download_quality not in DOWNLOAD_QUALITIES:
             raise ValueError(
                 f"Invalid download_quality '{self.download_quality}'; "
                 f"must be one of {DOWNLOAD_QUALITIES}"
             )
-        if self.people_cutoff < 1 or self.people_cutoff > 99:
+        if type(self.people_cutoff) is not int or not 1 <= self.people_cutoff <= 99:
             raise ValueError("people_cutoff must be between 1 and 99")
+        if not isinstance(self.show_favorite_people_only, bool):
+            raise ValueError("show_favorite_people_only must be a boolean")
+        if not isinstance(self.favorite_people, list) or any(
+            not isinstance(n, str) or not n.strip() for n in self.favorite_people
+        ):
+            raise ValueError("favorite_people must be a list of non-empty names")
 
         names: set[str] = set()
         for f in self.filters:
-            f.validate()
+            try:
+                f.validate()
+            except ValueError as exc:
+                raise ValueError(f"Filter '{f.name}': {exc}") from exc
             if f.name in names:
                 raise ValueError(f"Duplicate filter name: '{f.name}'")
             names.add(f.name)
@@ -79,12 +88,29 @@ class FetcherConfig:
 
     @classmethod
     def from_dict(cls, data: dict) -> "FetcherConfig":
+        if not isinstance(data, dict):
+            raise ValueError("Configuration must be an object")
+        filters_raw = data.get("filters", [])
+        if not isinstance(filters_raw, list):
+            raise ValueError("filters must be a list")
         aliases_raw = data.get("location_aliases", {})
+        if not isinstance(aliases_raw, dict):
+            raise ValueError("location_aliases must be an object")
+        for name, value in aliases_raw.items():
+            if not isinstance(name, str) or not name.strip() or not isinstance(value, dict):
+                raise ValueError("Location aliases must have names and location objects")
         aliases = {
             k: LocationAlias(**v) for k, v in aliases_raw.items()
         }
+        filters = []
+        for raw in filters_raw:
+            try:
+                filters.append(PhotoFilter.from_dict(raw))
+            except ValueError as exc:
+                name = raw.get("name", "unnamed") if isinstance(raw, dict) else "unnamed"
+                raise ValueError(f"Filter '{name}': {exc}") from exc
         return cls(
-            filters=[PhotoFilter.from_dict(f) for f in data.get("filters", [])],
+            filters=filters,
             num_photos=data.get("num_photos", 10),
             update_interval_minutes=data.get("update_interval_minutes", 60),
             download_quality=data.get("download_quality", "preview"),

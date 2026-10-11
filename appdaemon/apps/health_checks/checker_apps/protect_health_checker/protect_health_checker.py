@@ -67,6 +67,7 @@ if _appdaemon_root not in sys.path:
 
 import hassapi as hass
 
+from providers.secrets import resolve_arg_secret
 from providers.ha_provisioner import HAProvisioner, HaAdminClient
 from shared.auto_repair_config import AutoRepairConfigMixin, UNAVAILABLE_STATES
 
@@ -345,7 +346,7 @@ class ProtectHealthChecker(AutoRepairConfigMixin, hass.Hass):
         self.create_task(self._async_startup())
 
     async def _async_startup(self) -> None:
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if ha_url and ha_token_env:
             try:
@@ -385,7 +386,7 @@ class ProtectHealthChecker(AutoRepairConfigMixin, hass.Hass):
 
     async def _provision_entities(self) -> None:
         """Create auto-repair helper entities if they don't exist."""
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             return

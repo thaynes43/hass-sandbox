@@ -4,7 +4,7 @@
 countdown_app_dev:
   module: countdown_app.countdown_app
   class: CountdownApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   ai_provider_conf:
     image: openai-countdown
@@ -19,7 +19,7 @@ countdown_app_dev:
 shade_gateway_checker_dev:
   module: health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker
   class: ShadeGatewayChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: shade_gateway_dev
   checker_name: Shade Gateway (Dev)
@@ -40,7 +40,7 @@ shade_gateway_checker_dev:
 assist_exposure_guard_dev:
   module: assist_exposure_guard.assist_exposure_guard
   class: AssistExposureGuard
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   check_interval_minutes: 15
   enforce: false

@@ -164,7 +164,7 @@ class TestFetchPhotoIds:
         mock_client.get_album_assets.assert_awaited_once_with("alb-123")
 
     @pytest.mark.asyncio
-    async def test_album_not_found_returns_empty(self):
+    async def test_album_not_found_rejected(self):
         mock_client = _make_mock_client()
         mock_client.resolve_album_name = AsyncMock(return_value=None)
 
@@ -178,9 +178,9 @@ class TestFetchPhotoIds:
                 selection="album",
                 album_name="Nonexistent",
             )
-            ids = await provider.fetch_photo_ids(pf, 5)
+            with pytest.raises(RuntimeError, match="Album 'Nonexistent' not found"):
+                await provider.fetch_photo_ids(pf, 5)
 
-        assert ids == []
         mock_client.get_album_assets.assert_not_called()
 
     @pytest.mark.asyncio

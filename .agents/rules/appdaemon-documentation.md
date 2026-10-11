@@ -91,6 +91,7 @@ Update this map when adding new apps, providers, or docs. Agents creating new ap
 | `ai_providers/ollama` | `appdaemon/providers/ai_providers/ollama/README.md` | Ollama local adapter (text, multimodal); `_request_gate.py` keeps one AppDaemon request in flight per endpoint, process-wide, with a bounded queue wait |
 | `ai_providers/comfyui` | `appdaemon/providers/ai_providers/comfyui/README.md` | ComfyUI local adapter (image): named workflow registry (`workflow_registry.yaml` + `workflow_registry.py`), selected by name in AppDaemon config (bundle default or per-app `image_workflow`), validated at startup |
 | `ha_provisioner` | `appdaemon/providers/ha_provisioner/README.md` | Idempotent HA entity provisioning (scripts, helpers) + `HaAdminClient` (config-entry reload, template rendering) + `AssistExposureClient` (voice-assistant exposure list read/write + entity-registry platforms) + `local_file_status` / `local_file_exists` (unauthenticated `/local/...` probe: HTTP status, or a plain 200 check) |
+| `health_probes` | `appdaemon/providers/health_probes/README.md` | HTTP status/reachability probes used by health checkers through shared compatibility exports |
 | `alertmanager` | `appdaemon/providers/alertmanager/README.md` | Minimal Prometheus Alertmanager v2 client (post/refresh/resolve alerts) |
 | `metrics` | `appdaemon/providers/metrics/README.md` | Prometheus exporter for the health-check controller (`HealthMetrics`: snapshot gauges, repair events, checker-supplied metrics, per-checker series removal) |
 | `photo_providers` | `appdaemon/providers/photo_providers/README.md` | Photo source abstraction (Immich implementation) |
@@ -180,6 +181,7 @@ vestaboard_controller (vestaboard_apps/vestaboard_controller)
 media_dashboard_app (standalone — fetches from Tautulli, TMDb, SerpApi; publishes sensors for compact and detail Lovelace cards)
 
 health_check_controller (listens for health_check_command events from all checkers)
+  │    — checker HTTP probes use providers/health_probes through shared/check_utils
   │    — mirrors checker health → Alertmanager (providers/alertmanager) when alertmanager_url set
   │    — exposes Prometheus metrics (providers/metrics) on metrics_port
   │    — registration watchdog: besides the event bus, reads AppDaemon's admin namespace

@@ -272,24 +272,24 @@ def _session_answering(status: int = 200, exc: Exception | None = None) -> Magic
 class TestHttpReachableCheck:
     @pytest.mark.parametrize("status", [200, 401, 403, 404])
     def test_below_500_is_reachable(self, status):
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=_session_answering(status)):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=_session_answering(status)):
             result = _run(http_reachable_check("https://api.example.com/v1/models", label="OpenAI reachable"))
         assert result["status"] == "ok"
         assert result["detail"].startswith("OpenAI reachable · ")
 
     def test_5xx_is_critical(self):
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=_session_answering(503)):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=_session_answering(503)):
             result = _run(http_reachable_check("https://api.example.com"))
         assert result == {"status": "critical", "detail": "HTTP 503"}
 
     def test_timeout_is_critical(self):
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=_session_answering(exc=asyncio.TimeoutError())):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=_session_answering(exc=asyncio.TimeoutError())):
             result = _run(http_reachable_check("https://api.example.com"))
         assert result == {"status": "critical", "detail": "timeout"}
 
     def test_connection_error_is_critical(self):
         err = aiohttp.ClientError("Connection refused")
-        with patch("shared.check_utils.aiohttp.ClientSession", return_value=_session_answering(exc=err)):
+        with patch("providers.health_probes.http_checks.aiohttp.ClientSession", return_value=_session_answering(exc=err)):
             result = _run(http_reachable_check("https://api.example.com"))
         assert result["status"] == "critical"
         assert result["detail"].startswith("Connection error")

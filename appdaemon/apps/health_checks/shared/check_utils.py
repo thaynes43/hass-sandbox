@@ -2,7 +2,7 @@
 
 Provides ``ping_check``, ``http_check``, ``http_reachable_check`` and
 ``wyoming_check`` for use by health-checker AppDaemon apps.  These are lightweight wrappers around ``asyncio``
-subprocesses and ``aiohttp`` that return a uniform result dict::
+subprocesses and provider HTTP probes that return a uniform result dict::
 
     {"status": "ok" | "critical", "detail": "<human-readable detail>"}
 
@@ -18,9 +18,14 @@ import json
 import logging
 import sys
 import time
+from pathlib import Path
 from typing import Dict, List, Optional
 
-import aiohttp
+# Checkers can load shared utilities with only apps/ on the import path.
+sys.path.append(str(Path(__file__).resolve().parents[3]))
+
+# Compatibility exports keep existing checker imports unchanged.
+from providers.health_probes.http_checks import http_check, http_reachable_check
 
 logger = logging.getLogger(__name__)
 
@@ -130,77 +135,6 @@ async def _ping_once(host: str, timeout_s: int) -> Dict[str, str]:
     except Exception as exc:
         logger.warning("ping %s error: %s", host, exc)
         return {"status": "critical", "detail": f"ping failed: {exc}"}
-
-
-async def http_check(url: str, timeout_s: int = 5) -> Dict[str, str]:
-    """HTTP GET *url* and return a status dict.
-
-    Only checks for a successful HTTP response (2xx).  Does not follow
-    fragment identifiers (e.g. ``#/control-panel``); the fragment is
-    client-side only.
-
-    Returns::
-
-        {"status": "ok", "detail": "200 OK"}
-        {"status": "critical", "detail": "HTTP 503"}
-        {"status": "critical", "detail": "Connection error: <msg>"}
-    """
-    timeout = aiohttp.ClientTimeout(total=timeout_s)
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url, ssl=False) as resp:
-                if 200 <= resp.status < 300:
-                    logger.debug("http_check %s -> %s OK", url, resp.status)
-                    return {"status": "ok", "detail": f"{resp.status} OK"}
-                logger.debug("http_check %s -> HTTP %s", url, resp.status)
-                return {"status": "critical", "detail": f"HTTP {resp.status}"}
-    except asyncio.TimeoutError:
-        logger.warning("http_check %s timed out after %ss", url, timeout_s)
-        return {"status": "critical", "detail": "timeout"}
-    except aiohttp.ClientError as exc:
-        logger.warning("http_check %s client error: %s", url, exc)
-        return {"status": "critical", "detail": f"Connection error: {exc}"}
-    except Exception as exc:
-        logger.warning("http_check %s error: %s", url, exc)
-        return {"status": "critical", "detail": f"Error: {exc}"}
-
-
-async def http_reachable_check(
-    url: str, timeout_s: int = 5, label: str = "reachable"
-) -> Dict[str, str]:
-    """HTTP GET *url* and report whether the service answered at all.
-
-    Unlike ``http_check``, any response below 500 is ok: an authenticated
-    API answering 401/403 to an anonymous request proves the endpoint is up
-    and reachable from this host without holding its credential.  A 5xx,
-    timeout or connection error is critical.
-
-    Returns::
-
-        {"status": "ok", "detail": "reachable · 163ms"}
-        {"status": "critical", "detail": "HTTP 503"}
-        {"status": "critical", "detail": "timeout"}
-    """
-    timeout = aiohttp.ClientTimeout(total=timeout_s)
-    start = time.monotonic()
-    try:
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                elapsed_ms = (time.monotonic() - start) * 1000
-                if resp.status < 500:
-                    logger.debug("http_reachable_check %s -> %s", url, resp.status)
-                    return {"status": "ok", "detail": f"{label} · {elapsed_ms:.0f}ms"}
-                logger.debug("http_reachable_check %s -> HTTP %s", url, resp.status)
-                return {"status": "critical", "detail": f"HTTP {resp.status}"}
-    except asyncio.TimeoutError:
-        logger.warning("http_reachable_check %s timed out after %ss", url, timeout_s)
-        return {"status": "critical", "detail": "timeout"}
-    except aiohttp.ClientError as exc:
-        logger.warning("http_reachable_check %s client error: %s", url, exc)
-        return {"status": "critical", "detail": f"Connection error: {exc}"}
-    except Exception as exc:
-        logger.warning("http_reachable_check %s error: %s", url, exc)
-        return {"status": "critical", "detail": f"Error: {exc}"}
 
 
 # Largest Wyoming ``info`` body accepted (a TTS server lists every voice; the

@@ -33,7 +33,7 @@ Fetches daily lunch menus from the School Nutrition and Fitness API for multiple
 
 | Key | Required | Default | Description |
 |-----|----------|---------|-------------|
-| `ha_url` | Yes | — | Home Assistant base URL (use `!secret ha_url`) |
+| `ha_url_env` | Yes | — | Name of the environment variable containing the Home Assistant base URL (`HA_URL`) |
 | `ha_token_env` | Yes | — | Env var name containing the HA long-lived access token (e.g. `TOKEN`) |
 | `menu_url_env` | Yes* | — | Env var name holding the district's menu URL (`https://www.schoolnutritionandfitness.com/index.php?sid=<district>&page=menus`). The app parses the site ID (`sid`) out of it. Production uses `SCHOOL_LUNCH`, fed from 1Password via the `appdaemon` ExternalSecret. |
 | `sid` | Yes* | — | Direct site ID (numeric string). Dev/test fallback only — never commit a real district id; use `menu_url_env` instead. |
@@ -48,7 +48,7 @@ school_lunch_app:
   module: school_lunch_app.school_lunch_app
   class: SchoolLunchApp
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   menu_url_env: SCHOOL_LUNCH
   menus:

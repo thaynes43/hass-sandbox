@@ -255,12 +255,13 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 ## Dependencies
 
 - `providers/ha_provisioner` — creates HA helpers and scripts on startup; `HaAdminClient` gives ProtectHealthChecker entity discovery and config-entry reload
+- `providers/health_probes` — HTTP status/reachability probes, reexported by `shared/check_utils.py` for existing checker imports
 - `providers/alertmanager` — posts/resolves alerts in the cluster Alertmanager (controller, when `alertmanager_url` is set)
 - `providers/metrics` — Prometheus exporter; exposition server + base gauges + repair/custom metric ingest (controller)
 - `providers/ai_providers/comfyui` — `ComfyUIStatusClient` queue polling (ImageGenHealthChecker)
 - `shared/auto_repair_config` — `AutoRepairConfigMixin`: provisioning, reading, clamping and applying the auto-repair toggle/delay helpers, plus `_stand_down_pending_repair` (the one place a `pending` countdown or a stale `success` is dropped when auto-repair stops being allowed to act), mixed into all seven repair-capable checkers
 - `shared/switch_power_cycle` — `power_cycle_switch()`: turn a repair switch off, wait, turn it back on and confirm it reports `on` (one retry), shared by `RepairableDeviceChecker`, `RepairableDeviceGroupChecker` and `SpaHealthChecker`
-- `aiohttp` — HTTP health checks (in `shared/check_utils.py`); the Wyoming probe uses plain `asyncio` streams
+- `aiohttp` — HTTP health checks (in `providers/health_probes/http_checks.py`); the Wyoming probe uses plain `asyncio` streams
 - `prometheus-client` — metrics exposition (controller)
 
 ## Self-Provisioned Entities
@@ -303,7 +304,7 @@ Keep custom names unit-suffixed and labels low, stable cardinality (never timest
 health_check_controller:
   module: health_checks.controller.health_check_controller
   class: HealthCheckController
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   heartbeat_interval_s: 60       # Heartbeat update frequency (seconds)
   alert_history_max: 50          # Max alerts retained per checker
@@ -361,7 +362,7 @@ Any check can be disabled by omitting its config key (e.g., remove `radio_host` 
 
 ### RepairableNetworkProtocolChecker
 
-Every `NetworkProtocolChecker` key, plus the repair keys below. Also needs `ha_url` / `ha_token_env` so it can provision its auto-repair helpers.
+Every `NetworkProtocolChecker` key, plus the repair keys below. Also needs `ha_url_env` / `ha_token_env` so it can provision its auto-repair helpers.
 
 ```yaml
 zwave_health_checker:
@@ -524,7 +525,7 @@ health_checks/
 │       └── README.md
 ├── shared/                          # shared library code, the one exception to
 │   ├── __init__.py                  # "no shared code under apps/"
-│   ├── check_utils.py               # ping/HTTP/Wyoming checks + the cross-check downgrade
+│   ├── check_utils.py               # ping/Wyoming checks, HTTP provider exports + cross-check downgrade
 │   ├── alertmanager_bridge.py       # pure alert decision logic (no HTTP)
 │   ├── auto_repair_config.py        # AutoRepairConfigMixin: the auto-repair
 │   │                                # toggle/delay helpers, shared by all seven

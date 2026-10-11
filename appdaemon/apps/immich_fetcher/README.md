@@ -28,6 +28,30 @@ Periodically fetches photos from an [Immich](https://immich.app/) photo library 
 
 `immich-fetcher-card.js` — Lovelace card for filter editing (including per-filter pause/resume), manual refresh, metadata viewing.
 
+### Birthdays and holidays across years
+
+Choose **All Photos**, add the person under **People**, then add a range under **On these days · every year**. Choose the birthday's month and day and leave **Through** empty for a single day. A search query is optional only when using All Photos; **Search** requires a query and can also be combined with people and recurring dates.
+
+Add more ranges to include several holidays. December 24 through December 25 includes Christmas Eve and Christmas Day. Ranges include both endpoints, may cross New Year, and match any year. February 29 matches photos taken on leap day. Existing **Taken After / Before** limits remain optional and further restrict the years/dates that can match.
+
+```json
+{
+  "name": "Holiday memories",
+  "selection": "all_photos",
+  "people": ["A person from Immich"],
+  "recurring_date_ranges": [
+    {"start": "12-24", "end": "12-25"},
+    {"start": "07-04"}
+  ]
+}
+```
+
+Recurring dates use the photo's local capture date from Immich, falling back to its creation date when unavailable. Date-only Taken After / Before limits include the entire local day; saved limits that include a time retain their exact timestamp. Matching happens before the batch is sampled, so rare dates are not lost by filtering a small random batch. People, location, favorites, and date criteria also apply to album selections.
+
+The card disables Save for invalid filters and shows the reason beside the filter. It keeps edits until AppDaemon confirms that validation and persistence succeeded. Backend failures leave the previous configuration active and the edits available to correct or retry. Fetching an individual filter requires saving its edits first.
+
+Save replies are published on `sensor.immich_fetcher_status` as `config_save_status` (`idle`, `saved`, `error`), `config_save_error`, and `config_save_request_id`. The card sends a unique `request_id` with `update_config` and only treats the corresponding successful reply as a completed save.
+
 ## Config (apps.yaml)
 
 ### Required

@@ -46,7 +46,7 @@ When the GPU drops off the PCI bus, QEMU asserts on the passthrough device — r
 
 ## Self-Provisioned Entities
 
-None — with no auto-repair there are no helpers to provision, and no HA token is required (`ha_url`/`ha_token_env` are not used).
+None — with no auto-repair there are no helpers to provision, and no HA token is required (`ha_url_env`/`ha_token_env` are not used).
 
 ## Configuration Reference
 
