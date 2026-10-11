@@ -3,6 +3,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -97,6 +98,47 @@ class DiagnosticTests(unittest.TestCase):
             self.assertEqual(json.loads(output.getvalue())["cause"], "oauth_invalid")
             self.assertNotIn("SECRET", output.getvalue() + summary.read_text())
             self.assertNotIn("::error::", output.getvalue() + summary.read_text())
+
+    def test_actual_workflow_loaders_ignore_pr_head_helper(self):
+        repo = Path(__file__).resolve().parents[2]
+        for workflow in ("claude-code-review.yml", "claude.yml", "ci-auto-fix.yml", "docs-site-audit.yml", "agent-docs-audit.yml"):
+            with self.subTest(workflow=workflow), tempfile.TemporaryDirectory() as directory:
+                lines = (repo / ".github/workflows" / workflow).read_text().splitlines()
+                self.assertIn("          fetch-depth: 0", lines)
+                self.assertNotIn("          fetch-depth: 1", lines)
+                start = next(index for index, line in enumerate(lines) if "name: Diagnose Claude" in line)
+                run = next(index for index in range(start, len(lines)) if lines[index].strip() == "run: |")
+                script_lines = []
+                for line in lines[run + 1:]:
+                    if line.strip() and not line.startswith("          "):
+                        break
+                    script_lines.append(line[10:])
+                script = "\n".join(script_lines)
+                worktree = Path(directory)
+                def git(*args):
+                    return subprocess.run(["git", *args], cwd=worktree, check=True, capture_output=True, text=True).stdout.strip()
+                git("init", "--quiet")
+                git("config", "user.name", "Test")
+                git("config", "user.email", "test@example.invalid")
+                git("commit", "--allow-empty", "--quiet", "-m", "without helper")
+                missing_ref = git("rev-parse", "HEAD")
+                helper = worktree / "scripts/claude-review-diagnostics/diagnose.py"
+                helper.parent.mkdir(parents=True)
+                helper.write_text((repo / "scripts/claude-review-diagnostics/diagnose.py").read_text())
+                git("add", "scripts")
+                git("commit", "--quiet", "-m", "trusted helper")
+                trusted_ref = git("rev-parse", "HEAD")
+                git("update-ref", "refs/remotes/origin/main", trusted_ref)
+                helper.write_text("print('SECRET PR HEAD EXECUTED')\n")
+                (worktree / "claude-execution-output.json").write_text(json.dumps([
+                    {"type": "result", "is_error": True, "result": "Weekly limit SECRET"}
+                ]))
+                env = dict(os.environ, RUNNER_TEMP=directory, CLAUDE_EXECUTION_FILE="", GITHUB_STEP_SUMMARY="")
+                for ref, expected in ((trusted_ref, '"cause": "quota_or_rate_limit"'), ("origin/main", '"cause": "quota_or_rate_limit"'), (missing_ref, "Claude failure diagnostic unavailable in trusted base.")):
+                    env["CLAUDE_DIAGNOSTICS_REF"] = ref
+                    result = subprocess.run(["bash", "-e", "-c", script], cwd=worktree, env=env, capture_output=True, text=True, check=True)
+                    self.assertIn(expected, result.stdout)
+                    self.assertNotIn("SECRET", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
