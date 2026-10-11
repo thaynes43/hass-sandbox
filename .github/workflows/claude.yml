@@ -55,7 +55,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Run Claude Code
         id: claude
@@ -66,6 +66,20 @@ jobs:
           allowed_bots: "haynes-dev-bot"
           # Automated surfaces are pinned to the newest Opus explicitly — never an
           # alias, which resolves client-side and can silently serve an older tier.
-          claude_args: "--model claude-opus-5"
+          claude_args: "--model claude-opus-5-5"
           additional_permissions: |
             actions: read
+
+      - name: Diagnose Claude failure safely
+        if: always() && steps.claude.outcome == 'failure'
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_DIAGNOSTICS_REF: ${{ github.event.pull_request.base.sha || format('origin/{0}', github.event.repository.default_branch) }}
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/claude-review-diagnostics.py"
+          if ! git show "${CLAUDE_DIAGNOSTICS_REF}:scripts/claude-review-diagnostics/diagnose.py" > "$helper" 2>/dev/null; then
+            echo "Claude failure diagnostic unavailable in trusted base."
+            exit 0
+          fi
+          nice -n 19 python3 "$helper"

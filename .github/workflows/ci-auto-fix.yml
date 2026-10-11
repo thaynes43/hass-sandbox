@@ -121,7 +121,7 @@ jobs:
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           claude_args: >-
-            --model claude-opus-5
+            --model claude-opus-5-5
             --max-turns 60
             --allowedTools "Read,Glob,Grep,Edit,Write,Bash(python:*),Bash(python3:*),Bash(pip:*),Bash(pytest:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*)"
           prompt: |
@@ -167,3 +167,17 @@ jobs:
 
             Logs (JSON, truncated to the tail of each job):
             ${{ toJSON(fromJSON(steps.failure_details.outputs.result).errorLogs) }}
+
+      - name: Diagnose Claude failure safely
+        if: always() && steps.claude.outcome == 'failure'
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_DIAGNOSTICS_REF: ${{ github.event.pull_request.base.sha || format('origin/{0}', github.event.repository.default_branch) }}
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/claude-review-diagnostics.py"
+          if ! git show "${CLAUDE_DIAGNOSTICS_REF}:scripts/claude-review-diagnostics/diagnose.py" > "$helper" 2>/dev/null; then
+            echo "Claude failure diagnostic unavailable in trusted base."
+            exit 0
+          fi
+          nice -n 19 python3 "$helper"
