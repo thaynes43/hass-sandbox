@@ -959,6 +959,10 @@ class ImmichFetcherCard extends HTMLElement {
     };
     root.addEventListener("input", raise, true);
     root.addEventListener("keydown", raise, true);
+    root.addEventListener("focusin", (e) => {
+      // Preserve the next field while a render from the previous edit is pending.
+      if (this._renderPending) raise(e);
+    }, true);
     root.addEventListener("change", commit, true);
     root.addEventListener("focusout", commit, true);
     const releasePointer = () => {
