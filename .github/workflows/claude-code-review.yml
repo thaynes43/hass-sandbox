@@ -34,6 +34,7 @@ jobs:
           fetch-depth: 0
 
       - name: Run Claude Code Review
+        id: claude
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -45,7 +46,7 @@ jobs:
           # inline-comment grants below Claude cannot run `gh` or post line
           # comments at all, which is why earlier runs only ever left a summary.
           claude_args: |
-            --model claude-opus-5
+            --model claude-opus-5-5
             --max-turns 60
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr comment:*)"
           additional_permissions: |
@@ -121,3 +122,17 @@ jobs:
               what you checked. Never invent a finding to look thorough.
             - Only review files changed in this PR. Post GitHub comments only — do not
               return the review as chat text.
+
+      - name: Diagnose Claude failure safely
+        if: always() && steps.claude.outcome == 'failure'
+        env:
+          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+          CLAUDE_DIAGNOSTICS_REF: ${{ github.event.pull_request.base.sha || format('origin/{0}', github.event.repository.default_branch) }}
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/claude-review-diagnostics.py"
+          if ! git show "${CLAUDE_DIAGNOSTICS_REF}:scripts/claude-review-diagnostics/diagnose.py" > "$helper" 2>/dev/null; then
+            echo "Claude failure diagnostic unavailable in trusted base."
+            exit 0
+          fi
+          nice -n 19 python3 "$helper"
