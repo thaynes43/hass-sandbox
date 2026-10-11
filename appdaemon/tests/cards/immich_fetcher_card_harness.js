@@ -154,6 +154,37 @@ scenario("roundtrip_preserves_config", async () => {
   card._markDirty(); card._saveConfig(); assert.deepEqual(calls[1].payload.filters, filters);
 });
 
+for (const [name, rawValue, expected] of [
+  ["favorite_people_only_boolean_false", false, false],
+  ["favorite_people_only_boolean_true", true, true],
+  ["favorite_people_only_string_false", "False", false],
+  ["favorite_people_only_string_true", "True", true],
+  ["favorite_people_only_lowercase_false", "false", false],
+  ["favorite_people_only_lowercase_true", "true", true],
+  ["favorite_people_only_mixed_case_false", "fAlSe", false],
+  ["favorite_people_only_mixed_case_true", "tRuE", true],
+]) {
+  scenario(name, async () => {
+    const { card, calls, update, q } = mount();
+    update({ show_favorite_people_only: rawValue });
+    click(q('[data-action="toggle-people-manager"]'));
+    const checkbox = () => q('[data-action="set-global-bool"][data-field="show_favorite_people_only"]');
+    assert.equal(checkbox().checked, expected, `sensor ${JSON.stringify(rawValue)} loaded the wrong checkbox state`);
+    assert.equal(Boolean(card.shadowRoot.querySelector('[data-action="quick-add-person"][data-person="Ada"]')), !expected);
+    // Saving another setting must not silently flip this loaded global preference.
+    card._filters[0].name = "Family updated"; card._markDirty();
+    click(q('[data-action="save"]')); await flush();
+    assert.equal(calls.length, 1); assert.equal(calls[0].command, "update_config");
+    const sent = calls[0].payload;
+    assert.equal(sent.show_favorite_people_only, expected);
+    assert.equal(typeof sent.show_favorite_people_only, "boolean");
+    update({ filters: JSON.stringify(sent.filters), show_favorite_people_only: rawValue,
+      config_save_request_id: sent.request_id, config_save_status: "saved" });
+    assert.equal(card._dirty, false); assert.equal(card._pendingSave, null);
+    assert.equal(checkbox().checked, expected);
+  });
+}
+
 scenario("legacy_timestamp_limits_roundtrip", async () => {
   const filters = [{ name: "Legacy", selection: "all_photos", taken_after: "2020-03-01T00:00:00-05:00", taken_before: "2021-03-01T05:00:00+00:00" }];
   const { card, calls, q } = mount(filters);

@@ -215,7 +215,8 @@ class ImmichFetcherCard extends HTMLElement {
         this._peopleCutoff = Number(sensorState.attributes.people_cutoff) || 5;
       }
       if (sensorState.attributes.show_favorite_people_only !== undefined) {
-        this._showFavoritePeopleOnly = !!sensorState.attributes.show_favorite_people_only;
+        const value = sensorState.attributes.show_favorite_people_only;
+        this._showFavoritePeopleOnly = value === true || String(value).toLowerCase() === "true";
       }
     }
     this._dirty = false;
