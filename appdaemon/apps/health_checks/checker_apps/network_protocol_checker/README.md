@@ -55,7 +55,7 @@ Both escalations sit **above** the serial-sensor guard and the auto-repair toggl
 
 ## Self-Provisioned Entities
 
-`NetworkProtocolChecker` provisions nothing. `RepairableNetworkProtocolChecker` provisions the three helpers below, named from `checker_id` (`zwave` today), and needs `ha_url` / `ha_token_env` to do so:
+`NetworkProtocolChecker` provisions nothing. `RepairableNetworkProtocolChecker` provisions the three helpers below, named from `checker_id` (`zwave` today), and needs `ha_url_env` / `ha_token_env` to do so:
 
 | Entity | Type | Purpose |
 |--------|------|---------|
@@ -109,7 +109,7 @@ YAML bool coercion is handled: if `entity_healthy_state` is coerced from `"on"` 
 
 ### Repair keys (`RepairableNetworkProtocolChecker` only)
 
-Set `module` to `...network_protocol_checker.repairable_network_protocol_checker` and `class` to `RepairableNetworkProtocolChecker`, keep every key above, and add `ha_url` / `ha_token_env` plus the keys below. Live values: `apps-prod.yaml` -> `zwave_health_checker`.
+Set `module` to `...network_protocol_checker.repairable_network_protocol_checker` and `class` to `RepairableNetworkProtocolChecker`, keep every key above, and add `ha_url_env` / `ha_token_env` plus the keys below. Live values: `apps-prod.yaml` -> `zwave_health_checker`.
 
 | Key | Required | Default | Description |
 |-----|----------|---------|-------------|

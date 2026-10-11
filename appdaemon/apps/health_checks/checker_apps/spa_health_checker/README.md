@@ -79,7 +79,7 @@ recovers. The attempt counter resets on full recovery or manual repair.
 spa_health_checker:
   module: health_checks.checker_apps.spa_health_checker.spa_health_checker
   class: SpaHealthChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: spa                              # Unique ID
   checker_name: Spa                            # Display name on cards

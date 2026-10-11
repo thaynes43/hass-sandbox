@@ -6,7 +6,7 @@ Before deploying to production, run the pre-deploy security audit: `.agents/play
 
 ## How deployment works
 
-1. Developer merges PR to `main` (or pushes directly for hotfixes)
+1. Developer squash-merges a reviewed PR to `main` after its checks pass (hotfixes follow the same branch and PR workflow)
 2. GitHub Actions workflow (`.github/workflows/build-appdaemon.yml`) builds a Docker image
 3. Image is pushed to GHCR with semver tags from `VERSION` file (e.g., `0.1.0`, `0.1.0-abc1234`, `latest`)
 4. Verify the tag exists in GHCR (anon pull token + `GET /v2/thaynes43/appdaemon/manifests/<VERSION>` with an `Accept` header that includes `application/vnd.oci.image.manifest.v1+json` — the index types alone return a false 404)
@@ -50,19 +50,19 @@ When a new app is ready for production testing:
 2. **Strip the `_dev` suffix** from the app key (e.g., `my_app_dev` → `my_app`)
 3. **Add `disable: true`** (Docker build strips this; prevents local AppDaemon from running prod apps)
 4. **Remove `debug_preserve_run_dirs: true`** if present
-5. **Convert `ai_provider_conf`** from dev providers (ollama/comfyui with `!secret` URLs) to prod providers (e.g., `openai-default`):
+5. **Convert `ai_provider_conf`** from dev providers (ollama/comfyui with URL environment-variable names) to prod providers (e.g., `openai-default`):
    ```yaml
    # Dev format (inline bundle + URL):
    ai_provider_conf:
      simple_text:
        bundle: ollama-qwen9b
-       base_url: !secret ollama_url
+       base_url_env: OLLAMA_URL
      multimodal:
        bundle: ollama-qwen9b
-       base_url: !secret ollama_url
+       base_url_env: OLLAMA_URL
      image:
        bundle: comfyui-qwen-edit
-       base_url: !secret comfyui_url
+       base_url_env: COMFYUI_URL
 
    # Prod format (simple bundle reference):
    ai_provider_conf:

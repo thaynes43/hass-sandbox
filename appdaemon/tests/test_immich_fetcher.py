@@ -562,6 +562,111 @@ class TestAlbumSelection:
 # ---------------------------------------------------------------------------
 
 class TestConfigUpdateEvent:
+    def test_recurring_search_with_person_persists_and_acknowledges(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(config_file=os.path.join(td, "config.json"),
+                            output_dir=os.path.join(td, "photos"))
+            app.initialize()
+            app._people_available = ["Jackson Haynes"]
+            app._handle_update_config({
+                "request_id": "save-birthday",
+                "filters": [{
+                    "name": "Birthday", "selection": "search", "search_query": "birthday",
+                    "people": ["Jackson Haynes"], "recurring_date_ranges": [{"start": "07-04"}],
+                }],
+            })
+            attrs = app.set_state.call_args.kwargs["attributes"]
+            assert attrs["config_save_status"] == "saved"
+            assert attrs["config_save_error"] == ""
+            assert attrs["config_save_request_id"] == "save-birthday"
+            persisted = json.loads(Path(app._config_file).read_text())
+            assert persisted["filters"][0]["people"] == ["Jackson Haynes"]
+            assert persisted["filters"][0]["recurring_date_ranges"] == [{"start": "07-04", "end": "07-04"}]
+            assert "request_id" not in persisted
+
+    @pytest.mark.parametrize("filters, error", [
+        ([{"name": "Birthday", "selection": "search"}], "Birthday.*search_query"),
+        ([{"name": "Birthday"}], "Birthday.*selection"),
+        ([{"selection": "all_photos"}], "name must not be empty"),
+        ([{"name": "Birthday", "selection": "all_photos", "recurring_date_ranges": [{"start": "02-30"}]}], "Birthday.*month/day"),
+        ([{"name": "Birthday", "selection": "all_photos", "people": "Jackson"}], "people must be a list"),
+        ([{"name": "Birthday", "selection": "all_photos", "taken_after": "2024-02-30"}], "valid ISO-format"),
+    ])
+    def test_rejected_save_publishes_matching_error_ack_and_keeps_prior_config(self, filters, error):
+        import re
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(config_file=os.path.join(td, "config.json"),
+                            output_dir=os.path.join(td, "photos"))
+            app.initialize()
+            original = app._config
+            app._persist_config()
+            original_file = Path(app._config_file).read_bytes()
+            app._handle_update_config({"request_id": "failed-save", "filters": filters})
+            assert app._config is original
+            assert Path(app._config_file).read_bytes() == original_file
+            attrs = app.set_state.call_args.kwargs["attributes"]
+            assert attrs["config_save_status"] == "error"
+            assert attrs["config_save_request_id"] == "failed-save"
+            assert re.search(error, attrs["config_save_error"])
+
+    def test_failed_disk_write_does_not_apply_or_reschedule_candidate(self):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(config_file=os.path.join(td, "config.json"),
+                            output_dir=os.path.join(td, "photos"))
+            app.initialize()
+            app._persist_config()
+            original = app._config
+            original_file = Path(app._config_file).read_bytes()
+            app.create_task.reset_mock()
+            with patch.object(Path, "replace", side_effect=OSError("disk unavailable")):
+                app._handle_update_config({
+                    "request_id": "disk-failure",
+                    "filters": [{"name": "Updated", "selection": "all_photos"}],
+                    "update_interval_minutes": 15,
+                })
+            assert app._config is original
+            assert Path(app._config_file).read_bytes() == original_file
+            assert not list(Path(td).glob(".config.json.*"))
+            app.create_task.assert_not_called()
+            attrs = app.set_state.call_args.kwargs["attributes"]
+            assert attrs["config_save_status"] == "error"
+            assert attrs["config_save_request_id"] == "disk-failure"
+            assert "storage" in attrs["config_save_error"]
+
+    @pytest.mark.parametrize("payload", ["[]", "null", '"text"', "NOT JSON"])
+    def test_malformed_command_payload_exposes_save_error(self, payload):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(config_file=os.path.join(td, "config.json"),
+                            output_dir=os.path.join(td, "photos"))
+            app.initialize()
+            original = app._config
+            app._on_command("immich_fetcher_command", {"command": "update_config", "payload": payload}, {})
+            assert app._config is original
+            assert app.set_state.call_args.kwargs["attributes"]["config_save_status"] == "error"
+
+    @pytest.mark.parametrize("filter_data, metadata, message", [
+        ({"people": ["Unknown"]}, {"people": ["Alice"]}, "unknown people"),
+        ({"people": ["Unknown"]}, {"people": []}, "metadata is not ready"),
+        ({"selection": "album", "album_name": "Missing"}, {"albums": [{"name": "Family"}]}, "unknown album"),
+        ({"selection": "album", "album_name": "Missing"}, {"albums": []}, "metadata is not ready"),
+    ])
+    def test_unresolved_people_or_album_rejected(self, filter_data, metadata, message):
+        with tempfile.TemporaryDirectory() as td:
+            app = _make_app(config_file=os.path.join(td, "config.json"),
+                            output_dir=os.path.join(td, "photos"))
+            app.initialize()
+            app._people_available = metadata.get("people", [])
+            app._albums_available = metadata.get("albums", [])
+            original = app._config
+            app._handle_update_config({
+                "request_id": "unknown",
+                "filters": [{"name": "Unresolved", "selection": "all_photos", **filter_data}],
+            })
+            assert app._config is original
+            attrs = app.set_state.call_args.kwargs["attributes"]
+            assert attrs["config_save_status"] == "error"
+            assert message in attrs["config_save_error"]
+
     def test_valid_update_applied(self):
         with tempfile.TemporaryDirectory() as td:
             app = _make_app(
@@ -1027,8 +1132,8 @@ class TestSyncFilter:
             ]
             assert len(warn_msgs) == 1
 
-    def test_sync_name_not_found_falls_back_to_index(self):
-        """If card sends a name that doesn't exist, fall back to index."""
+    def test_sync_name_not_found_rejects_unrelated_index(self):
+        """A rejected/unsaved card filter must not fetch a different filter."""
         with tempfile.TemporaryDirectory() as td:
             app = _make_app(
                 config_file=os.path.join(td, "config.json"),
@@ -1049,8 +1154,8 @@ class TestSyncFilter:
                 {},
             )
 
-            assert app._active_filter_index == 1
-            assert app.create_task.called
+            assert app._active_filter_index == 0
+            app.create_task.assert_not_called()
             warn_msgs = [
                 str(c.args[0]) for c in app.log.call_args_list
                 if c.args and "not found" in str(c.args[0])

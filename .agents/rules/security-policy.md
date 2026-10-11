@@ -23,7 +23,7 @@ Credentials, tokens, API keys, and internal service URLs must **never** appear i
 
 ## S4 — Secrets YAML handling
 
-`secrets.yaml` is `.gitignored` and must never be committed. `.env` is also `.gitignored`. Production secrets come from Kubernetes ExternalSecret injected as environment variables. The only acceptable `!secret` reference is in `appdaemon.yaml` for the HASS plugin.
+`secrets.yaml` is `.gitignored` and must never be committed. `.env` is also `.gitignored`. Production secrets come from Kubernetes ExternalSecret injected as environment variables. The only acceptable `!secret` references are in `appdaemon.yaml` for direct core HASS/MQTT plugin settings: `ha_url`, `token`, `mqtt_host`, `mqtt_user`, and `mqtt_password`. App configs must use environment-variable names.
 
 ## S5 — Test credentials
 
@@ -35,11 +35,12 @@ Never log full tokens or API keys. If credential presence must be logged for deb
 
 ## S7 — Env-var secret resolution for API keys
 
-All API keys and tokens in app configs must use the `_env` key pattern (e.g., `api_key_env: OPENAPI_TOKEN`, `ha_token_env: TOKEN`, `immich_api_key_env: IMMICH_API_KEY`). Providers resolve these at runtime via `providers.secrets.resolve_secret()`. This prevents the AppDaemon admin UI from displaying them. URLs (e.g., `ha_url`, `immich_url`) may use `!secret` from `secrets.yaml` — intercluster endpoints are acceptable there.
+All API keys, tokens, and environment-specific URLs in app configs must use the `_env` key pattern (e.g., `api_key_env: OPENAPI_TOKEN`, `ha_token_env: TOKEN`, `immich_api_key_env: IMMICH_API_KEY`, `ha_url_env: HA_URL`, `immich_url_env: IMMICH_URL`). Providers resolve these at runtime via `providers.secrets.resolve_secret()`. This prevents the AppDaemon admin UI from displaying them. App configs must not use `!secret`; the HASS plugin exclusions below are the only exception.
 
 ### Known exclusions
 
 - `appdaemon/appdaemon.yaml` lines 15–16 (`!secret ha_url`, `!secret token`) — HASS plugin config required by AppDaemon, not app code. These are NOT displayed in the per-app config UI.
+- `appdaemon/appdaemon.yaml` MQTT plugin `client_host`, `client_user`, and `client_password` (`!secret mqtt_host`, `!secret mqtt_user`, `!secret mqtt_password`) — direct core-plugin settings, also absent from per-app config UI. The production ExternalSecret template has the same consumers.
 
 ### Enforcement
 

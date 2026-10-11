@@ -96,7 +96,7 @@ cielo_health_checker:
   module: health_checks.checker_apps.device_group_checker.repairable_device_group_checker
   class: RepairableDeviceGroupChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: cielo
   checker_name: Cielo Home

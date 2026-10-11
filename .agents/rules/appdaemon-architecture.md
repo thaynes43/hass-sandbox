@@ -136,17 +136,17 @@ For full provisioner API details and kwargs, see `.agents/playbooks/ha-provision
 
 ### App config requirements
 
-Apps using `ha_provisioner` need `ha_url` and `ha_token_env` in their `apps-prod.yaml` / `apps-dev.yaml` args:
+Apps using `ha_provisioner` need `ha_url_env` and `ha_token_env` in their `apps-prod.yaml` / `apps-dev.yaml` args:
 
 ```yaml
 my_app:
   module: my_app.my_app_module
   class: MyApp
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
 ```
 
-- `ha_url` uses `!secret ha_url` — resolved from `secrets.yaml` (the HA base URL, not highly sensitive).
+- `ha_url_env` is the **name** of the environment variable containing the HA base URL; resolve it in the provider layer with `providers.secrets.resolve_arg_secret()`.
 - `ha_token_env` is the **name** of an environment variable — the provisioner resolves it at runtime via `providers.secrets.resolve_secret()`.
 
 Production injects env vars via Kubernetes ExternalSecret. Dev uses `.env` (gitignored) loaded by `python-dotenv`.
@@ -387,6 +387,6 @@ When creating a new AppDaemon app with a Lovelace card:
 3. Call `ha_provisioner` on startup to ensure all entities exist.
 4. Card uses `callService("script", "<app>_relay", ...)` for all actions.
 5. AppDaemon listens for `<app>_command` event, routes commands.
-6. Add `ha_url: !secret ha_url` and `ha_token_env: TOKEN` to `apps-dev.yaml` and `apps-prod.yaml`.
+6. Add `ha_url_env: HA_URL` and `ha_token_env: TOKEN` to `apps-dev.yaml` and `apps-prod.yaml`.
 7. If the app generates files for the frontend, follow the `/media/` → `/config/www/` staging pattern (§6). Define a shell command, use `media_fs_root` config, and document the shell command in the README.
 8. Document any manual steps (shell commands, Lovelace resources, `local_file` cameras, directory creation) in the app's README.

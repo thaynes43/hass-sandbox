@@ -29,6 +29,7 @@
 | **alertmanager** | Minimal Prometheus Alertmanager client the health-check controller pages through |
 | **metrics** | Prometheus exporter for the health-check controller: checker status, repairs and checker-supplied values |
 | **ha_provisioner** | Idempotent HA entity provisioning (scripts, helpers), reading and writing the voice-assistant exposure list, plus a check that Home Assistant is really serving a staged `/local/...` file |
+| **health_probes** | HTTP status and reachability probes for the health-check apps |
 | **photo_providers** | Photo source abstraction (Immich implementation) |
 | **school_menu** | Async client for the School Nutrition and Fitness API |
 | **school_schedule** | Finalsite school calendar (ICS) and PowerSchool guardian portal scrapers |

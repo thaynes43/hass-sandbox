@@ -28,6 +28,7 @@ _appdaemon_root = str(Path(__file__).resolve().parents[4])
 if _appdaemon_root not in sys.path:
     sys.path.insert(0, _appdaemon_root)
 
+from providers.secrets import resolve_arg_secret
 from providers.ha_provisioner import HAProvisioner
 from health_checks.checker_apps.device_checker.device_checker import (
     BasicDeviceChecker,
@@ -113,7 +114,7 @@ class RepairableDeviceChecker(AutoRepairConfigMixin, BasicDeviceChecker):
         )
 
     async def _provision_repair_helpers(self) -> None:
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             return

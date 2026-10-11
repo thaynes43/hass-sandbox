@@ -13,6 +13,7 @@ from .types import (
     PhotoFilter,
     PhotoMetadata,
     PhotoPerson,
+    PhotoProviderError,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ class ImmichDataProvider:
         location_aliases: Optional[Dict[str, LocationAlias]] = None,
     ) -> List[str]:
         """Return up to count photo IDs matching the filter."""
+        photo_filter.validate()
         album_id: Optional[str] = None
         if photo_filter.selection == "album" and photo_filter.album_name:
             try:
@@ -102,13 +104,13 @@ class ImmichDataProvider:
                     photo_filter.album_name,
                     exc,
                 )
-                return []
+                raise PhotoProviderError("Could not resolve the requested Immich album") from exc
             if album_id is None:
                 logger.warning(
                     "ImmichDataProvider.fetch_photo_ids: album '%s' not found",
                     photo_filter.album_name,
                 )
-                return []
+                raise PhotoProviderError(f"Album '{photo_filter.album_name}' not found in Immich")
 
         try:
             async with self._create_client() as client:

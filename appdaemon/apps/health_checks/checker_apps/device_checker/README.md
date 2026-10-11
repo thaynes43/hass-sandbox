@@ -55,7 +55,7 @@ Same check config, plus:
 printer_health_checker:
   module: health_checks.checker_apps.device_checker.repairable_device_checker
   class: RepairableDeviceChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: printer
   checker_name: Printer
@@ -104,7 +104,7 @@ idle → pending → in_progress → success → idle     (checks stay healthy)
 movie_room_sonos_health_checker:
   module: health_checks.checker_apps.device_checker.repairable_device_checker
   class: RepairableDeviceChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: movie_room_sonos
   checker_name: Movie Room Sonos

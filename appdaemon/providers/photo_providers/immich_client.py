@@ -6,9 +6,11 @@ Pure-Python – no AppDaemon dependency.  Uses ``aiohttp`` for all I/O.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import aiohttp
+
+from .types import PhotoProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -130,8 +132,8 @@ class ImmichClient:
         """Resolve human-readable names to Immich person UUIDs.
 
         *people_cache* maps ``name -> uuid``; if not supplied the people
-        list is fetched from the API.  Unknown names are logged as warnings
-        and skipped.
+        list is fetched from the API. Unknown names fail closed, preserving
+        the requested person constraint.
         """
         if people_cache is None:
             raw = await self.get_people()
@@ -143,7 +145,7 @@ class ImmichClient:
             if uid:
                 ids.append(uid)
             else:
-                logger.warning("Person '%s' not found in Immich – skipping", name)
+                raise PhotoProviderError(f"Person '{name}' not found in Immich")
         return ids
 
     # -- Albums --------------------------------------------------------------
@@ -233,6 +235,41 @@ class ImmichClient:
         data = await self._json_request("POST", "/api/search/smart", json=body)
         assets_section = data.get("assets", {})
         return assets_section.get("items", [])
+
+    async def iter_search_assets(
+        self, body: dict, *, smart: bool = False,
+    ) -> AsyncIterator[Dict[str, Any]]:
+        """Stream every requested search page without retaining asset metadata.
+
+        Pagination is essential for rare recurring dates: filtering a random
+        sample or only the first semantic-search page can incorrectly be empty.
+        Non-advancing/malformed page tokens fail rather than hanging or silently
+        claiming that an incomplete scan is the whole library.
+        """
+        path = "/api/search/smart" if smart else "/api/search/metadata"
+        page = 1
+        while True:
+            data = await self._json_request("POST", path, json={**body, "page": page})
+            section = data.get("assets") if isinstance(data, dict) else None
+            items = section.get("items") if isinstance(section, dict) else None
+            if not isinstance(items, list) or any(
+                not isinstance(a, dict) or not isinstance(a.get("id"), str) for a in items
+            ):
+                raise PhotoProviderError("Immich returned an invalid search page")
+            for asset in items:
+                yield asset
+            next_page = section.get("nextPage")
+            if next_page is None:
+                return
+            if isinstance(next_page, bool):
+                raise PhotoProviderError("Immich returned an invalid next-page token")
+            try:
+                next_number = int(next_page)
+            except (TypeError, ValueError) as exc:
+                raise PhotoProviderError("Immich returned an invalid next-page token") from exc
+            if next_number <= page:
+                raise PhotoProviderError("Immich search pagination did not advance")
+            page = next_number
 
     # -- Asset download ------------------------------------------------------
 

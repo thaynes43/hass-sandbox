@@ -643,7 +643,7 @@ health_check_controller:
   module: health_checks.controller.health_check_controller
   class: HealthCheckController
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   heartbeat_interval_s: 60
   alert_history_max: 50
@@ -732,7 +732,7 @@ zwave_health_checker:
   module: health_checks.checker_apps.network_protocol_checker.repairable_network_protocol_checker
   class: RepairableNetworkProtocolChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: zwave
   checker_name: Z-Wave
@@ -813,7 +813,7 @@ printer_health_checker:
   module: health_checks.checker_apps.device_checker.repairable_device_checker
   class: RepairableDeviceChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: printer
   checker_name: Printer
@@ -844,7 +844,7 @@ movie_room_sonos_health_checker:
   module: health_checks.checker_apps.device_checker.repairable_device_checker
   class: RepairableDeviceChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: movie_room_sonos
   checker_name: Movie Room Sonos
@@ -863,7 +863,7 @@ fan_health_checker:
   module: health_checks.checker_apps.fan_health_checker.fan_health_checker
   class: FanHealthChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: fans
   checker_name: Ceiling Fans
@@ -1177,7 +1177,7 @@ shade_gateway_checker:
   module: health_checks.checker_apps.shade_gateway_checker.shade_gateway_checker
   class: ShadeGatewayChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: shade_gateway
   checker_name: Shade Gateway
@@ -1315,7 +1315,7 @@ school_lunch_app:
   module: school_lunch_app.school_lunch_app
   class: SchoolLunchApp
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   # District menu URL (…/index.php?sid=<district>&page=menus) from 1Password;
   # the app parses the site id out of it so the district stays out of git.
@@ -1336,7 +1336,7 @@ school_schedule_app:
   module: school_schedule_app.school_schedule_app
   class: SchoolScheduleApp
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   school_name: "Middle School"
   # Finalsite "view all events" page URL for the school calendar; the app
@@ -1359,7 +1359,7 @@ school_schedule_app:
 spa_health_checker:
   module: health_checks.checker_apps.spa_health_checker.spa_health_checker
   class: SpaHealthChecker
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: spa
   checker_name: Spa
@@ -1387,7 +1387,7 @@ protect_health_checker:
   module: health_checks.checker_apps.protect_health_checker.protect_health_checker
   class: ProtectHealthChecker
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   checker_id: protect
   checker_name: UniFi Protect
@@ -1440,7 +1440,7 @@ media_dashboard_app:
   module: media_dashboard_app.media_dashboard_app
   class: MediaDashboardApp
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   # Tautulli — Plex Movies + Plex Shows
   tautulli_url_env: TAUTULLI_URL
@@ -1485,7 +1485,7 @@ countdown_app:
   module: countdown_app.countdown_app
   class: CountdownApp
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   ai_provider_conf:
     image: openai-countdown
@@ -1549,7 +1549,7 @@ assist_exposure_guard:
   module: assist_exposure_guard.assist_exposure_guard
   class: AssistExposureGuard
   disable: true
-  ha_url: !secret ha_url
+  ha_url_env: HA_URL
   ha_token_env: TOKEN
   check_interval_minutes: 15
   # true = un-expose violators automatically; false = report only.

@@ -58,6 +58,7 @@ if _appdaemon_root not in sys.path:
 
 import hassapi as hass
 
+from providers.secrets import resolve_arg_secret
 from providers.ha_provisioner import HAProvisioner
 from shared.auto_repair_config import AutoRepairConfigMixin
 from shared.check_utils import apply_cross_check_per_device, ping_check
@@ -221,7 +222,7 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         )
 
     async def _provision_entities(self) -> None:
-        ha_url = self.args.get("ha_url")
+        ha_url = resolve_arg_secret(self.args, "ha_url", default="")
         ha_token_env = self.args.get("ha_token_env")
         if not ha_url or not ha_token_env:
             self.log(

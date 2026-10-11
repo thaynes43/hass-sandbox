@@ -18,7 +18,7 @@ from providers.photo_providers.immich_selectors import (
     SearchSelector,
     create_selector,
 )
-from providers.photo_providers.types import LocationAlias, PhotoFilter
+from providers.photo_providers.types import LocationAlias, PhotoFilter, PhotoProviderError
 
 
 # ---------------------------------------------------------------------------
@@ -157,14 +157,14 @@ class TestAllPhotosSelector:
         client.search_random.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_missing_person_skipped(self, client: ImmichClient):
+    async def test_missing_person_rejected(self, client: ImmichClient):
         pf = PhotoFilter(
             name="Missing", selection="all_photos",
             people=["Alice", "Unknown"],
         )
         sel = AllPhotosSelector(client, pf, people_map=PEOPLE_MAP)
-        body = sel.build_request_body(5)
-        assert body["personIds"] == ["uuid-alice"]
+        with pytest.raises(PhotoProviderError, match="Unknown people: Unknown"):
+            sel.build_request_body(5)
 
 
 # ---------------------------------------------------------------------------

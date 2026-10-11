@@ -20,7 +20,7 @@ Scan `appdaemon/apps/apps-prod.yaml` and `appdaemon/apps/apps-dev.yaml` for:
 
 **Rules:**
 
-- The only acceptable `!secret` references are in `appdaemon.yaml` for the HASS plugin (lines 15–16).
+- The only acceptable `!secret` references are in `appdaemon.yaml` for the core HASS and MQTT plugins (HA URL/token and MQTT host/user/password). App configs must use environment-variable names.
 - All credential config keys in app YAMLs must use the `_env` suffix pattern (e.g., `api_key_env: OPENAI_API_KEY`, `ha_url_env: HA_URL`).
 
 **PASS:** No `!secret` usage in app configs; all credential or environment-specific config uses `_env` keys. **FAIL:** Any `!secret` usage in app configs; report file and line.
@@ -39,11 +39,15 @@ If that file is unavailable, inspect any other committed template source that re
 - Only these keys are allowed in committed `secrets.yaml` templates:
   - `ha_url`
   - `token`
+  - `mqtt_host`
+  - `mqtt_user`
+  - `mqtt_password`
+- Verify that each allowed key is consumed directly by the core HASS or MQTT plugin in `appdaemon.yaml`; the allowlist is not permission to expose credentials through app arguments.
 - Any other environment-specific path or service URL must NOT live in `secrets.yaml`.
   Examples: `media_fs_root`, `immich_url`, `comfyui_url`, `ollama_url`
 - Those values must instead be exposed as plain env vars and consumed through project-level `_env` config or provider bundle `*_env` settings.
 
-**PASS:** `secrets.yaml` template contains only `ha_url` and `token`. **FAIL:** Any additional key is present; report file and key names.
+**PASS:** `secrets.yaml` template contains only the five allowed HASS/MQTT keys, with direct core-plugin consumers verified. **FAIL:** Any other key or app-level consumer is present; report file and key names.
 
 ## Step 3 — Provider boundary check
 

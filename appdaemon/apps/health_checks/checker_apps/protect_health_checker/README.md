@@ -17,7 +17,7 @@ Discovery renders a Jinja2 template against live HA that lists every `binary_sen
 
 - **ok** — N event sensors discovered
 - **warning** — template render failed but a cached sensor list from a previous cycle is available (falls back to per-entity `get_state`)
-- **critical** — no event sensors found (config entry not loaded?), or no `ha_url`/`ha_token_env` and no `motion_entities` override
+- **critical** — no event sensors found (config entry not loaded?), or no `ha_url_env`/`ha_token_env` and no `motion_entities` override
 
 Setting `motion_entities` skips template discovery entirely and monitors exactly that list (all treated as the camera group).
 
@@ -95,7 +95,7 @@ Auto-repair reloads at most once per `reload_cooldown_s` (default 1/hour) — pe
 - Only sustained **critical** triggers auto-repair — **warning** and **unknown** never do
 - A repair in progress suppresses auto-repair evaluation entirely
 - **success**/**failed** states clear back to **idle** automatically once all checks pass
-- Without admin access (`ha_url`/`ha_token_env`), repair immediately reports **failed** instead of pretending
+- Without admin access (`ha_url_env`/`ha_token_env`), repair immediately reports **failed** instead of pretending
 
 ## Self-Provisioned Entities
 
@@ -112,7 +112,7 @@ On **first provision**, the toggle is turned on when `auto_repair_enabled_defaul
 protect_health_checker:
   module: health_checks.checker_apps.protect_health_checker.protect_health_checker
   class: ProtectHealthChecker
-  ha_url: !secret ha_url                  # Required for discovery + reload
+  ha_url_env: HA_URL                  # Required for discovery + reload
   ha_token_env: TOKEN                     # Env var NAME holding a long-lived admin token
   checker_id: protect                     # Unique ID (default: protect)
   checker_name: UniFi Protect             # Display name on cards (default: UniFi Protect)
