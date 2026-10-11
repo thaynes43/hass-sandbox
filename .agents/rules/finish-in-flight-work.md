@@ -39,8 +39,9 @@ Every one of them cost a second session to redo. This rule exists so that stops.
    or audit job's service failure is not a finding. Automated AI reviews and
    audits are optional and advisory; unavailable, failed, skipped, or pending
    AI jobs do not block merging or deployment and need no owner approval.
-   Read findings from current and earlier runs, complete an independent native
-   agent review when AI review is unavailable, and record it in the PR.
+   Read findings from current and earlier runs. Review the diff and relevant
+   documentation yourself, and use an independent native agent review when
+   available. Record the review, validation and AI availability in the PR.
    Required tests, lint, builds, security checks, and substantive findings still
    need to pass or be resolved. See `git-workflow.md` for the full policy.
 3. **Merged is not done.** If the repo has a deploy chain after merge — image tag

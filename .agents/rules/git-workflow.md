@@ -62,7 +62,7 @@ Claude Code Review, Agent Docs Audit, Docs Site Audit, and all other automated A
 
 An AI job that is unavailable, failed, skipped, or still pending does not block delivery and needs no owner approval. This includes quota exhaustion, authentication failure, provider outage, workflow setup failure, timeout, and turn-budget exhaustion. Do not keep retrying or waiting for an AI service once the change is otherwise ready.
 
-Read findings already posted by current and earlier runs, even when the job failed. Fix each substantive finding or respond on the PR with a concrete reason it is wrong or does not apply. When AI review is unavailable, complete an independent native agent review of the change and relevant documentation, then record that review, the AI availability status, and validation in the PR before merging.
+Read findings already posted by current and earlier runs, even when the job failed. Fix each substantive finding or respond on the PR with a concrete reason it is wrong or does not apply. Review the diff and relevant documentation yourself, and use an independent native agent review when available. Record the review, validation and AI availability in the PR before merging. Native agent availability does not add a merge or deployment gate.
 
 Required tests, lint, documentation and image builds, security checks, runtime verification, and deploy verification remain mandatory. AI unavailability does not excuse their failure or unresolved substantive findings.
 
@@ -129,7 +129,7 @@ Agents (Claude Code, Cursor, etc.) creating PRs from local sessions must:
 4. Create the PR **ready for review** (`gh pr create`, never `--draft`)
 5. Include a test plan in the PR body: what was verified live and how, plus a **Not verified** line for anything that could not be
 6. Reference the issue/story if one exists
-7. Wait for required tests and builds, complete applicable lint and security checks, read available AI findings, and use an independent native agent review when AI review is unavailable. Address substantive findings, then squash-merge the PR yourself and delete the branch; no owner approval is needed for AI unavailability
+7. Wait for required tests and builds, complete applicable lint and security checks, and read available AI findings. Review the diff and relevant documentation yourself, and use an independent native agent review when available. Record the review, validation and AI availability in the PR. Address substantive findings, then squash-merge the PR yourself and delete the branch; no owner approval is needed for AI unavailability
 8. Finish the deploy chain (Workflow step 6; for card JS, the copy into the HA pod plus the `?v=N` bump) in the same session — merged is not done. `.agents/rules/finish-in-flight-work.md`.
 
 PRs created by agents via GitHub (e.g. `@claude` in issues) open as ready immediately — Code Review will run on those automatically.

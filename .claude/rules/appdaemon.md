@@ -8,7 +8,7 @@ When working in `appdaemon/`, read these for full detail:
 - `.agents/rules/ai-provider-architecture-guidelines.md` — capability bundles, model settings, prompt policy layering
 - `.agents/rules/logging-standards.md` — log levels, required logging points, formatting conventions
 - `.agents/rules/security-policy.md` — always applies; see also `.claude/rules/security.md`
-- `.agents/rules/git-workflow.md` — branching, required validation, optional AI reviews and audits, commit conventions
+- `.agents/rules/git-workflow.md` — branching, required validation and self-review, optional AI reviews and audits, independent native review when available, commit conventions
 - `.agents/rules/finish-in-flight-work.md` — always applies; finish, merge and deploy everything you start or find, no follow-up hand-offs
 
 ## Key decisions to know before coding
