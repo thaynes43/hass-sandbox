@@ -1,9 +1,7 @@
 """Attach haynesnetwork's "Watch history" MCP API to the Movie Room agent, or roll it back.
 
-AGENT=phone or AGENT=rumpus (on any action) works on the Phone Assist or Rumpus Room agent instead;
-they carry the same block. A fourth holder is out of reach: the local Jarvis agent
-(conversation.muse_glimmer_30b, a llama_cpp subentry) carries a variant with the web-search clause
-removed. After a WATCH_BLOCK change, edit it by hand (agent-docs/voice-agent-prompts.md, Movie Room section).
+AGENT=phone, AGENT=rumpus or AGENT=jarvis (on any action) selects the Phone Assist,
+Rumpus Room or idle local Jarvis agent instead; all four holders carry the same block.
 A PROMPT_FILE whose name marks it as a backup of any other subentry is refused.
 
 Runs INSIDE the Home Assistant pod via run.sh (the HA token arrives on stdin as HA_TOKEN and is
@@ -42,7 +40,7 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
   ACTION=update PROMPT_FILE=<its backup> (its block back in place, the API kept). A detach has no
   exact undo: ACTION=attach attaches again with the current WATCH_BLOCK. Once /tmp is gone, restore
   the backup's prompt by hand in HA's UI (the agent's Instructions field).
-- attach / update / detach: the OpenAI conversation subentry's reconfigure flow, REST only. HA has no
+- attach / update / detach: the conversation subentry's reconfigure flow, REST only. HA has no
   websocket command for subentry flows, and the websocket `config_entries/subentries/update`
   changes the title only. (components/openai_conversation/config_flow.py OpenAISubentryFlowHandler)
   POST /api/config/config_entries/subentries/flow {"handler": [entry_id, "conversation"], "subentry_id": id}
@@ -52,9 +50,12 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
      service_tier, web_search, search_context_size, user_location, inline_citations
      (the set depends on chat_model)
   -> abort "reconfigure_successful" (the subentry data is replaced by the flow's options).
+  Jarvis uses components/llama_cpp/config_flow.py: one "init" form with prompt, llm_hass_api,
+  chat_model and recommended, plus model parameters when recommended is false. The same guarded
+  flow submits every field unchanged apart from the prompt/API action.
   Every field of every form is submitted with its CURRENT value: an omitted field takes its schema
   default (max_tokens would fall to 3000). Each form's suggested values (HA's live copy) are checked
-  against the .storage backup before anything is submitted. Only the final "model" submit writes. Any
+  against the .storage backup before anything is submitted. Only the final submit writes. Any
   earlier stop DELETEs the flow and nothing changes.
 
 Known limits:
@@ -62,7 +63,7 @@ Known limits:
   OpenAI to reverse-geocode zone.home, and country/timezone from HA's config. No flow path skips
   that, so those four keys may be rewritten. The stored data is diffed afterwards and any drift is
   printed.
-- Saving the subentry fires the OpenAI entry's update listener, which reloads the entry: every
+- Saving the subentry fires the conversation entry's update listener, which reloads the entry: every
   agent under it is briefly unavailable.
 - attach and update need the mcp entry LOADED: the llm_hass_api selector only accepts registered
   API ids.
@@ -96,16 +97,18 @@ DRY_RUN = os.environ.get("DRY_RUN", "") not in ("", "0")  # ACTION=update only
 # change only the prompt. Without it that state refuses, because a mistyped ENTRY_ID looks the same.
 BLOCK_ONLY = os.environ.get("BLOCK_ONLY", "") not in ("", "0")
 
-# The agents that carry WATCH_BLOCK: (OpenAI config entry, conversation subentry, label).
+# The agents that carry WATCH_BLOCK: (config entry, conversation subentry, label).
 AGENTS = {
     "movie": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCRND9599AR8EFJVN0A", "Movie Room"),  # "Movie Room ChatGPT"
     "phone": ("01JBM33KVTM1FHF795G01R2C4X", "01M3FWW3MMFE079D9A7F2NF66F", "Phone Assist"),  # "Phone Assist"
     "rumpus": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCR5ZFTVM61SG13HVFR", "Rumpus Room"),  # "Rumpus Room ChatGPT"
+    "jarvis": ("01M34TQMBVCKW0BG0KZW5JG5YM", "01M34TQMBVMNR9CJZX892KD8VJ", "Jarvis"),  # "Muse Glimmer 30b"
 }
 AGENT = os.environ.get("AGENT", "movie")
 if AGENT not in AGENTS:
     raise SystemExit(f"AGENT={AGENT!r} is not one of {', '.join(AGENTS)}")
-OPENAI_ENTRY, SUBENTRY, AGENT_LABEL = AGENTS[AGENT]
+CONVERSATION_ENTRY, SUBENTRY, AGENT_LABEL = AGENTS[AGENT]
+AGENT_DOMAIN = "llama_cpp" if AGENT == "jarvis" else "openai_conversation"
 SUBFLOW = "/api/config/config_entries/subentries/flow"
 FLOW = "/api/config/config_entries/flow"
 EXPECTED_TITLE = "Watch history"
@@ -114,7 +117,7 @@ EXPECTED_TITLE = "Watch history"
 # agent-docs/voice-agent-prompts.md (the Phone Assist section points at that copy rather than
 # repeating it). Change both together, and move the text it replaces, verbatim, into
 # PREVIOUS_WATCH_BLOCKS so ACTION=update recognises the copy that is live in HA; then run the update
-# once per agent in AGENTS, and hand-edit the local Jarvis agent's variant (not reachable from here).
+# once per agent in AGENTS.
 WATCH_BLOCK = """WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
 - "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": read viewing_context for personal viewing and explicit feedback (plays do not prove liking or completion). Discover broadly with available web or catalog tools, check_titles against personal records, verify current regional streaming or rental availability, then choose and explain for his request. Use dated, attributable evidence for current buzz. Plex and watchlist membership are context, restricting choices only when he explicitly asks. recommend is a limited cached ledger/watchlist/TMDB candidate pool, not broad discovery; without broad discovery tools, say that scope plainly. No recorded viewing is not proof of never watched. Say at most three titles, each with a few words on why.
@@ -133,6 +136,13 @@ PREVIOUS_WATCH_BLOCKS = [
     # 2026-09-26: the nine-tool cached recommendation workflow, replaced by ADR-107
     """WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
+- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
+- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
+- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
+- His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download.""",
+    # 2026-09-26: Jarvis's nine-tool block omitted the first bullet's web-search clause.
+    """WATCH HISTORY
+- The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess. If someone else asks about their own viewing, say you only know Tom's.
 - "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
 - When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
 - "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
@@ -161,12 +171,12 @@ def load_entries() -> list[dict]:
 
 def get_subentry(entries: list[dict]) -> dict:
     for e in entries:
-        if e["entry_id"] == OPENAI_ENTRY:
+        if e["entry_id"] == CONVERSATION_ENTRY:
             for s in e.get("subentries", []):
                 if s["subentry_id"] == SUBENTRY:
                     return s
-            raise Refused(f"subentry {SUBENTRY} not found under {OPENAI_ENTRY}")
-    raise Refused(f"config entry {OPENAI_ENTRY} not found")
+            raise Refused(f"subentry {SUBENTRY} not found under {CONVERSATION_ENTRY}")
+    raise Refused(f"config entry {CONVERSATION_ENTRY} not found")
 
 
 def mcp_entries(entries: list[dict]) -> list[dict]:
@@ -258,7 +268,7 @@ async def cancel(s: aiohttp.ClientSession, flow_path: str, flow_id: str) -> None
 async def status(s: aiohttp.ClientSession) -> None:
     entries = load_entries()
     states = await entry_states(s, "mcp")
-    openai_state = (await entry_states(s, "openai_conversation")).get(OPENAI_ENTRY, "missing")
+    conversation_state = (await entry_states(s, AGENT_DOMAIN)).get(CONVERSATION_ENTRY, "missing")
     sub = get_subentry(entries)
     apis = sub["data"].get("llm_hass_api") or []
     print("== mcp config entries")
@@ -269,7 +279,7 @@ async def status(s: aiohttp.ClientSession) -> None:
         eid = e["entry_id"]
         tag = f" | ATTACHED to the {AGENT_LABEL} agent" if f"mcp-{eid}" in apis else ""
         print(f"   {eid} | {e['title']} | url={shown_url(e['data'].get('url'))} | state={states.get(eid, '?')} | llm api mcp-{eid}{tag}")
-    print(f"== {OPENAI_ENTRY} (state={openai_state}) subentry {SUBENTRY} ({sub['subentry_type']}) {sub['title']!r}")
+    print(f"== {CONVERSATION_ENTRY} (state={conversation_state}) subentry {SUBENTRY} ({sub['subentry_type']}) {sub['title']!r}")
     print("   llm_hass_api:", json.dumps(apis))
     prompt = sub["data"].get("prompt", "")
     print("   prompt length:", len(prompt))
@@ -363,7 +373,7 @@ def load_backup_prompt(path: str) -> str:
 
 async def reconfigure(s: aiohttp.ClientSession, current: dict, target: dict, need_apis: list[str]) -> None:
     """Drive the subentry reconfigure flow, submitting `target` for every field each form shows."""
-    st, r = await req(s, "POST", SUBFLOW, {"handler": [OPENAI_ENTRY, "conversation"], "subentry_id": SUBENTRY})
+    st, r = await req(s, "POST", SUBFLOW, {"handler": [CONVERSATION_ENTRY, "conversation"], "subentry_id": SUBENTRY})
     if st != 200 or not isinstance(r, dict):
         raise Refused(f"subentry flow start failed: HTTP {st} {summarize(r)}")
     flow_id = r.get("flow_id")
@@ -430,13 +440,13 @@ async def verify(s: aiohttp.ClientSession, before: dict, target: dict) -> None:
     for k in drift:
         why = "re-derived by the flow's location lookup" if k in LOCATION_KEYS else "UNEXPECTED"
         print(f"   CHANGED {k}: {before.get(k, '<absent>')!r} -> {after.get(k, '<absent>')!r} ({why})")
-    print("   OpenAI entry after its reload:", await wait_state(s, "openai_conversation", OPENAI_ENTRY, "loaded", 60))
+    print("   Conversation entry after its reload:", await wait_state(s, AGENT_DOMAIN, CONVERSATION_ENTRY, "loaded", 60))
 
 
-async def require_openai_loaded(s: aiohttp.ClientSession) -> None:
-    openai_state = (await entry_states(s, "openai_conversation")).get(OPENAI_ENTRY)
-    if openai_state != "loaded":
-        raise Refused(f"OpenAI entry is {openai_state}; its subentry flow aborts unless the entry is loaded")
+async def require_conversation_loaded(s: aiohttp.ClientSession) -> None:
+    conversation_state = (await entry_states(s, AGENT_DOMAIN)).get(CONVERSATION_ENTRY)
+    if conversation_state != "loaded":
+        raise Refused(f"Conversation entry is {conversation_state}; its subentry flow aborts unless the entry is loaded")
 
 
 async def require_mcp_loaded(s: aiohttp.ClientSession) -> None:
@@ -447,7 +457,7 @@ async def require_mcp_loaded(s: aiohttp.ClientSession) -> None:
 
 async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_prompt: str, need_apis: list[str],
                  undo: str) -> None:
-    await require_openai_loaded(s)
+    await require_conversation_loaded(s)
     backup(current, undo)
     target = dict(current, llm_hass_api=new_api, prompt=new_prompt)
     await reconfigure(s, current, target, need_apis)
@@ -594,7 +604,7 @@ async def update(s: aiohttp.ClientSession) -> None:
     print(f"   llm_hass_api stays {json.dumps(api)}")
     await require_mcp_loaded(s)
     if DRY_RUN:
-        await require_openai_loaded(s)
+        await require_conversation_loaded(s)
         print("DRY_RUN: no flow started, nothing changed")
         return
     undo = f"{run_line('update', ' PROMPT_FILE={path}')} puts this block back in place and keeps the API"
