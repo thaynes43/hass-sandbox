@@ -1,0 +1,36 @@
+name: Voice Watch Helper Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/voice-bench/attach_watch_history.py"
+      - "scripts/voice-bench/test_attach_watch_history.py"
+      - ".github/workflows/voice-watch-helper-tests.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/voice-bench/attach_watch_history.py"
+      - "scripts/voice-bench/test_attach_watch_history.py"
+      - ".github/workflows/voice-watch-helper-tests.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: voice-watch-helper-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  voice-watch-helper:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install the helper's HA transport dependency
+        run: python -m pip install 'aiohttp>=3.9,<4'
+      - name: Run focused guard and readback tests serially
+        run: nice -n 19 python -m unittest discover -s scripts/voice-bench -p test_attach_watch_history.py -v
