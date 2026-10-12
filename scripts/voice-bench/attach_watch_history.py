@@ -38,9 +38,11 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
   that undoes them. An attach made from a prompt with no block is undone by
   ACTION=detach PROMPT_FILE=<its backup> (the prompt byte for byte, the API removed); an update by
   ACTION=update PROMPT_FILE=<its backup> (its block back in place, the API kept). A detach has no
-  exact undo: ACTION=attach attaches again with the current WATCH_BLOCK. Once /tmp is gone, restore
-  the backup's prompt by hand in HA's UI (the agent's Instructions field).
-- attach / update / detach: the conversation subentry's reconfigure flow, REST only. HA has no
+  exact undo: ACTION=attach attaches again with the current WATCH_BLOCK. Preserve backups outside the pod's /tmp before a restart. Restore through this helper with the temporary native maintenance action for OpenAI agents whose web search and user location are enabled; the same guard applies to undo.
+- attach / update / detach: prefer the temporary native maintenance action, with a complete-data
+  hash checked before writing and complete stored data checked afterwards. Its atomic update changes
+  only the prompt and, when requested, the one fixed Watch history API membership. Without it,
+  safe OpenAI configurations and Jarvis use the conversation subentry's reconfigure flow, REST only. HA has no
   websocket command for subentry flows, and the websocket `config_entries/subentries/update`
   changes the title only. (components/openai_conversation/config_flow.py OpenAISubentryFlowHandler)
   POST /api/config/config_entries/subentries/flow {"handler": [entry_id, "conversation"], "subentry_id": id}
@@ -59,10 +61,7 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
   earlier stop DELETEs the flow and nothing changes.
 
 Known limits:
-- With web_search and user_location both on, the "model" submit re-derives city/region by asking
-  OpenAI to reverse-geocode zone.home, and country/timezone from HA's config. No flow path skips
-  that, so those four keys may be rewritten. The stored data is diffed afterwards and any drift is
-  printed.
+- For OpenAI agents with web search and user location enabled, use the temporary native maintenance action in the haynes-ops runbook hnet-watch-subentry-maintenance.md; the helper refuses the official reconfigure flow because it recalculates city. The maintenance action changes only the prompt and, when requested, the Watch history attachment in one update, then verifies the complete subentry data.
 - Saving the subentry fires the conversation entry's update listener, which reloads the entry: every
   agent under it is briefly unavailable.
 - attach and update need the mcp entry LOADED: the llm_hass_api selector only accepts registered
@@ -74,14 +73,13 @@ Known limits:
 
 import asyncio
 import datetime
+import hashlib
 import json
 import os
 import re
 import sys
 
 import aiohttp
-
-sys.stdout.reconfigure(errors="backslashreplace")
 
 TOK = os.environ["HA_TOKEN"]
 BASE = "http://localhost:8123"
@@ -112,6 +110,8 @@ AGENT_DOMAIN = "llama_cpp" if AGENT == "jarvis" else "openai_conversation"
 SUBFLOW = "/api/config/config_entries/subentries/flow"
 FLOW = "/api/config/config_entries/flow"
 EXPECTED_TITLE = "Watch history"
+WATCH_API = "mcp-01M381GTWER1BG9K4MWG3GDEGR"
+MAINTENANCE = "hnet_watch_maintenance"
 
 # Byte-identical copy of the fenced block under "Movie Room — watch history" in
 # agent-docs/voice-agent-prompts.md (the Phone Assist section points at that copy rather than
@@ -151,7 +151,6 @@ PREVIOUS_WATCH_BLOCKS = [
 WATCH_HEADER = WATCH_BLOCK.splitlines()[0]  # "WATCH HISTORY"
 SEP = "\n\n"  # one blank line between the existing prompt and the block
 
-LOCATION_KEYS = ("city", "region", "country", "timezone")  # re-derived by the "model" step
 # A key is credential-like when it contains one of CRED_WORDS or one of its _-separated words is in
 # CRED_PARTS: a bare "token" or "key" field counts, "max_tokens" does not.
 CRED_WORDS = ("api_key", "apikey", "password", "passwd", "secret", "access_token", "refresh_token")
@@ -209,7 +208,7 @@ def block_state(prompt: str) -> str:
     if not spans:
         return "absent"
     if len(spans) > 1:
-        return f"{len(spans)} WATCH HISTORY headers (unexpected: fix the prompt by hand)"
+        return f"{len(spans)} WATCH HISTORY headers (unexpected: correct the prompt with the guarded native maintenance action)"
     text = prompt[spans[0][0]:spans[0][1]]
     if text == WATCH_BLOCK:
         return "present (current text)"
@@ -373,6 +372,7 @@ def load_backup_prompt(path: str) -> str:
 
 async def reconfigure(s: aiohttp.ClientSession, current: dict, target: dict, need_apis: list[str]) -> None:
     """Drive the subentry reconfigure flow, submitting `target` for every field each form shows."""
+    refuse_location_flow(current, target)
     st, r = await req(s, "POST", SUBFLOW, {"handler": [CONVERSATION_ENTRY, "conversation"], "subentry_id": SUBENTRY})
     if st != 200 or not isinstance(r, dict):
         raise Refused(f"subentry flow start failed: HTTP {st} {summarize(r)}")
@@ -427,20 +427,91 @@ async def verify(s: aiohttp.ClientSession, before: dict, target: dict) -> None:
             after = dict(get_subentry(load_entries())["data"])
         except ValueError:  # caught the file mid-write: read again next second
             continue
-        if after.get("llm_hass_api") == target["llm_hass_api"] and after.get("prompt") == target["prompt"]:
+        if data_hash(after) == data_hash(target):
             break
+        if after.get("llm_hass_api") == target.get("llm_hass_api") and after.get("prompt") == target.get("prompt"):
+            changed = sorted(k for k in set(target) | set(after)
+                             if k not in target or k not in after or data_hash(target[k]) != data_hash(after[k]))
+            raise Refused(f"complete subentry readback differs from the target in keys {changed}; no further mutation attempted")
     else:
-        print("WARNING: .storage did not show the new values within 20 s; run ACTION=status")
+        raise Refused("complete subentry readback did not match the target within 20 s; no further mutation attempted")
     print("   llm_hass_api now:", json.dumps(after.get("llm_hass_api")))
     print(f"   prompt length now: {len(after.get('prompt', ''))} (was {len(before.get('prompt', ''))})")
-    drift = sorted(k for k in set(before) | set(after)
-                   if k not in ("prompt", "llm_hass_api") and before.get(k, "<absent>") != after.get(k, "<absent>"))
-    if not drift:
-        print("   every other key kept its value")
-    for k in drift:
-        why = "re-derived by the flow's location lookup" if k in LOCATION_KEYS else "UNEXPECTED"
-        print(f"   CHANGED {k}: {before.get(k, '<absent>')!r} -> {after.get(k, '<absent>')!r} ({why})")
-    print("   Conversation entry after its reload:", await wait_state(s, AGENT_DOMAIN, CONVERSATION_ENTRY, "loaded", 60))
+    print("   complete subentry data matches the target; every other key kept its value")
+    state = await wait_state(s, AGENT_DOMAIN, CONVERSATION_ENTRY, "loaded", 60)
+    print("   Conversation entry after its reload:", state)
+    if state != "loaded":
+        raise Refused("Conversation entry did not finish reloading; no further mutation attempted")
+
+
+def data_hash(data) -> str:
+    """Same canonical full-data hash as the narrow native maintenance integration."""
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def refuse_location_flow(current: dict, target: dict) -> None:
+    if AGENT_DOMAIN != "openai_conversation":
+        return
+    for data in (current, target):
+        if data.get("web_search") and (data.get("user_location") or data.get("web_search_user_location")):
+            raise Refused("OpenAI web search with user location enabled requires the temporary native maintenance action; "
+                          "the official reconfigure flow recalculates city and has not been started. "
+                          "See haynes-ops runbook hnet-watch-subentry-maintenance.md")
+
+
+async def maintenance_command(s: aiohttp.ClientSession, operation: str, **fields) -> dict | None:
+    """One bounded admin WS request; only an absent status command permits safe-flow fallback."""
+    try:
+        async with asyncio.timeout(15):
+            async with s.ws_connect(f"{BASE}/api/websocket", max_msg_size=8192) as ws:
+                greeting = await ws.receive_json()
+                if not isinstance(greeting, dict) or greeting.get("type") != "auth_required":
+                    raise Refused("native maintenance websocket did not request authentication")
+                await ws.send_json({"type": "auth", "access_token": TOK})
+                auth = await ws.receive_json()
+                if not isinstance(auth, dict) or auth.get("type") != "auth_ok":
+                    raise Refused("native maintenance websocket authentication failed")
+                await ws.send_json({"id": 1, "type": f"{MAINTENANCE}/{operation}", "agent": AGENT, **fields})
+                response = await ws.receive_json()
+    except (aiohttp.ClientError, TimeoutError, ValueError) as ex:
+        raise Refused("native maintenance request failed; no official reconfigure flow attempted") from ex
+    if not isinstance(response, dict) or response.get("id") != 1 or response.get("type") != "result":
+        raise Refused("native maintenance returned an invalid response")
+    if response.get("success") is not True:
+        error = response.get("error")
+        code = error.get("code") if isinstance(error, dict) else None
+        if operation == "status" and code == "unknown_command":
+            return None
+        if code == "conflict":
+            raise Refused("native maintenance rejected a stale or concurrent subentry change; take a fresh snapshot")
+        raise Refused("native maintenance action unavailable or refused; no official reconfigure flow attempted")
+    result = response.get("result")
+    if not isinstance(result, dict) or not isinstance(result.get("hash"), str) or not re.fullmatch(r"[0-9a-f]{64}", result["hash"]):
+        raise Refused("native maintenance returned an invalid data hash")
+    if operation == "status":
+        if result.get("status") != "loaded":
+            raise Refused("native maintenance reports that the conversation entry is not loaded")
+    elif result.get("status") not in ("updated", "unchanged") or type(result.get("changed")) is not bool:
+        raise Refused("native maintenance returned an invalid update result")
+    return result
+
+
+def native_attachment(current: dict, target: dict) -> str:
+    """Express only the fixed Watch history membership; preserve every other value and API order."""
+    expected = dict(current, prompt=target["prompt"])
+    if data_hash(expected) == data_hash(target):
+        return "keep"
+    apis = current.get("llm_hass_api")
+    if not isinstance(apis, list) or not all(isinstance(api, str) for api in apis):
+        raise Refused("native maintenance cannot change this API list")
+    attached = apis if WATCH_API in apis else [*apis, WATCH_API]
+    detached = [api for api in apis if api != WATCH_API]
+    for action, wanted in (("attach", attached), ("detach", detached)):
+        expected = dict(current, prompt=target["prompt"], llm_hass_api=wanted)
+        if data_hash(expected) == data_hash(target):
+            return action
+    raise Refused("native maintenance accepts only the fixed Watch history attachment; every other field and API must be preserved")
 
 
 async def require_conversation_loaded(s: aiohttp.ClientSession) -> None:
@@ -458,11 +529,29 @@ async def require_mcp_loaded(s: aiohttp.ClientSession) -> None:
 async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_prompt: str, need_apis: list[str],
                  undo: str) -> None:
     await require_conversation_loaded(s)
-    backup(current, undo)
     target = dict(current, llm_hass_api=new_api, prompt=new_prompt)
-    await reconfigure(s, current, target, need_apis)
-    print("subentry updated")
+    native = await maintenance_command(s, "status")
+    if native is None:
+        refuse_location_flow(current, target)
+        backup(current, undo)
+        await reconfigure(s, current, target, need_apis)
+    else:
+        if native["hash"] != data_hash(current):
+            raise Refused("native maintenance data hash differs from the snapshot; take a fresh snapshot before changing anything")
+        attachment = native_attachment(current, target)
+        if not isinstance(new_prompt, str) or not 1 <= len(new_prompt) <= 8000:
+            raise Refused("native maintenance prompt must contain 1 to 8000 characters")
+        backup(current, undo)
+        args = {"prompt": new_prompt, "expected_sha256": native["hash"]}
+        if attachment != "keep":
+            args["watch_attachment"] = attachment
+        result = await maintenance_command(s, "replace_prompt", **args)
+        changed = data_hash(current) != data_hash(target)
+        if (result is None or result["hash"] != data_hash(target) or result["changed"] != changed
+                or result["status"] != ("updated" if changed else "unchanged")):
+            raise Refused("native maintenance update result does not match the complete target; no further mutation attempted")
     await verify(s, current, target)
+    print("subentry updated and complete data verified")
 
 
 def need_entry_id() -> str:
@@ -523,7 +612,7 @@ async def attach(s: aiohttp.ClientSession) -> None:
     current = dict(get_subentry(entries)["data"])
     api = list(current.get("llm_hass_api") or [])
     prompt = current.get("prompt", "")
-    block = one_block(prompt, "fix it by hand")
+    block = one_block(prompt, "correct it with the guarded native maintenance action")
     if block and block[2] in PREVIOUS_WATCH_BLOCKS:
         if api_id in api:
             raise Refused("the prompt carries an earlier WATCH HISTORY block and the API is attached; "
@@ -531,7 +620,7 @@ async def attach(s: aiohttp.ClientSession) -> None:
         raise Refused(f"the prompt carries an earlier WATCH HISTORY block and llm_hass_api lacks {api_id}; "
                       + detach_then_attach(api, api_id))
     if block and block[2] != WATCH_BLOCK:
-        raise Refused("the prompt already has a WATCH HISTORY block with different text; fix it by hand or detach with PROMPT_FILE first")
+        raise Refused("the prompt already has a WATCH HISTORY block with different text; use the guarded native maintenance action or detach with PROMPT_FILE first")
     if block:
         new_prompt = prompt
     elif not prompt:
@@ -572,15 +661,15 @@ async def update(s: aiohttp.ClientSession) -> None:
                           "that attach took from a prompt with no block is restored by ACTION=detach with this PROMPT_FILE")
         target = backed_up[2]
         if target not in known:
-            raise Refused(f"{PROMPT_FILE}'s WATCH HISTORY block matches no copy in this script; restore it by hand")
-    block = one_block(prompt, "fix it by hand")
+            raise Refused(f"{PROMPT_FILE}'s WATCH HISTORY block matches no copy in this script; restore it with the guarded native maintenance action")
+    block = one_block(prompt, "correct it with the guarded native maintenance action")
     if api_id not in api:
         if block and block[2] in PREVIOUS_WATCH_BLOCKS:
             raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds an earlier "
                           "WATCH HISTORY block; " + detach_then_attach(api, api_id))
         if block and block[2] != WATCH_BLOCK:
             raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}, and the prompt holds a WATCH HISTORY "
-                          "block that matches no copy in this script; fix it by hand (ACTION=status shows the prompt "
+                          "block that matches no copy in this script; use the guarded native maintenance action (ACTION=status shows the prompt "
                           "tail), or ACTION=detach with PROMPT_FILE=<an attach backup> removes it")
         raise Refused(f"llm_hass_api is {json.dumps(api)}, without {api_id}; ACTION=attach adds the API "
                       + ("(the block is already current)" if block else "and the current block together"))
@@ -593,7 +682,7 @@ async def update(s: aiohttp.ClientSession) -> None:
         return
     if old not in known:
         raise Refused("the prompt's WATCH HISTORY block matches neither the current text nor any earlier one in this script; "
-                      "fix it by hand (ACTION=status shows the prompt tail)")
+                      "use the guarded native maintenance action (ACTION=status shows the prompt tail)")
     new_prompt = prompt[:start] + target + prompt[end:]
     where = "at the end of the prompt" if end == len(prompt) else f"at characters {start} to {end} of {len(prompt)}"
     source = f" from {PROMPT_FILE}" if PROMPT_FILE else ""
@@ -638,7 +727,7 @@ async def detach(s: aiohttp.ClientSession) -> None:
         if blk := one_block(new_prompt, "it is not a backup this helper wrote"):
             if blk[2] not in (WATCH_BLOCK, *PREVIOUS_WATCH_BLOCKS):
                 raise Refused(f"{PROMPT_FILE} holds a WATCH HISTORY block that matches no copy in this script; "
-                              "restore it by hand")
+                              "restore it with the guarded native maintenance action")
             raise Refused(f"{PROMPT_FILE} holds a WATCH HISTORY block, and a detach never leaves one behind: "
                           f"{run_line('detach')} removes the API and the block together, and ACTION=update with "
                           "this PROMPT_FILE puts that block back and keeps the API")
@@ -689,4 +778,6 @@ async def main() -> int:
     return 0
 
 
-sys.exit(asyncio.run(main()))
+if __name__ == "__main__":
+    sys.stdout.reconfigure(errors="backslashreplace")
+    sys.exit(asyncio.run(main()))

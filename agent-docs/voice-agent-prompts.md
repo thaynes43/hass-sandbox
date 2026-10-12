@@ -187,13 +187,14 @@ on Plex."), so the bullet makes it say back the title and year and always say wh
 `scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`; the Rumpus Room and Phone Assist agents carry it too) and every
 earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
 `ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
-to make it, then repeat with `AGENT=rumpus`, `AGENT=phone` and `AGENT=jarvis`, so all four holders change: it replaces the earlier block in place through the same reconfigure flow as `attach`,
+to make it, then repeat with `AGENT=rumpus`, `AGENT=phone` and `AGENT=jarvis`, so all four holders change: it replaces the earlier block in place,
 backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
 backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
-back in place, API kept. The backup lives in the HA pod's `/tmp` until the pod restarts; after that the
-way back is the backup's `prompt` pasted into the agent's instructions in HA's UI. HA's `mcp` integration reads a server's tool list only
+back in place, API kept. Preserve backups outside the pod's /tmp before a restart. Restore through this helper with the temporary native maintenance action for OpenAI agents whose web search and user location are enabled; the same guard applies to undo. HA's `mcp` integration reads a server's tool list only
 when the entry is set up, so new or removed tools reach the agent only after
 `homeassistant.reload_config_entry` on the mcp entry (or an HA restart).
+
+For OpenAI agents with web search and user location enabled, use the temporary native maintenance action in the haynes-ops runbook hnet-watch-subentry-maintenance.md; the helper refuses the official reconfigure flow because it recalculates city. The maintenance action changes only the prompt and, when requested, the Watch history attachment in one update, then verifies the complete subentry data.
 
 ```text
 WATCH HISTORY
