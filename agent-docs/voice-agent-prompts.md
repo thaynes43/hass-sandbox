@@ -172,10 +172,10 @@ turn (Tool track 1 measured about 2 s per turn for 35 tools), so few agents get 
 is also on:
 - the **Rumpus Room** agent, since 2026-09-26 on Tom's ruling;
 - the **OpenAI Phone Assist fallback** (below);
-- the idle local **Jarvis** agent, as a variant: the current block with ", and don't search the web for it" taken out of its first bullet, since that agent has no web search. Compared with `WATCH_BLOCK` on 2026-09-26; otherwise byte-identical.
+- the idle local **Jarvis** agent, which carries the same block; without broad discovery tools it states the cached scope.
 
 The live local phone agent does not carry it. `attach_watch_history.py` reaches each of these with
-`AGENT=movie|rumpus|phone`. It does not reach Jarvis, which is not an OpenAI subentry: after a block change, edit Jarvis's variant by hand.
+`AGENT=movie|rumpus|phone|jarvis`.
 
 The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
 `watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
@@ -187,7 +187,7 @@ on Plex."), so the bullet makes it say back the title and year and always say wh
 `scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`; the Rumpus Room and Phone Assist agents carry it too) and every
 earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
 `ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
-to make it, then both again with `AGENT=rumpus` and both again with `AGENT=phone`, so all three agents change: it replaces the earlier block in place through the same reconfigure flow as `attach`,
+to make it, then repeat with `AGENT=rumpus`, `AGENT=phone` and `AGENT=jarvis`, so all four holders change: it replaces the earlier block in place through the same reconfigure flow as `attach`,
 backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
 backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
 back in place, API kept. The backup lives in the HA pod's `/tmp` until the pod restarts; after that the
@@ -198,8 +198,8 @@ when the entry is set up, so new or removed tools reach the agent only after
 ```text
 WATCH HISTORY
 - The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
-- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": use recommend, with kind show or movie when he says which, and offset to hear more after the first answer. Say at most three titles, each with a few words on why.
-- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, use recommend right after. If a tool says a title is ambiguous, ask which one he meant.
+- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": read viewing_context for personal viewing and explicit feedback (plays do not prove liking or completion). Discover broadly with available web or catalog tools, check_titles against personal records, verify current regional streaming or rental availability, then choose and explain for his request. Use dated, attributable evidence for current buzz. Plex and watchlist membership are context, restricting choices only when he explicitly asks. recommend is a limited cached ledger/watchlist/TMDB candidate pool, not broad discovery; without broad discovery tools, say that scope plainly. No recorded viewing is not proof of never watched. Say at most three titles, each with a few words on why.
+- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, follow the same context, discovery and candidate-check workflow. If a tool says a title is ambiguous, ask which one he meant.
 - "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
 - His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download.
 ```
@@ -349,7 +349,7 @@ HOW YOU ACT
 - Answer everyday questions too. For news, scores, showtimes, facts or anything you are not sure of, search the web and answer in a sentence or two; a quick calculation, conversion or definition you can answer directly.
 ```
 
-After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` three times: without `AGENT`, with `AGENT=rumpus`, and with `AGENT=phone`.
+After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` four times: without `AGENT`, with `AGENT=rumpus`, with `AGENT=phone`, and with `AGENT=jarvis`.
 
 Tested on 2026-09-26, while it was the live agent, as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device):
 
