@@ -5,6 +5,7 @@ from contextlib import redirect_stdout
 from copy import deepcopy
 import io
 import os
+import runpy
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -139,11 +140,52 @@ class WatchMaintenanceTests(unittest.IsolatedAsyncioTestCase):
                 verify.assert_awaited_with(unittest.mock.ANY, self.current, target)
         self.assertEqual(flow.await_count, 2)
 
-    async def test_native_prompt_only_uses_snapshot_hash_and_full_readback_for_all_agents(self):
+    async def test_local_rumpus_selects_own_subentry_and_uses_guarded_native_flow(self):
+        with patch.dict(os.environ, {"HA_TOKEN": "unit-test-token", "AGENT": "rumpus_local"}):
+            selected = runpy.run_path(helper.__file__, run_name="watch_helper_selection")
+        entry, subentry, _ = selected["AGENTS"]["rumpus_local"]
+        cloud_entry, cloud_subentry, _ = selected["AGENTS"]["rumpus"]
+        entries = [
+            {"entry_id": cloud_entry, "subentries": [{"subentry_id": cloud_subentry, "data": {"prompt": "rollback"}}]},
+            {"entry_id": entry, "subentries": [{"subentry_id": subentry, "data": {"prompt": "live"}}]},
+        ]
+        self.assertEqual(selected["get_subentry"](entries)["data"]["prompt"], "live")
+        self.assertEqual(selected["AGENT_DOMAIN"], "llama_cpp")
+        with patch.object(helper, "AGENT", "rumpus_local"), patch.object(helper, "AGENT_DOMAIN", selected["AGENT_DOMAIN"]):
+            flow = self.enterContext(patch.object(helper, "reconfigure", AsyncMock()))
+            verify = self.enterContext(patch.object(helper, "verify", AsyncMock()))
+            maintenance = self.enterContext(patch.object(helper, "maintenance_command", AsyncMock()))
+            target = dict(self.current, prompt="Updated prompt")
+            await self.change(FakeSession(), target)
+            flow.assert_awaited_once_with(unittest.mock.ANY, self.current, target, [])
+            verify.assert_awaited_once_with(unittest.mock.ANY, self.current, target)
+            maintenance.assert_not_awaited()
+
+    async def test_watch_update_preserves_local_persona_and_trailing_tool_explanations(self):
+        prefix = "Jarvis persona and Rumpus room rules.\n\n"
+        tail = "\n\nWhen Tom asks about tools, explain actual supplied definitions and recorded results."
+        old = helper.PREVIOUS_WATCH_BLOCKS[0]
+        current = {"prompt": prefix + old + tail, "llm_hass_api": ["assist", helper.WATCH_API],
+                   "chat_model": "muse-glimmer-30b", "recommended": True}
+        entries = self.stored(current)
+        change = self.enterContext(patch.object(helper, "change", AsyncMock()))
+        self.enterContext(patch.object(helper, "load_entries", return_value=entries))
+        self.enterContext(patch.object(helper, "need_mcp_entry"))
+        self.enterContext(patch.object(helper, "require_mcp_loaded", AsyncMock()))
+        self.enterContext(patch.object(helper, "ENTRY_ID", helper.WATCH_API.removeprefix("mcp-")))
+        self.enterContext(patch.object(helper, "PROMPT_FILE", ""))
+        self.enterContext(patch.object(helper, "DRY_RUN", False))
+        await helper.update(FakeSession())
+        args = change.await_args.args
+        self.assertEqual(args[1], current)
+        self.assertEqual(args[2], current["llm_hass_api"])
+        self.assertEqual(args[3], prefix + helper.WATCH_BLOCK + tail)
+
+    async def test_original_agents_use_native_snapshot_hash_and_full_readback(self):
         target = dict(self.current, prompt="Updated prompt")
         original = deepcopy(self.current)
         flow = self.enterContext(patch.object(helper, "reconfigure", AsyncMock()))
-        for agent in helper.AGENTS:
+        for agent in ("movie", "rumpus", "phone", "jarvis"):
             with self.subTest(agent=agent), patch.object(helper, "AGENT", agent):
                 session = FakeSession(self.status(), self.updated(target))
                 with patch.object(helper, "load_entries", return_value=self.stored(target)):

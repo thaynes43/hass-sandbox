@@ -14,12 +14,9 @@ HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipel
 (`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent. The
 **Rumpus Room** satellite ran the local **Jarvis** pipeline from 2026-09-22, then returned to OpenAI
 on 2026-09-26. Since 2026-10-13 it runs the local trial described below: Parakeet STT, a room-specific
-Muse agent, and Kokoro TTS. The other boxes retain their existing pipelines. All pipelines
-`prefer_local_intents: true`, except **Bench Local (test agent)**. That one is `false` on purpose, so every
-benchmark question reaches the model (*Phone Assist* below); don't flip it.
+Muse agent, and Kokoro TTS. The other boxes retain their existing pipelines. The room pipelines, **Jarvis** and **Phone Assist** use `prefer_local_intents: true`. **Bench Local (test agent)** uses `false` on purpose so every benchmark question reaches the model (*Phone Assist* below); do not flip it.
 
-Every prompt = the owner's **persona** (his wording; do not rewrite it) + the **shared block**
-below, identical except for the room name, the room-facts sentence and the tool list.
+Room prompts retain the owner’s **persona** (his wording; do not rewrite it) and the shared speech and tool rules. Local agents also describe their available capabilities; the local Rumpus prompt includes an exception for requested tool explanations.
 
 ## Primary Bedroom
 
@@ -218,12 +215,12 @@ The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
 below is appended to its prompt after the shared block. Every attached tool schema rides every voice
 turn (Tool track 1 measured about 2 s per turn for 35 tools), so few agents get the API. The same block
 is also on:
-- the **Rumpus Room** agent, since 2026-09-26 on Tom's ruling;
-- the **OpenAI Phone Assist fallback** (below);
-- the idle local **Jarvis** agent, which carries the same block; without broad discovery tools it states the cached scope.
+- the **Rumpus Room local trial**, since 2026-10-13 (`AGENT=rumpus_local`);
+- the retained **Rumpus Room OpenAI rollback**, attached on 2026-09-26 (`AGENT=rumpus`);
+- the **OpenAI Phone Assist fallback** below (`AGENT=phone`);
+- the idle local **Jarvis** agent (`AGENT=jarvis`), which states the cached scope when broad discovery tools are unavailable.
 
-The live local phone agent does not carry it. `attach_watch_history.py` reaches each of these with
-`AGENT=movie|rumpus|phone|jarvis`.
+The live local phone agent does not carry it. Including Movie Room, the helper addresses five holders with `AGENT=movie|rumpus_local|rumpus|phone|jarvis`.
 
 The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
 `watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
@@ -232,11 +229,9 @@ auto-requests his watchlist, so adding a title that is not on Plex downloads it;
 new tools without a prompt change but paraphrased their answers down to a few words (it dropped "It's
 on Plex."), so the bullet makes it say back the title and year and always say when a title will download.
 
-`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`; the Rumpus Room and Phone Assist agents carry it too) and every
-earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
-`ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
-to make it, then repeat with `AGENT=rumpus`, `AGENT=phone` and `AGENT=jarvis`, so all four holders change: it replaces the earlier block in place,
-backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
+`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`) and earlier versions (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, update the shared block here and the helper constant, then run `ACTION=update ENTRY_ID=<mcp entry id> AGENT=movie DRY_RUN=1` to inspect the swap. Apply the update for each of `movie`, `rumpus_local`, `rumpus`, `phone` and `jarvis`, so all five holders receive it. The helper replaces the recognized Watch history block in place, preserves surrounding prompt text, backs up first and leaves `llm_hass_api` unchanged.
+
+To undo it, use the same AGENT and run the line the update prints after its
 backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
 back in place, API kept. Preserve backups outside the pod's /tmp before a restart. Restore through this helper with the temporary native maintenance action for OpenAI agents whose web search and user location are enabled; the same guard applies to undo. HA's `mcp` integration reads a server's tool list only
 when the entry is set up, so new or removed tools reach the agent only after
@@ -401,7 +396,7 @@ HOW YOU ACT
 - Answer everyday questions too. For news, scores, showtimes, facts or anything you are not sure of, search the web and answer in a sentence or two; a quick calculation, conversion or definition you can answer directly.
 ```
 
-After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` four times: without `AGENT`, with `AGENT=rumpus`, with `AGENT=phone`, and with `AGENT=jarvis`.
+After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` five times: without `AGENT`, with `AGENT=rumpus_local`, with `AGENT=rumpus`, with `AGENT=phone`, and with `AGENT=jarvis`.
 
 Tested on 2026-09-26, while it was the live agent, as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device):
 
