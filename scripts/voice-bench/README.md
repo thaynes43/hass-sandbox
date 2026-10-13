@@ -49,4 +49,16 @@ The initial Phone Assist incident on 2026-10-13 returned a correct count for its
 
 Historical Home Assistant records had 26 light entities on at both count timestamps. That larger set included overlapping groups, member entities and indicators, so neither total establishes a physical bulb count. An answer needs to make the coverage and scope clear.
 
+## Initial results, 2026-10-13
+
+The original native Phone and Rumpus profiles answered all 12 fixture turns, with nine passes and three failures after reviewing every answer. Basic counts, alias handling and room scope were correct. The failures were a repeated state question answered without a fresh lookup, an unhelpful response to `?` after an answer, and an unsupported individual-light total inferred from controls that did not establish bulb counts.
+
+The two local prompts now explicitly require a fresh lookup for each new state question, identify counts as visible lighting controls, acknowledge missing physical bulb data, and interpret a short follow-up in the preceding conversation. The complete prompt backups are in `agent-docs/voice-agent-prompts.md`. Model settings, tools, personas and pipeline routing are preserved.
+
+The original run took 99.99 seconds across 12 turns, with a median of 6.40 seconds. Cold Phone and Rumpus fixture turns took 19.73 and 23.76 seconds. These are direct model results with synthetic state data and a reconstructed native tool profile, not microphone-to-speaker measurements. Preserve both the untouched baseline and separately reviewed reports; a correction must not erase its failures.
+
+One targeted retest used the corrected native prompt prefixes, unchanged API instructions, tools and settings, and eight original turns. Seven passed after answer review: the repeat made a new lookup, `?` clarified the prior answer, counts remained correct, and room-to-house scope changed correctly. The individual-bulb case still failed: Muse confidently returned two individual lights even though fixture controls did not establish physical bulb counts. The prompt correction is therefore a partial improvement, not a reliable safeguard against that inference.
+
+The targeted run took 75.51 seconds, with a median of 5.43 seconds. Its cold Phone count took 21.03 seconds and cold Rumpus bulb question 30.00 seconds. There were no empty replies or protocol failures. A full corrected 12-turn regression and physical Rumpus voice test have not been performed. Keep the local deployment as a trial; remaining design work is recorded in `backlog/005-muse-cold-turn-latency.md` and `backlog/006-grounded-light-counts.md`.
+
 A small passing suite is evidence for the cases tested, not proof that all household voice requests are reliable. Keep the Rumpus proof-out and broader migration decision distinct from this direct-backend benchmark.

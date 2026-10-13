@@ -5,7 +5,13 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 `.agents/plans/voice-assist-handoff.md` (room-by-room testing), `agent-docs/voice-agent-prompts.md`
 (prompt backups incl. Jarvis's). Cluster side lives in haynes-ops (`kubernetes/main/apps/ai/`).
 
-## What is live (2026-09-22)
+## Current state update (2026-10-13)
+
+Muse now runs on Card C in talosw04's eGPU dock; Prime runs on repaired Card A in talosw01. Phone Assist uses `conversation.phone_assist_local` with house Assist only. Rumpus Room Assist now uses `conversation.rumpus_room_local` with local Parakeet, Muse and Kokoro, retaining house tools and Watch history. Current identities and complete prompt backups are in `agent-docs/voice-agent-prompts.md`; use supported subentry reconfiguration after capturing the live prompt.
+
+The original light-count fixture baseline passed nine of 12 turns. After a prompt correction, the targeted retest passed seven of eight: fresh lookups and short follow-ups improved, but physical bulb counting remained unsupported. The cold native Phone answer took 37.89 seconds with a 17,690-token first request. A repeated answer took 7.46 seconds. See `scripts/voice-bench/README.md` for the benchmark's limits and backlog items 005 and 006 for remaining latency and grounded-count design work. Physical Rumpus microphone-to-speaker validation is still required.
+
+## Historical deployment (2026-09-22, with September updates)
 
 | Piece | Where | Facts |
 |---|---|---|
@@ -18,7 +24,7 @@ Companion docs: `.agents/plans/voice-assist-rollout.md` (the OpenAI room agents,
 | Pipeline | **Jarvis** `01jb8sg4njw0mh3gnpqt4j9h6x` (renamed from Regina the same evening) | `stt.faster_whisper` (en) → `conversation.muse_glimmer_30b` (JARVIS persona) → `tts.kokoro` `bm_george` (en-GB, provisional), `prefer_local_intents: true`. The **Rumpus Room Voice PE** ran it with wake word **Hey Jarvis** from 2026-09-22 to 2026-09-26. Tom then moved the box back to OpenAI ("Rumpus Room Assist", now with Watch history; wake word "Okay Nabu" since 2026-09-27) and gave the local model to the phone instead, for cost. No satellite runs Jarvis now. Text-tested as that satellite 13/13 correct. **Kitchen** pipeline moved to local STT + Kokoro `af_sarah` with its OpenAI agent kept (it carried the cigar-journal API for one evening; removed again the same night — ~2 s per turn, see Tool track 1). Bedroom and Movie Room pipelines unchanged (OpenAI + HA Cloud). |
 | Removed | — | `ollama-assist01` (haynes-ops#3108, PVC orphan haynes-ops#3109) and its HA entry (had zero models). `ollama-assist02` on the RTX 2000 Ada still serves AppDaemon's detection summaries (`qwen3.5:9b`) and HA's Ollama entry `01JBQVEMK0RR9G3VZEKM715579`, which has only an AI Task subentry and no conversation agent. No Assist pipeline uses it (checked 2026-10-06). It runs one request at a time (ollama ignores `OLLAMA_NUM_PARALLEL` for qwen3.5, haynes-ops#3452), and AppDaemon sends it one request at a time since 1.25.1 (haynes-ops#3450). |
 
-### What the numbers mean
+### Historical September measurements
 
 - The Assist prompt is **~15k tokens per turn** (115 exposed entities + ~30 tool schemas). llama-server's
   prefix cache reuses 98–99.9 % of it, so per-turn prompt cost is ~0.2–0.5 s; a changed system prompt costs
