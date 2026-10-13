@@ -1,17 +1,15 @@
-name: Voice Watch Helper Tests
+name: Voice Helper Tests
 
 on:
   pull_request:
     branches: [main]
     paths:
-      - "scripts/voice-bench/attach_watch_history.py"
-      - "scripts/voice-bench/test_attach_watch_history.py"
+      - "scripts/voice-bench/**"
       - ".github/workflows/voice-watch-helper-tests.yml"
   push:
     branches: [main]
     paths:
-      - "scripts/voice-bench/attach_watch_history.py"
-      - "scripts/voice-bench/test_attach_watch_history.py"
+      - "scripts/voice-bench/**"
       - ".github/workflows/voice-watch-helper-tests.yml"
 
 permissions:
@@ -33,4 +31,4 @@ jobs:
       - name: Install the helper's HA transport dependency
         run: python -m pip install 'aiohttp>=3.9,<4'
       - name: Run focused guard and readback tests serially
-        run: nice -n 19 python -m unittest discover -s scripts/voice-bench -p test_attach_watch_history.py -v
+        run: nice -n 19 python -m unittest discover -s scripts/voice-bench -p 'test_*.py' -v
