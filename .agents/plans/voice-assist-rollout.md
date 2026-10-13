@@ -29,7 +29,7 @@ options probe cannot show their model fields, so read them from inside the HA po
 (`.storage/core.config_entries`, read-only, drop `api_key` and `prompt` before printing) and
 write them with `ha_config_set_helper(helper_type="config_subentry", entry_id, subentry_type="conversation", subentry_id, config={...})`.
 
-36 entities are exposed to Assist, so prompt size is **not** a latency factor today.
+At the 2026-09-18 starting point, 36 exposed entities did not make prompt size a latency factor for those OpenAI tests. This is not the current local Muse profile: its 2026-10-13 cold Phone request contained 17,690 tokens and had a substantial prefill cost. See `scripts/voice-bench/README.md` and `backlog/005-muse-cold-turn-latency.md`. Rumpus now uses a local trial; its current pipeline and prompt are recorded in `agent-docs/voice-agent-prompts.md`.
 
 ## Phase 1a — the "Bedroom GPT-5.6" error (fixed)
 

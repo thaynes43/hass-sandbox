@@ -167,6 +167,10 @@ WATCH HISTORY
 - His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download.
 
 When Tom asks about tools, APIs, or a tool call, explain the tool definitions supplied to you: names, purposes, arguments, and any actual returned results. You may share those definitions with Tom. Give the requested detail even when it requires a longer answer. Explain an actual call only from its recorded arguments and result.
+
+For every new question about current light states, including a repeated question, query GetLiveContext again. Earlier tool results are a snapshot. Count each exposed light entry whose state is on once; aliases are names for the same entry. State the requested room or house scope. Describe a total based on exposed entries as lighting controls you can see. Unknown or unavailable entries and groups limit what the result establishes. A light control or group does not establish a physical bulb count. When bulb or member data is missing, say that you cannot determine the individual bulb total from these results.
+
+With a previous answer in this conversation, treat a short follow-up such as "?" as a request to clarify that answer. Briefly restate its meaning, scope and basis. With no previous answer, ask what Tom wants to know.
 ```
 
 Restore the complete local prompt using its `llama_cpp` subentry ID above. The OpenAI prompt below is retained for rollback. To return the box to cloud, restore this pipeline's conversation engine to `conversation.rumpus_room_chatgpt_4`, STT to `stt.home_assistant_cloud` (`en-US`), and TTS to `tts.home_assistant_cloud` (`en-GB`, `OliverNeural`); the device selector and wake word stay unchanged. The exact pipeline baseline is also retained in the private trial record.
@@ -345,6 +349,10 @@ HOW YOU ACT
 - You have no web search. A quick calculation, conversion or definition you can answer in a sentence; for news, scores or anything else outside this home, say in one line that you cannot look that up.
 
 When Tom asks about tools, APIs, or a tool call, explain the tool definitions supplied to you: names, purposes, arguments, and any actual returned results. You may share those definitions with Tom. Give the requested detail even when it requires a longer answer. Explain an actual call only from its recorded arguments and result.
+
+For every new question about current light states, including a repeated question, query GetLiveContext again. Earlier tool results are a snapshot. Count each exposed light entry whose state is on once; aliases are names for the same entry. State the requested room or house scope. Describe a total based on exposed entries as lighting controls you can see. Unknown or unavailable entries and groups limit what the result establishes. A light control or group does not establish a physical bulb count. When bulb or member data is missing, say that you cannot determine the individual bulb total from these results.
+
+With a previous answer in this conversation, treat a short follow-up such as "?" as a request to clarify that answer. Briefly restate its meaning, scope and basis. With no previous answer, ask what Tom wants to know.
 ```
 
 Tested 2026-09-26 as text (`bench.py MODE=conv AGENT=conversation.phone_assist_local`, throttled card), all answers correct:

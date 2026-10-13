@@ -1,0 +1,1080 @@
+{
+  "schema_version": 1,
+  "scenarios": [
+    {
+      "id": "zero_on",
+      "profile": "phone",
+      "turns": [
+        {
+          "id": "count",
+          "text": "How many lights are on in the whole house?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "off",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "one_on",
+      "profile": "phone",
+      "turns": [
+        {
+          "id": "count",
+          "text": "How many lights are on in the whole house?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "off",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "aliases_are_not_extra_lights",
+      "profile": "phone",
+      "turns": [
+        {
+          "id": "count",
+          "text": "How many lights are on in the whole house?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "on",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "off_unknown_unavailable",
+      "profile": "phone",
+      "turns": [
+        {
+          "id": "count",
+          "text": "How many lights are on right now?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "on",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "unknown",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "unavailable",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "explicit_room",
+      "profile": "rumpus",
+      "turns": [
+        {
+          "id": "count",
+          "text": "How many lights are on in the Rumpus Room?",
+          "scope": {
+            "domain": "light",
+            "area": "Rumpus Room"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "on",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "scope_followup",
+      "profile": "rumpus",
+      "turns": [
+        {
+          "id": "room",
+          "text": "How many lights are on in the Rumpus Room?",
+          "scope": {
+            "domain": "light",
+            "area": "Rumpus Room"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        },
+        {
+          "id": "house",
+          "text": "What about the whole house?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        },
+        {
+          "id": "names",
+          "text": "Which ones?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "nonempty",
+          "require_read": false,
+          "manual_criterion": "Names must match the on records from the preceding whole-house result."
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "on",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "same_conversation_retry",
+      "profile": "phone",
+      "turns": [
+        {
+          "id": "first",
+          "text": "How many lights are on?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        },
+        {
+          "id": "clarify",
+          "text": "?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "nonempty",
+          "require_read": false,
+          "manual_criterion": "Treat this as a follow-up to the previous answer and retain its context."
+        },
+        {
+          "id": "repeat",
+          "text": "How many lights are on?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "count",
+          "require_read": true
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "on",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    },
+    {
+      "id": "individual_bulbs_unknown",
+      "profile": "rumpus",
+      "turns": [
+        {
+          "id": "physical_count",
+          "text": "How many individual bulbs are on, excluding groups?",
+          "scope": {
+            "domain": "light"
+          },
+          "expected_kind": "nonempty",
+          "require_read": false,
+          "manual_criterion": "Fixture group records do not identify their members. State that an individual bulb total cannot be determined; a confident total for physical bulbs fails."
+        }
+      ],
+      "entities": [
+        {
+          "entity_id": "light.rumpus_ceiling",
+          "domain": "light",
+          "names": [
+            "Rumpus ceiling",
+            "Rumpus ceiling light",
+            "Ceiling fixture"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": "176"
+          }
+        },
+        {
+          "entity_id": "light.rumpus_lamp",
+          "domain": "light",
+          "names": [
+            "Rumpus floor lamp",
+            "Rumpus lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ],
+          "attributes": {
+            "brightness": null
+          }
+        },
+        {
+          "entity_id": "light.kitchen_island",
+          "domain": "light",
+          "names": [
+            "Kitchen island",
+            "Island lights",
+            "Kitchen counter lights"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "attributes": {
+            "brightness": "128"
+          }
+        },
+        {
+          "entity_id": "light.entrance_group",
+          "domain": "light",
+          "names": [
+            "Entrance lights group",
+            "Entrance lighting control"
+          ],
+          "state": "on",
+          "areas": [
+            "Front Entrance"
+          ],
+          "attributes": {
+            "brightness": "200"
+          }
+        },
+        {
+          "entity_id": "light.unknown",
+          "domain": "light",
+          "names": [
+            "Kitchen table lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Kitchen"
+          ]
+        },
+        {
+          "entity_id": "light.unavailable",
+          "domain": "light",
+          "names": [
+            "Rumpus accent lamp"
+          ],
+          "state": "off",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        },
+        {
+          "entity_id": "light.hidden",
+          "domain": "light",
+          "names": [
+            "Unexposed fixture light"
+          ],
+          "state": "on",
+          "areas": [
+            "Kitchen"
+          ],
+          "exposed": false
+        },
+        {
+          "entity_id": "switch.decorative_indicator",
+          "domain": "switch",
+          "names": [
+            "Decorative indicator"
+          ],
+          "state": "on",
+          "areas": [
+            "Rumpus Room",
+            "Rumpus"
+          ]
+        }
+      ],
+      "count_unit": "exposed_light_entities"
+    }
+  ],
+  "fixture_source": "synthetic",
+  "native_ha_pipeline": false
+}
