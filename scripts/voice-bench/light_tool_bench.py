@@ -286,7 +286,9 @@ def stated_scope(answer, scope, entities):
                     or re.search(rf"\b{escaped}\b\s*:", text, re.I)):
                 area_claims.add(area.casefold())
     house_claim = bool(re.search(r"\b(?:whole\s+house|entire\s+house|housewide|everywhere)\b", text, re.I))
-    if len(area_claims) > 1 or (area_claims and house_claim):
+    alias_sets = [set(a.casefold() for a in e.get("areas", [])) for e in entities]
+    compound_areas = len(area_claims) > 1 and not any(area_claims <= aliases for aliases in alias_sets)
+    if compound_areas or (area_claims and house_claim):
         return None
     if "area" not in scope:
         if area_claims:
@@ -331,7 +333,8 @@ def score_turn(turn, result, entities, previous_evidence=None, read_tool=READ_TO
     grounded = bool(truth["entity_ids"]) and set(truth["entity_ids"]) <= evidence
     gates_pass = (
         result.get("status") == "complete" and bool(answer) and not blocked and not invalid
-        and (not count_case or ((said is None or said == truth["count"]) and grounded and scope_claim is not False))
+        and (not count_case or ((said is None or said == truth["count"] or scope_claim is None)
+                                and grounded and scope_claim is not False))
     )
     manual = result.get("manual_review")
     if manual is not None and (not isinstance(manual, dict) or type(manual.get("pass")) is not bool
@@ -347,7 +350,7 @@ def score_turn(turn, result, entities, previous_evidence=None, read_tool=READ_TO
         "manual_review_required": needs_manual, "manual_criterion": turn.get("manual_criterion"),
         "manual_review": manual, "status": result.get("status"), "nonempty_final": bool(answer),
         "expected": truth, "stated_count": said,
-        "count_correct": said == truth["count"] if count_case and said is not None else None,
+        "count_correct": said == truth["count"] if count_case and said is not None and scope_claim is not None else None,
         "stated_scope_correct": scope_claim if count_case else None,
         "grounded_scope": grounded if count_case else None,
         "blocked_calls": blocked, "invalid_calls": invalid,

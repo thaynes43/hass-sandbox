@@ -18,7 +18,7 @@ python3 scripts/voice-bench/light_tool_bench.py validate \
   --profiles /private/native-profiles.json --out /private/expected.json
 ```
 
-The run is deliberately bounded: at most 12 user turns, two tool rounds per turn, 90 seconds per turn and 600 seconds overall, sequentially. It executes only the selected profile's native GetLiveContext tool against fixture records: `homeassistant__GetLiveContext` for Phone or `assist__homeassistant__GetLiveContext` for Rumpus. All other tool calls are refused. Declare a short activity covering the shared model service before running it.
+The run is deliberately bounded: at most 12 user turns, two tool rounds per turn, 90 seconds per turn, 512 generated tokens per completion and 600 seconds overall, sequentially. The token cap applies to these benchmark requests; native settings are retained in profile metadata. It executes only the selected profile's native GetLiveContext tool against fixture records: `homeassistant__GetLiveContext` for Phone or `assist__homeassistant__GetLiveContext` for Rumpus. All other tool calls are refused. Declare a short activity covering the shared model service before running it.
 
 ```bash
 RUN_VOICE_TOOL_BENCH=1 \

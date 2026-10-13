@@ -221,6 +221,12 @@ class ScoringTests(unittest.TestCase):
         scored, _ = bench.score_turn(turn(), result("There might be three lights on."), entities())
         self.assertIsNone(scored["pass"])
         self.assertTrue(scored["count_parse_review"])
+        room = turn(scope={"domain": "light", "area": "Rumpus Room"})
+        self.assertTrue(bench.score_turn(room, result("Two lights are on in the Rumpus Room."), entities())[0]["pass"])
+        mixed = "In the Kitchen, one light is on; in the Rumpus Room, two lights are on."
+        scored, _ = bench.score_turn(turn(), result(mixed), entities())
+        self.assertIsNone(scored["pass"])
+        self.assertIsNone(scored["count_correct"])
 
     def test_report_rejects_native_pipeline_claim_and_missing_rows(self):
         for report in ({"mode": "native_ha_pipeline", "scenarios": []}, {"mode": bench.MODE, "scenarios": []}):
