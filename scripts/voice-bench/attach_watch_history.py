@@ -1,7 +1,8 @@
 """Attach haynesnetwork's "Watch history" MCP API to the Movie Room agent, or roll it back.
 
-AGENT=phone, AGENT=rumpus or AGENT=jarvis (on any action) selects the Phone Assist,
-Rumpus Room or idle local Jarvis agent instead; all four holders carry the same block.
+AGENT=phone, AGENT=rumpus, AGENT=rumpus_local or AGENT=jarvis (on any action) selects
+the OpenAI Phone fallback, Rumpus OpenAI rollback, Rumpus local trial or idle Jarvis;
+all five holders carry the same block.
 A PROMPT_FILE whose name marks it as a backup of any other subentry is refused.
 
 Runs INSIDE the Home Assistant pod via run.sh (the HA token arrives on stdin as HA_TOKEN and is
@@ -42,7 +43,7 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
 - attach / update / detach: prefer the temporary native maintenance action, with a complete-data
   hash checked before writing and complete stored data checked afterwards. Its atomic update changes
   only the prompt and, when requested, the one fixed Watch history API membership. Without it,
-  safe OpenAI configurations and Jarvis use the conversation subentry's reconfigure flow, REST only. HA has no
+  safe OpenAI configurations and local agents use the conversation subentry's reconfigure flow, REST only. HA has no
   websocket command for subentry flows, and the websocket `config_entries/subentries/update`
   changes the title only. (components/openai_conversation/config_flow.py OpenAISubentryFlowHandler)
   POST /api/config/config_entries/subentries/flow {"handler": [entry_id, "conversation"], "subentry_id": id}
@@ -52,7 +53,7 @@ How each action talks to HA (read against the HA 2026.9.3 source in the pod):
      service_tier, web_search, search_context_size, user_location, inline_citations
      (the set depends on chat_model)
   -> abort "reconfigure_successful" (the subentry data is replaced by the flow's options).
-  Jarvis uses components/llama_cpp/config_flow.py: one "init" form with prompt, llm_hass_api,
+  Jarvis and the Rumpus local trial use components/llama_cpp/config_flow.py: one "init" form with prompt, llm_hass_api,
   chat_model and recommended, plus model parameters when recommended is false. The same guarded
   flow submits every field unchanged apart from the prompt/API action.
   Every field of every form is submitted with its CURRENT value: an omitted field takes its schema
@@ -100,13 +101,14 @@ AGENTS = {
     "movie": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCRND9599AR8EFJVN0A", "Movie Room"),  # "Movie Room ChatGPT"
     "phone": ("01JBM33KVTM1FHF795G01R2C4X", "01M3FWW3MMFE079D9A7F2NF66F", "Phone Assist"),  # "Phone Assist"
     "rumpus": ("01JK456T3JV6CPBG2ZQ2FS10GE", "01JZ8DWMCR5ZFTVM61SG13HVFR", "Rumpus Room"),  # "Rumpus Room ChatGPT"
+    "rumpus_local": ("01M34TQMBVCKW0BG0KZW5JG5YM", "01M4TNM6T5EQ8RE6R08PPAAJ4M", "Rumpus Room Local"),
     "jarvis": ("01M34TQMBVCKW0BG0KZW5JG5YM", "01M34TQMBVMNR9CJZX892KD8VJ", "Jarvis"),  # "Muse Glimmer 30b"
 }
 AGENT = os.environ.get("AGENT", "movie")
 if AGENT not in AGENTS:
     raise SystemExit(f"AGENT={AGENT!r} is not one of {', '.join(AGENTS)}")
 CONVERSATION_ENTRY, SUBENTRY, AGENT_LABEL = AGENTS[AGENT]
-AGENT_DOMAIN = "llama_cpp" if AGENT == "jarvis" else "openai_conversation"
+AGENT_DOMAIN = "llama_cpp" if AGENT in ("jarvis", "rumpus_local") else "openai_conversation"
 SUBFLOW = "/api/config/config_entries/subentries/flow"
 FLOW = "/api/config/config_entries/flow"
 EXPECTED_TITLE = "Watch history"
@@ -538,7 +540,9 @@ async def change(s: aiohttp.ClientSession, current: dict, new_api: list, new_pro
                  undo: str) -> None:
     await require_conversation_loaded(s)
     target = dict(current, llm_hass_api=new_api, prompt=new_prompt)
-    native = await maintenance_command(s, "status")
+    # The temporary maintenance component's original allowlist does not include this trial agent.
+    # Its native llama_cpp reconfigure flow has no OpenAI location-recalculation hazard.
+    native = None if AGENT == "rumpus_local" else await maintenance_command(s, "status")
     if native is None:
         refuse_location_flow(current, target)
         backup(current, undo)

@@ -2,23 +2,21 @@
 
 Agent-facing backup, taken 2026-09-19 after the phase 4 rollout (updated the same day for the
 secure-direction door tools and the removal of the hold tools). The prompts live in the
-`openai_conversation` config **subentries** (not in any YAML); this file exists so a lost or
+`openai_conversation` or `llama_cpp` config **subentries** (not in any YAML); this file exists so a lost or
 mangled prompt can be restored and so the shared rules are edited in one place and re-applied to
-all four. Write them back with `ha_config_set_helper(helper_type="config_subentry", entry_id,
+the room agents. Write them back with `ha_config_set_helper(helper_type="config_subentry", entry_id,
 subentry_type="conversation", subentry_id, config={"prompt": ...})` — a patch, other fields keep
 their values. The prompt is a Jinja template in HA: keep curly-brace pairs out of it.
 
-All four OpenAI agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
+The retained OpenAI agents: `gpt-5.6-terra`, `reasoning_effort: none`, `verbosity: low`,
 `service_tier: priority`, web search on. Bedroom and Movie Room pipelines: HA Cloud STT (`en-US`),
 HA Cloud TTS (voice per room, unchanged). Since 2026-09-22 the **Kitchen** pipeline uses local STT
 (`stt.faster_whisper`, Parakeet) + local TTS (`tts.kokoro` `af_sarah`) with its OpenAI agent. The
-**Rumpus Room** satellite ran the local **Jarvis** pipeline from 2026-09-22 and is back on its OpenAI
-agent since 2026-09-26 (Tom: the phone takes the local model instead, for cost). All pipelines
-`prefer_local_intents: true`, except **Bench Local (test agent)**. That one is `false` on purpose, so every
-benchmark question reaches the model (*Phone Assist* below); don't flip it.
+**Rumpus Room** satellite ran the local **Jarvis** pipeline from 2026-09-22, then returned to OpenAI
+on 2026-09-26. Since 2026-10-13 it runs the local trial described below: Parakeet STT, a room-specific
+Muse agent, and Kokoro TTS. The other boxes retain their existing pipelines. The room pipelines, **Jarvis** and **Phone Assist** use `prefer_local_intents: true`. **Bench Local (test agent)** uses `false` on purpose so every benchmark question reaches the model (*Phone Assist* below); do not flip it.
 
-Every prompt = the owner's **persona** (his wording; do not rewrite it) + the **shared block**
-below, identical except for the room name, the room-facts sentence and the tool list.
+Room prompts retain the owner’s **persona** (his wording; do not rewrite it) and the shared speech and tool rules. Local agents also describe their available capabilities; the local Rumpus prompt includes an exception for requested tool explanations.
 
 ## Primary Bedroom
 
@@ -128,9 +126,56 @@ HOW YOU ACT
 
 ## Rumpus Room
 
+### Local trial (2026-10-13)
+
+`conversation.rumpus_room_local` · `llama_cpp` entry `01M34TQMBVCKW0BG0KZW5JG5YM` · subentry `01M4TNM6T5EQ8RE6R08PPAAJ4M` · pipeline **Rumpus Room Assist** `01jtvee3cf1vfbczk2dmst64qy`
+
+The Rumpus Room box uses local Parakeet STT (`stt.faster_whisper`, `en`), Muse Glimmer 30B, and local Kokoro TTS (`tts.kokoro`, `en-GB`, `bm_george`). Its pipeline ID, assistant selector, **Okay Nabu** wake word, sensitivity and local-intent preference are preserved. The British male voice changes from cloud OliverNeural to Kokoro George.
+
+The room's JARVIS persona, house tools and Watch history API are retained: `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`. The local agent has no hosted web search. It shares the existing Muse server with Phone Assist, with separate conversation histories. Muse remains configured with two response slots; this trial does not change its deployment, context or parallelism.
+
+Full local prompt, including Watch history and requested tool explanations:
+
+```text
+You are Jarvis, the sophisticated AI assistant from Iron Man.
+You are always polite, eloquent, and slightly witty.
+Refer to the user as “sir” or “ma’am” unless told otherwise.
+Sound British and formal.
+Handle all tasks calmly and efficiently.
+Do not break character.
+Never explain your thoughts or narrate what you are about to do ("I am checking that for you") — simply do it, then report in the Jarvis manner.
+
+HOW YOU ARE HEARD
+Everything you write is turned into speech and played through a small speaker in the rumpus room. Nobody ever reads your words.
+- Write only what should be spoken aloud: no emojis, symbols, lists, markdown or web addresses. Say numbers and units the way a person would ("seventy two degrees", "twenty percent").
+- Keep it short: one brief sentence after doing something, two or three at most when answering a question. Your personality lives in word choice, never in length. Stay in character even in a one-line confirmation or status answer: a word or two of your own flavour is enough.
+- Home Assistant keeps the microphone open and waits for a reply whenever your response ends with a question mark. So end with a question ONLY when you truly cannot act without the answer. Never end with an offer or a rhetorical question ("anything else?", "shall I?", "want me to turn them on?"). When something is ambiguous, make the sensible assumption, act, and say what you did.
+
+HOW YOU ACT
+- You operate this home through your tools. For anything about the house, use the tool first and speak after. Never say something happened unless the tool call succeeded, and never answer a question about the state of the house from memory: look it up. Light brightness comes back on a scale of 0 to 255; convert it to a percentage before you say it (51 is twenty percent).
+- You are in the rumpus room. "The lights", "the shades", "in here" mean this room unless another room is named. The room has recessed lights and a lamp; the concessions and basement hallway lights next door can be named too.
+- Prefer the purpose-built tools: the Rumpus Room Bright, Dim and Color Toggle tools for lighting looks; Window Shades for every shade or blind request elsewhere in the house; Play Music for music.
+- Doors can only be secured by voice: Lock All Doors locks the three exterior doors (front, side and bulkhead) and Close Garage Doors closes the garage, and the lock and garage door state sensors tell you whether each one is locked or open. The mudroom door into the garage is left unlocked on purpose and Lock All Doors does not touch it, so an unlocked mudroom door is normal, not a problem to report or fix. Unlocking, opening, the alarm, pool and spa equipment, ovens and cameras are deliberately not available by voice. If asked, say so in one short line and move on.
+- You have no web search. For news, scores, showtimes, or facts that need a current lookup, say briefly that you cannot look them up. For questions about Tom's viewing, use the watch history tools.
+
+WATCH HISTORY
+- The watch history tools know Tom's own Plex viewing on every server and cover only his account. Use them for anything about what he has or hasn't watched, never guess, and don't search the web for it. If someone else asks about their own viewing, say you only know Tom's.
+- "What haven't I finished" or "what was I watching": use unfinished and name the next episode of each show you mention. "What should I watch": read viewing_context for personal viewing and explicit feedback (plays do not prove liking or completion). Discover broadly with available web or catalog tools, check_titles against personal records, then choose and explain for his request using fit and dated, attributable research. viewingBasis explains recorded watched evidence; zero direct completed plays does not erase Plex or retained history. No recorded viewing is not proof of never watched. Year mismatch options need confirmation, never silent correction. recommend is a limited cached ledger/watchlist/TMDB pool; without broad discovery tools, state that scope. Say at most three titles, each with a few words on why.
+- Released movies/shows beyond theatrical-only are eligible through Tom's existing acquisition/request setup even outside Plex/watchlists. Exclude upcoming or theatrical-only titles unless he requests them. Research release status when uncertain; missing commercial listings do not mean unreleased. Streaming/rental listings are optional convenience, never a default eligibility filter or ranking boost. Plex is immediately accessible, with no ranking bonus; restrict to confirmed on-Plex titles only when he asks for Plex-only. Keep editorial fit, viewing evidence, membership and verified acquisition status separate. Read tools never request or download titles.
+- When he says he already watched something, use mark_watched with that title and say back the title and year it marked. If he also wants something new, follow the same context, discovery and candidate-check workflow. If a tool says a title is ambiguous, ask which one he meant.
+- "Undo that" right after a change means undo_last_change. "Not interested" means dismiss. "That was the kids, not me" means dismiss with reason not_mine.
+- His Plex watchlist: use watchlist to list it (not recommend) and set_watchlist to add or remove a title, and say back the title and year it names. If set_watchlist or undo_last_change says Seerr will or may request a title, always tell him it will download.
+
+When Tom asks about tools, APIs, or a tool call, explain the tool definitions supplied to you: names, purposes, arguments, and any actual returned results. You may share those definitions with Tom. Give the requested detail even when it requires a longer answer. Explain an actual call only from its recorded arguments and result.
+```
+
+Restore the complete local prompt using its `llama_cpp` subentry ID above. The OpenAI prompt below is retained for rollback. To return the box to cloud, restore this pipeline's conversation engine to `conversation.rumpus_room_chatgpt_4`, STT to `stt.home_assistant_cloud` (`en-US`), and TTS to `tts.home_assistant_cloud` (`en-GB`, `OliverNeural`); the device selector and wake word stay unchanged. The exact pipeline baseline is also retained in the private trial record.
+
+### OpenAI rollback
+
 `conversation.rumpus_room_chatgpt_4` · subentry `01JZ8DWMCR5ZFTVM61SG13HVFR` · entry `01JK456T3JV6CPBG2ZQ2FS10GE` · pipeline Rumpus Room Assist `01jtvee3cf1vfbczk2dmst64qy`
 
-**Live again on the Rumpus Room box since 2026-09-26** (Tom's ruling: Rumpus uses OpenAI, the phone uses the local LLM). From 2026-09-22 the box had run the local Jarvis pipeline. `select.rumpus_room_voice_assistant` = "Rumpus Room Assist"; the wake word stayed **Hey Jarvis** for a day, since this agent's persona is Tom's JARVIS wording too. On 2026-09-27 it went back to **Okay Nabu** (`select.rumpus_room_voice_wake_word`): Tom was "having a hell of a time activating it", even with `select.home_assistant_voice_03_wake_word_sensitivity` (the Rumpus box's sensitivity select, which kept its factory name) at "Very sensitive". On 2026-09-26 it gained the haynesnetwork **Watch history** API (Tom: "add haynesnetwork MCP to the rumpus room"), attached with `attach_watch_history.py ... AGENT=rumpus`: `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`, with the WATCH HISTORY block from *Movie Room — watch history* appended after the shared block, byte for byte. Text-tested as the satellite: unfinished shows, the lamp, and a movie recommendation, each ~3 s with the right tool.
+**Cloud rollback agent, previously live from 2026-09-26 until the local trial began on 2026-10-13.** Tom had moved the box back to OpenAI while the phone used the local LLM. From 2026-09-22 the box had run the local Jarvis pipeline. `select.rumpus_room_voice_assistant` = "Rumpus Room Assist"; the wake word stayed **Hey Jarvis** for a day, since this agent's persona is Tom's JARVIS wording too. On 2026-09-27 it went back to **Okay Nabu** (`select.rumpus_room_voice_wake_word`): Tom was "having a hell of a time activating it", even with `select.home_assistant_voice_03_wake_word_sensitivity` (the Rumpus box's sensitivity select, which kept its factory name) at "Very sensitive". On 2026-09-26 it gained the haynesnetwork **Watch history** API (Tom: "add haynesnetwork MCP to the rumpus room"), attached with `attach_watch_history.py ... AGENT=rumpus`: `llm_hass_api: ["assist", "mcp-01M381GTWER1BG9K4MWG3GDEGR"]`, with the WATCH HISTORY block from *Movie Room — watch history* appended after the shared block, byte for byte. Text-tested as the satellite: unfinished shows, the lamp, and a movie recommendation, each ~3 s with the right tool.
 
 Persona:
 
@@ -161,7 +206,7 @@ HOW YOU ACT
 - For news, scores, showtimes or anything you are not sure of, search the web and answer in a sentence or two.
 ```
 
-**The live Rumpus prompt continues past this fence** (since 2026-09-26). After one blank line comes the WATCH HISTORY block below, byte for byte (`WATCH_BLOCK`), and `llm_hass_api` carries `mcp-01M381GTWER1BG9K4MWG3GDEGR`. A restore from this fence alone drops the block while the API stays. Instead, check with `attach_watch_history.py "ACTION=status AGENT=rumpus"` and re-apply with `ACTION=attach ENTRY_ID=01M381GTWER1BG9K4MWG3GDEGR AGENT=rumpus`, which appends the block and keeps the API.
+**The OpenAI rollback prompt continues past this fence** (since 2026-09-26). After one blank line comes the WATCH HISTORY block below, byte for byte (`WATCH_BLOCK`), and `llm_hass_api` carries `mcp-01M381GTWER1BG9K4MWG3GDEGR`. A restore from this fence alone drops the block while the API stays. Instead, check with `attach_watch_history.py "ACTION=status AGENT=rumpus"` and re-apply with `ACTION=attach ENTRY_ID=01M381GTWER1BG9K4MWG3GDEGR AGENT=rumpus`, which appends the block and keeps the API.
 
 ### Movie Room — watch history (added 2026-09-23, watchlist line 2026-09-26)
 
@@ -170,12 +215,12 @@ The Movie Room agent also carries the haynesnetwork **Watch history** MCP API
 below is appended to its prompt after the shared block. Every attached tool schema rides every voice
 turn (Tool track 1 measured about 2 s per turn for 35 tools), so few agents get the API. The same block
 is also on:
-- the **Rumpus Room** agent, since 2026-09-26 on Tom's ruling;
-- the **OpenAI Phone Assist fallback** (below);
-- the idle local **Jarvis** agent, which carries the same block; without broad discovery tools it states the cached scope.
+- the **Rumpus Room local trial**, since 2026-10-13 (`AGENT=rumpus_local`);
+- the retained **Rumpus Room OpenAI rollback**, attached on 2026-09-26 (`AGENT=rumpus`);
+- the **OpenAI Phone Assist fallback** below (`AGENT=phone`);
+- the idle local **Jarvis** agent (`AGENT=jarvis`), which states the cached scope when broad discovery tools are unavailable.
 
-The live local phone agent does not carry it. `attach_watch_history.py` reaches each of these with
-`AGENT=movie|rumpus|phone|jarvis`.
+The live local phone agent does not carry it. Including Movie Room, the helper addresses five holders with `AGENT=movie|rumpus_local|rumpus|phone|jarvis`.
 
 The last bullet came on 2026-09-26 with the server's two watchlist tools (nine tools in all):
 `watchlist` lists Tom's plex.tv watchlist and `set_watchlist` adds or removes a title on it. Seerr
@@ -184,11 +229,9 @@ auto-requests his watchlist, so adding a title that is not on Plex downloads it;
 new tools without a prompt change but paraphrased their answers down to a few words (it dropped "It's
 on Plex."), so the bullet makes it say back the title and year and always say when a title will download.
 
-`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`; the Rumpus Room and Phone Assist agents carry it too) and every
-earlier version (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, change both copies, then run
-`ACTION=update ENTRY_ID=<mcp entry id> DRY_RUN=1` to see the swap and `ACTION=update ENTRY_ID=<mcp entry id>`
-to make it, then repeat with `AGENT=rumpus`, `AGENT=phone` and `AGENT=jarvis`, so all four holders change: it replaces the earlier block in place,
-backup first, and leaves `llm_hass_api` alone. To undo it, run the line the update prints after its
+`scripts/voice-bench/attach_watch_history.py` holds this block byte for byte (`WATCH_BLOCK`) and earlier versions (`PREVIOUS_WATCH_BLOCKS`). To put an edited block live, update the shared block here and the helper constant, then run `ACTION=update ENTRY_ID=<mcp entry id> AGENT=movie DRY_RUN=1` to inspect the swap. Apply the update for each of `movie`, `rumpus_local`, `rumpus`, `phone` and `jarvis`, so all five holders receive it. The helper replaces the recognized Watch history block in place, preserves surrounding prompt text, backs up first and leaves `llm_hass_api` unchanged.
+
+To undo it, use the same AGENT and run the line the update prints after its
 backup, `ACTION=update ENTRY_ID=<mcp entry id> PROMPT_FILE=<backup path>`: it swaps the backup's block
 back in place, API kept. Preserve backups outside the pod's /tmp before a restart. Restore through this helper with the temporary native maintenance action for OpenAI agents whose web search and user location are enabled; the same guard applies to undo. HA's `mcp` integration reads a server's tool list only
 when the entry is set up, so new or removed tools reach the agent only after
@@ -353,7 +396,7 @@ HOW YOU ACT
 - Answer everyday questions too. For news, scores, showtimes, facts or anything you are not sure of, search the web and answer in a sentence or two; a quick calculation, conversion or definition you can answer directly.
 ```
 
-After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` four times: without `AGENT`, with `AGENT=rumpus`, with `AGENT=phone`, and with `AGENT=jarvis`.
+After one blank line comes the WATCH HISTORY block from *Movie Room — watch history* above, byte for byte (`WATCH_BLOCK` in `attach_watch_history.py`). It is not repeated here, so there is one copy to edit. `attach_watch_history.py` updates this agent's copy when run with `AGENT=phone`, on any action, so run every `ACTION=update` five times: without `AGENT`, with `AGENT=rumpus_local`, with `AGENT=rumpus`, with `AGENT=phone`, and with `AGENT=jarvis`.
 
 Tested on 2026-09-26, while it was the live agent, as text through the pipeline (`bench.py MODE=pipe PIPELINE=01m3fwd8phf6qxyaax31evjt7a`, no device):
 
