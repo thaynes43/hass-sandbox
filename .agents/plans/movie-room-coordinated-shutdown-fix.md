@@ -8,7 +8,7 @@ Acceptance: Simulated timing/cancellation/hold/TV-transition tests; review diff 
 
 Dependencies: Confirmed attribution and evidence in movie-room-off-2026-10-17-findings.md. Live originals match saved rollback configs (hashes 2ed7e24f71801b90 and d78c34ad1a2a661c). Both automations currently enabled/idle; pending helper off.
 
-Owner: This same single Codex session, existing isolated task worktree/branch. No subagents or Claude usage; separate Opus session untouched. Authorized runtime writes limited to these two automation configurations via supported scoped update.
+Owner: This same single Codex session, existing isolated task worktree/branch. No subagents or local Claude sessions; separate Opus session untouched. Tom explicitly approved the existing Claude GitHub CI reviewers/audits on resumption. No further runtime writes are needed or authorized for publication; compare merged source to live configuration read-only.
 
 Budget: Target 60 minutes, checkpoint at 45 minutes/context pressure; concurrency one; actual quota unknown, no metered API work. Tests low CPU, serial/fake time; no burners, stress tests, wide parallel/looped test runs.
 
@@ -16,7 +16,13 @@ Plan: Preserve effective pre-warning absence delay max(existing TV delay helper 
 
 Artifacts/handoff: YAML mirrors, focused offline tests, PR/check evidence, deployment readback and rollback instructions here. Stop when accepted deployment verified, concrete scope/approval blocker, budget/context threshold, or explicit pause.
 
-## Explicit checkpoint — stopped
+## Resumed publication — authorized
+
+Tom explicitly approved publishing the existing ready PR, running existing Claude CI reviews/audits, addressing relevant findings and merging after required checks pass. The former CI permission blocker is resolved. Same session only; no implementation agents or use of idle Opus. Publication/check/review/merge and read-only source/live verification are now active; no unnecessary redeployment, live announcements/device/sensor tests, global reload or restart. Additional publication budget: target 30 minutes, concurrency one plus existing hosted CI, checkpoint if a required check or substantive finding blocks delivery.
+
+Tom plans to exercise each mmWave sensor tomorrow to verify occupied/clear transitions. This is a pending owner-operated runtime acceptance check; no sensor is to be triggered tonight.
+
+## Historical checkpoint — stopped before explicit resumption
 
 Tom directed stopping at the PR/CI boundary without permission to consume Claude CI. No further HA queries, writes, tests, PR creation, merging or deployment after this checkpoint. Separate Opus session untouched; no agents/Claude sessions launched.
 
@@ -34,4 +40,4 @@ Validation: 84 serial fake-time config-driven tests passed in 3.03s. Both config
 
 Rollback: the two original complete configs are in movie-room-off-2026-10-17-evidence/automation_light_inovelli_movie_room_motion_cleared_lights_off.json and automation_media_basement_movie_room_no_occupancy_tv_off.json, under config (including IDs/categories). Fetch current hashes immediately before any authorized rollback; restore original TV config first, then original lights config via ha_config_set_automation using each latest config_hash and original category. This restores the incident-era five-minute unannounced lights behavior, so rollback is not to be executed casually. No rollback performed.
 
-Minimal next authorization: allow ONLY the repository's existing Claude GitHub CI reviewers/audits for this PR (no local Claude sessions or additional agents), and resume the ready-PR/check/review/merge chain. If all Claude usage stays prohibited, keep this boundary held; changing shared CI policy needs separate explicit authorization. Pending clarification is not approval. Re-check live/source drift read-only only after Tom resumes work.
+Former authorization gate (resolved on resumption above): the existing Claude GitHub CI reviewers/audits had required explicit permission. That permission is now granted for this PR; no shared CI policy change or local Claude session is needed.

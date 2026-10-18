@@ -443,9 +443,9 @@
       "operation": "updated",
       "category": "01K57ATNFFTNT6X9H75K57VWZ9",
       "best_practice_warnings": [
-        "Template detected in condition — if this maps to a native option (`numeric_state`, `state`, `time`, `sun`, `zone`, `device`), use that instead. Templates fail silently at runtime and bypass schema validation. See skill://home-assistant-best-practices/references/template-guidelines.md#when-to-avoid-templates | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/template-guidelines.md')",
-        "Condition uses template with `is_state()` — use native `state` condition instead (e.g., `condition: state, entity_id: light.bedroom, state: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#native-conditions | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
-        "Trigger uses template with `is_state()` — use native `state` trigger instead (e.g., `platform: state, entity_id: light.x, to: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')"
+        "Template detected in condition \u2014 if this maps to a native option (`numeric_state`, `state`, `time`, `sun`, `zone`, `device`), use that instead. Templates fail silently at runtime and bypass schema validation. See skill://home-assistant-best-practices/references/template-guidelines.md#when-to-avoid-templates | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/template-guidelines.md')",
+        "Condition uses template with `is_state()` \u2014 use native `state` condition instead (e.g., `condition: state, entity_id: light.bedroom, state: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#native-conditions | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
+        "Trigger uses template with `is_state()` \u2014 use native `state` trigger instead (e.g., `platform: state, entity_id: light.x, to: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')"
       ]
     },
     {
@@ -455,10 +455,10 @@
       "operation": "updated",
       "category": "01KGP18YKXTZN1941J0JEB9SMN",
       "best_practice_warnings": [
-        "Action uses `wait_template` — consider `wait_for_trigger` with a state trigger (note: different semantics — `wait_for_trigger` waits for a *change*, `wait_template` passes immediately if already true). See skill://home-assistant-best-practices/references/automation-patterns.md#wait-actions | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
-        "Template detected in condition — if this maps to a native option (`numeric_state`, `state`, `time`, `sun`, `zone`, `device`), use that instead. Templates fail silently at runtime and bypass schema validation. See skill://home-assistant-best-practices/references/template-guidelines.md#when-to-avoid-templates | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/template-guidelines.md')",
-        "Trigger uses template with `is_state()` — use native `state` trigger instead (e.g., `platform: state, entity_id: light.x, to: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
-        "Trigger uses `template` platform — if this maps to a native option (`state`, `numeric_state`, `time`, `time_pattern`, `sun`, `zone`, `event`), use that instead. Native triggers are event-driven; template triggers re-evaluate on every state change. See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')"
+        "Action uses `wait_template` \u2014 consider `wait_for_trigger` with a state trigger (note: different semantics \u2014 `wait_for_trigger` waits for a *change*, `wait_template` passes immediately if already true). See skill://home-assistant-best-practices/references/automation-patterns.md#wait-actions | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
+        "Template detected in condition \u2014 if this maps to a native option (`numeric_state`, `state`, `time`, `sun`, `zone`, `device`), use that instead. Templates fail silently at runtime and bypass schema validation. See skill://home-assistant-best-practices/references/template-guidelines.md#when-to-avoid-templates | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/template-guidelines.md')",
+        "Trigger uses template with `is_state()` \u2014 use native `state` trigger instead (e.g., `platform: state, entity_id: light.x, to: 'on'`). See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')",
+        "Trigger uses `template` platform \u2014 if this maps to a native option (`state`, `numeric_state`, `time`, `time_pattern`, `sun`, `zone`, `event`), use that instead. Native triggers are event-driven; template triggers re-evaluate on every state change. See skill://home-assistant-best-practices/references/automation-patterns.md#trigger-types | call ha_get_skill_guide(skill='home-assistant-best-practices', file='references/automation-patterns.md')"
       ]
     }
   ],
@@ -468,5 +468,7 @@
   },
   "validation": "84 serial fake-time configuration-driven tests; installed HA schema OK for both; five isolated real HA Script probes with only fake service handlers passed; loaded raw_config exact match for both",
   "no_execution_verification": "Both automations on/current=0; last_triggered unchanged; pending off; lights/TV/satellite last_changed unchanged; unrelated photo automation last_changed unchanged",
-  "remaining_gate": "Opening a ready PR starts existing Claude review/audit workflows. No permission received to consume Claude CI. No PR opened, merge performed, or further runtime operations authorized after checkpoint."
+  "remaining_gate": "Opening a ready PR starts existing Claude review/audit workflows. No permission received to consume Claude CI. No PR opened, merge performed, or further runtime operations authorized after checkpoint.",
+  "record_type": "Historical deployment/checkpoint snapshot; see publication_resumption for current authorization",
+  "publication_resumption": "Tom explicitly approved ready PR publication, existing Claude GitHub CI reviews/audits, required checks and merge. Former CI permission gate resolved; same session only, no local Claude/agents and no further deployment. Compare merged source to live read-only."
 }
