@@ -1,155 +1,171 @@
 id: '1770265925289'
 alias: '[Media] [Basement] [Movie Room] : [No Occupancy] : [TV Off]'
-description: "Turn off the Movie Room LG TV when the room becomes empty and stays
-  empty for a configured time.\n\nBehavior:\n- The automation entity toggle is the
-  permanent enable/disable.\n- When the room first becomes empty (both occupancy sensors
-  off) while the TV is on, this sets input_boolean.basement_movie_room_tv_auto_off_enabled
-  = on to indicate a pending shutdown.\n- Toggling that input_boolean off cancels
-  the current pending shutdown (until occupancy becomes on again, then empty again).\n\
-  - The last 5 minutes are announced every minute on the Movie Room Voice satellite
-  before turning off the TV.\n"
+description: |
+  Coordinated empty-room TV and lights shutdown. Both sensors must report off.
+  Preserve the old silent absence delay: max(TV delay helper minus 5 minutes, 0),
+  currently 15 minutes with the existing 00:20:00 helper. Then announce 15, 10, 5,
+  and 1 minutes remaining, waiting 5/5/4/1 minutes AFTER each successful announcement.
+  Thus at least 15 minutes follow the first warning; nominal total absence is 30
+  minutes plus announcement durations. Occupancy, invalid sensor state, TV off or
+  unavailable/unknown, or cancelling the pending toggle aborts the entire run.
+  TV becoming active while already empty starts a fresh full cycle. Light holds
+  still protect the lights; they do not change the existing TV auto-off policy.
+  No actions continue after a failed announcement. TV-off lights-only cleanup is
+  owned by the separately guarded lights automation with a fresh delay.
 triggers:
-  - id: room_empty
-    value_template: "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy','off')
-      and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor','off')
-      }}"
-    trigger: template
-  - id: room_occupied
-    value_template: "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy','on')
-      or is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor','on')
-      }}"
-    trigger: template
-  - id: tv_turned_off
-    entity_id: media_player.lg_webos_tv_oled83g4wua
-    to: off
-    trigger: state
+  - trigger: template
+    id: room_empty
+    value_template: '{{ is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'', ''off'') and
+      is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'', ''off'') }}'
+  - trigger: template
+    id: room_not_empty
+    value_template: '{{ not (is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'', ''off'')
+      and is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'', ''off'')) }}'
+  - trigger: template
+    id: tv_active
+    value_template: '{{ states(''media_player.lg_webos_tv_oled83g4wua'') not in [''off'', ''unavailable'',
+      ''unknown''] }}'
+  - trigger: template
+    id: tv_inactive
+    value_template: '{{ not (states(''media_player.lg_webos_tv_oled83g4wua'') not in [''off'', ''unavailable'',
+      ''unknown'']) }}'
+  - trigger: state
+    entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
+    to: 'off'
+    id: pending_cancelled
 conditions: []
 actions:
   - choose:
       - conditions:
           - condition: trigger
             id:
-              - room_occupied
-              - tv_turned_off
+              - room_not_empty
+              - tv_inactive
+              - pending_cancelled
         sequence:
-          - action: input_boolean.turn_off
+          - &clear_pending
+            action: input_boolean.turn_off
             target:
               entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-            data: {}
       - conditions:
           - condition: trigger
-            id: room_empty
-          - condition: template
-            value_template: "{{ states('media_player.lg_webos_tv_oled83g4wua') not
-              in ['off','unavailable','unknown'] }}"
-        sequence:
-          - action: input_boolean.turn_on
-            target:
-              entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-            data: {}
-          - variables:
-              pre_warning_seconds: "{% set d = (states('input_select.basement_movie_room_tv_auto_off_delay')\n\
-                \  | replace('\"','')\n  | replace(\"'\",'')\n  | trim) %}\n{% set
-                d = d if d not in ['unknown','unavailable',''] else '00:20:00' %}\n\
-                {% set td = as_timedelta(d) %}\n{% set total_s = (td.total_seconds()
-                | int(1200)) %}\n{% set pre = (total_s - 300) %}\n{{ pre if pre >
-                0 else 0 }}"
-          - wait_for_trigger:
-              - value_template: "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy','on')
-                  or is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor','on')
-                  }}"
-                trigger: template
-              - entity_id: media_player.lg_webos_tv_oled83g4wua
-                to: off
-                trigger: state
-              - entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-                to: off
-                trigger: state
-            timeout:
-              seconds: '{{ pre_warning_seconds | int(0) }}'
-            continue_on_timeout: true
-          - choose:
-              - conditions:
-                  - condition: template
-                    value_template: '{{ wait.trigger is not none }}'
-                sequence:
-                  - action: input_boolean.turn_off
-                    target:
-                      entity_id: 
-                        input_boolean.basement_movie_room_tv_auto_off_enabled
-                    data: {}
-                  - stop: Cancelled before countdown
-          - repeat:
-              count: 5
-              sequence:
-                - condition: state
-                  entity_id: 
-                    input_boolean.basement_movie_room_tv_auto_off_enabled
-                  state: on
-                - condition: template
-                  value_template: "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy','off')
-                    and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor','off')
-                    }}"
-                - condition: template
-                  value_template: "{{ states('media_player.lg_webos_tv_oled83g4wua')
-                    not in ['off','unavailable','unknown'] }}"
-                - action: assist_satellite.announce
-                  target:
-                    entity_id: 
-                      assist_satellite.movie_room_voice_assist_satellite
-                  data:
-                    preannounce: true
-                    message: "{% set remaining = 6 - repeat.index %}\nMovie Room appears
-                      empty. Turning off the TV in {{ remaining }} minute{{ '' if
-                      remaining == 1 else 's' }}."
-                - wait_for_trigger:
-                    - value_template: "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy','on')
-                        or is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor','on')
-                        }}"
-                      trigger: template
-                    - entity_id: media_player.lg_webos_tv_oled83g4wua
-                      to: off
-                      trigger: state
-                    - entity_id: 
-                        input_boolean.basement_movie_room_tv_auto_off_enabled
-                      to: off
-                      trigger: state
-                  timeout:
-                    minutes: 1
-                  continue_on_timeout: true
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: '{{ wait.trigger is not none }}'
-                      sequence:
-                        - action: input_boolean.turn_off
-                          target:
-                            entity_id: 
-                              input_boolean.basement_movie_room_tv_auto_off_enabled
-                          data: {}
-                        - stop: Cancelled during countdown
+            id:
+              - room_empty
+              - tv_active
           - condition: state
-            entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-            state: on
-          - condition: template
-            value_template: "{{ is_state('binary_sensor.basement_movie_inovelli_presence_occupancy','off')
-              and is_state('binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor','off')
-              }}"
-          - condition: template
-            value_template: "{{ states('media_player.lg_webos_tv_oled83g4wua') not
-              in ['off','unavailable','unknown'] }}"
-          - action: assist_satellite.announce
-            target:
-              entity_id: assist_satellite.movie_room_voice_assist_satellite
-            data:
-              preannounce: true
-              message: Turning off the Movie Room TV now.
-          - action: media_player.turn_off
-            target:
-              entity_id: media_player.lg_webos_tv_oled83g4wua
-            data: {}
-          - action: input_boolean.turn_off
-            target:
-              entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
-            data: {}
+            entity_id: binary_sensor.basement_movie_inovelli_presence_occupancy
+            state: 'off'
+          - condition: state
+            entity_id: binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
+            state: 'off'
+          - condition: not
+            conditions:
+              - condition: state
+                entity_id: media_player.lg_webos_tv_oled83g4wua
+                state:
+                  - 'off'
+                  - unavailable
+                  - unknown
+        sequence:
+          - alias: Abort the whole shutdown on any service failure; always clear pending
+            continue_on_error: true
+            sequence:
+              - action: input_boolean.turn_on
+                target:
+                  entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
+              - variables:
+                  pre_warning_seconds: |-
+                    {% set d = (states('input_select.basement_movie_room_tv_auto_off_delay')
+                      | replace('"','')
+                      | replace("'",'')
+                      | trim) %}
+                    {% set d = d if d not in ['unknown','unavailable',''] else '00:20:00' %}
+                    {% set td = as_timedelta(d) %}
+                    {% set total_s = (td.total_seconds() | int(1200)) %}
+                    {% set pre = (total_s - 300) %}
+                    {{ pre if pre > 0 else 0 }}
+              - wait_template: '{{ not (is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'',
+                  ''off'') and is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'',
+                  ''off'') and states(''media_player.lg_webos_tv_oled83g4wua'') not in [''off'', ''unavailable'',
+                  ''unknown''] and is_state(''input_boolean.basement_movie_room_tv_auto_off_enabled'', ''on''))
+                  }}'
+                timeout:
+                  seconds: '{{ pre_warning_seconds | int(0) }}'
+                continue_on_timeout: true
+              - &cancel_if_invalid
+                if:
+                  - condition: not
+                    conditions:
+                      - condition: and
+                        conditions:
+                          - condition: state
+                            entity_id: binary_sensor.basement_movie_inovelli_presence_occupancy
+                            state: 'off'
+                          - condition: state
+                            entity_id: binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor
+                            state: 'off'
+                          - condition: not
+                            conditions:
+                              - condition: state
+                                entity_id: media_player.lg_webos_tv_oled83g4wua
+                                state:
+                                  - 'off'
+                                  - unavailable
+                                  - unknown
+                          - condition: state
+                            entity_id: input_boolean.basement_movie_room_tv_auto_off_enabled
+                            state: 'on'
+                then:
+                  - *clear_pending
+                  - stop: 'Shutdown cancelled: occupancy, TV state, or pending toggle changed'
+              - repeat:
+                  for_each:
+                    - remaining: 15
+                      wait: 5
+                    - remaining: 10
+                      wait: 5
+                    - remaining: 5
+                      wait: 4
+                    - remaining: 1
+                      wait: 1
+                  sequence:
+                    - *cancel_if_invalid
+                    - action: assist_satellite.announce
+                      target:
+                        entity_id: assist_satellite.movie_room_voice_assist_satellite
+                      data:
+                        preannounce: true
+                        message: Movie Room appears empty. Turning off the TV and lights in {{ repeat.item.remaining
+                          }} minute{{ '' if repeat.item.remaining == 1 else 's' }}.
+                    - wait_template: '{{ not (is_state(''binary_sensor.basement_movie_inovelli_presence_occupancy'',
+                        ''off'') and is_state(''binary_sensor.basement_rumpus_room_aqara_fp2_01_presence_sensor'',
+                        ''off'') and states(''media_player.lg_webos_tv_oled83g4wua'') not in [''off'', ''unavailable'',
+                        ''unknown''] and is_state(''input_boolean.basement_movie_room_tv_auto_off_enabled'',
+                        ''on'')) }}'
+                      timeout:
+                        minutes: '{{ repeat.item.wait }}'
+                      continue_on_timeout: true
+                    - *cancel_if_invalid
+              - *cancel_if_invalid
+              - if:
+                  - condition: template
+                    value_template: |
+                      {# Only run when hold is clear #}
+                      {% set s = 'basement_movie_inovelli_presence' %}
+                      {% set manual = states('input_text.inovelli_manual_hold') | int(85) %}
+                      {% set auto = states('input_text.inovelli_auto_hold') | int(0) %}
+                      {% set led1 = states('number.' ~ s ~ '_defaultled1colorwhenon') | int(-1) %}
+                      {{ led1 != manual and led1 != auto }}
+                then:
+                  - *cancel_if_invalid
+                  - action: light.turn_off
+                    target:
+                      entity_id:
+                        - light.basement_movie_room_lights
+                        - light.basement_movie_room_ambient_lighting
+              - *cancel_if_invalid
+              - action: media_player.turn_off
+                target:
+                  entity_id: media_player.lg_webos_tv_oled83g4wua
+          - *clear_pending
 mode: restart

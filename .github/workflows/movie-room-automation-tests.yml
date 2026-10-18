@@ -1,0 +1,37 @@
+name: Movie Room Automation Tests
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'home-assistant/automations/**/*movie_room*'
+      - 'home-assistant/automations/*movie_room*'
+      - 'scripts/automation-tests/**'
+      - '.github/workflows/movie-room-automation-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'home-assistant/automations/**/*movie_room*'
+      - 'home-assistant/automations/*movie_room*'
+      - 'scripts/automation-tests/**'
+      - '.github/workflows/movie-room-automation-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: movie-room-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  movie-room-automations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'pytest>=8,<10' 'PyYAML>=6,<7' 'Jinja2>=3.1,<4'
+      - name: Run configuration-driven scenarios serially with fake time and services
+        run: nice -n 19 python -m pytest -q scripts/automation-tests
