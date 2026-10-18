@@ -39,6 +39,8 @@ Tom sat in his daughter's spot from 12:32 EDT (16:32 UTC) and sat still.
 - Inovelli (`basement_movie_inovelli_presence_occupancy`): flapped on/off about every
   40 s while he settled, then reported off from 12:38:21 EDT onward. It does not hold a
   still, seated person; the FP2 alone keeps the room occupied.
+- Tom (with a photo of the TV wall): the seat is in the corner, outside the Inovelli
+  switch's view, so only the FP2 covers it. The Inovelli reading off there is expected.
 
 Incident correlation (2026-10-17, EDT): the FP2 held her from 22:03:18 to 23:13:49
 (70 min) before dropping, while the Inovelli had already cleared at 23:06:37. She was
