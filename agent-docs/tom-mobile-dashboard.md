@@ -294,7 +294,7 @@ Every button reuses a script the voice agents or the wall switches already use, 
   basement_server_inovelli_presence`, `normal_mode_input_select: input_select.basement_server_room_mmwave_normal_mode`,
   `hold_color: input_text.inovelli_manual_hold`, `prev_led_color_helper: input_text.basement_server_led_color`, and
   both `automation.light_fp2_server_room_motion_{detected_lights_on,cleared_lights_off}`. Holding sets MmwaveControlWiredDevice
-  to `Disabled` (the zone's normal mode is `Wasteful Occupancy`, so the switch itself would otherwise turn the load off),
+  to `Disabled` (the zone's normal mode is `Wasteful Occupancy`, which only ever turns the load on, never off),
   turns both FP2 automations off and paints LEDs 1–7 the manual-hold colour; clearing restores all three. Hold is lit
   (amber, `mdi:lock`) on the script's own `is_on_hold` test: LED 1 in a hold colour, or mmWave control `Disabled` while
   the normal mode is not, or either automation off. So a lit button always means "a tap clears it", auto holds included.

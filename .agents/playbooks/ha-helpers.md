@@ -235,6 +235,11 @@ Provide `helper_id` (the slug after the domain in entity_id). No discovery call 
   zones that automations own. The garage mudroom helper had `initial: "Occupancy (default)"`.
   After each restart the switch cut the garage lights in firmware whenever its own radar
   cleared, ignoring the other sensors (fixed 2026-10-18).
+- **Pick the mode from who owns the load.** `Disabled` when HA automations turn it on and off.
+  `Wasteful Occupancy` (auto on, never auto off) when the switch turns it on and HA owns the
+  off. `Occupancy (default)` only where HA has no off path at all, because that mode cuts the
+  load the moment the switch's own radar clears. Per-switch audit and evidence:
+  `backlog/008-inovelli-local-control-audit.md`.
 
 After creating, also update:
 

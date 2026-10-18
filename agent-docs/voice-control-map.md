@@ -220,7 +220,8 @@ stay invisible to Assist (no tool reads `input_text`).
 Defects found (open; the dead spa-light auto-hold trigger was fixed on 2026-09-19, and the
 garage mudroom normal-mode helper on 2026-10-18: its `initial` was "Occupancy (default)", which
 reset it on every HA restart and re-enabled the switch's local mmWave control. It is now
-`initial: Disabled`.) The spotlight mapping passes an `input_number` as
+`initial: Disabled`. The audit that followed, `backlog/008-inovelli-local-control-audit.md`,
+did the same for the first-floor mudroom and the kids' bath vanity.) The spotlight mapping passes an `input_number` as
 `prev_led_color_helper` (written with `input_text.set_value`, so it never updates);
 `automation.notify_garage_ratgdo_door_open_close_tom_iphone` is off; 14 exterior automations
 have no repo mirror.
@@ -235,7 +236,9 @@ Three control layers — only one is visible to HA:
 2. **HA automation on a button event**: Inovelli **config button** 1x/2x only (no paddle
    multi-taps are mapped anywhere on this floor) and the five ZEN32 scene controllers.
 3. **Device-local mmWave** (`MmwaveControlWiredDevice` ≠ Disabled): primary bath vanity
-   (Wasteful Occupancy), water closet, kids bath vanity, laundry. HA owns only the off.
+   (Wasteful Occupancy: the switch turns it on, HA owns the off), water closet and laundry
+   (Occupancy: the switch owns on and off; no HA automation). The kids' bath vanity left this
+   list on 2026-10-18: HA owns its on and off, and the switch is Disabled.
 
 | Room | Physical concept → target | Ownership / voice caveat |
 |---|---|---|
@@ -246,7 +249,7 @@ Three control layers — only one is visible to HA:
 | Primary Hallway | Config 2x hold only | motion on (ungated) + off after 2 min; 93 state changes/24 h — voice lasts minutes without a hold |
 | Upstairs Foyer | six Inovellis, binding only | `light.upstairs_foyer_lights` has no automation and is not exposed |
 | Blue / White / Pink rooms | ZEN32: big 1x = `light.<room>_fan_light`, 2x = nightstand bulb (Jackson / Penelope; White has none), TL/TR = `fan.<room>_fan_fan` on/off, BL = tilt-open / open scenes, BR = close | no occupancy, timers or holds; Blue Room TV off at 01:00 |
-| Kids Bathroom | vanity local mmWave, Config 2x hold | off after 5 min |
+| Kids Bathroom | vanity, Config 2x hold | HA occupancy on, off after 5 min (switch mmWave Disabled since 2026-10-18) |
 | Laundry | fully device-local mmWave | hold works only via the mmWave select |
 
 Shades: three parallel handles. Every ZEN32 button and both schedules (tilt-open 06:45
@@ -317,7 +320,7 @@ timer named oven (2026-10-18) — see *House-wide mechanisms*.
 | Livingroom | ZEN32: big = `light.livingroom_fan_light`; TL/TR = `fan.livingroom_fan_fan` on/off; BL = `scene.laundry_gateway_family_room_open` (2x tilt-open); BR = close | recessed `light.downstairs_livingroom_lights`, lamp, sconce `…_sconce_inovelli_dimmer`, fan light, fan, `climate.first_floor_ecobee`; **no unified "living room lights"** | manual; lamp: `automation.lamp_todo` sunset → 20 % 2500 K, off 02:00 |
 | Study | ZEN32, same layout → `light.study_fan_light`, `fan.study_fan_fan`, `scene.laundry_gateway_office_*` | main `light.downstairs_study_lights`, bookshelf `…_study_bookshelf_inovelli_dimmer` | manual |
 | Dining Room | none mapped | table `light.downstairs_dining_room_table_light`, cove `…_cove_inovelli_dimmer` | ZEN20 strip outlets 4+5 on at sunset, off 23:00 |
-| Mudroom | Config 2x = hold | `light.downstairs_mudroom_lights` | occupancy on/off (2 min) **and** the switch still has local mmWave — relights within seconds while occupied |
+| Mudroom | Config 2x = hold | `light.downstairs_mudroom_lights` | occupancy on/off (2 min); the switch's local mmWave is Disabled since 2026-10-18, so it no longer cuts the lights on its own radar |
 | Entrance | Config 1x = **all off on the way out** (entrance + mudroom + 3 bath loads); Config 2x = hold | `light.downstairs_entrance_lights`; all off = `script.voice_entrance_all_off` | occupancy on, off after 2 min; voice off sticks until re-entry |
 | First Floor Bathroom | vanity Config 2x = hold | three separate loads grouped as `light.downstairs_bathroom_lights` (HA light group, 2026-09-19); `cover.1_4` | vanity is firmware-driven; shower + fan light off after 2 min |
 | Foyer | three "chaos" Inovellis, unmapped | chandelier `light.foyer_chaos_light_switches`; the overhead recessed are `light.upstairs_foyer_lights` — "foyer lights" is ambiguous | manual |
@@ -353,10 +356,10 @@ timer named oven (2026-10-18) — see *House-wide mechanisms*.
 
 Defects found (open): `cover.kitchen_shade` unresponsive for ~3 days; Study shade buttons on both
 wall displays call non-existent `scene.laundry_gateway_study_*` (real: `…_office_*`) in the live
-dashboards and the repo cards; Mudroom switch mmWave is "Occupancy (default)" while HA owns the
-load; foyer/kitchen night-light automations reference `binary_sensor.study_sensor_occupancy` /
+dashboards and the repo cards; foyer/kitchen night-light automations reference `binary_sensor.study_sensor_occupancy` /
 `…dining_room_sensor_occupancy` (real ids have an `ecobee_` prefix);
 `light.downstairs_foyer_night_light` is assigned to the Basement Hallway area; disabled holiday
-automations target removed Twinkly lights; all first-floor schedule automations are live-only.
+automations target removed Twinkly lights; all first-floor schedule automations are live-only. (Fixed 2026-10-18: the
+Mudroom switch's mmWave was "Occupancy (default)" while HA owned the load; it is now Disabled.)
 Note: `floor_name(area_id)` returns None for areas whose id differs from their name — a template
 artifact, not a registry fault.
