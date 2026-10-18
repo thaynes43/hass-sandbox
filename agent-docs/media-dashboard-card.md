@@ -628,4 +628,4 @@ Since fetchers live in `providers/media_providers/`, they must be testable indep
 - **Column**: Right column (column 3)
 - **Position**: Below the Upcoming Events calendar
 - **Width**: Same as calendar card
-- **Height**: Compact view ~200-250px (3 posters + header + tabs)
+- **Height**: Compact view is a fixed 293px on every tab (3 posters + header + tabs). The wall displays are laid out to the pixel and the card rotates tabs on a timer, so the poster art (146px), the caption strip (title + one reserved subtitle line, 34px) and the poster row are pinned in px in the card's `:host` variables, and long titles/subtitles ellipsize. Before v1.26.4 the Theaters tab (no subtitles) was 293px and the others 309px, which bounced the bottom button row 15px off the 1080px screen (#261).
