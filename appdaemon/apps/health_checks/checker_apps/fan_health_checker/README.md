@@ -17,6 +17,17 @@ counts as a failure.
 
 Supports per-fan repair via a configurable HA script (default: `script.zen32_hard_reset`). The script power-cycles the fan's zen32 scene controller and optionally toggles the fan entity if still unavailable.
 
+### Monitor-only fans (no ZEN32)
+
+A fan entry without `power_switch`, `relay_control` and `scene_control` is
+**monitor-only**. The Pavilion fan is one: it is outdoors and has no ZEN32.
+It gets both checks and the same access-point-aware alert text, but it is never
+repair-worthy. Auto-repair, the Repair button and the backoff ladder never touch
+it. It is also left out of the systemic-outage count below: that signature means
+every *repairable* fan is entity-down. Otherwise a fan that can never be
+repair-worthy would make the signature unreachable. An entry with only some of
+the three keys logs a WARNING at startup and is treated as monitor-only.
+
 ### Auto-Repair Trigger (per-fan grace)
 
 Auto-repair only ever fires for a fan whose **entity is down** (State check
@@ -31,8 +42,9 @@ moment *it* went unhealthy. Timers update on every check cycle, including
 while a repair is running, so a fan that recovers mid-repair never keeps a
 stale timer.
 
-**Systemic outage guard**: if *every* fan is entity-down at once, that points
-at HA, the integration, or the Wi-Fi network — not at individual fans.
+**Systemic outage guard**: if *every* repairable fan is entity-down at once
+(monitor-only fans are not counted), that points at HA, the integration, or
+the Wi-Fi network — not at individual fans.
 Auto-repair is suspended (timers cleared, WARNING logged) until the signature
 clears; the fans that are still down afterwards then serve a fresh grace
 period.
@@ -157,6 +169,7 @@ Restore is on by default; set `restore_state_enabled: false` to disable it. If n
 ### Safety Rules
 
 - Each fan uses a different zen32 controller — repairs run independently
+- A fan with no zen32 configured (monitor-only) is never power-cycled
 - Only `unavailable`/`unknown` states trigger repair (a fan that is `off` is healthy)
 - A fan whose access point is down is never power-cycled — the repair and its
   clocks hold until the AP recovers
@@ -202,6 +215,11 @@ fan_health_checker:
       scene_control: select.upstairs_pink_room_scene_controller_scene_control_relay
       ap_status_entity: sensor.guest_room_u7_pro_state       # AP this fan usually holds
       ap_name: Guest Room U7 Pro                     # Friendly AP name for logs/alerts
+    - name: Pavilion                                 # Monitor-only: no ZEN32 keys,
+      entity_id: fan.pavilion_fan_fan                # so it is checked but never
+      ip: "192.168.50.184"                           # power-cycled
+      ap_status_entity: sensor.u7_pro_outdoor_state
+      ap_name: Pavilion U7 Pro Outdoor
 ```
 
 ## Dependencies

@@ -1,13 +1,25 @@
 # Runbook: `fans` — Ceiling Fan Health Checker
 
-Monitors Modern Forms ceiling fans (Pink/Blue/White/Primary/Living Room/Study)
-as one checker. **2 checks per fan**: `{name} State` (`get_state` not
+Monitors Modern Forms ceiling fans (Pink/Blue/White/Primary/Living Room/Study,
+plus the outdoor Pavilion fan since 2026-10-18) as one checker. **2 checks per fan**: `{name} State` (`get_state` not
 `unavailable`/`unknown`) and `{name} Ping` (ICMP to the fan's IP).
 `check_interval_s: 180`. **`supports_repair: yes`** — per-fan repair via
 `script.zen32_hard_reset`, which power-cycles that fan through its ZEN32 scene
 controller's relay. Auto-repair default **OFF**, delay 5 min,
 `repair_recovery_wait_s: 300` (wall clock). Failed repairs retry forever on a
 **CrashLoopBackOff ladder** (below) — there is no "one attempt per failure".
+
+**The Pavilion fan is monitor-only.** It has no ZEN32 (nothing can cut its
+power), so its config carries no `power_switch` / `relay_control` /
+`scene_control`: it gets the same State and Ping checks and AP-aware alert text
+(`sensor.u7_pro_outdoor_state`, the Pavilion U7 Pro Outdoor), but neither
+auto-repair nor the Repair button ever targets it, and it is left out of the
+all-fans-down systemic signature. A Pavilion page has no automated fix here:
+read its AP first, then try a UniFi `reconnect_client` (MAC
+`84:1f:e8:a0:47:84`, alias `MF Fan Pavilion`, fixed IP `192.168.50.184`), and
+if it stays down, it needs a breaker or switch cycle by a person. Never call
+`script.zen32_hard_reset` for it. Where this runbook says "six fans", read
+"the six ZEN32 fans".
 
 ## Domain fact (read this first)
 

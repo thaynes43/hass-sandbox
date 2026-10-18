@@ -182,8 +182,12 @@ Schedules (all unconditional, manual state simply lasts until the next edge):
   single voice handle is the HA group `light.landscape_lights` (2026-09-19).
 - Patio/shed lights and the motion flood relay are `switch.*` and allowlisted by id (v1.18.6);
   the shed fan stays denied (occupancy-owned, and not a light).
-- Every `fan.*` outside is spa equipment. Opener bulbs `light.ratgdov25i_*_light` pass a
-  domain-based deny list and should be denied by name.
+- Every other `fan.*` outside is spa equipment. The exception is the Pavilion ceiling fan,
+  added 2026-10-18 (Modern Forms, area Pavilion). Like the six indoor Modern Forms fans,
+  `fan.pavilion_fan_fan` and `light.pavilion_fan_light` are exposed with the aliases
+  "Pavilion fan" and "Pavilion fan light". It has no wall control or button mapping.
+  Opener bulbs `light.ratgdov25i_*_light` pass a domain-based deny list and should be
+  denied by name.
 
 Dangerous-set status: locks `lock.front_door_lock`, `lock.side_door_lock`, `lock.bulkhead_lock`
 (must be locked) and `lock.mudroom_door_lock` (interior garage↔mudroom door, **expected

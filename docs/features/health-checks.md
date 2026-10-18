@@ -26,7 +26,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Smart devices | Vestaboard, any entity + optional ping | `BasicDeviceChecker` |
 | Powered devices | The printer and the Movie Room Sonos Port — repaired by power-cycling their smart plug or PDU outlet | `RepairableDeviceChecker` |
 | Device groups | Cielo AC controllers, TP-Link plugs — related devices as one unit | `DeviceGroupChecker` |
-| Ceiling fans | Modern Forms fans with per-fan repair | `FanHealthChecker` |
+| Ceiling fans | Modern Forms fans with per-fan repair; the outdoor Pavilion fan has no relay, so it is watched but never power-cycled | `FanHealthChecker` |
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
 | Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
