@@ -175,7 +175,7 @@ power-cycle of another fan that merely blipped.
    test has its AP reading *connected*.
    With that settled: the page you woke on can be pure flapping, so do not go looking for
    one continuously-down fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
-   six fans report into one result list — so the checker stays non-ok while *any* fan is,
+   seven fans (Pavilion included) report into one result list — so the checker stays non-ok while *any* fan is,
    and fans taking turns keep the clock running with no single fan down two polls in a row.
    That is the shape of an airtime event on the Guest Room cluster. Exactly *which* cycle
    promotes depends on the cross-check downgrade, below — read that before you try to match
@@ -188,7 +188,7 @@ power-cycle of another fan that merely blipped.
    - **Nothing firing yet:** `_pending["since"]` starts on the first **non-ok** cycle of
      any severity and survives warning cycles, so a run of partials punctuated by a
      both-checks-red cycle past 300 s promotes straight to critical. It resets on any
-     **fully green** cycle — with six fans blipping those are common — so only an
+     **fully green** cycle — with seven fans blipping those are common — so only an
      *unbroken* run counts and one all-ok cycle restarts the 300 s. Date the promoting
      window from the last green cycle, not from the start of the day's churn.
    - **Once the partials have themselves paged** — with `alert_for_seconds.warning: 600`
@@ -201,7 +201,7 @@ power-cycle of another fan that merely blipped.
      differently: a cycle falling back to warning gives
      `Escalation dropped for checker 'fans' — returned to severity=warning before promotion`,
      while a **fully green** cycle deletes the pending escalation too but logs
-     `Alert suppressed for checker 'fans' — recovered after Ns pending`. With six fans
+     `Alert suppressed for checker 'fans' — recovered after Ns pending`. With seven fans
      blipping the green cycle is the *usual* interrupter, so do not look only for
      `Escalation dropped`. The warning alert itself stays up throughout — it is the
      escalation to critical that keeps restarting.
@@ -326,7 +326,7 @@ power-cycle of another fan that merely blipped.
    **(a) For each in-scope fan (step 2 above) whose AP is down → stop *for that fan*.** Take the AP-down
    exit below for it and do not apply the airtime table to it: a down radio reports no
    airtime, so baseline ratios are exactly what you expect and prove nothing.
-   **This is per fan, not per checker.** The six fans span four APs and the checker reads
+   **This is per fan, not per checker.** The seven fans span five APs (Pavilion: `sensor.u7_pro_outdoor_state`) and the checker reads
    each fan's AP separately, so one down AP does **not** close the incident — if any other
    in-scope fan has its AP up, carry on to (b) for those. Only when *every* in-scope fan
    is behind a down AP is the whole page an AP fault.
