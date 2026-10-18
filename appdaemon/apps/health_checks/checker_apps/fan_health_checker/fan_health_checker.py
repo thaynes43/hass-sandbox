@@ -1401,6 +1401,11 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
             fr = self._fan_repair_states.get(name)
             if fr is None or not isinstance(entry, (list, tuple)) or not entry:
                 continue
+            if name not in self._repairable_fans:
+                # A monitor-only fan has no ladder: a stale entry (a fan that
+                # lost its ZEN32, or a reused name) would show a retry that
+                # never fires and pin the aggregate on "failed".
+                continue
             try:
                 attempts = int(entry[0])
             except (TypeError, ValueError):

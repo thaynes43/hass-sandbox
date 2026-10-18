@@ -2415,3 +2415,22 @@ class TestMonitorOnlyFan:
 
         assert result["status"] == "critical"
         assert "Pavilion U7 Pro Outdoor" in result["detail"]
+
+    def test_stale_ladder_entry_for_monitor_only_fan_is_not_restored(self):
+        """A persisted ladder entry naming a monitor-only fan (it lost its ZEN32,
+        or a name was reused) must not come back as a retry that never fires."""
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+        future = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat()
+        ladder = json.dumps({
+            "Pavilion": [3, future, "failed"],
+            "Pink Room": [2, future, "failed"],
+        })
+        app.get_state = AsyncMock(return_value=ladder)
+
+        _run(app._seed_repair_ladder())
+
+        assert app._fan_repair_states["Pavilion"]["status"] == REPAIR_IDLE
+        assert app._fan_repair_states["Pavilion"]["attempts"] == 0
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
+        assert app._fan_repair_states["Pink Room"]["attempts"] == 2

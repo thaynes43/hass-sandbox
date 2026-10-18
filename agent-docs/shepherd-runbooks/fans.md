@@ -60,6 +60,7 @@ Three consequences that shape everything below:
 | Primary Bedroom | `fan.primary_bedroom_fan_fan` | 192.168.50.146 | Primary Closet U7 Pro |
 | Living Room | `fan.livingroom_fan_fan` | 192.168.50.148 | Livingroom U7-Pro-Wall |
 | Study | `fan.study_fan_fan` | 192.168.50.179 | Kitchen Pantry U7 Pro |
+| Pavilion (**monitor-only**, no ZEN32) | `fan.pavilion_fan_fan` | 192.168.50.184 | Pavilion U7 Pro Outdoor |
 
 Pink Room is **locked** to Kitchen Pantry in UniFi (client "Lock to AP"); the others roam.
 Fans roam between APs; the **Access point** column above is the AP each fan usually holds
@@ -94,8 +95,8 @@ power-cycle of another fan that merely blipped.
   climbing ladder back to instant power-cycles. A restored retry time is
   floored to `now + delay` (5 min), so a reload never fires a power-cycle
   immediately.
-- **All fans entity-down at once** is a systemic-outage signature (HA, the
-  integration, or the network) — auto-repair is suspended entirely and every
+- **All six ZEN32 fans entity-down at once** (the monitor-only Pavilion fan is
+  not counted) is a systemic-outage signature (HA, the integration, or the network) — auto-repair is suspended entirely and every
   timer cleared until it clears.
 - **A manual `start_repair` wipes every fan's ladder** back to attempt 1. That
   is deliberate (a human declaring a fresh start) — but it means firing one to
@@ -160,7 +161,8 @@ power-cycle of another fan that merely blipped.
    all-green arrival above, or an error detail — fetch it yourself with `GET /api/states/sensor.<ap>_state` for the APs named in
    the fan table above (`sensor.guest_room_u7_pro_state`,
    `sensor.kitchen_pantry_u7_pro_state`, `sensor.livingroom_u7_pro_wall_state`,
-   `sensor.primary_closet_u7_pro_state`); `disconnected` / `not_home` / `off` count as
+   `sensor.primary_closet_u7_pro_state`, and `sensor.u7_pro_outdoor_state` for the
+   Pavilion fan); `disconnected` / `not_home` / `off` count as
    down.
    **Then do this per fan:** skip this step for any in-scope fan whose own AP is
    down (gate 1 spans co-channel neighbours whose radios are still reporting, so the
