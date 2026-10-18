@@ -1571,7 +1571,7 @@
 </tr>
 <tr>
 <td>Ceiling fans</td>
-<td>Modern Forms fans with per-fan repair</td>
+<td>Modern Forms fans with per-fan repair; the outdoor Pavilion fan has no relay, so it is watched but never power-cycled</td>
 <td><code>FanHealthChecker</code></td>
 </tr>
 <tr>
@@ -1913,7 +1913,7 @@
 <td>Fans</td>
 <td><code>FanHealthChecker</code></td>
 <td>Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down</td>
-<td>Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder</td>
+<td>Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder (not the Pavilion fan, which has no zen32 and is monitor-only)</td>
 </tr>
 <tr>
 <td>Printer</td>
