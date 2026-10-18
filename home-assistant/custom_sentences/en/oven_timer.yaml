@@ -1,0 +1,63 @@
+# "Oven timer" by voice = the Voice PE built-in timer NAMED "oven" on the satellite you speak to
+# (hass-sandbox #259, 2026-10-18). The Cafe wall oven's own kitchen timer is never touched: a
+# remote write runs hidden on its LCD (#255).
+#
+# Live copy: /config/custom_sentences/en/oven_timer.yaml on the HA PVC (kubectl exec, then
+# conversation.reload). Custom sentences win over the built-in timer sentences
+# (recognize_best prefers custom), so these phrasings always land on the name "oven", never
+# "the oven". The pipelines prefer local intents, so they answer before any LLM agent.
+# The durations reuse the built-in timer lists ({timer_hours} etc., 1-100, digits or words).
+language: "en"
+intents:
+  HassStartTimer:
+    data:
+      - sentences:
+          - "<timer_set> [a|an|the|my] oven timer for <oven_duration>"
+          - "<timer_set> [a|an|the|my] <oven_duration> oven timer"
+          - "<timer_set> [a|an|the|my] <oven_duration> timer for <oven>"
+          - "<timer_set> [a|an|the|my] timer for <oven_duration> for <oven>"
+          - "<timer_set> [a|an|the|my] timer for <oven> for <oven_duration>"
+          - "oven timer [for] <oven_duration>"
+          - "<oven_duration> oven timer"
+          - "<oven_duration> timer for <oven>"
+        slots:
+          name: "oven"
+        response: oven_started
+  HassTimerStatus:
+    data:
+      - sentences:
+          - "[how much] time [is] left on <oven_timer>"
+          - "how long [is] left on <oven_timer>"
+          - "status of <oven_timer>"
+          - "oven timer status"
+        slots:
+          name: "oven"
+  HassCancelTimer:
+    data:
+      - sentences:
+          - "<timer_cancel> <oven_timer>"
+          - "turn off <oven_timer>"
+        slots:
+          name: "oven"
+expansion_rules:
+  oven: "[the|my] oven"
+  oven_timer: "([the|my] oven timer|[the|my] timer for <oven>)"
+  oven_duration: "({timer_hours:hours}( |-)hour[s] [and] {timer_minutes:minutes}( |-)minute[s]|{timer_hours:hours}( |-)hour[s]|{oven_one:hours} hour [and a {timer_half:minutes}]|{timer_half:minutes} an hour|{timer_minutes:minutes}( |-)minute[s] [and] {timer_seconds:seconds}( |-)second[s]|{timer_minutes:minutes}( |-)minute[s]|{timer_seconds:seconds}( |-)second[s])"
+lists:
+  oven_one:
+    values:
+      - in: "an"
+        out: 1
+      - in: "a"
+        out: 1
+responses:
+  intents:
+    HassStartTimer:
+      oven_started: >-
+        {% set h = slots.hours if slots.hours is defined else none %}
+        {% set m = slots.minutes if slots.minutes is defined else none %}
+        {% set s = slots.seconds if slots.seconds is defined else none %}
+        {% set h_text = ('1 hour' if h in ['1', 'one', 'an', 'a'] else h ~ ' hours') if h else '' %}
+        {% set m_text = ('30 minutes' if m in ['half', '1/2'] else m ~ (' minute' if m in ['1', 'one'] else ' minutes')) if m else '' %}
+        {% set s_text = (s ~ (' second' if s in ['1', 'one'] else ' seconds')) if s else '' %}
+        Oven timer set for {{ [h_text, m_text, s_text] | select | join(' and ') }}.
