@@ -2261,3 +2261,176 @@ class TestAccessPointGate:
         assert app._ap_state_by_fan["Pink Room"] is None
         assert "state unknown" in result["detail"]
         assert app._is_fan_repair_worthy(AP_FANS[0], _pink_down_results()) is True
+
+
+# ---------------------------------------------------------------------------
+# Tests — Monitor-only fans (no ZEN32 relay, e.g. the Pavilion fan)
+# ---------------------------------------------------------------------------
+
+MONITOR_ONLY_FAN = {
+    "name": "Pavilion",
+    "entity_id": "fan.pavilion_fan_fan",
+    "ip": "192.168.50.184",
+    "ap_status_entity": "sensor.u7_pro_outdoor_state",
+    "ap_name": "Pavilion U7 Pro Outdoor",
+}
+
+MIXED_FANS = [*SAMPLE_FANS, MONITOR_ONLY_FAN]
+
+
+def _mixed_results(pink: str, blue: str, pavilion: str) -> list[dict]:
+    """State + Ping rows for the two sample fans plus the Pavilion fan."""
+    rows = []
+    for name, status in (("Pink Room", pink), ("Blue Room", blue), ("Pavilion", pavilion)):
+        down = status == "critical"
+        rows.append({
+            "name": f"{name} State",
+            "status": status,
+            "detail": "unavailable" if down else "off",
+        })
+        rows.append({
+            "name": f"{name} Ping",
+            "status": status,
+            "detail": "timeout" if down else "4ms",
+        })
+    return rows
+
+
+class TestMonitorOnlyFan:
+    """A fan with no power_switch/relay_control/scene_control is checked
+    like every other fan but never power-cycled — there is no relay to cut."""
+
+    def test_monitor_only_fan_is_never_repair_worthy(self):
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+
+        results = _mixed_results("ok", "ok", "critical")
+        assert app._can_repair(MONITOR_ONLY_FAN) is False
+        assert app._is_fan_repair_worthy(MONITOR_ONLY_FAN, results) is False
+        # The repairable fans are unaffected
+        assert app._can_repair(SAMPLE_FANS[0]) is True
+        assert app._is_fan_repair_worthy(
+            SAMPLE_FANS[0], _mixed_results("critical", "ok", "ok")
+        ) is True
+
+    def test_monitor_only_fan_down_never_starts_auto_repair(self):
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 1
+        app.create_task = MagicMock()
+
+        results = _mixed_results("ok", "ok", "critical")
+        for _ in range(3):
+            app._update_fan_unhealthy_timers(results)
+            app._evaluate_auto_repair(results)
+
+        assert app._fan_unhealthy_since["Pavilion"] is None
+        assert app._fan_repair_states["Pavilion"]["status"] == REPAIR_IDLE
+        assert app._repair_status == REPAIR_IDLE
+        app.create_task.assert_not_called()
+
+    def test_manual_repair_skips_monitor_only_fan(self):
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+        app._run_health_checks_only = AsyncMock(
+            return_value=_mixed_results("critical", "ok", "critical")
+        )
+        app._execute_fan_repair = AsyncMock()
+
+        _run(app._repair_all_failing())
+
+        app._execute_fan_repair.assert_awaited_once_with(SAMPLE_FANS[0])
+
+    def test_systemic_signature_counts_repairable_fans_only(self):
+        """Every repairable fan down is still the systemic signature, whether
+        or not the monitor-only fan is down too — counting it would make the
+        guard unreachable (it is never repair-worthy)."""
+        for pavilion in ("critical", "ok"):
+            app = _make_app({"fans": MIXED_FANS})
+            _init_only(app)
+            app._cached_auto_repair_enabled = True
+            app._cached_auto_repair_delay_min = 5
+            app.create_task = MagicMock()
+
+            results = _mixed_results("critical", "critical", pavilion)
+            app._update_fan_unhealthy_timers(results)
+            app._evaluate_auto_repair(results)
+
+            assert app._systemic_outage is True, pavilion
+            assert all(t is None for t in app._fan_unhealthy_since.values())
+            app.create_task.assert_not_called()
+
+    def test_one_repairable_fan_down_is_not_systemic(self):
+        """Pink down alongside the monitor-only fan is not the signature: Pink
+        still gets its own grace countdown."""
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+        app._cached_auto_repair_enabled = True
+        app._cached_auto_repair_delay_min = 5
+        app.create_task = MagicMock()
+
+        results = _mixed_results("critical", "ok", "critical")
+        app._update_fan_unhealthy_timers(results)
+        app._evaluate_auto_repair(results)
+
+        assert app._systemic_outage is False
+        assert app._fan_unhealthy_since["Pink Room"] is not None
+        assert app._fan_unhealthy_since["Pavilion"] is None
+        assert app._repair_status == REPAIR_PENDING
+
+    def test_partial_repair_config_is_monitor_only_with_warning(self):
+        half = {**MONITOR_ONLY_FAN, "power_switch": "switch.somewhere"}
+        app = _make_app({"fans": [*SAMPLE_FANS, half]})
+        _init_only(app)
+
+        assert app._can_repair(half) is False
+        warnings = [
+            c for c in app.log.call_args_list
+            if c.kwargs.get("level") == "WARNING" and "Pavilion" in c.args[0]
+        ]
+        assert len(warnings) == 1
+        assert "relay_control" in warnings[0].args[0]
+        assert "scene_control" in warnings[0].args[0]
+
+    def test_monitor_only_fan_still_gets_state_and_ping_checks(self):
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+
+        names = app._build_check_names()
+        assert "Pavilion State" in names
+        assert "Pavilion Ping" in names
+
+    def test_monitor_only_fan_alert_names_its_ap(self):
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+
+        async def fake_get_state(entity_id=None, *a, **kw):
+            if entity_id == MONITOR_ONLY_FAN["ap_status_entity"]:
+                return "connected"
+            return "unavailable"
+
+        app.get_state = AsyncMock(side_effect=fake_get_state)
+        result = _run(app._check_fan_entity(MONITOR_ONLY_FAN))
+
+        assert result["status"] == "critical"
+        assert "Pavilion U7 Pro Outdoor" in result["detail"]
+
+    def test_stale_ladder_entry_for_monitor_only_fan_is_not_restored(self):
+        """A persisted ladder entry naming a monitor-only fan (it lost its ZEN32,
+        or a name was reused) must not come back as a retry that never fires."""
+        app = _make_app({"fans": MIXED_FANS})
+        _init_only(app)
+        future = (datetime.datetime.now() + datetime.timedelta(hours=1)).isoformat()
+        ladder = json.dumps({
+            "Pavilion": [3, future, "failed"],
+            "Pink Room": [2, future, "failed"],
+        })
+        app.get_state = AsyncMock(return_value=ladder)
+
+        _run(app._seed_repair_ladder())
+
+        assert app._fan_repair_states["Pavilion"]["status"] == REPAIR_IDLE
+        assert app._fan_repair_states["Pavilion"]["attempts"] == 0
+        assert app._fan_repair_states["Pink Room"]["status"] == REPAIR_FAILED
+        assert app._fan_repair_states["Pink Room"]["attempts"] == 2

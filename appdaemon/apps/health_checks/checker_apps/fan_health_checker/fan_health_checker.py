@@ -32,6 +32,12 @@ the AP recovers and the alert text says which AP is at fault.  (The
 repair script power-cycles the fan via its ZEN32 relay — the ZEN32 is
 Z-Wave, the fan is not.)
 
+A fan with no ZEN32 relay (no ``power_switch`` / ``relay_control`` /
+``scene_control``, e.g. the Pavilion fan) is **monitor-only**: it gets the
+same State and Ping checks and the same AP-aware alert text, but it is never
+repair-worthy, so neither auto-repair nor a manual repair ever targets it,
+and it does not count toward the systemic-outage signature.
+
 Communication with the controller is event-only (never ``get_app``).
 """
 
@@ -86,6 +92,10 @@ PING_ATTEMPTS = 3
 # the fan would burn its one repair attempt without any power-cycle happening
 SCRIPT_BUSY_WAIT_S = 660
 
+# Per-fan keys the repair script needs (the fan's ZEN32 relay). A fan without
+# all three is monitor-only: checked, never power-cycled.
+REPAIR_KEYS = ("power_switch", "relay_control", "scene_control")
+
 
 class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
     """Health checker for Modern Forms ceiling fans with per-fan repair."""
@@ -103,6 +113,21 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
 
         # Fan list
         self._fans: List[Dict[str, str]] = args.get("fans", [])
+
+        # Fans the repair script can power-cycle (all REPAIR_KEYS present).
+        # The rest are monitor-only: checked, never repair-worthy.
+        self._repairable_fans: set = set()
+        for fan in self._fans:
+            present = [k for k in REPAIR_KEYS if fan.get(k)]
+            if len(present) == len(REPAIR_KEYS):
+                self._repairable_fans.add(fan["name"])
+            elif present:
+                missing = [k for k in REPAIR_KEYS if not fan.get(k)]
+                self.log(
+                    f"{fan['name']}: incomplete repair config (missing "
+                    f"{', '.join(missing)}) — monitor-only, never repaired",
+                    level="WARNING",
+                )
 
         # Repair script (full entity ID, e.g. "script.zen32_hard_reset")
         self._repair_script: str = args.get("repair_script", "")
@@ -190,6 +215,7 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         self.log(
             f"FanHealthChecker initialising: id={self._checker_id}, "
             f"fans={[f['name'] for f in self._fans]}, "
+            f"monitor_only={[f['name'] for f in self._fans if not self._can_repair(f)]}, "
             f"repair_script={self._repair_script}",
             level="INFO",
         )
@@ -712,6 +738,10 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
     # Auto-repair logic
     # ------------------------------------------------------------------
 
+    def _can_repair(self, fan: dict) -> bool:
+        """True if the repair script can power-cycle *fan* (it has a ZEN32)."""
+        return fan["name"] in self._repairable_fans
+
     def _is_fan_repair_worthy(
         self, fan: dict, results: List[Dict[str, str]]
     ) -> bool:
@@ -726,7 +756,12 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         the outage is the network's, and power-cycling the fan cannot fix
         it — the repair (and its grace/backoff clocks) hold until the AP
         recovers.
+
+        A monitor-only fan (no ZEN32 relay configured) is never repair-worthy:
+        there is nothing to power-cycle.
         """
+        if not self._can_repair(fan):
+            return False
         state_name = f"{fan['name']} State"
         entity_down = any(
             r["name"] == state_name and r["status"] == "critical"
@@ -754,12 +789,15 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         # Systemic-outage signature: every fan entity-down at once points at
         # HA, the integration, or the Wi-Fi network — not at individual fans.
         # Power-cycling them all one by one would be wrong (and useless), so
-        # suspend the timers until the signature clears.
-        if len(self._fans) > 1 and len(repair_worthy) == len(self._fans):
+        # suspend the timers until the signature clears. Counted over the
+        # repairable fans only: a monitor-only fan is never repair-worthy, so
+        # counting it would make the signature unreachable.
+        repairable = [f for f in self._fans if self._can_repair(f)]
+        if len(repairable) > 1 and len(repair_worthy) == len(repairable):
             if not self._systemic_outage:
                 self._systemic_outage = True
                 self.log(
-                    f"All {len(self._fans)} fans entity-down — systemic "
+                    f"All {len(repairable)} repairable fans entity-down — systemic "
                     "outage signature, auto-repair suspended",
                     level="WARNING",
                 )
@@ -1362,6 +1400,11 @@ class FanHealthChecker(AutoRepairConfigMixin, hass.Hass):
         for name, entry in entries.items():
             fr = self._fan_repair_states.get(name)
             if fr is None or not isinstance(entry, (list, tuple)) or not entry:
+                continue
+            if name not in self._repairable_fans:
+                # A monitor-only fan has no ladder: a stale entry (a fan that
+                # lost its ZEN32, or a reused name) would show a retry that
+                # never fires and pin the aggregate on "failed".
                 continue
             try:
                 attempts = int(entry[0])

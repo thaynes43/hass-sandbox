@@ -26,7 +26,7 @@ This architecture means adding a new health check is often just a YAML config ch
 | Smart devices | Vestaboard, any entity + optional ping | `BasicDeviceChecker` |
 | Powered devices | The printer and the Movie Room Sonos Port — repaired by power-cycling their smart plug or PDU outlet | `RepairableDeviceChecker` |
 | Device groups | Cielo AC controllers, TP-Link plugs — related devices as one unit | `DeviceGroupChecker` |
-| Ceiling fans | Modern Forms fans with per-fan repair | `FanHealthChecker` |
+| Ceiling fans | Modern Forms fans with per-fan repair; the outdoor Pavilion fan has no relay, so it is watched but never power-cycled | `FanHealthChecker` |
 | Hot tub / spa | Gecko integration health, staleness detection, power-cycle repair | `SpaHealthChecker` |
 | Protect health | UniFi Protect — silent-freeze detection, hard-outage fast path, entry-sensor group, config-entry reload auto-heal | `ProtectHealthChecker` |
 | Image generation | ComfyUI API reachability and queue progress — a GPU watchdog | `ImageGenHealthChecker` |
@@ -328,7 +328,7 @@ The shared `check_utils` module provides reusable building blocks like `ping_che
 | Basement Lights | `MqttDeviceChecker` | Zigbee2MQTT device HA state + linkquality | No |
 | Cigar Room Humidity | `TempHumidityChecker` | Humidity sensors with threshold alerts | No |
 | Spa | `SpaHealthChecker` | Gateway ping, connections, multi-entity staleness (OR logic across thermostat/lights/pumps) | Yes — power cycle |
-| Fans | `FanHealthChecker` | Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down | Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder |
+| Fans | `FanHealthChecker` | Entity state + IP ping per Wi-Fi fan; repair held while the fan's UniFi AP is down | Yes — per-fan zen32 power cycle on a CrashLoopBackOff ladder (not the Pavilion fan, which has no zen32 and is monitor-only) |
 | Printer | `RepairableDeviceChecker` | Entity state + IP ping | Yes — power cycle |
 | Movie Room Sonos | `RepairableDeviceChecker` | Ping only — the music player itself is deliberately not watched | Yes — power cycle of its UniFi power-strip outlet, on by default |
 | Vestaboard | `BasicDeviceChecker` | Controller + configuration status | No |

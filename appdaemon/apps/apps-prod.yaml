@@ -938,6 +938,16 @@ fan_health_checker:
       scene_control: select.downstairs_study_scene_controller_scene_control_relay
       ap_status_entity: sensor.kitchen_pantry_u7_pro_state
       ap_name: Kitchen Pantry U7 Pro
+    # Pavilion (outdoor, added 2026-10-18): no ZEN32 relay, so no power_switch /
+    # relay_control / scene_control — MONITOR-ONLY. It gets the State + Ping
+    # checks and the AP-aware alert text, but is never power-cycled (auto or
+    # manual) and does not count toward the all-fans-down systemic signature.
+    # Associated with the Pavilion U7 Pro Outdoor at -44 dBm on first sight.
+    - name: Pavilion
+      entity_id: fan.pavilion_fan_fan
+      ip: "192.168.50.184"
+      ap_status_entity: sensor.u7_pro_outdoor_state
+      ap_name: Pavilion U7 Pro Outdoor
 
 cigar_humidity_checker:
   module: health_checks.checker_apps.temp_humidity_checker.temp_humidity_checker

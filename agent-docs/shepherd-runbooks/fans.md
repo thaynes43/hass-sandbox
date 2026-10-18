@@ -1,13 +1,28 @@
 # Runbook: `fans` — Ceiling Fan Health Checker
 
-Monitors Modern Forms ceiling fans (Pink/Blue/White/Primary/Living Room/Study)
-as one checker. **2 checks per fan**: `{name} State` (`get_state` not
+Monitors Modern Forms ceiling fans (Pink/Blue/White/Primary/Living Room/Study,
+plus the outdoor Pavilion fan since 2026-10-18) as one checker. **2 checks per fan**: `{name} State` (`get_state` not
 `unavailable`/`unknown`) and `{name} Ping` (ICMP to the fan's IP).
 `check_interval_s: 180`. **`supports_repair: yes`** — per-fan repair via
 `script.zen32_hard_reset`, which power-cycles that fan through its ZEN32 scene
 controller's relay. Auto-repair default **OFF**, delay 5 min,
 `repair_recovery_wait_s: 300` (wall clock). Failed repairs retry forever on a
 **CrashLoopBackOff ladder** (below) — there is no "one attempt per failure".
+
+**The Pavilion fan is monitor-only.** It has no ZEN32 (nothing can cut its
+power), so its config carries no `power_switch` / `relay_control` /
+`scene_control`: it gets the same State and Ping checks and AP-aware alert text
+(`sensor.u7_pro_outdoor_state`, the Pavilion U7 Pro Outdoor), but neither
+auto-repair nor the Repair button ever targets it, and it is left out of the
+all-fans-down systemic signature. A Pavilion page has no automated fix here:
+read its AP first, then try a UniFi `reconnect_client` (MAC
+`84:1f:e8:a0:47:84`, alias `MF Fan Pavilion`, fixed IP `192.168.50.184`), and
+if it stays down, it needs a breaker or switch cycle by a person. Never call
+`script.zen32_hard_reset` for it. Where this runbook says "six fans" about
+repairs, backoff ladders or the systemic signature, it means the six ZEN32 fans.
+The Pavilion fan's State and Ping rows still go into the same result list, so a
+Pavilion blip keeps the `fans` checker non-ok (and the alert clock running) like
+any other fan's.
 
 ## Domain fact (read this first)
 
@@ -48,6 +63,7 @@ Three consequences that shape everything below:
 | Primary Bedroom | `fan.primary_bedroom_fan_fan` | 192.168.50.146 | Primary Closet U7 Pro |
 | Living Room | `fan.livingroom_fan_fan` | 192.168.50.148 | Livingroom U7-Pro-Wall |
 | Study | `fan.study_fan_fan` | 192.168.50.179 | Kitchen Pantry U7 Pro |
+| Pavilion (**monitor-only**, no ZEN32) | `fan.pavilion_fan_fan` | 192.168.50.184 | Pavilion U7 Pro Outdoor |
 
 Pink Room is **locked** to Kitchen Pantry in UniFi (client "Lock to AP"); the others roam.
 Fans roam between APs; the **Access point** column above is the AP each fan usually holds
@@ -82,8 +98,8 @@ power-cycle of another fan that merely blipped.
   climbing ladder back to instant power-cycles. A restored retry time is
   floored to `now + delay` (5 min), so a reload never fires a power-cycle
   immediately.
-- **All fans entity-down at once** is a systemic-outage signature (HA, the
-  integration, or the network) — auto-repair is suspended entirely and every
+- **All six ZEN32 fans entity-down at once** (the monitor-only Pavilion fan is
+  not counted) is a systemic-outage signature (HA, the integration, or the network) — auto-repair is suspended entirely and every
   timer cleared until it clears.
 - **A manual `start_repair` wipes every fan's ladder** back to attempt 1. That
   is deliberate (a human declaring a fresh start) — but it means firing one to
@@ -148,7 +164,8 @@ power-cycle of another fan that merely blipped.
    all-green arrival above, or an error detail — fetch it yourself with `GET /api/states/sensor.<ap>_state` for the APs named in
    the fan table above (`sensor.guest_room_u7_pro_state`,
    `sensor.kitchen_pantry_u7_pro_state`, `sensor.livingroom_u7_pro_wall_state`,
-   `sensor.primary_closet_u7_pro_state`); `disconnected` / `not_home` / `off` count as
+   `sensor.primary_closet_u7_pro_state`, and `sensor.u7_pro_outdoor_state` for the
+   Pavilion fan); `disconnected` / `not_home` / `off` count as
    down.
    **Then do this per fan:** skip this step for any in-scope fan whose own AP is
    down (gate 1 spans co-channel neighbours whose radios are still reporting, so the
@@ -158,7 +175,7 @@ power-cycle of another fan that merely blipped.
    test has its AP reading *connected*.
    With that settled: the page you woke on can be pure flapping, so do not go looking for
    one continuously-down fan. The alert clocks (`_pending`/`_active`) are keyed by **checker, not fan**, and all
-   six fans report into one result list — so the checker stays non-ok while *any* fan is,
+   seven fans (Pavilion included) report into one result list — so the checker stays non-ok while *any* fan is,
    and fans taking turns keep the clock running with no single fan down two polls in a row.
    That is the shape of an airtime event on the Guest Room cluster. Exactly *which* cycle
    promotes depends on the cross-check downgrade, below — read that before you try to match
@@ -171,7 +188,7 @@ power-cycle of another fan that merely blipped.
    - **Nothing firing yet:** `_pending["since"]` starts on the first **non-ok** cycle of
      any severity and survives warning cycles, so a run of partials punctuated by a
      both-checks-red cycle past 300 s promotes straight to critical. It resets on any
-     **fully green** cycle — with six fans blipping those are common — so only an
+     **fully green** cycle — with seven fans blipping those are common — so only an
      *unbroken* run counts and one all-ok cycle restarts the 300 s. Date the promoting
      window from the last green cycle, not from the start of the day's churn.
    - **Once the partials have themselves paged** — with `alert_for_seconds.warning: 600`
@@ -184,7 +201,7 @@ power-cycle of another fan that merely blipped.
      differently: a cycle falling back to warning gives
      `Escalation dropped for checker 'fans' — returned to severity=warning before promotion`,
      while a **fully green** cycle deletes the pending escalation too but logs
-     `Alert suppressed for checker 'fans' — recovered after Ns pending`. With six fans
+     `Alert suppressed for checker 'fans' — recovered after Ns pending`. With seven fans
      blipping the green cycle is the *usual* interrupter, so do not look only for
      `Escalation dropped`. The warning alert itself stays up throughout — it is the
      escalation to critical that keeps restarting.
@@ -309,7 +326,7 @@ power-cycle of another fan that merely blipped.
    **(a) For each in-scope fan (step 2 above) whose AP is down → stop *for that fan*.** Take the AP-down
    exit below for it and do not apply the airtime table to it: a down radio reports no
    airtime, so baseline ratios are exactly what you expect and prove nothing.
-   **This is per fan, not per checker.** The six fans span four APs and the checker reads
+   **This is per fan, not per checker.** The seven fans span five APs (Pavilion: `sensor.u7_pro_outdoor_state`) and the checker reads
    each fan's AP separately, so one down AP does **not** close the incident — if any other
    in-scope fan has its AP up, carry on to (b) for those. Only when *every* in-scope fan
    is behind a down AP is the whole page an AP fault.
