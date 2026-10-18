@@ -282,6 +282,12 @@ class MediaDashboardCard extends HTMLElement {
       }
     }
     this._els.posterRow.innerHTML = html;
+    // A row where no poster has a subtitle (Theaters) centres its titles; a
+    // mixed row keeps every subtitle slot so the titles stay level.
+    this._els.posterRow.classList.toggle(
+      "md-no-subs",
+      visibleItems.every((item) => !item.subtitle)
+    );
 
     // Update active tab
     this._els.tabs.forEach((tab) => {
@@ -454,6 +460,7 @@ class MediaDashboardCard extends HTMLElement {
 
       .md-title {
         font-size: 12px;
+        line-height: 16px;
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
@@ -548,7 +555,7 @@ class MediaDashboardCard extends HTMLElement {
         text-transform: uppercase;
       }
 
-      /* Caption strip: fixed height whatever the text. A category without
+      /* Caption strip: fixed height whatever the text. A row without any
          subtitles (Theaters) centres the title in the same strip. */
       .md-poster-info {
         box-sizing: border-box;
@@ -586,7 +593,7 @@ class MediaDashboardCard extends HTMLElement {
         text-overflow: ellipsis;
       }
 
-      .md-poster-sub:empty {
+      .md-no-subs .md-poster-sub {
         display: none;
       }
 
